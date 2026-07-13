@@ -48,7 +48,7 @@ impl EddsaSignatureProvider {
             .new_channel_for_task(EddsaTaskId::Signature { id }, participants.clone())?;
 
         let result = SignComputation {
-            keygen_output: keyshare.keyshare,
+            keygen_output: keyshare.keygen_output,
             threshold,
             message: sign_request
                 .payload
@@ -98,7 +98,7 @@ impl EddsaSignatureProvider {
 
         let participants = channel.participants().to_vec();
         let _ = SignComputation {
-            keygen_output: keyshare.keyshare,
+            keygen_output: keyshare.keygen_output,
             threshold,
             message: sign_request
                 .payload

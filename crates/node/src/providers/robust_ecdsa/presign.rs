@@ -164,7 +164,7 @@ impl RobustEcdsaSignatureProvider {
 
         FollowerPresignComputation {
             max_malicious: damgard_et_al_threshold,
-            keygen_out: keyshare.keyshare,
+            keygen_out: keyshare.keygen_output,
             out_presignature_store: keyshare.presignature_store,
             out_presignature_id: id,
         }

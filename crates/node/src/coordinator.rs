@@ -23,7 +23,7 @@ use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
@@ -588,22 +588,19 @@ where
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    (ecdsa::KeygenOutput, ReconstructionThreshold),
+                    DomainKeyshare<ecdsa::KeygenOutput>,
                 > = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    (ecdsa::KeygenOutput, ReconstructionThreshold),
+                    DomainKeyshare<ecdsa::KeygenOutput>,
                 > = HashMap::new();
                 let mut eddsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    (eddsa::KeygenOutput, ReconstructionThreshold),
+                    DomainKeyshare<eddsa::KeygenOutput>,
                 > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    (
-                        confidential_key_derivation::KeygenOutput,
-                        ReconstructionThreshold,
-                    ),
+                    DomainKeyshare<confidential_key_derivation::KeygenOutput>,
                 > = HashMap::new();
                 let domain_registry: HashMap<DomainId, (Protocol, ReconstructionThreshold)> =
                     running_state
@@ -625,21 +622,32 @@ where
                     match (expected_curve, keyshare.data) {
                         (Curve::Secp256k1, KeyshareData::Secp256k1(data)) => match protocol {
                             Protocol::CaitSith => {
-                                ecdsa_keyshares.insert(domain_id, (data, reconstruction_threshold));
+                                ecdsa_keyshares.insert(
+                                    domain_id,
+                                    DomainKeyshare::new(data, reconstruction_threshold),
+                                );
                             }
                             Protocol::DamgardEtAl => {
-                                robust_ecdsa_keyshares
-                                    .insert(domain_id, (data, reconstruction_threshold));
+                                robust_ecdsa_keyshares.insert(
+                                    domain_id,
+                                    DomainKeyshare::new(data, reconstruction_threshold),
+                                );
                             }
                             other => anyhow::bail!(
                                 "Unexpected protocol {other:?} for Secp256k1 keyshare on domain {domain_id:?}",
                             ),
                         },
                         (Curve::Edwards25519, KeyshareData::Ed25519(data)) => {
-                            eddsa_keyshares.insert(domain_id, (data, reconstruction_threshold));
+                            eddsa_keyshares.insert(
+                                domain_id,
+                                DomainKeyshare::new(data, reconstruction_threshold),
+                            );
                         }
                         (Curve::Bls12381, KeyshareData::Bls12381(data)) => {
-                            ckd_keyshares.insert(domain_id, (data, reconstruction_threshold));
+                            ckd_keyshares.insert(
+                                domain_id,
+                                DomainKeyshare::new(data, reconstruction_threshold),
+                            );
                         }
                         (expected, data) => anyhow::bail!(
                             "Keyshare data does not match the domain protocol's expected curve: domain_id={:?}, protocol={:?}, expected_curve={:?}, data_kind={:?}",

@@ -46,7 +46,7 @@ impl RobustEcdsaSignatureProvider {
             .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
 
         let (signature, public_key) = SignComputation {
-            keygen_out: keyshare.keyshare,
+            keygen_out: keyshare.keygen_output,
             max_malicious: damgard_et_al_threshold,
             presign_out: presignature.presignature,
             msg_hash: msg_hash.into(),
@@ -99,7 +99,7 @@ impl RobustEcdsaSignatureProvider {
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
-            keygen_out: keyshare.keyshare,
+            keygen_out: keyshare.keygen_output,
             max_malicious: damgard_et_al_threshold,
             presignature_store: keyshare.presignature_store.clone(),
             presignature_id,

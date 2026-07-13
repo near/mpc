@@ -11,7 +11,7 @@ use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::ecdsa_common;
-use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -59,7 +59,7 @@ impl RobustEcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, DomainKeyshare<KeygenOutput>>,
     ) -> anyhow::Result<Self> {
         let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
@@ -197,7 +197,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                         self.config.presignature.clone().into(),
                         *domain_id,
                         data.presignature_store.clone(),
-                        data.keyshare.clone(),
+                        data.keygen_output.clone(),
                     ),
                 )
             })

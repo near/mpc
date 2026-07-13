@@ -5,7 +5,6 @@ mod sign;
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
@@ -20,7 +19,7 @@ use crate::{
     config::{MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
-    providers::SignatureProvider,
+    providers::{DomainKeyshare, SignatureProvider},
     storage::CKDRequestStorage,
     types::{CKDId, SignatureId},
 };
@@ -47,12 +46,7 @@ pub struct CKDProvider {
     keyshares: HashMap<DomainId, CkdKeyshare>,
 }
 
-#[derive(Clone)]
-pub(super) struct CkdKeyshare {
-    pub keyshare: KeygenOutput,
-    /// Per-domain reconstruction threshold `t`, used as the CKD threshold.
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub(super) type CkdKeyshare = DomainKeyshare<KeygenOutput>;
 
 impl CKDProvider {
     pub fn new(
@@ -60,20 +54,8 @@ impl CKDProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, CkdKeyshare>,
     ) -> Self {
-        let keyshares = keyshares
-            .into_iter()
-            .map(|(domain_id, (keyshare, reconstruction_threshold))| {
-                (
-                    domain_id,
-                    CkdKeyshare {
-                        keyshare,
-                        reconstruction_threshold,
-                    },
-                )
-            })
-            .collect();
         Self {
             config,
             mpc_config,

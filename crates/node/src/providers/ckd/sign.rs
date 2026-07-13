@@ -52,7 +52,7 @@ impl CKDProvider {
             .client
             .new_channel_for_task(CKDTaskId::Ckd { id }, participants)?;
 
-        let keygen_output = keyshare.keyshare;
+        let keygen_output = keyshare.keygen_output;
         let public_key = keygen_output.public_key;
         let participants = channel.participants().to_vec();
         let result = CKDComputation {
@@ -96,7 +96,7 @@ impl CKDProvider {
         let keyshare = self.keyshare(ckd_request.domain_id)?;
         let participants = channel.participants().to_vec();
         CKDComputation {
-            keygen_output: keyshare.keyshare,
+            keygen_output: keyshare.keygen_output,
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
         }

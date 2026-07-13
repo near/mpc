@@ -35,7 +35,7 @@ impl EcdsaSignatureProvider {
         let threshold = ReconstructionThreshold::from(threshold);
 
         let (signature, public_key) = SignComputation {
-            keygen_out: keyshare.keyshare,
+            keygen_out: keyshare.keygen_output,
             threshold,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
@@ -97,7 +97,7 @@ impl EcdsaSignatureProvider {
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
-            keygen_out: keyshare.keyshare,
+            keygen_out: keyshare.keygen_output,
             threshold,
             presignature_store: keyshare.presignature_store.clone(),
             presignature_id,

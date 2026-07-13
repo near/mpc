@@ -7,7 +7,7 @@ use crate::assets::DistributedAssetStorage;
 use crate::db::SecretDB;
 use crate::network::MeshNetworkClient;
 use crate::primitives::ParticipantId;
-use crate::providers::HasParticipants;
+use crate::providers::{DomainKeyshare, HasParticipants};
 use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
@@ -65,15 +65,14 @@ where
     }
 }
 
-/// Everything a secp256k1 provider keeps per signing domain.
+/// A domain's [`DomainKeyshare`] material plus a presignature store, which is runtime state the
+/// coordinator can't provide and so is built here.
 pub struct EcdsaKeyshare<P>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
-    pub keyshare: KeygenOutput,
+    pub keygen_output: KeygenOutput,
     pub presignature_store: Arc<PresignatureStorage<P>>,
-    /// Per-domain reconstruction threshold `t`, the source of truth for this domain's
-    /// keygen/presign/sign.
     pub reconstruction_threshold: ReconstructionThreshold,
 }
 
@@ -84,7 +83,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            keyshare: self.keyshare.clone(),
+            keygen_output: self.keygen_output.clone(),
             presignature_store: self.presignature_store.clone(),
             reconstruction_threshold: self.reconstruction_threshold,
         }
@@ -99,19 +98,18 @@ pub fn active_participants_query(
     Arc::new(move || network_client.all_alive_participant_ids())
 }
 
-/// Builds the per-domain map shared by both secp256k1 providers: one presignature store per domain,
-/// each paired with its keyshare and reconstruction threshold.
+/// Attaches a freshly-created presignature store to each domain's [`DomainKeyshare`].
 pub fn build_keyshares<P>(
     clock: &Clock,
     db: &Arc<SecretDB>,
     client: &Arc<MeshNetworkClient>,
-    keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+    keyshares: HashMap<DomainId, DomainKeyshare<KeygenOutput>>,
 ) -> anyhow::Result<HashMap<DomainId, EcdsaKeyshare<P>>>
 where
     P: Serialize + DeserializeOwned + Send + 'static,
 {
     let mut result = HashMap::new();
-    for (domain_id, (keyshare, reconstruction_threshold)) in keyshares {
+    for (domain_id, keyshare) in keyshares {
         let presignature_store = Arc::new(PresignatureStorage::new(
             clock.clone(),
             db.clone(),
@@ -121,9 +119,9 @@ where
         result.insert(
             domain_id,
             EcdsaKeyshare {
-                keyshare,
+                keygen_output: keyshare.keygen_output,
                 presignature_store,
-                reconstruction_threshold,
+                reconstruction_threshold: keyshare.reconstruction_threshold,
             },
         );
     }
@@ -147,7 +145,7 @@ where
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::build_keyshares;
+    use super::{DomainKeyshare, build_keyshares};
     use crate::db::SecretDB;
     use crate::network::testing::run_test_clients;
     use crate::tests::into_participant_ids;
@@ -186,9 +184,15 @@ mod tests {
                     let keyshares = HashMap::from([
                         (
                             low,
-                            (keygen_output.clone(), ReconstructionThreshold::new(2)),
+                            DomainKeyshare::new(
+                                keygen_output.clone(),
+                                ReconstructionThreshold::new(2),
+                            ),
                         ),
-                        (high, (keygen_output, ReconstructionThreshold::new(3))),
+                        (
+                            high,
+                            DomainKeyshare::new(keygen_output, ReconstructionThreshold::new(3)),
+                        ),
                     ]);
                     let dir = tempfile::tempdir().unwrap();
                     let db = SecretDB::new(dir.path(), [1; 16]).unwrap();

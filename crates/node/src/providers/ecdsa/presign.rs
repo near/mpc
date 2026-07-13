@@ -166,7 +166,7 @@ impl EcdsaSignatureProvider {
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
             threshold: TSReconstructionThreshold::from(threshold_usize),
-            keygen_out: keyshare.keyshare,
+            keygen_out: keyshare.keygen_output,
             triple_store,
             paired_triple_id,
             out_presignature_store: keyshare.presignature_store,

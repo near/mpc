@@ -15,6 +15,7 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
+use crate::providers::DomainKeyshare;
 use crate::providers::SignatureProvider;
 use crate::providers::ecdsa_common;
 use crate::storage::SignRequestStorage;
@@ -57,7 +58,7 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, DomainKeyshare<KeygenOutput>>,
     ) -> anyhow::Result<Self> {
         let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
@@ -290,7 +291,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     triple_store,
                     *domain_id,
                     data.presignature_store.clone(),
-                    data.keyshare.clone(),
+                    data.keygen_output.clone(),
                 ),
             ));
         }

@@ -6,6 +6,7 @@ use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::DomainKeyshare;
 #[cfg(test)]
 use crate::providers::PublicKeyConversion;
 use crate::providers::SignatureProvider;
@@ -15,7 +16,6 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_node_config::ConfigFile;
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 #[cfg(test)]
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -36,13 +36,7 @@ pub struct EddsaSignatureProvider {
     keyshares: HashMap<DomainId, EddsaKeyshare>,
 }
 
-#[derive(Clone)]
-pub(super) struct EddsaKeyshare {
-    pub keyshare: KeygenOutput,
-    /// Per-domain reconstruction threshold `t`, used as the FROST signing
-    /// threshold.
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub(super) type EddsaKeyshare = DomainKeyshare<KeygenOutput>;
 
 impl EddsaSignatureProvider {
     pub fn new(
@@ -50,20 +44,8 @@ impl EddsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, EddsaKeyshare>,
     ) -> Self {
-        let keyshares = keyshares
-            .into_iter()
-            .map(|(domain_id, (keyshare, reconstruction_threshold))| {
-                (
-                    domain_id,
-                    EddsaKeyshare {
-                        keyshare,
-                        reconstruction_threshold,
-                    },
-                )
-            })
-            .collect();
         Self {
             config,
             mpc_config,
