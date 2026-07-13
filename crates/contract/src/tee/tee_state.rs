@@ -11,11 +11,9 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
-    attestation::{
-        self, AcceptedAttestation, DstackAttestation, DstackVerify, MockAttestation,
-        VerifiedAttestation,
-    },
+    attestation::{self, AcceptedAttestation, DstackVerify, MockAttestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
+    tcb_info::TcbInfo,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
@@ -174,12 +172,12 @@ impl TeeState {
         self.store_verified_attestation(node_id, verified_attestation)
     }
 
-    /// Runs the post-DCAP checks for a [`DstackAttestation`] against the
-    /// [`VerifiedReport`] the verifier returned, then stores the result.
+    /// Runs the post-DCAP checks for a Dstack attestation's [`TcbInfo`] against
+    /// the [`VerifiedReport`] the verifier returned, then stores the result.
     pub(crate) fn verify_and_store_dstack(
         &mut self,
         node_id: NodeId,
-        dstack: &DstackAttestation,
+        tcb_info: &TcbInfo,
         report: &VerifiedReport,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
@@ -188,7 +186,7 @@ impl TeeState {
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = dstack.verify(
+        } = tcb_info.verify(
             report,
             expected_report_data,
             Self::current_time_seconds(),

@@ -7,6 +7,7 @@ use attestation::{
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
     report_data::ReportData,
+    tcb_info::TcbInfo,
 };
 
 use include_measurements::include_measurements;
@@ -265,12 +266,16 @@ pub fn default_measurements() -> &'static [ExpectedMeasurements] {
     &MEASUREMENTS
 }
 
-/// Verification for a [`DstackAttestation`] at the `mpc-attestation` layer.
+/// Verification of a Dstack [`TcbInfo`] at the `mpc-attestation` layer.
 ///
-/// [`DstackAttestation`] is defined in the lower `attestation` crate, which knows
+/// [`TcbInfo`] is defined in the lower `attestation` crate, which knows
 /// nothing of `mpc-primitives` hashes, so the MPC image / launcher compose checks
 /// (and the resulting [`AcceptedAttestation`]) live here as an extension trait
 /// rather than an inherent method. Mirrors [`MockAttestation::verify`].
+///
+/// Implemented for [`TcbInfo`] rather than [`DstackAttestation`]: the quote and
+/// collateral are consumed by the DCAP step that produced `report`, so a caller
+/// holding the verified report needs only the TCB info.
 pub trait DstackVerify {
     /// Runs the MPC-hash allowlist checks and the post-DCAP checks against an
     /// already-DCAP-verified [`VerifiedReport`], returning the
@@ -286,7 +291,7 @@ pub trait DstackVerify {
     ) -> Result<AcceptedAttestation, VerificationError>;
 }
 
-impl DstackVerify for DstackAttestation {
+impl DstackVerify for TcbInfo {
     fn verify(
         &self,
         report: &VerifiedReport,
@@ -329,7 +334,7 @@ impl Attestation {
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
-            Self::Dstack(dstack_attestation) => dstack_attestation.verify(
+            Self::Dstack(dstack_attestation) => dstack_attestation.tcb_info.verify(
                 report,
                 expected_report_data,
                 current_timestamp_seconds,
@@ -361,7 +366,7 @@ impl Attestation {
         match self {
             Self::Dstack(dstack_attestation) => {
                 let report = dstack_attestation.verify_dcap_quote(current_timestamp_seconds)?;
-                dstack_attestation.verify(
+                dstack_attestation.tcb_info.verify(
                     &report,
                     expected_report_data,
                     current_timestamp_seconds,
@@ -385,13 +390,12 @@ impl Attestation {
 /// checks them against `allowed_mpc_docker_image_hashes` and
 /// `allowed_launcher_docker_compose_hashes` respectively, and returns the pair.
 fn verify_dstack_mpc_hashes(
-    dstack_attestation: &DstackAttestation,
+    tcb_info: &TcbInfo,
     allowed_mpc_docker_image_hashes: &[NodeImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
 ) -> Result<(NodeImageHash, LauncherDockerComposeHash), VerificationError> {
     let mpc_image_hash: NodeImageHash = {
-        let mpc_image_hash_payload = &dstack_attestation
-            .tcb_info
+        let mpc_image_hash_payload = &tcb_info
             .get_single_event(MPC_IMAGE_HASH_EVENT)?
             .event_payload;
 
@@ -408,9 +412,8 @@ fn verify_dstack_mpc_hashes(
     let () = verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
 
     let launcher_compose_hash: LauncherDockerComposeHash = {
-        let app_compose: AppCompose =
-            serde_json::from_str(&dstack_attestation.tcb_info.app_compose)
-                .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
+        let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
+            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
 
         let launcher_compose_hash_bytes: [u8; 32] =
             Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();

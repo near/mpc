@@ -836,10 +836,19 @@ impl MpcContract {
             return Err(TeeError::VerifierNotConfigured.into());
         };
 
+        // The quote and collateral are consumed by the verifier's DCAP step;
+        // the callback only needs the TCB info for the post-DCAP checks, so
+        // only that part rides along in the callback receipt.
+        let DstackAttestation {
+            quote,
+            collateral,
+            tcb_info,
+        } = attestation;
+
         Ok(Promise::new(verifier_account_id)
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
-                borsh::to_vec(&(&attestation.quote, &attestation.collateral))
+                borsh::to_vec(&(&quote, &collateral))
                     .expect("borsh serialization of verify_quote args must succeed"),
                 NearToken::from_yoctonear(0),
                 Gas::from_tgas(self.config.verifier_tera_gas),
@@ -848,10 +857,7 @@ impl MpcContract {
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
                     .with_attached_deposit(env::attached_deposit())
-                    .resolve_verification(VerificationContext {
-                        node_id,
-                        attestation,
-                    }),
+                    .resolve_verification(VerificationContext { node_id, tcb_info }),
             ))
     }
 
@@ -2364,7 +2370,7 @@ impl MpcContract {
         let initial_storage = env::storage_usage();
         let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
-            &context.attestation,
+            &context.tcb_info,
             report,
             tee_upgrade_deadline_duration,
         ) {

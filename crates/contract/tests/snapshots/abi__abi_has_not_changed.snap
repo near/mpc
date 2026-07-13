@@ -1328,66 +1328,6 @@ expression: abi
                       "String"
                     ]
                   },
-                  "Collateral": {
-                    "Struct": [
-                      [
-                        "pck_crl_issuer_chain",
-                        "String"
-                      ],
-                      [
-                        "root_ca_crl",
-                        "Vec<u8>"
-                      ],
-                      [
-                        "pck_crl",
-                        "Vec<u8>"
-                      ],
-                      [
-                        "tcb_info_issuer_chain",
-                        "String"
-                      ],
-                      [
-                        "tcb_info",
-                        "String"
-                      ],
-                      [
-                        "tcb_info_signature",
-                        "Vec<u8>"
-                      ],
-                      [
-                        "qe_identity_issuer_chain",
-                        "String"
-                      ],
-                      [
-                        "qe_identity",
-                        "String"
-                      ],
-                      [
-                        "qe_identity_signature",
-                        "Vec<u8>"
-                      ],
-                      [
-                        "pck_certificate_chain",
-                        "Option<String>"
-                      ]
-                    ]
-                  },
-                  "DstackAttestation": {
-                    "Struct": [
-                      [
-                        "quote",
-                        "QuoteBytes"
-                      ],
-                      [
-                        "collateral",
-                        "Collateral"
-                      ],
-                      [
-                        "tcb_info",
-                        "TcbInfo"
-                      ]
-                    ]
-                  },
                   "Ed25519PublicKey": {
                     "Struct": [
                       "[u8; 32]"
@@ -1460,28 +1400,6 @@ expression: abi
                       ]
                     }
                   },
-                  "Option<String>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "String"
-                        ]
-                      ]
-                    }
-                  },
-                  "QuoteBytes": {
-                    "Struct": [
-                      "Vec<u8>"
-                    ]
-                  },
                   "String": {
                     "Sequence": {
                       "length_width": 4,
@@ -1546,16 +1464,6 @@ expression: abi
                       "elements": "EventLog"
                     }
                   },
-                  "Vec<u8>": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "u8"
-                    }
-                  },
                   "VerificationContext": {
                     "Struct": [
                       [
@@ -1563,8 +1471,8 @@ expression: abi
                         "NodeId"
                       ],
                       [
-                        "attestation",
-                        "DstackAttestation"
+                        "tcb_info",
+                        "TcbInfo"
                       ]
                     ]
                   },
