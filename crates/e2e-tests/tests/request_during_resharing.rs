@@ -7,18 +7,15 @@ use near_mpc_contract_interface::types::{
 };
 use rand::SeedableRng;
 
-/// Returns the single domain running `protocol_type`.
-///
-/// Each protocol appears at most once in this test's domain registry, so the
-/// protocol uniquely identifies its domain.
-fn create_domain(contract_state: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
+/// Panics if no domain matches; each protocol appears at most once in this test's domain set.
+fn find_domain_id(contract_state: &RunningContractState, protocol_type: Protocol) -> DomainId {
     contract_state
         .domains
         .domains
         .iter()
         .find(|d| d.protocol == protocol_type)
         .unwrap_or_else(|| panic!("no domain with protocol {protocol_type:?}"))
-        .clone()
+        .id
 }
 
 /// Tests that signature and CKD requests are processed using the previous
@@ -61,17 +58,17 @@ async fn test_request_during_resharing() {
     cluster.kill_nodes(&[5]).expect("failed to kill node 5");
 
     // then
-    let ecdsa_domain = create_domain(&contract_state, Protocol::CaitSith);
-    let robust_ecdsa_domain = create_domain(&contract_state, Protocol::DamgardEtAl);
-    let eddsa_domain = create_domain(&contract_state, Protocol::Frost);
-    let ckd_domain = create_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
+    let ecdsa_domain_id = find_domain_id(&contract_state, Protocol::CaitSith);
+    let robust_ecdsa_domain_id = find_domain_id(&contract_state, Protocol::DamgardEtAl);
+    let eddsa_domain_id = find_domain_id(&contract_state, Protocol::Frost);
+    let ckd_domain_id = find_domain_id(&contract_state, Protocol::ConfidentialKeyDerivation);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
         for (label, domain_id, is_eddsa) in [
-            ("ECDSA", ecdsa_domain.id, false),
-            ("robust ECDSA", robust_ecdsa_domain.id, false),
-            ("EdDSA", eddsa_domain.id, true),
+            ("ECDSA", ecdsa_domain_id, false),
+            ("robust ECDSA", robust_ecdsa_domain_id, false),
+            ("EdDSA", eddsa_domain_id, true),
         ] {
             let payload = if is_eddsa {
                 common::generate_eddsa_payload(&mut rng)
@@ -93,7 +90,7 @@ async fn test_request_during_resharing() {
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster
             .send_ckd_request(
-                ckd_domain.id,
+                ckd_domain_id,
                 common::generate_ckd_app_public_key(&mut rng),
                 cluster.default_user_account(),
             )
