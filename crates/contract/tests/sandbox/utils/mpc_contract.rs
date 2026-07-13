@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use super::consts::SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
@@ -50,6 +51,7 @@ pub async fn submit_participant_info(
     let result = account
         .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
         .args_json((attestation, tls_key))
+        .deposit(SUBMIT_PARTICIPANT_INFO_DEPOSIT)
         .max_gas()
         .transact()
         .await?;
