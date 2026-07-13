@@ -9,10 +9,7 @@ use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 
 /// Client credentials a mock server requires, mirroring the node's
-/// [`AuthConfig`](mpc_node_config::AuthConfig) kinds. Requests without the
-/// expected credentials are answered with 401 like real providers do, so
-/// verification can only succeed if the node applied the configured
-/// authentication.
+/// [`AuthConfig`](mpc_node_config::AuthConfig) kinds.
 #[derive(Clone, Debug)]
 pub enum MockAuthExpectation {
     None,
@@ -34,8 +31,6 @@ impl MockAuthExpectation {
 
 /// Rejects requests missing the expected credentials the way real providers
 /// do.
-/// Must be registered AFTER the credentialed mock — httpmock picks the
-/// first-registered matching mock, so authenticated requests keep hitting it.
 fn register_unauthorized_catch_all(server: &MockServer, auth: &MockAuthExpectation) {
     if matches!(auth, MockAuthExpectation::None) {
         return;

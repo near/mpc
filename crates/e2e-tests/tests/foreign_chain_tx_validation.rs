@@ -541,15 +541,10 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
-/// Sets up a single 2-node cluster with mock RPC servers for all chains,
-/// then submits verify_foreign_transaction requests for Bitcoin, Abstract,
-/// BNB, Base, Starknet, Arbitrum, HyperEVM, and Polygon and verifies the MPC
-/// nodes return valid signed responses. Also verifies rejection for unsupported
-/// chains and non-existent domains.
-///
-/// Bitcoin, Base and BNB providers require authentication (one per
-/// credential-carrying [`AuthConfig`] kind), so the test also proves the node
-/// applies configured RPC credentials end to end.
+/// Verifies all supported chains sign, and unsupported chains and non-existent
+/// domains are rejected. Bitcoin, Base and BNB require authentication (one per
+/// credential-carrying [`AuthConfig`] kind), proving the node applies configured
+/// RPC credentials end to end.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
