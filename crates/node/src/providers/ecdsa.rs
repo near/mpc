@@ -62,10 +62,7 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<Self> {
         let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
-        // cait-sith triple generation runs with exactly `t` parties, so we keep
-        // one store per distinct per-domain reconstruction threshold — known up
-        // front, no on-demand creation. Domains may share a `t` or diverge; the
-        // contract validates each domain's threshold independently.
+        // cait-sith triple generation runs with exactly `t` parties, so keep one store per distinct reconstruction threshold.
         let mut triple_stores = HashMap::new();
         for data in keyshares.values() {
             let t = data.reconstruction_threshold;
