@@ -1035,12 +1035,14 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
     Ok(())
 }
 
-/// A funded submission stores the attestation and refunds the deposit that exceeds
-/// the measured storage cost, so the caller pays only for storage (plus gas).
+/// Mirror of the zero-deposit test with a funded submission: the attestation is
+/// stored, storage grows, and the caller is charged a non-zero amount for it (the
+/// bug charged zero).
 #[tokio::test]
-async fn submit_participant_info__should_store_and_refund_excess_with_sufficient_deposit()
+async fn submit_participant_info__should_store_new_attestation_and_charge_with_sufficient_deposit()
 -> Result<()> {
-    // Given
+    // Given: the sandbox storage price, 1e19 yocto per byte.
+    const STORAGE_COST_PER_BYTE: u128 = 10u128.pow(19);
     const ATTACHED_DEPOSIT: NearToken = NearToken::from_near(1);
     let SandboxTestSetup {
         worker, contract, ..
@@ -1050,6 +1052,7 @@ async fn submit_participant_info__should_store_and_refund_excess_with_sufficient
         .await;
     let outsider = worker.dev_create_account().await?;
     let fresh_tls_key = bogus_ed25519_public_key();
+    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
     let balance_before = outsider.view_account().await?.balance;
 
     // When
@@ -1074,15 +1077,19 @@ async fn submit_participant_info__should_store_and_refund_excess_with_sufficient
         stored.is_some(),
         "the attestation entry should be stored on-chain"
     );
-    // A single mock attestation is a few hundred bytes; at the sandbox storage
-    // price it costs a tiny fraction of the 1 NEAR attached. The caller's net
-    // balance drop (storage cost + gas) must therefore be far below the full
-    // deposit, proving the excess was refunded rather than kept.
+    let storage_after = worker.view_account(contract.id()).await?.storage_usage;
+    let bytes_grown = storage_after - storage_before;
+    assert!(
+        bytes_grown > 0,
+        "contract storage should grow ({storage_before} -> {storage_after})"
+    );
+
+    let storage_stake = NearToken::from_yoctonear(u128::from(bytes_grown) * STORAGE_COST_PER_BYTE);
     let balance_after = outsider.view_account().await?.balance;
     let spent = balance_before.saturating_sub(balance_after);
     assert!(
-        spent < NearToken::from_millinear(100),
-        "caller should be refunded all but the storage cost; spent {spent} of {ATTACHED_DEPOSIT}"
+        spent >= storage_stake,
+        "caller must be charged at least the storage stake ({storage_stake}) for {bytes_grown} new bytes, spent {spent}"
     );
     Ok(())
 }
