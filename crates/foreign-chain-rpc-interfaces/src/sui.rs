@@ -87,11 +87,7 @@ impl GrpcSuiClient {
     ) -> Result<Self, Status> {
         let mut client = sui_rpc::Client::new(url)?;
         if let Some((name, value)) = auth_header {
-            let mut header_map = http::HeaderMap::new();
-            header_map.insert(name, value);
-            let mut headers = sui_rpc::client::HeadersInterceptor::new();
-            *headers.headers_mut() = tonic::metadata::MetadataMap::from_headers(header_map);
-            client = client.with_headers(headers);
+            client = client.with_headers(auth_interceptor(name, value));
         }
         Ok(Self { client, timeout })
     }
@@ -101,6 +97,15 @@ impl GrpcSuiClient {
         request.set_timeout(self.timeout);
         request
     }
+}
+
+/// Builds the gRPC interceptor that attaches the configured auth header to every request.
+fn auth_interceptor(name: HeaderName, value: HeaderValue) -> sui_rpc::client::HeadersInterceptor {
+    let mut header_map = http::HeaderMap::new();
+    header_map.insert(name, value);
+    let mut interceptor = sui_rpc::client::HeadersInterceptor::new();
+    *interceptor.headers_mut() = tonic::metadata::MetadataMap::from_headers(header_map);
+    interceptor
 }
 
 impl SuiRpcClient for GrpcSuiClient {
@@ -177,6 +182,26 @@ mod tests {
             Duration::from_secs(5),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn auth_interceptor__should_substitute_the_configured_header() {
+        // Given / When
+        let interceptor = auth_interceptor(
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_static("secret-token"),
+        );
+
+        // Then — the configured header is attached to every request's gRPC metadata.
+        assert_eq!(
+            interceptor
+                .headers()
+                .get("x-api-key")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "secret-token"
+        );
     }
 
     #[tokio::test]

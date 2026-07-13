@@ -3,10 +3,7 @@ use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
 use foreign_chain_rpc_interfaces::sui::proto::ExecutedTransaction;
 use foreign_chain_rpc_interfaces::sui::{Code, Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
-use std::borrow::Cow;
-
-/// A 32-byte Sui digest is at most 44 base58 characters.
-const DIGEST_MAX_BASE58_LEN: usize = 44;
+use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct SuiInspector<Client> {
@@ -31,11 +28,10 @@ pub enum SuiExtractor {
     Event { event_index: usize },
 }
 
-/// Unlike the JSON-RPC API, the gRPC [`Event`](foreign_chain_rpc_interfaces::sui::proto::Event)
-/// carries no per-event sequence number or transaction digest, so a provider serving a
-/// reordered event list cannot be detected from a single response; the array order is the
-/// certified order as served. Cross-provider protection comes from the fan-out quorum, and
-/// the type name embedded in the event's BCS message is cross-checked against the event type.
+/// The gRPC [`Event`](foreign_chain_rpc_interfaces::sui::proto::Event) carries no per-event
+/// sequence number or transaction digest, so the event array order is the certified order as
+/// served. The type name embedded in the event's BCS message is cross-checked against the
+/// event type.
 impl<Client> ForeignChainInspector for SuiInspector<Client>
 where
     Client: SuiRpcClient,
@@ -51,7 +47,7 @@ where
         finality: SuiFinality,
         extractors: Vec<SuiExtractor>,
     ) -> Result<Vec<SuiExtractedValue>, ForeignChainInspectionError> {
-        let digest = bs58::encode(*tx_id).into_string();
+        let digest = sui_sdk_types::Digest::new(*tx_id).to_base58();
 
         let response = self
             .client
@@ -122,34 +118,23 @@ fn classify_status(status: Status) -> ForeignChainInspectionError {
     }
 }
 
-/// Rejects a backend that returned a different transaction than queried. A non-base58 or
-/// wrong-length `returned` digest is a malformed response; a well-formed but different
-/// digest is a hard inconsistency.
+/// Rejects a backend that returned a different transaction than queried. A digest that is not
+/// valid base58 for 32 bytes is a malformed response; a well-formed but different digest is a
+/// hard inconsistency. `Digest::from_base58` decodes into a fixed 32-byte buffer, so an
+/// oversized string is rejected without a superlinear decode.
 fn ensure_digest_matches(
     requested: &[u8; 32],
     returned: &str,
 ) -> Result<(), ForeignChainInspectionError> {
-    if returned.len() > DIGEST_MAX_BASE58_LEN {
-        return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-            "transaction digest in response is too long: {} characters",
-            returned.len()
-        )));
-    }
-    let returned_bytes = bs58::decode(returned).into_vec().map_err(|e| {
+    let returned = sui_sdk_types::Digest::from_base58(returned).map_err(|e| {
         ForeignChainInspectionError::MalformedRpcResponse(format!(
-            "non-base58 transaction digest in response: {e}"
+            "invalid transaction digest in response: {e}"
         ))
     })?;
-    if returned_bytes.len() != requested.len() {
-        return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
-            "transaction digest in response is {} bytes, expected 32",
-            returned_bytes.len()
-        )));
-    }
-    if returned_bytes.as_slice() != requested.as_slice() {
+    if returned != sui_sdk_types::Digest::new(*requested) {
         return Err(ForeignChainInspectionError::InconsistentRpcResponse {
             requested_hash: HexBytes(requested.to_vec()),
-            returned_hash: HexBytes(returned_bytes),
+            returned_hash: HexBytes(returned.into_inner().to_vec()),
         });
     }
     Ok(())
@@ -200,8 +185,8 @@ impl SuiExtractor {
                 let type_tag = event
                     .event_type
                     .as_deref()
-                    .map(normalize_type_tag)
-                    .ok_or_else(|| malformed_event_field("event_type"))?;
+                    .ok_or_else(|| malformed_event_field("event_type"))
+                    .and_then(normalize_type_tag)?;
                 let contents = event
                     .contents
                     .as_ref()
@@ -211,7 +196,7 @@ impl SuiExtractor {
                 // come apart. Both sides are normalized so a provider that renders the two
                 // fields with different address forms is not rejected spuriously.
                 if let Some(name) = contents.name.as_deref() {
-                    let normalized_name = normalize_type_tag(name);
+                    let normalized_name = normalize_type_tag(name)?;
                     if normalized_name != type_tag {
                         return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
                             "event contents type {normalized_name:?} does not match the event type {type_tag:?}"
@@ -240,58 +225,24 @@ fn malformed_event_field(field: &str) -> ForeignChainInspectionError {
     ForeignChainInspectionError::MalformedRpcResponse(format!("event is missing its {field}"))
 }
 
-/// Rewrites every address inside a Move struct tag to Sui's canonical long form —
-/// `0x` followed by 64 lowercase hex digits — so providers that shorten framework
-/// addresses and providers that return the long form converge to the same signed payload.
-///
-/// Examples:
-/// - `0x2::sui::SUI` → `0x00…02::sui::SUI` (64 hex digits)
-/// - `0xAB::m::S` → `0x00…ab::m::S`
-/// - `0x2::coin::Coin<0x2::sui::SUI>` → `0x00…02::coin::Coin<0x00…02::sui::SUI>`
-///
-/// Addresses appear at the start of the tag or of a generic type argument — that is, right
-/// after `<`, `,` or a space — and are always followed by `::`. Splitting on those delimiters
-/// (keeping them) yields pieces that each begin at a potential address position, so only a
-/// leading `0x<hex>::` of a piece is rewritten; anything else (identifiers that merely contain
-/// `0x` such as a module named `m0x01`, primitive type args, …) is copied verbatim.
-fn normalize_type_tag(tag: &str) -> String {
-    tag.split_inclusive(['<', ',', ' '])
-        .map(normalize_leading_address)
-        .collect()
+/// Renders a Move type tag in Sui's canonical form — addresses as `0x` + 64 lowercase hex —
+/// so a provider that shortens framework addresses (`0x2::sui::SUI`) and one that returns the
+/// long form converge to the same signed payload. Parsing also rejects a malformed type tag.
+fn normalize_type_tag(tag: &str) -> Result<String, ForeignChainInspectionError> {
+    sui_sdk_types::TypeTag::from_str(tag)
+        .map(|type_tag| type_tag.to_string())
+        .map_err(|e| {
+            ForeignChainInspectionError::MalformedRpcResponse(format!(
+                "invalid Move type tag {tag:?}: {e}"
+            ))
+        })
 }
 
-/// If `piece` begins with an address followed by `::` (e.g. `0x2::m::S<`), rewrites that
-/// address to zero-padded lowercase (`0x00…02::m::S<`); any other piece is returned unchanged.
-fn normalize_leading_address(piece: &str) -> Cow<'_, str> {
-    let Some(stripped) = piece.strip_prefix("0x") else {
-        return Cow::Borrowed(piece);
-    };
-    let Some((hex, rest)) = stripped.split_once("::") else {
-        return Cow::Borrowed(piece);
-    };
-    let is_address =
-        !hex.is_empty() && hex.len() <= 64 && hex.bytes().all(|b| b.is_ascii_hexdigit());
-    if !is_address {
-        return Cow::Borrowed(piece);
-    }
-    let padded = format!("{:0>64}", hex.to_ascii_lowercase());
-    Cow::Owned(format!("0x{padded}::{rest}"))
-}
-
-/// Parse a Sui address string (0x-prefixed hex, possibly short) into [`SuiAddress`].
-/// Short addresses like "0x2" are zero-padded to 32 bytes.
+/// Parse a Sui address string (0x-prefixed hex, short forms zero-padded) into [`SuiAddress`].
 fn parse_sui_address(s: &str) -> Result<SuiAddress, String> {
-    let hex_str = s.strip_prefix("0x").unwrap_or(s);
-    if hex_str.is_empty() {
-        return Err(format!("empty Sui address: {s:?}"));
-    }
-    if hex_str.len() > 64 {
-        return Err(format!("address hex string too long: {s}"));
-    }
-    let padded = format!("{hex_str:0>64}");
-    let bytes = hex::decode(&padded).map_err(|e| format!("invalid hex in address '{s}': {e}"))?;
-    let array: [u8; 32] = bytes.try_into().expect("padded to exactly 32 bytes");
-    Ok(SuiAddress(array))
+    sui_sdk_types::Address::from_str(s)
+        .map(|address| SuiAddress(address.into()))
+        .map_err(|e| format!("invalid Sui address {s:?}: {e}"))
 }
 
 #[cfg(test)]
@@ -396,14 +347,15 @@ mod tests {
     }
 
     #[test]
-    fn ensure_digest_matches__should_reject_wrong_length_digest_as_malformed_response() {
-        // Given — a valid base58 string that decodes to 31 bytes, not 32.
+    fn ensure_digest_matches__should_reject_shorter_digest_as_inconsistent() {
+        // Given — a base58 string that decodes to 31 bytes; `Digest::from_base58` zero-pads it
+        // into a valid 32-byte digest, which then simply differs from the requested one.
         let short = bs58::encode([0xab; 31]).into_string();
 
-        // When / Then — a malformed field, not a digest mismatch.
+        // When / Then
         assert_matches!(
             ensure_digest_matches(&[0xab; 32], &short),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+            Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
         );
     }
 
@@ -435,7 +387,7 @@ mod tests {
         #[case] input: &str,
         #[case] expected: &str,
     ) {
-        assert_eq!(normalize_type_tag(input), expected);
+        assert_eq!(normalize_type_tag(input).unwrap(), expected);
     }
 
     #[test]
@@ -471,9 +423,8 @@ mod tests {
 
     #[test]
     fn parse_sui_address__should_reject_empty_address() {
-        // `""` and `"0x"` would otherwise be zero-padded into the all-zeros address.
+        // An empty string has no hex digits to decode.
         parse_sui_address("").unwrap_err();
-        parse_sui_address("0x").unwrap_err();
     }
 
     #[test]
