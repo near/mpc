@@ -578,19 +578,19 @@ where
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    DomainKeyshare<ecdsa::KeygenOutput>,
+                    DomainKeyshare<ecdsa::Secp256K1Sha256>,
                 > = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    DomainKeyshare<ecdsa::KeygenOutput>,
+                    DomainKeyshare<ecdsa::Secp256K1Sha256>,
                 > = HashMap::new();
                 let mut eddsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    DomainKeyshare<eddsa::KeygenOutput>,
+                    DomainKeyshare<eddsa::Ed25519Sha512>,
                 > = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
-                    DomainKeyshare<confidential_key_derivation::KeygenOutput>,
+                    DomainKeyshare<confidential_key_derivation::BLS12381SHA256>,
                 > = HashMap::new();
                 let domain_registry: HashMap<DomainId, (Protocol, ReconstructionThreshold)> =
                     running_state

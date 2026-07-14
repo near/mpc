@@ -23,7 +23,7 @@ use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::frost::eddsa::KeygenOutput;
+use threshold_signatures::frost::eddsa::{Ed25519Sha512, KeygenOutput};
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
 
@@ -36,7 +36,7 @@ pub struct EddsaSignatureProvider {
     keyshares: HashMap<DomainId, EddsaKeyshare>,
 }
 
-pub(super) type EddsaKeyshare = DomainKeyshare<KeygenOutput>;
+pub(super) type EddsaKeyshare = DomainKeyshare<Ed25519Sha512>;
 
 impl EddsaSignatureProvider {
     pub fn new(

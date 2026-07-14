@@ -22,19 +22,19 @@ pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionThreshold;
+use threshold_signatures::{Ciphersuite, KeygenOutput, ReconstructionThreshold};
 
 /// A domain's keygen output paired with its reconstruction threshold `t`, the per-domain material
 /// the coordinator hands to each signature provider.
 #[derive(Clone)]
-pub struct DomainKeyshare<K> {
-    pub keygen_output: K,
+pub struct DomainKeyshare<C: Ciphersuite> {
+    pub keygen_output: KeygenOutput<C>,
     pub reconstruction_threshold: mpc_primitives::ReconstructionThreshold,
 }
 
-impl<K> DomainKeyshare<K> {
+impl<C: Ciphersuite> DomainKeyshare<C> {
     pub fn new(
-        keygen_output: K,
+        keygen_output: KeygenOutput<C>,
         reconstruction_threshold: mpc_primitives::ReconstructionThreshold,
     ) -> Self {
         Self {

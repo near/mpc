@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use threshold_signatures::ecdsa::KeygenOutput;
+use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256};
 
 /// A stored presignature together with the participants that produced it, so the store can drop it
 /// once any of those participants goes offline. Generic over the presignature payload `P`.
@@ -103,7 +103,7 @@ pub fn build_keyshares<P>(
     clock: &Clock,
     db: &Arc<SecretDB>,
     client: &Arc<MeshNetworkClient>,
-    keyshares: HashMap<DomainId, DomainKeyshare<KeygenOutput>>,
+    keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
 ) -> anyhow::Result<HashMap<DomainId, EcdsaKeyshare<P>>>
 where
     P: Serialize + DeserializeOwned + Send + 'static,

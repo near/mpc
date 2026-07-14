@@ -8,7 +8,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
-    ElementG1, KeygenOutput, SigningShare, VerifyingKey,
+    BLS12381SHA256, ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
 
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
@@ -46,7 +46,7 @@ pub struct CKDProvider {
     keyshares: HashMap<DomainId, CkdKeyshare>,
 }
 
-pub(super) type CkdKeyshare = DomainKeyshare<KeygenOutput>;
+pub(super) type CkdKeyshare = DomainKeyshare<BLS12381SHA256>;
 
 impl CKDProvider {
     pub fn new(

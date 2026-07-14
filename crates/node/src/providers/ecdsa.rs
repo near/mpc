@@ -29,9 +29,8 @@ use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::ecdsa::KeygenOutput;
-use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
@@ -58,7 +57,7 @@ impl EcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, DomainKeyshare<KeygenOutput>>,
+        keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
         let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
