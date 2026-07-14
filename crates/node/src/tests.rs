@@ -24,7 +24,7 @@ use crate::indexer::handler::{
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{PortSeed, TestPorts, generate_test_p2p_configs};
+use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -191,7 +191,7 @@ impl IntegrationTestSetup {
         participant_accounts: Vec<AccountId>,
         threshold: usize,
         txn_delay_blocks: u64,
-        port_seed: TestPorts<PortSeed>,
+        port_seed: PortSeed,
         block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =

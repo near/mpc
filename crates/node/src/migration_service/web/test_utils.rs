@@ -18,7 +18,7 @@ use crate::{
         types::MigrationInfo,
         web::{server::start_web_server, types::WebServerState},
     },
-    p2p::testing::{PortSeed, TestPorts},
+    p2p::testing::PortSeed,
 };
 
 pub struct TestSetup {
@@ -32,7 +32,7 @@ pub struct TestSetup {
     pub _tmpdir: TempDir,
 }
 
-pub async fn setup(port_seed: TestPorts<PortSeed>) -> TestSetup {
+pub async fn setup(port_seed: PortSeed) -> TestSetup {
     let backup_encryption_key = Key::<Aes256Gcm>::generate();
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);

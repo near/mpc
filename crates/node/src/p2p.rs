@@ -931,30 +931,16 @@ pub mod testing {
     use ed25519_dalek::SigningKey;
     use near_account_id::AccountId;
     use rand::rngs::OsRng;
-    pub use test_port_allocator::TestPorts;
-    use test_port_allocator::{MultiplexedPortSpace, PortAllocationScheme, PortSpace};
+    use test_port_allocator::{PortAllocationScheme, TestPorts};
 
-    /// The `mpc-node` integration-test port space: no cluster ports, and each node
-    /// reserves `MAX_CASES * TOTAL_PORTS_PER_NODE` ports so a seed can be split into
-    /// disjoint cases via [`TestPorts::with_case`].
-    ///
-    /// This is a [`PortSpace`] marker; a concrete bundle of ports is a
-    /// `TestPorts<PortSeed>`, e.g. [`PortSeed::BASIC_CLUSTER_TEST`].
+    /// A unique seed for each integration test to avoid port conflicts during
+    /// testing. Each node's block holds `MAX_CASES` cases of
+    /// `TOTAL_PORTS_PER_NODE` ports, so one seed can drive several disjoint
+    /// test cases via [`PortSeed::with_case`].
     #[derive(Copy, Clone, Debug)]
-    pub struct PortSeed;
-
-    impl PortSpace for PortSeed {
-        const SCHEME: PortAllocationScheme = PortAllocationScheme::new(
-            test_port_allocator::PORT_SEED_BASE,
-            0,
-            PortSeed::MAX_CASES * PortSeed::TOTAL_PORTS_PER_NODE,
-            PortSeed::MAX_NODES,
-        );
-        const SPACE_END: u16 = test_port_allocator::E2E_PORT_BASE;
-    }
-
-    impl MultiplexedPortSpace for PortSeed {
-        const PORTS_PER_CASE: u16 = PortSeed::TOTAL_PORTS_PER_NODE;
+    pub struct PortSeed {
+        ports: TestPorts,
+        case: u16,
     }
 
     impl PortSeed {
@@ -965,34 +951,69 @@ pub mod testing {
         // Distinct per-node ports: p2p, web UI, migration web UI, pprof
         pub const TOTAL_PORTS_PER_NODE: u16 = 4;
 
+        const SCHEME: PortAllocationScheme = PortAllocationScheme {
+            base: test_port_allocator::PORT_SEED_BASE,
+            cluster_ports: 0,
+            ports_per_node: Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE,
+            max_nodes: Self::MAX_NODES,
+            space_end: test_port_allocator::E2E_PORT_BASE,
+        };
+
+        pub const fn new(test_id: u16) -> Self {
+            Self {
+                ports: TestPorts::new(Self::SCHEME, test_id),
+                case: 0,
+            }
+        }
+
+        pub fn with_case(&self, case: u16) -> Self {
+            Self { case, ..*self }
+        }
+
+        fn node_port(&self, node_index: usize, offset: u16) -> u16 {
+            self.ports
+                .node_port(node_index, self.case * Self::TOTAL_PORTS_PER_NODE + offset)
+        }
+
+        pub fn p2p_port(&self, node_index: usize) -> u16 {
+            self.node_port(node_index, 0)
+        }
+
+        pub fn web_ui_port(&self, node_index: usize) -> u16 {
+            self.node_port(node_index, 1)
+        }
+
+        pub fn migration_web_ui_port(&self, node_index: usize) -> u16 {
+            self.node_port(node_index, 2)
+        }
+
+        pub fn pprof_port(&self, node_index: usize) -> u16 {
+            self.node_port(node_index, 3)
+        }
+
         // Each place that passes a port seed in should define a unique one here.
-        pub const P2P_BASIC_TEST: TestPorts<PortSeed> = TestPorts::new(1);
-        pub const P2P_WAIT_FOR_READY_TEST: TestPorts<PortSeed> = TestPorts::new(2);
-        pub const BASIC_CLUSTER_TEST: TestPorts<PortSeed> = TestPorts::new(3);
-        pub const FAULTY_CLUSTER_TEST: TestPorts<PortSeed> = TestPorts::new(4);
-        pub const KEY_RESHARING_SIMPLE_TEST: TestPorts<PortSeed> = TestPorts::new(5);
-        pub const KEY_RESHARING_MULTISTAGE_TEST: TestPorts<PortSeed> = TestPorts::new(6);
-        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: TestPorts<PortSeed> = TestPorts::new(7);
-        pub const BASIC_MULTIDOMAIN_TEST: TestPorts<PortSeed> = TestPorts::new(8);
-        pub const FAULTY_STUCK_INDEXER_TEST: TestPorts<PortSeed> = TestPorts::new(9);
-        pub const RECOVERY_TEST: TestPorts<PortSeed> = TestPorts::new(10);
-        pub const ONBOARDING_TEST: TestPorts<PortSeed> = TestPorts::new(11);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: TestPorts<PortSeed> = TestPorts::new(12);
-        pub const MIGRATION_WEBSERVER_FAILURE_TEST: TestPorts<PortSeed> = TestPorts::new(13);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: TestPorts<PortSeed> =
-            TestPorts::new(14);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: TestPorts<PortSeed> =
-            TestPorts::new(15);
-        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: TestPorts<PortSeed> =
-            TestPorts::new(16);
-        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: TestPorts<PortSeed> = TestPorts::new(17);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: TestPorts<PortSeed> = TestPorts::new(18);
-        pub const RECONNECTION_TEST: TestPorts<PortSeed> = TestPorts::new(19);
-        pub const FOREIGN_CHAIN_POLICY_TEST: TestPorts<PortSeed> = TestPorts::new(20);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: TestPorts<PortSeed> =
-            TestPorts::new(21);
-        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: TestPorts<PortSeed> =
-            TestPorts::new(22);
+        pub const P2P_BASIC_TEST: Self = Self::new(1);
+        pub const P2P_WAIT_FOR_READY_TEST: Self = Self::new(2);
+        pub const BASIC_CLUSTER_TEST: Self = Self::new(3);
+        pub const FAULTY_CLUSTER_TEST: Self = Self::new(4);
+        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self::new(5);
+        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self::new(6);
+        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self::new(7);
+        pub const BASIC_MULTIDOMAIN_TEST: Self = Self::new(8);
+        pub const FAULTY_STUCK_INDEXER_TEST: Self = Self::new(9);
+        pub const RECOVERY_TEST: Self = Self::new(10);
+        pub const ONBOARDING_TEST: Self = Self::new(11);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self::new(12);
+        pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self::new(13);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self::new(14);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self::new(15);
+        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self::new(16);
+        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
+        pub const RECONNECTION_TEST: Self = Self::new(19);
+        pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
+        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1000,7 +1021,7 @@ pub mod testing {
         threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
-        port_seed: TestPorts<PortSeed>,
+        port_seed: PortSeed,
     ) -> anyhow::Result<Vec<(MpcConfig, SigningKey)>> {
         let p2p_keypairs = participant_accounts
             .iter()
@@ -1036,6 +1057,45 @@ pub mod testing {
         }
 
         Ok(configs)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::PortSeed;
+
+        #[test]
+        #[expect(non_snake_case)]
+        fn port_seed__should_pin_the_established_port_layout() {
+            // Given
+            let seed = PortSeed::BASIC_CLUSTER_TEST;
+
+            // When / Then
+            assert_eq!(seed.p2p_port(0), 10480);
+            assert_eq!(seed.web_ui_port(0), 10481);
+            assert_eq!(seed.migration_web_ui_port(0), 10482);
+            assert_eq!(seed.pprof_port(0), 10483);
+            assert_eq!(seed.p2p_port(1), 10496);
+            assert_eq!(PortSeed::new(22).pprof_port(9), 13667);
+        }
+
+        #[test]
+        #[expect(non_snake_case)]
+        fn with_case__should_shift_ports_into_a_disjoint_sub_block() {
+            // Given
+            let seed = PortSeed::new(1);
+
+            // When / Then
+            assert_eq!(seed.p2p_port(0), 10160);
+            assert_eq!(seed.with_case(1).p2p_port(0), 10164);
+            assert_eq!(seed.with_case(3).pprof_port(0), 10175);
+        }
+
+        #[test]
+        #[should_panic(expected = "node offset")]
+        #[expect(non_snake_case)]
+        fn with_case__should_panic_when_case_exceeds_max_cases() {
+            let _ = PortSeed::new(0).with_case(PortSeed::MAX_CASES).p2p_port(0);
+        }
     }
 }
 

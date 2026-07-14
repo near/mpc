@@ -226,14 +226,12 @@ E2E_PORT_BASE (20000) + test_id * 82 + offset
 ```
 
 with 82 ports per test (2 cluster ports + 8 per-node ports × 10 maximum
-nodes), as fixed by `E2ePortSpace`'s `PortAllocationScheme`. Cluster-level ports cover the sandbox RPC and network; per-node
+nodes). Cluster-level ports cover the sandbox RPC and network; per-node
 ports cover p2p, web UI, migration web UI, pprof, and the node's internal
 neard RPC/network.
 
-The allocator and every accessor come from `test_port_allocator::TestPorts`;
-`E2ePortAllocator` is just `TestPorts<E2ePortSpace>`, the same generic type the
-`mpc-node` integration tests use via a different space marker (`PortSeed`). Each
-space fixes its own base — the e2e space's (20000+) is kept disjoint from
+The block arithmetic and range checks live in the `test-port-allocator`
+crate, which keeps the e2e range (20000+) disjoint from `mpc-node`'s
 `PortSeed` (10000+) and `reserve_port` (40000+).
 
 Centralising seeds in `tests/common.rs` (e.g. `CKD_VERIFICATION_PORT_SEED = 9`)
