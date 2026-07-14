@@ -13,7 +13,7 @@ use chain_gateway::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::{
     call_args as contract_args,
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR,
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR,
     method_names::{
         ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
         VERIFY_TEE,
@@ -134,7 +134,7 @@ where
                     method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
                     args: args_json,
                     gas: SUBMIT_ATTESTATION_GAS,
-                    deposit: NearToken::from_yoctonear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR),
+                    deposit: NearToken::from_near(SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR),
                 },
             )
             .await
@@ -152,7 +152,7 @@ where
                     method_name: VERIFY_TEE.to_string(),
                     args: b"{}".to_vec(),
                     gas: VERIFY_TEE_GAS,
-                    deposit: NearToken::from_yoctonear(0),
+                    deposit: NearToken::from_near(0),
                 },
             )
             .await

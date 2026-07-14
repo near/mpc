@@ -144,7 +144,7 @@ mod tests {
             method_name: "do_something".to_string(),
             args: b"test args".to_vec(),
             gas: TEST_GAS,
-            deposit: NearToken::from_yoctonear(0),
+            deposit: NearToken::from_near(0),
         }
     }
 

@@ -1007,7 +1007,7 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
             Attestation::Mock(MockAttestation::Valid),
             fresh_tls_key.clone(),
         ))
-        .deposit(NearToken::from_yoctonear(0))
+        .deposit(NearToken::from_near(0))
         .max_gas()
         .transact()
         .await?;

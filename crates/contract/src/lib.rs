@@ -140,7 +140,7 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
 
 /// Transfers `amount` to `account_id` via a detached promise; no-op when zero.
 fn refund_to(account_id: &AccountId, amount: NearToken) {
-    if amount > NearToken::from_yoctonear(0) {
+    if amount > NearToken::from_near(0) {
         log!("refund {amount} to {account_id}");
         Promise::new(account_id.clone()).transfer(amount).detach();
     }
@@ -841,7 +841,7 @@ impl MpcContract {
                 method_names::VERIFY_QUOTE.to_string(),
                 borsh::to_vec(&(&attestation.quote, &attestation.collateral))
                     .expect("borsh serialization of verify_quote args must succeed"),
-                NearToken::from_yoctonear(0),
+                NearToken::from_near(0),
                 Gas::from_tgas(self.config.verifier_tera_gas),
             )
             .then(
@@ -1210,7 +1210,7 @@ impl MpcContract {
                 .function_call(
                     method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
                 )
                 .detach();
@@ -1219,7 +1219,7 @@ impl MpcContract {
                 .function_call(
                     method_names::CLEAN_TEE_STATUS.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.clean_tee_status_tera_gas),
                 )
                 .detach();
@@ -1231,7 +1231,7 @@ impl MpcContract {
                         "max_scan": RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN
                     }))
                     .unwrap(),
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.clean_invalid_attestations_tera_gas),
                 )
                 .detach();
@@ -1240,7 +1240,7 @@ impl MpcContract {
                 .function_call(
                     method_names::CLEANUP_ORPHANED_NODE_MIGRATIONS.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
                 )
                 .detach();
@@ -1249,7 +1249,7 @@ impl MpcContract {
                 .function_call(
                     method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
@@ -1258,7 +1258,7 @@ impl MpcContract {
                 .function_call(
                     method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(
                         self.config
                             .remove_non_participant_tee_verifier_votes_tera_gas,
@@ -2292,7 +2292,7 @@ impl MpcContract {
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
@@ -2342,7 +2342,7 @@ impl MpcContract {
                     method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
                     borsh::to_vec(&err.to_string())
                         .expect("borsh serialization of reason must succeed"),
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
                 );
                 PromiseOrValue::Promise(promise.as_return())
@@ -2418,7 +2418,7 @@ impl MpcContract {
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
@@ -2451,7 +2451,7 @@ impl MpcContract {
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ON_TIMEOUT.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
@@ -3673,7 +3673,7 @@ mod tests {
     #[should_panic(expected = "Attached deposit is lower than required")]
     fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        override_context_for_preconditions(NearToken::from_yoctonear(0), Gas::from_tgas(300));
+        override_context_for_preconditions(NearToken::from_near(0), Gas::from_tgas(300));
         contract.check_request_preconditions(
             DomainId::default(),
             DomainPurpose::Sign,
@@ -4151,7 +4151,7 @@ mod tests {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
             .predecessor_account_id(first_participant_id.clone())
-            .attached_deposit(NearToken::from_yoctonear(0))
+            .attached_deposit(NearToken::from_near(0))
             .build();
         testing_env!(voting_context);
 
@@ -4308,7 +4308,7 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(signer.clone())
                 .predecessor_account_id(signer.clone())
-                .attached_deposit(NearToken::from_yoctonear(0))
+                .attached_deposit(NearToken::from_near(0))
                 .build()
         );
         contract.vote_new_parameters(EpochId::new(1), proposal.into_dto_type())
@@ -4449,7 +4449,7 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
             .predecessor_account_id("forwarder.near".parse().unwrap())
-            .attached_deposit(NearToken::from_yoctonear(0))
+            .attached_deposit(NearToken::from_near(0))
             .build();
         testing_env!(ctx);
 

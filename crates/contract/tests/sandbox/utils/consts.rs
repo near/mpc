@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use near_mpc_contract_interface::{
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR, types::Protocol,
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR, types::Protocol,
 };
 use near_sdk::{Gas, NearToken};
 
@@ -50,6 +50,6 @@ pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear
 /// Attached to `submit_participant_info`; the contract charges the measured storage
 /// cost and refunds the excess.
 pub const SUBMIT_PARTICIPANT_INFO_DEPOSIT: NearToken =
-    NearToken::from_yoctonear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR);
+    NearToken::from_near(SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);
