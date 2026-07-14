@@ -210,6 +210,10 @@ impl TeeState {
         report_data.into()
     }
 
+    /// Stores `verified_attestation` under `node_id`'s TLS key and flushes the write to storage
+    /// before returning, so a caller's subsequent [`env::storage_usage`] reflects the insert
+    /// (used to charge the storage delta). Rejects a submission whose TLS key is already registered
+    /// to a different account with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`].
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
@@ -235,8 +239,7 @@ impl TeeState {
             },
         );
 
-        // Materialize the insert before the storage-usage charge reads it;
-        // `IterableMap` otherwise defers the write to flush-on-Drop
+        // `IterableMap` defers the write to flush-on-Drop; force it now
         self.stored_attestations.flush();
 
         Ok(match previous {
