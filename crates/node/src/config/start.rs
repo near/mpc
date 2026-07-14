@@ -55,11 +55,8 @@ impl StartConfigExt for StartConfig {
         let near_config_path = near_config_file(&self.home_dir);
         if near_config_path.exists() {
             tracing::info!("NEAR node already initialized, skipping init");
-            // Nodes initialized before decentralized state sync became the
-            // default still carry the deprecated centralized `ExternalStorage`
-            // block, which nearcore 2.13 rejects (it exits on startup). Migrate
-            // that one field in place, leaving the rest of the operator's config
-            // untouched. Fresh inits get `Peers` via `apply_near_config_patches`.
+            // TODO(#3801): remove once the fleet is off ExternalStorage state
+            // sync (post-3.13.2); this migrates existing configs in place.
             migrate_near_config_state_sync(&near_config_path, near_init)?;
             return Ok(());
         }
