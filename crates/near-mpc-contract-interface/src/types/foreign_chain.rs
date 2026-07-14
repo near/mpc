@@ -180,6 +180,7 @@ pub enum ForeignChainRpcRequest {
     HyperEvm(EvmRpcRequest),
     Ton(TonRpcRequest),
     Aptos(AptosRpcRequest),
+    Sui(SuiRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -197,6 +198,7 @@ impl ForeignChainRpcRequest {
             Self::HyperEvm(_) => ForeignChain::HyperEvm,
             Self::Ton(_) => ForeignChain::Ton,
             Self::Aptos(_) => ForeignChain::Aptos,
+            Self::Sui(_) => ForeignChain::Sui,
         }
     }
 }
@@ -724,6 +726,179 @@ pub enum AptosExtractedValue {
     Event(AptosEvent),
 }
 
+/// 32-byte Sui transaction digest (Blake2b-256 of the signed transaction data).
+/// Sui APIs display it base58-encoded; here it is carried as raw bytes (hex in JSON).
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SuiTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SuiAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SuiRpcRequest {
+    pub tx_id: SuiTxId,
+    pub finality: SuiFinality,
+    pub extractors: Vec<SuiExtractor>,
+}
+
+/// Sui has no reorgs; a transaction is final once it is included in a
+/// committee-certified checkpoint.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum SuiFinality {
+    Checkpointed,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum SuiExtractor {
+    Event { event_index: u64 } = 1,
+}
+
+/// A Sui Move event as observed on-chain.
+///
+/// `type_tag` carries every address in canonical long form (`0x` + 64 lowercase hex),
+/// and `bcs` carries the BCS-serialized event contents. Both are provider-independent,
+/// unlike the API's `parsedJson` rendering, which may vary across node versions.
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SuiEvent {
+    pub package_id: SuiAddress,
+    pub transaction_module: String,
+    pub sender: SuiAddress,
+    pub type_tag: String,
+    #[serde_as(as = "Hex")]
+    pub bcs: Vec<u8>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum SuiExtractedValue {
+    Event(SuiEvent),
+}
+
 #[derive(
     Debug,
     Clone,
@@ -993,6 +1168,7 @@ pub enum ExtractedValue {
     StarknetExtractedValue(StarknetExtractedValue),
     TonExtractedValue(TonExtractedValue),
     AptosExtractedValue(AptosExtractedValue),
+    SuiExtractedValue(SuiExtractedValue),
 }
 
 #[derive(
@@ -1094,6 +1270,7 @@ pub enum ForeignChain {
     HyperEvm,
     Ton,
     Aptos,
+    Sui,
 }
 
 #[derive(
@@ -1804,6 +1981,14 @@ mod tests {
         }),
         ForeignChain::Aptos,
     )]
+    #[case::sui(
+        ForeignChainRpcRequest::Sui(SuiRpcRequest {
+            tx_id: SuiTxId([0; 32]),
+            finality: SuiFinality::Checkpointed,
+            extractors: vec![],
+        }),
+        ForeignChain::Sui,
+    )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
         #[case] expected_chain: ForeignChain,
@@ -1930,6 +2115,33 @@ mod tests {
                     data: "{\"amount\":\"100\"}".to_string(),
                 }),
             )],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v1_sui__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Sui(SuiRpcRequest {
+                tx_id: SuiTxId([0xdd; 32]),
+                finality: SuiFinality::Checkpointed,
+                extractors: vec![SuiExtractor::Event { event_index: 0 }],
+            }),
+            values: vec![ExtractedValue::SuiExtractedValue(SuiExtractedValue::Event(
+                SuiEvent {
+                    package_id: SuiAddress([0x11; 32]),
+                    transaction_module: "omni_bridge".to_string(),
+                    sender: SuiAddress([0x22; 32]),
+                    type_tag: format!("0x{}::omni_bridge::InitTransfer", "11".repeat(32)),
+                    bcs: vec![0xde, 0xad, 0xbe, 0xef],
+                },
+            ))],
         });
 
         // When
