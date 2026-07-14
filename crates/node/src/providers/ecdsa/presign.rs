@@ -156,7 +156,9 @@ impl EcdsaSignatureProvider {
         let threshold = keyshare.reconstruction_threshold;
         let threshold_usize: usize = threshold.inner().try_into()?;
         if channel.participants().len() != threshold_usize {
-            metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS.inc();
+            metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS
+                .with_label_values(&[&domain_id.to_string()])
+                .inc();
             anyhow::bail!(
                 "CaitSith presign participant count ({}) does not match domain threshold t={}",
                 channel.participants().len(),
