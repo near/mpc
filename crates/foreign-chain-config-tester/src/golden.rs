@@ -246,8 +246,16 @@ mod tests {
             hex::encode(bytes),
             "7188017648e8e95bfa6c0591988f3c7a6ec6caf3967e294f70d906a376d5e4fe"
         );
+    }
+
+    #[test]
+    fn base58_32__should_reject_invalid_input() {
+        // Contains characters outside the base58 alphabet (`0`, `O`, `I`, `l`): decode fails.
         base58_32("not-base58-0OIl").unwrap_err();
+        // Valid base58, but decodes to fewer than 32 bytes.
         base58_32("abc").unwrap_err();
+        // Longer than any 32-byte digest's base58 (max 44 chars); rejected on length up front,
+        // before decoding, since `bs58`'s decode is superlinear in the input length.
         base58_32(&"1".repeat(45)).unwrap_err();
     }
 }
