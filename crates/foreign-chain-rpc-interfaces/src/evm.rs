@@ -11,6 +11,7 @@ pub use ethereum_types::{H160, H256, U64};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionReceiptResponse {
+    pub transaction_hash: H256,
     pub block_hash: H256,
     pub block_number: U64,
     pub status: U64,
