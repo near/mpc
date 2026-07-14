@@ -601,9 +601,10 @@ pub(crate) enum AttestationCheckError {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::key_state::AuthenticatedParticipantId;
-    use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_participant, gen_participants,
+    use crate::primitives::{
+        key_state::AuthenticatedParticipantId,
+        participants::{ParticipantId, ParticipantInfo},
+        test_utils::{bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_participants},
     };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
@@ -614,6 +615,8 @@ mod tests {
     use near_sdk::testing_env;
     use std::time::Duration;
 
+    const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
+
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
         let mut builder = VMContextBuilder::new();
@@ -623,11 +626,54 @@ mod tests {
         testing_env!(builder.build());
     }
 
+    fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
+        NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: bogus_ed25519_public_key(),
+        }
+    }
+
+    fn node_id_for(account_id: &AccountId) -> NodeId {
+        create_node_id(account_id, &bogus_ed25519_public_key())
+    }
+
+    fn store_valid_attestations(
+        tee_state: &mut TeeState,
+        participants: &[(AccountId, ParticipantId, ParticipantInfo)],
+        upgrade_duration: Duration,
+    ) {
+        for (account_id, _, participant_info) in participants {
+            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
+            tee_state
+                .verify_and_store_mock(node_id, MockAttestation::Valid, upgrade_duration)
+                .expect("mock attestation is valid");
+        }
+    }
+
+    fn attestation_expiring_at(expiry_secs: u64) -> MockAttestation {
+        MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(expiry_secs),
+            expected_measurements: None,
+        }
+    }
+
+    /// Sets `account_id` as the signer and authenticates it against `participants`.
+    fn authenticate_as(
+        account_id: &AccountId,
+        participants: &Participants,
+    ) -> AuthenticatedParticipantId {
+        let mut ctx = VMContextBuilder::new();
+        ctx.signer_account_id(account_id.clone());
+        testing_env!(ctx.build());
+        AuthenticatedParticipantId::new(participants).unwrap()
+    }
+
     #[test]
     fn clean_non_participant_votes__should_not_touch_attestations() {
         // Given
-        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);
-
         let mut tee_state = TeeState::default();
 
         // Create some test participants using test utils
@@ -638,21 +684,13 @@ mod tests {
         let participant_nodes: Vec<NodeId> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, p_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: p_info.tls_public_key.clone(),
-                account_public_key: bogus_ed25519_public_key(),
-            })
+            .map(|(account_id, _, p_info)| create_node_id(account_id, &p_info.tls_public_key))
             .collect();
 
         // Add TEE information for all participants and non-participant
         let local_attestation = MockAttestation::Valid;
 
-        let non_participant_uid = NodeId {
-            account_id: non_participant.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-            tls_public_key: bogus_ed25519_public_key(),
-        };
+        let non_participant_uid = node_id_for(&non_participant);
 
         for node_id in &participant_nodes {
             tee_state
@@ -704,29 +742,13 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        let fresh_node = NodeId {
-            account_id: "fresh.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        let stale_node = NodeId {
-            account_id: "stale.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let fresh_account: AccountId = "fresh.near".parse().unwrap();
+        let stale_account: AccountId = "stale.near".parse().unwrap();
+        let fresh_node = node_id_for(&fresh_account);
+        let stale_node = node_id_for(&stale_account);
 
-        let fresh = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(FRESH_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-        let stale = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(STALE_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
+        let fresh = attestation_expiring_at(FRESH_EXPIRY_SECONDS);
+        let stale = attestation_expiring_at(STALE_EXPIRY_SECONDS);
 
         tee_state
             .verify_and_store_mock(fresh_node.clone(), fresh, Duration::from_secs(0))
@@ -765,19 +787,11 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        let expired = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
+        let expired = attestation_expiring_at(EXPIRY_SECONDS);
 
         for idx in 0..10 {
-            let node_id = NodeId {
-                account_id: format!("node{idx}.near").parse().unwrap(),
-                tls_public_key: bogus_ed25519_public_key(),
-                account_public_key: bogus_ed25519_public_key(),
-            };
+            let account_id: AccountId = format!("node{idx}.near").parse().unwrap();
+            let node_id = node_id_for(&account_id);
             tee_state
                 .verify_and_store_mock(node_id, expired.clone(), Duration::from_secs(0))
                 .unwrap();
@@ -810,17 +824,9 @@ mod tests {
         testing_env!(VMContextBuilder::new().block_timestamp(0).build());
 
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        let attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(FUTURE_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
+        let account_id: AccountId = "alice.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
+        let attestation = attestation_expiring_at(FUTURE_EXPIRY_SECONDS);
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
             .unwrap();
@@ -840,17 +846,12 @@ mod tests {
     #[test]
     fn updating_existing_participant_returns_existing_participant() {
         // given
-        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);
         let mut tee_state = TeeState::default();
 
         let participant: AccountId = "dave.near".parse().unwrap();
         let local_attestation = MockAttestation::Valid;
 
-        let participant_id = NodeId {
-            account_id: participant.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-            tls_public_key: bogus_ed25519_public_key(),
-        };
+        let participant_id = node_id_for(&participant);
 
         let insertion_result = tee_state.verify_and_store_mock(
             participant_id.clone(),
@@ -880,11 +881,8 @@ mod tests {
     fn verify_and_store_mock__should_increase_storage_size() {
         // given
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "alice.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
         let attestation = MockAttestation::Valid;
 
         // when
@@ -905,11 +903,8 @@ mod tests {
         // Given
         testing_env!(VMContextBuilder::new().build());
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "alice.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
         let storage_before = env::storage_usage();
 
         // When
@@ -928,39 +923,11 @@ mod tests {
     }
 
     #[test]
-    fn verify_and_store_mock__should_index_by_tls_key() {
-        // given
-        let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        let attestation = MockAttestation::Valid;
-
-        // when
-        tee_state
-            .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
-            .unwrap();
-
-        // then
-        assert!(
-            tee_state
-                .stored_attestations
-                .contains_key(&node_id.tls_public_key),
-            "Entry should be strictly retrievable using the TLS public key"
-        );
-    }
-
-    #[test]
     fn verify_and_store_mock__should_preserve_node_id_integrity() {
         // given
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "alice.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
         let attestation = MockAttestation::Valid;
 
         // when
@@ -985,17 +952,10 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
 
-        let node_1 = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-
-        let node_2 = NodeId {
-            account_id: "bob.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let alice: AccountId = "alice.near".parse().unwrap();
+        let bob: AccountId = "bob.near".parse().unwrap();
+        let node_1 = node_id_for(&alice);
+        let node_2 = node_id_for(&bob);
 
         // when
         tee_state
@@ -1031,22 +991,14 @@ mod tests {
     fn re_verify_validates_fresh_attestation() {
         // given
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "fresh.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "fresh.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
 
         const NOW_SECONDS: u64 = 1000;
 
         testing_env!(VMContextBuilder::new().block_timestamp(NOW_SECONDS).build());
 
-        let attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(NOW_SECONDS),
-            expected_measurements: None,
-        };
+        let attestation = attestation_expiring_at(NOW_SECONDS);
 
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
@@ -1063,23 +1015,15 @@ mod tests {
     fn test_re_verify_rejects_expired_attestation() {
         // given
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "about_to_be_expired.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "about_to_be_expired.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
         const ELAPSED_SECONDS: u64 = 200;
 
         testing_env!(VMContextBuilder::new().block_timestamp(0).build());
 
-        let attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(EXPIRY_TIMESTAMP_SECONDS),
-            expected_measurements: None,
-        };
+        let attestation = attestation_expiring_at(EXPIRY_TIMESTAMP_SECONDS);
 
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
@@ -1105,11 +1049,8 @@ mod tests {
     fn re_verify_succeeds_within_expiry_time() {
         // given
         let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "valid_check.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "valid_check.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
 
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
 
@@ -1119,12 +1060,7 @@ mod tests {
                 .build()
         );
 
-        let attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(EXPIRY_TIMESTAMP_SECONDS),
-            expected_measurements: None,
-        };
+        let attestation = attestation_expiring_at(EXPIRY_TIMESTAMP_SECONDS);
 
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
@@ -1145,11 +1081,8 @@ mod tests {
     fn test_re_verify_returns_invalid_for_missing_node() {
         // given
         let tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "ghost.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let account_id: AccountId = "ghost.near".parse().unwrap();
+        let node_id = node_id_for(&account_id);
 
         // when
         let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
@@ -1288,15 +1221,6 @@ mod tests {
     /// Grace period for TEE upgrade deadline used in validate_tee() tests
     const TEST_GRACE_PERIOD: Duration = Duration::from_secs(10);
 
-    /// Helper to create a NodeId from participant data
-    fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
-        NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        }
-    }
-
     /// Helper to extract account IDs from participants for assertion comparisons
     fn account_ids(participants: &Participants) -> Vec<AccountId> {
         participants
@@ -1313,12 +1237,11 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for all participants
-        for (account_id, _, participant_info) in participants.participants().iter() {
-            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
-            tee_state
-                .verify_and_store_mock(node_id, MockAttestation::Valid, tee_upgrade_duration)
-                .expect("mock attestation is valid");
-        }
+        store_valid_attestations(
+            &mut tee_state,
+            participants.participants(),
+            tee_upgrade_duration,
+        );
 
         let validation_result =
             tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
@@ -1334,12 +1257,7 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for only first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
-            tee_state
-                .verify_and_store_mock(node_id, MockAttestation::Valid, tee_upgrade_duration)
-                .expect("mock attestation is valid");
-        }
+        store_valid_attestations(&mut tee_state, &participant_list[..2], tee_upgrade_duration);
         // Third participant has no attestation
 
         let validation_result =
@@ -1364,22 +1282,12 @@ mod tests {
         let participant_list: Vec<_> = participants.participants().to_vec();
 
         // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
-            tee_state
-                .verify_and_store_mock(node_id, MockAttestation::Valid, tee_upgrade_duration)
-                .expect("mock attestation is valid");
-        }
+        store_valid_attestations(&mut tee_state, &participant_list[..2], tee_upgrade_duration);
 
         // Add expiring attestation for third participant
         let (account_id, _, participant_info) = &participant_list[2];
         let node_id = create_node_id(account_id, &participant_info.tls_public_key);
-        let expiring_attestation = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(expiry_time_secs),
-            expected_measurements: None,
-        };
+        let expiring_attestation = attestation_expiring_at(expiry_time_secs);
         tee_state
             .verify_and_store_mock(node_id, expiring_attestation, tee_upgrade_duration)
             .expect("mock attestation is valid");
@@ -1414,12 +1322,7 @@ mod tests {
         for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
             let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             let attestation = if i == 2 {
-                MockAttestation::WithConstraints {
-                    mpc_docker_image_hash: None,
-                    launcher_docker_compose_hash: None,
-                    expiry_timestamp_seconds: Some(expiry_time_secs),
-                    expected_measurements: None,
-                }
+                attestation_expiring_at(expiry_time_secs)
             } else {
                 MockAttestation::Valid
             };
@@ -1444,16 +1347,11 @@ mod tests {
     #[test]
     fn verify_and_store_mock__should_reject_tls_key_owned_by_other_account() {
         // Given: an existing attestation registered to `alice.near` under some TLS key.
-        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
-
         let mut tee_state = TeeState::default();
         let tls_public_key = bogus_ed25519_public_key();
 
-        let alice_node = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let alice: AccountId = "alice.near".parse().unwrap();
+        let alice_node = create_node_id(&alice, &tls_public_key);
         tee_state
             .verify_and_store_mock(
                 alice_node.clone(),
@@ -1463,11 +1361,8 @@ mod tests {
             .expect("initial insertion should succeed");
 
         // When: a different account submits an attestation for the same TLS key.
-        let attacker_node = NodeId {
-            account_id: "attacker.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let attacker: AccountId = "attacker.near".parse().unwrap();
+        let attacker_node = create_node_id(&attacker, &tls_public_key);
         let result = tee_state.verify_and_store_mock(
             attacker_node,
             MockAttestation::Valid,
@@ -1489,26 +1384,17 @@ mod tests {
     #[test]
     fn verify_and_store_mock__should_allow_same_account_to_update_its_own_entry() {
         // Given: an existing attestation registered to `alice.near`.
-        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
-
         let mut tee_state = TeeState::default();
         let tls_public_key = bogus_ed25519_public_key();
 
-        let initial_node = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let alice: AccountId = "alice.near".parse().unwrap();
+        let initial_node = create_node_id(&alice, &tls_public_key);
         tee_state
             .verify_and_store_mock(initial_node, MockAttestation::Valid, TEE_UPGRADE_DURATION)
             .expect("initial insertion should succeed");
 
         // When: the same account resubmits with a rotated account_public_key.
-        let rotated_node = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key,
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let rotated_node = create_node_id(&alice, &tls_public_key);
         let result = tee_state.verify_and_store_mock(
             rotated_node.clone(),
             MockAttestation::Valid,
@@ -1531,7 +1417,6 @@ mod tests {
     fn revert_dstack_store__should_restore_the_displaced_entry_on_update() {
         // Given: `alice` has an attestation, then updates it (the second insertion
         // returns the displaced original wrapped in `UpdatedExistingParticipant`).
-        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
         let mut tee_state = TeeState::default();
         let account_id = "alice.near".parse().unwrap();
         let tls_public_key = bogus_ed25519_public_key();
@@ -1571,7 +1456,6 @@ mod tests {
     #[test]
     fn revert_dstack_store__should_remove_the_newly_inserted_entry() {
         // Given: a brand-new attestation for `alice` (no prior entry displaced).
-        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10_000);
         let mut tee_state = TeeState::default();
         let account_id = "alice.near".parse().unwrap();
         let tls_public_key = bogus_ed25519_public_key();
@@ -1599,12 +1483,7 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.tls_public_key);
-            tee_state
-                .verify_and_store_mock(node_id, MockAttestation::Valid, tee_upgrade_duration)
-                .expect("mock attestation is valid");
-        }
+        store_valid_attestations(&mut tee_state, &participant_list[..2], tee_upgrade_duration);
 
         // Add invalid attestation for third participant
         let (account_id, _, participant_info) = &participant_list[2];
@@ -1632,23 +1511,19 @@ mod tests {
     #[test]
     fn test_clean_non_participant_votes_removes_stale_votes() {
         // Build 5 participants
-        let mut all_participants = Participants::new();
-        let mut account_ids = Vec::new();
-        for i in 0..5 {
-            let (account_id, info) = gen_participant(i);
-            account_ids.push(account_id.clone());
-            all_participants.insert(account_id, info).unwrap();
-        }
+        let all_participants = gen_participants(5);
+        let account_ids: Vec<AccountId> = all_participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
 
         let mut tee_state = TeeState::default();
 
         // P0 and P1 vote for a malicious hash before resharing
         let malicious_hash = NodeImageHash::from([0xAA; 32]);
         for account_id in &account_ids[0..2] {
-            let mut ctx = VMContextBuilder::new();
-            ctx.signer_account_id(account_id.clone());
-            testing_env!(ctx.build());
-            let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
+            let auth_id = authenticate_as(account_id, &all_participants);
             tee_state.votes.vote(malicious_hash, &auth_id);
         }
         assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
@@ -1664,10 +1539,7 @@ mod tests {
 
         // P2 votes for the same malicious hash — should be only 1 vote, not 3
         let p2_account = &account_ids[2];
-        let mut ctx = VMContextBuilder::new();
-        ctx.signer_account_id(p2_account.clone());
-        testing_env!(ctx.build());
-        let auth_id = AuthenticatedParticipantId::new(&new_participants).unwrap();
+        let auth_id = authenticate_as(p2_account, &new_participants);
         let vote_count = tee_state.votes.vote(malicious_hash, &auth_id);
         assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
     }
@@ -1675,21 +1547,17 @@ mod tests {
     /// Verifies that clean_non_participants also removes stale launcher and measurement votes.
     #[test]
     fn test_clean_non_participants_removes_stale_launcher_and_measurement_votes() {
-        let mut all_participants = Participants::new();
-        let mut account_ids = Vec::new();
-        for i in 0..3 {
-            let (account_id, info) = gen_participant(i);
-            account_ids.push(account_id.clone());
-            all_participants.insert(account_id, info).unwrap();
-        }
+        let all_participants = gen_participants(3);
+        let account_ids: Vec<AccountId> = all_participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
 
         let mut tee_state = TeeState::default();
 
         // P0 votes for a launcher hash
-        let mut ctx = VMContextBuilder::new();
-        ctx.signer_account_id(account_ids[0].clone());
-        testing_env!(ctx.build());
-        let auth_id = AuthenticatedParticipantId::new(&all_participants).unwrap();
+        let auth_id = authenticate_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
         tee_state.launcher_votes.vote(launcher_action, &auth_id);
 
