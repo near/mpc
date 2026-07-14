@@ -81,6 +81,8 @@ impl Deref for TripleStorage {
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
+const TRIPLE_METRICS_REPORTING_INTERVAL: Duration = Duration::from_millis(500);
+
 impl EcdsaSignatureProvider {
     /// Reports the triple-buffer gauges summed across every per-`t` store.
     /// Each generator owns a distinct store keyed by its threshold, so a single
@@ -100,7 +102,7 @@ impl EcdsaSignatureProvider {
             metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
             metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
             metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(available);
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(TRIPLE_METRICS_REPORTING_INTERVAL).await;
         }
     }
 
