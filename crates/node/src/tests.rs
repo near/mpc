@@ -17,7 +17,7 @@ use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
-use crate::indexer::fake::{FakeIndexerManager, FakeReadForeignChainPolicy};
+use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -73,7 +73,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI<MockTransactionSender, FakeReadForeignChainPolicy>,
+    indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
@@ -204,8 +204,6 @@ impl IntegrationTestSetup {
             let config = ConfigFile {
                 cores: Some(4),
                 separate_asset_generation_runtime: true,
-                // Integration tests must observe fake-contract policy changes quickly.
-                foreign_chain_policy_refresh_interval_sec: 1,
                 // Indexer config is just a dummy.
                 indexer: IndexerConfig {
                     concurrency: 1.try_into().unwrap(),

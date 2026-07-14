@@ -1161,6 +1161,7 @@ pub struct SupportedForeignChains(BTreeSet<ForeignChain>);
     derive_more::From,
     derive_more::Deref,
     derive_more::DerefMut,
+    derive_more::IntoIterator,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -1182,6 +1183,7 @@ pub struct ForeignChainsConfig(BTreeSet<ForeignChain>);
     derive_more::From,
     derive_more::Deref,
     derive_more::DerefMut,
+    derive_more::IntoIterator,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),

@@ -24,6 +24,7 @@ use near_mpc_contract_interface::types as dtos;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
@@ -124,31 +125,21 @@ impl ForeignChainInspectors<HttpClient> {
     }
 }
 
-/// Cached view of the contract's foreign-chain policy.
-#[derive(Default)]
-pub(crate) struct ForeignChainPolicy {
-    /// The contract's available chains: whitelisted and supported by a signing quorum.
-    /// Checked before executing any verify_foreign_tx request.
-    pub(crate) available_chains: dtos::AvailableForeignChains,
-    /// Participants supporting each foreign chain, derived from the per-node configs,
-    /// chains without a signing quorum are omitted. Drives leader election and leader
-    /// presignature selection. Behind `Arc` so snapshots don't clone the map.
-    pub(crate) participants_by_chain: Arc<BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>>,
-}
-
-pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
+pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
-    foreign_chain_policy_reader: ForeignChainPolicyReader,
+    supporters_by_foreign_chain:
+        watch::Receiver<BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-    foreign_chain_policy: std::sync::RwLock<ForeignChainPolicy>,
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader> {
+impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
+        supporters_by_foreign_chain: watch::Receiver<
+            BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>,
+        >,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -156,11 +147,16 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
         Ok(Self {
             config,
             inspectors,
-            foreign_chain_policy_reader,
+            supporters_by_foreign_chain,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
-            foreign_chain_policy: std::sync::RwLock::new(ForeignChainPolicy::default()),
         })
+    }
+
+    pub(crate) fn supporters_by_foreign_chain(
+        &self,
+    ) -> watch::Receiver<BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>> {
+        self.supporters_by_foreign_chain.clone()
     }
 }
 
@@ -178,10 +174,7 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: crate::indexer::ReadForeignChainPolicy,
-{
+impl VerifyForeignTxProvider {
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::VerifyForeignTxTaskId(task) => match task {

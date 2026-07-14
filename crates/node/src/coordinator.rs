@@ -1,12 +1,13 @@
 use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
+use crate::foreign_chain_policy::spawn_supporters_by_foreign_chain;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::ChainSendTransactionRequest;
-use crate::indexer::{IndexerAPI, ReadForeignChainPolicy, tx_sender};
+use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
@@ -54,7 +55,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
+pub struct Coordinator<TransactionSender> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -64,7 +65,7 @@ pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI<TransactionSender, ForeignChainPolicyReader>,
+    pub indexer: IndexerAPI<TransactionSender>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -100,11 +101,9 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl<TransactionSender, ForeignChainPolicyReader>
-    Coordinator<TransactionSender, ForeignChainPolicyReader>
+impl<TransactionSender> Coordinator<TransactionSender>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
@@ -171,7 +170,8 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
-                                self.indexer.foreign_chain_policy_reader.clone(),
+                                self.indexer.available_foreign_chains_receiver.clone(),
+                                self.indexer.foreign_chains_configs_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -369,7 +369,8 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
+        available_foreign_chains_receiver: watch::Receiver<dtos::AvailableForeignChains>,
+        foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -671,9 +672,15 @@ where
                     ckd_keyshares,
                 ));
 
+                let supporters_by_foreign_chain = spawn_supporters_by_foreign_chain(
+                    available_foreign_chains_receiver,
+                    foreign_chains_configs_receiver,
+                    running_mpc_config.participants.clone(),
+                );
+
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
-                    foreign_chain_policy_reader.clone(),
+                    supporters_by_foreign_chain,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);

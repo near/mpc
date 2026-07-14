@@ -3,12 +3,15 @@ use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealForeignChainPolicyReader};
+use super::{IndexerAPI, IndexerState};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
+use crate::indexer::foreign_chain::{
+    monitor_available_foreign_chains, monitor_foreign_chains_configs,
+};
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
     monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
@@ -68,17 +71,19 @@ pub fn spawn_real_indexer(
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
-) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
+) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
-    let (foreign_chain_policy_reader_sender, foreign_chain_policy_reader_receiver) =
-        oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
+    let (available_foreign_chains_sender, available_foreign_chains_receiver) =
+        watch::channel(Default::default());
+    let (foreign_chains_configs_sender, foreign_chains_configs_receiver) =
+        watch::channel(Default::default());
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -181,15 +186,6 @@ pub fn spawn_real_indexer(
                 tracing::error!("Failed to send txn_sender back to main thread.")
             };
 
-            let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
-            if foreign_chain_policy_reader_sender
-                .send(foreign_chain_policy_reader)
-                .is_err()
-            {
-                tracing::error!("failed to send foreign chain policy reader back to main thread")
-            };
-
             #[cfg(feature = "network-hardship-simulation")]
             let process_blocks_receiver = {
                 let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);
@@ -211,6 +207,16 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
+                indexer_state.clone(),
+            ));
+
+            tokio::spawn(monitor_available_foreign_chains(
+                available_foreign_chains_sender,
+                indexer_state.clone(),
+            ));
+
+            tokio::spawn(monitor_foreign_chains_configs(
+                foreign_chains_configs_sender,
                 indexer_state.clone(),
             ));
 
@@ -318,10 +324,6 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Migraration info receiver must be returned by indexer.");
 
-    let foreign_chain_policy_reader = foreign_chain_policy_reader_receiver
-        .blocking_recv()
-        .expect("foreign chain policy reader must be returned by indexer");
-
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
@@ -330,7 +332,8 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
-        foreign_chain_policy_reader,
+        available_foreign_chains_receiver,
+        foreign_chains_configs_receiver,
     }
 }
 
