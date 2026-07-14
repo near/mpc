@@ -161,8 +161,18 @@ impl RobustEcdsaSignatureProvider {
         id.validate_owned_by(channel.sender().get_leader())?;
         let keyshare = self.keyshare(domain_id)?;
 
-        let (_num_signers, damgard_et_al_threshold) =
+        let (num_signers, damgard_et_al_threshold) =
             compute_thresholds(keyshare.reconstruction_threshold)?;
+        if channel.participants().len() != num_signers {
+            metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS
+                .with_label_values(&[&domain_id.to_string()])
+                .inc();
+            anyhow::bail!(
+                "robust-ECDSA presign participant count ({}) does not match required signer count {}",
+                channel.participants().len(),
+                num_signers,
+            );
+        }
 
         FollowerPresignComputation {
             max_malicious: damgard_et_al_threshold,
