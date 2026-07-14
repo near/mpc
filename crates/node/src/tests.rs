@@ -195,7 +195,7 @@ impl IntegrationTestSetup {
         block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
-            generate_test_p2p_configs(&participant_accounts, threshold, port_seed, None).unwrap();
+            generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
         let mut indexer_manager =
             FakeIndexerManager::new(clock.clone(), txn_delay_blocks, block_time);
