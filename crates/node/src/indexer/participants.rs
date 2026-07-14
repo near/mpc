@@ -26,11 +26,20 @@ pub fn convert_key_event_to_instance(
     key_event: &KeyEvent,
     current_height: u64,
     completed_domains: Vec<dtos::KeyForDomain>,
+    per_domain_thresholds: &BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 ) -> anyhow::Result<ContractKeyEventInstance> {
     let completed_domains: Vec<ContractKeyForDomain> = completed_domains
         .into_iter()
         .map(TryInto::try_into)
         .collect::<Result<_, _>>()?;
+
+    // Reshare to the new threshold: the contract carries the update only in
+    // `per_domain_thresholds`, not on the key event's own domain.
+    let mut domain = key_event.domain.clone();
+    if let Some(new_threshold) = per_domain_thresholds.get(&domain.id) {
+        domain.reconstruction_threshold = *new_threshold;
+    }
+
     Ok(match &key_event.instance {
         Some(current_instance) if current_height < current_instance.expires_on => {
             ContractKeyEventInstance {
@@ -39,7 +48,7 @@ pub fn convert_key_event_to_instance(
                     domain_id: key_event.domain.id,
                     attempt_id: current_instance.attempt_id,
                 },
-                domain: key_event.domain.clone(),
+                domain,
                 started: true,
                 completed: current_instance
                     .completed
@@ -55,7 +64,7 @@ pub fn convert_key_event_to_instance(
                 domain_id: key_event.domain.id,
                 attempt_id: key_event.next_attempt_id,
             },
-            domain: key_event.domain.clone(),
+            domain,
             started: false,
             completed: BTreeSet::new(),
             completed_domains,
@@ -188,6 +197,7 @@ impl ContractState {
                         &state.generating_key,
                         height,
                         state.generated_keys.clone(),
+                        &BTreeMap::new(),
                     )
                     .context("failed to convert initializing key event")?,
                 })
@@ -204,18 +214,13 @@ impl ContractState {
                 })
             }
             ProtocolContractState::Resharing(state) => {
-                let mut key_event = convert_key_event_to_instance(
+                let key_event = convert_key_event_to_instance(
                     &state.resharing_key,
                     height,
                     state.reshared_keys.clone(),
+                    &state.per_domain_thresholds,
                 )
                 .context("failed to convert resharing key event")?;
-
-                // Reshare to the new threshold: the contract carries the update only in
-                // `per_domain_thresholds`, not on the resharing key event's domain.
-                if let Some(new_threshold) = state.per_domain_thresholds.get(&key_event.domain.id) {
-                    key_event.domain.reconstruction_threshold = *new_threshold;
-                }
 
                 let resharing_state = Some(ContractResharingState {
                     new_participants: convert_participant_infos(
