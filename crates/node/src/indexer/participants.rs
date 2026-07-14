@@ -234,6 +234,23 @@ impl ContractState {
         })
     }
 
+    /// The participant set the P2P mesh connects to for the running job: prospective participants
+    /// during resharing, otherwise the running participants; `None` when no mesh is established.
+    ///
+    /// During resharing the single mesh is built from `new_participants` and shared by both the
+    /// signing and resharing protocols (signing routes its `old ∩ new` subset over it), so peer
+    /// addresses must be resolved against that set — using the old set would leave joining nodes
+    /// unresolved.
+    pub fn mesh_participants(&self) -> Option<&ParticipantsConfig> {
+        match self {
+            ContractState::Running(running) => Some(match &running.resharing_state {
+                Some(resharing) => &resharing.new_participants,
+                None => &running.participants,
+            }),
+            ContractState::Invalid | ContractState::Initializing(_) => None,
+        }
+    }
+
     /// Returns the participation status of the given node in the current contract state.
     ///
     /// Determines whether the node is active or inactive based on its account ID and P2P public key
@@ -277,7 +294,6 @@ pub async fn monitor_contract_state(
             refresh_interval_tick.tick().await;
 
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
             indexer_state.client.wait_for_full_sync().await;
 

@@ -403,10 +403,11 @@ impl PersistentConnection {
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
-        target_address: String,
+        initial_target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+        resolve_address: impl Fn() -> Option<String> + Send + 'static,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
@@ -414,6 +415,10 @@ impl PersistentConnection {
             async move {
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
+                    // Re-resolve on every (re)connect so a peer URL update is picked up; only the
+                    // next dial is affected, established connections are untouched.
+                    let target_address =
+                        resolve_address().unwrap_or_else(|| initial_target_address.clone());
                     let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
                         &target_address,
@@ -474,6 +479,9 @@ impl SenderConnectionId for IncomingConnection {
 }
 
 /// Creates a mesh network using TLS over TCP for communication.
+///
+/// Peer addresses are fixed at the addresses in `config`. Use
+/// [`new_tls_mesh_network_with_address_updates`] to let peers' addresses be updated live.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &ed25519_dalek::SigningKey,
@@ -481,6 +489,24 @@ pub async fn new_tls_mesh_network(
     impl MeshNetworkTransportSender + use<>,
     impl MeshNetworkTransportReceiver + use<>,
 )> {
+    new_tls_mesh_network_with_address_updates(config, p2p_private_key, |_| None).await
+}
+
+/// Like [`new_tls_mesh_network`], but `resolve_peer_address` is consulted on every (re)connect,
+/// so a peer's URL change takes effect on the next dial without tearing down established
+/// connections. Returning `None` falls back to the address in `config`. The participant set
+/// (identities, count) must not change — that requires a restart upstream.
+pub async fn new_tls_mesh_network_with_address_updates<F>(
+    config: &MpcConfig,
+    p2p_private_key: &ed25519_dalek::SigningKey,
+    resolve_peer_address: F,
+) -> anyhow::Result<(
+    impl MeshNetworkTransportSender + use<F>,
+    impl MeshNetworkTransportReceiver + use<F>,
+)>
+where
+    F: Fn(ParticipantId) -> Option<String> + Clone + Send + Sync + 'static,
+{
     let (server_config, client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
     let my_port = config
@@ -521,6 +547,11 @@ pub async fn new_tls_mesh_network(
         if participant.id == config.my_participant_id {
             continue;
         }
+        let resolve_address = {
+            let resolve_peer_address = resolve_peer_address.clone();
+            let target_id = participant.id;
+            move || resolve_peer_address(target_id)
+        };
         connections.insert(
             participant.id,
             Arc::new(PersistentConnection::new(
@@ -530,6 +561,7 @@ pub async fn new_tls_mesh_network(
                 participant.id,
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
+                resolve_address,
             )?),
         );
     }
@@ -1013,6 +1045,7 @@ pub mod testing {
         pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
         pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
+        pub const UPDATE_PARTICIPANT_URL_TEST: Self = Self::new(23);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1076,7 +1109,7 @@ mod tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use rand::{Rng, SeedableRng};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -1520,6 +1553,7 @@ mod tests {
                 target_id,
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
+                || None,
             )
             .unwrap();
 
@@ -1534,5 +1568,59 @@ mod tests {
         })
         .await;
         listener_task.abort();
+    }
+
+    /// A peer URL update must be picked up on the next reconnect without recreating the
+    /// connection: the retry loop re-resolves the target address on every dial attempt.
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn persistent_connection__should_dial_new_address_after_resolver_update() {
+        // Given
+        let (addr_a, mut accept_a, task_a) = must_spawn_silent_listener().await;
+        let (addr_b, mut accept_b, task_b) = must_spawn_silent_listener().await;
+        let client_config = must_make_client_config();
+        let my_id = ParticipantId::from_raw(0);
+        let target_id = ParticipantId::from_raw(1);
+        let resolved_address = Arc::new(Mutex::new(addr_a.clone()));
+
+        start_root_task_with_periodic_dump(async move {
+            let connectivities =
+                AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                    my_id,
+                    &[my_id, target_id],
+                );
+            let resolve_address = {
+                let resolved_address = resolved_address.clone();
+                move || Some(resolved_address.lock().unwrap().clone())
+            };
+
+            let _connection = PersistentConnection::new(
+                client_config,
+                my_id,
+                "127.0.0.1:1".to_string(),
+                target_id,
+                Arc::new(ParticipantIdentities::default()),
+                connectivities.get(target_id).unwrap(),
+                resolve_address,
+            )
+            .unwrap();
+
+            timeout(Duration::from_secs(120), accept_a.recv())
+                .await
+                .expect("should dial the initial address A")
+                .unwrap();
+
+            // When
+            *resolved_address.lock().unwrap() = addr_b.clone();
+
+            // Then
+            timeout(Duration::from_secs(120), accept_b.recv())
+                .await
+                .expect("should dial the updated address B after the resolver update")
+                .unwrap();
+        })
+        .await;
+        task_a.abort();
+        task_b.abort();
     }
 }
