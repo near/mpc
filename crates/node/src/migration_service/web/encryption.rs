@@ -1,15 +1,14 @@
-use aes_gcm::{
-    AeadCore, Aes256Gcm, KeyInit,
-    aead::{Aead, OsRng},
-};
-
 use crate::config::AesKey256;
+use aes_gcm::{
+    Aes256Gcm, KeyInit,
+    aead::{Aead, Generate, Nonce},
+};
 
 const NONCE_LEN: usize = 12;
 
 pub(crate) fn encrypt_bytes(key: &AesKey256, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(key.into());
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::<Aes256Gcm>::generate();
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)
         .map_err(|err| anyhow::anyhow!("encryption failed: {err}"))?;
@@ -25,10 +24,11 @@ pub(crate) fn decrypt_bytes(key: &AesKey256, nonce_and_cipher: &[u8]) -> anyhow:
     }
 
     let (nonce_bytes, ciphertext) = nonce_and_cipher.split_at(NONCE_LEN);
-
+    let nonce = Nonce::<Aes256Gcm>::try_from(nonce_bytes)
+        .map_err(|_| anyhow::anyhow!("invalid nonce length"))?;
     let cipher = Aes256Gcm::new(key.into());
     let plaintext_bytes = cipher
-        .decrypt(nonce_bytes.into(), ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|err| anyhow::anyhow!("encryption failed: {err}"))?;
     Ok(plaintext_bytes)
 }
