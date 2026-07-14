@@ -170,10 +170,6 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let height = info
         .checkpoint_height
         .context("provider returned no checkpoint height")?;
-    // Load-balanced providers may answer consecutive calls from different backends; probing
-    // slightly behind the reported tip keeps the check off the backend-sync race. checked_sub
-    // (not saturating): real checkpoint heights are 9 digits, so a height below the small
-    // offset means the provider returned something wrong — surface it instead of probing 0.
     let probe_height = height
         .checked_sub(CHECKPOINT_PROBE_OFFSET)
         .with_context(|| {
