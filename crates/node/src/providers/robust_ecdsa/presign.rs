@@ -7,12 +7,12 @@ use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa_common;
 use crate::providers::robust_ecdsa::{
-    KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId, compute_thresholds,
+    EcdsaKeyshare, KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
+    compute_thresholds,
 };
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use rand::rngs::OsRng;
 use std::sync::Arc;
@@ -37,12 +37,14 @@ pub type PresignOutputWithParticipants = ecdsa_common::PresignOutputWithParticip
 pub(super) async fn run_background_presignature_generation(
     client: Arc<MeshNetworkClient>,
     mpc_config: Arc<MpcConfig>,
-    threshold: ReconstructionThreshold,
     config: Arc<PresignatureConfig>,
     domain_id: DomainId,
-    presignature_store: Arc<PresignatureStorage>,
-    keygen_out: KeygenOutput,
+    keyshare: EcdsaKeyshare,
 ) -> ! {
+    let keygen_out = keyshare.keygen_output;
+    let presignature_store = keyshare.presignature_store;
+    let threshold = keyshare.reconstruction_threshold;
+
     let in_flight_generations = InFlightGenerationTracker::new();
     let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
         desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,

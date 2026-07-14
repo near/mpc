@@ -270,21 +270,16 @@ impl SignatureProvider for EcdsaSignatureProvider {
 
         let mut generate_presignatures = Vec::new();
         for (domain_id, data) in &self.keyshares {
-            let t = data.reconstruction_threshold;
-            let threshold_usize: usize = t.inner().try_into()?;
-            let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
-            let triple_store = self.triple_store_for_t(t)?;
+            let triple_store = self.triple_store_for_t(data.reconstruction_threshold)?;
             task_labels.push(format!("presignature generation (domain {})", domain_id.0));
             generate_presignatures.push(tracking::spawn(
                 &format!("generate presignatures for domain {}", domain_id.0),
                 Self::run_background_presignature_generation(
                     self.client.clone(),
-                    threshold_bound,
                     self.config.presignature.clone().into(),
                     triple_store,
                     *domain_id,
-                    data.presignature_store.clone(),
-                    data.keygen_output.clone(),
+                    data.clone(),
                 ),
             ));
         }

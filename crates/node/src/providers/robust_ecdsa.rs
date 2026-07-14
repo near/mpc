@@ -191,11 +191,9 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                     presign::run_background_presignature_generation(
                         self.client.clone(),
                         self.mpc_config.clone(),
-                        data.reconstruction_threshold,
                         self.config.presignature.clone().into(),
                         *domain_id,
-                        data.presignature_store.clone(),
-                        data.keygen_output.clone(),
+                        data.clone(),
                     ),
                 )
             })

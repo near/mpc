@@ -5,7 +5,9 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::triple::participants_from_triples;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
+use crate::providers::ecdsa::{
+    EcdsaKeyshare, EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage,
+};
 use crate::providers::ecdsa_common;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
@@ -37,13 +39,20 @@ impl EcdsaSignatureProvider {
     /// so that needs to be separately handled.
     pub(super) async fn run_background_presignature_generation(
         client: Arc<MeshNetworkClient>,
-        threshold: TSReconstructionThreshold,
         config: Arc<PresignatureConfig>,
         triple_store: Arc<TripleStorage>,
         domain_id: DomainId,
-        presignature_store: Arc<PresignatureStorage>,
-        keygen_out: KeygenOutput,
+        keyshare: EcdsaKeyshare,
     ) -> ! {
+        let keygen_out = keyshare.keygen_output;
+        let presignature_store = keyshare.presignature_store;
+        let threshold_usize: usize = keyshare
+            .reconstruction_threshold
+            .inner()
+            .try_into()
+            .expect("contract validation guarantees a valid threshold");
+        let threshold = TSReconstructionThreshold::from(threshold_usize);
+
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
             desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
