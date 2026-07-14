@@ -3715,6 +3715,7 @@ version = "3.13.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "bs58 0.5.1",
  "clap",
  "foreign-chain-inspector",
  "foreign-chain-rpc-auth",
