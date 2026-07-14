@@ -3,8 +3,8 @@
 //! `foreign-chain-config-tester` operator CLI and the MPC node's startup health
 //! check so the two never drift on golden vectors or auth handling.
 
-pub mod checks;
-pub mod golden;
+mod checks;
+mod golden;
 pub mod network;
 pub mod results;
 
@@ -36,9 +36,8 @@ use crate::golden::{AptosVector, BlockHashVector, SuiVector};
 /// provider. Each provider is checked independently: one bad provider does not
 /// stop the others from being reported. Chains that are configured but not yet
 /// supported by the node, or that have no reference transaction for `network`,
-/// are reported as [`Status::Skipped`]. Sui, being newly supported, gets a
-/// placeholder `Skipped` row even when absent from the config so its absence
-/// is visible in reports.
+/// are reported as [`Status::Skipped`]. An unconfigured sui still yields a
+/// placeholder `Skipped` row so its absence is visible in reports.
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
     network: Network,
@@ -308,7 +307,7 @@ fn mark_skipped(
     reason: &str,
     out: &mut Vec<ProviderResult>,
 ) {
-    for (name, _) in cfg.providers.iter() {
+    for name in cfg.providers.keys() {
         out.push(ProviderResult::skipped(chain, provider_name(name), reason));
     }
 }
@@ -328,6 +327,7 @@ fn mark_not_configured(chain: &'static str, out: &mut Vec<ProviderResult>) {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use httpmock::prelude::*;
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
@@ -366,13 +366,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn check_all_providers__should_report_absent_sui_as_not_configured() {
+        // Given — nothing configured
+        let fc = ForeignChainsConfig::default();
+
+        // When
+        let results = check_all_providers(&fc, Network::Mainnet).await;
+
+        // Then — sui shows up anyway, reported "not configured"
+        assert!(results.iter().any(|r| r.chain == "sui"));
+        assert!(results.iter().all(|r| matches!(
+            &r.status,
+            Status::Skipped(reason) if reason.contains("not configured")
+        )));
+    }
+
+    #[tokio::test]
     async fn check_all_providers__should_fail_provider_when_env_token_is_unset() {
         // Given
         let auth = AuthConfig::Header {
             name: http::HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Env {
-                env: "FCCT_DEFINITELY_UNSET_TOKEN_ENV".to_string(),
+                env: "DEFINITELY_UNSET_TOKEN_ENV".to_string(),
             },
         };
         let fc = ForeignChainsConfig {
@@ -388,6 +404,96 @@ mod tests {
         let Status::Failed(reason) = &results[0].status else {
             panic!("expected Failed, got a pass/skip");
         };
-        assert!(reason.contains("FCCT_DEFINITELY_UNSET_TOKEN_ENV"));
+        assert!(reason.contains("DEFINITELY_UNSET_TOKEN_ENV"));
+    }
+
+    fn aptos_event_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {
+        serde_json::json!({
+            "type": "block_metadata_transaction",
+            "hash": format!("0x{tx}"),
+            "success": true,
+            "events": [{
+                "guid": { "creation_number": "0", "account_address": "0x1" },
+                "sequence_number": sequence_number.to_string(),
+                "type": type_tag,
+                "data": { "epoch": "7510" }
+            }]
+        })
+    }
+
+    fn aptos_provider(rpc_url: String) -> ForeignChainProviderConfig {
+        ForeignChainProviderConfig {
+            rpc_url,
+            auth: AuthConfig::None,
+        }
+    }
+
+    #[tokio::test]
+    async fn check_all_providers__should_report_pass_fail_and_skip_in_one_run() {
+        // Given — on the same chain, one Aptos provider serves the golden event
+        // (pass) and another serves a wrong event (fail); a separate unsupported
+        // chain is skipped. All three are exercised in a single run.
+        let healthy = MockServer::start_async().await;
+        let broken = MockServer::start_async().await;
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
+        let tx = aptos.tx;
+        healthy
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path(format!("/transactions/by_hash/0x{tx}"));
+                then.status(200).json_body(aptos_event_body(
+                    tx,
+                    aptos.event_type_tag,
+                    aptos.event_sequence_number,
+                ));
+            })
+            .await;
+        broken
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path(format!("/transactions/by_hash/0x{tx}"));
+                then.status(200).json_body(aptos_event_body(
+                    tx,
+                    "0xdead::wrong::Event",
+                    aptos.event_sequence_number,
+                ));
+            })
+            .await;
+
+        let mut providers = NonEmptyBTreeMap::new(
+            "healthy".to_string().into(),
+            aptos_provider(healthy.base_url()),
+        );
+        providers.insert(
+            "broken".to_string().into(),
+            aptos_provider(broken.base_url()),
+        );
+        let fc = ForeignChainsConfig {
+            aptos: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(5).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                providers,
+            }),
+            ethereum: Some(config_with_provider(AuthConfig::None)),
+            ..Default::default()
+        };
+
+        // When
+        let results = check_all_providers(&fc, Network::Mainnet).await;
+
+        // Then — the broken provider does not stop the healthy one from being
+        // reported, the unsupported chain is skipped, and unconfigured sui
+        // gets its placeholder row.
+        assert_eq!(results.len(), 4);
+        let status = |chain: &str, provider: &str| {
+            results
+                .iter()
+                .find(|r| r.chain == chain && r.provider == provider)
+                .map(|r| &r.status)
+                .unwrap_or_else(|| panic!("missing result for {chain}/{provider}"))
+        };
+        assert_matches!(status("aptos", "healthy"), Status::Passed);
+        assert_matches!(status("aptos", "broken"), Status::Failed(_));
+        assert_matches!(status("ethereum", "only"), Status::Skipped(_));
     }
 }
