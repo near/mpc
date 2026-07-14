@@ -52,8 +52,6 @@ pub struct FakeMpcContractState {
     // TODO(#3630): drop this once 3.13 contract is deployed.
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
-    /// Mirror `available_foreign_chains` / `foreign_chains_configs` onto watch channels,
-    /// standing in for the real indexer's foreign-chain monitors.
     available_foreign_chains_sender: watch::Sender<dtos::AvailableForeignChains>,
     foreign_chains_configs_sender: watch::Sender<dtos::ForeignChainsConfigs>,
     pub migration_service: NodeMigrations,
@@ -83,7 +81,6 @@ impl FakeMpcContractState {
         }
     }
 
-    /// Publishes the current policy fields; a no-op for subscribers when nothing changed.
     fn publish_foreign_chain_policy(&self) {
         self.available_foreign_chains_sender
             .send_if_modified(|previous| {

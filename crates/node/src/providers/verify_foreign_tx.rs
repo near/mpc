@@ -128,8 +128,6 @@ impl ForeignChainInspectors<HttpClient> {
 pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
-    /// Participants supporting each available foreign chain, threshold-filtered; kept
-    /// current by [`crate::foreign_chain_policy::spawn_supporters_by_foreign_chain`].
     supporters_by_foreign_chain:
         watch::Receiver<BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
@@ -155,7 +153,6 @@ impl VerifyForeignTxProvider {
         })
     }
 
-    /// Receiver clone for consumers refining leader eligibility by chain support.
     pub(crate) fn supporters_by_foreign_chain(
         &self,
     ) -> watch::Receiver<BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>> {

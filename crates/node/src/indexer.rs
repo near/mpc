@@ -522,9 +522,7 @@ pub struct IndexerAPI<TransactionSender> {
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
-    /// Watcher that tracks the contract's available foreign chains.
     pub available_foreign_chains_receiver: watch::Receiver<dtos::AvailableForeignChains>,
-    /// Watcher that tracks the contract's per-node foreign-chain configs.
     pub foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
 }
 

@@ -8,11 +8,10 @@ use tokio::sync::watch;
 use crate::config::ParticipantsConfig;
 use crate::primitives::ParticipantId;
 
-/// Combines the indexer's two foreign-chain channels into one channel mapping each
-/// available chain to the participants supporting it (threshold-filtered). Participants
-/// are fixed per Running job; resharing restarts the job with a fresh task. The spawned
-/// task exits when either upstream sender is dropped (indexer shutdown) or every
-/// receiver of the returned channel is dropped.
+/// Combines the two foreign-chain channels into one channel mapping each
+/// available chain to the participants supporting it (threshold-filtered). 
+/// The spawned task exits when either upstream sender is dropped (indexer shutdown) 
+/// or every receiver of the returned channel is dropped.
 pub(crate) fn spawn_supporters_by_foreign_chain(
     mut available_chains_receiver: watch::Receiver<dtos::AvailableForeignChains>,
     mut foreign_chain_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,

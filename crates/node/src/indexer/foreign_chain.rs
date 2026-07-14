@@ -8,8 +8,7 @@ use crate::indexer::IndexerState;
 
 const FOREIGN_CHAIN_POLICY_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Monitor the contract's available foreign chains and update the watch channel when changes
-/// are detected. On read errors the previously published value stays in effect.
+/// On read errors the previously published value stays in effect.
 pub async fn monitor_available_foreign_chains(
     sender: watch::Sender<dtos::AvailableForeignChains>,
     indexer_state: Arc<IndexerState>,
@@ -40,8 +39,7 @@ pub async fn monitor_available_foreign_chains(
     }
 }
 
-/// Monitor the contract's per-node foreign-chain configs and update the watch channel when
-/// changes are detected. On read errors the previously published value stays in effect.
+/// On read errors the previously published value stays in effect.
 pub async fn monitor_foreign_chains_configs(
     sender: watch::Sender<dtos::ForeignChainsConfigs>,
     indexer_state: Arc<IndexerState>,
