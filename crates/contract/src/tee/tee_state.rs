@@ -581,12 +581,13 @@ mod tests {
     };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
-    use mpc_attestation::attestation::MockAttestation;
+    use mpc_attestation::attestation::{Attestation, MockAttestation};
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
+    use test_utils::attestation::{mock_dstack_attestation, verified_report};
 
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
@@ -1474,6 +1475,27 @@ mod tests {
             add_participant_result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
         )
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_reject_and_store_nothing_when_post_dcap_checks_fail() {
+        // Given: an empty allowlist, so any Dstack attestation fails the post-DCAP checks.
+        let mut tee_state = TeeState::default();
+        let Attestation::Dstack(dstack) = mock_dstack_attestation() else {
+            panic!("fixture is a Dstack attestation");
+        };
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+
+        // When: it is verified and stored.
+        let result =
+            tee_state.verify_and_store_dstack(node_id, &dstack, &verified_report(), Duration::MAX);
+
+        // Then: it is rejected and nothing is stored.
+        assert_matches!(
+            result,
+            Err(AttestationSubmissionError::InvalidAttestation(_))
+        );
+        assert!(tee_state.stored_attestations.is_empty());
     }
 
     /// Stale CodeHashesVotes entries from removed participants must not count toward

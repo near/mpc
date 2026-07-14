@@ -3,7 +3,7 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, TeeError},
+    errors::{Error, InvalidParameters, TeeError},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
@@ -284,6 +284,41 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         .unwrap()
         .expect("victim attestation should still be stored");
     assert_eq!(stored_before, stored_after);
+}
+
+/// Rejects a submission whose attached deposit is below the storage cost, so a caller
+/// cannot store an attestation without paying for it.
+#[test]
+fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
+    // Given: a participant whose submission context attaches only 1 yoctoNEAR.
+    let mut setup = TestSetupBuilder::new().build();
+    let node = setup.get_participant_node_ids()[0].clone();
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(node.account_id.clone())
+            .predecessor_account_id(node.account_id.clone())
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build()
+    );
+
+    // When: that participant submits a valid mock attestation.
+    let result = setup
+        .contract
+        .submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            node.tls_public_key.clone(),
+        )
+        .map(|_| ());
+
+    // Then: the storage charge rejects it, with the required cost exceeding the attached deposit.
+    // (The mock path stores before charging and relies on the runtime rolling the receipt back on
+    // this Err; that rollback is a chain-level guarantee not modeled by the in-process VM, so we
+    // assert only the error here.)
+    assert_matches!(
+        &result,
+        Err(Error::InvalidParameters(InvalidParameters::InsufficientDeposit { attached, required }))
+            if required > attached
+    );
 }
 
 /// Test that a `Dstack` submission is rejected when no verifier is configured.

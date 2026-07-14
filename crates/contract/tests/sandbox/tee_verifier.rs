@@ -231,6 +231,38 @@ async fn submit_participant_info__should_fail_and_store_nothing_on_verifier_cras
     .await;
 }
 
+#[tokio::test]
+async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap_checks_fail() {
+    // Given: a verifier that returns Verified, but an empty allowed-hash set, so the
+    // post-DCAP checks in resolve_verification reject the (genuinely verified) quote.
+    let (_worker, contract, submitter, balance_before) =
+        setup_with_stub(StubResponse::Verified(verified_report()), None).await;
+
+    // When: a Dstack attestation is submitted.
+    let result = submit_dstack(&submitter, &contract).await;
+
+    // Then: the failure originates inside the callback (not from the verifier), yet still
+    // refunds and fails the submission in a separate receipt, storing nothing. Asserted inline
+    // rather than via assert_submission_failed_cleanly because the error is an
+    // InvalidAttestation (empty-allowlist rejection), not a TeeError; the empty allowed
+    // mpc-image-hash list is the first post-DCAP check to reject.
+    let failures = result.failures();
+    assert!(
+        !failures.is_empty(),
+        "expected the promise chain to fail on a receipt, got: {result:#?}"
+    );
+    let rendered = format!("{failures:?}");
+    assert!(
+        rendered.contains("the allowed mpc image hashes list is empty"),
+        "expected the empty-allowlist rejection, got: {rendered}"
+    );
+    let stored = get_participant_attestation(&contract, &p2p_tls_key().into())
+        .await
+        .unwrap();
+    assert!(stored.is_none(), "nothing should be stored on failure");
+    assert_deposit_refunded(&submitter, balance_before).await;
+}
+
 // TODO(#3787): un-ignore once the fixture allowlist setup lands. A Verified
 // verdict routes through `verify_post_dcap_and_store`, whose allowlist checks
 // (fixture image/launcher hashes and measurements voted in, submitter using the

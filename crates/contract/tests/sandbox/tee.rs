@@ -267,17 +267,29 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key().into();
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = submitter.view_account().await?.balance;
+
     let success = submit_participant_info(
-        &mpc_signer_accounts[0],
+        submitter,
         &contract,
-        &mock_attestation,
-        &tls_key,
+        &Attestation::Mock(MockAttestation::Valid),
+        &p2p_tls_key().into(),
     )
     .await?
     .is_success();
     assert!(success);
+
+    // The submission attaches 1 NEAR but the contract charges only the measured storage cost
+    // and refunds the rest, so net spend is storage + gas, well under any fraction of the
+    // deposit; a retained deposit (e.g. 0.5 NEAR) would exceed this ceiling.
+    let balance_after = submitter.view_account().await?.balance;
+    let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
+    let refund_floor = NearToken::from_millinear(100).as_yoctonear();
+    assert!(
+        net_spent < refund_floor,
+        "excess deposit must be refunded (net spent {net_spent} yoctoNEAR should be storage + gas, < {refund_floor})"
+    );
     Ok(())
 }
 
