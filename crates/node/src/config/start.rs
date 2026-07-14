@@ -167,23 +167,17 @@ fn patch_near_config(
     let contract_id = node_config.indexer.mpc_contract_id.to_string();
     apply_near_config_patches(&mut config, near_init, &contract_id);
 
-    let patched =
-        serde_json::to_string_pretty(&config).context("failed to re-serialize NEAR config.json")?;
-    std::fs::write(config_path, patched)
-        .with_context(|| format!("failed to write {}", config_path.display()))?;
+    write_near_config_atomic(config_path, &config)?;
 
     tracing::info!("NEAR node config.json patched successfully");
     Ok(())
 }
 
-/// Migrates an already-initialized NEAR `config.json` from the deprecated
-/// centralized (`ExternalStorage`) state sync to decentralized (`Peers`), and
-/// (re)applies the advertised `tier3_public_addr` DSS needs. Touches only those
-/// fields, leaving the rest of the operator's config alone. nearcore 2.13
-/// rejects `ExternalStorage` and exits on startup, so nodes initialized before
-/// `Peers` became the default (see [`apply_near_config_patches`], which only
-/// runs on first init) need this on every start until migrated. A no-op once
-/// the config already carries both.
+/// Migrates an existing NEAR `config.json` to decentralized state sync in place:
+/// rewrites `state_sync.sync` to `Peers` and (re)applies `tier3_public_addr`,
+/// touching only those fields. Runs on every start because nearcore 2.13 rejects
+/// the old `ExternalStorage` value on load (the node exits); fresh inits instead
+/// get it via [`apply_near_config_patches`]. A no-op once the config carries both.
 fn migrate_near_config_state_sync(
     config_path: &Path,
     near_init: &NearInitConfig,
@@ -193,25 +187,28 @@ fn migrate_near_config_state_sync(
         return Ok(());
     }
 
+    // Symmetric to start.sh: `Peers` sync stalls silently without a reachable
+    // advertised address, so surface when one isn't configured.
+    if near_init.tier3_public_addr.is_none() {
+        tracing::info!(
+            "tier3_public_addr not set; decentralized state sync will rely on auto-detected addresses"
+        );
+    }
+
     let raw = std::fs::read_to_string(config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
     let mut config: serde_json::Value =
         serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
 
-    // Also (re)apply the advertised tier3 address: nodes initialized before DSS
-    // became the default never had it written, and `Peers` sync stalls silently
-    // without a reachable advertised address. Evaluate both so the tier3 fix is
-    // not skipped when `state_sync.sync` is already `Peers`.
+    // Evaluate both so the tier3 fix is not skipped when `state_sync.sync` is
+    // already `Peers`.
     let sync_changed = set_decentralized_state_sync(&mut config);
     let tier3_changed = set_tier3_public_addr(&mut config, near_init);
     if !(sync_changed || tier3_changed) {
         return Ok(());
     }
 
-    let patched =
-        serde_json::to_string_pretty(&config).context("failed to re-serialize NEAR config.json")?;
-    std::fs::write(config_path, patched)
-        .with_context(|| format!("failed to write {}", config_path.display()))?;
+    write_near_config_atomic(config_path, &config)?;
 
     if sync_changed {
         tracing::info!("migrated NEAR config.json state_sync to decentralized (Peers)");
@@ -219,6 +216,25 @@ fn migrate_near_config_state_sync(
     if tier3_changed {
         tracing::info!("set NEAR config.json network.experimental.tier3_public_addr");
     }
+    Ok(())
+}
+
+/// Writes `config` to `config_path` atomically: serialize to a sibling temp file,
+/// then rename over the target. The migration runs fleet-wide on the 3.13.2
+/// upgrade, and a crash mid-write with a plain `write` could leave a truncated
+/// `config.json` that the next start fails to parse.
+fn write_near_config_atomic(config_path: &Path, config: &serde_json::Value) -> anyhow::Result<()> {
+    let serialized =
+        serde_json::to_string_pretty(config).context("failed to re-serialize NEAR config.json")?;
+    let file_name = config_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .with_context(|| format!("config path has no file name: {}", config_path.display()))?;
+    let tmp_path = config_path.with_file_name(format!("{file_name}.tmp"));
+    std::fs::write(&tmp_path, serialized)
+        .with_context(|| format!("failed to write {}", tmp_path.display()))?;
+    std::fs::rename(&tmp_path, config_path)
+        .with_context(|| format!("failed to replace {}", config_path.display()))?;
     Ok(())
 }
 
@@ -639,6 +655,62 @@ mod tests {
                 .get("tier3_public_addr")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn migrate_near_config_state_sync__should_rewrite_existing_config_on_disk() {
+        // Given — a config on disk with the deprecated ExternalStorage block.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&real_external_storage_config()).unwrap(),
+        )
+        .unwrap();
+        let mut init = near_init(ChainId::Mainnet);
+        init.tier3_public_addr = Some("203.0.113.10:24567".parse().unwrap());
+
+        // When
+        migrate_near_config_state_sync(&path, &init).unwrap();
+
+        // Then — sync migrated, sibling preserved, tier3 applied, all persisted.
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(on_disk["state_sync"]["sync"], serde_json::json!("Peers"));
+        assert_eq!(
+            on_disk["state_sync"]["parts_compression_lvl"],
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            on_disk["network"]["experimental"]["tier3_public_addr"],
+            serde_json::json!("203.0.113.10:24567")
+        );
+
+        // And — a second call is an idempotent no-op that leaves valid JSON.
+        migrate_near_config_state_sync(&path, &init).unwrap();
+        let again: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(again["state_sync"]["sync"], serde_json::json!("Peers"));
+    }
+
+    #[test]
+    fn migrate_near_config_state_sync__should_leave_localnet_config_untouched() {
+        // Given — localnet, whose config the migration must not touch.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&real_external_storage_config()).unwrap(),
+        )
+        .unwrap();
+
+        // When
+        migrate_near_config_state_sync(&path, &near_init(ChainId::Localnet)).unwrap();
+
+        // Then — untouched: still on ExternalStorage.
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(on_disk["state_sync"]["sync"]["ExternalStorage"].is_object());
     }
 
     #[test]
