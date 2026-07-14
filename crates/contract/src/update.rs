@@ -206,7 +206,7 @@ impl ProposedUpdates {
                 promise = promise.deploy_contract(code).function_call(
                     method_names::MIGRATE,
                     Vec::new(),
-                    NearToken::from_near(0),
+                    NearToken::from_yoctonear(0),
                     gas,
                 );
             }
@@ -218,7 +218,7 @@ impl ProposedUpdates {
                 promise = promise.function_call(
                     method_names::UPDATE_CONFIG,
                     serde_json::to_vec(&(&config,)).unwrap(),
-                    NearToken::from_near(0),
+                    NearToken::from_yoctonear(0),
                     new_config_gas_value,
                 );
             }
