@@ -942,8 +942,6 @@ pub mod testing {
     impl PortSeed {
         // The base port number used, hoping the OS is not using ports in this range
         pub const BASE_PORT: u16 = 10000;
-        // This constant must be equal to the total number of ports defined below
-        pub const TOTAL_DEFINED_PORTS: u16 = 23;
         // Maximum number of nodes that can be handled without port collisions
         pub const MAX_NODES: u16 = 10;
         // Maximum number of cases that can be handled without port collisions
@@ -989,8 +987,6 @@ pub mod testing {
         pub fn pprof_web_port(&self, node_index: usize) -> u16 {
             self.compute_port(node_index as u16, 3)
         }
-
-        pub const CLI_FOR_PYTEST: Self = Self::new(0);
     }
 
     impl PortSeed {
@@ -1025,17 +1021,11 @@ pub mod testing {
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
         port_seed: PortSeed,
-        // Supply `Some` value here if you want to use pre-existing p2p key pairs
-        p2p_keypairs: Option<Vec<SigningKey>>,
     ) -> anyhow::Result<Vec<(MpcConfig, SigningKey)>> {
-        let p2p_keypairs = if let Some(p2p_keypairs) = p2p_keypairs {
-            p2p_keypairs
-        } else {
-            participant_accounts
-                .iter()
-                .map(|_account_id| SigningKey::generate(&mut OsRng))
-                .collect::<Vec<_>>()
-        };
+        let p2p_keypairs = participant_accounts
+            .iter()
+            .map(|_account_id| SigningKey::generate(&mut OsRng))
+            .collect::<Vec<_>>();
         let mut participants = Vec::new();
         for (i, (participant_account, p2p_signing_key)) in participant_accounts
             .iter()
@@ -1097,7 +1087,6 @@ mod tests {
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
             PortSeed::P2P_BASIC_TEST,
-            None,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
@@ -1204,7 +1193,6 @@ mod tests {
             ],
             4,
             PortSeed::P2P_WAIT_FOR_READY_TEST,
-            None,
         )
         .unwrap();
 
@@ -1329,7 +1317,6 @@ mod tests {
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
             PortSeed::RECONNECTION_TEST,
-            None,
         )
         .unwrap();
 

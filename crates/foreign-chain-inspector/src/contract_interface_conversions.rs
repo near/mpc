@@ -10,11 +10,16 @@ use crate::bitcoin::inspector::BitcoinExtractor;
 use crate::evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor};
 use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
+use crate::sui::SuiExtractedValue;
+use crate::sui::inspector::{SuiExtractor, SuiFinality};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
-    #[error("unsupported variant for conversion: {context}")]
-    UnsupportedVariant { context: &'static str },
+    #[error("unsupported variant for conversion: {context} ({value})")]
+    UnsupportedVariant {
+        context: &'static str,
+        value: String,
+    },
     #[error("integer overflow during conversion: {context}")]
     IntegerOverflow { context: &'static str },
 }
@@ -48,7 +53,8 @@ impl TryFrom<dtos::EvmFinality> for EthereumFinality {
             dtos::EvmFinality::Finalized => Ok(EthereumFinality::Finalized),
             dtos::EvmFinality::Safe => Ok(EthereumFinality::Safe),
             dtos::EvmFinality::Latest => Ok(EthereumFinality::Latest),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "EvmFinality",
             }),
         }
@@ -104,7 +110,8 @@ impl TryFrom<dtos::BitcoinExtractor> for BitcoinExtractor {
     fn try_from(value: dtos::BitcoinExtractor) -> Result<Self, Self::Error> {
         match value {
             dtos::BitcoinExtractor::BlockHash => Ok(BitcoinExtractor::BlockHash),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "BitcoinExtractor",
             }),
         }
@@ -128,7 +135,8 @@ impl TryFrom<dtos::BitcoinExtractedValue> for BitcoinExtractedValue {
             dtos::BitcoinExtractedValue::BlockHash(hash) => {
                 Ok(BitcoinExtractedValue::BlockHash(hash.0.into()))
             }
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "BitcoinExtractedValue",
             }),
         }
@@ -150,7 +158,8 @@ impl TryFrom<dtos::EvmExtractor> for EvmExtractor {
         match value {
             dtos::EvmExtractor::BlockHash => Ok(EvmExtractor::BlockHash),
             dtos::EvmExtractor::Log { log_index } => Ok(EvmExtractor::Log { log_index }),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "EvmExtractor",
             }),
         }
@@ -176,7 +185,8 @@ impl<Chain: EvmChain> TryFrom<dtos::EvmExtractedValue> for EvmExtractedValue<Cha
                 Ok(EvmExtractedValue::BlockHash(hash.0.into()))
             }
             dtos::EvmExtractedValue::Log(log) => Ok(EvmExtractedValue::Log(evm_log_to_log(log))),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "EvmExtractedValue",
             }),
         }
@@ -210,7 +220,8 @@ impl TryFrom<dtos::StarknetFinality> for StarknetFinality {
         match value {
             dtos::StarknetFinality::AcceptedOnL2 => Ok(StarknetFinality::AcceptedOnL2),
             dtos::StarknetFinality::AcceptedOnL1 => Ok(StarknetFinality::AcceptedOnL1),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "StarknetFinality",
             }),
         }
@@ -245,7 +256,8 @@ impl TryFrom<dtos::StarknetExtractor> for StarknetExtractor {
                     }
                 })?,
             }),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "StarknetExtractor",
             }),
         }
@@ -271,7 +283,8 @@ impl TryFrom<dtos::StarknetExtractedValue> for StarknetExtractedValue {
                 Ok(StarknetExtractedValue::BlockHash(felt.0.into()))
             }
             dtos::StarknetExtractedValue::Log(log) => Ok(StarknetExtractedValue::Log(log)),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "StarknetExtractedValue",
             }),
         }
@@ -297,7 +310,8 @@ impl TryFrom<dtos::AptosFinality> for AptosFinality {
     fn try_from(value: dtos::AptosFinality) -> Result<Self, Self::Error> {
         match value {
             dtos::AptosFinality::Committed => Ok(AptosFinality::Committed),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "AptosFinality",
             }),
         }
@@ -330,7 +344,8 @@ impl TryFrom<dtos::AptosExtractor> for AptosExtractor {
                     }
                 })?,
             }),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "AptosExtractor",
             }),
         }
@@ -350,7 +365,8 @@ impl TryFrom<dtos::AptosExtractedValue> for AptosExtractedValue {
     fn try_from(value: dtos::AptosExtractedValue) -> Result<Self, Self::Error> {
         match value {
             dtos::AptosExtractedValue::Event(event) => Ok(AptosExtractedValue::Event(event)),
-            _ => Err(ConversionError::UnsupportedVariant {
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
                 context: "AptosExtractedValue",
             }),
         }
@@ -360,6 +376,88 @@ impl TryFrom<dtos::AptosExtractedValue> for AptosExtractedValue {
 impl From<AptosExtractedValue> for dtos::ExtractedValue {
     fn from(value: AptosExtractedValue) -> Self {
         dtos::ExtractedValue::AptosExtractedValue(value.into())
+    }
+}
+
+impl From<SuiFinality> for dtos::SuiFinality {
+    fn from(value: SuiFinality) -> Self {
+        match value {
+            SuiFinality::Checkpointed => dtos::SuiFinality::Checkpointed,
+        }
+    }
+}
+
+impl TryFrom<dtos::SuiFinality> for SuiFinality {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SuiFinality) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SuiFinality::Checkpointed => Ok(SuiFinality::Checkpointed),
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
+                context: "SuiFinality",
+            }),
+        }
+    }
+}
+
+impl TryFrom<SuiExtractor> for dtos::SuiExtractor {
+    type Error = ConversionError;
+    fn try_from(value: SuiExtractor) -> Result<Self, Self::Error> {
+        match value {
+            SuiExtractor::Event { event_index } => Ok(dtos::SuiExtractor::Event {
+                event_index: u64::try_from(event_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "SuiExtractor::Event event_index exceeds u64",
+                    }
+                })?,
+            }),
+        }
+    }
+}
+
+impl TryFrom<dtos::SuiExtractor> for SuiExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SuiExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SuiExtractor::Event { event_index } => Ok(SuiExtractor::Event {
+                event_index: usize::try_from(event_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "SuiExtractor::Event event_index exceeds platform usize",
+                    }
+                })?,
+            }),
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
+                context: "SuiExtractor",
+            }),
+        }
+    }
+}
+
+impl From<SuiExtractedValue> for dtos::SuiExtractedValue {
+    fn from(value: SuiExtractedValue) -> Self {
+        match value {
+            SuiExtractedValue::Event(event) => dtos::SuiExtractedValue::Event(event),
+        }
+    }
+}
+
+impl TryFrom<dtos::SuiExtractedValue> for SuiExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SuiExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SuiExtractedValue::Event(event) => Ok(SuiExtractedValue::Event(event)),
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
+                context: "SuiExtractedValue",
+            }),
+        }
+    }
+}
+
+impl From<SuiExtractedValue> for dtos::ExtractedValue {
+    fn from(value: SuiExtractedValue) -> Self {
+        dtos::ExtractedValue::SuiExtractedValue(value.into())
     }
 }
 
@@ -374,7 +472,7 @@ mod tests {
     use crate::starknet::StarknetBlockHash;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::evm::Log;
-    use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
+    use near_mpc_contract_interface::types::{AptosAddress, AptosEvent, SuiAddress, SuiEvent};
 
     #[test]
     fn block_confirmations_roundtrip() {
@@ -613,6 +711,41 @@ mod tests {
         });
         let contract = dtos::AptosExtractedValue::from(inspector.clone());
         let back = AptosExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn sui_finality_roundtrip() {
+        assert_eq!(
+            dtos::SuiFinality::Checkpointed,
+            dtos::SuiFinality::from(SuiFinality::Checkpointed)
+        );
+        assert_eq!(
+            SuiFinality::Checkpointed,
+            SuiFinality::try_from(dtos::SuiFinality::Checkpointed).unwrap()
+        );
+    }
+
+    #[test]
+    fn sui_extractor_roundtrip() {
+        let inspector = SuiExtractor::Event { event_index: 3 };
+        let contract = dtos::SuiExtractor::try_from(inspector.clone()).unwrap();
+        assert_matches!(contract, dtos::SuiExtractor::Event { event_index: 3 });
+        let back = SuiExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn sui_extracted_value_roundtrip() {
+        let inspector = SuiExtractedValue::Event(SuiEvent {
+            package_id: SuiAddress([0x01; 32]),
+            transaction_module: "omni_bridge".to_string(),
+            sender: SuiAddress([0x02; 32]),
+            type_tag: format!("0x{}::omni_bridge::InitTransfer", "01".repeat(32)),
+            bcs: vec![0xde, 0xad, 0xbe, 0xef],
+        });
+        let contract = dtos::SuiExtractedValue::from(inspector.clone());
+        let back = SuiExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 }

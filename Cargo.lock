@@ -1253,6 +1253,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bcs"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85b6598a2f5d564fb7855dc6b06fd1c38cff5a72bd8b863a4d021938497b440a"
+dependencies = [
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.65.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1454,6 +1464,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bnum"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "119771309b95163ec7aaf79810da82f7cd0599c19722d48b9c03894dca833966"
+
+[[package]]
 name = "bon"
 version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1593,6 +1609,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e93abca9e28e0a1b9877922aacb20576e05d4679ffa78c3d6dc22a26a216659"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "bytestring"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86566c496f2f47d9b8147a4c8b02ffdb69c919fe0c2b2e7195d22cbba0e635c9"
+dependencies = [
+ "bytes",
 ]
 
 [[package]]
@@ -3690,6 +3715,7 @@ version = "3.13.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "bs58 0.5.1",
  "clap",
  "foreign-chain-inspector",
  "foreign-chain-rpc-auth",
@@ -3711,6 +3737,7 @@ name = "foreign-chain-inspector"
 version = "3.13.0"
 dependencies = [
  "assert_matches",
+ "bs58 0.5.1",
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
@@ -3725,6 +3752,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "sui-sdk-types",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3748,12 +3776,16 @@ version = "3.13.0"
 dependencies = [
  "derive_more 2.1.1",
  "ethereum-types",
+ "http",
  "jsonrpsee",
  "mpc-primitives",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "sui-rpc",
  "thiserror 2.0.18",
+ "tokio",
+ "tonic 0.14.5",
 ]
 
 [[package]]
@@ -9772,6 +9804,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "roaring"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dedc5658c6ecb3bdb5ef5f3295bb9253f42dcf3fd1402c03f6b1f7659c3c4a9"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+]
+
+[[package]]
 name = "rocksdb"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10936,6 +10978,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "sui-rpc"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00a313a63f07ada0be04c03e9d6e8c1d176e5a469ee6e3b6f973dee525667311"
+dependencies = [
+ "base64 0.22.1",
+ "bcs",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "prost 0.14.3",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sui-sdk-types",
+ "tap",
+ "tokio",
+ "tonic 0.14.5",
+ "tonic-prost",
+ "tower",
+]
+
+[[package]]
+name = "sui-sdk-types"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23f800c4c3539246ba94a825f6afe7faab0bc8fc4dda56c6cfa493ea2a32ecbd"
+dependencies = [
+ "base64ct",
+ "bcs",
+ "blake2",
+ "bnum",
+ "bs58 0.5.1",
+ "bytes",
+ "bytestring",
+ "itertools 0.14.0",
+ "roaring",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_with",
+ "winnow 0.7.15",
+]
+
+[[package]]
 name = "symbolic-common"
 version = "12.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11779,6 +11867,7 @@ dependencies = [
  "tower-service",
  "tracing",
  "webpki-roots",
+ "zstd",
 ]
 
 [[package]]
