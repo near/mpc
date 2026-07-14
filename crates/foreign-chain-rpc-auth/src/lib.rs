@@ -25,7 +25,10 @@ pub fn auth_config_to_rpc_auth(
                 Some(scheme) => format!("{scheme} {token_value}"),
                 None => token_value,
             };
-            let header_value = HeaderValue::from_str(&header_value_str)?;
+            let mut header_value = HeaderValue::from_str(&header_value_str)?;
+            // Redacts the token from `Debug` output and excludes it from HPACK
+            // dynamic-table indexing on h2 connections.
+            header_value.set_sensitive(true);
             Ok(RpcAuthentication::CustomHeader {
                 header_name,
                 header_value,
@@ -152,6 +155,29 @@ mod tests {
             panic!("expected CustomHeader, got {result:?}");
         };
         assert_eq!(header_value.to_str().unwrap(), "raw-token-value");
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__should_mark_header_value_sensitive() {
+        // Given
+        let auth = AuthConfig::Header {
+            name: http::HeaderName::from_static("authorization"),
+            scheme: Some("Bearer".to_string()),
+            token: TokenConfig::Val {
+                val: "secret".to_string(),
+            },
+        };
+        let mut url = "https://rpc.example.com".to_string();
+
+        // When
+        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
+
+        // Then
+        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
+            panic!("expected CustomHeader, got {result:?}");
+        };
+        assert!(header_value.is_sensitive());
+        assert_eq!(format!("{header_value:?}"), "Sensitive");
     }
 
     #[test]
