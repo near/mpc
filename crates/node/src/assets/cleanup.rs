@@ -131,7 +131,6 @@ fn cleanup_behavior(
 mod tests {
     use crate::assets::cleanup::EpochData;
     use crate::assets::cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
-    use std::collections::BTreeSet;
     use crate::assets::test_utils;
     use crate::assets::test_utils::TestContext;
     use crate::assets::test_utils::get_participant_ids;
@@ -144,6 +143,7 @@ mod tests {
     use crate::providers::ecdsa::triple::TripleStorage;
     use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
+    use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
