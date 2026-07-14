@@ -162,7 +162,7 @@ fn patch_near_config(
         serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
 
     let contract_id = node_config.indexer.mpc_contract_id.to_string();
-    apply_near_config_patches(&mut config, near_init, &contract_id);
+    apply_near_config_patches(&mut config, near_init, &contract_id)?;
 
     write_near_config_atomic(config_path, &config)?;
 
@@ -199,8 +199,8 @@ fn migrate_near_config_state_sync(
 
     // Evaluate both so the tier3 fix is not skipped when `state_sync.sync` is
     // already `Peers`.
-    let sync_changed = set_decentralized_state_sync(&mut config);
-    let tier3_changed = set_tier3_public_addr(&mut config, near_init);
+    let sync_changed = set_decentralized_state_sync(&mut config)?;
+    let tier3_changed = set_tier3_public_addr(&mut config, near_init)?;
     if !(sync_changed || tier3_changed) {
         return Ok(());
     }
@@ -235,30 +235,61 @@ fn write_near_config_atomic(config_path: &Path, config: &serde_json::Value) -> a
     Ok(())
 }
 
+/// Navigates to the nested object at `path`, creating any missing (or `null`)
+/// level as an empty object. Returns an error — rather than panicking like the
+/// `[]` operator — if a level exists as a non-object value, so a malformed
+/// `config.json` degrades to a clean startup error instead of tearing the node
+/// down. An empty `path` returns the root object.
+fn object_at<'a>(
+    config: &'a mut serde_json::Value,
+    path: &[&str],
+) -> anyhow::Result<&'a mut serde_json::Map<String, serde_json::Value>> {
+    let mut current = config
+        .as_object_mut()
+        .context("NEAR config.json root is not a JSON object")?;
+    for key in path {
+        let entry = current
+            .entry(*key)
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        if entry.is_null() {
+            *entry = serde_json::Value::Object(serde_json::Map::new());
+        }
+        current = entry
+            .as_object_mut()
+            .with_context(|| format!("NEAR config.json field `{key}` is not an object"))?;
+    }
+    Ok(current)
+}
+
 /// Sets `state_sync.sync` to decentralized (`Peers`), replacing any inherited
 /// value. Returns whether the config was changed.
-fn set_decentralized_state_sync(config: &mut serde_json::Value) -> bool {
+fn set_decentralized_state_sync(config: &mut serde_json::Value) -> anyhow::Result<bool> {
     let peers = serde_json::json!("Peers");
-    if config["state_sync"]["sync"] == peers {
-        return false;
+    let state_sync = object_at(config, &["state_sync"])?;
+    if state_sync.get("sync") == Some(&peers) {
+        return Ok(false);
     }
-    config["state_sync"]["sync"] = peers;
-    true
+    state_sync.insert("sync".to_owned(), peers);
+    Ok(true)
 }
 
 /// Sets the advertised `tier3_public_addr` when `near_init` provides one (it is
 /// required for decentralized state sync to be reachable). No-op when unset.
 /// Returns whether the config was changed.
-fn set_tier3_public_addr(config: &mut serde_json::Value, near_init: &NearInitConfig) -> bool {
-    let Some(tier3) = &near_init.tier3_public_addr else {
-        return false;
+fn set_tier3_public_addr(
+    config: &mut serde_json::Value,
+    near_init: &NearInitConfig,
+) -> anyhow::Result<bool> {
+    let Some(addr) = &near_init.tier3_public_addr else {
+        return Ok(false);
     };
-    let tier3 = serde_json::Value::String(tier3.to_string());
-    if config["network"]["experimental"]["tier3_public_addr"] == tier3 {
-        return false;
+    let tier3 = serde_json::Value::String(addr.to_string());
+    let experimental = object_at(config, &["network", "experimental"])?;
+    if experimental.get("tier3_public_addr") == Some(&tier3) {
+        return Ok(false);
     }
-    config["network"]["experimental"]["tier3_public_addr"] = tier3;
-    true
+    experimental.insert("tier3_public_addr".to_owned(), tier3);
+    Ok(true)
 }
 
 /// Reads and parses the NEAR node `config.json` under `home_dir`, for serving
@@ -278,27 +309,43 @@ fn apply_near_config_patches(
     config: &mut serde_json::Value,
     near_init: &NearInitConfig,
     mpc_contract_id: &str,
-) {
-    config["store"]["load_mem_tries_for_tracked_shards"] = serde_json::Value::Bool(true);
+) -> anyhow::Result<()> {
+    object_at(config, &["store"])?.insert(
+        "load_mem_tries_for_tracked_shards".to_owned(),
+        serde_json::Value::Bool(true),
+    );
 
     if near_init.chain_id.is_localnet() {
-        config["state_sync_enabled"] = serde_json::Value::Bool(false);
+        object_at(config, &[])?.insert(
+            "state_sync_enabled".to_owned(),
+            serde_json::Value::Bool(false),
+        );
     } else {
         // Decentralized (peer-to-peer) state sync; replaces any inherited ExternalStorage block.
-        set_decentralized_state_sync(config);
+        set_decentralized_state_sync(config)?;
     }
 
     // Track the shard that hosts the MPC contract.
-    config["tracked_shards_config"] = serde_json::json!({ "Accounts": [mpc_contract_id] });
+    object_at(config, &[])?.insert(
+        "tracked_shards_config".to_owned(),
+        serde_json::json!({ "Accounts": [mpc_contract_id] }),
+    );
 
     // Override listen addresses when running multiple nodes on one machine.
     if let Some(rpc_addr) = &near_init.rpc_addr {
-        config["rpc"]["addr"] = serde_json::Value::String(rpc_addr.to_string());
+        object_at(config, &["rpc"])?.insert(
+            "addr".to_owned(),
+            serde_json::Value::String(rpc_addr.to_string()),
+        );
     }
     if let Some(network_addr) = &near_init.network_addr {
-        config["network"]["addr"] = serde_json::Value::String(network_addr.to_string());
+        object_at(config, &["network"])?.insert(
+            "addr".to_owned(),
+            serde_json::Value::String(network_addr.to_string()),
+        );
     }
-    set_tier3_public_addr(config, near_init);
+    set_tier3_public_addr(config, near_init)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -339,7 +386,7 @@ mod tests {
         let init = near_init(ChainId::Testnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then
         assert_eq!(
@@ -355,7 +402,7 @@ mod tests {
         let init = near_init(ChainId::Testnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then
         assert_eq!(
@@ -373,7 +420,7 @@ mod tests {
         init.rpc_addr = Some("0.0.0.0:13030".parse().unwrap());
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then
         assert_eq!(
@@ -393,7 +440,7 @@ mod tests {
         let init = near_init(ChainId::Testnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then — sentinels survive (don't-clobber-downloaded-config contract).
         assert_eq!(
@@ -419,7 +466,7 @@ mod tests {
             let init = near_init(chain_id);
 
             // When
-            apply_near_config_patches(&mut config, &init, "mpc-contract.test.near");
+            apply_near_config_patches(&mut config, &init, "mpc-contract.test.near").unwrap();
 
             // Then
             assert_eq!(config["state_sync_enabled"], serde_json::json!(false));
@@ -435,7 +482,7 @@ mod tests {
         let init = near_init(ChainId::Testnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then — non-localnet uses decentralized (peer-to-peer) state sync.
         assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
@@ -454,7 +501,7 @@ mod tests {
         let init = near_init(ChainId::Mainnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer");
+        apply_near_config_patches(&mut config, &init, "v1.signer").unwrap();
 
         // Then — the whole block is replaced by the `Peers` variant.
         assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
@@ -468,7 +515,7 @@ mod tests {
         init.tier3_public_addr = Some("46.105.87.136:24567".parse().unwrap());
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then
         assert_eq!(
@@ -484,7 +531,7 @@ mod tests {
         let init = near_init(ChainId::Testnet);
 
         // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet");
+        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then
         assert!(
@@ -536,7 +583,7 @@ mod tests {
         });
 
         // When
-        let changed = set_decentralized_state_sync(&mut config);
+        let changed = set_decentralized_state_sync(&mut config).unwrap();
 
         // Then
         assert!(changed);
@@ -549,7 +596,7 @@ mod tests {
         let mut config = serde_json::json!({ "state_sync": { "sync": "Peers" } });
 
         // When
-        let changed = set_decentralized_state_sync(&mut config);
+        let changed = set_decentralized_state_sync(&mut config).unwrap();
 
         // Then — idempotent: nothing to migrate.
         assert!(!changed);
@@ -581,7 +628,7 @@ mod tests {
         let mut config = real_external_storage_config();
 
         // When
-        let changed = set_decentralized_state_sync(&mut config);
+        let changed = set_decentralized_state_sync(&mut config).unwrap();
 
         // Then — sync flips to Peers and the sibling field is left intact.
         assert!(changed);
@@ -598,7 +645,7 @@ mod tests {
         let mut config = serde_json::json!({ "state_sync": serde_json::Value::Null });
 
         // When
-        let changed = set_decentralized_state_sync(&mut config);
+        let changed = set_decentralized_state_sync(&mut config).unwrap();
 
         // Then
         assert!(changed);
@@ -611,7 +658,7 @@ mod tests {
         let mut config = serde_json::json!({});
 
         // When
-        let changed = set_decentralized_state_sync(&mut config);
+        let changed = set_decentralized_state_sync(&mut config).unwrap();
 
         // Then
         assert!(changed);
@@ -626,7 +673,7 @@ mod tests {
         init.tier3_public_addr = Some("203.0.113.10:24567".parse().unwrap());
 
         // When
-        let changed = set_tier3_public_addr(&mut config, &init);
+        let changed = set_tier3_public_addr(&mut config, &init).unwrap();
 
         // Then
         assert!(changed);
@@ -637,13 +684,36 @@ mod tests {
     }
 
     #[test]
+    fn set_decentralized_state_sync__should_error_not_panic_on_non_object_field() {
+        // Given — a malformed config where `state_sync` is a scalar, not an object.
+        let mut config = serde_json::json!({ "state_sync": "unexpected" });
+
+        // When / Then — clean error instead of an `[]`-index panic.
+        let err =
+            set_decentralized_state_sync(&mut config).expect_err("scalar state_sync must error");
+        assert!(err.to_string().contains("state_sync"));
+    }
+
+    #[test]
+    fn apply_near_config_patches__should_error_not_panic_when_root_is_not_object() {
+        // Given — a config.json whose root isn't a JSON object.
+        let mut config = serde_json::json!("not an object");
+        let init = near_init(ChainId::Testnet);
+
+        // When / Then
+        let err = apply_near_config_patches(&mut config, &init, "v1.signer")
+            .expect_err("non-object root must error");
+        assert!(err.to_string().contains("not a JSON object"));
+    }
+
+    #[test]
     fn set_tier3_public_addr__should_report_no_change_when_unset() {
         // Given — no tier3 configured (e.g. a node initialized before #3533).
         let mut config = serde_json::json!({ "network": {} });
         let init = near_init(ChainId::Mainnet);
 
         // When
-        let changed = set_tier3_public_addr(&mut config, &init);
+        let changed = set_tier3_public_addr(&mut config, &init).unwrap();
 
         // Then
         assert!(!changed);
