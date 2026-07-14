@@ -195,7 +195,7 @@ impl IntegrationTestSetup {
         block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
-            generate_test_p2p_configs(&participant_accounts, threshold, port_seed, None).unwrap();
+            generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
         let mut indexer_manager =
             FakeIndexerManager::new(clock.clone(), txn_delay_blocks, block_time);
@@ -231,7 +231,7 @@ impl IntegrationTestSetup {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
-                    timeout_sec: 60,
+                    timeout_sec: 120,
                 },
                 number_of_responder_keys: 0,
                 web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_port(i)),
