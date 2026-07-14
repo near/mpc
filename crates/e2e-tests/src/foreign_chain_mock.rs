@@ -4,8 +4,56 @@
 //! and Starknet JSON-RPC endpoints, returning hardcoded responses for the methods
 //! the MPC nodes call during `verify_foreign_transaction`.
 
+use httpmock::When;
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
+
+/// Client credentials a mock server requires, mirroring the node's
+/// [`AuthConfig`](mpc_node_config::AuthConfig) kinds.
+#[derive(Clone, Debug)]
+pub enum MockAuthExpectation {
+    None,
+    ApiKeyInPath { key: String },
+    Header { name: String, value: String },
+    QueryParam { name: String, value: String },
+}
+
+impl MockAuthExpectation {
+    fn apply(&self, when: When) -> When {
+        match self {
+            Self::None => when.path("/"),
+            Self::ApiKeyInPath { key } => when.path(format!("/{key}")),
+            Self::Header { name, value } => when.path("/").header(name, value),
+            Self::QueryParam { name, value } => when.path("/").query_param(name, value),
+        }
+    }
+}
+
+/// Rejects requests missing the expected credentials the way real providers
+/// do.
+fn register_unauthorized_catch_all(server: &MockServer, auth: &MockAuthExpectation) {
+    if matches!(auth, MockAuthExpectation::None) {
+        return;
+    }
+    server.mock(|when, then| {
+        when.any_request();
+        then.respond_with(move |req: &HttpMockRequest| {
+            let id = serde_json::from_slice::<serde_json::Value>(req.body().as_ref())
+                .map(|body| body["id"].clone())
+                .unwrap_or(serde_json::Value::Null);
+            let response_body = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32600, "message": "Must be authenticated!" },
+            });
+            HttpMockResponse::builder()
+                .status(401)
+                .header("content-type", "application/json")
+                .body(serde_json::to_string(&response_body).unwrap())
+                .build()
+        });
+    });
+}
 
 /// A [`MockServer`] paired with the id of a registered [`httpmock::Mock`], so
 /// tests can recover the `Mock<'_>` (which borrows from the server) on demand
@@ -47,10 +95,10 @@ fn jsonrpc_error(id: serde_json::Value, method: &str) -> HttpMockResponse {
         .build()
 }
 
-pub fn setup_bitcoin_mock(server: &MockServer) -> usize {
-    server
+pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
+    let mock_id = server
         .mock(|when, then| {
-            when.method(POST).path("/");
+            auth.apply(when.method(POST));
             then.respond_with(move |req: &HttpMockRequest| {
                 let body: serde_json::Value =
                     serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
@@ -83,12 +131,14 @@ pub fn setup_bitcoin_mock(server: &MockServer) -> usize {
                     .build()
             });
         })
-        .id
+        .id;
+    register_unauthorized_catch_all(server, &auth);
+    mock_id
 }
 
-pub fn setup_evm_mock(server: &MockServer) -> usize {
-    server.mock(|when, then| {
-        when.method(POST).path("/");
+pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
+    let mock_id = server.mock(|when, then| {
+        auth.apply(when.method(POST));
         then.respond_with(move |req: &HttpMockRequest| {
             let body: serde_json::Value =
                 serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
@@ -160,13 +210,15 @@ pub fn setup_evm_mock(server: &MockServer) -> usize {
                 .build()
         });
     })
-    .id
+    .id;
+    register_unauthorized_catch_all(server, &auth);
+    mock_id
 }
 
-pub fn setup_starknet_mock(server: &MockServer) -> usize {
-    server
+pub fn setup_starknet_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
+    let mock_id = server
         .mock(|when, then| {
-            when.method(POST).path("/");
+            auth.apply(when.method(POST));
             then.respond_with(move |req: &HttpMockRequest| {
                 let body: serde_json::Value =
                     serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
@@ -195,7 +247,9 @@ pub fn setup_starknet_mock(server: &MockServer) -> usize {
                     .build()
             });
         })
-        .id
+        .id;
+    register_unauthorized_catch_all(server, &auth);
+    mock_id
 }
 
 fn starknet_receipt_result() -> serde_json::Value {

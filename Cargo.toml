@@ -79,7 +79,7 @@ test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 
-aes-gcm = "0.10.3"
+aes-gcm = "0.11.0"
 anyhow = "1.0.102"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"

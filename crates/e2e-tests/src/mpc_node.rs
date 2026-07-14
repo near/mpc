@@ -476,7 +476,7 @@ impl MpcNodeSetup {
                 triple: TripleConfig {
                     concurrency: 2,
                     desired_triples_to_buffer: self.triples_to_buffer,
-                    timeout_sec: 60,
+                    timeout_sec: 120,
                     parallel_triple_generation_stagger_time_sec: 1,
                 },
                 presignature: PresignatureConfig {
