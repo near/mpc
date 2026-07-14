@@ -238,8 +238,6 @@ impl Cli {
         match self.command {
             CliCommand::StartWithConfigFile { config_path } => {
                 let node_configuration = StartConfig::from_toml_file(&config_path)?;
-                // `ensure_near_initialized` runs inside `run_mpc_node` (after
-                // logging is initialized), before the indexer reads the config.
                 run_mpc_node(node_configuration).await
             }
             // TODO(#2334): deprecate this

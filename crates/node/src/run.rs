@@ -57,11 +57,8 @@ pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 *
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 
-    // Initialize/migrate the NEAR node config before anything reads it — in
-    // particular before `spawn_real_indexer` below loads and validates it (2.13
-    // rejects the deprecated `ExternalStorage` state sync on load). Kept here,
-    // after `init_logging`, so the migration's log lines are actually emitted.
-    // No-op for the legacy `start` path, whose `near_init` is None.
+    // Must run before `spawn_real_indexer` loads/validates the config, and
+    // after `init_logging` so its logs are emitted. No-op for the `start` path.
     config.ensure_near_initialized()?;
 
     // Log startup info
