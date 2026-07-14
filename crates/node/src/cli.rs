@@ -485,15 +485,15 @@ mod testing {
             number_of_responder_keys: 1,
             web_ui: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
-                PortSeed::CLI_FOR_PYTEST.web_port(index),
+                PortSeed::CLI_FOR_PYTEST.web_ui_port(index),
             ),
             migration_web_ui: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
-                PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+                PortSeed::CLI_FOR_PYTEST.migration_web_ui_port(index),
             ),
             pprof_bind_address: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
-                PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
+                PortSeed::CLI_FOR_PYTEST.pprof_port(index),
             ),
             indexer: IndexerConfig {
                 validate_genesis: true,

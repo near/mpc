@@ -218,21 +218,23 @@ impl MpcClusterConfig {
 
 ### 5. `E2ePortAllocator` — deterministic port layout
 
-Each test declares a `port_seed: u16`. Ports are computed as:
+Each test declares a `port_seed: u16` (the allocator's `test_id`). Ports are
+computed as:
 
 ```
-BASE_PORT (20000) + test_id * PORTS_PER_TEST + offset
+E2E_PORT_BASE (20000) + test_id * 82 + offset
 ```
 
-with `PORTS_PER_TEST = 2 + 10 * 8` (2 cluster ports + 8 per-node ports × 10
-maximum nodes). Cluster-level ports cover the sandbox RPC and network; per-node
+with 82 ports per test (2 cluster ports + 8 per-node ports × 10 maximum
+nodes), as fixed by `E2ePortSpace`'s `PortAllocationScheme`. Cluster-level ports cover the sandbox RPC and network; per-node
 ports cover p2p, web UI, migration web UI, pprof, and the node's internal
 neard RPC/network.
 
-The offset arithmetic is shared with the `mpc-node` integration tests via
-`test_port_allocator::PortAllocationScheme`; `E2ePortAllocator` only names the offsets.
-Its base (20000+) is kept disjoint from `PortSeed` (10000+) and
-`reserve_port` (40000+).
+The allocator and every accessor come from `test_port_allocator::TestPorts`;
+`E2ePortAllocator` is just `TestPorts<E2ePortSpace>`, the same generic type the
+`mpc-node` integration tests use via a different space marker (`PortSeed`). Each
+space fixes its own base — the e2e space's (20000+) is kept disjoint from
+`PortSeed` (10000+) and `reserve_port` (40000+).
 
 Centralising seeds in `tests/common.rs` (e.g. `CKD_VERIFICATION_PORT_SEED = 9`)
 keeps parallel tests from colliding. If a test crashes and leaves an orphan

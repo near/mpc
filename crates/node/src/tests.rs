@@ -24,7 +24,7 @@ use crate::indexer::handler::{
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
+use crate::p2p::testing::{PortSeed, TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -190,7 +190,7 @@ impl IntegrationTestSetup {
         participant_accounts: Vec<AccountId>,
         threshold: usize,
         txn_delay_blocks: u64,
-        port_seed: PortSeed,
+        port_seed: TestPorts<PortSeed>,
         block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
@@ -233,14 +233,14 @@ impl IntegrationTestSetup {
                     timeout_sec: 60,
                 },
                 number_of_responder_keys: 0,
-                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_port(i)),
+                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_ui_port(i)),
                 migration_web_ui: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
-                    port_seed.migration_web_port(i),
+                    port_seed.migration_web_ui_port(i),
                 ),
                 pprof_bind_address: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
-                    port_seed.pprof_web_port(i),
+                    port_seed.pprof_port(i),
                 ),
             };
             let secrets = SecretsConfig {

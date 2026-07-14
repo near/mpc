@@ -17,7 +17,7 @@ use crate::{
         types::MigrationInfo,
         web::{server::start_web_server, types::WebServerState},
     },
-    p2p::testing::PortSeed,
+    p2p::testing::{PortSeed, TestPorts},
 };
 
 pub struct TestSetup {
@@ -31,12 +31,12 @@ pub struct TestSetup {
     pub _tmpdir: TempDir,
 }
 
-pub async fn setup(port_seed: PortSeed) -> TestSetup {
+pub async fn setup(port_seed: TestPorts<PortSeed>) -> TestSetup {
     let backup_encryption_key = Aes256Gcm::generate_key(OsRng);
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);
 
-    let port: u16 = port_seed.migration_web_port(0);
+    let port: u16 = port_seed.migration_web_ui_port(0);
     let target_address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
