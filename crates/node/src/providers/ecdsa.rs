@@ -63,11 +63,8 @@ impl EcdsaSignatureProvider {
 
         // cait-sith triple generation runs with exactly `t` parties, so keep one store per distinct reconstruction threshold.
         let mut triple_stores = HashMap::new();
-        for data in keyshares.values() {
-            let t = data.reconstruction_threshold;
-            if triple_stores.contains_key(&t) {
-                continue;
-            }
+        for t in triple::distinct_thresholds(keyshares.values().map(|d| d.reconstruction_threshold))
+        {
             triple_stores.insert(
                 t,
                 Arc::new(TripleStorage::new(

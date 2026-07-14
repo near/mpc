@@ -23,6 +23,7 @@ use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
+use crate::providers::ecdsa::triple;
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
@@ -35,7 +36,6 @@ use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_mpc_contract_interface::call_args as contract_args;
-use near_mpc_contract_interface::types::DomainConfig;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -389,7 +389,7 @@ where
                 epoch_id: current_epoch_id,
                 participants: current_participants_config,
             };
-            let triple_thresholds = distinct_caitsith_triple_thresholds(&running_state.domains);
+            let triple_thresholds = triple::caitsith_triple_thresholds(&running_state.domains);
             delete_stale_triples_and_presignatures(
                 &secret_db,
                 current_epoch_data,
@@ -978,53 +978,4 @@ fn make_initializing_stop_fn(
             stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
         }),
     )
-}
-
-/// Distinct reconstruction thresholds `t` across the CaitSith domains — the only protocol that uses
-/// triples, which are keyed on disk by the `t` they were generated for.
-fn distinct_caitsith_triple_thresholds(domains: &[DomainConfig]) -> Vec<ReconstructionThreshold> {
-    let mut thresholds: Vec<ReconstructionThreshold> = domains
-        .iter()
-        .filter(|d| d.protocol == Protocol::CaitSith)
-        .map(|d| d.reconstruction_threshold)
-        .collect();
-    thresholds.sort();
-    thresholds.dedup();
-    thresholds
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::distinct_caitsith_triple_thresholds;
-    use mpc_primitives::ReconstructionThreshold;
-    use mpc_primitives::domain::{DomainId, Protocol};
-    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
-
-    fn domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
-        DomainConfig {
-            id: DomainId(id),
-            protocol,
-            reconstruction_threshold: ReconstructionThreshold::new(t),
-            purpose: DomainPurpose::Sign,
-        }
-    }
-
-    #[test]
-    fn distinct_caitsith_triple_thresholds__should_dedup_and_exclude_non_caitsith() {
-        // Given CaitSith domains with a duplicate `t` alongside non-CaitSith domains
-        let domains = [
-            domain(0, Protocol::CaitSith, 3),
-            domain(1, Protocol::CaitSith, 2),
-            domain(2, Protocol::CaitSith, 3),
-            domain(3, Protocol::DamgardEtAl, 5),
-            domain(4, Protocol::Frost, 4),
-        ];
-
-        // When / Then only the distinct CaitSith thresholds remain, sorted
-        assert_eq!(
-            distinct_caitsith_triple_thresholds(&domains),
-            [2, 3].map(ReconstructionThreshold::new)
-        );
-    }
 }

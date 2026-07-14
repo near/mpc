@@ -6,6 +6,7 @@ use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
 use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
 use serde::{self, Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -23,7 +24,7 @@ pub fn delete_stale_triples_and_presignatures(
     current_epoch_data: EpochData,
     my_participant_id: primitives::ParticipantId,
     ecdsa_domain_ds: Vec<DomainId>,
-    triple_thresholds: Vec<ReconstructionThreshold>,
+    triple_thresholds: BTreeSet<ReconstructionThreshold>,
 ) -> anyhow::Result<()> {
     let asset_cleanup: AssetCleanup = match get_epoch_data(db)? {
         None => AssetCleanup::Keep,
@@ -130,6 +131,7 @@ fn cleanup_behavior(
 mod tests {
     use crate::assets::cleanup::EpochData;
     use crate::assets::cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
+    use std::collections::BTreeSet;
     use crate::assets::test_utils;
     use crate::assets::test_utils::TestContext;
     use crate::assets::test_utils::get_participant_ids;
@@ -187,7 +189,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
         ctx.assert_owned(2);
@@ -205,7 +207,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
         ctx.assert_owned(1);
@@ -219,7 +221,7 @@ mod tests {
             end_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
 
@@ -264,7 +266,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
@@ -283,7 +285,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
 
@@ -330,7 +332,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
         start_data
@@ -344,7 +346,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
 
@@ -388,7 +390,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
         start_data
@@ -402,7 +404,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([threshold]),
         )
         .unwrap();
 
