@@ -388,8 +388,8 @@ pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
     }
 }
 
-/// Returns the domain running `protocol_type`, panicking if absent. Each
-/// protocol appears at most once per registry, so it identifies a unique domain.
+/// Returns the first domain running `protocol_type` (the registry allows
+/// duplicates), panicking if absent.
 pub fn must_get_domain(running: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
     running
         .domains
