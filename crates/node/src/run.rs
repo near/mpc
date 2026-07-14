@@ -2,7 +2,7 @@ use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
         generate_and_write_backup_encryption_key_to_disk,
-        start::{TeeAuthorityImpl as _, read_near_config_json},
+        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -56,6 +56,13 @@ pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 *
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
+
+    // Initialize/migrate the NEAR node config before anything reads it — in
+    // particular before `spawn_real_indexer` below loads and validates it (2.13
+    // rejects the deprecated `ExternalStorage` state sync on load). Kept here,
+    // after `init_logging`, so the migration's log lines are actually emitted.
+    // No-op for the legacy `start` path, whose `near_init` is None.
+    config.ensure_near_initialized()?;
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
