@@ -451,7 +451,7 @@ mod tests {
                 concurrency: 1,
                 desired_triples_to_buffer: 10,
                 parallel_triple_generation_stagger_time_sec: 1,
-                timeout_sec: 60,
+                timeout_sec: 120,
             },
             presignature: PresignatureConfig {
                 concurrency: 1,
