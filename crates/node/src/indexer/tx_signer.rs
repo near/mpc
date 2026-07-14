@@ -36,6 +36,7 @@ impl TransactionSigner {
         new_nonce
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub(crate) fn create_and_sign_function_call_tx(
         &self,
         receiver_id: AccountId,
