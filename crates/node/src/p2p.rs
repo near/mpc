@@ -966,7 +966,6 @@ pub mod testing {
         pub const TOTAL_PORTS_PER_NODE: u16 = 4;
 
         // Each place that passes a port seed in should define a unique one here.
-        pub const CLI_FOR_PYTEST: TestPorts<PortSeed> = TestPorts::new(0);
         pub const P2P_BASIC_TEST: TestPorts<PortSeed> = TestPorts::new(1);
         pub const P2P_WAIT_FOR_READY_TEST: TestPorts<PortSeed> = TestPorts::new(2);
         pub const BASIC_CLUSTER_TEST: TestPorts<PortSeed> = TestPorts::new(3);
@@ -1002,17 +1001,11 @@ pub mod testing {
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
         port_seed: TestPorts<PortSeed>,
-        // Supply `Some` value here if you want to use pre-existing p2p key pairs
-        p2p_keypairs: Option<Vec<SigningKey>>,
     ) -> anyhow::Result<Vec<(MpcConfig, SigningKey)>> {
-        let p2p_keypairs = if let Some(p2p_keypairs) = p2p_keypairs {
-            p2p_keypairs
-        } else {
-            participant_accounts
-                .iter()
-                .map(|_account_id| SigningKey::generate(&mut OsRng))
-                .collect::<Vec<_>>()
-        };
+        let p2p_keypairs = participant_accounts
+            .iter()
+            .map(|_account_id| SigningKey::generate(&mut OsRng))
+            .collect::<Vec<_>>();
         let mut participants = Vec::new();
         for (i, (participant_account, p2p_signing_key)) in participant_accounts
             .iter()
@@ -1074,7 +1067,6 @@ mod tests {
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
             PortSeed::P2P_BASIC_TEST,
-            None,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
@@ -1181,7 +1173,6 @@ mod tests {
             ],
             4,
             PortSeed::P2P_WAIT_FOR_READY_TEST,
-            None,
         )
         .unwrap();
 
@@ -1306,7 +1297,6 @@ mod tests {
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
             PortSeed::RECONNECTION_TEST,
-            None,
         )
         .unwrap();
 
