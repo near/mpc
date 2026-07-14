@@ -1013,7 +1013,6 @@ pub mod testing {
         pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
         pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
-        pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST: Self = Self::new(23);
         pub const RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST: Self = Self::new(24);
         pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: Self = Self::new(25);
         pub const RECONSTRUCTION_THRESHOLD_CHANGE_TEST: Self = Self::new(26);
