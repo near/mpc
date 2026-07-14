@@ -8,17 +8,13 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::common::sign_domain;
 use crate::tests::{
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
-    request_signature_and_await_response,
+    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    IntegrationTestSetup, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
 use near_mpc_contract_interface::types::{DomainConfig, Protocol, ReconstructionThreshold};
 use near_time::Clock;
 use std::collections::BTreeMap;
-
-// Slow enough that the DamgardEtAl domains don't flake (matches the existing
-// distinct-reconstruction-thresholds test).
-const BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(600);
 
 async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
@@ -73,7 +69,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST,
-        BLOCK_TIME,
+        DEFAULT_BLOCK_TIME,
     );
 
     // low needs 2 online, high needs 4 online, robust (DamgardEtAl) needs 2*3-1 = 5 online.
@@ -147,7 +143,7 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::RECONSTRUCTION_THRESHOLD_RESHARING_TEST,
-        BLOCK_TIME,
+        DEFAULT_BLOCK_TIME,
     );
 
     // low needs 2 online, mid (Frost) needs 3 online, high needs 4 online.
@@ -244,7 +240,7 @@ async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key
         THRESHOLD,
         TXN_DELAY_BLOCKS,
         PortSeed::RECONSTRUCTION_THRESHOLD_CHANGE_TEST,
-        BLOCK_TIME,
+        DEFAULT_BLOCK_TIME,
     );
 
     let domain = sign_domain(0, Protocol::CaitSith, 4);
