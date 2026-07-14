@@ -2,7 +2,7 @@ use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
         generate_and_write_backup_encryption_key_to_disk,
-        start::{TeeAuthorityImpl as _, read_near_config_json},
+        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -54,6 +54,10 @@ pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 *
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
+
+    // Must run before `spawn_real_indexer` loads/validates the config, and
+    // after `init_logging` so its logs are emitted. No-op for the `start` path.
+    config.ensure_near_initialized()?;
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
