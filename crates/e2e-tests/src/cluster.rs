@@ -6,12 +6,15 @@ use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
-    ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
-    Threshold, ThresholdParameters,
+use near_mpc_contract_interface::{
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR,
+    method_names,
+    types::{
+        AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
+        Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
+        ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
+        Threshold, ThresholdParameters,
+    },
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -46,6 +49,9 @@ const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1)
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
 const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const SUBMIT_PARTICIPANT_INFO_DEPOSIT: near_kit::NearToken =
+    near_kit::NearToken::from_yoctonear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR);
+const SUBMIT_PARTICIPANT_INFO_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
@@ -1186,13 +1192,15 @@ async fn init_contract(
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
-            .call_from(
+            .call_from_with_deposit(
                 &client,
                 method_names::SUBMIT_PARTICIPANT_INFO,
                 json!({
                     "proposed_participant_attestation": { "Mock": "Valid" },
                     "tls_public_key": pubkey,
                 }),
+                SUBMIT_PARTICIPANT_INFO_GAS,
+                SUBMIT_PARTICIPANT_INFO_DEPOSIT,
             )
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;

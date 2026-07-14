@@ -6,14 +6,17 @@ use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
-use near_indexer_primitives::types::Gas;
-use near_mpc_contract_interface::call_args as contract_args;
-use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
-    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
-    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+use near_indexer_primitives::types::{Balance, Gas};
+use near_mpc_contract_interface::{
+    call_args as contract_args,
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR,
+    method_names::{
+        CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
+        START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
+        VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+    },
+    types::{self as dtos},
 };
-use near_mpc_contract_interface::types::{self as dtos};
 use serde::Serialize;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -119,6 +122,15 @@ impl ChainSendTransactionRequest {
             | Self::SubmitParticipantInfo { .. }
             | Self::ConcludeNodeMigration(_)
             | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
+        }
+    }
+
+    pub fn deposit_required(&self) -> Balance {
+        match self {
+            Self::SubmitParticipantInfo { .. } => {
+                Balance::from_yoctonear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR)
+            }
+            _ => Balance::from_yoctonear(0),
         }
     }
 }

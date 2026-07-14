@@ -11,13 +11,14 @@ use chain_gateway::{
     types::FunctionCallArgs,
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::call_args as contract_args;
-use near_mpc_contract_interface::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
-    VERIFY_TEE,
-};
-use near_mpc_contract_interface::types::{
-    AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey,
+use near_mpc_contract_interface::{
+    call_args as contract_args,
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR,
+    method_names::{
+        ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
+        VERIFY_TEE,
+    },
+    types::{AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey},
 };
 use serde::Deserialize;
 use tokio::sync::watch;
@@ -133,7 +134,7 @@ where
                     method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
                     args: args_json,
                     gas: SUBMIT_ATTESTATION_GAS,
-                    deposit: NearToken::from_yoctonear(0),
+                    deposit: NearToken::from_yoctonear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR),
                 },
             )
             .await

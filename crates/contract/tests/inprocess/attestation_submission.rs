@@ -12,11 +12,13 @@ use mpc_contract::{
     },
     tee::tee_state::{AttestationSubmissionError, NodeId},
 };
-use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
-    ReconstructionThreshold,
+use near_mpc_contract_interface::{
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR,
+    types::{
+        Attestation, DomainConfig, DomainId, DomainPurpose, InitConfig, MockAttestation, Protocol,
+        ProtocolContractState, ReconstructionThreshold,
+    },
 };
-use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
 use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
@@ -28,7 +30,8 @@ use std::{str::FromStr, time::Duration};
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
-const ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_near(1);
+const ATTESTATION_STORAGE_DEPOSIT: NearToken =
+    NearToken::from_yoctonear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_YOCTONEAR);
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;

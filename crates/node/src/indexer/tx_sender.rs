@@ -10,7 +10,7 @@ use crate::types::{
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
+use near_indexer_primitives::types::{Balance, Gas};
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
 use near_time::Clock;
 use std::future::Future;
@@ -148,6 +148,7 @@ async fn submit_tx(
     method: String,
     params_ser: String,
     gas: Gas,
+    deposit: Balance,
 ) -> anyhow::Result<SubmittedTxMetadata> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
@@ -156,6 +157,7 @@ async fn submit_tx(
         method,
         params_ser.into(),
         gas,
+        deposit,
         block.header.hash,
         block.header.height,
     );
@@ -340,6 +342,7 @@ async fn ensure_send_transaction(
         method.to_string(),
         params_ser.clone(),
         request.gas_required(),
+        request.deposit_required(),
     )
     .await;
 
