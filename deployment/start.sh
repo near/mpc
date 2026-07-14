@@ -43,7 +43,25 @@ config['store']['load_mem_tries_for_tracked_shards'] = True
 if "$MPC_ENV" == "mpc-localnet":
     config['state_sync_enabled'] = False
 else:
-    config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
+    # Decentralized (peer-to-peer) state sync. Centralized (ExternalStorage)
+    # state sync is deprecated and rejected by nearcore 2.13, which exits on
+    # startup if it is present. Overwrite only the 'sync' value (any sibling
+    # state_sync fields, e.g. parts_compression_lvl, are preserved). The
+    # get-or-empty-dict below covers every observed shape: an ExternalStorage
+    # block, an absent state_sync (current download default), a null
+    # state_sync, or already Peers.
+    state_sync = config.get('state_sync') or {}
+    state_sync['sync'] = 'Peers'
+    config['state_sync'] = state_sync
+    # Decentralized state sync needs a reachable advertised IP:24567 or it
+    # stalls silently; set it when the deployment provides one.
+    tier3 = "$MPC_TIER3_PUBLIC_ADDR"
+    if tier3:
+        network = config.get('network') or {}
+        experimental = network.get('experimental') or {}
+        experimental['tier3_public_addr'] = tier3
+        network['experimental'] = experimental
+        config['network'] = network
 
 # Track whichever shard the contract account is on.
 config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
@@ -186,6 +204,13 @@ if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
 else
     echo "Initializing Near node"
     initialize_near_node "$MPC_HOME_DIR" && echo "Near node initialized"
+fi
+
+# MPC_TIER3_PUBLIC_ADDR is optional: nodes that are already publicly reachable
+# don't need it. Nodes behind NAT / not otherwise reachable must set it, or
+# decentralized state sync (set below) stalls silently. Log which case applies.
+if [ "$MPC_ENV" != "mpc-localnet" ] && [ -z "$MPC_TIER3_PUBLIC_ADDR" ]; then
+    echo "INFO: MPC_TIER3_PUBLIC_ADDR is not set; decentralized state sync will rely on auto-detected addresses. Set it to a reachable IP:24567 if this node is not otherwise publicly reachable."
 fi
 
 # Update the Near node config with the MPC ENV variables values
