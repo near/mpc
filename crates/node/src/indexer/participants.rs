@@ -33,12 +33,13 @@ pub fn convert_key_event_to_instance(
         .map(TryInto::try_into)
         .collect::<Result<_, _>>()?;
 
-    // Reshare to the new threshold: the contract carries the update only in
-    // `per_domain_thresholds`, not on the key event's own domain.
+    // `per_domain_thresholds` holds only *changed* thresholds; a domain with no
+    // entry (and the initializing path's empty map) keeps its key event's own.
     let mut domain = key_event.domain.clone();
-    if let Some(new_threshold) = per_domain_thresholds.get(&domain.id) {
-        domain.reconstruction_threshold = *new_threshold;
-    }
+    domain.reconstruction_threshold = per_domain_thresholds
+        .get(&domain.id)
+        .copied()
+        .unwrap_or(domain.reconstruction_threshold);
 
     Ok(match &key_event.instance {
         Some(current_instance) if current_height < current_instance.expires_on => {
