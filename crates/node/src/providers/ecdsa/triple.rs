@@ -135,6 +135,13 @@ impl EcdsaSignatureProvider {
                     }
                 };
 
+                // The follower derives the store's `t` from the channel size (see `run_triple_generation_follower`), so pair exactly `t`.
+                debug_assert_eq!(
+                    participants.len(),
+                    threshold.value(),
+                    "triple routing infers t from channel size (see run_triple_generation_follower)"
+                );
+
                 let id_start = triple_store
                     .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
                 let task_id = EcdsaTaskId::ManyTriples {
