@@ -33,7 +33,7 @@ const ATTESTATION_STORAGE_DEPOSIT: NearToken =
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;
-const DEFAUTL_CONTRACT_PROTOCOL_STATE: ContractProtocolState = ContractProtocolState::Running;
+const DEFAULT_CONTRACT_PROTOCOL_STATE: ContractProtocolState = ContractProtocolState::Running;
 
 enum ContractProtocolState {
     Running,
@@ -58,7 +58,7 @@ impl TestSetupBuilder {
         }
     }
 
-    fn with_partcipant_count(mut self, participant_count: usize) -> Self {
+    fn with_participant_count(mut self, participant_count: usize) -> Self {
         self.participant_count = Some(participant_count);
         self
     }
@@ -71,6 +71,13 @@ impl TestSetupBuilder {
     fn with_init_config(mut self, init_config: InitConfig) -> Self {
         self.init_config = Some(init_config);
         self
+    }
+
+    fn with_tee_upgrade_grace_period_seconds(self, seconds: u64) -> Self {
+        self.with_init_config(InitConfig {
+            tee_upgrade_deadline_duration_seconds: Some(seconds),
+            ..Default::default()
+        })
     }
 
     fn with_contract_protocol_state(
@@ -86,7 +93,7 @@ impl TestSetupBuilder {
         let threshold = self.threshold.unwrap_or(DEFAULT_THRESHOLD_SIZE);
         let contract_protocol_state = self
             .contract_protocol_state
-            .unwrap_or(DEFAUTL_CONTRACT_PROTOCOL_STATE);
+            .unwrap_or(DEFAULT_CONTRACT_PROTOCOL_STATE);
 
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
@@ -225,14 +232,8 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     const PARTICIPANT_COUNT: usize = 2;
     const THRESHOLD: u64 = 2;
 
-    testing_env!(
-        VMContextBuilder::new()
-            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
-            .build()
-    );
-
     let mut setup = TestSetupBuilder::new()
-        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_participant_count(PARTICIPANT_COUNT)
         .with_threshold(THRESHOLD)
         .build();
 
@@ -311,28 +312,15 @@ fn clean_tee_status__should_not_touch_attestations() {
     const PARTICIPANT_COUNT: usize = 2; // After resharing removed one participant
     const THRESHOLD: u64 = 2;
 
-    testing_env!(
-        VMContextBuilder::new()
-            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
-            .build()
-    );
-
     // Create contract in Running state with 2 current participants
     let mut setup = TestSetupBuilder::new()
-        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_participant_count(PARTICIPANT_COUNT)
         .with_threshold(THRESHOLD)
         .build();
 
     // Submit TEE info for current 2 participants (all have valid attestations)
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-    let participant_nodes: Vec<NodeId> = setup
-        .participants_list
-        .iter()
-        .take(PARTICIPANT_COUNT)
-        .map(|(account_id, _, participant_info)| {
-            create_node_id(account_id, &participant_info.tls_public_key)
-        })
-        .collect();
+    let participant_nodes = setup.get_participant_node_ids();
     for node_id in &participant_nodes {
         setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
@@ -348,12 +336,11 @@ fn clean_tee_status__should_not_touch_attestations() {
         INITIAL_TEE_ACCOUNTS
     );
 
-    let running_state = match setup.contract.state() {
-        ProtocolContractState::Running(r) => r,
-        _ => panic!("Should be in Running state"),
-    };
-    let participant_count = running_state.parameters.participants.participants.len();
-    assert_eq!(participant_count, PARTICIPANT_COUNT);
+    assert_matches!(
+        setup.contract.state(),
+        ProtocolContractState::Running(r)
+            if r.parameters.participants.participants.len() == PARTICIPANT_COUNT
+    );
 
     // When: clean_tee_status runs.
     setup.contract.clean_tee_status().unwrap();
@@ -365,17 +352,10 @@ fn clean_tee_status__should_not_touch_attestations() {
     );
 
     // State should remain Running with same participant count
-    let final_running_state = match setup.contract.state() {
-        ProtocolContractState::Running(r) => r,
-        _ => panic!("Should still be Running after cleanup"),
-    };
-    assert_eq!(
-        final_running_state
-            .parameters
-            .participants
-            .participants
-            .len(),
-        PARTICIPANT_COUNT
+    assert_matches!(
+        setup.contract.state(),
+        ProtocolContractState::Running(r)
+            if r.parameters.participants.participants.len() == PARTICIPANT_COUNT
     );
 }
 
@@ -390,15 +370,8 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     const EXPIRY_SECONDS: u64 = 1_000;
     const NOW_NS: u64 = 5_000 * NANOS_IN_SECOND;
 
-    testing_env!(
-        VMContextBuilder::new()
-            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
-            .block_timestamp(0)
-            .build()
-    );
-
     let mut setup = TestSetupBuilder::new()
-        .with_partcipant_count(PARTICIPANT_COUNT)
+        .with_participant_count(PARTICIPANT_COUNT)
         .with_threshold(THRESHOLD)
         .build();
 
@@ -412,10 +385,7 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     // init_running seeds one mock `Valid` attestation per participant. Overwrite the
     // first participant's entry with an expiring one, and add a brand-new entry for an
     // outsider account.
-    let participant_node = {
-        let (account_id, _, info) = &setup.participants_list[0];
-        create_node_id(account_id, &info.tls_public_key)
-    };
+    let participant_node = setup.get_participant_node_ids()[0].clone();
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
 
     let stale_node = node_id_for(&"stale.near".parse().unwrap());
@@ -444,12 +414,6 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
 #[test]
 fn clean_invalid_attestations__should_reject_when_not_running() {
     // Given: contract sitting in Initializing state.
-    testing_env!(
-        VMContextBuilder::new()
-            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
-            .block_timestamp(0)
-            .build()
-    );
 
     let mut setup = TestSetupBuilder::new()
         .with_contract_protocol_state(ContractProtocolState::Initializing)
@@ -491,13 +455,8 @@ fn only_latest_hash_after_grace_period() {
     const SECOND_ENTRY_TIME_NS: u64 = 4 * NANOS_IN_SECOND; // 1s
     const GRACE_PERIOD_NS: u64 = 10 * NANOS_IN_SECOND; // 10s
 
-    let init_config = near_mpc_contract_interface::types::InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NS / NANOS_IN_SECOND),
-        ..Default::default()
-    };
-
     let mut setup = TestSetupBuilder::new()
-        .with_init_config(init_config)
+        .with_tee_upgrade_grace_period_seconds(GRACE_PERIOD_NS / NANOS_IN_SECOND)
         .build();
 
     let old_hash = [1; 32];
@@ -536,12 +495,8 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     const INITIAL_TIME: u64 = 1;
     const GRACE_PERIOD: u64 = 10;
 
-    let init_config = near_mpc_contract_interface::types::InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD),
-        ..Default::default()
-    };
     let mut setup = TestSetupBuilder::new()
-        .with_init_config(init_config)
+        .with_tee_upgrade_grace_period_seconds(GRACE_PERIOD)
         .build();
 
     let hash_1 = [1; 32];
@@ -579,13 +534,8 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     const THIRD_ENTRY_TIME_NS: u64 = 7 * NANOS_IN_SECOND;
     const GRACE_PERIOD_TIME_NS: u64 = 10 * NANOS_IN_SECOND;
 
-    let init_config = near_mpc_contract_interface::types::InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_TIME_NS / NANOS_IN_SECOND),
-        ..Default::default()
-    };
-
     let mut test_setup = TestSetupBuilder::new()
-        .with_init_config(init_config)
+        .with_tee_upgrade_grace_period_seconds(GRACE_PERIOD_TIME_NS / NANOS_IN_SECOND)
         .build();
 
     let first_code_hash = [1; 32];
@@ -659,12 +609,8 @@ fn latest_image_never_expires_if_its_not_superseded() {
     const START_TIME_SECONDS: u64 = 1;
     const GRACE_PERIOD_SECONDS: u64 = 10;
 
-    let init_config = near_mpc_contract_interface::types::InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
-        ..Default::default()
-    };
     let mut test_setup = TestSetupBuilder::new()
-        .with_init_config(init_config)
+        .with_tee_upgrade_grace_period_seconds(GRACE_PERIOD_SECONDS)
         .build();
 
     let only_image_code_hash = [123; 32];
@@ -718,12 +664,8 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     const GRACE_PERIOD_NANOS: u64 = GRACE_PERIOD_SECONDS * NANOS_IN_SECOND;
     const HASH_DEPLOYMENT_INTERVAL_NANOS: u64 = 3 * NANOS_IN_SECOND;
 
-    let init_config = near_mpc_contract_interface::types::InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
-        ..Default::default()
-    };
     let mut test_setup = TestSetupBuilder::new()
-        .with_init_config(init_config)
+        .with_tee_upgrade_grace_period_seconds(GRACE_PERIOD_SECONDS)
         .build();
 
     let hash_v1 = [1; 32]; // Original version
