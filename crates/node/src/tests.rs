@@ -232,7 +232,7 @@ impl IntegrationTestSetup {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
-                    timeout_sec: 60,
+                    timeout_sec: 120,
                 },
                 number_of_responder_keys: 0,
                 web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_port(i)),

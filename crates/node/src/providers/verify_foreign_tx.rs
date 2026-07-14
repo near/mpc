@@ -17,9 +17,11 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{FanOut, RpcAuthentication};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
@@ -43,6 +45,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
+    pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -75,6 +78,23 @@ impl ForeignChainInspectors<HttpClient> {
                 let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
                 Ok(new_inspector(client))
             }
+        }
+
+        fn new_sui_inspector(
+            url: String,
+            rpc_auth: RpcAuthentication,
+            timeout: Duration,
+        ) -> anyhow::Result<SuiInspector<GrpcSuiClient>> {
+            let auth_header = match rpc_auth {
+                RpcAuthentication::KeyInUrl => None,
+                RpcAuthentication::CustomHeader {
+                    header_name,
+                    header_value,
+                } => Some((header_name, header_value)),
+            };
+            let client = GrpcSuiClient::new(url, auth_header, timeout)
+                .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))?;
+            Ok(SuiInspector::new(client))
         }
 
         fn new_aptos_inspector(
@@ -124,6 +144,7 @@ impl ForeignChainInspectors<HttpClient> {
                 with_http_client(PolygonInspector::new),
             )?,
             aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
+            sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
         })
     }
 }

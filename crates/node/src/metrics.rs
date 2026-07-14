@@ -30,6 +30,9 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
         prometheus::register_histogram!(
             "near_mpc_triples_generation_time_elapsed",
             "Time taken to generate a batch of triples",
+            // Batch generation takes tens of seconds, up to the configured
+            // timeout; the default buckets top out at 10s.
+            vec![5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 240.0],
         )
         .unwrap()
     });
