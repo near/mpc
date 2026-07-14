@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+bs58 = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
@@ -14,6 +15,7 @@ jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
+sui-sdk-types = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
