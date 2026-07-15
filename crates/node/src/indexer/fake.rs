@@ -1,6 +1,5 @@
 use super::IndexerAPI;
 use super::ReadAttestationExpiry;
-use super::ReadSupportedForeignChain;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
@@ -60,11 +59,6 @@ pub struct FakeMpcContractState {
     pub migration_service: NodeMigrations,
 }
 
-#[derive(Clone)]
-pub struct FakeReadSupportedForeignChain {
-    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
-}
-
 struct FakeAttestationExpiryReader;
 
 impl ReadAttestationExpiry for FakeAttestationExpiryReader {
@@ -74,17 +68,6 @@ impl ReadAttestationExpiry for FakeAttestationExpiryReader {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
     {
         Box::pin(async { Ok(None) })
-    }
-}
-
-impl ReadSupportedForeignChain for FakeReadSupportedForeignChain {
-    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
-        Ok(self
-            .contract
-            .lock()
-            .await
-            .supported_foreign_chains()
-            .clone())
     }
 }
 
@@ -1173,7 +1156,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
+        IndexerAPI<MockTransactionSender>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1195,9 +1178,6 @@ impl FakeIndexerManager {
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
-        let foreign_chain_policy_reader = FakeReadSupportedForeignChain {
-            contract: self.contract.clone(),
-        };
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
@@ -1208,7 +1188,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
-            foreign_chain_policy_reader,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };

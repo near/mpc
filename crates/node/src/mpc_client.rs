@@ -1,4 +1,3 @@
-use crate::indexer::ReadSupportedForeignChain;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -49,7 +48,7 @@ const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
-pub struct MpcClient<ForeignChainPolicyReader> {
+pub struct MpcClient {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
@@ -59,7 +58,7 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
-    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
+    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
     domain_to_protocol: HashMap<DomainId, Protocol>,
     /// Lower-priority runtime for CPU-heavy asset generation.
     gen_runtime_handle: tokio::runtime::Handle,
@@ -109,10 +108,7 @@ async fn run_led_computation<T>(
     result
 }
 
-impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: ReadSupportedForeignChain + 'static,
-{
+impl MpcClient {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
@@ -124,7 +120,7 @@ where
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
-        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
+        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
         domain_to_protocol: HashMap<DomainId, Protocol>,
         gen_runtime_handle: tokio::runtime::Handle,
     ) -> Self {
@@ -638,7 +634,7 @@ where
 
     async fn monitor_passive_channels_inner(
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        mpc_client: Arc<MpcClient<ForeignChainPolicyReader>>,
+        mpc_client: Arc<MpcClient>,
     ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Some(channel) = channel_receiver.recv().await {
