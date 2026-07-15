@@ -1,3 +1,4 @@
+use super::foreign_chain::monitor_foreign_chain_supporters;
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
@@ -80,6 +81,8 @@ pub fn spawn_real_indexer(
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
+    let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
+        watch::channel(Default::default());
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -221,6 +224,11 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
+            tokio::spawn(monitor_foreign_chain_supporters(
+                foreign_chain_supporters_sender,
+                indexer_state.clone(),
+            ));
+
             let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
                 watch::channel(std::collections::BTreeMap::new());
             tokio::spawn(monitor_allowed_foreign_chain_providers(
@@ -342,6 +350,7 @@ pub fn spawn_real_indexer(
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
         foreign_chain_policy_reader,
+        foreign_chain_supporters_receiver,
         attestation_reader,
     }
 }

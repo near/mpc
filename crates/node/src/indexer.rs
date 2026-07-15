@@ -18,9 +18,9 @@ use near_indexer_primitives::{
 };
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    GET_ATTESTATION, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
-    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS,
-    MIGRATION_INFO, STATE,
+    GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+    GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
@@ -32,6 +32,7 @@ use tokio::sync::{
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
+pub mod foreign_chain;
 pub mod handler;
 pub mod migrations;
 pub mod near_data_wipe;
@@ -268,6 +269,22 @@ impl IndexerViewClient {
             .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS)
             .await?;
         Ok(policy)
+    }
+
+    pub(crate) async fn get_foreign_chains_configs(
+        &self,
+        mpc_contract_id: &AccountId,
+    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
+        self.get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
+            .await
+    }
+
+    pub(crate) async fn get_available_chains(
+        &self,
+        mpc_contract_id: &AccountId,
+    ) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
+        self.get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
+            .await
     }
 
     /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
@@ -604,6 +621,14 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+
+    /// Watcher that tracks the contract's available foreign chains and their
+    /// registered supporters (by TLS key).
+    #[expect(
+        dead_code,
+        reason = "consumed once the verify-foreign-tx provider switches to the new API"
+    )]
+    pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
 
     pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }
