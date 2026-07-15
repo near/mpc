@@ -95,19 +95,20 @@ run if any artifact is missing.
 ### 3. Verify the build is reproducible
 
 **Do this before publishing (step 5) — publishing creates the git tag and is
-effectively irreversible.** Confirm the artifacts CI built match a local
+effectively irreversible.** Confirm the CI-built artifacts match a local
 reproducible build, so the released `:X.Y.Z` images and contract WASM are
 exactly what the source produces:
 
 - **Contract WASM** — build via the reproducible path and compare its hash to
-  the CI `contract` artifact:
+  the CI `contract` artifact (builds from committed git state, so commit first):
   ```sh
-  nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+  cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
   ```
-- **Docker images** — rebuild with `repro-env` and compare the digests to the
-  CI-pushed `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`:
+- **Docker images** — compare the digests in the draft release to the ones
+  produced locally (with no flags the script builds and prints digests for all
+  three images):
   ```sh
-  ./deployment/build-images.sh --node --rust-launcher
+  ./deployment/build-images.sh
   ```
 
 See [reproducible builds](./docs/reproducible-builds.md) for the full
