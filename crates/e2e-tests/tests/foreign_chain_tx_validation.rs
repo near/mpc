@@ -289,20 +289,6 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             expected_chains,
             available_set
         );
-        // The nodes dual-write, so the legacy view must stay in lockstep until
-        // the deprecated API is dropped.
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
-            .await
-            .context("failed to view supported chains")?;
-        let supported_set: std::collections::BTreeSet<ForeignChain> =
-            supported.iter().copied().collect();
-        anyhow::ensure!(
-            supported_set == expected_chains,
-            "expected supported chains {:?}, got {:?}",
-            expected_chains,
-            supported_set
-        );
         Ok(())
     })
     .retry(

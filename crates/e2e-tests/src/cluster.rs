@@ -855,45 +855,6 @@ impl MpcCluster {
             )
             .await
     }
-    /// View the foreign chains the contract accepts requests for.
-    pub async fn view_foreign_chains_supported_by_contract(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
-        self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
-            .await
-    }
-
-    /// View the per-node foreign chain configurations registered with the contract.
-    pub async fn view_foreign_chain_configurations(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-            .await
-    }
-
-    /// Register foreign chain support on the contract for a specific node.
-    pub async fn register_foreign_chain_config(
-        &self,
-        node_index: usize,
-        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let node = &self.nodes[node_index];
-        let client = self
-            .blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
-        self.contract
-            .call_from(
-                &client,
-                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
-                json!({
-                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
-                }),
-            )
-            .await
-    }
-
     /// View the available foreign chains (threshold-covered + whitelisted).
     pub async fn view_available_foreign_chains(
         &self,

@@ -50,10 +50,6 @@ pub struct FakeMpcContractState {
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
-    // Legacy foreign-chain model, fed by the legacy registration; the node's
-    // read path still depends on it. TODO(#3630): drop with the legacy API.
-    supported_foreign_chains: dtos::SupportedForeignChains,
-    supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
     /// Mirrors the real indexer's foreign-chain supporters watch channel.
@@ -88,21 +84,11 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
-            supported_foreign_chains: dtos::SupportedForeignChains::default(),
-            supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
             foreign_chain_supporters_sender: watch::channel(Default::default()).0,
             migration_service: NodeMigrations::default(),
         }
-    }
-
-    pub fn supported_foreign_chains(&self) -> &dtos::SupportedForeignChains {
-        &self.supported_foreign_chains
-    }
-
-    pub fn supported_foreign_chains_by_node(&self) -> &dtos::ForeignChainSupportByNode {
-        &self.supported_foreign_chains_by_node
     }
 
     pub fn available_foreign_chains(&self) -> &dtos::AvailableForeignChains {
@@ -111,71 +97,6 @@ impl FakeMpcContractState {
 
     pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
         &self.foreign_chains_configs
-    }
-
-    /// Legacy registration, mirroring the old contract rule: a chain is
-    /// supported only when every active participant registered it.
-    /// TODO(#3630): drop with the legacy API.
-    #[expect(deprecated)]
-    pub fn register_foreign_chain_config(
-        &mut self,
-        account_id: AccountId,
-        local_foreign_chain_config: dtos::ForeignChainConfiguration,
-    ) {
-        let ProtocolContractState::Running(state) = &self.state else {
-            tracing::info!(
-                "register_foreign_chain_config transaction ignored because the contract is not in running state"
-            );
-            return;
-        };
-
-        let participants = state.parameters.participants().participants();
-
-        let is_participant = participants
-            .iter()
-            .any(|(participant_id, _, _)| participant_id == &account_id);
-
-        if !is_participant {
-            tracing::info!(
-                "register_foreign_chain_config transaction ignored because signer is not a participant"
-            );
-            return;
-        }
-
-        let local_foreign_chain_support: dtos::SupportedForeignChains = local_foreign_chain_config
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .into();
-
-        self.supported_foreign_chains_by_node
-            .foreign_chain_support_by_node
-            .insert(account_id, local_foreign_chain_support);
-
-        // Derive supported_foreign_chains as intersection of all active participants' votes
-        let active_participant_account_ids: BTreeSet<dtos::AccountId> =
-            participants.iter().map(|(id, _, _)| id.clone()).collect();
-
-        let mut chain_to_supporters: BTreeMap<dtos::ForeignChain, BTreeSet<dtos::AccountId>> =
-            BTreeMap::new();
-        for (voter_id, chains) in &self
-            .supported_foreign_chains_by_node
-            .foreign_chain_support_by_node
-        {
-            for chain in chains.iter().copied() {
-                chain_to_supporters
-                    .entry(chain)
-                    .or_default()
-                    .insert(voter_id.clone());
-            }
-        }
-
-        self.supported_foreign_chains = chain_to_supporters
-            .into_iter()
-            .filter(|(_, supporters)| supporters.is_superset(&active_participant_account_ids))
-            .map(|(chain, _)| chain)
-            .collect::<BTreeSet<_>>()
-            .into();
     }
 
     /// The real endpoint authenticates via the TEE registry, which is
@@ -785,13 +706,6 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
                         contract.vote_reshared(account_id, Into::into(reshared.key_event_id));
-                    }
-                    ChainSendTransactionRequest::RegisterForeignChainConfig(args) => {
-                        let mut contract = contract.lock().await;
-                        contract.register_foreign_chain_config(
-                            account_id,
-                            args.foreign_chain_configuration,
-                        );
                     }
                     ChainSendTransactionRequest::RegisterForeignChainsConfig(args) => {
                         let mut contract = contract.lock().await;
