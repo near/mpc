@@ -4,11 +4,9 @@ version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 
-# Wire types shared between the `test-tee-verifier` stub contract and the
-# `mpc-contract` sandbox tests that drive it. A plain lib (no `#[near]`) so both
-# a contract crate and a test binary can depend on it without the duplicate-ABI
-# symbol / `--all-features` collision that importing the stub crate itself would
-# cause (see docs / the mpc-contract sandbox tests).
+# Wire types shared between the `test-tee-verifier` stub contract and the sandbox
+# tests that drive it. Kept as a plain (non-`#[near]`) lib so a test crate can depend
+# on it without pulling a contract's duplicate ABI symbol under `--all-features`.
 
 [features]
 # Mirrors the stub's `abi` feature: derives the borsh schema on the wire types so

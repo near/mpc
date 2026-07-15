@@ -1,10 +1,8 @@
 //! Wire types shared between the `test-tee-verifier` stub contract and the
 //! `mpc-contract` sandbox tests that drive it.
 //!
-//! Kept in a plain (non-`#[near]`) crate so both a contract crate and a test
-//! binary can depend on the same definition: importing the stub contract itself
-//! would emit a duplicate contract-ABI symbol and unify its `abi` feature under
-//! `cargo test --all-features`.
+//! Kept as a plain (non-`#[near]`) crate so a test crate can depend on it without
+//! pulling the stub contract's duplicate ABI symbol under `cargo test --all-features`.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
