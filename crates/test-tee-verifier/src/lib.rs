@@ -1,7 +1,6 @@
-//! Test-only stub of the `tee-verifier` contract.
-//!
-//! [`TestTeeVerifier::verify_quote`] returns a [`StubResponse`] fixed at init
-//! time instead of running real `dcap_qvl::verify`.
+//! Test-only stub of the `tee-verifier` contract: [`TestTeeVerifier::verify_quote`]
+//! returns a [`StubResponse`] chosen at init time instead of running DCAP quote
+//! verification, letting tests drive any verifier outcome deterministically.
 
 use near_sdk::{env, near};
 use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};

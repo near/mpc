@@ -1,27 +1,12 @@
-//! Sandbox tests for the async [`submit_participant_info`] flow that offloads
-//! DCAP verification to a separate tee-verifier contract.
+//! Sandbox tests for the async [`submit_participant_info`] flow that offloads DCAP
+//! verification to a separate tee-verifier contract.
 //!
-//! Each test deploys the `test-tee-verifier` stub, whose verify-quote returns a
-//! response the test picks instead of running real `dcap-qvl`, votes it in as the
-//! trusted verifier via [`vote_tee_verifier_change`], and then covers one branch
-//! of the promise-chain flow.
-//!
-//! A Dstack submission spawns `verify_quote` on the trusted verifier with
-//! [`MpcContract::resolve_verification`] chained as its callback. There is no
-//! yield-resume and no timeout: [`resolve_verification`] settles every outcome
-//! synchronously within the same chain.
-//!
-//! - verifier not configured → the submit tx fails synchronously with
-//!   [`TeeError::VerifierNotConfigured`], nothing stored.
-//! - [`StubResponse::Rejected`] → [`resolve_verification`] refunds the deposit and
-//!   fires `fail_attestation_submission`, which panics in a separate receipt to
-//!   fail the submitter's transaction; nothing stored.
-//! - stub panics (verifier unreachable) → the callback observes a failed promise,
-//!   resolves to [`TeeError::VerifierUnavailable`], and fails the same way.
-//!
-//! On failure the top-level submit call still returns its chained promise, so the
-//! failure surfaces on the chain's receipt outcomes
-//! ([`ExecutionFinalResult::failures`]), not on the top-level tx result.
+//! Each test deploys the `test-tee-verifier` stub (returning a picked response
+//! instead of running real `dcap-qvl`), votes it in as the trusted verifier, and
+//! covers one branch of the promise chain: a Dstack submission spawns `verify_quote`
+//! with [`MpcContract::resolve_verification`] chained as its callback, which settles
+//! every outcome synchronously. When a submission fails, the top-level `submit` tx still
+//! succeeds (it returned the chained promise); the error appears on one of the receipts.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -110,10 +95,9 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
     .unwrap()
 }
 
-/// Asserts a Dstack submission failed on the chain and left no committed state:
-/// the failure surfaces on a receipt (`fail_attestation_submission` panics in its
-/// own receipt), carries `expected_error`, nothing is stored, and the deposit is
-/// refunded.
+/// Asserts a Dstack submission failed cleanly: a receipt failed carrying
+/// `expected_error` (`fail_attestation_submission` panics in its own receipt), no
+/// attestation was stored, and the deposit was refunded.
 async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
     contract: &Contract,
@@ -204,10 +188,7 @@ async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_re
     // When: a Dstack attestation is submitted.
     let result = submit_dstack(&submitter, &contract).await;
 
-    // Then: resolve_verification refunds and fails the submission in a separate
-    // receipt; the failure is on the chain, not the top-level tx result. The
-    // stub wraps the reason in `VerifierError::DcapVerification`, whose Display
-    // prefixes "dcap verification failed: ".
+    // Then: the submission fails cleanly, reporting the verifier's rejection reason.
     assert_submission_failed_cleanly(
         &result,
         &contract,
@@ -230,8 +211,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_on_verifier_cras
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: the callback sees a failed promise, resolves to VerifierUnavailable,
-    // refunds, and fails the submission in a separate receipt. No timeout: the
-    // outcome settles synchronously within the same chain.
+    // refunds, and fails the submission in a separate receipt.
     assert_submission_failed_cleanly(
         &result,
         &contract,
@@ -252,11 +232,8 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
     // When: a Dstack attestation is submitted.
     let result = submit_dstack(&submitter, &contract).await;
 
-    // Then: the failure originates inside the callback (not from the verifier), yet still
-    // refunds and fails the submission in a separate receipt, storing nothing. Asserted inline
-    // rather than via assert_submission_failed_cleanly because the error is an
-    // InvalidAttestation (empty-allowlist rejection), not a TeeError; the empty allowed
-    // mpc-image-hash list is the first post-DCAP check to reject.
+    // Then: the callback's post-DCAP check rejects the (verified) quote. Asserted inline
+    // rather than via assert_submission_failed_cleanly since the error is not a TeeError.
     let failures = result.failures();
     assert!(
         !failures.is_empty(),
@@ -274,12 +251,8 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
     assert_deposit_refunded(&submitter, balance_before, &result).await;
 }
 
-// TODO(#3787): un-ignore once the fixture allowlist setup lands. A Verified
-// verdict routes through `verify_post_dcap_and_store`, whose allowlist checks
-// (fixture image/launcher hashes and measurements voted in, submitter using the
-// fixture keys) must pass before the attestation is stored. With an empty
-// allowlist the post-DCAP check fails and the submission is rejected instead of
-// stored, so the happy path cannot be exercised here yet.
+// TODO(#3787): un-ignore once the fixture allowlist setup lands; without it the
+// post-DCAP check rejects the quote, so the store happy path can't run here yet.
 #[ignore = "needs fixture allowlist setup to pass the post-DCAP checks; tracked in #3787"]
 #[tokio::test]
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
@@ -326,15 +299,9 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     );
 }
 
-// TODO(#3787): un-ignore once the fixture allowlist setup lands. To OOG,
-// `resolve_verification` must reach the heavy RTMR3 replay in the post-DCAP
-// checks, which needs the allowlist populated and the submitter using the fixture
-// keys. With an empty allowlist the post-DCAP check fails fast and
-// `resolve_verification` completes well under 1 TGas, re-testing the rejection
-// path instead. Under the promise-chain model an OOG rolls the whole callback
-// receipt back atomically: nothing is stored, the runtime refunds the attached
-// deposit to the predecessor, and `fail_attestation_submission` never fires, so
-// the chain still surfaces a failed receipt. No timeout is involved.
+// TODO(#3787): un-ignore once the fixture allowlist setup lands; without it the
+// post-DCAP check fails fast and resolve_verification never reaches the heavy work
+// needed to run it out of gas, so this re-tests the rejection path instead.
 #[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; tracked in #3787"]
 #[tokio::test]
 async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_verification_runs_out_of_gas()
