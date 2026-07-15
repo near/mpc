@@ -9,8 +9,8 @@ repository = "https://github.com/near/mpc"
 ignored = ["borsh"]
 
 [package.metadata.near.reproducible_build]
-image = "sourcescan/cargo-near:0.21.1-rust-1.93.0"
-image_digest = "sha256:79b789c81ba19ec30794a6b1046b02dcaf5c055994b22cc7c9af67ab5096b095"
+image = "sourcescan/cargo-near:0.21.1-rust-1.97.0"
+image_digest = "sha256:7ba2b3251f29e5d29fca1611cb5298fc44bafddcff8cab2e143b1e491da16633"
 passed_env = []
 container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked"]
 

@@ -481,7 +481,7 @@ mod tests {
 
         Ok(triples
             .into_iter()
-            .chain(passive_triples.await.unwrap().into_iter())
+            .chain(passive_triples.await.unwrap())
             .collect())
     }
 
