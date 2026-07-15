@@ -15,6 +15,7 @@ use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -24,6 +25,7 @@ use crate::{
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use near_mpc_contract_interface::types::{Payload, Tweak};
+use std::collections::HashSet;
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -58,8 +60,22 @@ impl VerifyForeignTxProvider {
         let domain_data = self
             .ecdsa_signature_provider
             .domain_data(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let requested_chain = foreign_tx_request.request.chain();
+
+        let chain_supporters = self.chain_supporters(&requested_chain);
+        let eligible_participants: Vec<ParticipantId> = self
+            .ecdsa_signature_provider
+            .alive_participant_ids()
+            .into_iter()
+            .filter(|participant_id| chain_supporters.contains(participant_id))
+            .collect();
+
+        let (presignature_id, presignature) = domain_data
+            .presignature_store
+            .take_owned_matching(eligible_participants)
+            .await;
         let participants = presignature.participants.clone();
+
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
                 id,
@@ -82,6 +98,17 @@ impl VerifyForeignTxProvider {
             .make_signature_leader_given_parameters(sign_request, presignature, channel)
             .await?;
         Ok(((response_payload, response.0), response.1))
+    }
+
+    /// Participants supporting `chain`; empty when the chain is unavailable or
+    /// lacks a signing quorum. Cloned so the watch borrow is not held across
+    /// awaits.
+    fn chain_supporters(&self, chain: &dtos::ForeignChain) -> HashSet<ParticipantId> {
+        self.supporters_by_foreign_chain
+            .borrow()
+            .get(chain)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub(super) async fn make_verify_foreign_tx_follower(
@@ -396,9 +423,8 @@ fn ensure_chain_is_available(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::ParticipantId;
     use assert_matches::assert_matches;
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::BTreeMap;
 
     fn bitcoin_supporters() -> SupportersByForeignChain {
         BTreeMap::from([(
