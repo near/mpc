@@ -1041,7 +1041,7 @@ fn make_initializing_stop_fn(
 
 #[cfg(test)]
 #[expect(non_snake_case)]
-mod stop_running_tests {
+mod tests {
     use super::{participants_change_requires_restart, peer_address_from_state, stop_running};
     use crate::config::{ParticipantInfo, ParticipantsConfig};
     use crate::indexer::participants::{
