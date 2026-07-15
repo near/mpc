@@ -8,7 +8,7 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            vote_add_launcher_hash, vote_for_hash,
+            total_gas_fee, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -260,6 +260,7 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -269,26 +270,29 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .await;
     let submitter = &mpc_signer_accounts[0];
     let balance_before = submitter.view_account().await?.balance;
+    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
 
-    let success = submit_participant_info(
+    let result = submit_participant_info(
         submitter,
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
         &p2p_tls_key().into(),
     )
-    .await?
-    .is_success();
-    assert!(success);
+    .await?;
+    assert!(result.is_success());
 
-    // The submission attaches 1 NEAR but the contract charges only the measured storage cost
-    // and refunds the rest, so net spend is storage + gas, well under any fraction of the
-    // deposit; a retained deposit (e.g. 0.5 NEAR) would exceed this ceiling.
+    // The caller's net spend must be exactly the measured storage stake plus the fee
+    // actually burnt: the storage entry is charged from the attached deposit and every
+    // other yoctoNEAR of the deposit is refunded.
+    let bytes_grown =
+        u128::from(worker.view_account(contract.id()).await?.storage_usage - storage_before);
+    assert!(bytes_grown > 0);
+    let storage_stake = near_sdk::env::storage_byte_cost().saturating_mul(bytes_grown);
     let balance_after = submitter.view_account().await?.balance;
-    let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
-    let refund_floor = NearToken::from_millinear(100).as_yoctonear();
-    assert!(
-        net_spent < refund_floor,
-        "excess deposit must be refunded (net spent {net_spent} yoctoNEAR should be storage + gas, < {refund_floor})"
+    let net_spent = balance_before.saturating_sub(balance_after);
+    assert_eq!(
+        net_spent,
+        storage_stake.saturating_add(total_gas_fee(&result))
     );
     Ok(())
 }
@@ -318,13 +322,10 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     assert!(!result.is_success());
 
     // Verify the error message indicates unauthorized access
-    match result.into_result() {
-        Err(failure) => {
-            let error_msg = format!("{:?}", failure);
-            assert!(error_msg.contains("Method clean_tee_status is private"));
-        }
-        Ok(_) => panic!("Call should have failed"),
-    }
+    let failure = result
+        .into_result()
+        .expect_err("clean_tee_status must reject a non-private caller");
+    assert!(format!("{failure:?}").contains("Method clean_tee_status is private"));
 
     Ok(())
 }
@@ -1053,8 +1054,6 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
 #[tokio::test]
 async fn submit_participant_info__should_store_new_attestation_and_charge_with_sufficient_deposit()
 -> Result<()> {
-    // Given: the sandbox storage price, 1e19 yocto per byte.
-    const STORAGE_COST_PER_BYTE: u128 = 10u128.pow(19);
     const ATTACHED_DEPOSIT: NearToken = NearToken::from_near(1);
     let SandboxTestSetup {
         worker, contract, ..
@@ -1091,17 +1090,13 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_with_s
     );
     let storage_after = worker.view_account(contract.id()).await?.storage_usage;
     let bytes_grown = storage_after - storage_before;
-    assert!(
-        bytes_grown > 0,
-        "contract storage should grow ({storage_before} -> {storage_after})"
-    );
+    assert!(bytes_grown > 0);
 
-    let storage_stake = NearToken::from_yoctonear(u128::from(bytes_grown) * STORAGE_COST_PER_BYTE);
+    // The caller's net spend must be exactly the measured storage stake plus the fee
+    // actually burnt; the rest of the attached deposit is refunded.
+    let storage_stake = near_sdk::env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
     let balance_after = outsider.view_account().await?.balance;
     let spent = balance_before.saturating_sub(balance_after);
-    assert!(
-        spent >= storage_stake,
-        "caller must be charged at least the storage stake ({storage_stake}) for {bytes_grown} new bytes, spent {spent}"
-    );
+    assert_eq!(spent, storage_stake.saturating_add(total_gas_fee(&result)));
     Ok(())
 }

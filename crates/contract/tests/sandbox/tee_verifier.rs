@@ -31,7 +31,7 @@ use crate::sandbox::{
         contract_build::stub_tee_verifier_contract,
         mpc_contract::{
             get_participant_attestation, submit_participant_info,
-            submit_participant_info_with_deposit, vote_tee_verifier_change,
+            submit_participant_info_with_deposit, total_gas_fee, vote_tee_verifier_change,
         },
     },
 };
@@ -139,7 +139,18 @@ async fn assert_submission_failed_cleanly(
         .await
         .unwrap();
     assert!(stored.is_none(), "nothing should be stored on failure");
-    assert_deposit_refunded(submitter, balance_before).await;
+    assert_deposit_refunded(submitter, balance_before, result).await;
+}
+
+/// Asserts the deposit was fully refunded: with nothing stored, the caller spends only gas.
+async fn assert_deposit_refunded(
+    account: &Account,
+    balance_before: NearToken,
+    result: &ExecutionFinalResult,
+) {
+    let balance_after = account.view_account().await.unwrap().balance;
+    let net_spent = balance_before.saturating_sub(balance_after);
+    assert_eq!(net_spent, total_gas_fee(result));
 }
 
 #[tokio::test]
@@ -260,7 +271,7 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
         .await
         .unwrap();
     assert!(stored.is_none(), "nothing should be stored on failure");
-    assert_deposit_refunded(&submitter, balance_before).await;
+    assert_deposit_refunded(&submitter, balance_before, &result).await;
 }
 
 // TODO(#3787): un-ignore once the fixture allowlist setup lands. A Verified
@@ -274,8 +285,13 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given: a verifier that returns the report the real verifier would produce
     // for the fixture quote.
-    let (_worker, contract, submitter, balance_before) =
+    let (worker, contract, submitter, balance_before) =
         setup_with_stub(StubResponse::Verified(verified_report()), None).await;
+    let storage_before = worker
+        .view_account(contract.id())
+        .await
+        .unwrap()
+        .storage_usage;
 
     // When: a Dstack attestation is submitted.
     let result = submit_dstack(&submitter, &contract).await;
@@ -292,19 +308,21 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
         .unwrap();
     assert!(stored.is_some(), "a verified attestation must be stored");
 
-    // Bound net spend both sides: storage was charged (> 0), but the excess was
-    // refunded (< floor). The upper bound catches a wrongly-retained deposit.
+    // The caller's net spend must be exactly the measured storage stake plus the fee
+    // actually burnt; the rest of the SUBMIT_DEPOSIT is refunded.
+    let storage_after = worker
+        .view_account(contract.id())
+        .await
+        .unwrap()
+        .storage_usage;
+    let bytes_grown = u128::from(storage_after - storage_before);
+    assert!(bytes_grown > 0);
+    let storage_stake = near_sdk::env::storage_byte_cost().saturating_mul(bytes_grown);
     let balance_after = submitter.view_account().await.unwrap().balance;
-    let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
-    let refund_floor = NearToken::from_millinear(100).as_yoctonear();
-    assert!(
-        net_spent > 0,
-        "storage must be charged from the attached deposit"
-    );
-    assert!(
-        net_spent < refund_floor,
-        "excess deposit must be refunded (net spent {net_spent} yoctoNEAR should be \
-         storage + gas, < {refund_floor}); a retained {SUBMIT_DEPOSIT} deposit would exceed this"
+    let net_spent = balance_before.saturating_sub(balance_after);
+    assert_eq!(
+        net_spent,
+        storage_stake.saturating_add(total_gas_fee(&result))
     );
 }
 
@@ -347,23 +365,5 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_ver
         stored.is_none(),
         "nothing should be stored on an OOG resolve"
     );
-    assert_deposit_refunded(&submitter, balance_before).await;
-}
-
-/// Asserts the full 1 NEAR storage deposit was returned: the net spend is only
-/// gas, well under any fraction of the deposit.
-async fn assert_deposit_refunded(account: &Account, balance_before: NearToken) {
-    let balance_after = account.view_account().await.unwrap().balance;
-    // Raw subtraction (not `saturating_sub`): if the contract over-refunds so
-    // `balance_after > balance_before`, this underflows and panics rather than
-    // clamping to 0 and silently passing.
-    let net_spent = balance_before.as_yoctonear() - balance_after.as_yoctonear();
-    // Bound to the gas envelope, not the deposit: max gas (~0.03 NEAR at the
-    // sandbox price) sits far below this ceiling, while any partial retention of
-    // the 1 NEAR deposit (e.g. 0.5 NEAR) would exceed it and fail.
-    let gas_ceiling = NearToken::from_millinear(50).as_yoctonear();
-    assert!(
-        net_spent < gas_ceiling,
-        "deposit should be fully refunded (net spent {net_spent} yoctoNEAR should be gas-only, < {gas_ceiling})"
-    );
+    assert_deposit_refunded(&submitter, balance_before, &result).await;
 }

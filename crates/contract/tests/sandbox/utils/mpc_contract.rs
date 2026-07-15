@@ -12,6 +12,17 @@ use near_workspaces::{
     Account, AccountId, Contract, result::ExecutionFinalResult, types::NearToken,
 };
 
+/// The gas fee the caller actually pays for a call, summed over its transaction and
+/// receipts. This is gas only: it excludes both the refunded unused prepaid gas and any
+/// storage-staking deposit (storage is locked on the contract, not burnt).
+pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
+    result
+        .outcomes()
+        .iter()
+        .map(|outcome| outcome.tokens_burnt)
+        .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+}
+
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract
         .view(method_names::STATE)

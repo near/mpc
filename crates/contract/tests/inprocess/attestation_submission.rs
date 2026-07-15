@@ -3,7 +3,7 @@
 use mpc_contract::{
     MpcContract,
     crypto_shared::types::PublicKeyExtended,
-    errors::{Error, InvalidParameters, TeeError},
+    errors::{Error, InvalidParameters, InvalidState, TeeError},
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
@@ -372,11 +372,12 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
     // Given: a participant whose submission context attaches only 1 yoctoNEAR.
     let mut setup = TestSetupBuilder::new().build();
     let node = setup.get_participant_node_ids()[0].clone();
+    let attached_deposit = NearToken::from_yoctonear(1);
     testing_env!(
         VMContextBuilder::new()
             .signer_account_id(node.account_id.clone())
             .predecessor_account_id(node.account_id.clone())
-            .attached_deposit(NearToken::from_yoctonear(1))
+            .attached_deposit(attached_deposit)
             .build()
     );
 
@@ -396,7 +397,7 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
     assert_matches!(
         &result,
         Err(Error::InvalidParameters(InvalidParameters::InsufficientDeposit { attached, required }))
-            if required > attached
+            if *attached == attached_deposit.as_yoctonear() && required > attached
     );
 }
 
@@ -407,10 +408,10 @@ fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() 
     let mut setup = TestSetupBuilder::new().build();
     let node = setup.get_participant_node_ids()[0].clone();
 
-    // When: that participant submits a Dstack attestation.
+    // When
     let result = setup.try_submit_attestation_for_node(&node, mock_dto_dstack_attestation());
 
-    // Then: it is rejected with `VerifierNotConfigured`.
+    // Then
     assert_matches!(
         &result,
         Err(Error::TeeError(TeeError::VerifierNotConfigured))
@@ -545,7 +546,10 @@ fn clean_invalid_attestations__should_reject_when_not_running() {
     let result = setup.contract.clean_invalid_attestations(100);
 
     // Then: the call errors without mutating state.
-    assert_matches!(result, Err(_));
+    assert_matches!(
+        result,
+        Err(Error::InvalidState(InvalidState::ProtocolStateNotRunning))
+    );
 }
 
 macro_rules! assert_allowed_docker_image_hashes {

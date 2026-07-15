@@ -47,7 +47,7 @@ pub enum AttestationSubmissionError {
     TlsKeyOwnedByOtherAccount,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[expect(clippy::large_enum_variant)]
 pub(crate) enum ParticipantInsertion {
     NewlyInsertedParticipant,
@@ -66,7 +66,7 @@ pub enum TeeValidationResult {
     },
 }
 
-#[derive(Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -608,7 +608,7 @@ mod tests {
     };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
-    use mpc_attestation::attestation::{Attestation, MockAttestation};
+    use mpc_attestation::attestation::{Attestation, MockAttestation, VerificationError};
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
@@ -652,7 +652,7 @@ mod tests {
         }
     }
 
-    fn attestation_expiring_at(expiry_secs: u64) -> MockAttestation {
+    fn mock_attestation_with_expiry(expiry_secs: u64) -> MockAttestation {
         MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -661,7 +661,14 @@ mod tests {
         }
     }
 
-    /// Sets `account_id` as the signer and authenticates it against `participants`.
+    fn mock_valid_attestation(node_id: NodeId) -> NodeAttestation {
+        NodeAttestation {
+            node_id,
+            verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+        }
+    }
+
+    /// Sets [`AccountId`] as the signer and authenticates it against [`Participants`].
     fn authenticate_as(
         account_id: &AccountId,
         participants: &Participants,
@@ -748,8 +755,8 @@ mod tests {
         let fresh_node = node_id_for(&fresh_account);
         let stale_node = node_id_for(&stale_account);
 
-        let fresh = attestation_expiring_at(FRESH_EXPIRY_SECONDS);
-        let stale = attestation_expiring_at(STALE_EXPIRY_SECONDS);
+        let fresh = mock_attestation_with_expiry(FRESH_EXPIRY_SECONDS);
+        let stale = mock_attestation_with_expiry(STALE_EXPIRY_SECONDS);
 
         tee_state
             .verify_and_store_mock(fresh_node.clone(), fresh, Duration::from_secs(0))
@@ -788,7 +795,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        let expired = attestation_expiring_at(EXPIRY_SECONDS);
+        let expired = mock_attestation_with_expiry(EXPIRY_SECONDS);
 
         for idx in 0..10 {
             let account_id: AccountId = format!("node{idx}.near").parse().unwrap();
@@ -827,7 +834,7 @@ mod tests {
         let mut tee_state = TeeState::default();
         let account_id: AccountId = "alice.near".parse().unwrap();
         let node_id = node_id_for(&account_id);
-        let attestation = attestation_expiring_at(FUTURE_EXPIRY_SECONDS);
+        let attestation = mock_attestation_with_expiry(FUTURE_EXPIRY_SECONDS);
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
             .unwrap();
@@ -872,9 +879,11 @@ mod tests {
         );
 
         // then
-        assert_matches!(
+        assert_eq!(
             re_insertion_result,
-            Ok(ParticipantInsertion::UpdatedExistingParticipant(_))
+            Ok(ParticipantInsertion::UpdatedExistingParticipant(
+                mock_valid_attestation(participant_id)
+            ))
         );
     }
 
@@ -937,14 +946,9 @@ mod tests {
             .unwrap();
 
         // then
-        let stored_entry = tee_state
-            .stored_attestations
-            .get(&node_id.tls_public_key)
-            .unwrap();
-
         assert_eq!(
-            stored_entry.node_id, node_id,
-            "The stored NodeId struct must exactly match the inserted one"
+            tee_state.stored_attestations.get(&node_id.tls_public_key),
+            Some(&mock_valid_attestation(node_id))
         );
     }
 
@@ -999,7 +1003,7 @@ mod tests {
 
         testing_env!(VMContextBuilder::new().block_timestamp(NOW_SECONDS).build());
 
-        let attestation = attestation_expiring_at(NOW_SECONDS);
+        let attestation = mock_attestation_with_expiry(NOW_SECONDS);
 
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
@@ -1024,7 +1028,7 @@ mod tests {
 
         testing_env!(VMContextBuilder::new().block_timestamp(0).build());
 
-        let attestation = attestation_expiring_at(EXPIRY_TIMESTAMP_SECONDS);
+        let attestation = mock_attestation_with_expiry(EXPIRY_TIMESTAMP_SECONDS);
 
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
@@ -1043,7 +1047,7 @@ mod tests {
         let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
         // then
-        assert_matches!(status, TeeQuoteStatus::Invalid(_));
+        assert_matches!(status, TeeQuoteStatus::Invalid(msg) if msg.contains("has expired"));
     }
 
     #[test]
@@ -1061,7 +1065,7 @@ mod tests {
                 .build()
         );
 
-        let attestation = attestation_expiring_at(EXPIRY_TIMESTAMP_SECONDS);
+        let attestation = mock_attestation_with_expiry(EXPIRY_TIMESTAMP_SECONDS);
 
         tee_state
             .verify_and_store_mock(node_id.clone(), attestation, Duration::from_secs(0))
@@ -1288,7 +1292,7 @@ mod tests {
         // Add expiring attestation for third participant
         let (account_id, _, participant_info) = &participant_list[2];
         let node_id = create_node_id(account_id, &participant_info.tls_public_key);
-        let expiring_attestation = attestation_expiring_at(expiry_time_secs);
+        let expiring_attestation = mock_attestation_with_expiry(expiry_time_secs);
         tee_state
             .verify_and_store_mock(node_id, expiring_attestation, tee_upgrade_duration)
             .expect("mock attestation is valid");
@@ -1323,7 +1327,7 @@ mod tests {
         for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
             let node_id = create_node_id(account_id, &participant_info.tls_public_key);
             let attestation = if i == 2 {
-                attestation_expiring_at(expiry_time_secs)
+                mock_attestation_with_expiry(expiry_time_secs)
             } else {
                 MockAttestation::Valid
             };
@@ -1375,11 +1379,10 @@ mod tests {
             result,
             Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount)
         );
-        let stored = tee_state
-            .stored_attestations
-            .get(&tls_public_key)
-            .expect("entry must still be present");
-        assert_eq!(stored.node_id, alice_node);
+        assert_eq!(
+            tee_state.stored_attestations.get(&tls_public_key),
+            Some(&mock_valid_attestation(alice_node))
+        );
     }
 
     #[test]
@@ -1407,11 +1410,10 @@ mod tests {
             result,
             Ok(ParticipantInsertion::UpdatedExistingParticipant(_))
         );
-        let stored = tee_state
-            .stored_attestations
-            .get(&rotated_node.tls_public_key)
-            .expect("entry must be present");
-        assert_eq!(stored.node_id, rotated_node);
+        assert_eq!(
+            tee_state.stored_attestations.get(&tls_public_key),
+            Some(&mock_valid_attestation(rotated_node))
+        );
     }
 
     #[test]
@@ -1431,27 +1433,32 @@ mod tests {
             .expect("initial insertion should succeed");
         let updated_node = create_node_id(&account_id, &tls_public_key);
         let insertion = tee_state
-            .verify_and_store_mock(updated_node, MockAttestation::Valid, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(
+                updated_node.clone(),
+                MockAttestation::Valid,
+                TEE_UPGRADE_DURATION,
+            )
             .expect("update should succeed");
 
-        let original_entry = NodeAttestation {
-            node_id: original_node,
-            verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
-        };
-        let ParticipantInsertion::UpdatedExistingParticipant(displaced) = &insertion else {
-            panic!("expected an update, got {insertion:?}");
-        };
-        assert_eq!(*displaced, original_entry);
+        let original_entry = mock_valid_attestation(original_node);
+        let updated_entry = mock_valid_attestation(updated_node);
+        assert_eq!(
+            insertion,
+            ParticipantInsertion::UpdatedExistingParticipant(original_entry.clone())
+        );
+        assert_eq!(
+            tee_state.stored_attestations.get(&tls_public_key),
+            Some(&updated_entry)
+        );
 
         // When: the store is reverted.
         tee_state.revert_dstack_store(&tls_public_key, insertion);
 
         // Then: the whole original entry is back in place.
-        let stored = tee_state
-            .stored_attestations
-            .get(&tls_public_key)
-            .expect("original entry must be restored");
-        assert_eq!(*stored, original_entry);
+        assert_eq!(
+            tee_state.stored_attestations.get(&tls_public_key),
+            Some(&original_entry)
+        );
     }
 
     #[test]
@@ -1497,7 +1504,9 @@ mod tests {
 
         assert_matches!(
             add_participant_result,
-            Err(AttestationSubmissionError::InvalidAttestation(_))
+            Err(AttestationSubmissionError::InvalidAttestation(
+                VerificationError::InvalidMockAttestation
+            ))
         )
     }
 
@@ -1517,7 +1526,9 @@ mod tests {
         // Then: it is rejected and nothing is stored.
         assert_matches!(
             result,
-            Err(AttestationSubmissionError::InvalidAttestation(_))
+            Err(AttestationSubmissionError::InvalidAttestation(
+                VerificationError::Custom(msg)
+            )) if msg.contains("allowed mpc image hashes list is empty")
         );
         assert!(tee_state.stored_attestations.is_empty());
     }
