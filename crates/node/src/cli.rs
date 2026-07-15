@@ -483,7 +483,6 @@ mod testing {
             my_near_account_id: participant.clone(),
             near_responder_account_id: responder.clone(),
             number_of_responder_keys: 1,
-            foreign_chain_policy_refresh_interval_sec: 1,
             web_ui: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
                 PortSeed::CLI_FOR_PYTEST.web_port(index),

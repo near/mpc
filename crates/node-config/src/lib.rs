@@ -146,11 +146,6 @@ pub struct ConfigFile {
     pub keygen: KeygenConfig,
     #[serde(default)]
     pub foreign_chains: ForeignChainsConfig,
-    /// How often the node re-reads the contract's foreign-chain policy (per-node
-    /// configs and available chains). Until the next refresh, verify_foreign_tx
-    /// requests are checked against the previously cached policy.
-    #[serde(default = "default_foreign_chain_policy_refresh_interval_sec")]
-    pub foreign_chain_policy_refresh_interval_sec: u64,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
@@ -199,10 +194,6 @@ fn default_pprof_bind_address() -> SocketAddr {
 
 fn default_true() -> bool {
     true
-}
-
-fn default_foreign_chain_policy_refresh_interval_sec() -> u64 {
-    60
 }
 
 fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>

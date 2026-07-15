@@ -45,6 +45,8 @@ use tokio::time::{sleep, timeout};
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
+/// Between refreshes, verify_foreign_tx requests are checked against the cached policy.
+const FOREIGN_CHAIN_POLICY_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Clone)]
 pub struct MpcClient<ForeignChainPolicyReader> {
@@ -182,8 +184,6 @@ where
 
         let foreign_chain_policy_refresher = {
             let provider = self.verify_foreign_tx_provider.clone();
-            let refresh_interval =
-                Duration::from_secs(self.config.foreign_chain_policy_refresh_interval_sec);
             tracking::spawn("foreign_chain_policy_refresher", async move {
                 loop {
                     if let Err(err) = provider.refresh_foreign_chain_policy().await {
@@ -192,7 +192,7 @@ where
                             "failed to refresh foreign-chain policy, keeping the previous view"
                         );
                     }
-                    sleep(refresh_interval).await;
+                    sleep(FOREIGN_CHAIN_POLICY_REFRESH_INTERVAL).await;
                 }
             })
         };
