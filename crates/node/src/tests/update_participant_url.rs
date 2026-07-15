@@ -16,7 +16,7 @@ use near_time::Clock;
 
 /// A peer's registered URL becoming unroutable (identity and port unchanged) does not stop the
 /// running network: the change is hot-swapped, so established connections stay up and signing
-/// continues. The precise no-restart decision lives in `coordinator::stop_running_tests`.
+/// continues.
 #[tokio::test]
 #[test_log::test]
 async fn update_participant_url__should_keep_signing_when_peer_address_moved_to_dead_address() {
