@@ -24,6 +24,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId,
     SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
     TonLog, TonRpcRequest, TonTxId,
 };
@@ -826,6 +827,18 @@ pub fn aptos_extracted_values() -> Vec<ExtractedValue> {
     )]
 }
 
+pub fn sui_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::SuiExtractedValue(SuiExtractedValue::Event(
+        SuiEvent {
+            package_id: SuiAddress([1; 32]),
+            transaction_module: "omni_bridge".to_string(),
+            sender: SuiAddress([2; 32]),
+            type_tag: format!("0x{}::omni_bridge::InitTransfer", "01".repeat(32)),
+            bcs: vec![0xde, 0xad, 0xbe, 0xef],
+        },
+    ))]
+}
+
 pub fn bnb_evm_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Bnb(EvmRpcRequest {
         tx_id: EvmTxId([0xbb; 32]),
@@ -883,5 +896,13 @@ pub fn aptos_request() -> ForeignChainRpcRequest {
         tx_id: AptosTxId([0xbb; 32]),
         finality: AptosFinality::Committed,
         extractors: vec![AptosExtractor::Event { event_index: 0 }],
+    })
+}
+
+pub fn sui_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Sui(SuiRpcRequest {
+        tx_id: SuiTxId([0xbb; 32]),
+        finality: SuiFinality::Checkpointed,
+        extractors: vec![SuiExtractor::Event { event_index: 0 }],
     })
 }

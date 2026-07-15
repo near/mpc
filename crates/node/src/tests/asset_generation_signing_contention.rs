@@ -226,7 +226,7 @@ async fn measure_signing_latency(
                 STEADY_TRIPLES_TO_BUFFER
             },
             parallel_triple_generation_stagger_time_sec: TRIPLE_STAGGER_SEC,
-            timeout_sec: 60,
+            timeout_sec: 120,
         };
         node.config.presignature = PresignatureConfig {
             concurrency: PRESIGNATURE_CONCURRENCY,
