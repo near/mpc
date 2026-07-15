@@ -62,7 +62,7 @@ The contract carries [NEP-330](https://github.com/near/NEPs/blob/master/neps/nep
 build metadata in `crates/contract/Cargo.toml`
 (`[package.metadata.near.reproducible_build]`), which pins a
 `sourcescan/cargo-near` Docker image whose tag and digest match
-`rust-toolchain.toml` (`1.93.0`). This metadata is embedded in the WASM, which
+`rust-toolchain.toml` (`1.97.0`). This metadata is embedded in the WASM, which
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
 is the build CI publishes as the release artifact. It requires `docker`:

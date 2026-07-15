@@ -7451,9 +7451,9 @@ dependencies = [
 
 [[package]]
 name = "near-sys"
-version = "0.2.9"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7c212278351251aa342eab33a9d64f99294bc5784cda10107867a72dda699bb"
+checksum = "48b26c10a43e1dccab24e80dd38c3bf73eab9c95da54fcce1144f2b58ef5b507"
 
 [[package]]
 name = "near-telemetry"
