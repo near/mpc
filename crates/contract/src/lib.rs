@@ -6034,7 +6034,7 @@ mod tests {
         // then
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
+        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", error_string);
     }
 
     /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
@@ -6084,7 +6084,7 @@ mod tests {
         // then
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
+        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", error_string);
     }
 
     fn make_launcher_hash(byte: u8) -> LauncherImageHash {

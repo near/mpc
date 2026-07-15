@@ -641,8 +641,7 @@ impl MpcVoteAddDomainsCmd {
             }
         };
         let mut proposal = Vec::new();
-        let mut next_domain = domains.next_domain_id;
-        for protocol in &protocols {
+        for (next_domain, protocol) in (domains.next_domain_id..).zip(&protocols) {
             let purpose = match protocol {
                 Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
                 Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => DomainPurpose::Sign,
@@ -653,7 +652,6 @@ impl MpcVoteAddDomainsCmd {
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose,
             });
-            next_domain += 1;
         }
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);
