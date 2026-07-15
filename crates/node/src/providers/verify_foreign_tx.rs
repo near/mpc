@@ -171,6 +171,10 @@ impl VerifyForeignTxProvider {
             ecdsa_signature_provider,
         })
     }
+
+    pub(crate) fn supporters_by_foreign_chain(&self) -> watch::Receiver<SupportersByForeignChain> {
+        self.supporters_by_foreign_chain.clone()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
