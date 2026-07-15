@@ -157,8 +157,8 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
     prometheus::register_int_counter!(
         "mpc_num_verify_foreign_tx_unavailable_chain_rejections",
         "Number of gate rejections of verify foreign tx attempts, at most one per node per \
-         attempt: the requested chain is not available or the supporters snapshot has not \
-         been received yet"
+         attempt: the requested chain is not available, the supporters snapshot has not \
+         been received yet, or too few supporting participants are alive"
     )
     .unwrap()
 });
