@@ -37,6 +37,21 @@ const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration:
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
 
+/// Narrows the eligible-leader set for a specific request (e.g. to the participants
+/// supporting the request's foreign chain). `update` runs once per queue pass so
+/// `refine` works off a consistent snapshot and stays cheap per request.
+pub trait EligibleLeadersRefiner<RequestType>: Send {
+    /// Refreshes the refiner's snapshot of its underlying data source.
+    fn update(&mut self);
+
+    /// Returns the subset of `eligible` allowed to lead `request`.
+    fn refine(
+        &self,
+        request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId>;
+}
+
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
 ///  - Every block that comes from the indexer. For each block, we need the list of
@@ -71,6 +86,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
+
+    /// When set, narrows the eligible-leader set per request before leader selection.
+    refine_eligible_leaders: Option<Box<dyn EligibleLeadersRefiner<RequestType>>>,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -458,7 +476,18 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
+            refine_eligible_leaders: None,
         }
+    }
+
+    /// Narrows the eligible-leader set per request before leader selection
+    /// (e.g. to the participants supporting the request's foreign chain).
+    pub fn with_eligible_leaders_refiner(
+        mut self,
+        refiner: Box<dyn EligibleLeadersRefiner<RequestType>>,
+    ) -> Self {
+        self.refine_eligible_leaders = Some(refiner);
+        self
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -586,6 +615,13 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
 
+        // One snapshot per pass: `update` refreshes the refiner's view once, then
+        // `refine` narrows `eligible_leaders` per request in the loop below.
+        if let Some(refiner) = self.refine_eligible_leaders.as_mut() {
+            refiner.update();
+        }
+        let refiner = self.refine_eligible_leaders.as_deref();
+
         let mut result = Vec::new();
 
         // Tag each removal so the post-loop knows whether to record a `completion_delay`
@@ -614,7 +650,20 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
+            let refined;
+            let request_eligible_leaders = match refiner {
+                Some(refiner) => {
+                    refined = refiner.refine(&request.request, &eligible_leaders);
+                    &refined
+                }
+                None => &eligible_leaders,
+            };
+            match request.process(
+                self.my_participant_id,
+                request_eligible_leaders,
+                cutoff_block,
+                now,
+            ) {
                 RequestStatus::Drop(reason) => {
                     tracing::debug!(target: "request", reason = %reason, "removing request");
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
@@ -1301,5 +1350,105 @@ mod tests {
             !pending_requests.requests.contains_key(&req1.id),
             "expired request should be removed from the queue"
         );
+    }
+
+    /// Refiner whose allowed set the test can swap; counts `update` calls.
+    struct TestRefiner {
+        allowed: Arc<Mutex<HashSet<ParticipantId>>>,
+        update_calls: Arc<Mutex<usize>>,
+    }
+
+    impl super::EligibleLeadersRefiner<TestRequest> for TestRefiner {
+        fn update(&mut self) {
+            *self.update_calls.lock().unwrap() += 1;
+        }
+
+        fn refine(
+            &self,
+            _request: &TestRequest,
+            eligible: &HashSet<ParticipantId>,
+        ) -> HashSet<ParticipantId> {
+            eligible & &self.allowed.lock().unwrap()
+        }
+    }
+
+    impl TestRefiner {
+        fn new(allowed: HashSet<ParticipantId>) -> Self {
+            Self {
+                allowed: Arc::new(Mutex::new(allowed)),
+                update_calls: Arc::new(Mutex::new(0)),
+            }
+        }
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_reroute_leadership_when_refiner_excludes_first_leader() {
+        // Given: a request whose leader order starts with participant 0 then us,
+        // and a refiner that excludes participant 0.
+        let (pending_requests, mut setup) = TestSetup::new();
+        let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
+        let refiner = TestRefiner::new(allowed);
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then: we attempt the request, as the refiner removed participant 0.
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_park_request_until_refiner_allows_a_leader() {
+        // Given: a request for which we lead, and a refiner allowing nobody.
+        let (pending_requests, mut setup) = TestSetup::new();
+        let refiner = TestRefiner::new(HashSet::new());
+        let allowed = refiner.allowed.clone();
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let req = setup.add_request_leader();
+        setup.update(&mut pending_requests);
+
+        // When: nobody may lead the request.
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then: the request is parked, not attempted and not dropped.
+        assert_eq!(to_attempt.len(), 0);
+        assert!(pending_requests.requests.contains_key(&req.id));
+
+        // When: the refiner starts allowing every participant.
+        *allowed.lock().unwrap() = setup.participant_ids.iter().copied().collect();
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then: we attempt the parked request.
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_update_refiner_snapshot_once_per_pass() {
+        // Given: several pending requests and a refiner counting its updates.
+        let (pending_requests, mut setup) = TestSetup::new();
+        let refiner = TestRefiner::new(setup.participant_ids.iter().copied().collect());
+        let update_calls = refiner.update_calls.clone();
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        setup.add_request_leader();
+        setup.add_request_follower();
+        setup.add_request_follower();
+        setup.update(&mut pending_requests);
+
+        // When
+        pending_requests.get_requests_to_attempt();
+
+        // Then: the snapshot was refreshed once, not once per request.
+        assert_eq!(*update_calls.lock().unwrap(), 1);
     }
 }

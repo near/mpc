@@ -1,5 +1,3 @@
-// applied on module since near proc macro is unable to apply the expect lint
-#![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 #![doc = include_str!("../README.md")]
 
 pub mod config;
@@ -75,7 +73,7 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVeri
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
     log, near,
-    store::{IterableMap, Lazy, LookupMap},
+    store::{Lazy, LookupMap},
 };
 use node_migrations::NodeMigrations;
 use primitives::{
@@ -154,9 +152,6 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
-    // TODO(#3475): drop this once we upgrade the contract and nodes start using
-    // the new API.
-    node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -170,36 +165,6 @@ pub struct MpcContract {
     // non-optional via a migration that requires it be set.
     tee_verifier_account_id: Option<AccountId>,
     tee_verifier_votes: TeeVerifierVotes,
-}
-
-#[near(serializers=[borsh])]
-#[derive(Debug)]
-struct SupportedForeignChainsByNode {
-    foreign_chain_support_by_node: IterableMap<dtos::AccountId, dtos::SupportedForeignChains>,
-}
-
-impl Default for SupportedForeignChainsByNode {
-    fn default() -> Self {
-        Self {
-            foreign_chain_support_by_node: IterableMap::new(
-                StorageKey::SupportedForeignChainsByNode,
-            ),
-        }
-    }
-}
-
-impl SupportedForeignChainsByNode {
-    fn to_dto(&self) -> dtos::ForeignChainSupportByNode {
-        let foreign_chain_configuration_by_node = self
-            .foreign_chain_support_by_node
-            .iter()
-            .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
-            .collect();
-
-        dtos::ForeignChainSupportByNode {
-            foreign_chain_support_by_node: foreign_chain_configuration_by_node,
-        }
-    }
 }
 
 impl MpcContract {
@@ -531,8 +496,8 @@ impl MpcContract {
         );
 
         let requested_chain = request.request.chain();
-        let supported_chains = self.get_supported_foreign_chains();
-        if !supported_chains.contains(&requested_chain) {
+        let available_chains = self.get_available_foreign_chains();
+        if !available_chains.contains(&requested_chain) {
             env::panic_str(
                 &InvalidParameters::ForeignChainNotSupported {
                     requested: requested_chain,
@@ -959,29 +924,6 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Registers the set of foreign chains the calling node supports.
-    ///
-    /// Must be called directly from the participant's own NEAR account
-    /// (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded
-    /// through another contract). Callable by a participant in any active protocol phase
-    /// (Initializing, Running, or Resharing — authenticated against that phase's participant
-    /// set); panics in `NotInitialized` or when the caller is not a participant. Entries for
-    /// accounts that are no longer participants are pruned after resharing by
-    /// [`Self::clean_foreign_chain_data`].
-    #[handle_result]
-    pub fn register_foreign_chain_support(
-        &mut self,
-        foreign_chain_support: dtos::SupportedForeignChains,
-    ) -> Result<(), Error> {
-        let account_id = self.voter_or_panic();
-
-        self.node_foreign_chain_support
-            .foreign_chain_support_by_node
-            .insert(account_id, foreign_chain_support);
-
-        Ok(())
-    }
-
     /// (Re)registers the foreign chains this node currently covers.
     #[handle_result]
     pub fn register_foreign_chains_config(
@@ -1053,23 +995,6 @@ impl MpcContract {
         self.foreign_chains
             .get_mut()
             .update_available_chains_config_cache(&active_tls_keys, threshold);
-    }
-
-    #[deprecated(
-        note = "https://github.com/near/mpc/issues/3079. Node will be upgraded to use register_foreign_chain_support instead"
-    )]
-    #[handle_result]
-    pub fn register_foreign_chain_config(
-        &mut self,
-        foreign_chain_configuration: dtos::ForeignChainConfiguration,
-    ) -> Result<(), Error> {
-        let foreign_chain_support: dtos::SupportedForeignChains = foreign_chain_configuration
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .into();
-
-        self.register_foreign_chain_support(foreign_chain_support)
     }
 
     /// Starts a new attempt to generate a key for the current domain.
@@ -1857,30 +1782,11 @@ impl MpcContract {
             }
         };
 
-        let participant_accounts: std::collections::HashSet<dtos::AccountId> = participants
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-
         let active_tls_keys: std::collections::BTreeSet<dtos::Ed25519PublicKey> = participants
             .participants()
             .iter()
             .map(|(_, _, info)| info.tls_public_key.clone())
             .collect();
-
-        let non_participant_configs: Vec<dtos::AccountId> = self
-            .node_foreign_chain_support
-            .foreign_chain_support_by_node
-            .keys()
-            .filter(|account| !participant_accounts.contains(*account))
-            .cloned()
-            .collect();
-        for account in &non_participant_configs {
-            self.node_foreign_chain_support
-                .foreign_chain_support_by_node
-                .remove(account);
-        }
 
         self.foreign_chains
             .get_mut()
@@ -1962,7 +1868,6 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             metrics: Default::default(),
-            node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
@@ -2041,7 +1946,6 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             metrics: Default::default(),
-            node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
@@ -2170,54 +2074,6 @@ impl MpcContract {
 
     pub fn config(&self) -> dtos::Config {
         dtos::Config::from(&self.config)
-    }
-
-    pub fn get_supported_foreign_chains(&self) -> dtos::SupportedForeignChains {
-        let active_participant_account_ids = self
-            .protocol_state
-            .active_participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect::<BTreeSet<_>>();
-
-        let mut foreign_chain_to_node_mapping: BTreeMap<
-            &dtos::ForeignChain,
-            BTreeSet<dtos::AccountId>,
-        > = BTreeMap::new();
-
-        for (account_id, chains) in self
-            .node_foreign_chain_support
-            .foreign_chain_support_by_node
-            .iter()
-        {
-            for chain in chains.iter() {
-                foreign_chain_to_node_mapping
-                    .entry(chain)
-                    .or_default()
-                    .insert(account_id.clone());
-            }
-        }
-
-        foreign_chain_to_node_mapping
-            .into_iter()
-            .filter_map(|(foreign_chain, nodes_supporting_chain)| {
-                let all_active_nodes_supports_chain =
-                    nodes_supporting_chain.is_superset(&active_participant_account_ids);
-
-                if all_active_nodes_supports_chain {
-                    Some(foreign_chain)
-                } else {
-                    None
-                }
-            })
-            .cloned()
-            .collect::<BTreeSet<dtos::ForeignChain>>()
-            .into()
-    }
-
-    pub fn get_foreign_chain_support_by_node(&self) -> dtos::ForeignChainSupportByNode {
-        self.node_foreign_chain_support.to_dto()
     }
 
     /// The **available** foreign chains: whitelisted chains that are supported
@@ -2411,7 +2267,7 @@ impl MpcContract {
     /// This check reaches every signer-authenticated mutating method through one of three
     /// paths (the list below is illustrative, not exhaustive):
     /// - Called directly: `vote_new_parameters`, `vote_add_domains`, `vote_cancel_resharing`,
-    ///   `vote_cancel_keygen`, `register_foreign_chain_support`, `submit_participant_info`,
+    ///   `vote_cancel_keygen`, `register_foreign_chains_config`, `submit_participant_info`,
     ///   and the node-migration methods.
     /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
     ///   `vote_code_hash`, the launcher/OS-measurement votes,
@@ -2703,7 +2559,7 @@ mod tests {
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation, VerifiedAttestation,
     };
     use mpc_primitives::hash::DockerImageHash;
-    use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
     use near_mpc_contract_interface::types::DestinationNodeInfo;
@@ -2886,38 +2742,18 @@ mod tests {
         (context, contract, sk)
     }
 
-    /// Register the given foreign chains as supported by all active participants.
-    fn register_supported_chains(
+    /// Makes the given foreign chains available: whitelists each chain and
+    /// registers a config covering them for every active participant.
+    fn make_chains_available(
         contract: &mut MpcContract,
         chains: impl IntoIterator<Item = dtos::ForeignChain>,
     ) {
-        let foreign_chain_configuration: dtos::ForeignChainConfiguration = chains
-            .into_iter()
-            .map(|foreign_chain| {
-                (
-                    foreign_chain,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: "dummy_url.com".to_string(),
-                    }),
-                )
-            })
-            .collect::<BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>>()
-            .into();
-
-        // pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
-
-        let participants: Vec<_> = contract
-            .protocol_state
-            .active_participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-        for account_id in participants {
-            let _env = Environment::new(None, Some(account_id), None);
-            contract
-                .register_foreign_chain_config(foreign_chain_configuration.clone())
-                .expect("register should succeed");
+        let chains: Vec<dtos::ForeignChain> = chains.into_iter().collect();
+        for chain in &chains {
+            whitelist_chain(contract, *chain);
+        }
+        for account_id in participant_account_ids(contract) {
+            register_foreign_chain_config(contract, &account_id, chains.clone());
         }
     }
 
@@ -3210,7 +3046,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
-        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -3662,7 +3498,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
-        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
@@ -3733,7 +3569,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _secret_key) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
-        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
@@ -3817,7 +3653,7 @@ mod tests {
         let (context, mut contract, _sk) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
         // Supported chains has Solana but not Bitcoin
-        register_supported_chains(&mut contract, [dtos::ForeignChain::Solana]);
+        make_chains_available(&mut contract, [dtos::ForeignChain::Solana]);
         testing_env!(context.clone());
 
         // When - requesting Bitcoin which is not in the policy
@@ -4383,10 +4219,10 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
-    fn register_foreign_chain_support__should_panic_when_predecessor_differs_from_signer() {
+    fn register_foreign_chains_config__should_panic_when_predecessor_differs_from_signer() {
         let mut contract = forwarded_participant_call_contract();
         contract
-            .register_foreign_chain_support(BTreeSet::new().into())
+            .register_foreign_chains_config(BTreeSet::new().into())
             .expect("expected panic when predecessor != signer");
     }
 
@@ -4573,7 +4409,6 @@ mod tests {
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
-                node_foreign_chain_support: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
@@ -6920,260 +6755,6 @@ mod tests {
     fn mpc_contract_borsh_schema_has_not_changed() {
         let schema = borsh::schema::BorshSchemaContainer::for_type::<MpcContract>();
         insta::assert_debug_snapshot!(schema);
-    }
-
-    #[test]
-    fn register_foreign_chain_support__should_store_supported_chains_for_participant() {
-        // Given
-        let running_state = gen_running_state(1);
-        let participants = running_state
-            .parameters
-            .participants()
-            .participants()
-            .clone();
-        let first_account = participants[0].0.clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        let foreign_chain_support: dtos::SupportedForeignChains =
-            BTreeSet::from([dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum]).into();
-
-        let _env = Environment::new(None, Some(first_account.clone()), None);
-
-        // When
-        contract
-            .register_foreign_chain_support(foreign_chain_support.clone())
-            .expect("register should succeed");
-
-        // Then
-        let votes = contract.get_foreign_chain_support_by_node();
-        assert_eq!(votes.foreign_chain_support_by_node.len(), 1);
-        assert_eq!(
-            votes
-                .foreign_chain_support_by_node
-                .get(&first_account.clone()),
-            Some(&foreign_chain_support)
-        );
-    }
-
-    #[test]
-    fn register_foreign_chain_support__should_store_for_previous_participant_during_resharing() {
-        // Given: a contract mid-resharing, and a participant from the previous running set.
-        let (_env, resharing_state) = gen_resharing_state(1);
-        let previous_participant = resharing_state
-            .previous_running_state
-            .parameters
-            .participants()
-            .participants()[0]
-            .0
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing_state));
-        let foreign_chain_support: dtos::SupportedForeignChains =
-            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
-        let _env = Environment::new(None, Some(previous_participant.clone()), None);
-
-        // When: that participant registers foreign-chain support outside of Running state.
-        contract
-            .register_foreign_chain_support(foreign_chain_support.clone())
-            .expect("a previous participant may register during resharing");
-
-        // Then: the registration is stored against their account.
-        let stored = contract.get_foreign_chain_support_by_node();
-        assert_eq!(
-            stored
-                .foreign_chain_support_by_node
-                .get(&previous_participant),
-            Some(&foreign_chain_support)
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "not a voter")]
-    fn register_foreign_chain_config__should_reject_non_participant() {
-        // Given
-        let running_state = gen_running_state(1);
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-        let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
-            dtos::ForeignChain::Bitcoin,
-            NonEmptyBTreeSet::new(dtos::RpcProvider {
-                rpc_url: "https://btc.example.com".to_string(),
-            }),
-        )])
-        .into();
-
-        let non_participant = gen_account_id();
-        let _env = Environment::new(None, Some(non_participant), None);
-
-        // When / Then: a non-participant is rejected. Registration now authenticates via
-        // `voter_or_panic()`, which panics rather than returning an error.
-        contract
-            .register_foreign_chain_config(foreign_chain_configuration)
-            .expect("non-participant should not be able to register");
-    }
-
-    #[test]
-    fn get_supported_foreign_chains__should_return_chains_supported_by_all_participants() {
-        // Given
-        let running_state = gen_running_state(1);
-        let participants = running_state
-            .parameters
-            .participants()
-            .participants()
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        // Both participants support Bitcoin and Ethereum
-        let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
-            (
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://btc.example.com".to_string(),
-                }),
-            ),
-            (
-                dtos::ForeignChain::Ethereum,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://eth.example.com".to_string(),
-                }),
-            ),
-        ])
-        .into();
-
-        for (account_id, _, _) in &participants {
-            let _env = Environment::new(None, Some(account_id.clone()), None);
-            contract
-                .register_foreign_chain_config(foreign_chain_configuration.clone())
-                .expect("register should succeed");
-        }
-
-        // When
-        let result = contract.get_supported_foreign_chains();
-
-        // Then
-        assert!(result.contains(&dtos::ForeignChain::Bitcoin));
-        assert!(result.contains(&dtos::ForeignChain::Ethereum));
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn get_supported_foreign_chains__should_exclude_chains_not_supported_by_all() {
-        // Given
-        let running_state = gen_running_state(1);
-        let participants = running_state
-            .parameters
-            .participants()
-            .participants()
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        // All participants except the last support Bitcoin + Ethereum
-        for (account_id, _, _) in &participants[..participants.len() - 1] {
-            let _env = Environment::new(None, Some(account_id.clone()), None);
-            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
-                (
-                    dtos::ForeignChain::Bitcoin,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: "https://btc.example.com".to_string(),
-                    }),
-                ),
-                (
-                    dtos::ForeignChain::Ethereum,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: "https://eth.example.com".to_string(),
-                    }),
-                ),
-            ])
-            .into();
-            contract
-                .register_foreign_chain_config(foreign_chain_configuration)
-                .expect("register should succeed");
-        }
-
-        // Last participant supports only Bitcoin
-        {
-            let last = &participants[participants.len() - 1].0;
-            let _env = Environment::new(None, Some(last.clone()), None);
-            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::new(dtos::RpcProvider {
-                    rpc_url: "https://btc.example.com".to_string(),
-                }),
-            )])
-            .into();
-            contract
-                .register_foreign_chain_config(foreign_chain_configuration)
-                .expect("register should succeed");
-        }
-
-        // When
-        let result = contract.get_supported_foreign_chains();
-
-        // Then - only Bitcoin is unanimous
-        assert!(result.contains(&dtos::ForeignChain::Bitcoin));
-        assert!(!result.contains(&dtos::ForeignChain::Ethereum));
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn get_supported_foreign_chains__different_rpc_urls_per_participant_is_fine() {
-        // Given
-        let running_state = gen_running_state(1);
-        let participants = running_state
-            .parameters
-            .participants()
-            .participants()
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        // Each participant registers the same chains but with different RPC URLs
-        for (i, (account_id, _, _)) in participants.iter().enumerate() {
-            let _env = Environment::new(None, Some(account_id.clone()), None);
-            let foreign_chain_configuration: dtos::ForeignChainConfiguration = BTreeMap::from([
-                (
-                    dtos::ForeignChain::Bitcoin,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: format!("https://btc-node-{i}.example.com"),
-                    }),
-                ),
-                (
-                    dtos::ForeignChain::Ethereum,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: format!("https://eth-node-{i}.example.com"),
-                    }),
-                ),
-            ])
-            .into();
-            contract
-                .register_foreign_chain_config(foreign_chain_configuration)
-                .expect("register should succeed");
-        }
-
-        // When
-        let result = contract.get_supported_foreign_chains();
-
-        // Then — both chains are supported despite different RPC URLs
-        assert!(result.contains(&dtos::ForeignChain::Bitcoin));
-        assert!(result.contains(&dtos::ForeignChain::Ethereum));
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn get_supported_foreign_chains__should_return_empty_when_no_votes() {
-        // Given
-        let running_state = gen_running_state(1);
-        let contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        // When
-        let result = contract.get_supported_foreign_chains();
-
-        // Then
-        assert!(result.is_empty());
     }
 
     #[test]

@@ -1,12 +1,14 @@
 use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
+use crate::foreign_chain_policy::spawn_supporters_by_foreign_chain;
+use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::ChainSendTransactionRequest;
-use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
+use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
@@ -35,6 +37,7 @@ use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_mpc_contract_interface::call_args as contract_args;
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -53,7 +56,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
+pub struct Coordinator<TransactionSender> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -63,7 +66,7 @@ pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI<TransactionSender, ForeignChainPolicyReader>,
+    pub indexer: IndexerAPI<TransactionSender>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -99,11 +102,9 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl<TransactionSender, ForeignChainPolicyReader>
-    Coordinator<TransactionSender, ForeignChainPolicyReader>
+impl<TransactionSender> Coordinator<TransactionSender>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
@@ -170,7 +171,7 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
-                                self.indexer.foreign_chain_policy_reader.clone(),
+                                self.indexer.foreign_chain_supporters_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -368,7 +369,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
+        foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -431,16 +432,7 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract.
-        let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
-        if let Err(err) = chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-            ))
-            .await
-        {
-            tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-        }
+        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
 
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
@@ -679,9 +671,16 @@ where
                     ckd_keyshares,
                 ));
 
+                // Spawned here because resolving supporters needs the current
+                // participant set.
+                let supporters_by_foreign_chain = spawn_supporters_by_foreign_chain(
+                    foreign_chain_supporters_receiver,
+                    running_mpc_config.participants.clone(),
+                );
+
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
-                    foreign_chain_policy_reader.clone(),
+                    supporters_by_foreign_chain,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);
@@ -948,6 +947,26 @@ fn stop_initializing(
             tracing::info!("Protocol State changed.");
             true
         }
+    }
+}
+
+/// Registers the locally configured foreign chains with the contract.
+async fn register_foreign_chains(
+    chain_txn_sender: &impl tx_sender::TransactionSender,
+    foreign_chains: &mpc_node_config::ForeignChainsConfig,
+) {
+    let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+            contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config),
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
     }
 }
 

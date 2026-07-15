@@ -1,11 +1,8 @@
-use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::num::NonZeroU64;
 
 use anyhow::Context as _;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
@@ -73,10 +70,6 @@ pub struct ForeignChainProviderConfig {
 pub struct RpcProviderName(String);
 
 impl ForeignChainProviderConfig {
-    fn rpc_url(&self) -> Cow<'_, str> {
-        self.auth.strip_placeholder(&self.rpc_url)
-    }
-
     fn validate_auth_config(&self, chain: dtos::ForeignChain) -> anyhow::Result<()> {
         auth::validate_auth_config(&self.auth, &self.rpc_url)?;
 
@@ -104,24 +97,6 @@ impl ForeignChainsConfig {
         self.all_configured_chains()
             .into_iter()
             .map(|(cfg, id)| (id, cfg))
-    }
-
-    #[expect(deprecated, reason = "https://github.com/near/mpc/issues/3079")]
-    pub fn configured_chains(&self) -> dtos::ForeignChainConfiguration {
-        self.all_configured_chains()
-            .into_iter()
-            .map(|(config, foreign_chain_identifier)| {
-                let rpc_providers =
-                    config
-                        .providers
-                        .map_to_set(|_provider_name, provider_config| dtos::RpcProvider {
-                            rpc_url: provider_config.rpc_url().trim().to_string(),
-                        });
-
-                (foreign_chain_identifier, rpc_providers)
-            })
-            .collect::<BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>>()
-            .into()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -396,70 +371,6 @@ foreign_chains:
     }
 
     #[test]
-    fn configured_chains__should_strip_path_auth_placeholder_from_rpc_url() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  solana:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      ankr:
-        rpc_url: "https://rpc.ankr.com/solana/{api_key}"
-        auth:
-          kind: path
-          placeholder: "{api_key}"
-          token:
-            val: "secret"
-"#;
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
-        config.validate().expect("config should be valid");
-        let configured = config.foreign_chains.configured_chains();
-
-        // Then
-        let solana_providers = configured
-            .get(&near_mpc_contract_interface::types::ForeignChain::Solana)
-            .expect("Solana should be in the configured chains");
-        let provider = solana_providers
-            .iter()
-            .next()
-            .expect("expected at least one Solana provider");
-        assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
-    }
-
-    #[test]
     fn config_parsing__should_succeed_with_starknet_section() {
         // Given
         let yaml = r#"
@@ -512,78 +423,6 @@ foreign_chains:
             .validate()
             .expect("config with starknet section should be valid");
         assert!(config.foreign_chains.starknet.is_some());
-    }
-
-    #[test]
-    fn configured_chains__should_preserve_url_for_non_path_auth() {
-        // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
-  ethereum:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      alchemy:
-        rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
-        auth:
-          kind: header
-          name: Authorization
-          scheme: Bearer
-          token:
-            val: "secret"
-"#;
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
-        config.validate().expect("config should be valid");
-        let configured = config.foreign_chains.configured_chains();
-
-        // Then
-        let eth_providers = configured
-            .get(&near_mpc_contract_interface::types::ForeignChain::Ethereum)
-            .expect("Ethereum should be in the configured chains");
-        let provider = eth_providers
-            .iter()
-            .next()
-            .expect("expected at least one Ethereum provider");
-        assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
-
-        assert!(
-            !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Solana)
-        );
-        assert!(
-            !configured.contains_key(&near_mpc_contract_interface::types::ForeignChain::Bitcoin)
-        );
     }
 
     #[test]

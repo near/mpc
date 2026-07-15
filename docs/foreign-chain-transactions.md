@@ -346,10 +346,10 @@ pub enum ForeignChain {
 
 Relevant contract methods:
 
-* `register_available_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method (formerly `register_foreign_chain_config`; old name kept as a deprecated wrapper). The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
-* `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
-* `get_available_foreign_chain_by_node() -> ForeignChainSupportByNode` — view method (formerly `get_foreign_chain_support_by_node`; old name kept as a deprecated wrapper). Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
+* `register_foreign_chains_config(foreign_chains_config: ForeignChainsConfig)` — call method. The authenticated node (re)registers the set of chains it covers, keyed by its TLS key. The call is idempotent. (The legacy `register_foreign_chain_config`/`register_foreign_chain_support` endpoints have been removed.)
+* `allowed_foreign_chain_providers()` — view method. Returns the on-chain RPC provider whitelist (`foreign_chain_rpc_whitelist`), whose keys are the whitelisted chains.
+* `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the whitelisted chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set. (The legacy `get_supported_foreign_chains()` intersection view has been removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
+* `get_foreign_chains_configs() -> ForeignChainsConfigs` — view method. Returns each node's registered set of covered chains, keyed by TLS key. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
 ## On-chain RPC Provider Whitelist
 

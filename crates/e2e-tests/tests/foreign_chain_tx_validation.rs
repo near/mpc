@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
 use crate::common;
@@ -9,6 +10,7 @@ use e2e_tests::foreign_chain_mock::{
     MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
 use httpmock::prelude::*;
+use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };
@@ -52,6 +54,25 @@ struct MockServerUrls {
     arbitrum: String,
     hyper_evm: String,
     polygon: Vec<String>,
+}
+
+fn build_providers_from_urls(
+    urls: &[String],
+    chain_name: &str,
+) -> NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig> {
+    let map: BTreeMap<_, _> = urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let cfg = ForeignChainProviderConfig {
+                rpc_url: url.clone(),
+                auth: Default::default(),
+            };
+            (format!("mock-{chain_name}-{i}").into(), cfg)
+        })
+        .collect();
+    map.try_into()
+        .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -152,29 +173,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
         polygon: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            providers: {
-                let mut iter = urls.polygon.iter().enumerate();
-                let (i, first_url) = iter
-                    .next()
-                    .expect("at least one polygon provider must be configured");
-                let mut providers = NonEmptyBTreeMap::new(
-                    format!("mock-{i}").into(),
-                    ForeignChainProviderConfig {
-                        rpc_url: first_url.clone(),
-                        auth: Default::default(),
-                    },
-                );
-                for (i, url) in iter {
-                    providers.insert(
-                        format!("mock-{i}").into(),
-                        ForeignChainProviderConfig {
-                            rpc_url: url.clone(),
-                            auth: Default::default(),
-                        },
-                    );
-                }
-                providers
-            },
+            providers: build_providers_from_urls(&urls.polygon, "polygon"),
         }),
         ..Default::default()
     }
@@ -249,21 +248,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let (cluster, _running) =
-        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
-            c.num_nodes = 2;
-            c.threshold = 2;
-            c.domains = vec![DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::ForeignTx,
-            }];
-            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
-        })
-        .await;
-
-    let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
+    let expected_chains: std::collections::BTreeSet<ForeignChain> = [
         ForeignChain::Bitcoin,
         ForeignChain::Abstract,
         ForeignChain::Bnb,
@@ -276,18 +261,33 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     .into_iter()
     .collect();
 
+    let (cluster, _running) =
+        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::ForeignTx,
+            }];
+            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
+            c.whitelisted_chains = expected_chains.clone();
+        })
+        .await;
+
     (|| async {
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
+        let available = cluster
+            .view_available_foreign_chains()
             .await
-            .context("failed to view supported chains")?;
-        let supported_set: std::collections::BTreeSet<ForeignChain> =
-            supported.iter().copied().collect();
+            .context("failed to view available chains")?;
+        let available_set: std::collections::BTreeSet<ForeignChain> =
+            available.iter().copied().collect();
         anyhow::ensure!(
-            supported_set == expected_supported_chains,
-            "expected supported chains {:?}, got {:?}",
-            expected_supported_chains,
-            supported_set
+            available_set == expected_chains,
+            "expected available chains {:?}, got {:?}",
+            expected_chains,
+            available_set
         );
         Ok(())
     })
@@ -299,7 +299,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             ),
     )
     .await
-    .context("timed out waiting for every participant to register its foreign chains")?;
+    .context("timed out waiting for all chains to become available")?;
 
     let state = cluster
         .get_contract_state()

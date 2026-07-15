@@ -61,8 +61,10 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_foreign_chains: BTreeSet<ForeignChain> =
-        foreign_chains.configured_chains().keys().copied().collect();
+    let expected_foreign_chains: BTreeSet<ForeignChain> = foreign_chains
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect();
 
     {
         let mut contract = setup.indexer.contract_mut().await;
@@ -80,7 +82,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
-                if **contract.supported_foreign_chains() == expected_foreign_chains {
+                if **contract.available_foreign_chains() == expected_foreign_chains {
                     break;
                 }
             }
@@ -94,16 +96,17 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
     let contract = setup.indexer.contract_mut().await;
 
     assert_eq!(
-        **contract.supported_foreign_chains(),
+        **contract.available_foreign_chains(),
         expected_foreign_chains
     );
 
-    let expected_node_support = BTreeSet::from([ForeignChain::Solana]);
+    let expected_node_config = BTreeSet::from([ForeignChain::Solana]);
 
-    let all_nodes_submitted_supported_chains = contract
-        .supported_foreign_chains_by_node()
-        .values()
-        .all(|node_support| **node_support == expected_node_support);
-
-    assert!(all_nodes_submitted_supported_chains);
+    let configs = contract.foreign_chains_configs();
+    assert_eq!(configs.len(), setup.participants.participants.len());
+    assert!(
+        configs
+            .values()
+            .all(|node_config| **node_config == expected_node_config)
+    );
 }

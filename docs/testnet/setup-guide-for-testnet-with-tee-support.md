@@ -259,7 +259,7 @@ Add keys to each NEAR account:
 The keys are granted access to all methods on the MPC contract (empty
 `--function-names` list) while staying scoped to it via `--contract-account-id`.
 This avoids the keys breaking whenever a release adds a method the node must call
-(e.g. `register_foreign_chain_config`).
+(e.g. `register_foreign_chains_config`).
 
 ```bash
 near account add-key $FRODO_ACCOUNT grant-function-call-access \

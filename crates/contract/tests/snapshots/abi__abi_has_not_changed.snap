@@ -613,16 +613,6 @@ expression: abi
         }
       },
       {
-        "name": "get_foreign_chain_support_by_node",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/ForeignChainSupportByNode"
-          }
-        }
-      },
-      {
         "name": "get_foreign_chains_configs",
         "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
         "kind": "view",
@@ -717,16 +707,6 @@ expression: abi
                 "type": "null"
               }
             ]
-          }
-        }
-      },
-      {
-        "name": "get_supported_foreign_chains",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/SupportedForeignChains"
           }
         }
       },
@@ -1142,49 +1122,6 @@ expression: abi
               "name": "backup_service_info",
               "type_schema": {
                 "$ref": "#/definitions/BackupServiceInfo"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
-        "name": "register_foreign_chain_config",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "foreign_chain_configuration",
-              "type_schema": {
-                "$ref": "#/definitions/ForeignChainConfiguration"
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
-        "name": "register_foreign_chain_support",
-        "doc": " Registers the set of foreign chains the calling node supports.\n\n Must be called directly from the participant's own NEAR account\n (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded\n through another contract). Callable by a participant in any active protocol phase\n (Initializing, Running, or Resharing — authenticated against that phase's participant\n set); panics in `NotInitialized` or when the caller is not a participant. Entries for\n accounts that are no longer participants are pruned after resharing by\n [`Self::clean_foreign_chain_data`].",
-        "kind": "call",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "foreign_chain_support",
-              "type_schema": {
-                "$ref": "#/definitions/SupportedForeignChains"
               }
             }
           ]
@@ -3153,13 +3090,6 @@ expression: abi
             "Sui"
           ]
         },
-        "ForeignChainConfiguration": {
-          "deprecated": true,
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/definitions/NonEmptyBTreeSet_RpcProvider"
-          }
-        },
         "ForeignChainRpcRequest": {
           "oneOf": [
             {
@@ -3319,20 +3249,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "ForeignChainSupportByNode": {
-          "type": "object",
-          "required": [
-            "foreign_chain_support_by_node"
-          ],
-          "properties": {
-            "foreign_chain_support_by_node": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/SupportedForeignChains"
-              }
-            }
-          }
         },
         "ForeignChainsConfig": {
           "description": "Set of foreign chains a node reports it can serve; aggregated into [`AvailableForeignChains`] by the contract.",
@@ -3994,14 +3910,6 @@ expression: abi
             }
           }
         },
-        "NonEmptyBTreeSet_RpcProvider": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/RpcProvider"
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
         "ParticipantId": {
           "description": "Stable identifier for a participant within the MPC protocol's participant set.",
           "type": "integer",
@@ -4508,17 +4416,6 @@ expression: abi
             }
           }
         },
-        "RpcProvider": {
-          "type": "object",
-          "required": [
-            "rpc_url"
-          ],
-          "properties": {
-            "rpc_url": {
-              "type": "string"
-            }
-          }
-        },
         "Rtmr0Hash": {
           "type": "string",
           "maxLength": 96,
@@ -4897,13 +4794,6 @@ expression: abi
           "description": "32-byte Sui transaction digest (Blake2b-256 of the signed transaction data). Sui APIs display it base58-encoded; here it is carried as raw bytes (hex in JSON).",
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
-        "SupportedForeignChains": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ForeignChain"
-          },
-          "uniqueItems": true
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",

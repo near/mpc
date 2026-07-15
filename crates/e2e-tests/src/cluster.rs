@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -6,12 +6,13 @@ use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-    Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants,
-    ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
-    Threshold, ThresholdParameters,
+    AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
+    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, ParticipantId,
+    ParticipantInfo, Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
+    ProviderConfig, ProviderId, ReconstructionThreshold, Threshold, ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -46,6 +47,7 @@ const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1)
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
 const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
@@ -93,6 +95,7 @@ pub struct MpcClusterConfig {
     pub migration_targets: Vec<usize>,
     /// Wire format used when calling `init`. See [`ContractInitFormat`].
     pub init_format: ContractInitFormat,
+    pub whitelisted_chains: BTreeSet<ForeignChain>,
 }
 
 /// JSON wire format used for the contract's `init` call.
@@ -163,6 +166,7 @@ impl MpcClusterConfig {
             node_foreign_chains_configs: vec![],
             migration_targets: vec![],
             init_format: ContractInitFormat::Current,
+            whitelisted_chains: BTreeSet::new(),
         }
     }
 
@@ -850,43 +854,81 @@ impl MpcCluster {
             )
             .await
     }
-    /// View the foreign chains the contract accepts requests for.
-    pub async fn view_foreign_chains_supported_by_contract(
+    /// View the available foreign chains (threshold-covered + whitelisted).
+    pub async fn view_available_foreign_chains(
         &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
         self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
+            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
             .await
     }
 
-    /// View the per-node foreign chain configurations registered with the contract.
-    pub async fn view_foreign_chain_configurations(
+    /// View the per-node foreign chain configs keyed by TLS public key.
+    pub async fn view_foreign_chains_configs(
         &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
         self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
+            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
             .await
     }
 
-    /// Register foreign chain support on the contract for a specific node.
-    pub async fn register_foreign_chain_config(
+    pub async fn whitelist_foreign_chains(
         &self,
-        node_index: usize,
-        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let node = &self.nodes[node_index];
-        let client = self
-            .blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
-        self.contract
-            .call_from(
-                &client,
-                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
-                json!({
-                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
-                }),
-            )
-            .await
+        participant_indices: &[usize],
+        chains: &BTreeSet<ForeignChain>,
+    ) -> anyhow::Result<()> {
+        if chains.is_empty() {
+            return Ok(());
+        }
+        // Every whitelisted chain gets the same placeholder entry: these tests only
+        // care about which chains are whitelisted, never about the provider content.
+        let provider = |base_url: &str| ProviderConfig {
+            base_url: base_url.to_string(),
+            auth_scheme: AuthScheme::None,
+            chain_routing: ChainRouting::Embedded,
+        };
+        let mut providers = NonEmptyBTreeMap::new(
+            ProviderId("alchemy".to_string()),
+            provider("https://example1.com/v2/"),
+        );
+        providers.insert(
+            ProviderId("quicknode".to_string()),
+            provider("https://example2.com/"),
+        );
+        providers.insert(
+            ProviderId("public".to_string()),
+            provider("https://example3.com/"),
+        );
+        let placeholder = ChainEntry {
+            providers,
+            quorum: 1,
+        };
+
+        let batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> = chains
+            .iter()
+            .map(|&chain| (chain, placeholder.clone()))
+            .collect::<BTreeMap<_, _>>()
+            .try_into()
+            .context("whitelist_foreign_chains: chains must be non-empty")?;
+
+        for &idx in participant_indices {
+            let client = self
+                .operator_client_for(idx)
+                .with_context(|| format!("whitelist_foreign_chains: node {idx}"))?;
+            self.contract
+                .call_from_borsh_with_deposit(
+                    &client,
+                    method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+                    batch.clone(),
+                    VOTE_FOREIGN_CHAIN_GAS,
+                    near_kit::NearToken::from_yoctonear(0),
+                )
+                .await
+                .with_context(|| {
+                    format!("vote_update_foreign_chain_providers from node {idx} failed")
+                })?;
+        }
+        Ok(())
     }
 
     /// Start node migration for a specific node.

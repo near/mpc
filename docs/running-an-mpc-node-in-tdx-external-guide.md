@@ -1146,7 +1146,7 @@ This section shows how to add the MPC node's public key (from the previous secti
   it cannot transfer funds or call other contracts.
 
   > **Why allow all methods instead of an explicit list?** The set of methods an
-  > MPC node must call changes across releases (e.g. `register_foreign_chain_config`
+  > MPC node must call changes across releases (e.g. `register_foreign_chains_config`
   > was added for foreign-chain support). A hand-maintained method list silently
   > drifts out of date, and the node then fails — with no obvious error — on any
   > new method the key was never granted. Allowing all methods on the contract
@@ -1224,7 +1224,7 @@ key may call **all** methods on that contract.
 If your node's key was previously added with a restricted `method_names` list
 (e.g. an older guide granted an explicit list), the node will fail — with no
 obvious error — on any contract method that was not in that list. A symptom of
-this is the node being unable to call `register_foreign_chain_config`, so the
+this is the node being unable to call `register_foreign_chains_config`, so the
 contract reports no foreign chains supported by your node.
 
 Access-key permissions are **immutable** in NEAR: you cannot edit an existing

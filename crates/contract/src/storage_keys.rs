@@ -23,7 +23,7 @@ pub enum StorageKey {
     _SupportedForeignChainsVotes,
     _DeprecatedPendingSignatureRequestsV3,
     StoredAttestations,
-    SupportedForeignChainsByNode,
+    _DeprecatedSupportedForeignChainsByNode,
     PendingSignatureRequestsV4,
     PendingCKDRequestsV3,
     PendingVerifyForeignTxRequestsV2,

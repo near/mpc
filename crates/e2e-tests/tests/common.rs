@@ -73,6 +73,7 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
+    let whitelisted_chains = config.whitelisted_chains.clone();
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
@@ -87,6 +88,11 @@ pub async fn must_setup_cluster(
     let ProtocolContractState::Running(running) = protocol_state else {
         panic!("expected Running state");
     };
+
+    cluster
+        .whitelist_foreign_chains(&initial_participant_indices, &whitelisted_chains)
+        .await
+        .expect("failed to whitelist foreign chains");
 
     wait_for_presignatures(
         &cluster,

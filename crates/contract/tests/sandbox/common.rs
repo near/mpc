@@ -25,8 +25,8 @@ use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
     SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId,
-    SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
-    TonLog, TonRpcRequest, TonTxId,
+    TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality, TonLog, TonRpcRequest,
+    TonTxId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -646,25 +646,57 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// registers a foreign chain configuration so the foreign chains are supported
+/// Makes `chain` available: whitelists it and registers a config covering it
+/// for every account.
 pub async fn register_foreign_chain_configuration(
     chain: near_mpc_contract_interface::types::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
+    let entry = near_mpc_contract_interface::types::ChainEntry {
+        providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
+            near_mpc_contract_interface::types::ProviderId("test-provider".to_string()),
+            near_mpc_contract_interface::types::ProviderConfig {
+                base_url: "https://provider.example.com".to_string(),
+                auth_scheme: near_mpc_contract_interface::types::AuthScheme::None,
+                chain_routing: near_mpc_contract_interface::types::ChainRouting::Embedded,
+            },
+        ),
+        quorum: 1,
+    };
+    let whitelist_batch = near_mpc_bounded_collections::NonEmptyBTreeMap::new(chain, entry);
     for account in accounts {
         let result = account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_SUPPORT)
-            .args_json(json!({ "foreign_chain_support": node_foreign_chain_support }))
+            .call(
+                contract.id(),
+                method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+            )
+            .args_borsh(whitelist_batch.clone())
             .transact()
             .await
             .unwrap()
             .into_result();
         assert!(
             result.is_ok(),
-            "{} should succeed",
-            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
+            "{} should succeed: {result:?}",
+            method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS
+        );
+    }
+
+    let foreign_chains_config: near_mpc_contract_interface::types::ForeignChainsConfig =
+        BTreeSet::from([chain]).into();
+    for account in accounts {
+        let result = account
+            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAINS_CONFIG)
+            .args_json(json!({ "foreign_chains_config": foreign_chains_config }))
+            .transact()
+            .await
+            .unwrap()
+            .into_result();
+        assert!(
+            result.is_ok(),
+            "{} should succeed: {result:?}",
+            method_names::REGISTER_FOREIGN_CHAINS_CONFIG
         );
     }
 }

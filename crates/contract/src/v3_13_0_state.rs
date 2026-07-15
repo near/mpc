@@ -11,11 +11,11 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{
     AccountId, env,
-    store::{Lazy, LookupMap},
+    store::{IterableMap, Lazy, LookupMap},
 };
 
 use crate::{
-    Config, SupportedForeignChainsByNode,
+    Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
@@ -26,6 +26,20 @@ use crate::{
     tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
 };
+
+/// Legacy per-account foreign-chain support; dropped (and its storage cleared)
+/// by the migration below.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct SupportedForeignChainsByNode {
+    foreign_chain_support_by_node:
+        IterableMap<near_mpc_contract_interface::types::AccountId, LegacySupportedForeignChains>,
+}
+
+/// Borsh layout of the legacy `SupportedForeignChains` DTO.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct LegacySupportedForeignChains(
+    std::collections::BTreeSet<near_mpc_contract_interface::types::ForeignChain>,
+);
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
@@ -54,13 +68,16 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         }
 
+        // Reclaim the storage held by the dropped legacy per-account support map.
+        let mut legacy_support = old.node_foreign_chain_support;
+        legacy_support.foreign_chain_support_by_node.clear();
+
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
-            node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config,
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,

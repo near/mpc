@@ -1,4 +1,4 @@
-use crate::indexer::ReadSupportedForeignChain;
+use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -6,7 +6,7 @@ use crate::indexer::types::{
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
@@ -14,7 +14,7 @@ use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTa
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
-    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
+    CHECK_EACH_REQUEST_INTERVAL, EligibleLeadersRefiner, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
@@ -31,7 +31,7 @@ use near_mpc_contract_interface::call_args as contract_args;
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -47,7 +47,7 @@ const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
-pub struct MpcClient<ForeignChainPolicyReader> {
+pub struct MpcClient {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
@@ -57,10 +57,49 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
-    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
+    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
     domain_to_protocol: HashMap<DomainId, Protocol>,
     /// Lower-priority runtime for CPU-heavy asset generation.
     gen_runtime_handle: tokio::runtime::Handle,
+}
+
+/// Narrows verify-foreign-tx leader election to the participants supporting the
+/// request's chain. `update` snapshots the supporters channel once per queue
+/// pass; if the channel's sender is dropped the last snapshot stays in effect.
+struct ForeignChainLeadersRefiner {
+    supporters_receiver: tokio::sync::watch::Receiver<SupportersByForeignChain>,
+    snapshot: SupportersByForeignChain,
+}
+
+impl ForeignChainLeadersRefiner {
+    fn new(
+        mut supporters_receiver: tokio::sync::watch::Receiver<SupportersByForeignChain>,
+    ) -> Self {
+        let snapshot = supporters_receiver.borrow_and_update().clone();
+        Self {
+            supporters_receiver,
+            snapshot,
+        }
+    }
+}
+
+impl EligibleLeadersRefiner<VerifyForeignTxRequest> for ForeignChainLeadersRefiner {
+    fn update(&mut self) {
+        if self.supporters_receiver.has_changed().unwrap_or(false) {
+            self.snapshot = self.supporters_receiver.borrow_and_update().clone();
+        }
+    }
+
+    fn refine(
+        &self,
+        request: &VerifyForeignTxRequest,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        match self.snapshot.get(&request.request.chain()) {
+            Some(supporters) => supporters & eligible,
+            None => HashSet::new(),
+        }
+    }
 }
 
 /// Whether a task is CPU-heavy asset generation that should run on the
@@ -87,10 +126,7 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
     }
 }
 
-impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: ReadSupportedForeignChain + 'static,
-{
+impl MpcClient {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
@@ -102,7 +138,7 @@ where
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
-        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
+        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
         domain_to_protocol: HashMap<DomainId, Protocol>,
         gen_runtime_handle: tokio::runtime::Handle,
     ) -> Self {
@@ -247,6 +283,10 @@ where
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let eligible_leaders_refiner = ForeignChainLeadersRefiner::new(
+            self.verify_foreign_tx_provider
+                .supporters_by_foreign_chain(),
+        );
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
@@ -255,7 +295,8 @@ where
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
-        );
+        )
+        .with_eligible_leaders_refiner(Box::new(eligible_leaders_refiner));
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
@@ -586,9 +627,10 @@ where
                                     Some(Protocol::CaitSith) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.verify_foreign_tx_provider.clone().make_signature(
-                                                verify_foreign_tx_attempt.request.id,
-                                            ),
+                                            this.verify_foreign_tx_provider
+                                                .make_verify_foreign_tx_leader(
+                                                    verify_foreign_tx_attempt.request.id,
+                                                ),
                                         )
                                         .await??;
 
@@ -651,7 +693,7 @@ where
 
     async fn monitor_passive_channels_inner(
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        mpc_client: Arc<MpcClient<ForeignChainPolicyReader>>,
+        mpc_client: Arc<MpcClient>,
     ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Some(channel) = channel_receiver.recv().await {

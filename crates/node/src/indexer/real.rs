@@ -1,9 +1,10 @@
+use super::foreign_chain::monitor_foreign_chain_supporters;
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader, RealForeignChainPolicyReader};
+use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -68,11 +69,9 @@ pub fn spawn_real_indexer(
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
-) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
+) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
-    let (foreign_chain_policy_reader_sender, foreign_chain_policy_reader_receiver) =
-        oneshot::channel();
     let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
@@ -80,6 +79,8 @@ pub fn spawn_real_indexer(
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
+    let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
+        watch::channel(Default::default());
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -182,15 +183,6 @@ pub fn spawn_real_indexer(
                 tracing::error!("Failed to send txn_sender back to main thread.")
             };
 
-            let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
-            if foreign_chain_policy_reader_sender
-                .send(foreign_chain_policy_reader)
-                .is_err()
-            {
-                tracing::error!("failed to send foreign chain policy reader back to main thread")
-            };
-
             let attestation_reader: std::sync::Arc<dyn super::ReadAttestationExpiry> =
                 std::sync::Arc::new(RealAttestationExpiryReader::new(indexer_state.clone()));
             if attestation_reader_sender.send(attestation_reader).is_err() {
@@ -218,6 +210,11 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
+                indexer_state.clone(),
+            ));
+
+            tokio::spawn(monitor_foreign_chain_supporters(
+                foreign_chain_supporters_sender,
                 indexer_state.clone(),
             ));
 
@@ -325,10 +322,6 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Migraration info receiver must be returned by indexer.");
 
-    let foreign_chain_policy_reader = foreign_chain_policy_reader_receiver
-        .blocking_recv()
-        .expect("foreign chain policy reader must be returned by indexer");
-
     let attestation_reader = attestation_reader_receiver
         .blocking_recv()
         .expect("attestation reader must be returned by indexer");
@@ -341,7 +334,7 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
-        foreign_chain_policy_reader,
+        foreign_chain_supporters_receiver,
         attestation_reader,
     }
 }

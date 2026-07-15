@@ -18,20 +18,21 @@ use near_indexer_primitives::{
 };
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    GET_ATTESTATION, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
-    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_SUPPORTED_FOREIGN_CHAINS, GET_TEE_ACCOUNTS,
-    MIGRATION_INFO, STATE,
+    GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
+pub mod foreign_chain;
 pub mod handler;
 pub mod migrations;
 pub mod near_data_wipe;
@@ -260,14 +261,20 @@ impl IndexerViewClient {
         }
     }
 
-    pub(crate) async fn get_supported_chains(
+    pub(crate) async fn get_foreign_chains_configs(
         &self,
         mpc_contract_id: &AccountId,
-    ) -> anyhow::Result<dtos::SupportedForeignChains> {
-        let (_height, policy) = self
-            .get_mpc_state(mpc_contract_id.clone(), GET_SUPPORTED_FOREIGN_CHAINS)
-            .await?;
-        Ok(policy)
+    ) -> anyhow::Result<(u64, dtos::ForeignChainsConfigs)> {
+        self.get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAINS_CONFIGS)
+            .await
+    }
+
+    pub(crate) async fn get_available_chains(
+        &self,
+        mpc_contract_id: &AccountId,
+    ) -> anyhow::Result<(u64, dtos::AvailableForeignChains)> {
+        self.get_mpc_state(mpc_contract_id.clone(), GET_AVAILABLE_FOREIGN_CHAINS)
+            .await
     }
 
     /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
@@ -396,33 +403,6 @@ impl IndexerViewClient {
                 anyhow::bail!("got unexpected response querying mpc contract state")
             }
         }
-    }
-}
-
-#[cfg_attr(test, mockall::automock)]
-pub(crate) trait ReadSupportedForeignChain: Send + Sync {
-    fn get_supported_chains(
-        &self,
-    ) -> impl Future<Output = anyhow::Result<dtos::SupportedForeignChains>> + Send;
-}
-
-#[derive(Clone)]
-pub(crate) struct RealForeignChainPolicyReader {
-    indexer_state: Arc<IndexerState>,
-}
-
-impl RealForeignChainPolicyReader {
-    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
-        Self { indexer_state }
-    }
-}
-
-impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
-    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
-        self.indexer_state
-            .view_client
-            .get_supported_chains(&self.indexer_state.mpc_contract_id)
-            .await
     }
 }
 
@@ -581,7 +561,7 @@ impl IndexerRpcHandler {
 /// The MPC node implementation needs this and only this to be able to interact
 /// with the indexer.
 /// TODO(#592): abstract away having an indexer running in a separate process
-pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
+pub struct IndexerAPI<TransactionSender> {
     /// Provides the current contract state as well as updates to it.
     pub contract_state_receiver: watch::Receiver<ContractState>,
     /// Provides block updates (signature requests and other relevant receipts).
@@ -603,7 +583,9 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
-    pub foreign_chain_policy_reader: ForeignChainPolicyReader,
+    /// Watcher that tracks the contract's available foreign chains and their
+    /// registered supporters (by TLS key).
+    pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
 
     pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }

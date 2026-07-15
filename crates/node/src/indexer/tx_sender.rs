@@ -314,7 +314,7 @@ async fn observe_tx_result(
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
         | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
+        | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
     }
 }
 

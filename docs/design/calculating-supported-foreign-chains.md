@@ -1,8 +1,14 @@
 # Calculating the whitelisted and available foreign-chain sets
 
-Status: Proposed — supersedes the all-participant intersection rule in
+Status: Implemented — supersedes the all-participant intersection rule in
 [`docs/foreign-chain-transactions.md`](../foreign-chain-transactions.md). Tracked by
-[#3434](https://github.com/near/mpc/issues/3434).
+[#3434](https://github.com/near/mpc/issues/3434). Final method names differ from
+this proposal: registration is `register_foreign_chains_config`, the per-node view
+is `get_foreign_chains_configs`, and the whitelist is served by
+`allowed_foreign_chain_providers`. The legacy intersection API
+(`get_supported_foreign_chains`, `get_foreign_chain_support_by_node`,
+`register_foreign_chain_config`, `register_foreign_chain_support`) has been
+removed; `verify_foreign_transaction` gates on the available set.
 
 ## Background
 

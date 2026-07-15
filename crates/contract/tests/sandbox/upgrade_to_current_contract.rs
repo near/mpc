@@ -17,7 +17,6 @@ use mpc_contract::primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -29,7 +28,6 @@ use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
-use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -474,19 +472,14 @@ async fn init_running_rejects_external_callers_pre_initialization() {
     )
 }
 
-/// Verifies that per-node foreign chain configurations registered on the old
-/// contract via the deprecated `register_foreign_chain_config` are migrated to
-/// the new `node_foreign_chain_support` layout: each node's full
-/// `ForeignChainConfiguration` (chain → RPC providers) collapses to the set of
-/// supported chains, and per-node entries are preserved (not merged).
+/// Verifies that migrating a contract holding per-node foreign chain
+/// registrations made through the removed `register_foreign_chain_config`
+/// endpoint succeeds, and that the legacy state leaves along with its API.
 #[rstest]
 #[tokio::test]
-async fn upgrade_preserves_per_node_foreign_chain_support(
+async fn upgrade_drops_legacy_per_node_foreign_chain_support(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) -> anyhow::Result<()> {
-    // Three participants, each registering a distinct chain configuration. The
-    // chosen sets are deliberately overlapping but not equal so the test can
-    // detect any per-node merging or loss.
     let per_node_chains: [&[dtos::ForeignChain]; 3] = [
         &[dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Ethereum],
         &[dtos::ForeignChain::Bitcoin],
@@ -494,30 +487,28 @@ async fn upgrade_preserves_per_node_foreign_chain_support(
     ];
 
     // Given: an old contract with participants and per-node foreign chain
-    // configurations registered through the deprecated method.
+    // configurations registered through the legacy method (built as raw JSON;
+    // the DTOs no longer exist in the current interface).
     let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
     let contract = deploy_old(&worker, network).await?;
     let (accounts, _participants) =
         init_old_contract(&worker, &contract, per_node_chains.len()).await?;
 
     for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
-        #[expect(deprecated)]
-        let configuration: dtos::ForeignChainConfiguration = chains
+        let configuration: serde_json::Map<String, serde_json::Value> = chains
             .iter()
             .map(|chain| {
                 (
-                    *chain,
-                    NonEmptyBTreeSet::new(dtos::RpcProvider {
-                        rpc_url: format!("https://{:?}.{}.example.near", chain, account.id()),
-                    }),
+                    format!("{chain:?}"),
+                    serde_json::json!([{
+                        "rpc_url": format!("https://{:?}.{}.example.near", chain, account.id()),
+                    }]),
                 )
             })
-            .collect::<BTreeMap<_, _>>()
-            .into();
+            .collect();
 
-        #[expect(deprecated)]
         account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_CONFIG)
+            .call(contract.id(), "register_foreign_chain_config")
             .args_json(serde_json::json!({
                 "foreign_chain_configuration": configuration,
             }))
@@ -532,26 +523,20 @@ async fn upgrade_preserves_per_node_foreign_chain_support(
         .await
         .expect("❌ migration() failed");
 
-    // Then: each node's supported-chain set matches the chains it originally
-    // registered (RPC providers are dropped by the new layout).
-    let support: dtos::ForeignChainSupportByNode = contract
-        .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
+    // Then: the legacy view is gone, while the new foreign-chain views work
+    // and hold no registrations (the legacy entries were dropped, not carried
+    // over).
+    let legacy_view = contract.view("get_foreign_chain_support_by_node").await;
+    let error = legacy_view.expect_err("legacy view must not exist after the upgrade");
+    assert!(
+        format!("{error:?}").contains("MethodNotFound"),
+        "expected MethodNotFound, got: {error:?}"
+    );
+
+    let configs: dtos::ForeignChainsConfigs = contract
+        .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
         .await?
         .json()?;
-
-    for (account, chains) in accounts.iter().zip(per_node_chains.iter()) {
-        let actual = support
-            .foreign_chain_support_by_node
-            .get(account.id())
-            .unwrap_or_else(|| panic!("entry for {} preserved post-upgrade", account.id()));
-        let expected: dtos::SupportedForeignChains =
-            chains.iter().copied().collect::<BTreeSet<_>>().into();
-        assert_eq!(
-            *actual,
-            expected,
-            "supported chains for {} should match what was registered pre-upgrade",
-            account.id(),
-        );
-    }
+    assert!(configs.is_empty());
     Ok(())
 }
