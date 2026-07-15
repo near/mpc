@@ -1,9 +1,8 @@
 mod sign;
 
-use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
-use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -23,13 +22,8 @@ use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
-use near_mpc_contract_interface::types as dtos;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ReconstructionThreshold;
-use threshold_signatures::ecdsa::{KeygenOutput, Signature};
-use threshold_signatures::frost_secp256k1::VerifyingKey;
-use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
@@ -189,46 +183,11 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader> SignatureProvider
-    for VerifyForeignTxProvider<ForeignChainPolicyReader>
+impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
     ForeignChainPolicyReader: crate::indexer::ReadSupportedForeignChain,
 {
-    type PublicKey = VerifyingKey;
-    type SecretShare = SigningShare;
-    type KeygenOutput = KeygenOutput;
-    type Signature = (dtos::ForeignTxSignPayload, Signature);
-    type TaskId = VerifyForeignTxTaskId;
-
-    async fn make_signature(
-        &self,
-        id: VerifyForeignTxId,
-    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
-        self.make_verify_foreign_tx_leader(id).await
-    }
-
-    async fn run_key_generation_client(
-        _threshold: ReconstructionThreshold,
-        _channel: NetworkTaskChannel,
-    ) -> anyhow::Result<Self::KeygenOutput> {
-        anyhow::bail!(
-            "this method is never called, as we are re-using the ecdsa signature provider"
-        )
-    }
-
-    async fn run_key_resharing_client(
-        _new_threshold: ReconstructionThreshold,
-        _key_share: Option<SigningShare>,
-        _public_key: VerifyingKey,
-        _old_participants: &ParticipantsConfig,
-        _channel: NetworkTaskChannel,
-    ) -> anyhow::Result<Self::KeygenOutput> {
-        anyhow::bail!(
-            "this method is never called, as we are re-using the ecdsa signature provider"
-        )
-    }
-
-    async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
+    pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::VerifyForeignTxTaskId(task) => match task {
                 VerifyForeignTxTaskId::VerifyForeignTx {
@@ -245,10 +204,6 @@ where
             ),
         }
 
-        Ok(())
-    }
-
-    async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         Ok(())
     }
 }
