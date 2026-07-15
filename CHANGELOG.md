@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.13.2] - 2026-07-15
+
+### 🐛 Bug Fixes
+
+- [#3807](https://github.com/near/mpc/pull/3807)(@barakeinav1): *(node)* Migrate state_sync ExternalStorage → Peers on start (#3796) (#3807)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3822](https://github.com/near/mpc/pull/3822)(@barakeinav1): Bump to nearcore 2.13.1 (#3808) (#3822)
+
+
 ## [3.13.1] - 2026-07-01
 
 ### 🚀 Features
