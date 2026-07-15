@@ -37,6 +37,7 @@ pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
 pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
 pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 23;
+pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 24;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -74,6 +75,7 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
+    let whitelisted_chains = config.whitelisted_chains.clone();
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
@@ -88,6 +90,11 @@ pub async fn must_setup_cluster(
     let ProtocolContractState::Running(running) = protocol_state else {
         panic!("expected Running state");
     };
+
+    cluster
+        .whitelist_foreign_chains(&initial_participant_indices, &whitelisted_chains)
+        .await
+        .expect("failed to whitelist foreign chains");
 
     wait_for_presignatures(
         &cluster,
