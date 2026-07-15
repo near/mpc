@@ -24,8 +24,8 @@ const VECTORS_PATH: &str = concat!(
     "/tests/vectors/ckd_test_vectors.json"
 );
 
-/// Hash-to-curve domain separator, mirroring the crate-private constant of the
-/// same name; used only to document the DST in the generated vectors file.
+/// Mirror of the crate-private `crypto::constants::NEAR_CKD_DOMAIN` (the source
+/// of truth); used only to document the DST in the generated vectors file.
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
 #[derive(Deserialize)]
@@ -57,7 +57,8 @@ fn load_vectors() -> Vec<Vector> {
     parsed.vectors
 }
 
-/// Parses a 32-byte big-endian hex scalar, reduced mod the BLS12-381 scalar order.
+/// Parses a 32-byte big-endian hex scalar. The value must be canonical, i.e.
+/// strictly less than the BLS12-381 scalar order (no reduction is performed).
 fn scalar_from_be_hex(hex_be: &str) -> Scalar {
     let mut bytes: [u8; 32] = hex::decode(hex_be)
         .expect("scalar hex")
@@ -97,7 +98,6 @@ fn hex_g2(point: &G2Projective) -> String {
     hex::encode(point.to_compressed())
 }
 
-/// `H(pk_compressed || app_id)` mapped to G1.
 fn hash_point(pk: &G2Projective, app_id: &[u8]) -> G1Projective {
     ckd::hash_app_id_with_pk(&VerifyingKey::new(*pk), app_id)
 }
@@ -130,7 +130,7 @@ fn ckd_test_vectors__should_derive_expected_public_values() {
     // Given
     let vectors = load_vectors();
 
-    for v in &vectors {
+    for (i, v) in vectors.iter().enumerate() {
         let msk = scalar_from_be_hex(&v.msk);
         let a = scalar_from_be_hex(&v.a);
         let y = scalar_from_be_hex(&v.y);
@@ -145,12 +145,12 @@ fn ckd_test_vectors__should_derive_expected_public_values() {
         let big_c = h * msk + app_pk1 * y;
 
         // Then
-        assert_eq!(hex_g2(&pk), v.pk);
-        assert_eq!(hex_g1(&app_pk1), v.app_pk1);
-        assert_eq!(hex_g2(&app_pk2), v.app_pk2);
-        assert_eq!(hex_g1(&h), v.hash_point);
-        assert_eq!(hex_g1(&big_y), v.big_y);
-        assert_eq!(hex_g1(&big_c), v.big_c);
+        assert_eq!(hex_g2(&pk), v.pk, "vector {i}: pk");
+        assert_eq!(hex_g1(&app_pk1), v.app_pk1, "vector {i}: app_pk1");
+        assert_eq!(hex_g2(&app_pk2), v.app_pk2, "vector {i}: app_pk2");
+        assert_eq!(hex_g1(&h), v.hash_point, "vector {i}: hash_point");
+        assert_eq!(hex_g1(&big_y), v.big_y, "vector {i}: big_y");
+        assert_eq!(hex_g1(&big_c), v.big_c, "vector {i}: big_c");
     }
 }
 
@@ -162,7 +162,7 @@ fn ckd_test_vectors__should_recover_a_signature_that_verifies() {
     // Given
     let vectors = load_vectors();
 
-    for v in &vectors {
+    for (i, v) in vectors.iter().enumerate() {
         let a = scalar_from_be_hex(&v.a);
         let pk = g2_from_hex(&v.pk);
         let big_y = g1_from_hex(&v.big_y);
@@ -173,8 +173,11 @@ fn ckd_test_vectors__should_recover_a_signature_that_verifies() {
         let sig = CKDOutput::new(big_y, big_c).unmask(a);
 
         // Then
-        assert_eq!(hex_g1(&sig), v.sig);
-        assert!(verify_signature(&VerifyingKey::new(pk), &app_id, &sig).is_ok());
+        assert_eq!(hex_g1(&sig), v.sig, "vector {i}: sig");
+        assert!(
+            verify_signature(&VerifyingKey::new(pk), &app_id, &sig).is_ok(),
+            "vector {i}: signature verification"
+        );
     }
 }
 
@@ -184,14 +187,14 @@ fn ckd_test_vectors__should_derive_expected_hkdf_secret() {
     // Given
     let vectors = load_vectors();
 
-    for v in &vectors {
+    for (i, v) in vectors.iter().enumerate() {
         let sig = g1_from_hex(&v.sig);
 
         // When
         let s = derive_strong_key(&sig);
 
         // Then
-        assert_eq!(hex::encode(s), v.s);
+        assert_eq!(hex::encode(s), v.s, "vector {i}: s");
     }
 }
 
@@ -203,7 +206,7 @@ fn ckd_test_vectors__should_satisfy_public_verifiability_pairings() {
     // Given
     let vectors = load_vectors();
 
-    for v in &vectors {
+    for (i, v) in vectors.iter().enumerate() {
         let pk = g2_from_hex(&v.pk);
         let app_pk1 = g1_from_hex(&v.app_pk1);
         let app_pk2 = g2_from_hex(&v.app_pk2);
@@ -222,13 +225,20 @@ fn ckd_test_vectors__should_satisfy_public_verifiability_pairings() {
             pairing_product_is_identity(&[(big_c, minus_g2), (big_y, app_pk2), (h, pk)]);
 
         // Then
-        assert!(app_key_ok, "app public key pairing check failed");
-        assert!(output_ok, "aggregated output pairing check failed");
+        assert!(
+            app_key_ok,
+            "vector {i}: app public key pairing check failed"
+        );
+        assert!(
+            output_ok,
+            "vector {i}: aggregated output pairing check failed"
+        );
     }
 }
 
-/// Source for a generator scalar: a label to be hashed (top byte cleared so it
-/// stays below the group order) or an explicit 32-byte big-endian hex value.
+/// Source for a generator scalar: a label to be hashed (top two bits of the top
+/// byte cleared so the result stays below the scalar order) or an explicit
+/// 32-byte big-endian hex value.
 enum ScalarSpec {
     Label(&'static str),
     Hex(&'static str),
@@ -298,7 +308,7 @@ fn vectors_metadata() -> serde_json::Value {
     serde_json::json!({
         "_encoding": {
             "curve": "BLS12-381",
-            "scalars": "32-byte big-endian hex, reduced mod the scalar field order",
+            "scalars": "32-byte big-endian hex, canonical (strictly less than the scalar field order)",
             "g1_points": "48-byte compressed hex (blstrs/ZCash encoding)",
             "g2_points": "96-byte compressed hex (blstrs/ZCash encoding)",
             "pk_group": "G2 (network public key)",
@@ -316,12 +326,12 @@ fn vectors_metadata() -> serde_json::Value {
     })
 }
 
-/// Regenerates `tests/vectors/ckd_test_vectors.json`. Ignored so it never runs
-/// in CI; run manually with `cargo nextest run -- --ignored generate_ckd_test_vectors`
-/// (or `cargo test -- --ignored generate_ckd_test_vectors --nocapture`) and paste
-/// the printed JSON into the file.
+/// Rewrites `tests/vectors/ckd_test_vectors.json` in place. Ignored so it never
+/// runs in CI; run manually with
+/// `cargo nextest run -- --ignored generate_ckd_test_vectors` after changing the
+/// scheme or the vector inputs, then commit the regenerated file.
 #[test]
-#[ignore = "manual test-vector generator; prints JSON to stdout"]
+#[ignore = "manual test-vector generator; rewrites the committed vectors file"]
 fn generate_ckd_test_vectors() {
     // q - 1, the largest valid scalar; exercises little-endian encoding and
     // canonical reduction on the consuming side.
@@ -369,8 +379,7 @@ fn generate_ckd_test_vectors() {
     let mut doc = vectors_metadata();
     doc["vectors"] = serde_json::Value::Array(vectors);
 
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&doc).expect("serialize vectors")
-    );
+    let json = serde_json::to_string_pretty(&doc).expect("serialize vectors");
+    std::fs::write(VECTORS_PATH, format!("{json}\n")).expect("write test vectors file");
+    println!("wrote {VECTORS_PATH}");
 }

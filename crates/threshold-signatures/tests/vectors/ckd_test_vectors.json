@@ -8,7 +8,7 @@
     "hash_to_curve_input": "pk_compressed(96B) || app_id, RFC 9380 BLS12381G1_XMD:SHA-256_SSWU_RO_, empty aug",
     "pk_group": "G2 (network public key)",
     "s": "HKDF-SHA256(ikm = sig_compressed[48B], salt = none, info = \"\"), 32 bytes",
-    "scalars": "32-byte big-endian hex, reduced mod the scalar field order",
+    "scalars": "32-byte big-endian hex, canonical (strictly less than the scalar field order)",
     "signature_group": "G1"
   },
   "_notes": {
