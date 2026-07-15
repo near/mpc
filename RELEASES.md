@@ -148,10 +148,7 @@ by GitHub when the draft is published.
 Review the draft and click "Publish release." Publishing creates the
 `3.11.0` git tag at the released commit.
 
-> ⚠️ **Point of no return.** Publishing creates the tag, and once operators
-> consume `:X.Y.Z` the tag can't be cleanly re-pointed (the Release workflow's
-> tag/release-existence checks block it). Only publish after step 3's
-> reproducibility check passes.
+> ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 
 ### 6. Promote to operator floating tags (optional)
 
