@@ -76,7 +76,7 @@ impl ReadSupportedForeignChain for FakeReadSupportedForeignChain {
     async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
         // Shim while the node's read path still asks for "supported" chains:
         // the fake models the new API only, so serve the available set.
-        // TODO(#3630): dies with the trait once the node reads available chains.
+        // TODO(#3630): removed with the trait once the node reads available chains.
         Ok(self
             .contract
             .lock()
@@ -118,6 +118,9 @@ impl FakeMpcContractState {
         &self.foreign_chains_configs
     }
 
+    /// Deviation from the real contract: registrations are accepted only in
+    /// `Running`, while the real endpoint also accepts existing or prospective
+    /// participants during `Initializing` and `Resharing`.
     pub fn register_foreign_chains_config(
         &mut self,
         account_id: AccountId,
@@ -139,10 +142,15 @@ impl FakeMpcContractState {
         self.recompute_available_foreign_chains();
     }
 
-    /// Mirrors the real contract's rule: a chain is available once a signing
-    /// threshold of current participants registered it. Deviation: the real
-    /// contract additionally requires the chain to be whitelisted; the fake has
-    /// no provider-whitelist voting, so every registered chain counts.
+    /// Mirrors the real contract's availability rule, with three deviations
+    /// kept so the fake stays a thin model that only reacts to registrations:
+    /// - no whitelisting: the fake has no provider-whitelist voting, so every
+    ///   registered chain counts;
+    /// - threshold: the governance threshold stands in for the real contract's
+    ///   maximum reconstruction threshold across ForeignTx domains (to be
+    ///   aligned when #3640 brings reconstruction thresholds to the node);
+    /// - the recomputation runs even when no ForeignTx domain is registered,
+    ///   where the real contract skips it.
     fn recompute_available_foreign_chains(&mut self) {
         let ProtocolContractState::Running(state) = &self.state else {
             return;
@@ -677,7 +685,7 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::RegisterForeignChainConfig(_) => {
                         // Legacy registration; the fake models only the new API.
-                        // TODO(#3630): dies with the dual-write.
+                        // TODO(#3630): removed when the dual-write is dropped.
                     }
                     ChainSendTransactionRequest::RegisterForeignChainsConfig(args) => {
                         let mut contract = contract.lock().await;

@@ -945,8 +945,10 @@ fn stop_initializing(
 
 /// Sends both the deprecated and the new foreign-chain registration transactions
 /// so nodes remain compatible with pre- and post-upgrade contracts during the
-/// upgrade window. TODO(#3630): drop RegisterForeignChainConfig once the node's
-/// read path no longer relies on the legacy registration.
+/// upgrade window. Registration always reflects the node's current config — an
+/// empty one included, since a node that dropped every chain must propagate
+/// that to the contract. TODO(#3630): drop RegisterForeignChainConfig once the
+/// node's read path no longer relies on the legacy registration.
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
     foreign_chains: &mpc_node_config::ForeignChainsConfig,
@@ -986,4 +988,61 @@ fn make_initializing_stop_fn(
             stop_initializing(new_state, key_event.id.epoch_id, &key_event_sender)
         }),
     )
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::register_foreign_chains;
+    use crate::indexer::types::ChainSendTransactionRequest;
+    use crate::tests::common::MockTransactionSender;
+    use assert_matches::assert_matches;
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
+    use near_mpc_contract_interface::types as dtos;
+    use std::collections::BTreeSet;
+    use std::num::NonZeroU64;
+    use tokio::sync::mpsc;
+
+    /// Guards the upgrade-window dual-write: the legacy registration must keep
+    /// being emitted alongside the new one until #3630 drops it.
+    #[tokio::test]
+    async fn register_foreign_chains__should_send_legacy_and_new_registrations() {
+        // Given: a node config covering Solana.
+        let foreign_chains = ForeignChainsConfig {
+            solana: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(30).unwrap(),
+                max_retries: NonZeroU64::new(3).unwrap(),
+                providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
+                    RpcProviderName::from("public".to_string()),
+                    ForeignChainProviderConfig {
+                        rpc_url: "https://rpc.public.example.com".to_string(),
+                        auth: Default::default(),
+                    },
+                ),
+            }),
+            ..Default::default()
+        };
+        let (sender, mut receiver) = mpsc::channel(10);
+        let txn_sender = MockTransactionSender {
+            transaction_sender: sender,
+        };
+
+        // When
+        register_foreign_chains(&txn_sender, &foreign_chains).await;
+
+        // Then: the legacy registration is emitted first, then the new one.
+        assert_matches!(
+            receiver.try_recv(),
+            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(_))
+        );
+        let expected: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Solana]).into();
+        assert_matches!(
+            receiver.try_recv(),
+            Ok(ChainSendTransactionRequest::RegisterForeignChainsConfig(args))
+                if args.foreign_chains_config == expected
+        );
+        assert_matches!(receiver.try_recv(), Err(_));
+    }
 }
