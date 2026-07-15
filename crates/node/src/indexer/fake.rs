@@ -127,6 +127,9 @@ impl FakeMpcContractState {
         foreign_chains_config: dtos::ForeignChainsConfig,
     ) {
         let ProtocolContractState::Running(state) = &self.state else {
+            tracing::info!(
+                "register_foreign_chains_config transaction ignored because the contract is not in running state"
+            );
             return;
         };
         let participants = state.parameters.participants().participants();
@@ -142,15 +145,10 @@ impl FakeMpcContractState {
         self.recompute_available_foreign_chains();
     }
 
-    /// Mirrors the real contract's availability rule, with three deviations
-    /// kept so the fake stays a thin model that only reacts to registrations:
-    /// - no whitelisting: the fake has no provider-whitelist voting, so every
-    ///   registered chain counts;
-    /// - threshold: the governance threshold stands in for the real contract's
-    ///   maximum reconstruction threshold across ForeignTx domains (to be
-    ///   aligned when #3640 brings reconstruction thresholds to the node);
-    /// - the recomputation runs even when no ForeignTx domain is registered,
-    ///   where the real contract skips it.
+    /// Unlike the real contract, no whitelisting is required and the
+    /// recomputation runs even without a ForeignTx domain.
+    /// TODO(#3640): use the max reconstruction threshold across ForeignTx
+    /// domains instead of the governance threshold.
     fn recompute_available_foreign_chains(&mut self) {
         let ProtocolContractState::Running(state) = &self.state else {
             return;

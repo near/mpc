@@ -943,12 +943,9 @@ fn stop_initializing(
     }
 }
 
-/// Sends both the deprecated and the new foreign-chain registration transactions
-/// so nodes remain compatible with pre- and post-upgrade contracts during the
-/// upgrade window. Registration always reflects the node's current config — an
-/// empty one included, since a node that dropped every chain must propagate
-/// that to the contract. TODO(#3630): drop RegisterForeignChainConfig once the
-/// node's read path no longer relies on the legacy registration.
+/// Dual-writes the node's foreign-chain registration (legacy + new endpoint);
+/// an empty config still registers so that dropping every chain propagates.
+/// TODO(#3630): drop the legacy RegisterForeignChainConfig half.
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
     foreign_chains: &mpc_node_config::ForeignChainsConfig,
@@ -1003,6 +1000,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU64;
     use tokio::sync::mpsc;
+    use tokio::sync::mpsc::error::TryRecvError;
 
     /// Guards the upgrade-window dual-write: the legacy registration must keep
     /// being emitted alongside the new one until #3630 drops it.
@@ -1032,9 +1030,11 @@ mod tests {
         register_foreign_chains(&txn_sender, &foreign_chains).await;
 
         // Then: the legacy registration is emitted first, then the new one.
+        let expected_legacy = foreign_chains.configured_chains();
         assert_matches!(
             receiver.try_recv(),
-            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(_))
+            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(args))
+                if args.foreign_chain_configuration == expected_legacy
         );
         let expected: dtos::ForeignChainsConfig =
             BTreeSet::from([dtos::ForeignChain::Solana]).into();
@@ -1043,6 +1043,6 @@ mod tests {
             Ok(ChainSendTransactionRequest::RegisterForeignChainsConfig(args))
                 if args.foreign_chains_config == expected
         );
-        assert_matches!(receiver.try_recv(), Err(_));
+        assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
     }
 }
