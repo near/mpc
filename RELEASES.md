@@ -92,7 +92,28 @@ run if any artifact is missing.
 > smoke-test on testnet before promoting, deploy
 > `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
 
-### 3. Run the Release workflow
+### 3. Verify the build is reproducible
+
+**Do this before publishing (step 5) — publishing creates the git tag and is
+effectively irreversible.** Confirm the artifacts CI built match a local
+reproducible build, so the released `:X.Y.Z` images and contract WASM are
+exactly what the source produces:
+
+- **Contract WASM** — build via the reproducible path and compare its hash to
+  the CI `contract` artifact:
+  ```sh
+  nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+  ```
+- **Docker images** — rebuild with `repro-env` and compare the digests to the
+  CI-pushed `nearone/mpc-{node,node-gcp,launcher}:<branch>-<short-sha>`:
+  ```sh
+  ./deployment/build-images.sh --node --rust-launcher
+  ```
+
+See [reproducible builds](./docs/reproducible-builds.md) for the full
+procedure. If any hash/digest differs, do **not** publish — investigate first.
+
+### 4. Run the Release workflow
 
 Trigger the [Release workflow](.github/workflows/release.yml) against the
 branch:
@@ -115,7 +136,7 @@ is missing.
 > [Build Contract](.github/workflows/build_contract.yml) workflow
 > manually before triggering the release.
 
-### 4. Edit and publish the draft release
+### 5. Edit and publish the draft release
 
 When the workflow finishes, a draft release named `MPC 3.11.0` appears on
 the [releases page](https://github.com/near/mpc/releases). The draft
@@ -126,7 +147,12 @@ by GitHub when the draft is published.
 Review the draft and click "Publish release." Publishing creates the
 `3.11.0` git tag at the released commit.
 
-### 5. Promote to operator floating tags (optional)
+> ⚠️ **Point of no return.** Publishing creates the tag, and once operators
+> consume `:X.Y.Z` the tag can't be cleanly re-pointed (the Release workflow's
+> tag/release-existence checks block it). Only publish after step 3's
+> reproducibility check passes.
+
+### 6. Promote to operator floating tags (optional)
 
 Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
