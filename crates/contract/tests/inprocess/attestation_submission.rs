@@ -1,29 +1,27 @@
 #![allow(non_snake_case)]
 
+use super::common;
 use mpc_contract::{
     MpcContract,
-    crypto_shared::types::PublicKeyExtended,
     errors::{Error, InvalidParameters},
     primitives::{
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{bogus_ed25519_public_key, gen_participants},
-        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+        test_utils::bogus_ed25519_public_key,
+        thresholds::ProposedThresholdParameters,
     },
     tee::tee_state::NodeId,
 };
 use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
-    ReconstructionThreshold,
+    Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
-use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
 use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -79,101 +77,31 @@ impl TestSetupBuilder {
     }
 
     fn build(self) -> TestSetup {
-        // 1. Configuration & Defaults
         let participant_count = self.participant_count.unwrap_or(DEFAULT_PARTICIPANT_COUNT);
         let threshold = self.threshold.unwrap_or(DEFAULT_THRESHOLD_SIZE);
         let contract_protocol_state = self
             .contract_protocol_state
             .unwrap_or(DEFAUTL_CONTRACT_PROTOCOL_STATE);
 
-        // 2. Data Generation
-        let participants = gen_participants(participant_count);
-        let participants_list = participants.participants().clone();
-
-        let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
-            .expect("Failed to create threshold parameters");
-
-        // Construct dummy keys for setup
-        let near_public_key =
-            near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
-
-        let keyset = Keyset::new(
-            EpochId::new(5),
-            vec![KeyForDomain {
-                domain_id: DomainId::default(),
-                key: PublicKeyExtended::Secp256k1 { near_public_key },
-                attempt: AttemptId::new(),
-            }],
-        );
-
-        let domains = vec![DomainConfig {
-            id: DomainId::default(),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: DomainPurpose::Sign,
-        }];
-
-        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-
-        let context = VMContextBuilder::new()
-            .attached_deposit(NearToken::from_yoctonear(1))
-            .predecessor_account_id(contract_account_id.clone())
-            .current_account_id(contract_account_id)
-            .build();
-
-        testing_env!(context);
-
-        let init_config = self.init_config;
-        let contract = MpcContract::init_running(
-            domains,
-            1,
-            keyset,
-            parameters.clone().into(),
-            init_config.clone(),
-        )
-        .unwrap();
+        let common::RunningContract {
+            contract,
+            participants: participants_list,
+            parameters,
+        } = common::build_running_contract(participant_count, threshold, self.init_config);
 
         let mut setup = TestSetup {
             contract,
             participants_list,
         };
 
-        let all_nodes: Vec<NodeId> = setup
-            .participants_list
-            .iter()
-            .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.tls_public_key.clone(),
-                account_public_key: bogus_ed25519_public_key(),
-            })
-            .collect();
-
         match contract_protocol_state {
-            // Contract is aready in running
             ContractProtocolState::Running => {}
-            // Start key generation to go into initalization
             ContractProtocolState::Initializing => {
-                for node_id in &all_nodes {
-                    let context = create_context_for_participant(&node_id.account_id);
-                    testing_env!(context);
-
-                    setup
-                        .contract
-                        .vote_add_domains(vec![DomainConfig {
-                            id: DomainId(1),
-                            protocol: Protocol::Frost,
-                            reconstruction_threshold: ReconstructionThreshold::new(2),
-                            purpose: DomainPurpose::Sign,
-                        }])
-                        .unwrap();
-                }
-
-                assert_matches!(
-                    setup.contract.state(),
-                    ProtocolContractState::Initializing(_)
-                );
+                let participants = setup.participants_list.clone();
+                common::transition_to_initializing(&mut setup.contract, &participants);
             }
             ContractProtocolState::Resharing => {
+                let all_nodes = setup.get_participant_node_ids();
                 let threshold_nodes = all_nodes.iter().take(threshold as usize);
 
                 for node_id in threshold_nodes.clone() {
@@ -184,9 +112,7 @@ impl TestSetupBuilder {
                 }
 
                 for node_id in threshold_nodes {
-                    let context = create_context_for_participant(&node_id.account_id);
-                    testing_env!(context);
-
+                    testing_env!(common::participant_context(&node_id.account_id));
                     let proposal =
                         ProposedThresholdParameters::new(parameters.clone(), BTreeMap::new());
                     setup
@@ -219,8 +145,7 @@ impl TestSetup {
         node_id: &NodeId,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        let context = create_context_for_participant(&node_id.account_id);
-        testing_env!(context);
+        testing_env!(common::participant_context(&node_id.account_id));
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
     }
@@ -266,14 +191,6 @@ impl TestSetup {
             expected_measurements: None,
         })
     }
-}
-
-fn create_context_for_participant(account_id: &AccountId) -> VMContext {
-    VMContextBuilder::new()
-        .signer_account_id(account_id.clone())
-        .predecessor_account_id(account_id.clone())
-        .block_timestamp(near_sdk::env::block_timestamp())
-        .build()
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {

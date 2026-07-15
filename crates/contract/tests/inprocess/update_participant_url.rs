@@ -1,93 +1,17 @@
 #![allow(non_snake_case)]
 
-use mpc_contract::{
-    MpcContract,
-    crypto_shared::types::PublicKeyExtended,
-    errors::{Error, InvalidState},
-    primitives::{
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantId, ParticipantInfo},
-        test_utils::gen_participants,
-        thresholds::{Threshold, ThresholdParameters},
-    },
+use super::common::{
+    RunningContract, build_running_contract, participant_context, transition_to_initializing,
 };
+use mpc_contract::errors::{Error, InvalidState};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, ParticipantInfo as DtoParticipantInfo, Protocol,
-    ProtocolContractState, ReconstructionThreshold,
+    ParticipantInfo as DtoParticipantInfo, ProtocolContractState,
 };
-use near_sdk::{VMContext, test_utils::VMContextBuilder, testing_env};
+use near_sdk::testing_env;
 use std::str::FromStr;
 
 use assert_matches::assert_matches;
-
-fn participant_context(account_id: &AccountId) -> VMContext {
-    VMContextBuilder::new()
-        .signer_account_id(account_id.clone())
-        .predecessor_account_id(account_id.clone())
-        .build()
-}
-
-struct RunningContract {
-    contract: MpcContract,
-    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-}
-
-fn build_running_contract(participant_count: usize, threshold: u64) -> RunningContract {
-    let participants = gen_participants(participant_count);
-    let participants_list = participants.participants().clone();
-    let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
-        .expect("failed to create threshold parameters");
-
-    let near_public_key =
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
-    let keyset = Keyset::new(
-        EpochId::new(5),
-        vec![KeyForDomain {
-            domain_id: DomainId::default(),
-            key: PublicKeyExtended::Secp256k1 { near_public_key },
-            attempt: AttemptId::new(),
-        }],
-    );
-    let domains = vec![DomainConfig {
-        id: DomainId::default(),
-        protocol: Protocol::CaitSith,
-        reconstruction_threshold: ReconstructionThreshold::new(2),
-        purpose: DomainPurpose::Sign,
-    }];
-
-    let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-    testing_env!(
-        VMContextBuilder::new()
-            .predecessor_account_id(contract_account_id.clone())
-            .current_account_id(contract_account_id)
-            .build()
-    );
-
-    let contract = MpcContract::init_running(domains, 1, keyset, parameters.into(), None).unwrap();
-
-    RunningContract {
-        contract,
-        participants: participants_list,
-    }
-}
-
-/// Drives the contract out of `Running` by having every participant vote to add a new domain,
-/// which transitions it into `Initializing`.
-fn transition_to_initializing(rc: &mut RunningContract) {
-    for (account_id, _, _) in rc.participants.clone() {
-        testing_env!(participant_context(&account_id));
-        rc.contract
-            .vote_add_domains(vec![DomainConfig {
-                id: DomainId(1),
-                protocol: Protocol::Frost,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::Sign,
-            }])
-            .unwrap();
-    }
-    assert_matches!(rc.contract.state(), ProtocolContractState::Initializing(_));
-}
 
 fn participant_info(rc: &RunningContract, account_id: &AccountId) -> DtoParticipantInfo {
     let ProtocolContractState::Running(running) = rc.contract.state() else {
@@ -106,7 +30,7 @@ fn participant_info(rc: &RunningContract, account_id: &AccountId) -> DtoParticip
 #[test]
 fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     // Given
-    let mut rc = build_running_contract(3, 2);
+    let mut rc = build_running_contract(3, 2, None);
     let (account_id, _, original_info) = rc.participants[0].clone();
     let (other_account, _, other_info) = rc.participants[1].clone();
     let new_url = "https://relocated.example.com:9000".to_string();
@@ -127,7 +51,7 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
 #[test]
 fn update_participant_url__should_reject_non_participant() {
     // Given
-    let mut rc = build_running_contract(3, 2);
+    let mut rc = build_running_contract(3, 2, None);
     let outsider = AccountId::from_str("outsider.near").unwrap();
 
     // When
@@ -146,8 +70,9 @@ fn update_participant_url__should_reject_non_participant() {
 #[test]
 fn update_participant_url__should_reject_when_not_running() {
     // Given
-    let mut rc = build_running_contract(3, 2);
-    transition_to_initializing(&mut rc);
+    let mut rc = build_running_contract(3, 2, None);
+    let participants = rc.participants.clone();
+    transition_to_initializing(&mut rc.contract, &participants);
     let (account_id, _, _) = rc.participants[0].clone();
 
     // When
