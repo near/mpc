@@ -59,93 +59,92 @@ flowchart LR
 
 ### Submission flow
 
-`mpc-contract`'s [`submit_participant_info`][submit-participant-info] becomes asynchronous for Dstack attestations, but without yield-resume: it settles the submission entirely inside a single cross-contract promise chain. The method returns `Result<PromiseOrValue<()>, Error>`. A `Mock` attestation is verified and stored synchronously and returns `Ok(PromiseOrValue::Value(()))`. A `Dstack` attestation is handed to `submit_dstack_attestation`, which builds a `Promise` that calls `tee-verifier::verify_quote` and chains `resolve_verification` as its `.then` callback; the method returns `Ok(PromiseOrValue::Promise(...))`. The attached deposit is forwarded onto the callback via `.with_attached_deposit(env::attached_deposit())` rather than stashed in contract state, so `resolve_verification` can charge storage or refund from it directly.
+`mpc-contract`'s [`submit_participant_info`][submit-participant-info] becomes asynchronous for Dstack attestations and uses the same yield-resume pattern already in place for `sign`, `request_app_private_key`, and `request_verify_foreign_tx`. The method registers a yielded promise via [`env::promise_yield_create`][promise-yield-create] (going through the contract's existing [`enqueue_yield_request`][enqueue-yield-request] helper), stashes the resulting `data_id` in `pending_attestations`, and fires a cross-contract call to `tee-verifier::verify_quote` whose own `.then` callback (`resolve_verification`) bridges the verifier's response into a `promise_yield_resume`. Because `verify_quote` returns a `VerificationResult` value rather than failing the receipt (see [§Why a rejection is a value](#why-a-rejection-is-a-value-not-a-failed-receipt)), `resolve_verification`'s `#[callback_result]` distinguishes three outcomes: `Verified` runs the post-DCAP checks (RTMR3 replay, app-compose validation, measurement allowlist matching, report-data binding) and resumes; `Rejected` refunds and resumes **immediately** with the reason; and only `Err(PromiseError::Failed)` — the verifier unreachable or crashed — returns early, leaving cleanup to the ~200-block timeout. The yield-callback `on_attestation_verified` stays trivial, the same shape as the sign-request callback [`return_signature_and_clean_state_on_success`][sign-yield-callback]: it returns the resumed outcome to the caller, and only on the timeout (`Err(PromiseError::Failed)`) does it remove the pending entry and schedule a refund. Keeping the heavy work in `resolve_verification` makes an OOG in the yield-callback implausible, and an OOG in `resolve_verification` rolls back its whole receipt so the timeout still fires the trivial callback for cleanup. The exact branch-by-branch behavior is in [§Handling failures](#handling-failures) below.
 
-Because `verify_quote` returns a `VerificationResult` value rather than failing the receipt (see [§Why a rejection is a value](#why-a-rejection-is-a-value-not-a-failed-receipt)), `resolve_verification`'s `#[callback_result]` distinguishes three outcomes: `Ok(Verified)` runs the post-DCAP checks (RTMR3 replay, app-compose validation, measurement allowlist matching, report-data binding) and, on success, stores the attestation and charges storage; `Ok(Rejected)` returns a `QuoteRejected` error carrying the reason; and `Err(PromiseError::Failed)` — the verifier unreachable, panicked, or out of gas — returns `VerifierUnavailable`. On any error branch `resolve_verification` refunds the whole attached deposit and fires a *separate* `fail_attestation_submission` receipt whose panic fails the submitter's transaction. There is no yield, no `data_id`, no `pending_attestations` entry, and no ~200-block timeout: a failure settles immediately within the same promise chain. The exact branch-by-branch behavior is in [§Handling failures](#handling-failures) below.
+The post-DCAP policy inputs are the same fields `mpc-contract` already holds today — the allowed-image-hash list, the per-account TLS / account public-key binding, and the stored-attestation map. No new policy state is introduced; the only state addition is the `pending_attestations` map described below, which is bookkeeping for the in-flight yield.
 
-The post-DCAP policy inputs are the same fields `mpc-contract` already holds today — the allowed-image-hash list, the per-account TLS / account public-key binding, and the stored-attestation map. No new policy state is introduced, and the chain carries no bookkeeping map: everything `resolve_verification` needs travels as a `VerificationContext` borsh argument on the callback.
-
-The periodic re-validation path ([`re_verify`](../../crates/mpc-attestation/src/attestation.rs)) does not call `dcap_qvl::verify` — it re-checks post-DCAP allowlist invariants against already-stored attestations — and is therefore unaffected by this design. It stays synchronous.
+The periodic re-validation path ([`re_verify`](../../crates/contract/src/tee/tee_state.rs)) does not call `dcap_qvl::verify` — it re-checks post-DCAP allowlist invariants against already-stored attestations — and is therefore unaffected by this design. It stays synchronous.
 
 ```mermaid
 sequenceDiagram
     participant Op as Operator
     participant MPC as mpc-contract
+    participant State as State
     participant Ver as tee-verifier
     participant DCAP as dcap-qvl
 
     Op->>MPC: submit_participant_info(Dstack, tls_pk)
-    MPC->>Ver: Promise: verify_quote(quote, collateral)
-    Note over MPC: .then resolve_verification(VerificationContext),<br/>attached deposit forwarded to the callback
+    MPC->>MPC: promise_yield_create → data_id
+    MPC->>State: insert PendingAttestation { data_id, ... }
+    MPC->>Ver: Promise: verify_quote (chained .then resolve_verification)
 
     Ver->>DCAP: verify(quote, collateral, now)
 
-    alt Verified + store ok
+    alt Verified (post-DCAP runs, then resumes)
         Ver-->>MPC: VerificationResult::Verified(report)
-        MPC->>MPC: resolve_verification: verify_post_dcap_and_store vs fresh allowlist
-        MPC->>MPC: charge_attestation_storage (refund excess)
-        MPC-->>Op: PromiseOrValue::Value(()) — success
-    else Verified + post-DCAP fail, or Rejected, or verifier unreachable
-        Ver-->>MPC: Verified(report) / Rejected(reason) / (no answer)
-        MPC->>MPC: resolve_verification produces Err (QuoteRejected / VerifierUnavailable)
-        MPC->>Op: refund whole attached deposit (this receipt)
-        MPC->>MPC: fail_attestation_submission receipt panics
-        MPC-->>Op: transaction fails (carrying the reason)
+        MPC->>MPC: resolve_verification: finish_verify vs fresh allowlist
+        MPC->>State: store on pass / refund on fail, remove PendingAttestation
+        MPC->>MPC: promise_yield_resume(data_id, FinalOutcome)
+        MPC-->>Op: success or error, immediately
+    else Rejected (resumes immediately)
+        Ver-->>MPC: VerificationResult::Rejected(reason)
+        MPC->>MPC: resolve_verification: refund, remove PendingAttestation
+        MPC->>MPC: promise_yield_resume(data_id, FinalOutcome::Err(reason))
+        MPC-->>Op: error (carrying reason), immediately
+    else No verdict — verifier unreachable / silent for ~200 blocks
+        Note over MPC: resolve_verification (if it runs) only logs and returns.<br/>Cleanup is left to the runtime yield-timeout.
+        MPC->>MPC: on_attestation_verified fires with Err(PromiseError::Failed)
+        MPC->>State: remove PendingAttestation, refund
+        MPC-->>Op: error
     end
 ```
 
 #### Caller-side impact
 
-The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at 12 h). That polling-based success criterion is what makes the sync→async change transparent. The returned `Promise` now resolves through the chain with the actual outcome — success, a verifier-rejection error, a post-DCAP-failure error, or a `VerifierUnavailable` error if the verifier never answers — so any future caller that wants to await the result synchronously can, without changing the contract. There is no ~200-block timeout error to account for: every path settles as soon as the verifier's receipt finishes.
+The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at 12 h). That polling-based success criterion is what makes the sync→async change transparent. Under yield-resume the returned `Promise` also resolves with the actual outcome — success, a verifier-rejection error, or a post-DCAP-failure error (each as soon as the verifier answers), or a timeout error after ~200 blocks if it never does — so any future caller that wants to await the result synchronously can, without changing the contract.
 
 #### Handling failures
 
-The submission produces no in-flight state to clean up: nothing is inserted into contract storage at submit time, so there is no pending entry that a failure could leave wedged and no "already pending" guard to trip on a resubmit. What a failure must still get right is the money — the attached deposit — and the caller-facing outcome. Both are handled in the single `.then` callback, `resolve_verification`.
+The first thing `submit_participant_info` does is insert a `PendingAttestation` entry, and that entry has to come back out once verification finishes — successfully or not. If a failure leaves the entry behind, the submitter's account is wedged: every future `submit_participant_info` call panics on the "already pending" guard, and the deposit stays locked because the refund is part of the cleanup the contract never got around to.
 
-`resolve_verification` is a `#[private]` `#[payable]` method. It is `#[payable]` because the deposit rides forward onto it via `.with_attached_deposit`, so `env::attached_deposit()` inside the callback returns the amount the submitter attached. It observes the verifier's answer through `#[callback_result]` and reduces it to a `Result<(), Error>`:
+That makes *where* the cleanup runs the central question, because NEAR offers two natural homes for "do something when the verifier responds" and they have very different failure modes.
 
-- `Ok(VerificationResult::Verified(report))` → `verify_post_dcap_and_store(&context, &report)`, which returns `Ok(())` on a clean store or an `Err` if a post-DCAP check or the storage charge fails.
-- `Ok(VerificationResult::Rejected(reason))` → `Err(QuoteRejected { reason })`.
-- `Err(promise_err)` → `Err(VerifierUnavailable)` — the verifier was unreachable, panicked, or ran out of gas.
+A **`.then` callback** is a normal cross-contract callback chained onto the verifier's promise. The runtime runs it in a fresh receipt once the verifier's receipt finishes; if it panics or runs out of gas, that receipt rolls back atomically and the chain ends. Because the receipt is independent of whatever yield is parked in parallel, its failure has no special effect on the submitter's call — the submitter just keeps waiting on the yield.
 
-On `Ok(())` the callback returns `PromiseOrValue::Value(())`; the attestation is stored and storage has been charged, with any excess deposit refunded inside `charge_attestation_storage`.
+A **yield-callback** is different. When `submit_participant_info` calls `promise_yield_create`, it asks the runtime to *park* the submitter's call so the contract can return its result later. The runtime fires the named callback exactly once per `data_id` — either when something calls `promise_yield_resume(data_id, payload)`, or after ~200 blocks of silence with `Err(PromiseError::Failed)`. That single firing's return value is what the submitter eventually receives. There is no second invocation: an OOG inside the yield-callback rolls back its whole receipt and drops whatever cleanup it was meant to do, with no automatic retry.
 
-On `Err(err)` the callback does two things, in order, and the order is the whole point:
-
-1. `refund_to(&account_id, env::attached_deposit())` — refund the *entire* attached deposit in this receipt.
-2. Schedule a *separate* `fail_attestation_submission` receipt via `Promise::new(current_account).function_call(...).as_return()`, and return it as `PromiseOrValue::Promise`.
-
-The refund and the failure live in different receipts deliberately. `fail_attestation_submission` is a tiny `#[private]` method that logs the reason and then `env::panic_str(&reason)` — its panic is what fails the submitter's transaction and surfaces the error. If that panic instead happened inside `resolve_verification` (the `#[handle_result]`-return-an-`Err` shape), it would roll back the whole callback receipt, discarding the refund transfer and any created promises along with it. Splitting them lets the refund commit in the first receipt while the second receipt fails the caller's transaction afterward.
-
-`verify_post_dcap_and_store` has its own commit-order subtlety. Unlike the synchronous `Mock` path — where returning an `Err` rolls back the entire method receipt and un-does any partial store — this callback receipt *commits regardless* of the `Err` it hands back to `resolve_verification`. So the store cannot be left to implicit rollback. `verify_post_dcap_and_store` snapshots `env::storage_usage()`, calls `verify_and_store_dstack`, then `charge_attestation_storage`; if the charge fails (`InsufficientDeposit`), it explicitly calls `tee_state.revert_dstack_store(tls_pk, insertion)` before returning the error, so the caller never gets storage for free plus a full refund.
+The asymmetry decides the design. The work the verifier's *answer* unlocks — post-DCAP checks, the `stored_attestations` insert, the refund on rejection or post-DCAP failure, the pending-entry removal, the `promise_yield_resume` call — lives in the `.then` bridge `resolve_verification`. If it aborts mid-flight, the entire receipt rolls back atomically (including the resume), so the yield stays parked and the runtime's 200-block timeout still fires the yield-callback for cleanup — same recovery as "verifier never responded." `resolve_verification` resolves immediately on either answer it can act on: `Verified` (run post-DCAP, then resume) and `Rejected` (refund and resume with the reason). Only `Err(PromiseError::Failed)` — no verdict, the verifier was unreachable or crashed — is deliberately *not* resolved here: `resolve_verification` logs and returns early, routing that case to the timeout cleanup. The yield-callback `on_attestation_verified` is intentionally tiny: on resume, return the value to the caller; on its `Err(PromiseError::Failed)` branch — verifier unreachable or silent timeout — remove the pending entry and schedule a refund.
 
 Walking every path the system can take:
 
-- Verifier returned `Verified`, post-DCAP checks pass, storage charge succeeds → attestation stored, excess refunded, `Value(())`. Caller polls and sees the entry.
-- Verifier returned `Verified` but a post-DCAP check fails → `verify_and_store_dstack` errors (nothing was stored), `resolve_verification` refunds and fires the fail receipt.
-- Verifier returned `Verified`, post-DCAP passes, but the storage charge fails → `verify_post_dcap_and_store` reverts the store explicitly, returns the error, `resolve_verification` refunds and fires the fail receipt.
-- Verifier returned `Rejected` → `QuoteRejected`, refund + fail receipt.
-- Verifier unreachable / panicked / out of gas (`Err(PromiseError::Failed)`) → `VerifierUnavailable`, refund + fail receipt. This is handled right here, immediately; it is not deferred to any timeout.
-- `resolve_verification` itself runs out of gas or panics mid-receipt → the whole callback receipt rolls back atomically, no partial commits, and the submitter's transaction fails. Because nothing was inserted at submit time, there is no orphaned state to reclaim.
+- `resolve_verification` resumes (verifier returned `Verified` (post-DCAP pass or fail) or `Rejected`) → it cleaned up before resuming, caller receives the outcome.
+- `resolve_verification` returns early (verifier unreachable — `Err(PromiseError::Failed)`) → timeout fires, yield-callback cleans up.
+- `resolve_verification` aborts (OOG / panic mid-receipt) → timeout fires, yield-callback cleans up.
+- `resolve_verification` never runs (verifier silent) → timeout fires, yield-callback cleans up.
+- Yield-callback itself OOGs → genuine orphan. Its body is one `LookupMap::remove` plus one Promise schedule, small enough that an out-of-gas failure is implausible with a sensible gas budget.
 
-The verifier still returns its verdict as a *value* rather than a failed receipt, so `#[callback_result]` can tell a definitive `Rejected` apart from `Err(PromiseError::Failed)` (no answer). Under the no-yield design both still lead to an immediate fail-and-refund in `resolve_verification`; the distinction only changes the error type and message the caller sees (`QuoteRejected` with the reason vs `VerifierUnavailable`), not whether cleanup is immediate.
+This isn't a novel pattern in this codebase: `sign`, `request_app_private_key`, and `request_verify_foreign_tx` already use the same split. The heavy work and the `promise_yield_resume` call live in [`pending_requests::resolve_yields_for`][pending-requests-mod] (invoked from `respond`, `respond_ckd`, and `respond_verify_foreign_tx`), and [`return_signature_and_clean_state_on_success`][sign-yield-callback] is a tiny yield-callback that just routes the outcome back to the caller and handles the no-response timeout. The attestation flow inherits the same orphan-proof argument: heavy work in a safely-recoverable receipt, cleanup in a callback small enough that gas budgeting makes its failure implausible.
 
 ### Contract state changes
 
-`resolve_verification` runs in a later block than `submit_participant_info`, as an independent contract invocation, so anything it needs from the original call must travel with it. That is done not through contract storage but through a borsh callback argument:
+The callback runs in a later block than `submit_participant_info`, as an independent contract invocation. Anything the callback still needs must be stashed in contract storage, in a new field:
 
 ```rust
-pub struct VerificationContext {
-    pub(crate) node_id: NodeId,
-    pub(crate) attestation: DstackAttestation,
-}
+pending_attestations: LookupMap<AccountId, PendingAttestation>
 ```
 
-`VerificationContext` carries the submitter's `NodeId` (account id, TLS public key, and account public key — the binding the post-DCAP report-data check reproves) and the full `DstackAttestation` payload (RTMR3 event log, app-compose, report-data) that the post-DCAP checks consume. It is passed to `resolve_verification` as a `#[serializer(borsh)]` argument and is never written to contract state. The attached deposit is *not* part of it — it rides forward on the promise via `.with_attached_deposit`, so `env::attached_deposit()` in the callback yields the submitter's deposit directly.
+This map mirrors the other pending-request maps in `mpc-contract` ([`pending_signature_requests`][pending-requests-mod], `pending_ckd_requests`, `pending_verify_foreign_tx_requests`), but stores a single `PendingAttestation` per `AccountId` rather than a `Vec<YieldIndex>`: attestation submissions are 1-per-account.
 
-This design adds **no** new attestation-related state. There is no `pending_attestations` map, no `PendingAttestation` struct, no `AttestationResult` enum, and no stashed `data_id` or deposit. The only new fields on the contract are `tee_verifier_account_id` and `tee_verifier_votes`, both from [§Voting on the trusted verifier](#voting-on-the-trusted-verifier-in-mpc-contract).
+Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
-Notably, the **post-DCAP policy state** — allowed MPC image hashes, allowed launcher compose hashes, and accepted measurements — is not snapshotted either. `verify_post_dcap_and_store` reads all of it fresh from contract state when the callback runs, so any governance vote that adds or removes an entry mid-flight applies to verifications it overlaps. Snapshotting at request time would freeze each submission against stale policy — wrong default for a security control, where removing a compromised hash should take effect immediately.
+- **The submitter's `Attestation::Dstack` payload** — the RTMR3 event log, app-compose, and report-data the post-DCAP checks consume.
+- **The submitter's TLS public key** — the callback hashes it with the submitter's account public key and compares to the quote's `report_data` field, proving the enclave produced the quote for this specific submitter.
+- **The attached deposit** — covers storage staking on success, refunded to the signer of the original `submit_participant_info` transaction on failure. `env::attached_deposit()` is not visible from the callback receipt, so the value is stashed at submit time and the recipient `AccountId` is the same one used to key the entry (set by `Self::assert_caller_is_signer()`).
+- **`data_id: CryptoHash`** — the yield handle returned by [`env::promise_yield_create`][promise-yield-create]. The intermediate `.then` callback (`resolve_verification`) reads this back to call [`env::promise_yield_resume`][promise-yield-resume] with a `FinalOutcome` after the post-DCAP checks have run.
+
+Entries are removed by `resolve_verification` on every branch where the verifier returned an answer — `Verified` (post-DCAP success or failure) and `Rejected`; only when the verifier gave no verdict (`Err(PromiseError::Failed)` — unreachable or crashed) does it return early and leave the entry in place. `on_attestation_verified` then removes the entry on its `Err(PromiseError::Failed)` branch, which covers that unreachable case and the no-response timeout.
+
+Notably absent from `PendingAttestation`: the **post-DCAP policy state** — allowed MPC image hashes, allowed launcher compose hashes, and accepted measurements. `resolve_verification` re-reads all of them from contract state, so any governance vote that adds or removes an entry mid-flight applies to verifications it overlaps. Snapshotting at request time would freeze each submission against stale policy — wrong default for a security control, where removing a compromised hash should take effect immediately.
 
 ```mermaid
 sequenceDiagram
@@ -155,6 +154,8 @@ sequenceDiagram
     participant Ver as tee-verifier
 
     Op->>MPC: submit_participant_info(Dstack, tls_pk)
+    MPC->>MPC: promise_yield_create → data_id
+    MPC->>MPC: insert PendingAttestation { data_id, ... }
     MPC->>Ver: Promise: verify_quote(...) (.then resolve_verification)
 
     Gov->>MPC: vote_add_image_hash(H)
@@ -162,8 +163,10 @@ sequenceDiagram
 
     Ver-->>MPC: VerificationResult::Verified(report)
     MPC->>MPC: resolve_verification
-    MPC->>MPC: verify_post_dcap_and_store reads allowlist fresh (sees H)
-    MPC->>MPC: store on pass / refund + fail receipt on error
+    MPC->>MPC: read allowlist (sees H)
+    MPC->>MPC: finish_verify against fresh allowlist
+    MPC->>MPC: promise_yield_resume(data_id, FinalOutcome)
+    MPC->>MPC: on_attestation_verified (trivial: return value)
 ```
 
 ## Crate layout
@@ -278,13 +281,13 @@ pub enum VerificationResult {
 
 #### Why a rejection is a value, not a failed receipt
 
-Encoding the rejection the obvious way — `Result<VerifiedReport, VerifierError>` via `#[handle_result]`, so a rejection fails the receipt — loses the reason. NEAR's promise result is either `Successful(bytes)` or `Failed`, and **`Failed` carries no payload**: the caller's `#[callback_result]` sees a bare `Err(PromiseError::Failed)`, *identical* to the verifier being unreachable or out of gas. `mpc-contract` still wants to tell "the verifier rejected this quote" apart from "the verifier did not answer", so it can report the right error to the caller. Returning the outcome as a *value* keeps them distinct, so `#[callback_result]` observes:
+Encoding the rejection the obvious way — `Result<VerifiedReport, VerifierError>` via `#[handle_result]`, so a rejection fails the receipt — loses the reason. NEAR's promise result is either `Successful(bytes)` or `Failed`, and **`Failed` carries no payload**: the caller's `#[callback_result]` sees a bare `Err(PromiseError::Failed)`, *identical* to the verifier being unreachable or out of gas. But `mpc-contract` must treat "the verifier rejected this quote" (definitive — refund and finish now) differently from "the verifier did not answer" (transient — wait for the yield timeout, the node resubmits). Returning the outcome as a *value* keeps them distinct, so `#[callback_result]` observes:
 
 - `Ok(VerificationResult::Verified(report))` — quote valid; run post-DCAP checks.
-- `Ok(VerificationResult::Rejected(reason))` — rejected; `resolve_verification` returns `QuoteRejected { reason }`.
-- `Err(PromiseError::Failed)` — unreachable / panicked / out of gas; `resolve_verification` returns `VerifierUnavailable`.
+- `Ok(VerificationResult::Rejected(reason))` — rejected; refund and resume **immediately**, with the reason.
+- `Err(PromiseError::Failed)` — unreachable / panicked / timed out; the yield timeout cleans up.
 
-This is the NEP-141 / NEP-171 shape — the meaningful outcome rides in the success payload, a failed receipt is reserved for "something broke". Under the no-yield design both error branches lead to the same immediate refund-and-fail; keeping them distinct only changes the error type and message the caller receives. (near-sdk also refuses to serialize a bare `Result` return, so `VerificationResult` is a dedicated sum type.)
+This is the NEP-141 / NEP-171 shape — the meaningful outcome rides in the success payload, a failed receipt is reserved for "something broke" — and it preserves `mpc-contract`'s existing invariant that a rejection and a non-answer are never the same event. (near-sdk also refuses to serialize a bare `Result` return, so `VerificationResult` is a dedicated sum type.)
 
 ### Voting on the trusted verifier in `mpc-contract`
 
@@ -298,7 +301,7 @@ The proposal payload is the pair `(candidate_account_id, expected_code_hash)`. `
 #[near(serializers = [borsh])]
 pub struct VerifierChangeProposal {
     pub candidate_account_id: AccountId,
-    pub expected_code_hash: TeeVerifierCodeHash,
+    pub expected_code_hash: CryptoHash,
 }
 
 impl ProposalHashEncoding for VerifierChangeProposal {
@@ -319,7 +322,7 @@ impl MpcContract {
     pub fn vote_tee_verifier_change(
         &mut self,
         candidate_account_id: AccountId,
-        expected_code_hash: TeeVerifierCodeHash,
+        expected_code_hash: CryptoHash,
     );
 
     /// Withdraw the caller's current vote on any pending verifier-change
@@ -334,20 +337,17 @@ The contract gains two new state fields:
 pub struct MpcContract {
     // ... existing fields ...
 
-    /// The locked account `mpc-contract` currently trusts as the verifier, or
-    /// `None` until participants vote one in (a `Dstack` `submit_participant_info`
-    /// is then rejected with `VerifierNotConfigured`). `submit_participant_info`
-    /// calls `verify_quote` on this account. Mutated only by the threshold-crossing
-    /// vote above; the mutation re-routes future submissions and does not touch
-    /// already-stored attestations. (Making this non-`Option` once a verifier is
-    /// voted in is the follow-up #3639.)
-    tee_verifier_account_id: Option<AccountId>,
+    /// The locked account `mpc-contract` currently trusts as the verifier.
+    /// `submit_participant_info` calls `verify_quote` on this account.
+    /// Mutated only by the threshold-crossing vote above; the mutation
+    /// re-routes future submissions and does not touch already-stored
+    /// attestations.
+    tee_verifier_account_id: AccountId,
 
     /// Pending votes for changing `tee_verifier_account_id`. Each voter is an
     /// active MPC participant; each proposal is hashed from
-    /// `(candidate_account_id, expected_code_hash)`. `TeeVerifierVotes` is a thin
-    /// newtype wrapping the generic `Votes<AuthenticatedParticipantId>`.
-    tee_verifier_votes: TeeVerifierVotes,
+    /// `(candidate_account_id, expected_code_hash)`.
+    tee_verifier_votes: Votes<AuthenticatedParticipantId>,
 }
 ```
 
@@ -371,7 +371,7 @@ sequenceDiagram
     Note over MPC: tee_verifier_account_id = new (routing only,<br/>no eviction)
 
     VerOld-->>MPC: VerificationResult::Verified(report)
-    MPC->>MPC: resolve_verification (post-DCAP + store, as usual)
+    MPC->>MPC: resolve_verification (post-DCAP + insert, as usual)
     Note over MPC: stored entry ages out within the<br/>expiration window via re_verify
 
     Op->>MPC: submit_participant_info(Dstack, tls_pk) (next hourly resubmit)
@@ -381,186 +381,235 @@ sequenceDiagram
 
 ### `mpc-contract::submit_participant_info`
 
-The method resolves a Dstack submission through a two-receipt promise chain: `verify_quote` on the verifier, then `resolve_verification` as its callback — see [§Submission flow](#submission-flow) above for the architecture. It returns `Result<PromiseOrValue<()>, Error>`. A `Mock` attestation is verified and stored synchronously and returns `Ok(PromiseOrValue::Value(()))`. A `Dstack` attestation is delegated to `submit_dstack_attestation`, which builds the chain and returns `Ok(PromiseOrValue::Promise(...))`. The attached deposit is forwarded onto `resolve_verification` via `.with_attached_deposit`, so the callback can charge storage or refund without any state being stashed at submit time. There is no `pending_attestations` insert and no "one in-flight per account" guard. Draft implementation:
+The method splits across three receipts joined by yield-resume — see [§Submission flow](#submission-flow) above for the architecture. The return type is [`PromiseOrValue<()>`](https://docs.rs/near-sdk/5.26.1/near_sdk/enum.PromiseOrValue.html), `near-sdk`'s "sometimes synchronous, sometimes a Promise chain" type: `Mock` attestations return `Value(())` immediately, and `Dstack` attestations return the yielded `Promise` from [`env::promise_yield_create`][promise-yield-create], which the runtime resolves either when `resolve_verification` calls [`env::promise_yield_resume`][promise-yield-resume] or after ~200 blocks of silence. The post-DCAP checks and the `stored_attestations` insert live in `resolve_verification`, not in the yield-callback — that's what keeps `on_attestation_verified` trivial enough to match the sign-request callback [`return_signature_and_clean_state_on_success`][sign-yield-callback]. Draft implementation:
 
 ```rust
 impl MpcContract {
-    #[payable]
-    #[handle_result]
     pub fn submit_participant_info(
         &mut self,
         attestation: Attestation,
-        tls_public_key: Ed25519PublicKey,
-    ) -> Result<PromiseOrValue<()>, Error> {
+        tls_pk: Ed25519PublicKey,
+    ) -> PromiseOrValue<()> {
         // Existing convention: caller must be the signer of this transaction,
         // not a relayer or proxy.
         let account_id = Self::assert_caller_is_signer();
-        let node_id = NodeId { account_id, tls_public_key, /* account_public_key */ };
-
         match attestation {
-            // Synchronous: no DCAP, verified and stored in this call. A
-            // returned Err here rolls back the whole receipt.
+            // Unchanged from today.
             Attestation::Mock(mock) => {
-                let initial_storage = env::storage_usage();
-                self.tee_state.verify_and_store_mock(node_id, mock, ...)?;
-                self.charge_attestation_storage(&node_id.account_id, initial_storage)?;
-                Ok(PromiseOrValue::Value(()))
+                self.verify_mock_synchronously(mock, tls_pk);
+                PromiseOrValue::Value(())
             }
-            // Dstack: async via the verifier promise chain.
-            Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation)?,
-            )),
+            // Dstack: yield-resume.
+            Attestation::Dstack(dstack) => {
+                // One in-flight verification per AccountId. A duplicate submit
+                // before the previous one finishes (verifier response or
+                // runtime timeout) is rejected outright — same shape as
+                // duplicate sign requests.
+                if self.pending_attestations.contains_key(&account_id) {
+                    env::panic_str("verification already pending");
+                }
+
+                let (quote, collateral) = extract_dcap_inputs(&dstack);
+                let attached_deposit = env::attached_deposit();
+
+                // Reuses the existing `enqueue_yield_request` helper that
+                // wraps `env::promise_yield_create`. The helper allocates
+                // `data_id`, registers `on_attestation_verified` as the
+                // yield-callback, and surfaces `data_id` via the `insert`
+                // closure so we can stash it together with the rest of the
+                // `PendingAttestation` fields.
+                self.enqueue_yield_request(
+                    "on_attestation_verified",
+                    borsh::to_vec(&account_id).unwrap(),
+                    Gas::from_tgas(YIELD_CALLBACK_GAS_TGAS),
+                    |this, data_id| {
+                        this.pending_attestations.insert(
+                            account_id.clone(),
+                            PendingAttestation {
+                                dstack,
+                                tls_pk,
+                                attached_deposit,
+                                data_id,
+                            },
+                        );
+                    },
+                );
+
+                // Cross-contract call to the verifier. Its `.then` callback
+                // (`resolve_verification`) is the bridge that turns the
+                // verifier's response into a `promise_yield_resume` on the
+                // yield this method registered above.
+                Promise::new(self.tee_verifier_account_id.clone())
+                    .function_call(
+                        "verify_quote".into(),
+                        borsh::to_vec(&(quote, collateral)).unwrap(),
+                        NearToken::from_yoctonear(0),
+                        Gas::from_tgas(VERIFIER_GAS_TGAS),
+                    )
+                    .then(
+                        Self::ext(env::current_account_id())
+                            .with_static_gas(Gas::from_tgas(RESOLVE_GAS_TGAS))
+                            .resolve_verification(account_id),
+                    );
+
+                // The yield handle was returned by `enqueue_yield_request`
+                // via `env::promise_return`, so the caller's `Promise`
+                // resolves with whatever the yield-callback returns.
+                PromiseOrValue::Value(())
+            }
         }
     }
 
-    /// Builds the verifier promise chain. Fails the submit transaction
-    /// synchronously with `VerifierNotConfigured` if no verifier has been
-    /// voted in — there is no account to call `verify_quote` on. Otherwise it
-    /// calls `verify_quote` on the trusted verifier and chains
-    /// `resolve_verification` as its `.then` callback, forwarding the attached
-    /// deposit onto that callback. Quote/collateral are serialized by
-    /// reference so `attestation` can move into the `VerificationContext`.
-    fn submit_dstack_attestation(
-        &mut self,
-        node_id: NodeId,
-        attestation: DstackAttestation,
-    ) -> Result<Promise, Error> {
-        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
-            return Err(TeeError::VerifierNotConfigured.into());
-        };
-
-        Ok(Promise::new(verifier_account_id)
-            .function_call(
-                "verify_quote".into(),
-                borsh::to_vec(&(&attestation.quote, &attestation.collateral)).unwrap(),
-                NearToken::from_yoctonear(0),
-                Gas::from_tgas(self.config.verifier_tera_gas),
-            )
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
-                    .with_attached_deposit(env::attached_deposit())
-                    .resolve_verification(VerificationContext { node_id, attestation }),
-            ))
-    }
-
-    /// Verify-quote callback. `#[payable]` because the submitter's deposit
-    /// rides forward via `.with_attached_deposit`, so `env::attached_deposit()`
-    /// here is the amount they attached. `#[callback_result]` distinguishes the
-    /// three verifier outcomes:
+    /// `.then` bridge between the verifier's cross-contract call and the
+    /// yield this submission registered. Owns every outcome where the verifier
+    /// *answered* (`Ok(VerificationResult::{Verified,Rejected})`): on
+    /// `Verified` it runs the post-DCAP checks against fresh policy state and
+    /// inserts into `stored_attestations` on success; on `Rejected` it skips
+    /// straight to the refund. Either way it removes the pending entry,
+    /// schedules a refund where the outcome is an error, and calls
+    /// `promise_yield_resume(data_id, FinalOutcome)` as the LAST step of the
+    /// receipt — so a rejected quote is resolved *immediately*, not at the
+    /// timeout. Only `Err(PromiseError::Failed)` (no verdict — verifier
+    /// unreachable or crashed) is logged and returned early WITHOUT resuming or
+    /// removing the pending entry; `on_attestation_verified` owns that cleanup
+    /// on its `Err(PromiseError::Failed)` branch, so we must not race the
+    /// timeout for it. State mutations in this receipt are visible to the
+    /// yield-callback that fires next; if any line below `promise_yield_resume`
+    /// panicked or OOG'd, the entire receipt would roll back atomically (no
+    /// partial state commits) and the runtime's ~200-block yield-timeout would
+    /// still fire `on_attestation_verified` with `Err(PromiseError::Failed)`
+    /// for cleanup.
     ///
-    /// - `Ok(Verified)`  → run post-DCAP checks and store.
-    /// - `Ok(Rejected)`  → `QuoteRejected { reason }`.
-    /// - `Err(_)`        → `VerifierUnavailable` (unreachable / panicked / OOG).
-    ///
-    /// On success returns `Value(())` (attestation stored, storage charged,
-    /// excess refunded). On any error it refunds the WHOLE attached deposit in
-    /// this receipt, then fires a SEPARATE `fail_attestation_submission`
-    /// receipt whose panic fails the caller's transaction — the split is what
-    /// lets the refund commit, since a panic in this receipt would roll it back
-    /// (and drop the created promises) along with the refund.
+    /// Same architectural shape as [`pending_requests::resolve_yields_for`][pending-requests-mod]
+    /// in the sign-request flow: the response-side function owns the state
+    /// mutation and the `promise_yield_resume` call; the yield-callback is
+    /// kept trivial.
     #[private]
-    #[payable]
     pub fn resolve_verification(
         &mut self,
-        #[serializer(borsh)] context: VerificationContext,
-        #[serializer(borsh)]
-        #[callback_result]
-        result: Result<VerificationResult, PromiseError>,
-    ) -> PromiseOrValue<()> {
-        let account_id = context.node_id.account_id.clone();
-
-        let attestation_result = match result {
-            Ok(VerificationResult::Verified(report)) => {
-                self.verify_post_dcap_and_store(&context, &report)
-            }
-            Ok(VerificationResult::Rejected(reason)) => {
-                log!("verifier rejected quote for {account_id}: {reason}");
-                Err(TeeError::QuoteRejected { reason: reason.to_string() }.into())
-            }
+        account_id: AccountId,
+        #[callback_result] result: Result<VerificationResult, PromiseError>,
+    ) {
+        let final_outcome = match result {
+            // No verdict: the verifier was unreachable, panicked, or ran out of
+            // gas. Do nothing — the runtime's yield-timeout will fire
+            // `on_attestation_verified` with `Err(PromiseError::Failed)` and
+            // clean up the pending entry there. We must not call
+            // `promise_yield_resume` here, or we'd race the timeout for
+            // ownership of the cleanup path.
             Err(promise_err) => {
                 log!("verifier did not answer for {account_id}: {promise_err:?}");
-                Err(TeeError::VerifierUnavailable.into())
+                return;
+            }
+            // The verifier ran and rejected the quote. A definitive verdict:
+            // refund and resume now, with the reason, rather than waiting for
+            // the timeout.
+            Ok(VerificationResult::Rejected(reason)) => {
+                log!("verifier rejected quote for {account_id}: {reason}");
+                FinalOutcome::Err(format!("verifier: {reason}"))
+            }
+            Ok(VerificationResult::Verified(report)) => {
+                let pending = self.pending_attestations.get(&account_id).expect(
+                    "PendingAttestation must exist while resolve_verification holds the yield",
+                );
+                // Post-DCAP checks operate on the verified report plus state held
+                // here. The allowlist is read fresh — governance votes mid-flight
+                // take effect.
+                match finish_verify(pending, &report, self.allowlist_fresh()) {
+                    Ok(()) => {
+                        self.tee_state.stored_attestations.insert(
+                            pending.tls_pk.clone(),
+                            VerifiedAttestation::from((pending.clone(), report)),
+                        );
+                        FinalOutcome::Ok
+                    }
+                    Err(reason) => {
+                        log!("post-DCAP check failed for {account_id}: {reason}");
+                        FinalOutcome::Err(format!("post-DCAP: {reason}"))
+                    }
+                }
             }
         };
 
-        match attestation_result {
-            Ok(()) => PromiseOrValue::Value(()),
-            Err(err) => {
-                refund_to(&account_id, env::attached_deposit());
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    "fail_attestation_submission".into(),
-                    borsh::to_vec(&err.to_string()).unwrap(),
-                    NearToken::from_yoctonear(0),
-                    Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
-                );
-                PromiseOrValue::Promise(promise.as_return())
-            }
+        let pending = self
+            .pending_attestations
+            .remove(&account_id)
+            .expect("PendingAttestation must exist while resolve_verification holds the yield");
+        if matches!(final_outcome, FinalOutcome::Err(_)) {
+            refund_deposit(&account_id, pending.attached_deposit);
         }
+        // `promise_yield_resume` must be the LAST host call in this receipt:
+        // anything after it could panic and roll back the state mutations above.
+        env::promise_yield_resume(&pending.data_id, borsh::to_vec(&final_outcome).unwrap());
     }
 
-    /// Runs the post-DCAP checks and stores the attestation for a `Verified`
-    /// response. The callback receipt commits regardless of the `Err` returned,
-    /// so a failed storage charge cannot rely on implicit rollback: it reverts
-    /// the store explicitly, or the caller would get storage for free plus a
-    /// full refund.
-    fn verify_post_dcap_and_store(
-        &mut self,
-        context: &VerificationContext,
-        report: &VerifiedReport,
-    ) -> Result<(), Error> {
-        let account_id = &context.node_id.account_id;
-        let initial_storage = env::storage_usage();
-        let insertion = self.tee_state.verify_and_store_dstack(
-            context.node_id.clone(),
-            &context.attestation,
-            report,
-            /* tee_upgrade_deadline_duration */
-        )?;
-
-        match self.charge_attestation_storage(account_id, initial_storage) {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                self.tee_state
-                    .revert_dstack_store(&context.node_id.tls_public_key, insertion);
-                Err(err)
-            }
-        }
-    }
-
-    /// Separate receipt whose panic fails the caller's transaction after the
-    /// refund in `resolve_verification` has committed.
+    /// Yield-callback. Same shape as the sign-request callback
+    /// [`return_signature_and_clean_state_on_success`][sign-yield-callback]: the
+    /// `Verified` and `Rejected` outcomes (every case where the verifier
+    /// answered) were already finalized by `resolve_verification` (which removed
+    /// the pending entry and scheduled any refund before calling
+    /// `promise_yield_resume`), so this body just returns the outcome to the
+    /// caller.
+    ///
+    /// The only branch that does real work is `Err(PromiseError::Failed)`, fired
+    /// by the runtime ~200 blocks after submit if no `promise_yield_resume` has
+    /// landed: the verifier was unreachable / never responded so
+    /// `resolve_verification` deliberately returned early, or it ran but rolled
+    /// back (OOM / panic). On that branch the pending entry is still present, so
+    /// it removes the entry and schedules a deposit refund.
     #[private]
-    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
-        log!("fail_attestation_submission: {reason}");
-        env::panic_str(&reason);
+    pub fn on_attestation_verified(
+        &mut self,
+        account_id: AccountId,
+        #[callback_result] result: Result<FinalOutcome, PromiseError>,
+    ) -> Result<(), String> {
+        match result {
+            Ok(FinalOutcome::Ok) => Ok(()),
+            Ok(FinalOutcome::Err(reason)) => Err(reason),
+            Err(_promise_err) => {
+                if let Some(pending) = self.pending_attestations.remove(&account_id) {
+                    refund_deposit(&account_id, pending.attached_deposit);
+                    log!("yield timeout for {account_id}: refunded and cleaned up");
+                }
+                Err("verifier did not respond within yield-resume window".to_string())
+            }
+        }
     }
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub enum FinalOutcome {
+    Ok,
+    Err(String),
 }
 ```
 
-`charge_attestation_storage` reads `env::attached_deposit()` itself: if the attached amount is less than the measured storage cost it returns `InsufficientDeposit`; otherwise it refunds the excess to the account via `refund_to`. `refund_to` is the generic refund helper (a detached `transfer` promise, no-op on zero).
+`VERIFIER_GAS_TGAS`, `RESOLVE_GAS_TGAS`, and `YIELD_CALLBACK_GAS_TGAS` are placeholders until benchmarked. The verifier-side cost is dominated by ECDSA verifications and X.509-chain walking inside `dcap_qvl::verify::verify`. The bulk of the contract-side post-DCAP work — RTMR3 replay, app-compose validation, allowlist matching, report-data binding, plus the `stored_attestations.insert` — runs inside `resolve_verification`, so `RESOLVE_GAS_TGAS` gets the largest budget. `YIELD_CALLBACK_GAS_TGAS` can be conservatively small (on the order of 10 TGas with comfortable headroom): the yield-callback only does a `LookupMap::remove` and schedules a `Promise` on the timeout branch, and just returns a value on the resume branch.
 
-`verifier_tera_gas`, `resolve_verification_tera_gas`, and `fail_attestation_submission_tera_gas` are unbenchmarked estimates until measured. The verifier-side cost (`verifier_tera_gas`) is dominated by ECDSA verifications and X.509-chain walking inside `dcap_qvl::verify::verify`, so it gets the largest budget. `resolve_verification_tera_gas` covers the contract-side post-DCAP work — RTMR3 replay, app-compose validation, allowlist matching, report-data binding — plus the `verify_and_store_dstack` insert and the storage charge. `fail_attestation_submission_tera_gas` can be tiny (a couple of TGas): the method only logs and panics.
+The contract gains the following state fields:
 
-### Contract state changes summary
+```rust
+pub struct MpcContract {
+    // ... existing fields, including tee_verifier_account_id and
+    // tee_verifier_votes from §Voting on the trusted verifier ...
+    pending_attestations: LookupMap<AccountId, PendingAttestation>,
+}
 
-No new attestation state fields. The chain carries a `VerificationContext { node_id, attestation }` as a borsh callback argument; nothing new is written to storage. The only new fields on the contract are `tee_verifier_account_id` and `tee_verifier_votes` from [§Voting on the trusted verifier](#voting-on-the-trusted-verifier-in-mpc-contract).
+pub struct PendingAttestation {
+    pub dstack: DstackAttestation,
+    pub tls_pk: Ed25519PublicKey,
+    pub attached_deposit: NearToken,
+    pub data_id: CryptoHash,
+}
+```
 
 ## Testing
 
-The no-yield chain adds a handful of resolution branches the synchronous version never had, all inside `resolve_verification` and the helper it delegates to:
-
-- **Verifier not configured** — `Dstack` submit while `tee_verifier_account_id` is `None` fails *synchronously* with `VerifierNotConfigured`; the submit transaction itself errors, no promise is scheduled.
-- **Verified + store happy path** — `verify_quote` returns `Verified`, post-DCAP passes, storage charged, excess refunded, `Value(())`. The attestation is present in state afterward.
-- **Verified + post-DCAP fail** — `verify_and_store_dstack` errors; `resolve_verification` refunds the whole deposit and fires the `fail_attestation_submission` receipt; nothing is stored.
-- **Verified + insufficient deposit** — post-DCAP passes but `charge_attestation_storage` returns `InsufficientDeposit`; `verify_post_dcap_and_store` reverts the store explicitly, so state is unchanged; refund + fail receipt.
-- **Rejected → fail + refund** — `verify_quote` returns `Rejected`; `resolve_verification` returns `QuoteRejected` carrying the reason; refund + fail receipt.
-- **Verifier unreachable → `VerifierUnavailable`** — the callback observes `Err(PromiseError::Failed)`; refund + fail receipt.
-- **OOG in `resolve_verification` rolls back atomically** — an out-of-gas or panic mid-callback rolls back the whole receipt (no partial store, no partial refund) and fails the caller's transaction; because nothing was inserted at submit time, there is no orphaned state to reclaim.
+The yield-resume split adds four resolution branches the synchronous version never had. Three do their work in `resolve_verification`, each from a distinct verifier answer: `Verified` + post-DCAP pass (store + resume `Ok`), `Verified` + post-DCAP fail (refund + resume `Err`), and `Rejected` (refund + resume `Err`, immediately — the path that recovers the synchronous-rejection behavior the split would otherwise lose). The fourth lives in `on_attestation_verified`, on its `Err(PromiseError::Failed)` branch, reached when the verifier gave no verdict — unreachable, panicked, or no resume landed within ~200 blocks (verifier silent, or a `resolve_verification` receipt that rolled back). That no-verdict case re-enters `resolve_verification`, which logs and returns early without resuming, so its cleanup happens in `on_attestation_verified`. Each branch needs test coverage, and exercising them requires the verifier to return specific answers on demand — a `Verified` or `Rejected` value for the three `resolve_verification` branches, and for the no-verdict path either an unreachable account or the test driver advancing the chain past the yield-resume window without resuming.
 
 The verifier-rotation design changes the test surface in three ways. First, the expiration window itself: an entry whose `expiry_timestamp_seconds` is in the past must be rejected by `re_verify` even when every post-DCAP allowlist invariant still holds, and an entry within the (shortened) window must still pass — this is the existing expiry check, now exercised against the lowered `DEFAULT_EXPIRATION_DURATION_SECONDS`. Second, rotation routing: after `vote_tee_verifier_change` crosses threshold, the next `submit_participant_info` must call `verify_quote` on the new `tee_verifier_account_id`, and existing stored entries must remain present (no purge) until they expire. Third, the in-flight case: a verification scheduled against the old verifier that resolves after the vote crosses threshold must still be stored as a normal entry — it is not treated specially and ages out via the same expiration window as any other entry.
 
-To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `VerificationResult` (`Verified` or `Rejected`) the test asks for — and a stub that panics, or an undeployed account, covers the `VerifierUnavailable` path. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
+To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `VerificationResult` (`Verified` or `Rejected`) the test asks for — and a stub that panics, or an undeployed account, covers the no-verdict path. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
 
 E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the test wants real `dcap-qvl` against a fixture quote) or the stub (for everything else). The change is one extra `deploy` call in the setup helper.
 
@@ -569,9 +618,17 @@ E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the 
 [nep-509]: https://github.com/near/NEPs/blob/master/neps/nep-0509.md
 [re-verify]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/mpc-attestation/src/attestation.rs#L93
 [periodic-attestation-submission]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/node/src/tee/remote_attestation.rs#L140
+[attestation-resubmission-interval]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/node/src/run.rs#L43
+[attestation-attempts-metric]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/node/src/metrics.rs#L364
 [verify-tee]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1543
 [clean-invalid-attestations]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1646
+[clean-foreign-chain-data]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1669
 [monitor-attestation-removal]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/node/src/tee/remote_attestation.rs#L209
 [submit-participant-info]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/crates/contract/src/lib.rs#L754-L782
 [launcher-pattern]: https://github.com/near/mpc/blob/efe49230bb66854c55bba080e7610e42f9221506/docs/tee-lifecycle.md#upgrade
 [slack-launcher-discussion]: https://nearone.slack.com/archives/C0B12RKBSAV/p1777897902903889
+[promise-yield-create]: https://docs.rs/near-sdk/5.26.1/near_sdk/env/fn.promise_yield_create.html
+[promise-yield-resume]: https://docs.rs/near-sdk/5.26.1/near_sdk/env/fn.promise_yield_resume.html
+[enqueue-yield-request]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L301-L323
+[pending-requests-mod]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/pending_requests.rs
+[sign-yield-callback]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/contract/src/lib.rs#L1999-L2023
