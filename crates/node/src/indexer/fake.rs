@@ -1,6 +1,7 @@
 use super::IndexerAPI;
 use super::ReadAttestationExpiry;
 use super::ReadSupportedForeignChain;
+use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
@@ -56,6 +57,8 @@ pub struct FakeMpcContractState {
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
+    /// Mirrors the real indexer's foreign-chain supporters watch channel.
+    foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
     pub migration_service: NodeMigrations,
 }
 
@@ -106,6 +109,7 @@ impl FakeMpcContractState {
             supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
+            foreign_chain_supporters_sender: watch::channel(Default::default()).0,
             migration_service: NodeMigrations::default(),
         }
     }
@@ -269,6 +273,24 @@ impl FakeMpcContractState {
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
             .into();
+
+        self.publish_foreign_chain_supporters();
+    }
+
+    fn publish_foreign_chain_supporters(&self) {
+        let supporters = supporters_by_available_chain(
+            &self.available_foreign_chains,
+            &self.foreign_chains_configs,
+        );
+        self.foreign_chain_supporters_sender
+            .send_if_modified(|previous| {
+                if *previous != supporters {
+                    *previous = supporters;
+                    true
+                } else {
+                    false
+                }
+            });
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
@@ -865,6 +887,10 @@ pub struct FakeIndexerManager {
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 
+    /// Cloned into each node's `IndexerAPI`; tracks the fake contract's
+    /// foreign-chain supporters.
+    foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
 
@@ -1052,7 +1078,10 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
-        let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
+        let contract_state = FakeMpcContractState::new();
+        let foreign_chain_supporters_receiver =
+            contract_state.foreign_chain_supporters_sender.subscribe();
+        let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
@@ -1085,6 +1114,7 @@ impl FakeIndexerManager {
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
             contract,
+            foreign_chain_supporters_receiver,
             account_id_by_uid,
             verify_foreign_tx_response_receiver,
             verify_foreign_tx_request_sender,
@@ -1170,6 +1200,7 @@ impl FakeIndexerManager {
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
             foreign_chain_policy_reader,
+            foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 
