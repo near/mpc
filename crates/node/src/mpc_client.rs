@@ -1,3 +1,4 @@
+use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -5,7 +6,7 @@ use crate::indexer::types::{
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::MpcTaskId;
+use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
@@ -13,7 +14,7 @@ use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTa
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
-    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
+    CHECK_EACH_REQUEST_INTERVAL, EligibleLeadersRefiner, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
@@ -30,7 +31,7 @@ use near_mpc_contract_interface::call_args as contract_args;
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -62,6 +63,51 @@ pub struct MpcClient {
     domain_to_protocol: HashMap<DomainId, Protocol>,
     /// Lower-priority runtime for CPU-heavy asset generation.
     gen_runtime_handle: tokio::runtime::Handle,
+}
+
+/// Narrows verify-foreign-tx leader election to the participants supporting the
+/// request's chain. `update` snapshots the supporters channel once per queue
+/// pass; if the channel's sender is dropped the last snapshot stays in effect.
+/// While no snapshot has been received yet (`None`), no leader is eligible —
+/// the provider would reject the attempt anyway.
+struct ForeignChainLeadersRefiner {
+    supporters_receiver: tokio::sync::watch::Receiver<Option<SupportersByForeignChain>>,
+    snapshot: Option<SupportersByForeignChain>,
+}
+
+impl ForeignChainLeadersRefiner {
+    fn new(
+        mut supporters_receiver: tokio::sync::watch::Receiver<Option<SupportersByForeignChain>>,
+    ) -> Self {
+        let snapshot = supporters_receiver.borrow_and_update().clone();
+        Self {
+            supporters_receiver,
+            snapshot,
+        }
+    }
+}
+
+impl EligibleLeadersRefiner<VerifyForeignTxRequest> for ForeignChainLeadersRefiner {
+    fn update(&mut self) {
+        if self.supporters_receiver.has_changed().unwrap_or(false) {
+            self.snapshot = self.supporters_receiver.borrow_and_update().clone();
+        }
+    }
+
+    fn refine(
+        &self,
+        request: &VerifyForeignTxRequest,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        match self
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.get(&request.request.chain()))
+        {
+            Some(supporters) => supporters & eligible,
+            None => HashSet::new(),
+        }
+    }
 }
 
 /// Whether a task is CPU-heavy asset generation that should run on the
@@ -265,6 +311,10 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let eligible_leaders_refiner = ForeignChainLeadersRefiner::new(
+            self.verify_foreign_tx_provider
+                .supporters_by_foreign_chain(),
+        );
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
@@ -273,7 +323,8 @@ impl MpcClient {
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
-        );
+        )
+        .with_eligible_leaders_refiner(Box::new(eligible_leaders_refiner));
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();

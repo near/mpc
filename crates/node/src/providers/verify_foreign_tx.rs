@@ -185,6 +185,12 @@ impl VerifyForeignTxProvider {
         })
     }
 
+    pub(crate) fn supporters_by_foreign_chain(
+        &self,
+    ) -> watch::Receiver<Option<SupportersByForeignChain>> {
+        self.supporters_by_foreign_chain.clone()
+    }
+
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::VerifyForeignTxTaskId(task) => match task {
