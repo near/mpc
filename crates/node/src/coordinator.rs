@@ -35,6 +35,7 @@ use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_mpc_contract_interface::call_args as contract_args;
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -431,16 +432,7 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract.
-        let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
-        if let Err(err) = chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-            ))
-            .await
-        {
-            tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-        }
+        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
 
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
@@ -948,6 +940,38 @@ fn stop_initializing(
             tracing::info!("Protocol State changed.");
             true
         }
+    }
+}
+
+/// Sends both the deprecated and the new foreign-chain registration transactions
+/// so nodes remain compatible with pre- and post-upgrade contracts during the
+/// upgrade window. TODO(#3630): drop RegisterForeignChainConfig once the node's
+/// read path no longer relies on the legacy registration.
+async fn register_foreign_chains(
+    chain_txn_sender: &impl tx_sender::TransactionSender,
+    foreign_chains: &mpc_node_config::ForeignChainsConfig,
+) {
+    let foreign_chain_configuration = foreign_chains.configured_chains();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
+            contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
+    }
+    let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+            contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config),
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
     }
 }
 
