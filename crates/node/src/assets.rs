@@ -165,6 +165,32 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         self.cold_queue.push_back((id, value));
         ColdQueueAddIfNotSatisfiedResult::Enqueued
     }
+
+    /// Adds an element whose status against the stored condition is unknown:
+    /// inserted at the `cold_available` barrier so both sweep barriers stay
+    /// valid for `take`/`discard`.
+    pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
+        self.cold_queue.insert(self.cold_available, (id, value));
+        self.cold_available += 1;
+    }
+
+    /// Removes the first element matching `cond_val` (a caller-supplied value,
+    /// independent of the stored condition value), shifting the barriers that
+    /// lie beyond the removed position.
+    pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
+        let pos = self
+            .cold_queue
+            .iter()
+            .position(|(_, value)| (self.condition)(cond_val, value))?;
+        let result = self.cold_queue.remove(pos);
+        if pos < self.cold_ready {
+            self.cold_ready -= 1;
+        }
+        if pos < self.cold_available {
+            self.cold_available -= 1;
+        }
+        result
+    }
 }
 
 enum ColdQueueTakeResult<T> {
@@ -265,6 +291,32 @@ where
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
+        loop {
+            {
+                let mut cold = self.cold_queue.lock().unwrap();
+                // The stored condition value doesn't affect matching (the
+                // predicate runs against `cond_val`); refreshed anyway so
+                // matching-heavy periods don't leave it stale for
+                // `take_owned`/`discard`.
+                cold.update_condition_value_if_due();
+                while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
+                    cold.ingest(id, value);
+                }
+                if let Some(taken) = cold.take_first_matching(&cond_val) {
+                    return taken;
+                }
+            }
+            tokio::select! {
+                _ = self.clock.sleep(near_time::Duration::seconds(1)) => {}
+                received = self.hot_receiver.recv_async() => {
+                    let (id, value) = received.unwrap();
+                    self.cold_queue.lock().unwrap().ingest(id, value);
                 }
             }
         }
@@ -496,6 +548,18 @@ where
 
     pub async fn take_owned(&self) -> (UniqueId, T) {
         let (id, asset) = self.owned_queue.take_owned().await;
+        let mut update = self.db.update();
+        update.delete(self.col, &self.make_key(id));
+        update
+            .commit()
+            .expect("Unrecoverable error writing to database");
+        (id, asset)
+    }
+
+    /// Takes an owned asset whose participants are all in `active`, waiting for
+    /// background generation if none is currently available.
+    pub async fn take_owned_matching(&self, active: Vec<ParticipantId>) -> (UniqueId, T) {
+        let (id, asset) = self.owned_queue.take_owned_matching(active).await;
         let mut update = self.db.update();
         update.delete(self.col, &self.make_key(id));
         update
@@ -746,6 +810,158 @@ mod tests {
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id4, 4));
         assert_eq!(queue.available(), 0);
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn take_owned_matching__should_return_matching_asset_immediately() {
+        // Given: a queue holding one non-matching and one matching asset.
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+        queue.add_owned(id2, 3);
+
+        // When: taking with a condition value matching only the second asset.
+        let taken = queue.take_owned_matching(1).now_or_never();
+
+        // Then
+        assert_eq!(taken, Some((id2, 3)));
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn take_owned_matching__should_wait_until_matching_asset_is_added() {
+        // Given: a queue holding only a non-matching asset.
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+
+        // When: taking with a condition value nothing matches yet.
+        let mut take = Box::pin(queue.take_owned_matching(1));
+        assert!((&mut take).now_or_never().is_none());
+
+        // Then: the take completes once a matching asset is generated.
+        queue.add_owned(id2, 3);
+        assert_eq!(take.await, (id2, 3));
+        // And: the non-matching asset is still in the queue.
+        assert_eq!(queue.available(), 1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn cold_queue_ingest_and_take_first_matching__should_preserve_barriers() {
+        // Given: a ready prefix and a non-satisfying tail (stored condition:
+        // even values satisfy condition value 0).
+        let clock = FakeClock::default();
+        let cond_value = Arc::new(AtomicI32::new(0));
+        let mut queue = ColdQueue::new(clock.clock(), |cond, val| val % 2 == *cond, {
+            let cond_value = cond_value.clone();
+            Arc::new(move || cond_value.load(Ordering::Relaxed))
+        });
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
+        let id2 = id1.add_to_counter(1).unwrap();
+        let id3 = id1.add_to_counter(2).unwrap();
+        let id4 = id1.add_to_counter(3).unwrap();
+        queue.add_if_condition_satisfied(id1, 2);
+        queue.add_if_condition_not_satisfied(id2, 3);
+        verify_cold_queue_internal_consistency(&queue, 2);
+
+        // When: ingesting unknowns and taking one by a caller-side condition.
+        queue.ingest(id3, 4);
+        queue.ingest(id4, 5);
+        verify_cold_queue_internal_consistency(&queue, 4);
+        let taken = queue.take_first_matching(&1);
+
+        // Then: the matching element is removed, the barriers stay valid, and
+        // a regular take still serves the ready prefix.
+        assert_eq!(taken, Some((id4, 5)));
+        verify_cold_queue_internal_consistency(&queue, 3);
+        let super::ColdQueueTakeResult::Taken(pair) = queue.take() else {
+            panic!("expected the ready asset to be taken");
+        };
+        assert_eq!(pair, (id1, 2));
+        verify_cold_queue_internal_consistency(&queue, 2);
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn double_queue__should_keep_take_and_discard_working_across_matching_takes() {
+        // Given: even values satisfy the stored condition (condition value 0).
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        let id3 = id1.add_to_counter(2).unwrap();
+        let id4 = id1.add_to_counter(3).unwrap();
+        queue.add_owned(id1, 2);
+        queue.add_owned(id2, 3);
+        queue.add_owned(id3, 4);
+        queue.add_owned(id4, 5);
+
+        // When: a matching take (odd values) interleaves with the regular flow.
+        assert_eq!(queue.take_owned_matching(1).now_or_never(), Some((id2, 3)));
+
+        // Then: a regular take still yields a condition-satisfying asset,
+        assert_eq!(queue.take_owned().now_or_never(), Some((id1, 2)));
+        // discard removes exactly the non-satisfying leftover,
+        assert_eq!(queue.maybe_discard_owned(2).await, vec![id4]);
+        assert_eq!(queue.available(), 1);
+        // and the surviving satisfying asset remains takeable.
+        assert_eq!(queue.take_owned().now_or_never(), Some((id3, 4)));
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn distributed_store_take_owned_matching__should_delete_taken_asset_from_disk() {
+        // Given: two persisted assets; the condition keys on the asset value.
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let condition: fn(&Vec<ParticipantId>, &u32) -> bool =
+            |eligible, val| eligible.contains(&ParticipantId::from_raw(*val));
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
+            ParticipantId::from_raw(42),
+            condition,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
+        let id1 = store.generate_and_reserve_id();
+        let id2 = store.generate_and_reserve_id();
+        store.add_owned(id1, 123);
+        store.add_owned(id2, 456);
+
+        // When: taking the matching asset, then reopening the store from disk.
+        let taken = store
+            .take_owned_matching(vec![ParticipantId::from_raw(456)])
+            .await;
+        drop(store);
+        let reopened = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
+            ParticipantId::from_raw(42),
+            condition,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
+
+        // Then: only the taken asset was removed from disk.
+        assert_eq!(taken, (id2, 456));
+        assert_eq!(reopened.num_owned(), 1);
+        assert_eq!(
+            reopened
+                .take_owned_matching(vec![ParticipantId::from_raw(123)])
+                .await,
+            (id1, 123)
+        );
     }
 
     // This test covers tricky cases around updates to the condition value

@@ -87,6 +87,10 @@ impl EcdsaSignatureProvider {
         })
     }
 
+    pub(crate) fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
+        self.client.all_alive_participant_ids()
+    }
+
     pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
         ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
     }
