@@ -1,5 +1,5 @@
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, request_signature_and_await_response,
@@ -33,7 +33,7 @@ async fn test_faulty_cluster() {
         accounts.clone(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FAULTY_CLUSTER_TEST,
+        port_seed::FAULTY_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
@@ -181,7 +181,7 @@ async fn test_indexer_stuck() {
         accounts.clone(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FAULTY_STUCK_INDEXER_TEST,
+        port_seed::FAULTY_STUCK_INDEXER_TEST,
         std::time::Duration::from_millis(100),
     );
 
