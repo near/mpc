@@ -448,7 +448,7 @@ pub mod test_utils {
     use near_mpc_crypto_types::Keyset;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::{
         ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
@@ -529,6 +529,7 @@ pub mod test_utils {
             participants,
             resharing_state: Some(ContractResharingState {
                 new_participants,
+                per_domain_thresholds: BTreeMap::new(),
                 reshared_keys: Keyset::new(EpochId::new(epoch), vec![]),
                 key_event: ContractKeyEventInstance {
                     id: KeyEventId::new(EpochId::new(epoch), DomainId(0), AttemptId::new()),

@@ -5,7 +5,7 @@
 
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::common::{ckd_domain, sign_domain};
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
@@ -82,7 +82,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST,
+        port_seed::RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
@@ -177,7 +177,7 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::RECONSTRUCTION_THRESHOLD_RESHARING_TEST,
+        port_seed::RECONSTRUCTION_THRESHOLD_RESHARING_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
@@ -289,7 +289,7 @@ async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::RECONSTRUCTION_THRESHOLD_CHANGE_TEST,
+        port_seed::RECONSTRUCTION_THRESHOLD_CHANGE_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

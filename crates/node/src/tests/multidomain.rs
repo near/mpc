@@ -32,7 +32,7 @@ async fn multidomain_with_distinct_reconstruction_thresholds__should_sign_for_ev
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST,
+        port_seed::DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST,
         std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
