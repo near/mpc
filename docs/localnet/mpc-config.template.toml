@@ -94,3 +94,13 @@ rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
 
 [node.foreign_chains.aptos.providers.public.auth]
 kind = "none"
+
+[node.foreign_chains.sui]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.sui.providers.public]
+rpc_url = "https://archive.mainnet.sui.io"
+
+[node.foreign_chains.sui.providers.public.auth]
+kind = "none"

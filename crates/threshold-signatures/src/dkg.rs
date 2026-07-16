@@ -703,10 +703,10 @@ pub mod test {
         let participants_2 = generate_participants(3);
         let hash_1 = domain_separate_hash(&mut cnt.clone(), &participants_1);
         let hash_2 = domain_separate_hash(&mut cnt, &participants_2);
-        assert!(hash_1 == hash_2);
+        assert_eq!(hash_1, hash_2);
         // incremented
         let hash_2 = domain_separate_hash(&mut cnt, &participants_2);
-        assert!(hash_1 != hash_2);
+        assert_ne!(hash_1, hash_2);
     }
 
     fn compute_private_key<C: Ciphersuite>(
@@ -735,7 +735,7 @@ pub mod test {
         <C::Group as Group>::Element: std::fmt::Debug,
     {
         let result = run_keygen::<C, R>(participants, threshold, rng);
-        assert!(result.len() == participants.len());
+        assert_eq!(result.len(), participants.len());
         assert_public_key_invariant(&result);
 
         let pub_key = result[0].1.public_key.to_element();

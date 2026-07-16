@@ -33,6 +33,19 @@ pub struct AptosVector {
     pub event_sequence_number: u64,
 }
 
+/// Sui fullnodes prune the gRPC read path after a few weeks, so a fixed reference
+/// transaction would age out. The check instead verifies the provider's chain identity
+/// (the genesis checkpoint digest, which never changes) and probes a transaction
+/// from the provider's latest checkpoint.
+#[derive(Clone, Copy)]
+pub struct SuiVector {
+    /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
+    /// returns it (`sui.rpc.v2`: "the digest of the genesis checkpoint"). Its 4-byte
+    /// prefix is the well-known Sui chain identifier — mainnet `0x35834a8a`, testnet
+    /// `0x4c78adac` — which is the value to grep against Sui docs to verify these.
+    pub chain_id: &'static str,
+}
+
 pub struct GoldenSet {
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
@@ -43,6 +56,7 @@ pub struct GoldenSet {
     pub bitcoin: Option<BlockHashVector>,
     pub starknet: Option<BlockHashVector>,
     pub aptos: Option<AptosVector>,
+    pub sui: Option<SuiVector>,
 }
 
 pub fn golden_set(network: Network) -> GoldenSet {
@@ -90,6 +104,9 @@ const MAINNET: GoldenSet = GoldenSet {
         event_type_tag: "0x1::block::NewBlockEvent",
         event_sequence_number: 822_198_006,
     }),
+    sui: Some(SuiVector {
+        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+    }),
 };
 
 const TESTNET: GoldenSet = GoldenSet {
@@ -115,6 +132,9 @@ const TESTNET: GoldenSet = GoldenSet {
         event_type_tag: "0x1::block::NewBlockEvent",
         event_sequence_number: 302_761_912,
     }),
+    sui: Some(SuiVector {
+        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
+    }),
 };
 
 /// Decode a 32-byte hash from hex, tolerating an optional `0x` prefix.
@@ -132,6 +152,23 @@ pub fn felt32(felt: &str) -> anyhow::Result<[u8; 32]> {
     let stripped = felt.strip_prefix("0x").unwrap_or(felt);
     anyhow::ensure!(stripped.len() <= 64, "felt too long: {felt}");
     hex32(&format!("{stripped:0>64}"))
+}
+
+/// Decode a base58-encoded 32-byte digest (the form Sui APIs use).
+pub fn base58_32(digest: &str) -> anyhow::Result<[u8; 32]> {
+    // 32 bytes encode to at most 44 base58 characters; rejecting longer inputs up front
+    // also bounds `bs58`'s superlinear decode.
+    anyhow::ensure!(
+        digest.len() <= 44,
+        "base58 digest too long: {} characters",
+        digest.len()
+    );
+    let bytes = bs58::decode(digest)
+        .into_vec()
+        .with_context(|| format!("invalid base58: {digest}"))?;
+    bytes
+        .try_into()
+        .map_err(|b: Vec<u8>| anyhow::anyhow!("expected 32 bytes, got {}: {digest}", b.len()))
 }
 
 #[cfg(test)]
@@ -190,6 +227,35 @@ mod tests {
             if let Some(v) = set.aptos {
                 hex32(v.tx).unwrap();
             }
+            if let Some(v) = set.sui {
+                base58_32(v.chain_id).unwrap();
+            }
         }
+    }
+
+    #[test]
+    fn base58_32__should_decode_sui_digest() {
+        // Given
+        let digest = "8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo";
+
+        // When
+        let bytes = base58_32(digest).unwrap();
+
+        // Then
+        assert_eq!(
+            hex::encode(bytes),
+            "7188017648e8e95bfa6c0591988f3c7a6ec6caf3967e294f70d906a376d5e4fe"
+        );
+    }
+
+    #[test]
+    fn base58_32__should_reject_invalid_input() {
+        // Contains characters outside the base58 alphabet (`0`, `O`, `I`, `l`): decode fails.
+        base58_32("not-base58-0OIl").unwrap_err();
+        // Valid base58, but decodes to fewer than 32 bytes.
+        base58_32("abc").unwrap_err();
+        // Longer than any 32-byte digest's base58 (max 44 chars); rejected on length up front,
+        // before decoding, since `bs58`'s decode is superlinear in the input length.
+        base58_32(&"1".repeat(45)).unwrap_err();
     }
 }

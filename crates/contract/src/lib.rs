@@ -2808,8 +2808,8 @@ mod tests {
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id,
-        gen_participant, gen_participants, infer_purpose_from_protocol,
+        NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
+        gen_account_id, gen_participant, gen_participants, infer_purpose_from_protocol,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::key_event::tests::Environment;
@@ -5815,11 +5815,7 @@ mod tests {
         let (target_account_id, _, target_participant_info) = &participant_list[2];
 
         // Replace the target's attestation with an expired one
-        let node_id = NodeId {
-            account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
         let expiring_attestation = MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -5934,11 +5930,7 @@ mod tests {
         let participant_list: Vec<_> = participants.participants().to_vec();
         let (target_account_id, _, target_participant_info) =
             &participant_list[PARTICIPANT_COUNT - 1];
-        let node_id = NodeId {
-            account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
         let expiring_attestation = MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
