@@ -388,6 +388,16 @@ pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
     }
 }
 
+/// Builds a `ConfidentialKeyDerivation` (CKD) domain with reconstruction threshold `t`, which needs `t` signers.
+pub fn ckd_domain(id: u64, t: u64) -> DomainConfig {
+    DomainConfig {
+        id: DomainId(id),
+        protocol: Protocol::ConfidentialKeyDerivation,
+        reconstruction_threshold: ReconstructionThreshold::new(t),
+        purpose: DomainPurpose::CKD,
+    }
+}
+
 /// Returns the first domain running `protocol_type` (the registry allows
 /// duplicates), panicking if absent.
 pub fn must_get_domain(running: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
