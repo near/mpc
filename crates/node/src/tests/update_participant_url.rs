@@ -2,7 +2,7 @@
 
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, request_signature_and_await_response,
@@ -33,7 +33,7 @@ async fn update_participant_url__should_keep_signing_when_peer_address_moved_to_
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::UPDATE_PARTICIPANT_URL_TEST,
+        port_seed::UPDATE_PARTICIPANT_URL_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
