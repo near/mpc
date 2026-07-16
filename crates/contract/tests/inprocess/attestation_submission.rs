@@ -7,8 +7,8 @@ use mpc_contract::{
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{create_node_id, node_id_for},
-        thresholds::ProposedThresholdParameters,
+        test_utils::{create_node_id, gen_participants, node_id_for},
+        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
 };
@@ -83,11 +83,11 @@ impl TestSetupBuilder {
             .contract_protocol_state
             .unwrap_or(DEFAUTL_CONTRACT_PROTOCOL_STATE);
 
-        let common::RunningContract {
-            contract,
-            participants: participants_list,
-            parameters,
-        } = common::build_running_contract(participant_count, threshold, self.init_config);
+        let participants = gen_participants(participant_count);
+        let participants_list = participants.participants().clone();
+        let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
+            .expect("failed to create threshold parameters");
+        let contract = common::init_contract(&parameters, self.init_config);
 
         let mut setup = TestSetup {
             contract,

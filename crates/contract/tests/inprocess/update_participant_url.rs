@@ -1,9 +1,14 @@
 #![allow(non_snake_case)]
 
-use super::common::{
-    RunningContract, build_running_contract, participant_context, transition_to_initializing,
+use super::common::{init_contract, participant_context, transition_to_initializing};
+use mpc_contract::{
+    MpcContract,
+    errors::{Error, InvalidState},
+    primitives::{
+        test_utils::gen_participants,
+        thresholds::{Threshold, ThresholdParameters},
+    },
 };
-use mpc_contract::errors::{Error, InvalidState};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     ParticipantInfo as DtoParticipantInfo, ProtocolContractState,
@@ -13,8 +18,8 @@ use std::str::FromStr;
 
 use assert_matches::assert_matches;
 
-fn participant_info(rc: &RunningContract, account_id: &AccountId) -> DtoParticipantInfo {
-    let ProtocolContractState::Running(running) = rc.contract.state() else {
+fn participant_info(contract: &MpcContract, account_id: &AccountId) -> DtoParticipantInfo {
+    let ProtocolContractState::Running(running) = contract.state() else {
         panic!("expected Running state");
     };
     running
@@ -30,35 +35,38 @@ fn participant_info(rc: &RunningContract, account_id: &AccountId) -> DtoParticip
 #[test]
 fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     // Given
-    let mut rc = build_running_contract(3, 2, None);
-    let (account_id, _, original_info) = rc.participants[0].clone();
-    let (other_account, _, other_info) = rc.participants[1].clone();
+    let participants = gen_participants(3);
+    let participant_list = participants.participants().clone();
+    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let mut contract = init_contract(&parameters, None);
+    let (account_id, _, original_info) = participant_list[0].clone();
+    let (other_account, _, other_info) = participant_list[1].clone();
     let new_url = "https://relocated.example.com:9000".to_string();
     assert_ne!(original_info.url, new_url);
 
     // When
     testing_env!(participant_context(&account_id));
-    rc.contract.update_participant_url(new_url.clone()).unwrap();
+    contract.update_participant_url(new_url.clone()).unwrap();
 
     // Then
-    let updated = participant_info(&rc, &account_id);
+    let updated = participant_info(&contract, &account_id);
     assert_eq!(updated.url, new_url);
     assert_eq!(updated.tls_public_key, original_info.tls_public_key);
-    let other = participant_info(&rc, &other_account);
+    let other = participant_info(&contract, &other_account);
     assert_eq!(other.url, other_info.url);
 }
 
 #[test]
 fn update_participant_url__should_reject_non_participant() {
     // Given
-    let mut rc = build_running_contract(3, 2, None);
+    let participants = gen_participants(3);
+    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let mut contract = init_contract(&parameters, None);
     let outsider = AccountId::from_str("outsider.near").unwrap();
 
     // When
     testing_env!(participant_context(&outsider));
-    let result = rc
-        .contract
-        .update_participant_url("https://outsider.example.com:9000".to_string());
+    let result = contract.update_participant_url("https://outsider.example.com:9000".to_string());
 
     // Then
     assert_matches!(
@@ -70,16 +78,16 @@ fn update_participant_url__should_reject_non_participant() {
 #[test]
 fn update_participant_url__should_reject_when_not_running() {
     // Given
-    let mut rc = build_running_contract(3, 2, None);
-    let participants = rc.participants.clone();
-    transition_to_initializing(&mut rc.contract, &participants);
-    let (account_id, _, _) = rc.participants[0].clone();
+    let participants = gen_participants(3);
+    let participant_list = participants.participants().clone();
+    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let mut contract = init_contract(&parameters, None);
+    transition_to_initializing(&mut contract, &participant_list);
+    let (account_id, _, _) = participant_list[0].clone();
 
     // When
     testing_env!(participant_context(&account_id));
-    let result = rc
-        .contract
-        .update_participant_url("https://relocated.example.com:9000".to_string());
+    let result = contract.update_participant_url("https://relocated.example.com:9000".to_string());
 
     // Then
     assert_matches!(

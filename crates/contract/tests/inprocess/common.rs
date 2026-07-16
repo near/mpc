@@ -4,8 +4,7 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::gen_participants,
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::ThresholdParameters,
     },
 };
 use near_account_id::AccountId;
@@ -18,13 +17,6 @@ use std::str::FromStr;
 
 use assert_matches::assert_matches;
 
-/// A freshly built `Running` contract plus the data tests need to drive it.
-pub struct RunningContract {
-    pub contract: MpcContract,
-    pub participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-    pub parameters: ThresholdParameters,
-}
-
 /// A VM context whose signer and predecessor are `account_id` — i.e. the call originates from
 /// that participant's own account — keeping the current block timestamp.
 pub fn participant_context(account_id: &AccountId) -> VMContext {
@@ -35,18 +27,11 @@ pub fn participant_context(account_id: &AccountId) -> VMContext {
         .build()
 }
 
-/// Builds a contract already in `Running` with a single Sign domain and `participant_count`
-/// participants.
-pub fn build_running_contract(
-    participant_count: usize,
-    threshold: u64,
+/// Initializes a `Running` contract with a single Sign domain from `parameters`.
+pub fn init_contract(
+    parameters: &ThresholdParameters,
     init_config: Option<InitConfig>,
-) -> RunningContract {
-    let participants = gen_participants(participant_count);
-    let participants_list = participants.participants().clone();
-    let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
-        .expect("failed to create threshold parameters");
-
+) -> MpcContract {
     let near_public_key =
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
     let keyset = Keyset::new(
@@ -73,15 +58,7 @@ pub fn build_running_contract(
             .build()
     );
 
-    let contract =
-        MpcContract::init_running(domains, 1, keyset, parameters.clone().into(), init_config)
-            .unwrap();
-
-    RunningContract {
-        contract,
-        participants: participants_list,
-        parameters,
-    }
+    MpcContract::init_running(domains, 1, keyset, parameters.clone().into(), init_config).unwrap()
 }
 
 /// Drives `contract` out of `Running` into `Initializing` by having every participant vote to
