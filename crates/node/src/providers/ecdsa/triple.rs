@@ -158,7 +158,6 @@ impl EcdsaSignatureProvider {
                     }
                 };
 
-                // The follower derives the store's `t` from the channel size (see `run_triple_generation_follower`), so pair exactly `t`.
                 debug_assert_eq!(
                     participants.len(),
                     threshold.value(),
