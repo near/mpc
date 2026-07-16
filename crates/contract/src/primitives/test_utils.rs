@@ -148,7 +148,7 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
-/// Builds a [`NodeId`] with a placeholder (bogus) account public key.
+/// Builds a [`NodeId`] with a fresh random account public key.
 pub fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
     NodeId {
         account_id: account_id.clone(),
@@ -157,13 +157,12 @@ pub fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey)
     }
 }
 
-/// Builds a [`NodeId`] for `account_id` with placeholder (bogus) TLS and account public keys,
-/// for tests that do not exercise those keys.
+/// Builds a [`NodeId`] for the given [`AccountId`] with fresh random TLS and account public keys.
 pub fn node_id_for(account_id: &AccountId) -> NodeId {
     create_node_id(account_id, &bogus_ed25519_public_key())
 }
 
-/// Sets `account_id` as the signer and authenticates it against `participants`.
+/// Sets the given [`AccountId`] as the signer and authenticates it against the [`Participants`].
 pub fn authenticate_as(
     account_id: &AccountId,
     participants: &Participants,
