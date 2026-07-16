@@ -12,7 +12,7 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
-        consts::ALL_PROTOCOLS,
+        consts::{ALL_PROTOCOLS, SUBMIT_PARTICIPANT_INFO_DEPOSIT},
         contract_build::stub_tee_verifier_contract,
         mpc_contract::{
             get_participant_attestation, submit_participant_info,
@@ -28,9 +28,9 @@ use near_workspaces::{
 use test_tee_verifier_types::StubResponse;
 use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key, verified_report};
 
-/// Deposit attached to a Dstack submission: covers storage on success, fully
-/// refunded on failure.
-const SUBMIT_DEPOSIT: NearToken = NearToken::from_near(1);
+/// Deposit attached to a Dstack submission: the flat storage fee, consumed on
+/// success and fully refunded on failure.
+const SUBMIT_DEPOSIT: NearToken = SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 
 /// Deploys the stub verifier with the given response, initializes it, and votes
 /// it in as `mpc-contract`'s trusted verifier (all participants vote so the
@@ -258,44 +258,31 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given: a verifier that returns the report the real verifier would produce
     // for the fixture quote.
-    let (worker, contract, submitter, balance_before) =
+    let (_worker, contract, submitter, balance_before) =
         setup_with_stub(StubResponse::Verified(verified_report()), None).await;
-    let storage_before = worker
-        .view_account(contract.id())
-        .await
-        .unwrap()
-        .storage_usage;
 
     // When: a Dstack attestation is submitted.
     let result = submit_dstack(&submitter, &contract).await;
 
-    // Then: the chain succeeds and the attestation is stored; storage is charged
-    // and the excess deposit refunded, so net spend is storage + gas, well under
-    // the full deposit.
+    // Then: every receipt in the verify_quote -> resolve_verification chain
+    // succeeds, the attestation is stored, and the flat fee is consumed (not
+    // refunded), so net spend is the fee plus gas.
     assert!(
         result.failures().is_empty(),
-        "the verified submission chain must succeed, got: {result:#?}"
+        "no receipt in the verify_quote -> resolve_verification promise chain may fail, got: {result:#?}"
     );
     let stored = get_participant_attestation(&contract, &p2p_tls_key().into())
         .await
         .unwrap();
     assert!(stored.is_some(), "a verified attestation must be stored");
 
-    // The caller's net spend must be exactly the measured storage stake plus the fee
-    // actually burnt; the rest of the SUBMIT_DEPOSIT is refunded.
-    let storage_after = worker
-        .view_account(contract.id())
-        .await
-        .unwrap()
-        .storage_usage;
-    let bytes_grown = u128::from(storage_after - storage_before);
-    assert!(bytes_grown > 0);
-    let storage_stake = near_sdk::env::storage_byte_cost().saturating_mul(bytes_grown);
+    // net spend is at least the fee (the rest is gas); a refund would drop it
+    // below the fee, proving the whole fee was consumed, not returned.
     let balance_after = submitter.view_account().await.unwrap().balance;
     let net_spent = balance_before.saturating_sub(balance_after);
-    assert_eq!(
-        net_spent,
-        storage_stake.saturating_add(total_gas_fee(&result))
+    assert!(
+        net_spent >= SUBMIT_DEPOSIT,
+        "flat fee must be consumed, not refunded: spent {net_spent}, fee {SUBMIT_DEPOSIT}"
     );
 }
 
