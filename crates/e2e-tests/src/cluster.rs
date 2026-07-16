@@ -49,6 +49,16 @@ const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
+fn sign_request_args(domain_id: DomainId, payload: serde_json::Value) -> serde_json::Value {
+    json!({
+        "request": {
+            "domain_id": domain_id,
+            "path": "test",
+            "payload_v2": payload,
+        }
+    })
+}
+
 // Seed offsets for `generate_deterministic_key` — each range holds up to 100 keys.
 const KEY_SEED_NEAR_SIGNER: u64 = 0;
 const KEY_SEED_P2P: u64 = 100;
@@ -777,15 +787,47 @@ impl MpcCluster {
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "path": "test",
-                "payload_v2": payload,
-            }
-        });
         self.contract
-            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+            .call_from_with_deposit(
+                &client,
+                method_names::SIGN,
+                sign_request_args(domain_id, payload),
+                SIGN_GAS,
+                SIGN_DEPOSIT,
+            )
+            .await
+    }
+
+    /// Submit a sign request and return its tx hash once included. Pair with
+    /// [`Self::wait_sign_request_final`] for requests that resolve past the RPC timeout.
+    pub async fn send_sign_request_included(
+        &self,
+        domain_id: DomainId,
+        payload: serde_json::Value,
+        account_id: &AccountId,
+    ) -> anyhow::Result<near_kit::CryptoHash> {
+        let client = self.user_client(account_id)?;
+        self.contract
+            .call_from_with_deposit_included(
+                &client,
+                method_names::SIGN,
+                sign_request_args(domain_id, payload),
+                SIGN_GAS,
+                SIGN_DEPOSIT,
+            )
+            .await
+    }
+
+    /// Poll a submitted sign request until its receipt tree is `Final` or `timeout`
+    /// elapses. `account_id` is the sender.
+    pub async fn wait_sign_request_final(
+        &self,
+        tx_hash: near_kit::CryptoHash,
+        account_id: &AccountId,
+        timeout: Duration,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        self.contract
+            .wait_tx_final(tx_hash, account_id, timeout)
             .await
     }
 

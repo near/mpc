@@ -1,9 +1,9 @@
 use crate::common::{
     DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, damgard_etal_domain, generate_ecdsa_payload,
-    must_get_domain, must_setup_cluster, wait_metric_on_nodes,
+    must_get_domain, must_setup_cluster,
 };
 
-use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
+use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -57,29 +57,25 @@ async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_whe
         outcome.failure_message()
     );
 
-    // And Cait-Sith (needs all 6) is unanswerable. Its request never resolves on
-    // chain, and the yield auto-timeout outlives the JSON-RPC call, so we race the
-    // doomed request against the surviving nodes' timeout counter rather than
-    // awaiting it (see `timeout_metric.rs`).
-    tokio::select! {
-        res = wait_metric_on_nodes(
-            &cluster,
-            &[0, 1, 2, 3, 4],
-            metrics::TIMEOUTS_INDEXED,
-            |v| v >= 1,
-            CLUSTER_WAIT_TIMEOUT,
-        ) => res.unwrap_or_else(|_| panic!(
-            "{} did not reach 1 on the surviving nodes — Cait-Sith request was answered \
-             despite only 5 of its 6 required signers being alive",
-            metrics::TIMEOUTS_INDEXED
-        )),
-        _ = cluster.send_sign_request(
-            caitsith_domain.id,
-            generate_ecdsa_payload(&mut rng),
-            cluster.default_user_account(),
-        ) => panic!(
-            "Cait-Sith sign request returned before the timeout metric — it should be \
-             unanswerable with only 5 of 6 required signers alive"
-        ),
-    }
+    // And Cait-Sith (needs all 6) is unanswerable: its request fails on chain once the
+    // yield times out, which outlives the JSON-RPC call. So we submit, grab the tx hash
+    // once included, then poll the receipt tree to `Final` rather than await it.
+    let user = cluster.default_user_account().clone();
+    let tx_hash = cluster
+        .send_sign_request_included(caitsith_domain.id, generate_ecdsa_payload(&mut rng), &user)
+        .await
+        .expect("failed to submit Cait-Sith sign request");
+    let outcome = cluster
+        .wait_sign_request_final(tx_hash, &user, CLUSTER_WAIT_TIMEOUT)
+        .await
+        .expect("Cait-Sith sign request did not reach a final on-chain outcome");
+    assert!(
+        outcome.is_failure(),
+        "Cait-Sith sign request succeeded with only 5 of its 6 required signers alive"
+    );
+    let message = outcome.failure_message().unwrap_or_default();
+    assert!(
+        message.contains("timed out"),
+        "Cait-Sith sign request failed for an unexpected reason: {message}"
+    );
 }
