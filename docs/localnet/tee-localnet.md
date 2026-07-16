@@ -276,7 +276,7 @@ near transaction view-status <transaction_Id> network-config mpc-localnet
 ```
 
 ```
-(ExecutionError("Smart contract panicked: Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the allowed mpc image hashes list is empty"
+(ExecutionError("Smart contract panicked: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"))
 ```
 
 ### Vote Commands
