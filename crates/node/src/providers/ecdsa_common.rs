@@ -168,8 +168,8 @@ mod tests {
             .1
     }
 
-    // Directly asserts the plumbing that `multidomain_with_distinct_reconstruction_thresholds`
-    // only checks indirectly (by running a full multi-node signing round): each domain must keep
+    // Directly asserts the plumbing that the `reconstruction_thresholds` integration tests
+    // only check indirectly (by running full multi-node signing rounds): each domain must keep
     // its OWN reconstruction threshold, never a single shared/governance value.
     #[tokio::test]
     async fn build_keyshares__should_pair_each_domain_with_its_own_reconstruction_threshold() {
