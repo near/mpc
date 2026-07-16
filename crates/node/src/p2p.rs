@@ -1006,12 +1006,10 @@ pub mod testing {
         pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: TestPorts =
             TestPorts::mpc_node_tests(22);
         pub const UPDATE_PARTICIPANT_URL_TEST: TestPorts = TestPorts::mpc_node_tests(23);
-        pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST: TestPorts =
-            TestPorts::mpc_node_tests(24);
         pub const RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST: TestPorts =
-            TestPorts::mpc_node_tests(25);
+            TestPorts::mpc_node_tests(24);
         pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: TestPorts =
-            TestPorts::mpc_node_tests(26);
+            TestPorts::mpc_node_tests(25);
     }
 
     pub fn generate_test_p2p_configs(
