@@ -149,7 +149,16 @@ impl TestSetup {
         node_id: &NodeId,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        testing_env!(common::participant_context(&node_id.account_id));
+        // `submit_participant_info` requires the flat storage fee, unlike the
+        // deposit-free calls `common::participant_context` is built for.
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(node_id.account_id.clone())
+                .predecessor_account_id(node_id.account_id.clone())
+                .block_timestamp(near_sdk::env::block_timestamp())
+                .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
+                .build()
+        );
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
             .map(|_| ())
