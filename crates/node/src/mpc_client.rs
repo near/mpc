@@ -553,7 +553,7 @@ where
             }
             Some(Protocol::ConfidentialKeyDerivation) => Err(anyhow::anyhow!(
                 "Incorrect protocol for domain: {:?}",
-                request.domain.clone()
+                request.domain
             )),
             Some(Protocol::DamgardEtAl) => {
                 let (signature, public_key) = self
@@ -572,7 +572,7 @@ where
             }
             None => Err(anyhow::anyhow!(
                 "Signature scheme is not found for domain: {:?}",
-                request.domain.clone()
+                request.domain
             )),
         }
     }
@@ -598,12 +598,12 @@ where
             Some(Protocol::CaitSith) | Some(Protocol::DamgardEtAl) | Some(Protocol::Frost) => {
                 Err(anyhow::anyhow!(
                     "Signature scheme is not allowed for domain: {:?}",
-                    request.domain_id.clone()
+                    request.domain_id
                 ))
             }
             None => Err(anyhow::anyhow!(
                 "Signature scheme is not found for domain: {:?}",
-                request.domain_id.clone()
+                request.domain_id
             )),
         }
     }
@@ -633,11 +633,11 @@ where
             | Some(Protocol::DamgardEtAl)
             | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                 "Signature scheme is not allowed for domain: {:?}",
-                request.domain_id.clone()
+                request.domain_id
             )),
             None => Err(anyhow::anyhow!(
                 "Signature scheme is not found for domain: {:?}",
-                request.domain_id.clone()
+                request.domain_id
             )),
         }
     }
@@ -831,5 +831,122 @@ mod tests {
                 "unexpected classification for {task_id:?}",
             );
         }
+    }
+
+    fn led_computations_metric() -> prometheus::IntCounterVec {
+        prometheus::IntCounterVec::new(
+            prometheus::Opts::new("test_computations_led", "test"),
+            &["result"],
+        )
+        .unwrap()
+    }
+
+    fn label_value(metric: &prometheus::IntCounterVec, label: &str) -> u64 {
+        metric.with_label_values(&[label]).get()
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn run_led_computation__should_record_succeeded_and_total_on_success() {
+        // Given
+        let metric = led_computations_metric();
+
+        // When
+        let result =
+            run_led_computation(&metric, Duration::from_secs(1), async { anyhow::Ok(42) }).await;
+
+        // Then
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL),
+            1
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL),
+            1
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL),
+            0
+        );
+        assert_eq!(
+            label_value(
+                &metric,
+                metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL
+            ),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn run_led_computation__should_record_failed_and_total_on_error() {
+        // Given
+        let metric = led_computations_metric();
+
+        // When
+        let result: anyhow::Result<u32> = run_led_computation(&metric, Duration::from_secs(1), {
+            async { Err(anyhow::anyhow!("computation failed")) }
+        })
+        .await;
+
+        // Then
+        assert_eq!(result.unwrap_err().to_string(), "computation failed");
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL),
+            1
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL),
+            1
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL),
+            0
+        );
+        assert_eq!(
+            label_value(
+                &metric,
+                metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL
+            ),
+            0
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn run_led_computation__should_record_deadline_exceeded_and_total_on_timeout() {
+        // Given
+        let metric = led_computations_metric();
+
+        // When
+        let result: anyhow::Result<u32> = run_led_computation(
+            &metric,
+            Duration::ZERO,
+            std::future::pending::<anyhow::Result<u32>>(),
+        )
+        .await;
+
+        // Then
+        result.unwrap_err();
+        assert_eq!(
+            label_value(
+                &metric,
+                metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL
+            ),
+            1
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL),
+            1
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL),
+            0
+        );
+        assert_eq!(
+            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL),
+            0
+        );
     }
 }

@@ -177,7 +177,7 @@ pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVe
     || {
         prometheus::register_int_counter_vec!(
             "mpc_num_signature_computations_led",
-            "Number of finished signature computation attempts that this node led. Attempts that never finish (e.g. node restart) are not counted.",
+            "Number of finished signature computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
@@ -188,7 +188,7 @@ pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = L
     || {
         prometheus::register_int_counter_vec!(
             "mpc_num_ckd_computations_led",
-            "Number of finished ckd computation attempts that this node led. Attempts that never finish (e.g. node restart) are not counted.",
+            "Number of finished ckd computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
@@ -199,7 +199,7 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntC
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
             "mpc_num_verify_foreign_tx_computations_led",
-            "Number of finished verify foreign tx computation attempts that this node led. Attempts that never finish (e.g. node restart) are not counted.",
+            "Number of finished verify foreign tx computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
