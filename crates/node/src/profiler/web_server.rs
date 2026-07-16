@@ -2,12 +2,18 @@
 use super::jemalloc::{jemalloc_heap_flamegraph, jemalloc_heap_pprof};
 use super::pprof::collect_pprof;
 
+use axum::extract::{Path, State};
+use axum::response::Response;
 use axum::{
+    Json,
     extract::Query,
     http::{StatusCode, header},
     response::IntoResponse,
 };
-use std::{net::SocketAddr, time::Duration};
+use http::HeaderValue;
+use serde::Serialize;
+use std::path::PathBuf;
+use std::{fs, net::SocketAddr, time::Duration};
 use tokio::{io, net::TcpListener};
 use tower::limit::GlobalConcurrencyLimitLayer;
 
@@ -105,4 +111,76 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {:?}", e)).into_response(),
     }
+}
+
+#[derive(Clone)]
+struct LogServerState {
+    log_dir: PathBuf,
+}
+
+#[derive(Serialize)]
+struct LogFile {
+    name: String,
+    size: u64,
+}
+
+async fn list_logs(State(state): State<LogServerState>) -> Result<Json<Vec<LogFile>>, StatusCode> {
+    let mut logs = Vec::new();
+    let entries = fs::read_dir(&state.log_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("mpc") {
+            continue;
+        }
+        let metadata = entry
+            .metadata()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if !metadata.is_file() {
+            continue;
+        }
+        logs.push(LogFile {
+            name,
+            size: metadata.len(),
+        });
+    }
+    logs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(Json(logs))
+}
+
+async fn fetch_log(
+    State(state): State<LogServerState>,
+    Path(name): Path<String>,
+) -> Result<Response, StatusCode> {
+    if !name.starts_with("mpc") || name.contains('/') || name.contains('\\') || name.contains("..")
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let path = state.log_dir.join(&name);
+    let contents = fs::read(path).map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok((
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        )],
+        contents,
+    )
+        .into_response())
+}
+
+pub(crate) async fn start_log_server(
+    bind_address: SocketAddr,
+    log_dir: PathBuf,
+) -> Result<(), io::Error> {
+    let router = axum::Router::new()
+        .route("/logs", axum::routing::get(list_logs))
+        .route("/logs/{name}", axum::routing::get(fetch_log))
+        .with_state(LogServerState { log_dir });
+    let tcp_listener = TcpListener::bind(&bind_address).await?;
+    tokio::spawn(async move {
+        tracing::info!(?bind_address, "starting log server");
+        if let Err(err) = axum::serve(tcp_listener, router).await {
+            tracing::error!(?err, "log server failed");
+        }
+    });
+    Ok(())
 }

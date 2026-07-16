@@ -441,6 +441,8 @@ impl MpcNodeSetup {
             log: LogConfig {
                 format: LogFormat::Plain,
                 filter: Some("debug".to_string()),
+                log_dir: Some(self.home_dir.clone()),
+                max_log_files: Some(100),
             },
             near_init: Some(NearInitConfig {
                 chain_id: ChainId::Custom(self.chain_id.clone()),

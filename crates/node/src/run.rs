@@ -55,7 +55,7 @@ use crate::tee::{
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
-    init_logging(&config.log);
+    let (_log_guard, log_path) = init_logging(&config.log);
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
@@ -118,6 +118,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
+    // TODO: Make log server address and port configurable
+    profiler::web_server::start_log_server("127.0.0.1:35000".parse().unwrap(), log_path).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     // TODO(#2102): Decide if the MPC responder account is actually needed
