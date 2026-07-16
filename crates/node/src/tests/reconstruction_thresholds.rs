@@ -157,13 +157,13 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
     assert_can_sign(&mut setup.indexer, "user_restored_frost", &frost).await;
 }
 
-/// Resharing (a new node joining) preserves each domain's own reconstruction threshold:
-/// afterwards the high-`t` domain still requires its higher online-signer count.
+/// One resharing preserves unchanged domains' `t` while applying a per-domain update: the
+/// lowered domain then signs with fewer online nodes than its old sharing allowed, while a
+/// sibling left at the same `t` still needs its higher count.
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_domain_across_resharing()
- {
+async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_ones() {
     // Given a cluster starting with 4 of an eventual 5 participants.
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
@@ -228,12 +228,16 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
     assert_can_sign(&mut setup.indexer, "user_pre_ckd", &ckd).await;
     assert_can_sign(&mut setup.indexer, "user_pre_robust", &robust).await;
 
-    // When the fifth node joins via resharing.
+    // When the fifth node joins via resharing, which also lowers `high` from t=4 to t=2.
+    let high_lowered = sign_domain(2, Protocol::CaitSith, 2);
     setup
         .indexer
         .contract_mut()
         .await
-        .start_resharing(setup.participants.clone());
+        .start_resharing_with_threshold_updates(
+            setup.participants.clone(),
+            BTreeMap::from([(high.id, ReconstructionThreshold::new(2))]),
+        );
 
     setup
         .indexer
@@ -253,97 +257,20 @@ async fn per_domain_reconstruction_thresholds__should_be_preserved_for_each_doma
     // Then all domains still sign with the full reshared set.
     assert_can_sign(&mut setup.indexer, "user_post_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_post_mid", &mid).await;
-    assert_can_sign(&mut setup.indexer, "user_post_high", &high).await;
+    assert_can_sign(&mut setup.indexer, "user_post_high", &high_lowered).await;
     assert_can_sign(&mut setup.indexer, "user_post_ckd", &ckd).await;
     assert_can_sign(&mut setup.indexer, "user_post_robust", &robust).await;
 
-    // With two nodes down (3 online): high/ckd (t=4) stop, but low/mid/robust still
-    // work — each domain's threshold survived the reshare.
+    // With three nodes down (2 online): `high` now signs at its new t=2 — impossible under
+    // the old t=4 sharing, so the update took real effect. `ckd`, left at t=4, stops —
+    // proving the change was per-domain, not global. `low` (t=2) keeps working; `mid` (t=3)
+    // and `robust` (DamgardEtAl, needs 2t-1=3) stop.
     let _disabled_a = setup.indexer.disable(4.into()).await;
     let _disabled_b = setup.indexer.disable(3.into()).await;
+    let _disabled_c = setup.indexer.disable(2.into()).await;
     assert_can_sign(&mut setup.indexer, "user_drop_low", &low).await;
-    assert_can_sign(&mut setup.indexer, "user_drop_mid", &mid).await;
-    assert_cannot_sign(&mut setup.indexer, "user_drop_high", &high).await;
+    assert_can_sign(&mut setup.indexer, "user_drop_high", &high_lowered).await;
     assert_cannot_sign(&mut setup.indexer, "user_drop_ckd", &ckd).await;
-    assert_can_sign(&mut setup.indexer, "user_drop_robust", &robust).await;
-}
-
-/// Changing a domain's reconstruction threshold via a resharing proposal takes real
-/// cryptographic effect: after lowering `t` from 4 to 2, only 2 nodes need be online to
-/// sign — impossible unless the key was genuinely re-shared to the new threshold.
-#[tokio::test]
-#[test_log::test]
-#[expect(non_snake_case)]
-async fn changing_reconstruction_threshold_via_resharing__should_reshare_the_key_to_the_new_threshold()
- {
-    // Given a 5-node cluster with a single CaitSith domain at t=4.
-    const NUM_PARTICIPANTS: usize = 5;
-    const THRESHOLD: usize = 3;
-    const TXN_DELAY_BLOCKS: u64 = 1;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let mut setup = IntegrationTestSetup::new(
-        Clock::real(),
-        temp_dir.path(),
-        (0..NUM_PARTICIPANTS)
-            .map(|i| format!("test{}", i).parse().unwrap())
-            .collect(),
-        THRESHOLD,
-        TXN_DELAY_BLOCKS,
-        port_seed::RECONSTRUCTION_THRESHOLD_CHANGE_TEST,
-        DEFAULT_BLOCK_TIME,
-    );
-
-    let domain = sign_domain(0, Protocol::CaitSith, 4);
-    {
-        let mut contract = setup.indexer.contract_mut().await;
-        contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![domain.clone()]);
-    }
-
-    let _runs = setup
-        .configs
-        .into_iter()
-        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
-        .collect::<Vec<_>>();
-
-    setup
-        .indexer
-        .wait_for_contract_state(
-            |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
-        )
-        .await
-        .expect("must not exceed timeout");
-
-    // Sanity: at t=4 the domain signs with all nodes online.
-    assert_can_sign(&mut setup.indexer, "user_pre", &domain).await;
-
-    // When resharing lowers the threshold to t=2 (participant set unchanged).
-    let lowered = sign_domain(0, Protocol::CaitSith, 2);
-    setup
-        .indexer
-        .contract_mut()
-        .await
-        .start_resharing_with_threshold_updates(
-            setup.participants.clone(),
-            BTreeMap::from([(domain.id, ReconstructionThreshold::new(2))]),
-        );
-
-    setup
-        .indexer
-        .wait_for_contract_state(
-            |state| match state {
-                ContractState::Running(running) => running.keyset.epoch_id.get() == 1,
-                _ => false,
-            },
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
-        )
-        .await
-        .expect("Timeout waiting for resharing to complete");
-
-    // Then two online nodes suffice; the original t=4 sharing would have needed four.
-    let _d1 = setup.indexer.disable(4.into()).await;
-    let _d2 = setup.indexer.disable(3.into()).await;
-    let _d3 = setup.indexer.disable(2.into()).await;
-    assert_can_sign(&mut setup.indexer, "user_post", &lowered).await;
+    assert_cannot_sign(&mut setup.indexer, "user_drop_mid", &mid).await;
+    assert_cannot_sign(&mut setup.indexer, "user_drop_robust", &robust).await;
 }

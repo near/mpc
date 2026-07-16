@@ -1010,7 +1010,6 @@ pub mod testing {
             TestPorts::mpc_node_tests(24);
         pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: TestPorts =
             TestPorts::mpc_node_tests(25);
-        pub const RECONSTRUCTION_THRESHOLD_CHANGE_TEST: TestPorts = TestPorts::mpc_node_tests(26);
     }
 
     pub fn generate_test_p2p_configs(
