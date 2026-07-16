@@ -222,14 +222,14 @@ Each test declares a `port_seed: u16` (the allocator's `test_id`). Ports are
 computed as:
 
 ```
-e2e base (20000) + test_id * 82 + offset
+e2e base (20000) + test_id * ports_per_test() + offset
 ```
 
-with 82 ports per test (2 cluster ports + 8 per-node ports × 10 maximum
-nodes), as fixed by the e2e scheme in the `test-port-allocator` crate.
-Cluster-level ports cover the sandbox RPC and network; per-node
-ports cover p2p, web UI, migration web UI, pprof, and the node's internal
-neard RPC/network.
+For the e2e scheme, `ports_per_test` is 82 (2 cluster ports + 8 per-node ports
+× 10 maximum nodes); the `mpc-node` scheme uses a different block size, so this
+number is specific to `TestPorts::e2e_tests`. Cluster-level ports cover the
+sandbox RPC and network; per-node ports cover p2p, web UI, migration web UI,
+pprof, and the node's internal neard RPC/network.
 
 The allocator is `test_port_allocator::TestPorts`, the same struct the
 `mpc-node` integration tests use — each constructor pins its scheme, and the
