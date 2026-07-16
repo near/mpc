@@ -1,6 +1,6 @@
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{DEFAULT_BLOCK_TIME, make_key_storage_config};
 use crate::tests::{
@@ -36,7 +36,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         account_ids,
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::RECOVERY_TEST,
+        port_seed::RECOVERY_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

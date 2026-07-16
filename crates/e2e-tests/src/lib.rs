@@ -5,7 +5,6 @@ pub mod foreign_chain_mock;
 pub mod metrics;
 pub mod mpc_node;
 pub mod near_sandbox;
-pub mod port_allocator;
 
 pub use blockchain::{ClientHandle, DeployedContract, NearBlockchain};
 pub use cluster::{
@@ -13,4 +12,4 @@ pub use cluster::{
     MpcClusterConfig, MpcNodeState,
 };
 pub use near_sandbox::NearSandbox;
-pub use port_allocator::E2ePortAllocator;
+pub use test_port_allocator::{E2eTestPorts, TestPorts};
