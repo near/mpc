@@ -74,7 +74,8 @@ Views: `allowed_docker_image_hashes`, `allowed_launcher_compose_hashes`.
 `respond_ckd`, `respond_verify_foreign_tx`, `vote_pk`, `vote_reshared`,
 `start_keygen_instance`, `start_reshare_instance`,
 `vote_abort_key_event_instance`, `verify_tee`, `submit_participant_info`,
-`conclude_node_migration`, deprecated `register_foreign_chain_config`.
+`conclude_node_migration`, `register_foreign_chains_config`, deprecated
+`register_foreign_chain_config`.
 Views: `state`, `migration_info`, `get_attestation`, `get_pending_request`,
 `get_pending_ckd_request`, `get_pending_verify_foreign_tx_request`,
 `get_supported_foreign_chains`, `get_tee_accounts`,
@@ -237,7 +238,7 @@ let mpc_contract = MpcContractHandle::new(caller.clone(), id);     // owns (for 
 | governance | `vote_new_parameters`, `vote_add_domains`, `vote_update`, `propose_update` (borsh), `vote_code_hash`, `vote_add_launcher_hash`, `vote_update_foreign_chain_providers` |
 | TEE | `submit_participant_info`, `verify_tee`, `clean_tee_status`², `clean_invalid_attestations` |
 | migration/backup | `start_node_migration`, `register_backup_service`, `conclude_node_migration` |
-| foreign chains | `register_foreign_chain_support`, `register_foreign_chain_config` (carries `#[deprecated(note = "#3079")]`) |
+| foreign chains | `register_foreign_chain_support`, `register_foreign_chains_config`, `register_foreign_chain_config` (carries `#[deprecated(note = "#3079")]`) |
 | lifecycle | `init`, `init_running`, `migrate` |
 
 ¹ `vote_abort_key_event_instance` is currently only sent by the node (via
@@ -256,16 +257,16 @@ send garbage.
 
 "Everything" is scoped to methods some workspace crate calls today. The
 contract exposes further public entry points that nothing in the workspace
-exercises (`register_foreign_chains_config`, `remove_update_vote`,
-`vote_remove_launcher_hash`, `vote_add_os_measurement`,
-`vote_remove_os_measurement`, `vote_tee_verifier_change`,
-`withdraw_tee_verifier_vote`; views `metrics`, `launcher_hash_votes`,
-`code_hash_votes`, `tee_verifier_votes`, `os_measurement_votes`,
-`allowed_os_measurements`, `allowed_launcher_image_hashes`,
-`get_available_foreign_chains`, `get_foreign_chains_configs`) — those grow
-handle methods on first use. Mind the near-collision when that happens: the
-live `register_foreign_chains_config` (plural) and the deprecated
-`register_foreign_chain_config` (singular) differ by one letter.
+exercises (`remove_update_vote`, `vote_remove_launcher_hash`,
+`vote_add_os_measurement`, `vote_remove_os_measurement`,
+`vote_tee_verifier_change`, `withdraw_tee_verifier_vote`; views `metrics`,
+`launcher_hash_votes`, `code_hash_votes`, `tee_verifier_votes`,
+`os_measurement_votes`, `allowed_os_measurements`,
+`allowed_launcher_image_hashes`, `get_available_foreign_chains`,
+`get_foreign_chains_configs`) — those grow handle methods on first use.
+Mind the near-collision in the foreign-chains group: the live
+`register_foreign_chains_config` (plural, sent by the node) and the
+deprecated `register_foreign_chain_config` (singular) differ by one letter.
 
 ### Read side: `ViewContract`
 
@@ -330,26 +331,30 @@ as they come up.
 
 ### Argument structs
 
-This section is PR 1 of the rollout (see "Rollout: PR sequence"): purely
-additive to `call_args.rs`, no behavior change, and every consumer PR builds
-on it.
+This section is PR 1 of the rollout (see "Rollout: PR sequence"), except the
+`Deserialize` derives, which land with PR 6: wire-compatible, no behavior
+change, and every consumer PR builds on it.
 
 `call_args.rs` stays the single wire-format truth. Structs that exist on main
 are kept: `SignatureRespondArgs`, `CKDRespondArgs`,
 `VerifyForeignTransactionRespondArgs`, `VotePkArgs`, `VoteResharedArgs`,
 `StartKeygenArgs`, `StartReshareArgs`, `VoteAbortKeyEventInstanceArgs`,
 `SubmitParticipantInfoArgs`, `ConcludeNodeMigrationArgs`,
-`RegisterForeignChainConfigArgs`. Seven of them (`VotePkArgs`,
+`RegisterForeignChainConfigArgs`. Eight of them (`VotePkArgs`,
 `VoteResharedArgs`, `StartKeygenArgs`, `StartReshareArgs`,
 `VoteAbortKeyEventInstanceArgs`, `ConcludeNodeMigrationArgs`,
-`RegisterForeignChainConfigArgs`) are `Serialize`-only today and gain
-`Deserialize` here: PR 6's `method_name`+deserialize dispatch (observation,
-fake indexer) round-trips every variant.
+`RegisterForeignChainConfigArgs`, `RegisterForeignChainsConfigArgs`) are
+`Serialize`-only today; they gain `Deserialize` in PR 6, where the
+`method_name`+deserialize dispatch (observation, fake indexer) starts
+round-tripping every variant — not before.
 
 `ProposeUpdateArgs` moves in from the contract crate
 (`contract/src/update.rs:89`) — the contract depends on this crate, so the
 handle cannot name the struct where it lives today without a dependency
-cycle. The move also retires the divergent duplicates: devnet's
+cycle. Its destination is `types/updates.rs`, not `call_args.rs`: the
+contract itself names it in its `propose_update` entry point, and arg types
+the contract consumes belong in the unconditional DTO module — `call_args`
+stays client-only. The move also retires the divergent duplicates: devnet's
 `ProposeUpdateArgs` (`mpc.rs:543`; field named `contract`, config typed
 `Option<()>` — wire-compatible only because borsh is positional and `config`
 is always `None`) and e2e's `ProposeUpdateArgsBorsh` (`cluster.rs:1346`).
@@ -474,8 +479,8 @@ observe — with three adjustments:
 
 - `observe_tx_result` re-keys from enum-variant match to `method_name` match
   plus `serde_json::from_slice` of the args it needs (the respond structs
-  and `SubmitParticipantInfoArgs` derive `Deserialize` already; PR 1 adds it
-  to the other seven — see "Argument structs").
+  and `SubmitParticipantInfoArgs` derive `Deserialize` already; this PR adds
+  it to the other eight — see "Argument structs").
 - `SubmitParticipantInfo`'s `serde(skip)` expiry baseline (observation
   context that must never reach the wire; today view-read by the caller and
   threaded into the enum variant, `tee/remote_attestation.rs:66`) is
@@ -810,7 +815,7 @@ resolving it. Deposit is 0 unless noted.
 | `vote_new_parameters` | `prospective_epoch_id: EpochId, proposal: ProposedThresholdParameters` | `MAX_GAS` | |
 | `vote_add_domains` | `domains: Vec<DomainConfig>` | `MAX_GAS` | |
 | `vote_update` | `id: UpdateId` | `MAX_GAS` | |
-| `propose_update` | `args: ProposeUpdateArgs` (borsh; struct moves into `call_args.rs` — see "Argument structs") + trailing `deposit: NearToken` | `MAX_GAS` | caller-supplied |
+| `propose_update` | `args: ProposeUpdateArgs` (borsh; struct moves into `types/updates.rs` — see "Argument structs") + trailing `deposit: NearToken` | `MAX_GAS` | caller-supplied |
 | `vote_code_hash` | `code_hash: NodeImageHash` | `MAX_GAS` | |
 | `vote_add_launcher_hash` | `launcher_hash: LauncherImageHash` | `MAX_GAS` | |
 | `vote_update_foreign_chain_providers` | `votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>` (borsh) | `MAX_GAS` | |
@@ -822,6 +827,7 @@ resolving it. Deposit is 0 unless noted.
 | `register_backup_service` | `backup_service_info: BackupServiceInfo` | `MAX_GAS` | |
 | `conclude_node_migration` | `keyset: &Keyset` | `MAX_GAS` | |
 | `register_foreign_chain_support` | `foreign_chain_support: SupportedForeignChains` | `MAX_GAS` | |
+| `register_foreign_chains_config` | `foreign_chains_config: ForeignChainsConfig` | `MAX_GAS` | |
 | `register_foreign_chain_config` (deprecated, #3079) | `foreign_chain_configuration: ForeignChainConfiguration` | `MAX_GAS` | |
 | `init` | `parameters: ThresholdParameters, init_config: Option<InitConfig>` | `MAX_GAS` | |
 | `init_running` | `domains: Vec<DomainConfig>, next_domain_id: u64, keyset: Keyset, parameters: ThresholdParameters, init_config: Option<InitConfig>` | `MAX_GAS` | |
@@ -898,12 +904,12 @@ first real call site.
 
 | # | PR | Contents |
 |---|---|---|
-| 1 | argument structs | new `*Args` in `call_args.rs`; promote devnet's `VoteUpdateArgs` and sandbox's `SignResponseArgs`; move `ProposeUpdateArgs` out of the contract crate (retiring the devnet/e2e duplicates); add the seven missing `Deserialize` derives. Additive only; independent of 2 |
+| 1 | argument structs | promote devnet's `VoteUpdateArgs` into `call_args.rs` and retire sandbox's `SignResponseArgs` in favor of `SignatureRespondArgs`; move `ProposeUpdateArgs` out of the contract crate into `types/updates.rs` (retiring the devnet/e2e duplicates). Wire-compatible, no behavior change; independent of 2 |
 | 2 | transport + chain-gateway + tee-context | the vertical slice proving the architecture: rename `mpc-call-args` → `near-contract-transport`, add `CallContract`/`ViewContract`/`ViewArgs`/`CallError` + `&T` blankets; `AccountCaller` + `ChainGateway: ViewContract`; implement the traits for chain-gateway's test contract and `MockChainState` — the second-contract pattern, and PR 2's `ViewContract` exercise (tee-context's reads are subscriptions, out of scope); redesign `TeeContext` to hold the handle; birth of the `client` module with the first MPC methods (`submit_participant_info`, `verify_tee`); traits + `CallError` behind a default-on `traits` feature — `chain-gateway-test-contract` builds this crate into wasm and keeps payload-only |
 | 3 | e2e | `NearKitCaller` (rename from `ClientHandle`) + both impls; handle grows the e2e methods, including the first MPC *view* methods (`state`, `migration_info`, …); migrate `cluster.rs`/tests; shrink `DeployedContract` to deployment + `code_hash`; confirm near-kit caps prepaid gas and has `args_raw` on the call builder (open items in the deviation audit) |
 | 4 | sandbox | `SandboxCaller`/`SandboxAsyncCaller` impls; handle grows the respond/key-event methods; migrate tests; delete local `SignResponseArgs` |
 | 5 | devnet | `DevnetCaller` impls; handle grows `propose_update` (with its deposit parameter) etc.; migrate `mpc.rs`; `read_contract_state` → view methods |
-| 6 | node: queue currency | `TransactionSender` trait deleted in favor of `CallContract`; queue carries `FunctionCallArgs` + the signing account (replaces `signer_for`); `observe_tx_result` re-keyed on `method_name`; expiry baseline view-read by the processor at submit time; interim `tx_signer` threads the message's gas/deposit; fake indexer deserializing round-trip; `IndexerViewClient: ViewContract` (the observe re-key rewrites those call sites anyway); handle grows the node-only methods (`vote_abort_key_event_instance`, `conclude_node_migration`); settle `.awaiting()` naming |
+| 6 | node: queue currency | `TransactionSender` trait deleted in favor of `CallContract`; queue carries `FunctionCallArgs` + the signing account (replaces `signer_for`); the eight `Serialize`-only arg structs gain `Deserialize`; `observe_tx_result` re-keyed on `method_name`; expiry baseline view-read by the processor at submit time; interim `tx_signer` threads the message's gas/deposit; fake indexer deserializing round-trip; `IndexerViewClient: ViewContract` (the observe re-key rewrites those call sites anyway); handle grows the node-only methods (`vote_abort_key_event_instance`, `conclude_node_migration`); settle `.awaiting()` naming |
 | 7 | node: transport | processor's sign-and-submit replaced by `AccountCaller`; make `FetchLatestFinalBlockInfo`/`SubmitSignedTransaction` `pub` (the `SubmitFunctionCall` blanket is sealed while they are `pub(crate)`); settle the debug-page metadata story; delete `indexer/tx_signer.rs` (nonce semantics match the gateway signer's) |
 
 Ordering: 1 ∥ 2, then 3 → 4 → 5 (sequential by default — they append to the
