@@ -72,6 +72,11 @@ impl RegisterForeignChainConfigArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RegisterForeignChainsConfigArgs {
+    pub foreign_chains_config: crate::types::ForeignChainsConfig,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct StartReshareArgs {
     pub key_event_id: KeyEventId,
 }

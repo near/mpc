@@ -251,6 +251,23 @@ impl ContractState {
         })
     }
 
+    /// The participant set the P2P mesh connects to for the running job: prospective participants
+    /// during resharing, otherwise the running participants; `None` when no mesh is established.
+    ///
+    /// During resharing the single mesh is built from `new_participants` and shared by both the
+    /// signing and resharing protocols (signing routes its `old ∩ new` subset over it), so peer
+    /// addresses must be resolved against that set — using the old set would leave joining nodes
+    /// unresolved.
+    pub fn mesh_participants(&self) -> Option<&ParticipantsConfig> {
+        match self {
+            ContractState::Running(running) => Some(match &running.resharing_state {
+                Some(resharing) => &resharing.new_participants,
+                None => &running.participants,
+            }),
+            ContractState::Invalid | ContractState::Initializing(_) => None,
+        }
+    }
+
     /// Returns the participation status of the given node in the current contract state.
     ///
     /// Determines whether the node is active or inactive based on its account ID and P2P public key
@@ -294,7 +311,6 @@ pub async fn monitor_contract_state(
             refresh_interval_tick.tick().await;
 
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
             indexer_state.client.wait_for_full_sync().await;
 
@@ -420,9 +436,23 @@ pub fn convert_participant_infos(
 #[cfg(test)]
 pub mod test_utils {
 
-    use crate::config::ParticipantInfo;
+    use crate::config::{ParticipantInfo, ParticipantsConfig};
+    use crate::primitives::ParticipantId;
+    use ed25519_dalek::SigningKey;
+    use mpc_primitives::EpochId;
+    use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::{
+        AttemptId, DomainConfig, DomainId, DomainPurpose, KeyEventId, Protocol,
+        ReconstructionThreshold,
+    };
+    use near_mpc_crypto_types::Keyset;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    use super::ContractState;
+    use super::{
+        ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
+    };
 
     impl ContractState {
         /// returns the participants of the current or prospective epoch
@@ -439,6 +469,77 @@ pub mod test_utils {
                     .unwrap_or(running.participants.participants.clone()),
             }
         }
+    }
+
+    pub(crate) fn participant(
+        id: u32,
+        account: &str,
+        address: &str,
+        port: u16,
+        key_seed: u64,
+    ) -> ParticipantInfo {
+        let signing_key = SigningKey::generate(&mut StdRng::seed_from_u64(key_seed));
+        ParticipantInfo {
+            id: ParticipantId::from_raw(id),
+            address: address.to_string(),
+            port,
+            p2p_public_key: signing_key.verifying_key(),
+            near_account_id: account.parse::<AccountId>().unwrap(),
+        }
+    }
+
+    pub(crate) fn base_config() -> ParticipantsConfig {
+        ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                participant(0, "alice.near", "alice.example.com", 8080, 1),
+                participant(1, "bob.near", "bob.example.com", 8080, 2),
+            ],
+        }
+    }
+
+    pub(crate) fn me() -> AccountId {
+        "alice.near".parse().unwrap()
+    }
+
+    pub(crate) fn running(participants: ParticipantsConfig, epoch: u64) -> ContractState {
+        ContractState::Running(ContractRunningState {
+            keyset: Keyset::new(EpochId::new(epoch), vec![]),
+            domains: vec![],
+            participants,
+            resharing_state: None,
+        })
+    }
+
+    /// A `Running` state with a resharing in progress whose prospective set is `new_participants`.
+    pub(crate) fn resharing(
+        participants: ParticipantsConfig,
+        new_participants: ParticipantsConfig,
+        epoch: u64,
+    ) -> ContractState {
+        let domain = DomainConfig {
+            id: DomainId(0),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        };
+        ContractState::Running(ContractRunningState {
+            keyset: Keyset::new(EpochId::new(epoch), vec![]),
+            domains: vec![domain.clone()],
+            participants,
+            resharing_state: Some(ContractResharingState {
+                new_participants,
+                per_domain_thresholds: BTreeMap::new(),
+                reshared_keys: Keyset::new(EpochId::new(epoch), vec![]),
+                key_event: ContractKeyEventInstance {
+                    id: KeyEventId::new(EpochId::new(epoch), DomainId(0), AttemptId::new()),
+                    domain,
+                    started: false,
+                    completed: BTreeSet::new(),
+                    completed_domains: vec![],
+                },
+            }),
+        })
     }
 }
 #[cfg(test)]
@@ -459,6 +560,8 @@ mod tests {
         ReconstructionThreshold, Threshold, ThresholdParameters,
     };
     use std::collections::{BTreeMap, HashMap};
+
+    use super::test_utils::{base_config, participant, resharing};
 
     fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![
@@ -682,5 +785,22 @@ mod tests {
             resharing_state.key_event.domain.reconstruction_threshold,
             old_threshold
         );
+    }
+
+    #[test]
+    fn mesh_participants__should_return_new_participants_during_resharing() {
+        // Given
+        let mut new_participants = base_config();
+        new_participants.participants.push(participant(
+            2,
+            "carol.near",
+            "carol.example.com",
+            7000,
+            3,
+        ));
+        let state = resharing(base_config(), new_participants.clone(), 5);
+
+        // When / Then
+        assert_eq!(state.mesh_participants(), Some(&new_participants));
     }
 }

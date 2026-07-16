@@ -8,6 +8,7 @@ use foreign_chain_inspector::bnb::inspector::BnbExtractor;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
 use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
+use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
@@ -51,7 +52,7 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
     ForeignChainPolicyReader: ReadSupportedForeignChain,
 {
-    pub(super) async fn make_verify_foreign_tx_leader(
+    pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
@@ -318,6 +319,30 @@ where
                 let tx_id = request.tx_id.0.into();
                 let finality: AptosFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<AptosExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+
+                let extracted_values = inspector
+                    .extract(tx_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                extracted_values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Sui(request) => {
+                let inspector = self
+                    .inspectors
+                    .sui
+                    .as_ref()
+                    .context("no inspector configured for Sui")?;
+
+                let tx_id = request.tx_id.0.into();
+                let finality: SuiFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<SuiExtractor> = request
                     .extractors
                     .iter()
                     .cloned()

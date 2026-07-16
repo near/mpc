@@ -586,9 +586,10 @@ where
                                     Some(Protocol::CaitSith) => {
                                         let response = timeout(
                                             Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.verify_foreign_tx_provider.clone().make_signature(
-                                                verify_foreign_tx_attempt.request.id,
-                                            ),
+                                            this.verify_foreign_tx_provider
+                                                .make_verify_foreign_tx_leader(
+                                                    verify_foreign_tx_attempt.request.id,
+                                                ),
                                         )
                                         .await??;
 

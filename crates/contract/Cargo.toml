@@ -17,10 +17,10 @@ repository = "https://github.com/near/mpc"
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
 # docker image, descriptor of build environment; pinned to match
-# `rust-toolchain.toml` (1.93.0)
-image = "sourcescan/cargo-near:0.21.1-rust-1.93.0"
+# `rust-toolchain.toml` (1.97.0)
+image = "sourcescan/cargo-near:0.22.0-rust-1.97.0"
 # tag after colon above serves only descriptive purpose; image is identified by digest
-image_digest = "sha256:79b789c81ba19ec30794a6b1046b02dcaf5c055994b22cc7c9af67ab5096b095"
+image_digest = "sha256:b193c8640a27172f83136a0f0aab2a9bf9d09f6ba0e6afd187addfaa9b92bae0"
 # list of environment variables names, whose values, if set, will be used as external build parameters
 # in a reproducible manner
 # supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images

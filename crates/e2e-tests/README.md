@@ -24,7 +24,7 @@ graph TD
     Cluster[MpcCluster] -->|owns| Sandbox[NearSandbox]
     Cluster -->|owns| Blockchain[NearBlockchain]
     Cluster -->|owns N| Node[MpcNode / MpcNodeSetup]
-    Cluster -->|owns| Ports[E2ePortAllocator]
+    Cluster -->|owns| Ports[TestPorts]
 
     Sandbox --- S1(neard process + genesis + boot node info)
     Blockchain --- B1(near-kit RPC client)
@@ -53,7 +53,7 @@ graph TD
 
 3. **Deterministic ports per test.** `cargo nextest` runs each test in its own
    process, so tests execute concurrently by default. Each test declares a
-   unique `port_seed`; `E2ePortAllocator` maps that seed to a non-overlapping
+   unique `port_seed`; `TestPorts::e2e_tests` maps that seed to a non-overlapping
    range of ports for the sandbox, the mpc-node web/P2P/pprof endpoints, and
    the per-node neard instances. Seeds are centralised as constants in
    `tests/common.rs` to avoid collisions.
@@ -85,14 +85,14 @@ graph TD
 ### 1. `NearSandbox` — neard process wrapper
 
 Starts a `near-sandbox` binary at a configurable version, on ports assigned by
-`E2ePortAllocator`. Exposes everything an `mpc-node` indexer needs to peer with
+`TestPorts`. Exposes everything an `mpc-node` indexer needs to peer with
 it: genesis path, boot-node string (`<pubkey>@127.0.0.1:<port>`), and chain ID.
 
 ```rust
 pub struct NearSandbox { /* wraps near_sandbox::Sandbox */ }
 
 impl NearSandbox {
-    pub async fn start(ports: &E2ePortAllocator, version: &str) -> anyhow::Result<Self>;
+    pub async fn start(ports: &TestPorts, version: &str) -> anyhow::Result<Self>;
     pub fn rpc_url(&self) -> String;
     pub fn genesis_path(&self) -> PathBuf;
     pub fn boot_nodes(&self) -> anyhow::Result<String>;
@@ -156,7 +156,7 @@ indexer state may be corrupt).
 
 The entry point for tests. `MpcCluster::start(config)` does everything:
 
-1. Create `E2ePortAllocator` from `config.port_seed`.
+1. Create `TestPorts` via `TestPorts::e2e_tests(config.port_seed)`.
 2. Create a per-test temp directory.
 3. Start the `NearSandbox`.
 4. Build a `NearBlockchain` signed as the sandbox root.
@@ -216,18 +216,25 @@ impl MpcClusterConfig {
 }
 ```
 
-### 5. `E2ePortAllocator` — deterministic port layout
+### 5. `TestPorts::e2e_tests` — deterministic port layout
 
-Each test declares a `port_seed: u16`. Ports are computed as:
+Each test declares a `port_seed: u16` (the allocator's `test_id`). Ports are
+computed as:
 
 ```
-BASE_PORT (20000) + test_id * PORTS_PER_TEST + offset
+e2e base (20000) + test_id * ports_per_test() + offset
 ```
 
-with `PORTS_PER_TEST = 2 + 10 * 8` (2 cluster ports + 8 per-node ports × 10
-maximum nodes). Cluster-level ports cover the sandbox RPC and network; per-node
-ports cover p2p, web UI, migration web UI, pprof, and the node's internal
-neard RPC/network.
+For the e2e scheme, `ports_per_test` is 82 (2 cluster ports + 8 per-node ports
+× 10 maximum nodes); the `mpc-node` scheme uses a different block size, so this
+number is specific to `TestPorts::e2e_tests`. Cluster-level ports cover the
+sandbox RPC and network; per-node ports cover p2p, web UI, migration web UI,
+pprof, and the node's internal neard RPC/network.
+
+The allocator is `test_port_allocator::TestPorts`, the same struct the
+`mpc-node` integration tests use — each constructor pins its scheme, and the
+e2e scheme's range (20000+) is kept disjoint from `TestPorts::mpc_node_tests`
+(10000+) and `reserve_port` (40000+).
 
 Centralising seeds in `tests/common.rs` (e.g. `CKD_VERIFICATION_PORT_SEED = 9`)
 keeps parallel tests from colliding. If a test crashes and leaves an orphan

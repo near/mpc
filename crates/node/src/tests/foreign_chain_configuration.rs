@@ -1,11 +1,13 @@
-use crate::p2p::testing::PortSeed;
-use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup};
+use crate::p2p::testing::port_seed;
+use crate::tests::{DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
-use near_mpc_contract_interface::types::ForeignChain;
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainId, DomainPurpose, ForeignChain, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 use std::collections::BTreeSet;
 use std::num::NonZeroU64;
@@ -27,7 +29,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         vec!["test0".parse().unwrap(), "test1".parse().unwrap()],
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FOREIGN_CHAIN_POLICY_TEST,
+        port_seed::FOREIGN_CHAIN_POLICY_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
@@ -55,17 +57,27 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         hyper_evm: None,
         polygon: None,
         aptos: None,
+        sui: None,
     };
     for config in &mut setup.configs {
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_foreign_chains: BTreeSet<ForeignChain> =
-        foreign_chains.configured_chains().keys().copied().collect();
+    let expected_foreign_chains: BTreeSet<ForeignChain> = foreign_chains
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect();
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
+        // Availability is computed based on ForeignTx domains threshold.
+        contract.add_domains(vec![DomainConfig {
+            id: DomainId(0),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(THRESHOLD as u64),
+            purpose: DomainPurpose::ForeignTx,
+        }]);
     }
 
     let _runs = setup
@@ -75,11 +87,11 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         .collect::<Vec<_>>();
 
     // When
-    let wait_result = tokio::time::timeout(Duration::from_secs(10), async {
+    let wait_result = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
-                if **contract.supported_foreign_chains() == expected_foreign_chains {
+                if **contract.available_foreign_chains() == expected_foreign_chains {
                     break;
                 }
             }
@@ -93,16 +105,32 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
     let contract = setup.indexer.contract_mut().await;
 
     assert_eq!(
-        **contract.supported_foreign_chains(),
+        **contract.available_foreign_chains(),
         expected_foreign_chains
     );
 
-    let expected_node_support = BTreeSet::from([ForeignChain::Solana]);
+    let expected_node_config = BTreeSet::from([ForeignChain::Solana]);
 
-    let all_nodes_submitted_supported_chains = contract
+    let configs = contract.foreign_chains_configs();
+    assert_eq!(configs.len(), setup.participants.participants.len());
+    assert!(
+        configs
+            .values()
+            .all(|node_config| **node_config == expected_node_config)
+    );
+
+    // The dual-write also feeds the legacy model the node still reads from.
+    assert_eq!(
+        **contract.supported_foreign_chains(),
+        expected_foreign_chains
+    );
+    let by_node = &contract
         .supported_foreign_chains_by_node()
-        .values()
-        .all(|node_support| **node_support == expected_node_support);
-
-    assert!(all_nodes_submitted_supported_chains);
+        .foreign_chain_support_by_node;
+    assert_eq!(by_node.len(), setup.participants.participants.len());
+    assert!(
+        by_node
+            .values()
+            .all(|node_support| **node_support == expected_node_config)
+    );
 }

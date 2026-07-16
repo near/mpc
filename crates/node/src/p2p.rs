@@ -63,6 +63,11 @@ const TCP_USER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30)
 /// Timeout for individual write operations to detect if writes are hanging.
 const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Maximum time to complete the TLS handshake on an accepted incoming
+/// connection. Without this bound, a peer that opens the TCP connection but
+/// never sends a ClientHello would hang the accept task forever.
+const TLS_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -403,10 +408,11 @@ impl PersistentConnection {
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
-        target_address: String,
+        initial_target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+        resolve_address: impl Fn() -> Option<String> + Send + 'static,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
@@ -414,6 +420,10 @@ impl PersistentConnection {
             async move {
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
+                    // Re-resolve on every (re)connect so a peer URL update is picked up; only the
+                    // next dial is affected, established connections are untouched.
+                    let target_address =
+                        resolve_address().unwrap_or_else(|| initial_target_address.clone());
                     let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
                         &target_address,
@@ -474,6 +484,9 @@ impl SenderConnectionId for IncomingConnection {
 }
 
 /// Creates a mesh network using TLS over TCP for communication.
+///
+/// Peer addresses are fixed at the addresses in `config`. Use
+/// [`new_tls_mesh_network_with_address_updates`] to let peers' addresses be updated live.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
     p2p_private_key: &ed25519_dalek::SigningKey,
@@ -481,6 +494,24 @@ pub async fn new_tls_mesh_network(
     impl MeshNetworkTransportSender + use<>,
     impl MeshNetworkTransportReceiver + use<>,
 )> {
+    new_tls_mesh_network_with_address_updates(config, p2p_private_key, |_| None).await
+}
+
+/// Like [`new_tls_mesh_network`], but `resolve_peer_address` is consulted on every (re)connect,
+/// so a peer's URL change takes effect on the next dial without tearing down established
+/// connections. Returning `None` falls back to the address in `config`. The participant set
+/// (identities, count) must not change — that requires a restart upstream.
+pub async fn new_tls_mesh_network_with_address_updates<F>(
+    config: &MpcConfig,
+    p2p_private_key: &ed25519_dalek::SigningKey,
+    resolve_peer_address: F,
+) -> anyhow::Result<(
+    impl MeshNetworkTransportSender + use<F>,
+    impl MeshNetworkTransportReceiver + use<F>,
+)>
+where
+    F: Fn(ParticipantId) -> Option<String> + Clone + Send + Sync + 'static,
+{
     let (server_config, client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
     let my_port = config
@@ -521,6 +552,11 @@ pub async fn new_tls_mesh_network(
         if participant.id == config.my_participant_id {
             continue;
         }
+        let resolve_address = {
+            let resolve_peer_address = resolve_peer_address.clone();
+            let target_id = participant.id;
+            move || resolve_peer_address(target_id)
+        };
         connections.insert(
             participant.id,
             Arc::new(PersistentConnection::new(
@@ -530,6 +566,7 @@ pub async fn new_tls_mesh_network(
                 participant.id,
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
+                resolve_address,
             )?),
         );
     }
@@ -595,7 +632,9 @@ async fn incoming_connection_handler(
     my_id: ParticipantId,
 ) -> anyhow::Result<()> {
     let tcp_stream = configure_tcp_stream(tcp_stream)?;
-    let mut tls_stream = tls_acceptor.accept(tcp_stream).await?;
+    let mut tls_stream = timeout(TLS_ACCEPT_TIMEOUT, tls_acceptor.accept(tcp_stream))
+        .await
+        .context("timed out accepting TLS connection")??;
 
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
@@ -931,91 +970,48 @@ pub mod testing {
     use ed25519_dalek::SigningKey;
     use near_account_id::AccountId;
     use rand::rngs::OsRng;
+    pub use test_port_allocator::{NodeTestPorts, TestPorts};
 
-    /// A unique seed for each integration test to avoid port conflicts during testing.
-    #[derive(Copy, Clone)]
-    pub struct PortSeed {
-        port_number: u16,
-        case: u16,
-    }
+    /// Each place that passes a port seed into [`generate_test_p2p_configs`] or
+    /// `IntegrationTestSetup` should define a unique one here, so parallel
+    /// tests never collide on ports.
+    pub mod port_seed {
+        use test_port_allocator::TestPorts;
 
-    impl PortSeed {
-        // The base port number used, hoping the OS is not using ports in this range
-        pub const BASE_PORT: u16 = 10000;
-        // Maximum number of nodes that can be handled without port collisions
-        pub const MAX_NODES: u16 = 10;
-        // Maximum number of cases that can be handled without port collisions
-        pub const MAX_CASES: u16 = 4;
-        // Each function below corresponds to a port per node. Each defines an offset,
-        // and all offsets must be different
-        pub const TOTAL_PORTS_PER_NODE: u16 = 4;
-
-        pub const fn new(port_number: u16) -> Self {
-            Self {
-                port_number,
-                case: 0,
-            }
-        }
-
-        pub fn with_case(&self, case: u16) -> Self {
-            Self {
-                port_number: self.port_number,
-                case,
-            }
-        }
-
-        fn compute_port(&self, node_index: u16, offset: u16) -> u16 {
-            Self::BASE_PORT
-                + self.port_number * Self::MAX_NODES * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
-                + node_index * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
-                + self.case * Self::TOTAL_PORTS_PER_NODE
-                + offset
-        }
-
-        pub fn p2p_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 0)
-        }
-
-        pub fn web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 1)
-        }
-
-        pub fn migration_web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 2)
-        }
-
-        pub fn pprof_web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 3)
-        }
-    }
-
-    impl PortSeed {
-        // Each place that passes a PortSeed in should define a unique one here.
-        pub const P2P_BASIC_TEST: Self = Self::new(1);
-        pub const P2P_WAIT_FOR_READY_TEST: Self = Self::new(2);
-        pub const BASIC_CLUSTER_TEST: Self = Self::new(3);
-        pub const FAULTY_CLUSTER_TEST: Self = Self::new(4);
-        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self::new(5);
-        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self::new(6);
-        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self::new(7);
-        pub const BASIC_MULTIDOMAIN_TEST: Self = Self::new(8);
-        pub const FAULTY_STUCK_INDEXER_TEST: Self = Self::new(9);
-        pub const RECOVERY_TEST: Self = Self::new(10);
-        pub const ONBOARDING_TEST: Self = Self::new(11);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self::new(12);
-        pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self::new(13);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self::new(14);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self::new(15);
-        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self::new(16);
-        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
-        pub const RECONNECTION_TEST: Self = Self::new(19);
-        pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
-        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
-        pub const RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST: Self = Self::new(24);
-        pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: Self = Self::new(25);
-        pub const RECONSTRUCTION_THRESHOLD_CHANGE_TEST: Self = Self::new(26);
+        pub const P2P_BASIC_TEST: TestPorts = TestPorts::mpc_node_tests(1);
+        pub const P2P_WAIT_FOR_READY_TEST: TestPorts = TestPorts::mpc_node_tests(2);
+        pub const BASIC_CLUSTER_TEST: TestPorts = TestPorts::mpc_node_tests(3);
+        pub const FAULTY_CLUSTER_TEST: TestPorts = TestPorts::mpc_node_tests(4);
+        pub const KEY_RESHARING_SIMPLE_TEST: TestPorts = TestPorts::mpc_node_tests(5);
+        pub const KEY_RESHARING_MULTISTAGE_TEST: TestPorts = TestPorts::mpc_node_tests(6);
+        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: TestPorts = TestPorts::mpc_node_tests(7);
+        pub const BASIC_MULTIDOMAIN_TEST: TestPorts = TestPorts::mpc_node_tests(8);
+        pub const FAULTY_STUCK_INDEXER_TEST: TestPorts = TestPorts::mpc_node_tests(9);
+        pub const RECOVERY_TEST: TestPorts = TestPorts::mpc_node_tests(10);
+        pub const ONBOARDING_TEST: TestPorts = TestPorts::mpc_node_tests(11);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: TestPorts = TestPorts::mpc_node_tests(12);
+        pub const MIGRATION_WEBSERVER_FAILURE_TEST: TestPorts = TestPorts::mpc_node_tests(13);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: TestPorts =
+            TestPorts::mpc_node_tests(14);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: TestPorts =
+            TestPorts::mpc_node_tests(15);
+        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: TestPorts =
+            TestPorts::mpc_node_tests(16);
+        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: TestPorts = TestPorts::mpc_node_tests(17);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: TestPorts = TestPorts::mpc_node_tests(18);
+        pub const RECONNECTION_TEST: TestPorts = TestPorts::mpc_node_tests(19);
+        pub const FOREIGN_CHAIN_POLICY_TEST: TestPorts = TestPorts::mpc_node_tests(20);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: TestPorts =
+            TestPorts::mpc_node_tests(21);
+        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: TestPorts =
+            TestPorts::mpc_node_tests(22);
+        pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_TEST: TestPorts =
+            TestPorts::mpc_node_tests(24);
+        pub const RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST: TestPorts =
+            TestPorts::mpc_node_tests(25);
+        pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: TestPorts =
+            TestPorts::mpc_node_tests(26);
+        pub const RECONSTRUCTION_THRESHOLD_CHANGE_TEST: TestPorts = TestPorts::mpc_node_tests(27);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1023,7 +1019,7 @@ pub mod testing {
         threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
-        port_seed: PortSeed,
+        ports: &TestPorts,
     ) -> anyhow::Result<Vec<(MpcConfig, SigningKey)>> {
         let p2p_keypairs = participant_accounts
             .iter()
@@ -1038,7 +1034,7 @@ pub mod testing {
             participants.push(ParticipantInfo {
                 id: ParticipantId::from_raw(rand::random()),
                 address: "127.0.0.1".to_string(),
-                port: port_seed.p2p_port(i),
+                port: ports.p2p_port(i),
                 p2p_public_key: p2p_signing_key.verifying_key(),
                 near_account_id: participant_account.clone(),
             });
@@ -1067,21 +1063,30 @@ pub mod testing {
 mod tests {
     use super::{
         IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
+        incoming_connection_handler,
     };
     use crate::config::MpcConfig;
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
+    use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
+    use mpc_tls::tls::configure_tls;
+    use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
-    use std::sync::Arc;
+    use rustls::ClientConfig;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::mpsc;
+    use tokio::task::JoinHandle;
     use tokio::time::timeout;
+    use tokio_rustls::TlsAcceptor;
 
     #[tokio::test]
     #[test_log::test]
@@ -1089,7 +1094,7 @@ mod tests {
         let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
-            PortSeed::P2P_BASIC_TEST,
+            &port_seed::P2P_BASIC_TEST,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
@@ -1195,7 +1200,7 @@ mod tests {
                 "test3".parse().unwrap(),
             ],
             4,
-            PortSeed::P2P_WAIT_FOR_READY_TEST,
+            &port_seed::P2P_WAIT_FOR_READY_TEST,
         )
         .unwrap();
 
@@ -1319,7 +1324,7 @@ mod tests {
         let mut configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
-            PortSeed::RECONNECTION_TEST,
+            &port_seed::RECONNECTION_TEST,
         )
         .unwrap();
 
@@ -1375,7 +1380,7 @@ mod tests {
             );
 
             configs[1].0.participants.participants[1].port =
-                PortSeed::RECONNECTION_TEST.p2p_port(2);
+                port_seed::RECONNECTION_TEST.p2p_port(2);
             let (bob_new, _bob_new_receiver) =
                 super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                     .await
@@ -1439,14 +1444,10 @@ mod tests {
     /// the returned channel, and never sends a byte back (holding the streams
     /// open). This mimics a middlebox that ACKs the ClientHello but never
     /// responds, hanging the dialer's TLS handshake.
-    async fn must_spawn_silent_listener() -> (
-        String,
-        tokio::sync::mpsc::UnboundedReceiver<()>,
-        tokio::task::JoinHandle<()>,
-    ) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    async fn must_spawn_silent_listener() -> (String, mpsc::UnboundedReceiver<()>, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target_address = listener.local_addr().unwrap().to_string();
-        let (accept_tx, accept_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (accept_tx, accept_rx) = mpsc::unbounded_channel();
         let listener_task = tokio::spawn(async move {
             let mut held_streams = Vec::new();
             loop {
@@ -1458,11 +1459,26 @@ mod tests {
         (target_address, accept_rx, listener_task)
     }
 
-    fn must_make_client_config() -> Arc<rustls::ClientConfig> {
-        let signing_key =
-            ed25519_dalek::SigningKey::generate(&mut rand::rngs::StdRng::seed_from_u64(42));
-        let (_server_config, client_config) = mpc_tls::tls::configure_tls(&signing_key).unwrap();
+    async fn must_accept_silent_connection() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listen_address = listener.local_addr().unwrap();
+        let client = TcpStream::connect(listen_address).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        (server, client)
+    }
+
+    fn must_make_signing_key() -> SigningKey {
+        SigningKey::generate(&mut StdRng::seed_from_u64(42))
+    }
+
+    fn must_make_client_config() -> Arc<ClientConfig> {
+        let (_server_config, client_config) = configure_tls(&must_make_signing_key()).unwrap();
         Arc::new(client_config)
+    }
+
+    fn must_make_tls_acceptor() -> TlsAcceptor {
+        let (server_config, _client_config) = configure_tls(&must_make_signing_key()).unwrap();
+        TlsAcceptor::from(Arc::new(server_config))
     }
 
     // Paused tokio time makes CONNECT_TIMEOUT elapse instantly once the dial
@@ -1523,6 +1539,7 @@ mod tests {
                 target_id,
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
+                || None,
             )
             .unwrap();
 
@@ -1537,5 +1554,98 @@ mod tests {
         })
         .await;
         listener_task.abort();
+    }
+
+    /// A peer URL update must be picked up on the next reconnect without recreating the
+    /// connection: the retry loop re-resolves the target address on every dial attempt.
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn persistent_connection__should_dial_new_address_after_resolver_update() {
+        // Given
+        let (addr_a, mut accept_a, task_a) = must_spawn_silent_listener().await;
+        let (addr_b, mut accept_b, task_b) = must_spawn_silent_listener().await;
+        let client_config = must_make_client_config();
+        let my_id = ParticipantId::from_raw(0);
+        let target_id = ParticipantId::from_raw(1);
+        let resolved_address = Arc::new(Mutex::new(addr_a.clone()));
+
+        start_root_task_with_periodic_dump(async move {
+            let connectivities =
+                AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                    my_id,
+                    &[my_id, target_id],
+                );
+            let resolve_address = {
+                let resolved_address = resolved_address.clone();
+                move || Some(resolved_address.lock().unwrap().clone())
+            };
+
+            let _connection = PersistentConnection::new(
+                client_config,
+                my_id,
+                "127.0.0.1:1".to_string(),
+                target_id,
+                Arc::new(ParticipantIdentities::default()),
+                connectivities.get(target_id).unwrap(),
+                resolve_address,
+            )
+            .unwrap();
+
+            timeout(Duration::from_secs(120), accept_a.recv())
+                .await
+                .expect("should dial the initial address A")
+                .unwrap();
+
+            // When
+            *resolved_address.lock().unwrap() = addr_b.clone();
+
+            // Then
+            timeout(Duration::from_secs(120), accept_b.recv())
+                .await
+                .expect("should dial the updated address B after the resolver update")
+                .unwrap();
+        })
+        .await;
+        task_a.abort();
+        task_b.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn incoming_connection_handler__should_fail_accept_when_peer_never_starts_tls_handshake()
+    {
+        // Given
+        let (tcp_stream, _silent_client) = must_accept_silent_connection().await;
+        let tls_acceptor = must_make_tls_acceptor();
+        let (message_sender, _message_receiver) = mpsc::unbounded_channel();
+        let my_id = ParticipantId::from_raw(0);
+        let connectivities = Arc::new(AllNodeConnectivities::<
+            OutgoingConnection,
+            IncomingConnection,
+        >::new(my_id, &[my_id]));
+
+        // When
+        let result = timeout(
+            Duration::from_secs(60),
+            incoming_connection_handler(
+                message_sender,
+                connectivities,
+                tcp_stream,
+                tls_acceptor,
+                Arc::new(ParticipantIdentities::default()),
+                my_id,
+            ),
+        )
+        .await
+        .expect("accept did not terminate within bounded time");
+
+        // Then
+        let Err(error) = result else {
+            panic!("accept unexpectedly succeeded");
+        };
+        assert!(
+            format!("{error:#}").contains("timed out"),
+            "unexpected error: {error:#}"
+        );
     }
 }
