@@ -105,7 +105,13 @@ where
     TransactionSender: tx_sender::TransactionSender + 'static,
     ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
-    pub async fn run(mut self) -> anyhow::Result<()> {
+    /// Drives the MPC state machine for the lifetime of the coordinator role.
+    /// Loops forever; returns `Err` only on unrecoverable conditions. The
+    /// dispatcher in `run.rs` swaps the coordinator out by dropping this
+    /// future — the in-flight MPC job's `AsyncDroppableRuntime` and the
+    /// `drop_guard` on its internal cancellation token cascade cleanup of
+    /// spawned tasks. See `docs/design/migration-onboarding-dispatcher.md`.
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             let mut job: MpcJob = match state {
