@@ -493,8 +493,8 @@ mod test {
 
         let mut poly = Polynomial::<C>::new(&coefficients).unwrap();
         let point = <<C as frost_core::Ciphersuite>::Group as Group>::Field::zero();
-        assert!(zero_coeff != poly.eval_at_zero().unwrap().0);
-        assert!(zero_coeff != poly.eval_at_point(point).unwrap().0);
+        assert_ne!(zero_coeff, poly.eval_at_zero().unwrap().0);
+        assert_ne!(zero_coeff, poly.eval_at_point(point).unwrap().0);
 
         poly.set_nonzero_constant(zero_coeff).unwrap();
         assert_eq!(zero_coeff, poly.eval_at_zero().unwrap().0);

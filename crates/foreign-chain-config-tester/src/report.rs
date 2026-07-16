@@ -37,10 +37,6 @@ pub fn any_failed(results: &[ProviderResult]) -> bool {
 /// table (not in the `RESULT` column) so a long or multi-line error can't break
 /// the alignment.
 pub fn render(results: &[ProviderResult]) -> String {
-    if results.is_empty() {
-        return "No foreign chains configured — nothing to check.\n".to_string();
-    }
-
     let chain_w = results
         .iter()
         .map(|r| r.chain.len())

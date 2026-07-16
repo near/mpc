@@ -209,15 +209,18 @@ We follow [Semantic Versioning](https://semver.org/) with these compatibility ru
 ## Changelog conventions
 
 We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
-The `prepare-release.sh` script invokes `git-cliff --unreleased -t
-<VERSION>` which picks up commits since the most recent **semver** tag
-(`X.Y.Z`). `cliff.toml` sets `tag_pattern` to a semver regex so git-cliff
-only treats version tags as release boundaries — without it,
-`--unreleased` anchors to the newest tag of *any* shape, so a stray
-non-version tag silently truncates the generated changelog to the commits
-after that tag. For both minor releases on `main` and patch releases on
-`release/vX.Y`, the baseline is the previous semver release, regardless of
-where unrelated tags point.
+The `prepare-release.sh` script invokes `git-cliff -t <VERSION>
+<BASE_TAG>..<HEAD-SHA>`, where `BASE_TAG` is the most recent **semver**
+tag (`X.Y.Z`) reachable from `HEAD`, found via `git describe` with a
+`--match` glob that skips stray non-semver tags. The range head is a
+concrete SHA rather than the literal `HEAD`: git-cliff derives the ref it
+fetches PR/author metadata from off the range head, and `HEAD` resolves to
+the repo's default branch (`main`), so PRs merged only into a release
+branch would render with empty links. Using the SHA makes git-cliff fetch
+from the branch actually being released, so both minor releases on `main`
+and patch releases on `release/vX.Y` get correct PR links, and the
+baseline is always the previous semver release regardless of where
+unrelated tags point.
 
 If a previous patch was tagged off a release branch and its fixes were
 also cherry-picked to `main`, append the main-side cherry-pick commits

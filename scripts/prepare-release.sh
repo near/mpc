@@ -86,14 +86,20 @@ fi
 
 # --- Generate changelog ---
 
-# Use --prepend --unreleased so the new release section is added on top of
-# CHANGELOG.md, preserving any manually authored sections (e.g. for releases
-# whose tag does not live on main, like 3.9.1 on release/v3.9.1). When new
-# sections need to be hand-written, append the relevant duplicate cherry-pick
-# commits to .cliffignore so they don't reappear in the next auto-generated
-# release block.
+# Use --prepend so the new release section is added on top of CHANGELOG.md,
+# preserving any manually authored sections (e.g. for releases whose tag does not
+# live on main, like 3.9.1 on release/v3.9.1). When new sections need to be
+# hand-written, append the relevant duplicate cherry-pick commits to .cliffignore
+# so they don't reappear in the next auto-generated release block.
+#
+# git-cliff fetches PR/author metadata for the ref at the range head. The literal
+# `HEAD` resolves to the default branch (main), missing PRs merged only into a
+# release branch, so we pass an explicit range ending at a concrete SHA. The base
+# is the latest semver tag reachable from HEAD; --match skips stray non-semver tags.
 echo "==> Generating changelog..."
-git-cliff --prepend CHANGELOG.md --unreleased -t "$VERSION"
+BASE_TAG=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' HEAD) \
+    || die "Could not find a previous semver tag reachable from HEAD."
+git-cliff --prepend CHANGELOG.md -t "$VERSION" "${BASE_TAG}..$(git rev-parse HEAD)"
 
 # --- Bump workspace version in Cargo.toml ---
 
