@@ -383,74 +383,10 @@ where
                             .clone();
                         let response = match existing_response {
                             None => {
-                                let computation = async {
-                                    match this
-                                        .domain_to_protocol
-                                        .get(&signature_attempt.request.domain)
-                                    {
-                                        Some(Protocol::CaitSith) => {
-                                            let (signature, public_key) = this
-                                                .ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id)
-                                                .await?;
-
-                                            let response =
-                                                contract_args::SignatureRespondArgs::from_ecdsa(
-                                                    &signature_attempt.request,
-                                                    &signature,
-                                                    &public_key,
-                                                )?;
-
-                                            Ok(response)
-                                        }
-                                        Some(Protocol::Frost) => {
-                                            let (signature, _) = this
-                                                .eddsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id)
-                                                .await?;
-
-                                            let response =
-                                                contract_args::SignatureRespondArgs::from_eddsa(
-                                                    &signature_attempt.request,
-                                                    &signature,
-                                                )?;
-
-                                            Ok(response)
-                                        }
-                                        Some(Protocol::ConfidentialKeyDerivation) => {
-                                            Err(anyhow::anyhow!(
-                                                "Incorrect protocol for domain: {:?}",
-                                                signature_attempt.request.domain.clone()
-                                            ))
-                                        }
-                                        Some(Protocol::DamgardEtAl) => {
-                                            let (signature, public_key) = this
-                                                .robust_ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id)
-                                                .await?;
-
-                                            let response =
-                                                contract_args::SignatureRespondArgs::from_ecdsa(
-                                                    &signature_attempt.request,
-                                                    &signature,
-                                                    &public_key,
-                                                )?;
-
-                                            Ok(response)
-                                        }
-                                        None => Err(anyhow::anyhow!(
-                                            "Signature scheme is not found for domain: {:?}",
-                                            signature_attempt.request.domain.clone()
-                                        )),
-                                    }
-                                };
                                 let response = run_led_computation(
                                     &metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.signature.timeout_sec),
-                                    computation,
+                                    this.compute_signature_response(&signature_attempt.request),
                                 )
                                 .await?;
 
@@ -494,45 +430,10 @@ where
                             .clone();
                         let response = match existing_response {
                             None => {
-                                let computation = async {
-                                    match this
-                                        .domain_to_protocol
-                                        .get(&ckd_attempt.request.domain_id)
-                                    {
-                                        Some(Protocol::ConfidentialKeyDerivation) => {
-                                            let response = this
-                                                .ckd_provider
-                                                .clone()
-                                                .make_signature(ckd_attempt.request.id)
-                                                .await?;
-
-                                            let response = contract_args::CKDRespondArgs::new(
-                                                (&ckd_attempt.request)
-                                                    .into_contract_interface_type(),
-                                                CKDResponse {
-                                                    big_y: (&response.0.0).into(),
-                                                    big_c: (&response.0.1).into(),
-                                                },
-                                            );
-
-                                            Ok(response)
-                                        }
-                                        Some(Protocol::CaitSith)
-                                        | Some(Protocol::DamgardEtAl)
-                                        | Some(Protocol::Frost) => Err(anyhow::anyhow!(
-                                            "Signature scheme is not allowed for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
-                                        None => Err(anyhow::anyhow!(
-                                            "Signature scheme is not found for domain: {:?}",
-                                            ckd_attempt.request.domain_id.clone()
-                                        )),
-                                    }
-                                };
                                 let response = run_led_computation(
                                     &metrics::MPC_NUM_CKD_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.ckd.timeout_sec),
-                                    computation,
+                                    this.compute_ckd_response(&ckd_attempt.request),
                                 )
                                 .await?;
 
@@ -580,45 +481,12 @@ where
                             .clone();
                         let response = match existing_response {
                             None => {
-                                let computation = async {
-                                    match this
-                                        .domain_to_protocol
-                                        .get(&verify_foreign_tx_attempt.request.domain_id)
-                                    {
-                                        Some(Protocol::CaitSith) => {
-                                            let response = this
-                                                .verify_foreign_tx_provider
-                                                .make_verify_foreign_tx_leader(
-                                                    verify_foreign_tx_attempt.request.id,
-                                                )
-                                                .await?;
-
-                                            let payload_hash = response.0.0.compute_msg_hash()?;
-                                            let response = contract_args::VerifyForeignTransactionRespondArgs::from_signature(
-                                                verify_foreign_tx_attempt.request.clone(),
-                                                payload_hash,
-                                                response.0.1,
-                                                response.1,
-                                            )?;
-
-                                            Ok(response)
-                                        }
-                                        Some(Protocol::ConfidentialKeyDerivation)
-                                        | Some(Protocol::DamgardEtAl)
-                                        | Some(Protocol::Frost) => Err(anyhow::anyhow!(
-                                            "Signature scheme is not allowed for domain: {:?}",
-                                            verify_foreign_tx_attempt.request.domain_id.clone()
-                                        )),
-                                        None => Err(anyhow::anyhow!(
-                                            "Signature scheme is not found for domain: {:?}",
-                                            verify_foreign_tx_attempt.request.domain_id.clone()
-                                        )),
-                                    }
-                                };
                                 let response = run_led_computation(
                                     &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.signature.timeout_sec),
-                                    computation,
+                                    this.compute_verify_foreign_tx_response(
+                                        &verify_foreign_tx_attempt.request,
+                                    ),
                                 )
                                 .await?;
 
@@ -648,6 +516,129 @@ where
                     },
                 );
             }
+        }
+    }
+
+    async fn compute_signature_response(
+        &self,
+        request: &SignatureRequest,
+    ) -> anyhow::Result<contract_args::SignatureRespondArgs> {
+        match self.domain_to_protocol.get(&request.domain) {
+            Some(Protocol::CaitSith) => {
+                let (signature, public_key) = self
+                    .ecdsa_signature_provider
+                    .clone()
+                    .make_signature(request.id)
+                    .await?;
+
+                let response = contract_args::SignatureRespondArgs::from_ecdsa(
+                    request,
+                    &signature,
+                    &public_key,
+                )?;
+
+                Ok(response)
+            }
+            Some(Protocol::Frost) => {
+                let (signature, _) = self
+                    .eddsa_signature_provider
+                    .clone()
+                    .make_signature(request.id)
+                    .await?;
+
+                let response =
+                    contract_args::SignatureRespondArgs::from_eddsa(request, &signature)?;
+
+                Ok(response)
+            }
+            Some(Protocol::ConfidentialKeyDerivation) => Err(anyhow::anyhow!(
+                "Incorrect protocol for domain: {:?}",
+                request.domain.clone()
+            )),
+            Some(Protocol::DamgardEtAl) => {
+                let (signature, public_key) = self
+                    .robust_ecdsa_signature_provider
+                    .clone()
+                    .make_signature(request.id)
+                    .await?;
+
+                let response = contract_args::SignatureRespondArgs::from_ecdsa(
+                    request,
+                    &signature,
+                    &public_key,
+                )?;
+
+                Ok(response)
+            }
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.domain.clone()
+            )),
+        }
+    }
+
+    async fn compute_ckd_response(
+        &self,
+        request: &CKDRequest,
+    ) -> anyhow::Result<contract_args::CKDRespondArgs> {
+        match self.domain_to_protocol.get(&request.domain_id) {
+            Some(Protocol::ConfidentialKeyDerivation) => {
+                let response = self.ckd_provider.clone().make_signature(request.id).await?;
+
+                let response = contract_args::CKDRespondArgs::new(
+                    request.into_contract_interface_type(),
+                    CKDResponse {
+                        big_y: (&response.0.0).into(),
+                        big_c: (&response.0.1).into(),
+                    },
+                );
+
+                Ok(response)
+            }
+            Some(Protocol::CaitSith) | Some(Protocol::DamgardEtAl) | Some(Protocol::Frost) => {
+                Err(anyhow::anyhow!(
+                    "Signature scheme is not allowed for domain: {:?}",
+                    request.domain_id.clone()
+                ))
+            }
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.domain_id.clone()
+            )),
+        }
+    }
+
+    async fn compute_verify_foreign_tx_response(
+        &self,
+        request: &VerifyForeignTxRequest,
+    ) -> anyhow::Result<contract_args::VerifyForeignTransactionRespondArgs> {
+        match self.domain_to_protocol.get(&request.domain_id) {
+            Some(Protocol::CaitSith) => {
+                let response = self
+                    .verify_foreign_tx_provider
+                    .make_verify_foreign_tx_leader(request.id)
+                    .await?;
+
+                let payload_hash = response.0.0.compute_msg_hash()?;
+                let response = contract_args::VerifyForeignTransactionRespondArgs::from_signature(
+                    request.clone(),
+                    payload_hash,
+                    response.0.1,
+                    response.1,
+                )?;
+
+                Ok(response)
+            }
+            Some(Protocol::ConfidentialKeyDerivation)
+            | Some(Protocol::DamgardEtAl)
+            | Some(Protocol::Frost) => Err(anyhow::anyhow!(
+                "Signature scheme is not allowed for domain: {:?}",
+                request.domain_id.clone()
+            )),
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.domain_id.clone()
+            )),
         }
     }
 
