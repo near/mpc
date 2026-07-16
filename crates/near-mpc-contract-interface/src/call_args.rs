@@ -56,9 +56,6 @@ pub struct VoteResharedArgs {
     pub key_event_id: KeyEventId,
 }
 
-/// Arguments for `vote_update`. The contract signature takes `id: UpdateId`,
-/// a transparent u64 newtype living in the contract crate; on the wire it is
-/// a bare JSON number.
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteUpdateArgs {
     pub id: u64,

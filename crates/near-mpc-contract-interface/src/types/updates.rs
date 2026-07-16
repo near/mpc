@@ -51,9 +51,6 @@ pub enum UpdateHash {
     Config(Sha256Digest),
 }
 
-/// Borsh-encoded payload of the contract's `propose_update` entry point.
-/// Exactly one of `code` and `config` must be set; the contract rejects the
-/// other combinations.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
