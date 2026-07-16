@@ -102,10 +102,10 @@ async fn run_led_computation<T>(
             Err(elapsed.into()),
         ),
     };
-    metric.with_label_values(&[outcome_label]).inc();
     metric
         .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
         .inc();
+    metric.with_label_values(&[outcome_label]).inc();
     result
 }
 
