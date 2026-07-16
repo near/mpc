@@ -1,6 +1,6 @@
 use crate::indexer::participants::ContractState;
 use crate::metrics;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::{NodeTestPorts, port_seed};
 use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
     request_ckd_and_await_response, request_signature_and_await_response,
@@ -48,7 +48,7 @@ async fn test_key_resharing_simple(
             .collect(),
         threshold,
         TXN_DELAY_BLOCKS,
-        PortSeed::KEY_RESHARING_SIMPLE_TEST.with_case(case),
+        port_seed::KEY_RESHARING_SIMPLE_TEST.with_case(case),
         DEFAULT_BLOCK_TIME,
     );
 
@@ -177,7 +177,7 @@ async fn test_key_resharing_multistage() {
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::KEY_RESHARING_MULTISTAGE_TEST,
+        port_seed::KEY_RESHARING_MULTISTAGE_TEST,
         std::time::Duration::from_millis(600),
     );
 
@@ -395,7 +395,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
+        port_seed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

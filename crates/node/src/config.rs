@@ -437,7 +437,7 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
         }
         Err(err) => Err(anyhow::anyhow!(
             "Could not find file {:?}: {}",
-            &listen_blocks_file,
+            listen_blocks_file,
             err
         )),
     }

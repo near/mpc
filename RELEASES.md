@@ -92,7 +92,29 @@ run if any artifact is missing.
 > smoke-test on testnet before promoting, deploy
 > `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
 
-### 3. Run the Release workflow
+### 3. Verify the build is reproducible
+
+**Do this before publishing (step 5) — publishing creates the git tag and is
+effectively irreversible.** Confirm the CI-built artifacts match a local
+reproducible build, so the released `:X.Y.Z` images and contract WASM are
+exactly what the source produces:
+
+- **Contract WASM** — build via the reproducible path and compare its hash to
+  the CI `contract` artifact (builds from committed git state, so commit first):
+  ```sh
+  cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+  ```
+- **Docker images** — compare the digests in the draft release to the ones
+  produced locally (with no flags the script builds and prints digests for all
+  three images):
+  ```sh
+  ./deployment/build-images.sh
+  ```
+
+See [reproducible builds](./docs/reproducible-builds.md) for the full
+procedure. If any hash/digest differs, do **not** publish — investigate first.
+
+### 4. Run the Release workflow
 
 Trigger the [Release workflow](.github/workflows/release.yml) against the
 branch:
@@ -115,7 +137,7 @@ is missing.
 > [Build Contract](.github/workflows/build_contract.yml) workflow
 > manually before triggering the release.
 
-### 4. Edit and publish the draft release
+### 5. Edit and publish the draft release
 
 When the workflow finishes, a draft release named `MPC 3.11.0` appears on
 the [releases page](https://github.com/near/mpc/releases). The draft
@@ -126,7 +148,9 @@ by GitHub when the draft is published.
 Review the draft and click "Publish release." Publishing creates the
 `3.11.0` git tag at the released commit.
 
-### 5. Promote to operator floating tags (optional)
+> ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
+
+### 6. Promote to operator floating tags (optional)
 
 Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
@@ -209,15 +233,18 @@ We follow [Semantic Versioning](https://semver.org/) with these compatibility ru
 ## Changelog conventions
 
 We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
-The `prepare-release.sh` script invokes `git-cliff --unreleased -t
-<VERSION>` which picks up commits since the most recent **semver** tag
-(`X.Y.Z`). `cliff.toml` sets `tag_pattern` to a semver regex so git-cliff
-only treats version tags as release boundaries — without it,
-`--unreleased` anchors to the newest tag of *any* shape, so a stray
-non-version tag silently truncates the generated changelog to the commits
-after that tag. For both minor releases on `main` and patch releases on
-`release/vX.Y`, the baseline is the previous semver release, regardless of
-where unrelated tags point.
+The `prepare-release.sh` script invokes `git-cliff -t <VERSION>
+<BASE_TAG>..<HEAD-SHA>`, where `BASE_TAG` is the most recent **semver**
+tag (`X.Y.Z`) reachable from `HEAD`, found via `git describe` with a
+`--match` glob that skips stray non-semver tags. The range head is a
+concrete SHA rather than the literal `HEAD`: git-cliff derives the ref it
+fetches PR/author metadata from off the range head, and `HEAD` resolves to
+the repo's default branch (`main`), so PRs merged only into a release
+branch would render with empty links. Using the SHA makes git-cliff fetch
+from the branch actually being released, so both minor releases on `main`
+and patch releases on `release/vX.Y` get correct PR links, and the
+baseline is always the previous semver release regardless of where
+unrelated tags point.
 
 If a previous patch was tagged off a release branch and its fixes were
 also cherry-picked to `main`, append the main-side cherry-pick commits

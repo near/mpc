@@ -20,7 +20,7 @@ use serde_json::json;
 use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
-use crate::port_allocator::E2ePortAllocator;
+use test_port_allocator::TestPorts;
 
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
 const SANDBOX_ROOT_SECRET_KEY: &str = near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY;
@@ -209,7 +209,7 @@ pub struct MpcCluster {
     pub operator_keys: Vec<SigningKey>,
     pub threshold: usize,
     pub user_accounts: HashMap<AccountId, SigningKey>,
-    pub ports: E2ePortAllocator,
+    pub ports: TestPorts,
     /// Held to keep the temp directory alive for the lifetime of the cluster.
     pub test_dir: tempfile::TempDir,
 }
@@ -221,7 +221,7 @@ impl MpcCluster {
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         config.validate()?;
         let threshold = config.threshold;
-        let ports = E2ePortAllocator::new(config.port_seed);
+        let ports = TestPorts::e2e_tests(config.port_seed);
         let test_dir = create_test_dir(&config.home_base)?;
 
         let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
@@ -905,6 +905,22 @@ impl MpcCluster {
             .await
     }
 
+    /// Update the registered URL of a specific node, called from that node's own operator account.
+    pub async fn update_participant_url(
+        &self,
+        node_index: usize,
+        url: String,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let client = self.operator_client_for(node_index)?;
+        self.contract
+            .call_from(
+                &client,
+                method_names::UPDATE_PARTICIPANT_URL,
+                json!({ "url": url }),
+            )
+            .await
+    }
+
     /// Send a verify_foreign_transaction request from the default user account.
     pub async fn send_verify_foreign_transaction(
         &self,
@@ -1143,7 +1159,7 @@ struct InitContractArgs {
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    ports: &E2ePortAllocator,
+    ports: &TestPorts,
     args: InitContractArgs,
 ) -> anyhow::Result<()> {
     let InitContractArgs {
@@ -1246,7 +1262,7 @@ fn start_mpc_nodes(
     p2p_keys: &[SigningKey],
     contract_account: &AccountId,
     test_dir: &Path,
-    ports: &E2ePortAllocator,
+    ports: &TestPorts,
 ) -> anyhow::Result<Vec<MpcNodeState>> {
     let chain_id = sandbox.chain_id()?;
     let genesis_path = sandbox.genesis_path();
@@ -1356,7 +1372,7 @@ struct UpdateId(u64);
 fn build_participants(
     indices: &[usize],
     p2p_keys: &[SigningKey],
-    ports: &E2ePortAllocator,
+    ports: &TestPorts,
 ) -> Participants {
     let mut list = Vec::new();
     for (participant_id, &i) in indices.iter().enumerate() {

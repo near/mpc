@@ -52,7 +52,7 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
 where
     ForeignChainPolicyReader: ReadSupportedForeignChain,
 {
-    pub(super) async fn make_verify_foreign_tx_leader(
+    pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
