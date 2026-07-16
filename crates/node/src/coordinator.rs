@@ -869,6 +869,7 @@ fn participants_change_requires_restart(
     new: &ParticipantsConfig,
     my_near_account_id: &AccountId,
 ) -> bool {
+    // TODO(#3838): a governance-threshold-only change should not require a restart
     if old.threshold != new.threshold {
         return true;
     }
