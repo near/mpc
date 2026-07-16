@@ -63,6 +63,11 @@ const TCP_USER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30)
 /// Timeout for individual write operations to detect if writes are hanging.
 const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Maximum time to complete the TLS handshake on an accepted incoming
+/// connection. Without this bound, a peer that opens the TCP connection but
+/// never sends a ClientHello would hang the accept task forever.
+const TLS_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -595,7 +600,9 @@ async fn incoming_connection_handler(
     my_id: ParticipantId,
 ) -> anyhow::Result<()> {
     let tcp_stream = configure_tcp_stream(tcp_stream)?;
-    let mut tls_stream = tls_acceptor.accept(tcp_stream).await?;
+    let mut tls_stream = timeout(TLS_ACCEPT_TIMEOUT, tls_acceptor.accept(tcp_stream))
+        .await
+        .context("timed out accepting TLS connection")??;
 
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
@@ -1064,6 +1071,7 @@ pub mod testing {
 mod tests {
     use super::{
         IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
+        incoming_connection_handler,
     };
     use crate::config::MpcConfig;
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
@@ -1074,11 +1082,19 @@ mod tests {
     };
     use crate::providers::EcdsaTaskId;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
+    use mpc_tls::tls::configure_tls;
+    use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
+    use rustls::ClientConfig;
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::mpsc;
+    use tokio::task::JoinHandle;
     use tokio::time::timeout;
+    use tokio_rustls::TlsAcceptor;
 
     #[tokio::test]
     #[test_log::test]
@@ -1436,14 +1452,10 @@ mod tests {
     /// the returned channel, and never sends a byte back (holding the streams
     /// open). This mimics a middlebox that ACKs the ClientHello but never
     /// responds, hanging the dialer's TLS handshake.
-    async fn must_spawn_silent_listener() -> (
-        String,
-        tokio::sync::mpsc::UnboundedReceiver<()>,
-        tokio::task::JoinHandle<()>,
-    ) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    async fn must_spawn_silent_listener() -> (String, mpsc::UnboundedReceiver<()>, JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target_address = listener.local_addr().unwrap().to_string();
-        let (accept_tx, accept_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (accept_tx, accept_rx) = mpsc::unbounded_channel();
         let listener_task = tokio::spawn(async move {
             let mut held_streams = Vec::new();
             loop {
@@ -1455,11 +1467,26 @@ mod tests {
         (target_address, accept_rx, listener_task)
     }
 
-    fn must_make_client_config() -> Arc<rustls::ClientConfig> {
-        let signing_key =
-            ed25519_dalek::SigningKey::generate(&mut rand::rngs::StdRng::seed_from_u64(42));
-        let (_server_config, client_config) = mpc_tls::tls::configure_tls(&signing_key).unwrap();
+    async fn must_accept_silent_connection() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listen_address = listener.local_addr().unwrap();
+        let client = TcpStream::connect(listen_address).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        (server, client)
+    }
+
+    fn must_make_signing_key() -> SigningKey {
+        SigningKey::generate(&mut StdRng::seed_from_u64(42))
+    }
+
+    fn must_make_client_config() -> Arc<ClientConfig> {
+        let (_server_config, client_config) = configure_tls(&must_make_signing_key()).unwrap();
         Arc::new(client_config)
+    }
+
+    fn must_make_tls_acceptor() -> TlsAcceptor {
+        let (server_config, _client_config) = configure_tls(&must_make_signing_key()).unwrap();
+        TlsAcceptor::from(Arc::new(server_config))
     }
 
     // Paused tokio time makes CONNECT_TIMEOUT elapse instantly once the dial
@@ -1534,5 +1561,44 @@ mod tests {
         })
         .await;
         listener_task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn incoming_connection_handler__should_fail_accept_when_peer_never_starts_tls_handshake()
+    {
+        // Given
+        let (tcp_stream, _silent_client) = must_accept_silent_connection().await;
+        let tls_acceptor = must_make_tls_acceptor();
+        let (message_sender, _message_receiver) = mpsc::unbounded_channel();
+        let my_id = ParticipantId::from_raw(0);
+        let connectivities = Arc::new(AllNodeConnectivities::<
+            OutgoingConnection,
+            IncomingConnection,
+        >::new(my_id, &[my_id]));
+
+        // When
+        let result = timeout(
+            Duration::from_secs(60),
+            incoming_connection_handler(
+                message_sender,
+                connectivities,
+                tcp_stream,
+                tls_acceptor,
+                Arc::new(ParticipantIdentities::default()),
+                my_id,
+            ),
+        )
+        .await
+        .expect("accept did not terminate within bounded time");
+
+        // Then
+        let Err(error) = result else {
+            panic!("accept unexpectedly succeeded");
+        };
+        assert!(
+            format!("{error:#}").contains("timed out"),
+            "unexpected error: {error:#}"
+        );
     }
 }
