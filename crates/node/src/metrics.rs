@@ -409,21 +409,6 @@ pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
 pub const MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL: &str = "failed";
 pub const MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL: &str = "deadline_exceeded";
 
-pub fn record_led_computation_outcome<T>(
-    metric: &prometheus::IntCounterVec,
-    result: &Result<anyhow::Result<T>, tokio::time::error::Elapsed>,
-) {
-    let outcome_label = match result {
-        Ok(Ok(_)) => MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-        Ok(Err(_)) => MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL,
-        Err(_) => MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-    };
-    metric.with_label_values(&[outcome_label]).inc();
-    metric
-        .with_label_values(&[MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
-        .inc();
-}
-
 pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(

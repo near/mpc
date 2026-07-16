@@ -32,6 +32,7 @@ use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -43,6 +44,27 @@ use tokio::time::{sleep, timeout};
 /// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
 /// production runs experience fewer redundant signatures/ckds.
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
+
+async fn run_led_computation<T>(
+    metric: &prometheus::IntCounterVec,
+    deadline: Duration,
+    computation: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    let (outcome_label, result) = match timeout(deadline, computation).await {
+        Ok(Ok(value)) => (metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL, Ok(value)),
+        Ok(Err(error)) => (metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, Err(error)),
+        Err(elapsed) => (
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            Err(elapsed.into()),
+        ),
+    };
+    metric.with_label_values(&[outcome_label]).inc();
+    metric
+        .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
+        .inc();
+    result
+}
+
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
@@ -425,16 +447,12 @@ where
                                         )),
                                     }
                                 };
-                                let result = timeout(
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.signature.timeout_sec),
                                     computation,
                                 )
-                                .await;
-                                metrics::record_led_computation_outcome(
-                                    &metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED,
-                                    &result,
-                                );
-                                let response = result??;
+                                .await?;
 
                                 signature_attempt
                                     .computation_progress
@@ -511,16 +529,12 @@ where
                                         )),
                                     }
                                 };
-                                let result = timeout(
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_CKD_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.ckd.timeout_sec),
                                     computation,
                                 )
-                                .await;
-                                metrics::record_led_computation_outcome(
-                                    &metrics::MPC_NUM_CKD_COMPUTATIONS_LED,
-                                    &result,
-                                );
-                                let response = result??;
+                                .await?;
 
                                 ckd_attempt
                                     .computation_progress
@@ -601,16 +615,12 @@ where
                                         )),
                                     }
                                 };
-                                let result = timeout(
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.signature.timeout_sec),
                                     computation,
                                 )
-                                .await;
-                                metrics::record_led_computation_outcome(
-                                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
-                                    &result,
-                                );
-                                let response = result??;
+                                .await?;
 
                                 verify_foreign_tx_attempt
                                     .computation_progress
