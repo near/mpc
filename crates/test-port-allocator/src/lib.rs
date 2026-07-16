@@ -16,7 +16,6 @@ use rand::Rng;
 /// Block-allocation arithmetic for one port space: each `test_id` owns a
 /// disjoint block of `cluster_ports` shared ports followed by `max_nodes`
 /// groups of `ports_per_node`, with the whole space capped at `space_end`.
-/// Offsets are semantic-free — the [`TestPorts`] accessors name them.
 #[derive(Copy, Clone, Debug)]
 struct PortAllocationScheme {
     base: u16,
@@ -27,7 +26,7 @@ struct PortAllocationScheme {
     ports_per_node: u16,
     max_nodes: u16,
     /// Number of disjoint [`NodeTestPorts::with_case`] sub-blocks a node's block
-    /// is divided into; each occupies [`TestPorts::SHARED_NODE_PORTS`] offsets.
+    /// is divided into, each occupies [`TestPorts::SHARED_NODE_PORTS`] offsets.
     cases_per_node: u16,
 }
 
@@ -70,10 +69,9 @@ impl PortAllocationScheme {
     }
 }
 
-/// A bundle of TCP ports for one `test_id`, laid out by the scheme its
-/// constructor pins. The shared per-node accessors are inherent; the `near_*`
-/// cluster/node ports live on [`E2eTestPorts`] and case multiplexing on
-/// [`NodeTestPorts`], so each call site imports only the capability it needs.
+/// A bundle of TCP ports for one `test_id`. Per-node ports every test uses
+/// implemented directly on this struct. `near_*` ports come from
+/// [`E2eTestPorts`] and case multiplexing from [`NodeTestPorts`].
 #[derive(Copy, Clone, Debug)]
 pub struct TestPorts {
     scheme: PortAllocationScheme,
@@ -84,8 +82,8 @@ pub struct TestPorts {
 impl TestPorts {
     const MAX_NODES: u16 = 10;
 
-    /// Per-node offsets owned by the accessors both schemes share (p2p, web UI,
-    /// migration web UI, pprof); scheme-specific offsets start here.
+    /// Per-node offsets owned by the accessors that the integration and e2e-test
+    /// allocation schemes share (p2p, web UI, migration web UI, pprof).
     const SHARED_NODE_PORTS: u16 = 4;
 
     /// `mpc-node` integration tests: no cluster ports; a node's block is
@@ -101,8 +99,7 @@ impl TestPorts {
     };
 
     /// `e2e-tests` clusters: cluster-level ports for the NEAR sandbox RPC and
-    /// network, then per-node ports (the shared four, the node's internal neard
-    /// RPC/network, and two spare).
+    /// network, then per-node ports.
     const E2E_TESTS_SCHEME: PortAllocationScheme = PortAllocationScheme {
         base: 20000,
         space_end: RESERVE_RANGE_START,
@@ -161,27 +158,22 @@ impl TestPorts {
     }
 }
 
-/// The extra port capability an `mpc-node` integration test needs beyond the
-/// inherent per-node accessors; implemented by [`TestPorts::mpc_node_tests`]
-/// bundles.
+/// Extra port capability an `mpc-node` integration test needs beyond the
+/// inherent per-node accessors.
 pub trait NodeTestPorts {
-    /// Shifts every per-node offset into `case`'s sub-block, so distinct cases
+    /// Shifts every per-node offset into `case`'s sub-block, distinct cases
     /// of the same seed never collide.
     fn with_case(self, case: u16) -> Self
     where
         Self: Sized;
 }
 
-/// The extra ports an `e2e-tests` cluster needs beyond the inherent per-node
-/// accessors; implemented by [`TestPorts::e2e_tests`] bundles.
+/// Extra ports an `e2e-tests` cluster needs beyond the inherent per-node
+/// accessors.
 pub trait E2eTestPorts {
-    /// The cluster's NEAR sandbox RPC port.
     fn near_node_rpc_port(&self) -> u16;
-    /// The cluster's NEAR sandbox network port.
     fn near_node_network_port(&self) -> u16;
-    /// A node's internal neard RPC port.
     fn near_rpc_port(&self, node_index: usize) -> u16;
-    /// A node's internal neard network port.
     fn near_network_port(&self, node_index: usize) -> u16;
 }
 
