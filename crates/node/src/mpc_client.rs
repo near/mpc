@@ -45,26 +45,6 @@ use tokio::time::{sleep, timeout};
 /// production runs experience fewer redundant signatures/ckds.
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 
-async fn run_led_computation<T>(
-    metric: &prometheus::IntCounterVec,
-    deadline: Duration,
-    computation: impl Future<Output = anyhow::Result<T>>,
-) -> anyhow::Result<T> {
-    let (outcome_label, result) = match timeout(deadline, computation).await {
-        Ok(Ok(value)) => (metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL, Ok(value)),
-        Ok(Err(error)) => (metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, Err(error)),
-        Err(elapsed) => (
-            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
-            Err(elapsed.into()),
-        ),
-    };
-    metric.with_label_values(&[outcome_label]).inc();
-    metric
-        .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
-        .inc();
-    result
-}
-
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
@@ -107,6 +87,26 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
         | MpcTaskId::CKDTaskId(_)
         | MpcTaskId::VerifyForeignTxTaskId(_) => false,
     }
+}
+
+async fn run_led_computation<T>(
+    metric: &prometheus::IntCounterVec,
+    deadline: Duration,
+    computation: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    let (outcome_label, result) = match timeout(deadline, computation).await {
+        Ok(Ok(value)) => (metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL, Ok(value)),
+        Ok(Err(error)) => (metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, Err(error)),
+        Err(elapsed) => (
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            Err(elapsed.into()),
+        ),
+    };
+    metric.with_label_values(&[outcome_label]).inc();
+    metric
+        .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
+        .inc();
+    result
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
