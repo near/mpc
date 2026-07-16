@@ -18,15 +18,15 @@ use mpc_contract::{
         thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
-    update::{ProposeUpdateArgs, UpdateId},
+    update::UpdateId,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
-    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-    SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId,
-    SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
-    TonLog, TonRpcRequest, TonTxId,
+    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
+    ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
+    SuiRpcRequest, SuiTxId, SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
     method_names,
