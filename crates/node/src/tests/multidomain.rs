@@ -1,5 +1,5 @@
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
     request_ckd_and_await_response, request_signature_and_await_response,
@@ -28,7 +28,7 @@ async fn test_basic_multidomain() {
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::BASIC_MULTIDOMAIN_TEST,
+        port_seed::BASIC_MULTIDOMAIN_TEST,
         std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 

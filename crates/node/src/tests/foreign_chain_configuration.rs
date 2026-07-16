@@ -1,4 +1,4 @@
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
@@ -29,7 +29,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         vec!["test0".parse().unwrap(), "test1".parse().unwrap()],
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FOREIGN_CHAIN_POLICY_TEST,
+        port_seed::FOREIGN_CHAIN_POLICY_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
