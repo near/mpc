@@ -409,10 +409,6 @@ pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
 pub const MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL: &str = "failed";
 pub const MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL: &str = "deadline_exceeded";
 
-/// Records the outcome of a finished leader-side computation attempt: bumps exactly one of
-/// `succeeded`, `failed`, or `deadline_exceeded`, plus `total`, so the labels stay consistent
-/// at every scrape. `deadline_exceeded` means the node's own deadline (`timeout_sec`) elapsed
-/// and the attempt was aborted, not the on-chain request timeout.
 pub fn record_led_computation_outcome<T>(
     metric: &prometheus::IntCounterVec,
     result: &Result<anyhow::Result<T>, tokio::time::error::Elapsed>,
