@@ -2402,6 +2402,28 @@ expression: abi
         }
       },
       {
+        "name": "update_participant_url",
+        "doc": " Updates the calling participant's registered URL, keeping the TLS key and participant ID.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "url",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "verify_foreign_transaction",
         "doc": " Submit a verification + signing request for a foreign chain transaction.\n MPC nodes will verify the transaction on the foreign chain before signing.\n The signed payload is derived from the transaction ID (hash of tx_id).",
         "kind": "call",

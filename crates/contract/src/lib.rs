@@ -83,6 +83,7 @@ use node_migrations::NodeMigrations;
 use primitives::{
     domain::{DomainRegistry, max_reconstruction_threshold},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
+    participants::ParticipantInfo,
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
@@ -2619,6 +2620,32 @@ impl MpcContract {
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
         Ok(())
+    }
+
+    /// Updates the calling participant's registered URL, keeping the TLS key and participant ID.
+    #[handle_result]
+    pub fn update_participant_url(&mut self, url: String) -> Result<(), Error> {
+        // TODO(#1163): require a deposit
+        let account_id = Self::assert_caller_is_signer();
+        log!(
+            "update_participant_url: signer={:?}, url={:?}",
+            account_id,
+            url
+        );
+
+        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
+            return Err(errors::InvalidState::ProtocolStateNotRunning.into());
+        };
+
+        let Some(existing_info) = running_state.parameters.participants().info(&account_id) else {
+            return Err(errors::InvalidState::NotParticipant { account_id }.into());
+        };
+
+        let new_info = ParticipantInfo {
+            url,
+            tls_public_key: existing_info.tls_public_key.clone(),
+        };
+        running_state.parameters.update_info(account_id, new_info)
     }
 
     /// Finalizes a node migration for the calling account.

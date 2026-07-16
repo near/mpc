@@ -63,6 +63,7 @@ mod multidomain;
 mod onboarding;
 mod protocol_yielding;
 mod resharing;
+mod update_participant_url;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
