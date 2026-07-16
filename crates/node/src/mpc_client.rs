@@ -523,13 +523,15 @@ where
         &self,
         request: &SignatureRequest,
     ) -> anyhow::Result<contract_args::SignatureRespondArgs> {
+        macro_rules! make_signature {
+            ($provider:expr) => {
+                $provider.make_signature(request.id).await?
+            };
+        }
+
         match self.domain_to_protocol.get(&request.domain) {
             Some(Protocol::CaitSith) => {
-                let (signature, public_key) = self
-                    .ecdsa_signature_provider
-                    .clone()
-                    .make_signature(request.id)
-                    .await?;
+                let (signature, public_key) = make_signature!(self.ecdsa_signature_provider);
 
                 let response = contract_args::SignatureRespondArgs::from_ecdsa(
                     request,
@@ -540,11 +542,7 @@ where
                 Ok(response)
             }
             Some(Protocol::Frost) => {
-                let (signature, _) = self
-                    .eddsa_signature_provider
-                    .clone()
-                    .make_signature(request.id)
-                    .await?;
+                let (signature, _) = make_signature!(self.eddsa_signature_provider);
 
                 let response =
                     contract_args::SignatureRespondArgs::from_eddsa(request, &signature)?;
@@ -556,11 +554,7 @@ where
                 request.domain
             )),
             Some(Protocol::DamgardEtAl) => {
-                let (signature, public_key) = self
-                    .robust_ecdsa_signature_provider
-                    .clone()
-                    .make_signature(request.id)
-                    .await?;
+                let (signature, public_key) = make_signature!(self.robust_ecdsa_signature_provider);
 
                 let response = contract_args::SignatureRespondArgs::from_ecdsa(
                     request,
@@ -583,7 +577,7 @@ where
     ) -> anyhow::Result<contract_args::CKDRespondArgs> {
         match self.domain_to_protocol.get(&request.domain_id) {
             Some(Protocol::ConfidentialKeyDerivation) => {
-                let response = self.ckd_provider.clone().make_signature(request.id).await?;
+                let response = self.ckd_provider.make_signature(request.id).await?;
 
                 let response = contract_args::CKDRespondArgs::new(
                     request.into_contract_interface_type(),
@@ -841,8 +835,12 @@ mod tests {
         .unwrap()
     }
 
-    fn label_value(metric: &prometheus::IntCounterVec, label: &str) -> u64 {
-        metric.with_label_values(&[label]).get()
+    fn assert_label_value(metric: &prometheus::IntCounterVec, label: &str, expected: u64) {
+        assert_eq!(
+            metric.with_label_values(&[label]).get(),
+            expected,
+            "unexpected count for result label {label:?}",
+        );
     }
 
     #[tokio::test]
@@ -857,24 +855,17 @@ mod tests {
 
         // Then
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL),
-            1
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+            1,
         );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL),
-            1
-        );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL),
-            0
-        );
-        assert_eq!(
-            label_value(
-                &metric,
-                metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL
-            ),
-            0
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            0,
         );
     }
 
@@ -892,24 +883,17 @@ mod tests {
 
         // Then
         assert_eq!(result.unwrap_err().to_string(), "computation failed");
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL),
-            1
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 1);
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+            0,
         );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL),
-            1
-        );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL),
-            0
-        );
-        assert_eq!(
-            label_value(
-                &metric,
-                metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL
-            ),
-            0
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            0,
         );
     }
 
@@ -929,24 +913,17 @@ mod tests {
 
         // Then
         result.unwrap_err();
-        assert_eq!(
-            label_value(
-                &metric,
-                metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL
-            ),
-            1
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            1,
         );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL),
-            1
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+            0,
         );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL),
-            0
-        );
-        assert_eq!(
-            label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL),
-            0
-        );
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
     }
 }
