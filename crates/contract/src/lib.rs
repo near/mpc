@@ -106,6 +106,12 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Flat fee a node attaches to [`MpcContract::submit_participant_info`] for its
+/// stored attestation entry. The entry is bounded, so the fee is fixed and
+/// nothing is refunded; its margin over the true cost absorbs storage-price and
+/// layout changes. A unit test asserts it covers the worst-case entry.
+const MINIMUM_ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(100);
+
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
@@ -766,9 +772,10 @@ impl MpcContract {
     /// - [`Attestation::Mock`] is verified synchronously.
     /// - [`Attestation::Dstack`] is verified asynchronously via a cross-contract
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
-    ///   callback to run the post-DCAP checks and settle the deposit.
+    ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// The attached deposit pays for storage on success, and is refunded on failure.
+    /// The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole
+    /// fee is kept on success and refunded if the attestation is not accepted.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -805,17 +812,24 @@ impl MpcContract {
             account_public_key,
         };
 
+        let attached = env::attached_deposit();
+        if attached < MINIMUM_ATTESTATION_STORAGE_DEPOSIT {
+            return Err(InvalidParameters::InsufficientDeposit {
+                attached: attached.as_yoctonear(),
+                required: MINIMUM_ATTESTATION_STORAGE_DEPOSIT.as_yoctonear(),
+            }
+            .into());
+        }
+
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                let initial_storage = env::storage_usage();
                 self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
-                self.charge_attestation_storage(&account_id, initial_storage)?;
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
@@ -853,34 +867,6 @@ impl MpcContract {
                         attestation,
                     }),
             ))
-    }
-
-    fn charge_attestation_storage(
-        &self,
-        account_id: &AccountId,
-        initial_storage: u64,
-    ) -> Result<(), Error> {
-        // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
-        // rather than underflow. Intentional asymmetry: we do not refund freed
-        // bytes either, since the caller already paid for the larger entry.
-        let attached = env::attached_deposit();
-        // Relies on the attestation store having flushed its insert already; it
-        // defers writes to flush-on-Drop, so an unflushed insert reads as a zero delta
-        let storage_used = env::storage_usage().saturating_sub(initial_storage);
-        let cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
-
-        if attached < cost {
-            return Err(InvalidParameters::InsufficientDeposit {
-                attached: attached.as_yoctonear(),
-                required: cost.as_yoctonear(),
-            }
-            .into());
-        }
-
-        if let Some(diff) = attached.checked_sub(cost) {
-            refund_to(account_id, diff);
-        }
-        Ok(())
     }
 
     #[handle_result]
@@ -2301,7 +2287,8 @@ impl MpcContract {
     }
 
     /// Verify-quote callback: on a verifier verdict it runs the post-DCAP
-    /// checks, stores the attestation, and settles the deposit.
+    /// checks and stores the attestation, refunding the flat fee if the
+    /// attestation is not accepted.
     #[private]
     #[payable]
     pub fn resolve_verification(
@@ -2351,9 +2338,9 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. On failure it reverts the
-    /// store explicitly, since the callback receipt commits regardless
-    /// (unlike the synchronous path).
+    /// [`VerificationResult::Verified`] response. The deposit was already
+    /// checked against the flat fee in [`Self::submit_participant_info`], so this
+    /// only verifies and stores.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -2363,34 +2350,17 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let initial_storage = env::storage_usage();
-        let insertion = match self.tee_state.verify_and_store_dstack(
+        if let Err(err) = self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            Ok(insertion) => insertion,
-            Err(err) => {
-                log!("post-DCAP check failed for {account_id}: {err}");
-                return Err(err.into());
-            }
-        };
-
-        // The charge is the measured storage delta, so it is only known after
-        // the store; an insufficient deposit reverts the store below.
-        match self.charge_attestation_storage(account_id, initial_storage) {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                // This receipt commits even though we return an error, so the
-                // store above is NOT rolled back automatically (unlike the
-                // synchronous path). Undo it explicitly, or the caller would
-                // get storage for free plus a full refund.
-                self.tee_state
-                    .revert_dstack_store(&context.node_id.tls_public_key, insertion);
-                Err(err)
-            }
+            log!("post-DCAP check failed for {account_id}: {err}");
+            return Err(err.into());
         }
+
+        Ok(())
     }
 
     /// Yield-resume callback for a single queued CKD request.
@@ -2829,7 +2799,8 @@ mod tests {
     use elliptic_curve::Group;
     use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
-        MockAttestation as MpcMockAttestation, VerifiedAttestation,
+        MockAttestation as MpcMockAttestation, ValidatedDstackAttestation, VerifiedAttestation,
+        default_measurements,
     };
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
@@ -7878,5 +7849,45 @@ mod tests {
         let configs = &contract.foreign_chains.get().foreign_chains_configs;
         assert!(configs.contains_key(&tls_key_a), "node A config must exist");
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
+    }
+
+    // Catches only entry-size growth: fails if a schema change makes the stored entry
+    // cost more than the fee at today's storage_byte_cost. It cannot see a future
+    // storage_byte_cost increase on a live contract; the fee's margin covers that.
+    #[test]
+    fn minimum_attestation_storage_deposit__should_cover_worst_case_entry() {
+        // Given: the largest entry a submission can store. NEAR caps an account id
+        // at 64 bytes; every other field is fixed-size, so this is the worst case.
+        testing_env!(VMContextBuilder::new().build());
+        let node_id = create_node_id(
+            &"a".repeat(64).parse().unwrap(),
+            &bogus_ed25519_public_key(),
+        );
+        let worst_case = NodeAttestation {
+            node_id: node_id.clone(),
+            verified_attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                mpc_image_hash: [0xff; 32].into(),
+                launcher_compose_hash: [0xff; 32].into(),
+                expiry_timestamp_seconds: u64::MAX,
+                measurements: default_measurements()[0],
+            }),
+        };
+
+        // When: the entry is inserted and flushed, so storage_usage reflects it.
+        let mut tee_state = TeeState::default();
+        let storage_before = env::storage_usage();
+        tee_state
+            .stored_attestations
+            .insert(node_id.tls_public_key.clone(), worst_case);
+        tee_state.stored_attestations.flush();
+        let bytes_grown = env::storage_usage() - storage_before;
+        let worst_case_cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
+
+        // Then: the flat fee covers the worst-case cost with headroom to spare.
+        assert!(
+            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= worst_case_cost,
+            "flat fee {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
+             ({bytes_grown} bytes, {worst_case_cost}) at today's storage price"
+        );
     }
 }

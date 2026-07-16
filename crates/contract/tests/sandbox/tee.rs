@@ -3,7 +3,7 @@
 use crate::sandbox::{
     common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
     utils::{
-        consts::ALL_PROTOCOLS,
+        consts::{ALL_PROTOCOLS, SUBMIT_PARTICIPANT_INFO_DEPOSIT},
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
@@ -985,10 +985,10 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// Regression test for the lazy-collection storage-charge bug: a brand-new
-/// attestation submitted with zero deposit must be rejected and not persisted.
+/// A submission attaching less than the flat storage fee is rejected before the
+/// entry is stored.
 #[tokio::test]
-async fn submit_participant_info__should_reject_new_attestation_with_zero_deposit() -> Result<()> {
+async fn submit_participant_info__should_reject_new_attestation_below_flat_fee() -> Result<()> {
     // Given
     let SandboxTestSetup {
         worker, contract, ..
@@ -999,6 +999,7 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
     let outsider = worker.dev_create_account().await?;
     let fresh_tls_key = bogus_ed25519_public_key();
     let storage_before = worker.view_account(contract.id()).await?.storage_usage;
+    let below_fee = SUBMIT_PARTICIPANT_INFO_DEPOSIT.saturating_sub(NearToken::from_yoctonear(1));
 
     // When
     let result = outsider
@@ -1007,7 +1008,7 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
             Attestation::Mock(MockAttestation::Valid),
             fresh_tls_key.clone(),
         ))
-        .deposit(NearToken::from_near(0))
+        .deposit(below_fee)
         .max_gas()
         .transact()
         .await?;
@@ -1015,7 +1016,7 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
     // Then
     assert!(
         !result.is_success(),
-        "zero-deposit submission of a new attestation must fail: {result:?}"
+        "submission below the flat fee must fail: {result:?}"
     );
     let error_msg = format!("{:?}", result.into_result());
     assert!(
@@ -1035,15 +1036,13 @@ async fn submit_participant_info__should_reject_new_attestation_with_zero_deposi
     Ok(())
 }
 
-/// Mirror of the zero-deposit test with a funded submission: the attestation is
-/// stored, storage grows, and the caller is charged a non-zero amount for it (the
-/// bug charged zero).
+/// A submission attaching exactly the flat fee is stored, and the caller is
+/// charged the whole fee with no excess refunded (the fee far exceeds the true
+/// storage cost by design).
 #[tokio::test]
-async fn submit_participant_info__should_store_new_attestation_and_charge_with_sufficient_deposit()
+async fn submit_participant_info__should_store_new_attestation_and_charge_the_flat_fee()
 -> Result<()> {
-    // Given: the sandbox storage price, 1e19 yocto per byte.
-    const STORAGE_COST_PER_BYTE: u128 = 10u128.pow(19);
-    const ATTACHED_DEPOSIT: NearToken = NearToken::from_near(1);
+    // Given
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
@@ -1052,7 +1051,6 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_with_s
         .await;
     let outsider = worker.dev_create_account().await?;
     let fresh_tls_key = bogus_ed25519_public_key();
-    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
     let balance_before = outsider.view_account().await?.balance;
 
     // When
@@ -1062,7 +1060,7 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_with_s
             Attestation::Mock(MockAttestation::Valid),
             fresh_tls_key.clone(),
         ))
-        .deposit(ATTACHED_DEPOSIT)
+        .deposit(SUBMIT_PARTICIPANT_INFO_DEPOSIT)
         .max_gas()
         .transact()
         .await?;
@@ -1070,26 +1068,20 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_with_s
     // Then
     assert!(
         result.is_success(),
-        "funded submission of a new attestation should succeed: {result:?}"
+        "submission attaching the flat fee should succeed: {result:?}"
     );
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
     assert!(
         stored.is_some(),
         "the attestation entry should be stored on-chain"
     );
-    let storage_after = worker.view_account(contract.id()).await?.storage_usage;
-    let bytes_grown = storage_after - storage_before;
-    assert!(
-        bytes_grown > 0,
-        "contract storage should grow ({storage_before} -> {storage_after})"
-    );
-
-    let storage_stake = NearToken::from_yoctonear(u128::from(bytes_grown) * STORAGE_COST_PER_BYTE);
+    // The whole flat fee is consumed (no excess refund); `spent` also covers gas,
+    // so it must be at least the fee.
     let balance_after = outsider.view_account().await?.balance;
     let spent = balance_before.saturating_sub(balance_after);
     assert!(
-        spent >= storage_stake,
-        "caller must be charged at least the storage stake ({storage_stake}) for {bytes_grown} new bytes, spent {spent}"
+        spent >= SUBMIT_PARTICIPANT_INFO_DEPOSIT,
+        "caller must be charged the full flat fee ({SUBMIT_PARTICIPANT_INFO_DEPOSIT}), spent {spent}"
     );
     Ok(())
 }

@@ -9,7 +9,7 @@ use k256::{
 use near_indexer_primitives::types::{Balance, Gas};
 use near_mpc_contract_interface::{
     call_args as contract_args,
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR,
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
     method_names::{
         CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
         START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
@@ -128,7 +128,7 @@ impl ChainSendTransactionRequest {
     pub fn deposit_required(&self) -> Balance {
         match self {
             Self::SubmitParticipantInfo { .. } => {
-                Balance::from_near(SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR)
+                Balance::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR)
             }
             _ => Balance::from_near(0),
         }

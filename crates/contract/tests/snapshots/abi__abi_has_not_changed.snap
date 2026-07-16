@@ -1314,7 +1314,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks, stores the attestation, and settles the deposit.",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks and stores the attestation, refunding the flat fee if the\n attestation is not accepted.",
         "kind": "call",
         "modifiers": [
           "payable",
@@ -2336,7 +2336,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and settle the deposit.\n\n The attached deposit pays for storage on success, and is refunded on failure.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole\n fee is kept on success and refunded if the attestation is not accepted.",
         "kind": "call",
         "modifiers": [
           "payable"

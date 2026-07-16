@@ -13,7 +13,7 @@ use mpc_contract::{
     tee::tee_state::{AttestationSubmissionError, NodeId},
 };
 use near_mpc_contract_interface::{
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR,
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
     types::{
         Attestation, DomainConfig, DomainId, DomainPurpose, InitConfig, MockAttestation, Protocol,
         ProtocolContractState, ReconstructionThreshold,
@@ -31,7 +31,7 @@ const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
 const ATTESTATION_STORAGE_DEPOSIT: NearToken =
-    NearToken::from_near(SUBMIT_PARTICIPANT_INFO_DEPOSIT_NEAR);
+    NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR);
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;

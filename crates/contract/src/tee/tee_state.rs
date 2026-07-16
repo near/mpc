@@ -48,12 +48,9 @@ pub enum AttestationSubmissionError {
 }
 
 #[derive(Debug)]
-#[expect(clippy::large_enum_variant)]
 pub(crate) enum ParticipantInsertion {
     NewlyInsertedParticipant,
-    /// Holds the overwritten entry so [`TeeState::revert_dstack_store`] can put
-    /// it back if the async store is rolled back.
-    UpdatedExistingParticipant(NodeAttestation),
+    UpdatedExistingParticipant,
 }
 
 #[derive(Debug)]
@@ -210,10 +207,10 @@ impl TeeState {
         report_data.into()
     }
 
-    /// Stores `verified_attestation` under `node_id`'s TLS key and flushes the write to storage
-    /// before returning, so a caller's subsequent [`env::storage_usage`] reflects the insert
-    /// (used to charge the storage delta). Rejects a submission whose TLS key is already registered
-    /// to a different account with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`].
+    /// Stores `verified_attestation` under `node_id`'s TLS key, reporting whether the
+    /// entry was newly inserted or updated an existing one. Rejects a submission whose
+    /// TLS key is already registered to a different account with
+    /// [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`].
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
@@ -239,33 +236,10 @@ impl TeeState {
             },
         );
 
-        // `IterableMap` defers the write to flush-on-Drop; force it now
-        self.stored_attestations.flush();
-
         Ok(match previous {
-            Some(previous) => ParticipantInsertion::UpdatedExistingParticipant(previous),
+            Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
             None => ParticipantInsertion::NewlyInsertedParticipant,
         })
-    }
-
-    /// Undoes a [`Self::verify_and_store_dstack`] store: restores the displaced
-    /// entry, or removes the newly-inserted one if there was none. Used by the
-    /// async flow when the storage charge fails after the store, so a caller
-    /// can't get storage for free in a receipt that still commits.
-    pub(crate) fn revert_dstack_store(
-        &mut self,
-        tls_public_key: &Ed25519PublicKey,
-        insertion: ParticipantInsertion,
-    ) {
-        match insertion {
-            ParticipantInsertion::UpdatedExistingParticipant(previous) => {
-                self.stored_attestations
-                    .insert(tls_public_key.clone(), previous);
-            }
-            ParticipantInsertion::NewlyInsertedParticipant => {
-                self.stored_attestations.remove(tls_public_key);
-            }
-        }
     }
 
     /// reverifies stored participant attestations.
@@ -844,7 +818,7 @@ mod tests {
         // then
         assert_matches!(
             re_insertion_result,
-            Ok(ParticipantInsertion::UpdatedExistingParticipant(_))
+            Ok(ParticipantInsertion::UpdatedExistingParticipant)
         );
     }
 
@@ -865,33 +839,6 @@ mod tests {
             tee_state.stored_attestations.len(),
             1,
             "Internal storage count should increase by exactly one"
-        );
-    }
-
-    #[test]
-    fn verify_and_store_mock__should_flush_so_storage_usage_grows() {
-        // Given
-        testing_env!(VMContextBuilder::new().build());
-        let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        let storage_before = env::storage_usage();
-
-        // When
-        tee_state
-            .verify_and_store_mock(node_id, MockAttestation::Valid, Duration::from_secs(0))
-            .unwrap();
-
-        // Then: the store must flush the insert so the charged storage delta is
-        // nonzero. Without the flush the write defers to drop and this reads zero,
-        // letting a caller store an attestation without paying for it.
-        let storage_after = env::storage_usage();
-        assert!(
-            storage_after > storage_before,
-            "env::storage_usage() should grow after the store ({storage_before} -> {storage_after})"
         );
     }
 
@@ -1427,10 +1374,7 @@ mod tests {
         );
 
         // Then: the update is accepted and the stored entry reflects the new key.
-        assert_matches!(
-            result,
-            Ok(ParticipantInsertion::UpdatedExistingParticipant(_))
-        );
+        assert_matches!(result, Ok(ParticipantInsertion::UpdatedExistingParticipant));
         let stored = tee_state
             .stored_attestations
             .get(&rotated_node.tls_public_key)
