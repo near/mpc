@@ -36,6 +36,7 @@ use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args as contract_args;
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -435,16 +436,7 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        // Register locally supported foreign chains with the contract.
-        let foreign_chain_configuration = config_file.foreign_chains.configured_chains();
-        if let Err(err) = chain_txn_sender
-            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-                contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-            ))
-            .await
-        {
-            tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-        }
+        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
 
         let resolve_peer_address =
             move |participant_id| peer_address_from_state(&contract_state_receiver, participant_id);
@@ -1027,6 +1019,37 @@ fn stop_initializing(
     }
 }
 
+/// Dual-writes the node's foreign-chain registration (legacy + new endpoint);
+/// an empty config still registers so that dropping every chain propagates.
+/// TODO(#3630): drop the legacy RegisterForeignChainConfig half.
+async fn register_foreign_chains(
+    chain_txn_sender: &impl tx_sender::TransactionSender,
+    foreign_chains: &mpc_node_config::ForeignChainsConfig,
+) {
+    let foreign_chain_configuration = foreign_chains.configured_chains();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
+            contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
+    }
+    let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
+        .iter_chains()
+        .map(|(chain, _)| chain)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into();
+    if let Err(err) = chain_txn_sender
+        .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+            contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config),
+        ))
+        .await
+    {
+        tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
+    }
+}
+
 fn make_initializing_stop_fn(
     key_event: ContractKeyEventInstance,
 ) -> (watch::Receiver<ContractKeyEventInstance>, StopFn) {
@@ -1043,16 +1066,29 @@ fn make_initializing_stop_fn(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{participants_change_requires_restart, peer_address_from_state, stop_running};
+    use super::{
+        participants_change_requires_restart, peer_address_from_state, register_foreign_chains,
+        stop_running,
+    };
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
         base_config, me, participant, resharing, running,
     };
+    use crate::indexer::types::ChainSendTransactionRequest;
     use crate::primitives::ParticipantId;
+    use crate::tests::common::MockTransactionSender;
+    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
     use mpc_primitives::EpochId;
+    use near_mpc_contract_interface::types as dtos;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use std::collections::BTreeSet;
+    use std::num::NonZeroU64;
+    use tokio::sync::mpsc;
+    use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
 
     #[test]
@@ -1236,5 +1272,49 @@ mod tests {
             Some("bob-reshared.example.com:9090".to_string())
         );
         assert_eq!(joining_peer, Some("carol.example.com:7000".to_string()));
+    }
+
+    /// Guards the upgrade-window dual-write: the legacy registration must keep
+    /// being emitted alongside the new one until #3630 drops it.
+    #[tokio::test]
+    async fn register_foreign_chains__should_send_legacy_and_new_registrations() {
+        // Given: a node config covering Solana.
+        let foreign_chains = ForeignChainsConfig {
+            solana: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(30).unwrap(),
+                max_retries: NonZeroU64::new(3).unwrap(),
+                providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
+                    RpcProviderName::from("public".to_string()),
+                    ForeignChainProviderConfig {
+                        rpc_url: "https://rpc.public.example.com".to_string(),
+                        auth: Default::default(),
+                    },
+                ),
+            }),
+            ..Default::default()
+        };
+        let (sender, mut receiver) = mpsc::channel(10);
+        let txn_sender = MockTransactionSender {
+            transaction_sender: sender,
+        };
+
+        // When
+        register_foreign_chains(&txn_sender, &foreign_chains).await;
+
+        // Then: the legacy registration is emitted first, then the new one.
+        let expected_legacy = foreign_chains.configured_chains();
+        assert_matches!(
+            receiver.try_recv(),
+            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(args))
+                if args.foreign_chain_configuration == expected_legacy
+        );
+        let expected: dtos::ForeignChainsConfig =
+            BTreeSet::from([dtos::ForeignChain::Solana]).into();
+        assert_matches!(
+            receiver.try_recv(),
+            Ok(ChainSendTransactionRequest::RegisterForeignChainsConfig(args))
+                if args.foreign_chains_config == expected
+        );
+        assert_matches!(receiver.try_recv(), Err(TryRecvError::Empty));
     }
 }
