@@ -1,5 +1,5 @@
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, request_ckd_and_await_response, request_ckd_pv_and_await_response,
@@ -29,7 +29,7 @@ async fn test_basic_cluster() {
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::BASIC_CLUSTER_TEST,
+        port_seed::BASIC_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

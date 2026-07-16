@@ -938,88 +938,41 @@ pub mod testing {
     use ed25519_dalek::SigningKey;
     use near_account_id::AccountId;
     use rand::rngs::OsRng;
+    pub use test_port_allocator::{NodeTestPorts, TestPorts};
 
-    /// A unique seed for each integration test to avoid port conflicts during testing.
-    #[derive(Copy, Clone)]
-    pub struct PortSeed {
-        port_number: u16,
-        case: u16,
-    }
+    /// Each place that passes a port seed into [`generate_test_p2p_configs`] or
+    /// `IntegrationTestSetup` should define a unique one here, so parallel
+    /// tests never collide on ports.
+    pub mod port_seed {
+        use test_port_allocator::TestPorts;
 
-    impl PortSeed {
-        // The base port number used, hoping the OS is not using ports in this range
-        pub const BASE_PORT: u16 = 10000;
-        // Maximum number of nodes that can be handled without port collisions
-        pub const MAX_NODES: u16 = 10;
-        // Maximum number of cases that can be handled without port collisions
-        pub const MAX_CASES: u16 = 4;
-        // Each function below corresponds to a port per node. Each defines an offset,
-        // and all offsets must be different
-        pub const TOTAL_PORTS_PER_NODE: u16 = 4;
-
-        pub const fn new(port_number: u16) -> Self {
-            Self {
-                port_number,
-                case: 0,
-            }
-        }
-
-        pub fn with_case(&self, case: u16) -> Self {
-            Self {
-                port_number: self.port_number,
-                case,
-            }
-        }
-
-        fn compute_port(&self, node_index: u16, offset: u16) -> u16 {
-            Self::BASE_PORT
-                + self.port_number * Self::MAX_NODES * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
-                + node_index * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
-                + self.case * Self::TOTAL_PORTS_PER_NODE
-                + offset
-        }
-
-        pub fn p2p_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 0)
-        }
-
-        pub fn web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 1)
-        }
-
-        pub fn migration_web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 2)
-        }
-
-        pub fn pprof_web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 3)
-        }
-    }
-
-    impl PortSeed {
-        // Each place that passes a PortSeed in should define a unique one here.
-        pub const P2P_BASIC_TEST: Self = Self::new(1);
-        pub const P2P_WAIT_FOR_READY_TEST: Self = Self::new(2);
-        pub const BASIC_CLUSTER_TEST: Self = Self::new(3);
-        pub const FAULTY_CLUSTER_TEST: Self = Self::new(4);
-        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self::new(5);
-        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self::new(6);
-        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self::new(7);
-        pub const BASIC_MULTIDOMAIN_TEST: Self = Self::new(8);
-        pub const FAULTY_STUCK_INDEXER_TEST: Self = Self::new(9);
-        pub const RECOVERY_TEST: Self = Self::new(10);
-        pub const ONBOARDING_TEST: Self = Self::new(11);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self::new(12);
-        pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self::new(13);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self::new(14);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self::new(15);
-        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self::new(16);
-        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
-        pub const RECONNECTION_TEST: Self = Self::new(19);
-        pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: Self = Self::new(21);
-        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: Self = Self::new(22);
+        pub const P2P_BASIC_TEST: TestPorts = TestPorts::mpc_node_tests(1);
+        pub const P2P_WAIT_FOR_READY_TEST: TestPorts = TestPorts::mpc_node_tests(2);
+        pub const BASIC_CLUSTER_TEST: TestPorts = TestPorts::mpc_node_tests(3);
+        pub const FAULTY_CLUSTER_TEST: TestPorts = TestPorts::mpc_node_tests(4);
+        pub const KEY_RESHARING_SIMPLE_TEST: TestPorts = TestPorts::mpc_node_tests(5);
+        pub const KEY_RESHARING_MULTISTAGE_TEST: TestPorts = TestPorts::mpc_node_tests(6);
+        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: TestPorts = TestPorts::mpc_node_tests(7);
+        pub const BASIC_MULTIDOMAIN_TEST: TestPorts = TestPorts::mpc_node_tests(8);
+        pub const FAULTY_STUCK_INDEXER_TEST: TestPorts = TestPorts::mpc_node_tests(9);
+        pub const RECOVERY_TEST: TestPorts = TestPorts::mpc_node_tests(10);
+        pub const ONBOARDING_TEST: TestPorts = TestPorts::mpc_node_tests(11);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: TestPorts = TestPorts::mpc_node_tests(12);
+        pub const MIGRATION_WEBSERVER_FAILURE_TEST: TestPorts = TestPorts::mpc_node_tests(13);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: TestPorts =
+            TestPorts::mpc_node_tests(14);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: TestPorts =
+            TestPorts::mpc_node_tests(15);
+        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: TestPorts =
+            TestPorts::mpc_node_tests(16);
+        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: TestPorts = TestPorts::mpc_node_tests(17);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: TestPorts = TestPorts::mpc_node_tests(18);
+        pub const RECONNECTION_TEST: TestPorts = TestPorts::mpc_node_tests(19);
+        pub const FOREIGN_CHAIN_POLICY_TEST: TestPorts = TestPorts::mpc_node_tests(20);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME: TestPorts =
+            TestPorts::mpc_node_tests(21);
+        pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: TestPorts =
+            TestPorts::mpc_node_tests(22);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1027,7 +980,7 @@ pub mod testing {
         threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
-        port_seed: PortSeed,
+        ports: &TestPorts,
     ) -> anyhow::Result<Vec<(MpcConfig, SigningKey)>> {
         let p2p_keypairs = participant_accounts
             .iter()
@@ -1042,7 +995,7 @@ pub mod testing {
             participants.push(ParticipantInfo {
                 id: ParticipantId::from_raw(rand::random()),
                 address: "127.0.0.1".to_string(),
-                port: port_seed.p2p_port(i),
+                port: ports.p2p_port(i),
                 p2p_public_key: p2p_signing_key.verifying_key(),
                 near_account_id: participant_account.clone(),
             });
@@ -1076,7 +1029,7 @@ mod tests {
     use crate::config::MpcConfig;
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-    use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
+    use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
     use crate::primitives::{
         ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
     };
@@ -1102,7 +1055,7 @@ mod tests {
         let configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
-            PortSeed::P2P_BASIC_TEST,
+            &port_seed::P2P_BASIC_TEST,
         )
         .unwrap();
         let participant0 = configs[0].0.my_participant_id;
@@ -1208,7 +1161,7 @@ mod tests {
                 "test3".parse().unwrap(),
             ],
             4,
-            PortSeed::P2P_WAIT_FOR_READY_TEST,
+            &port_seed::P2P_WAIT_FOR_READY_TEST,
         )
         .unwrap();
 
@@ -1332,7 +1285,7 @@ mod tests {
         let mut configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
-            PortSeed::RECONNECTION_TEST,
+            &port_seed::RECONNECTION_TEST,
         )
         .unwrap();
 
@@ -1388,7 +1341,7 @@ mod tests {
             );
 
             configs[1].0.participants.participants[1].port =
-                PortSeed::RECONNECTION_TEST.p2p_port(2);
+                port_seed::RECONNECTION_TEST.p2p_port(2);
             let (bob_new, _bob_new_receiver) =
                 super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                     .await

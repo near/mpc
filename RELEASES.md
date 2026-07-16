@@ -92,7 +92,29 @@ run if any artifact is missing.
 > smoke-test on testnet before promoting, deploy
 > `nearone/mpc-node-gcp:release-v3.11-<short-sha>` directly.
 
-### 3. Run the Release workflow
+### 3. Verify the build is reproducible
+
+**Do this before publishing (step 5) — publishing creates the git tag and is
+effectively irreversible.** Confirm the CI-built artifacts match a local
+reproducible build, so the released `:X.Y.Z` images and contract WASM are
+exactly what the source produces:
+
+- **Contract WASM** — build via the reproducible path and compare its hash to
+  the CI `contract` artifact (builds from committed git state, so commit first):
+  ```sh
+  cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+  ```
+- **Docker images** — compare the digests in the draft release to the ones
+  produced locally (with no flags the script builds and prints digests for all
+  three images):
+  ```sh
+  ./deployment/build-images.sh
+  ```
+
+See [reproducible builds](./docs/reproducible-builds.md) for the full
+procedure. If any hash/digest differs, do **not** publish — investigate first.
+
+### 4. Run the Release workflow
 
 Trigger the [Release workflow](.github/workflows/release.yml) against the
 branch:
@@ -115,7 +137,7 @@ is missing.
 > [Build Contract](.github/workflows/build_contract.yml) workflow
 > manually before triggering the release.
 
-### 4. Edit and publish the draft release
+### 5. Edit and publish the draft release
 
 When the workflow finishes, a draft release named `MPC 3.11.0` appears on
 the [releases page](https://github.com/near/mpc/releases). The draft
@@ -126,7 +148,9 @@ by GitHub when the draft is published.
 Review the draft and click "Publish release." Publishing creates the
 `3.11.0` git tag at the released commit.
 
-### 5. Promote to operator floating tags (optional)
+> ⚠️ **Point of no return.** Publishing creates the tag, and once the tag is published it cannot be modified as we are using [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
+
+### 6. Promote to operator floating tags (optional)
 
 Some operators consume floating tags like `nearone/mpc-node-gcp:testnet-release`
 and `:mainnet-release`. Promote with the retag workflows:
