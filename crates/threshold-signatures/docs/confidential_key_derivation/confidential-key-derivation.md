@@ -199,9 +199,9 @@ contract.
 
 [`tests/vectors/ckd_test_vectors.json`](../../tests/vectors/ckd_test_vectors.json)
 holds reproducible vectors for both variants, checked by `tests/ckd_test_vectors.rs`;
-encodings and the derivation are documented in the file's `_encoding`/`_notes`
-blocks. Each vector fixes $`\texttt{msk}, a, y`$ and an $`\texttt{app\_id}`$ and
-records every intermediate and final value.
+encodings are documented in the file's `_encoding` block. Each vector fixes
+$`\texttt{msk}, a`$ and an $`\texttt{app\_id}`$ and records every intermediate
+and final value.
 
 Regenerate with the ignored generator:
 `cargo nextest run -- --ignored generate_ckd_test_vectors`.

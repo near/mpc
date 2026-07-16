@@ -2,8 +2,8 @@
 //!
 //! The committed vectors live in `tests/vectors/ckd_test_vectors.json` (see its
 //! `_encoding` block for the serialization conventions). Each fixes the scalars
-//! `msk`, `a`, `y` and an `app_id`, and records every intermediate and final
-//! value so an independent implementation can reproduce and check the scheme.
+//! `msk`, `a` and an `app_id`, and records every intermediate and final value so
+//! an independent implementation can reproduce and check the scheme.
 //!
 //! `generate_ckd_test_vectors` (ignored) regenerates the JSON; the other tests
 //! verify the committed values against the public crate API.
@@ -13,10 +13,15 @@ use digest::Digest as _;
 use elliptic_curve::Group as _;
 use hkdf::Hkdf;
 use pairing::{MillerLoopResult as _, MultiMillerLoop as _};
+use rand::SeedableRng as _;
 use serde::Deserialize;
 use sha2::Sha256;
 use threshold_signatures::confidential_key_derivation::{
-    self as ckd, CKDOutput, VerifyingKey, ciphersuite::verify_signature,
+    self as ckd, AppId, BLS12381SHA256, CKDOutput, PublicVerificationKey, VerifyingKey,
+    ciphersuite::verify_signature,
+};
+use threshold_signatures::test_utils::{
+    MockCryptoRng, deal_keygen_outputs, generate_participants, run_ckd_pv,
 };
 
 const VECTORS_PATH: &str = concat!(
@@ -28,6 +33,15 @@ const VECTORS_PATH: &str = concat!(
 /// of truth); used only to document the DST in the generated vectors file.
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
+/// The threshold instance the vectors are generated from. All participants take
+/// part, so the sharing reconstructs `msk` regardless of the threshold.
+const NUM_PARTICIPANTS: usize = 3;
+const THRESHOLD: usize = 2;
+
+/// Base RNG seed; each vector uses `BASE_SEED + index` so the generator and the
+/// regression check drive the protocol identically.
+const BASE_SEED: u64 = 0xC0DE_0000;
+
 #[derive(Deserialize)]
 struct TestVectors {
     vectors: Vec<Vector>,
@@ -38,7 +52,6 @@ struct Vector {
     // Inputs.
     msk: String,
     a: String,
-    y: String,
     app_id: String,
     // Expected values.
     pk: String,
@@ -98,8 +111,8 @@ fn hex_g2(point: &G2Projective) -> String {
     hex::encode(point.to_compressed())
 }
 
-fn hash_point(pk: &G2Projective, app_id: &[u8]) -> G1Projective {
-    ckd::hash_app_id_with_pk(&VerifyingKey::new(*pk), app_id)
+fn hash_point(pk: &VerifyingKey, app_id: &[u8]) -> G1Projective {
+    ckd::hash_app_id_with_pk(pk, app_id)
 }
 
 /// HKDF-SHA256 with no salt and empty info over the 48-byte compressed signature.
@@ -124,33 +137,81 @@ fn pairing_product_is_identity(pairs: &[(G1Projective, G2Projective)]) -> bool {
         .into()
 }
 
+/// Every value a vector records, as hex strings.
+struct DerivedVector {
+    pk: String,
+    app_pk1: String,
+    app_pk2: String,
+    hash_point: String,
+    big_y: String,
+    big_c: String,
+    sig: String,
+    s: String,
+}
+
+/// Derives a full vector by running the real threshold `ckd_pv` protocol.
+///
+/// `msk` is dealt to [`NUM_PARTICIPANTS`] participants and every participant runs
+/// the protocol, so the coordinator's aggregated `(big_y, big_c)` is genuine
+/// protocol output. All randomness is seeded from `seed`, so the result is
+/// reproducible.
+fn derive_vector(msk: Scalar, a: Scalar, app_id: &[u8], seed: u64) -> DerivedVector {
+    let participants = generate_participants(NUM_PARTICIPANTS);
+    let coordinator = *participants.first().expect("participant list is not empty");
+
+    let pk = VerifyingKey::new(G2Projective::generator() * msk);
+    let app_pk1 = G1Projective::generator() * a;
+    let app_pk2 = G2Projective::generator() * a;
+    let app_pk = PublicVerificationKey::new(app_pk1, app_pk2);
+    let h = hash_point(&pk, app_id);
+    let app_id = AppId::try_from(app_id).expect("valid app_id");
+
+    let mut rng = MockCryptoRng::seed_from_u64(seed);
+    let key_packages =
+        deal_keygen_outputs::<BLS12381SHA256>(msk, &participants, THRESHOLD, &mut rng);
+    let output = run_ckd_pv(&key_packages, coordinator, &app_id, &app_pk, &mut rng)
+        .expect("run ckd protocol");
+
+    let sig = output.unmask(a);
+    let s = derive_strong_key(&sig);
+
+    DerivedVector {
+        pk: hex_g2(&pk.to_element()),
+        app_pk1: hex_g1(&app_pk1),
+        app_pk2: hex_g2(&app_pk2),
+        hash_point: hex_g1(&h),
+        big_y: hex_g1(&output.big_y()),
+        big_c: hex_g1(&output.big_c()),
+        sig: hex_g1(&sig),
+        s: hex::encode(s),
+    }
+}
+
+/// Re-runs the real protocol on the committed inputs and asserts every recorded
+/// value matches. Fails if our implementation drifts from the committed vectors.
 #[test]
 #[expect(non_snake_case)]
-fn ckd_test_vectors__should_derive_expected_public_values() {
+fn ckd_test_vectors__should_match_real_protocol() {
     // Given
     let vectors = load_vectors();
 
     for (i, v) in vectors.iter().enumerate() {
         let msk = scalar_from_be_hex(&v.msk);
         let a = scalar_from_be_hex(&v.a);
-        let y = scalar_from_be_hex(&v.y);
         let app_id = hex::decode(&v.app_id).expect("app_id hex");
 
         // When
-        let pk = G2Projective::generator() * msk;
-        let app_pk1 = G1Projective::generator() * a;
-        let app_pk2 = G2Projective::generator() * a;
-        let h = hash_point(&pk, &app_id);
-        let big_y = G1Projective::generator() * y;
-        let big_c = h * msk + app_pk1 * y;
+        let derived = derive_vector(msk, a, &app_id, BASE_SEED + i as u64);
 
         // Then
-        assert_eq!(hex_g2(&pk), v.pk, "vector {i}: pk");
-        assert_eq!(hex_g1(&app_pk1), v.app_pk1, "vector {i}: app_pk1");
-        assert_eq!(hex_g2(&app_pk2), v.app_pk2, "vector {i}: app_pk2");
-        assert_eq!(hex_g1(&h), v.hash_point, "vector {i}: hash_point");
-        assert_eq!(hex_g1(&big_y), v.big_y, "vector {i}: big_y");
-        assert_eq!(hex_g1(&big_c), v.big_c, "vector {i}: big_c");
+        assert_eq!(derived.pk, v.pk, "vector {i}: pk");
+        assert_eq!(derived.app_pk1, v.app_pk1, "vector {i}: app_pk1");
+        assert_eq!(derived.app_pk2, v.app_pk2, "vector {i}: app_pk2");
+        assert_eq!(derived.hash_point, v.hash_point, "vector {i}: hash_point");
+        assert_eq!(derived.big_y, v.big_y, "vector {i}: big_y");
+        assert_eq!(derived.big_c, v.big_c, "vector {i}: big_c");
+        assert_eq!(derived.sig, v.sig, "vector {i}: sig");
+        assert_eq!(derived.s, v.s, "vector {i}: s");
     }
 }
 
@@ -271,39 +332,30 @@ fn compute_vector(
     app_id_label: &str,
     msk_spec: &ScalarSpec,
     a_spec: &ScalarSpec,
-    y_spec: &ScalarSpec,
+    seed: u64,
 ) -> serde_json::Value {
     let (msk_be, msk) = resolve_scalar(msk_spec);
     let (a_be, a) = resolve_scalar(a_spec);
-    let (y_be, y) = resolve_scalar(y_spec);
     let app_id: [u8; 32] = Sha256::digest(app_id_label.as_bytes()).into();
 
-    let pk = G2Projective::generator() * msk;
-    let app_pk1 = G1Projective::generator() * a;
-    let app_pk2 = G2Projective::generator() * a;
-    let h = hash_point(&pk, &app_id);
-    let big_y = G1Projective::generator() * y;
-    let big_c = h * msk + app_pk1 * y;
-    let sig = CKDOutput::new(big_y, big_c).unmask(a);
-    let s = derive_strong_key(&sig);
+    let derived = derive_vector(msk, a, &app_id, seed);
 
     serde_json::json!({
         "msk": hex::encode(msk_be),
         "a": hex::encode(a_be),
-        "y": hex::encode(y_be),
         "app_id": hex::encode(app_id),
-        "pk": hex_g2(&pk),
-        "app_pk1": hex_g1(&app_pk1),
-        "app_pk2": hex_g2(&app_pk2),
-        "hash_point": hex_g1(&h),
-        "big_y": hex_g1(&big_y),
-        "big_c": hex_g1(&big_c),
-        "sig": hex_g1(&sig),
-        "s": hex::encode(s),
+        "pk": derived.pk,
+        "app_pk1": derived.app_pk1,
+        "app_pk2": derived.app_pk2,
+        "hash_point": derived.hash_point,
+        "big_y": derived.big_y,
+        "big_c": derived.big_c,
+        "sig": derived.sig,
+        "s": derived.s,
     })
 }
 
-/// The self-describing `_encoding` / `_notes` header of the vectors file.
+/// The self-describing `_encoding` header of the vectors file.
 fn vectors_metadata() -> serde_json::Value {
     serde_json::json!({
         "_encoding": {
@@ -317,11 +369,6 @@ fn vectors_metadata() -> serde_json::Value {
             "hash_to_curve_dst": String::from_utf8_lossy(NEAR_CKD_DOMAIN),
             "hash_to_curve_input": "pk_compressed(96B) || app_id, RFC 9380 BLS12381G1_XMD:SHA-256_SSWU_RO_, empty aug",
             "s": "HKDF-SHA256(ikm = sig_compressed[48B], salt = none, info = \"\"), 32 bytes",
-        },
-        "_notes": {
-            "derivation": "pk = msk.G2 ; A1 = a.G1 ; A2 = a.G2 ; hash_point = H(pk||app_id) ; big_y = y.G1 ; big_c = hash_point.msk + A1.y ; sig = big_c - a.big_y = msk.hash_point ; s = HKDF(sig)",
-            "private_verifiability": "app recovers sig via unmask(a) and verifies e(hash_point, pk) = e(sig, G2)",
-            "public_verifiability": "adds A2 and the checks e(A1, G2) = e(G1, A2) and e(big_c, G2) = e(big_y, A2) . e(hash_point, pk)",
         },
     })
 }
@@ -337,25 +384,22 @@ fn generate_ckd_test_vectors() {
     // canonical reduction on the consuming side.
     const MAX_SCALAR: &str = "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000";
 
-    // (app_id label, msk, app-secret a, blinding y)
+    // (app_id label, msk, app-secret a)
     let inputs = [
         (
             "ckd-vector-1/app_id",
             ScalarSpec::Label("ckd-vector-1/msk"),
             ScalarSpec::Label("ckd-vector-1/a"),
-            ScalarSpec::Label("ckd-vector-1/y"),
         ),
         (
             "ckd-vector-2/app_id",
             ScalarSpec::Label("ckd-vector-2/msk"),
             ScalarSpec::Label("ckd-vector-2/a"),
-            ScalarSpec::Label("ckd-vector-2/y"),
         ),
-        // Hand-checkable anchor: msk = a = y = 1, so pk and app_pk1 are the group
-        // generators, big_y = G1, and sig = hash_point.
+        // Hand-checkable anchor: msk = a = 1, so pk and app_pk1 are the group
+        // generators and sig = hash_point (unmask cancels the blinding).
         (
             "ckd-vector-3/app_id",
-            ScalarSpec::Hex("0000000000000000000000000000000000000000000000000000000000000001"),
             ScalarSpec::Hex("0000000000000000000000000000000000000000000000000000000000000001"),
             ScalarSpec::Hex("0000000000000000000000000000000000000000000000000000000000000001"),
         ),
@@ -365,14 +409,14 @@ fn generate_ckd_test_vectors() {
             "ckd-vector-4/app_id",
             ScalarSpec::Hex(MAX_SCALAR),
             ScalarSpec::Hex("6fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-            ScalarSpec::Hex("5abbccddeeff00112233445566778899aabbccddeeff00112233445566778899"),
         ),
     ];
 
     let vectors: Vec<serde_json::Value> = inputs
         .iter()
-        .map(|(app_id_label, msk_spec, a_spec, y_spec)| {
-            compute_vector(app_id_label, msk_spec, a_spec, y_spec)
+        .enumerate()
+        .map(|(i, (app_id_label, msk_spec, a_spec))| {
+            compute_vector(app_id_label, msk_spec, a_spec, BASE_SEED + i as u64)
         })
         .collect();
 
