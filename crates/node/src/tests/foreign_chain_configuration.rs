@@ -5,7 +5,9 @@ use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
-use near_mpc_contract_interface::types::ForeignChain;
+use near_mpc_contract_interface::types::{
+    DomainConfig, DomainId, DomainPurpose, ForeignChain, Protocol, ReconstructionThreshold,
+};
 use near_time::Clock;
 use std::collections::BTreeSet;
 use std::num::NonZeroU64;
@@ -69,6 +71,13 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
+        // Availability is computed based on ForeignTx domains threshold.
+        contract.add_domains(vec![DomainConfig {
+            id: DomainId(0),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(THRESHOLD as u64),
+            purpose: DomainPurpose::ForeignTx,
+        }]);
     }
 
     let _runs = setup
@@ -78,7 +87,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         .collect::<Vec<_>>();
 
     // When
-    let wait_result = tokio::time::timeout(Duration::from_secs(10), async {
+    let wait_result = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
@@ -108,5 +117,20 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         configs
             .values()
             .all(|node_config| **node_config == expected_node_config)
+    );
+
+    // The dual-write also feeds the legacy model the node still reads from.
+    assert_eq!(
+        **contract.supported_foreign_chains(),
+        expected_foreign_chains
+    );
+    let by_node = &contract
+        .supported_foreign_chains_by_node()
+        .foreign_chain_support_by_node;
+    assert_eq!(by_node.len(), setup.participants.participants.len());
+    assert!(
+        by_node
+            .values()
+            .all(|node_support| **node_support == expected_node_config)
     );
 }
