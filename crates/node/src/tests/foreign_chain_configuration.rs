@@ -1,5 +1,5 @@
 use crate::p2p::testing::PortSeed;
-use crate::tests::{DEFAULT_BLOCK_TIME, IntegrationTestSetup};
+use crate::tests::{DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup};
 use crate::tracking::AutoAbortTask;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
@@ -87,7 +87,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         .collect::<Vec<_>>();
 
     // When
-    let wait_result = tokio::time::timeout(Duration::from_secs(30), async {
+    let wait_result = tokio::time::timeout(DEFAULT_MAX_PROTOCOL_WAIT_TIME, async {
         loop {
             {
                 let contract = setup.indexer.contract_mut().await;
