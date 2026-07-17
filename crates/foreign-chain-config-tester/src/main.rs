@@ -362,7 +362,7 @@ fn mark_skipped(
     reason: &str,
     out: &mut Vec<ProviderResult>,
 ) {
-    for (name, _) in cfg.providers.iter() {
+    for name in cfg.providers.keys() {
         out.push(ProviderResult::skipped(chain, provider_name(name), reason));
     }
 }

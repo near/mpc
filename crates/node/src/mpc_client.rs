@@ -32,6 +32,7 @@ use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -43,6 +44,7 @@ use tokio::time::{sleep, timeout};
 /// responded to multiple times. It doesn't affect correctness, but can make tests less flaky and
 /// production runs experience fewer redundant signatures/ckds.
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
+
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
@@ -85,6 +87,26 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
         | MpcTaskId::CKDTaskId(_)
         | MpcTaskId::VerifyForeignTxTaskId(_) => false,
     }
+}
+
+async fn run_led_computation<T>(
+    metric: &prometheus::IntCounterVec,
+    deadline: Duration,
+    computation: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    let (outcome_label, result) = match timeout(deadline, computation).await {
+        Ok(Ok(value)) => (metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL, Ok(value)),
+        Ok(Err(error)) => (metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, Err(error)),
+        Err(elapsed) => (
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            Err(elapsed.into()),
+        ),
+    };
+    metric
+        .with_label_values(&[metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL])
+        .inc();
+    metric.with_label_values(&[outcome_label]).inc();
+    result
 }
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
@@ -361,86 +383,12 @@ where
                             .clone();
                         let response = match existing_response {
                             None => {
-                                metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
-                                    ])
-                                    .inc();
-
-                                let response = match this
-                                    .domain_to_protocol
-                                    .get(&signature_attempt.request.domain)
-                                {
-                                    Some(Protocol::CaitSith) => {
-                                        let (signature, public_key) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response =
-                                            contract_args::SignatureRespondArgs::from_ecdsa(
-                                                &signature_attempt.request,
-                                                &signature,
-                                                &public_key,
-                                            )?;
-
-                                        Ok(response)
-                                    }
-                                    Some(Protocol::Frost) => {
-                                        let (signature, _) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.eddsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response =
-                                            contract_args::SignatureRespondArgs::from_eddsa(
-                                                &signature_attempt.request,
-                                                &signature,
-                                            )?;
-
-                                        Ok(response)
-                                    }
-                                    Some(Protocol::ConfidentialKeyDerivation) => {
-                                        Err(anyhow::anyhow!(
-                                            "Incorrect protocol for domain: {:?}",
-                                            signature_attempt.request.domain.clone()
-                                        ))
-                                    }
-                                    Some(Protocol::DamgardEtAl) => {
-                                        let (signature, public_key) = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.robust_ecdsa_signature_provider
-                                                .clone()
-                                                .make_signature(signature_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response =
-                                            contract_args::SignatureRespondArgs::from_ecdsa(
-                                                &signature_attempt.request,
-                                                &signature,
-                                                &public_key,
-                                            )?;
-
-                                        Ok(response)
-                                    }
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        signature_attempt.request.domain.clone()
-                                    )),
-                                }?;
-
-                                metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-                                    ])
-                                    .inc();
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED,
+                                    Duration::from_secs(this.config.signature.timeout_sec),
+                                    this.compute_signature_response(&signature_attempt.request),
+                                )
+                                .await?;
 
                                 signature_attempt
                                     .computation_progress
@@ -482,52 +430,12 @@ where
                             .clone();
                         let response = match existing_response {
                             None => {
-                                metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
-                                    ])
-                                    .inc();
-
-                                let response = match this
-                                    .domain_to_protocol
-                                    .get(&ckd_attempt.request.domain_id)
-                                {
-                                    Some(Protocol::ConfidentialKeyDerivation) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.ckd.timeout_sec),
-                                            this.ckd_provider
-                                                .clone()
-                                                .make_signature(ckd_attempt.request.id),
-                                        )
-                                        .await??;
-
-                                        let response = contract_args::CKDRespondArgs::new(
-                                            (&ckd_attempt.request).into_contract_interface_type(),
-                                            CKDResponse {
-                                                big_y: (&response.0.0).into(),
-                                                big_c: (&response.0.1).into(),
-                                            },
-                                        );
-
-                                        Ok(response)
-                                    }
-                                    Some(Protocol::CaitSith)
-                                    | Some(Protocol::DamgardEtAl)
-                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        ckd_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
-
-                                metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-                                    ])
-                                    .inc();
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_CKD_COMPUTATIONS_LED,
+                                    Duration::from_secs(this.config.ckd.timeout_sec),
+                                    this.compute_ckd_response(&ckd_attempt.request),
+                                )
+                                .await?;
 
                                 ckd_attempt
                                     .computation_progress
@@ -573,52 +481,14 @@ where
                             .clone();
                         let response = match existing_response {
                             None => {
-                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
-                                    ])
-                                    .inc();
-
-                                let response = match this
-                                    .domain_to_protocol
-                                    .get(&verify_foreign_tx_attempt.request.domain_id)
-                                {
-                                    Some(Protocol::CaitSith) => {
-                                        let response = timeout(
-                                            Duration::from_secs(this.config.signature.timeout_sec),
-                                            this.verify_foreign_tx_provider.clone().make_signature(
-                                                verify_foreign_tx_attempt.request.id,
-                                            ),
-                                        )
-                                        .await??;
-
-                                        let payload_hash = response.0.0.compute_msg_hash()?;
-                                        let response = contract_args::VerifyForeignTransactionRespondArgs::from_signature(
-                                            verify_foreign_tx_attempt.request.clone(),
-                                            payload_hash,
-                                            response.0.1,
-                                            response.1,
-                                        )?;
-
-                                        Ok(response)
-                                    }
-                                    Some(Protocol::ConfidentialKeyDerivation)
-                                    | Some(Protocol::DamgardEtAl)
-                                    | Some(Protocol::Frost) => Err(anyhow::anyhow!(
-                                        "Signature scheme is not allowed for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
-                                    )),
-                                    None => Err(anyhow::anyhow!(
-                                        "Signature scheme is not found for domain: {:?}",
-                                        verify_foreign_tx_attempt.request.domain_id.clone()
-                                    )),
-                                }?;
-
-                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
-                                    .with_label_values(&[
-                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
-                                    ])
-                                    .inc();
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
+                                    Duration::from_secs(this.config.signature.timeout_sec),
+                                    this.compute_verify_foreign_tx_response(
+                                        &verify_foreign_tx_attempt.request,
+                                    ),
+                                )
+                                .await?;
 
                                 verify_foreign_tx_attempt
                                     .computation_progress
@@ -646,6 +516,123 @@ where
                     },
                 );
             }
+        }
+    }
+
+    async fn compute_signature_response(
+        &self,
+        request: &SignatureRequest,
+    ) -> anyhow::Result<contract_args::SignatureRespondArgs> {
+        macro_rules! make_signature {
+            ($provider:expr) => {
+                $provider.make_signature(request.id).await?
+            };
+        }
+
+        match self.domain_to_protocol.get(&request.domain) {
+            Some(Protocol::CaitSith) => {
+                let (signature, public_key) = make_signature!(self.ecdsa_signature_provider);
+
+                let response = contract_args::SignatureRespondArgs::from_ecdsa(
+                    request,
+                    &signature,
+                    &public_key,
+                )?;
+
+                Ok(response)
+            }
+            Some(Protocol::Frost) => {
+                let (signature, _) = make_signature!(self.eddsa_signature_provider);
+
+                let response =
+                    contract_args::SignatureRespondArgs::from_eddsa(request, &signature)?;
+
+                Ok(response)
+            }
+            Some(Protocol::ConfidentialKeyDerivation) => Err(anyhow::anyhow!(
+                "Incorrect protocol for domain: {:?}",
+                request.domain
+            )),
+            Some(Protocol::DamgardEtAl) => {
+                let (signature, public_key) = make_signature!(self.robust_ecdsa_signature_provider);
+
+                let response = contract_args::SignatureRespondArgs::from_ecdsa(
+                    request,
+                    &signature,
+                    &public_key,
+                )?;
+
+                Ok(response)
+            }
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.domain
+            )),
+        }
+    }
+
+    async fn compute_ckd_response(
+        &self,
+        request: &CKDRequest,
+    ) -> anyhow::Result<contract_args::CKDRespondArgs> {
+        match self.domain_to_protocol.get(&request.domain_id) {
+            Some(Protocol::ConfidentialKeyDerivation) => {
+                let response = self.ckd_provider.make_signature(request.id).await?;
+
+                let response = contract_args::CKDRespondArgs::new(
+                    request.into_contract_interface_type(),
+                    CKDResponse {
+                        big_y: (&response.0.0).into(),
+                        big_c: (&response.0.1).into(),
+                    },
+                );
+
+                Ok(response)
+            }
+            Some(Protocol::CaitSith) | Some(Protocol::DamgardEtAl) | Some(Protocol::Frost) => {
+                Err(anyhow::anyhow!(
+                    "Signature scheme is not allowed for domain: {:?}",
+                    request.domain_id
+                ))
+            }
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.domain_id
+            )),
+        }
+    }
+
+    async fn compute_verify_foreign_tx_response(
+        &self,
+        request: &VerifyForeignTxRequest,
+    ) -> anyhow::Result<contract_args::VerifyForeignTransactionRespondArgs> {
+        match self.domain_to_protocol.get(&request.domain_id) {
+            Some(Protocol::CaitSith) => {
+                let response = self
+                    .verify_foreign_tx_provider
+                    .make_verify_foreign_tx_leader(request.id)
+                    .await?;
+
+                let payload_hash = response.0.0.compute_msg_hash()?;
+                let response = contract_args::VerifyForeignTransactionRespondArgs::from_signature(
+                    request.clone(),
+                    payload_hash,
+                    response.0.1,
+                    response.1,
+                )?;
+
+                Ok(response)
+            }
+            Some(Protocol::ConfidentialKeyDerivation)
+            | Some(Protocol::DamgardEtAl)
+            | Some(Protocol::Frost) => Err(anyhow::anyhow!(
+                "Signature scheme is not allowed for domain: {:?}",
+                request.domain_id
+            )),
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.domain_id
+            )),
         }
     }
 
@@ -838,5 +825,105 @@ mod tests {
                 "unexpected classification for {task_id:?}",
             );
         }
+    }
+
+    fn led_computations_metric() -> prometheus::IntCounterVec {
+        prometheus::IntCounterVec::new(
+            prometheus::Opts::new("test_computations_led", "test"),
+            &["result"],
+        )
+        .unwrap()
+    }
+
+    fn assert_label_value(metric: &prometheus::IntCounterVec, label: &str, expected: u64) {
+        assert_eq!(
+            metric.with_label_values(&[label]).get(),
+            expected,
+            "unexpected count for result label {label:?}",
+        );
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn run_led_computation__should_record_succeeded_and_total_on_success() {
+        // Given
+        let metric = led_computations_metric();
+
+        // When
+        let result =
+            run_led_computation(&metric, Duration::from_secs(1), async { anyhow::Ok(42) }).await;
+
+        // Then
+        assert_eq!(result.unwrap(), 42);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+            1,
+        );
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            0,
+        );
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn run_led_computation__should_record_failed_and_total_on_error() {
+        // Given
+        let metric = led_computations_metric();
+
+        // When
+        let result: anyhow::Result<u32> = run_led_computation(&metric, Duration::from_secs(1), {
+            async { Err(anyhow::anyhow!("computation failed")) }
+        })
+        .await;
+
+        // Then
+        assert_eq!(result.unwrap_err().to_string(), "computation failed");
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 1);
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+            0,
+        );
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            0,
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn run_led_computation__should_record_deadline_exceeded_and_total_on_timeout() {
+        // Given
+        let metric = led_computations_metric();
+
+        // When
+        let result: anyhow::Result<u32> = run_led_computation(
+            &metric,
+            Duration::ZERO,
+            std::future::pending::<anyhow::Result<u32>>(),
+        )
+        .await;
+
+        // Then
+        result.unwrap_err();
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL,
+            1,
+        );
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL, 1);
+        assert_label_value(
+            &metric,
+            metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+            0,
+        );
+        assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
     }
 }
