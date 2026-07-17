@@ -927,18 +927,13 @@ impl MpcCluster {
             auth_scheme: AuthScheme::None,
             chain_routing: ChainRouting::Embedded,
         };
-        let mut providers = NonEmptyBTreeMap::new(
-            ProviderId("alchemy".to_string()),
-            provider("https://example1.com/v2/"),
-        );
+        let mut providers =
+            NonEmptyBTreeMap::new(ProviderId("alchemy".to_string()), provider("example1.com"));
         providers.insert(
             ProviderId("quicknode".to_string()),
-            provider("https://example2.com/"),
+            provider("example2.com"),
         );
-        providers.insert(
-            ProviderId("public".to_string()),
-            provider("https://example3.com/"),
-        );
+        providers.insert(ProviderId("public".to_string()), provider("example3.com"));
         let placeholder = ChainEntry {
             providers,
             quorum: 1,
