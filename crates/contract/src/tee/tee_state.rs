@@ -1415,18 +1415,18 @@ mod tests {
 
     #[test]
     fn verify_and_store_dstack__should_reject_and_store_nothing_when_post_dcap_checks_fail() {
-        // Given: an empty allowlist, so any Dstack attestation fails the post-DCAP checks.
+        // Given
         let mut tee_state = TeeState::default();
         let Attestation::Dstack(dstack) = mock_dstack_attestation() else {
             panic!("fixture is a Dstack attestation");
         };
         let node_id = node_id_for(&"alice.near".parse().unwrap());
 
-        // When: it is verified and stored.
+        // When
         let result =
             tee_state.verify_and_store_dstack(node_id, &dstack, &verified_report(), Duration::MAX);
 
-        // Then: it is rejected and nothing is stored.
+        // Then
         assert_matches!(
             result,
             Err(AttestationSubmissionError::InvalidAttestation(_))

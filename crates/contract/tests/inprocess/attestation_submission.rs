@@ -290,7 +290,7 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
 /// cannot store an attestation without paying for it.
 #[test]
 fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
-    // Given: a participant whose submission context attaches only 1 yoctoNEAR.
+    // Given
     let mut setup = TestSetupBuilder::new().build();
     let node = setup.get_participant_node_ids()[0].clone();
     let attached_deposit = NearToken::from_yoctonear(1);
@@ -302,7 +302,7 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
             .build()
     );
 
-    // When: that participant submits a valid mock attestation.
+    // When
     let result = setup
         .contract
         .submit_participant_info(
@@ -311,10 +311,7 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
         )
         .map(|_| ());
 
-    // Then: the storage charge rejects it, with the required cost exceeding the attached deposit.
-    // (The mock path stores before charging and relies on the runtime rolling the receipt back on
-    // this Err; that rollback is a chain-level guarantee not modeled by the in-process VM, so we
-    // assert only the error here.)
+    // Then
     assert_matches!(
         &result,
         Err(Error::InvalidParameters(InvalidParameters::InsufficientDeposit { attached, required }))
@@ -325,7 +322,7 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
 /// Test that a `Dstack` submission is rejected when no verifier is configured.
 #[test]
 fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
-    // Given: a running contract with no TEE verifier voted in.
+    // Given
     let mut setup = TestSetupBuilder::new().build();
     let node = setup.get_participant_node_ids()[0].clone();
 

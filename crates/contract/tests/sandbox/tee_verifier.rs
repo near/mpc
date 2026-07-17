@@ -139,7 +139,7 @@ async fn assert_deposit_refunded(
 
 #[tokio::test]
 async fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
-    // Given: no verifier voted in.
+    // Given
     let SandboxTestSetup {
         mpc_signer_accounts,
         contract,
@@ -149,7 +149,7 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
         .build()
         .await;
 
-    // When: a Dstack attestation is submitted.
+    // When
     let result = submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
@@ -181,14 +181,14 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
 
 #[tokio::test]
 async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_rejection() {
-    // Given: a verifier that always rejects.
+    // Given
     let (_worker, contract, submitter, balance_before) =
         setup_with_stub(StubResponse::Rejected("test rejection".to_string()), None).await;
 
-    // When: a Dstack attestation is submitted.
+    // When
     let result = submit_dstack(&submitter, &contract).await;
 
-    // Then: the submission fails cleanly, reporting the verifier's rejection reason.
+    // Then
     assert_submission_failed_cleanly(
         &result,
         &contract,
@@ -207,7 +207,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_on_verifier_cras
     let (_worker, contract, submitter, balance_before) =
         setup_with_stub(StubResponse::Panic, None).await;
 
-    // When: a Dstack attestation is submitted.
+    // When
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: the callback sees a failed promise, resolves to VerifierUnavailable,
@@ -229,7 +229,7 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
     let (_worker, contract, submitter, balance_before) =
         setup_with_stub(StubResponse::Verified(verified_report()), None).await;
 
-    // When: a Dstack attestation is submitted.
+    // When
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: the callback's post-DCAP check rejects the (verified) quote. Asserted inline
@@ -256,12 +256,11 @@ async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap
 #[ignore = "needs fixture allowlist setup to pass the post-DCAP checks; tracked in #3787"]
 #[tokio::test]
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
-    // Given: a verifier that returns the report the real verifier would produce
-    // for the fixture quote.
+    // Given
     let (_worker, contract, submitter, balance_before) =
         setup_with_stub(StubResponse::Verified(verified_report()), None).await;
 
-    // When: a Dstack attestation is submitted.
+    // When
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: every receipt in the verify_quote -> resolve_verification chain
@@ -302,7 +301,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_ver
     let (_worker, contract, submitter, _balance_before) =
         setup_with_stub(StubResponse::Verified(verified_report()), Some(init_config)).await;
 
-    // When: a Dstack attestation is submitted.
+    // When
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: the OOG rolls the whole callback receipt back — the submission is reported
