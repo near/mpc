@@ -194,3 +194,14 @@ contract.
   use the computed $`\texttt{sig} = \texttt{msk} \cdot H(\texttt{pk},\, \texttt{app\_id})`$ to
   compute the key $`s = \texttt{HKDF}(\texttt{sig})`$, using a
   [HKDF](https://en.wikipedia.org/wiki/HKDF) function.
+
+## Test vectors
+
+[`tests/vectors/ckd_test_vectors.json`](../../tests/vectors/ckd_test_vectors.json)
+holds reproducible vectors for both variants, checked by `tests/ckd_test_vectors.rs`;
+encodings are documented in the file's `_encoding` block. Each vector fixes
+$`\texttt{msk}, a`$ and an $`\texttt{app\_id}`$ and records every intermediate
+and final value.
+
+Regenerate with the ignored generator:
+`cargo nextest run -- --ignored generate_ckd_test_vectors`.

@@ -28,6 +28,7 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+test-port-allocator = { workspace = true }
 test-utils = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }

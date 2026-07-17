@@ -15,4 +15,5 @@ mod request_lifecycle;
 mod sigterm_handler;
 mod submit_participant_info;
 mod timeout_metric;
+mod update_participant_url;
 mod web_endpoints;
