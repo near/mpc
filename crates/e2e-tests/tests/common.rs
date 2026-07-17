@@ -15,7 +15,6 @@ use serde_json::json;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Constant-interval retry policy: poll every `POLL_INTERVAL` until `CLUSTER_WAIT_TIMEOUT`.
 pub fn cluster_poll_retry() -> ConstantBuilder {
     ConstantBuilder::default()
         .with_delay(POLL_INTERVAL)
