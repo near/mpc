@@ -8,7 +8,8 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            submit_participant_info_with_deposit, vote_add_launcher_hash, vote_for_hash,
+            submit_participant_info_with_deposit, total_gas_fee, vote_add_launcher_hash,
+            vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -267,26 +268,15 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let submitter = &mpc_signer_accounts[0];
-    let balance_before = submitter.view_account().await?.balance;
-
-    let result = submit_participant_info(
-        submitter,
+    let success = submit_participant_info(
+        &mpc_signer_accounts[0],
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
         &p2p_tls_key().into(),
     )
-    .await?;
-    assert!(result.is_success());
-
-    // The flat fee is consumed (not refunded), so net spend is at least the fee
-    // (the rest is gas). A refund would drop it below the fee.
-    let balance_after = submitter.view_account().await?.balance;
-    let net_spent = balance_before.saturating_sub(balance_after);
-    assert!(
-        net_spent >= SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-        "flat fee must be consumed, not refunded: spent {net_spent}, fee {SUBMIT_PARTICIPANT_INFO_DEPOSIT}"
-    );
+    .await?
+    .is_success();
+    assert!(success);
     Ok(())
 }
 
@@ -1076,13 +1066,9 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_the_fl
         stored.is_some(),
         "the attestation entry should be stored on-chain"
     );
-    // The whole flat fee is consumed (no excess refund); `spent` also covers gas,
-    // so it must be at least the fee.
     let balance_after = outsider.view_account().await?.balance;
-    let spent = balance_before.saturating_sub(balance_after);
-    assert!(
-        spent >= SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-        "caller must be charged the full flat fee ({SUBMIT_PARTICIPANT_INFO_DEPOSIT}), spent {spent}"
-    );
+    let net_spent = balance_before.saturating_sub(balance_after);
+    let non_gas_spent = net_spent.saturating_sub(total_gas_fee(&result));
+    assert_eq!(non_gas_spent, SUBMIT_PARTICIPANT_INFO_DEPOSIT);
     Ok(())
 }
