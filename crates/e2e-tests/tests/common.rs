@@ -15,11 +15,6 @@ use serde_json::json;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-pub fn cluster_poll_retry() -> ConstantBuilder {
-    ConstantBuilder::default()
-        .with_delay(POLL_INTERVAL)
-        .with_max_times((CLUSTER_WAIT_TIMEOUT.as_millis() / POLL_INTERVAL.as_millis()) as usize)
-}
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
@@ -98,12 +93,12 @@ pub async fn must_setup_cluster(
         panic!("expected Running state");
     };
 
+    let whitelist: std::collections::BTreeMap<_, _> = whitelisted_chains
+        .iter()
+        .map(|&chain| (chain, e2e_tests::cluster::placeholder_chain_entry(chain)))
+        .collect();
     cluster
-        .whitelist_foreign_chains(
-            &initial_participant_indices[..threshold],
-            &whitelisted_chains,
-            &e2e_tests::cluster::placeholder_chain_entry(),
-        )
+        .whitelist_foreign_chains(&initial_participant_indices[..threshold], &whitelist)
         .await
         .expect("failed to whitelist foreign chains");
 

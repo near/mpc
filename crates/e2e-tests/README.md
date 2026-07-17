@@ -189,8 +189,9 @@ The returned cluster exposes:
   `send_verify_foreign_transaction`.
 - **Foreign chains:** `view_foreign_chains_supported_by_contract`,
   `view_foreign_chain_configurations`, `view_available_foreign_chains`,
-  `view_foreign_chains_configs`, `register_foreign_chain_config`,
-  `whitelist_foreign_chains`
+  `view_foreign_chains_configs`, `view_allowed_foreign_chain_providers`,
+  `register_foreign_chain_config`, `whitelist_foreign_chains`,
+  `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
 `Drop` kills all running nodes; the temp directory is held via `test_dir` and

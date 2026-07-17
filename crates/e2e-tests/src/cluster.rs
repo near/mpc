@@ -33,6 +33,15 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 // triple/presignature generation past 120 s; the most pressure-sensitive
 // consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
+pub const CLUSTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+pub fn cluster_poll_retry() -> ConstantBuilder {
+    ConstantBuilder::default()
+        .with_delay(CLUSTER_POLL_INTERVAL)
+        .with_max_times(
+            (CLUSTER_WAIT_TIMEOUT.as_millis() / CLUSTER_POLL_INTERVAL.as_millis()) as usize,
+        )
+}
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
 // which costs significantly more than a plain CKD or sign request.
@@ -104,23 +113,46 @@ pub struct ForeignChainsClusterConfig {
     pub whitelisted_chains: BTreeSet<ForeignChain>,
 }
 
-pub fn placeholder_chain_entry() -> ChainEntry {
-    let provider = |base_url: &str| ProviderConfig {
-        base_url: base_url.to_string(),
+pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
+    let chain = format!("{chain:?}").to_lowercase();
+    let provider = |name: &str| ProviderConfig {
+        base_url: format!("{name}.{chain}.example.com"),
         auth_scheme: AuthScheme::None,
         chain_routing: ChainRouting::Embedded,
     };
     let mut providers =
-        NonEmptyBTreeMap::new(ProviderId("alchemy".to_string()), provider("example1.com"));
+        NonEmptyBTreeMap::new(ProviderId(format!("alchemy-{chain}")), provider("alchemy"));
     providers.insert(
-        ProviderId("quicknode".to_string()),
-        provider("example2.com"),
+        ProviderId(format!("quicknode-{chain}")),
+        provider("quicknode"),
     );
-    providers.insert(ProviderId("public".to_string()), provider("example3.com"));
+    providers.insert(ProviderId(format!("public-{chain}")), provider("public"));
     ChainEntry {
         providers,
         quorum: 1,
     }
+}
+
+pub fn build_providers_from_urls(
+    urls: &[String],
+    chain_name: &str,
+) -> NonEmptyBTreeMap<
+    mpc_node_config::foreign_chains::RpcProviderName,
+    mpc_node_config::ForeignChainProviderConfig,
+> {
+    let map: BTreeMap<_, _> = urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let cfg = mpc_node_config::ForeignChainProviderConfig {
+                rpc_url: url.clone(),
+                auth: Default::default(),
+            };
+            (format!("mock-{chain_name}-{i}").into(), cfg)
+        })
+        .collect();
+    map.try_into()
+        .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
 }
 
 /// JSON wire format used for the contract's `init` call.
@@ -933,22 +965,59 @@ impl MpcCluster {
             .await
     }
 
+    pub async fn view_allowed_foreign_chain_providers(
+        &self,
+    ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
+        self.contract
+            .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .await
+    }
+
+    /// Polls until the registered per-node configs equal `expected`.
+    pub async fn wait_for_foreign_chains_registrations(
+        &self,
+        expected: &near_mpc_contract_interface::types::ForeignChainsConfigs,
+    ) -> anyhow::Result<()> {
+        (|| async {
+            let registrations = self.view_foreign_chains_configs().await?;
+            anyhow::ensure!(
+                registrations == *expected,
+                "expected registrations {expected:?}, got {registrations:?}"
+            );
+            Ok(())
+        })
+        .retry(cluster_poll_retry())
+        .await
+    }
+
+    /// Polls until the available-chains view equals `expected`.
+    pub async fn wait_for_available_foreign_chains(
+        &self,
+        expected: &BTreeSet<ForeignChain>,
+    ) -> anyhow::Result<()> {
+        (|| async {
+            let available = self.view_available_foreign_chains().await?;
+            anyhow::ensure!(
+                *available == *expected,
+                "expected available chains {expected:?}, got {available:?}"
+            );
+            Ok(())
+        })
+        .retry(cluster_poll_retry())
+        .await
+    }
+
     pub async fn whitelist_foreign_chains(
         &self,
         participant_indices: &[usize],
-        chains: &BTreeSet<ForeignChain>,
-        entry: &ChainEntry,
+        chains: &BTreeMap<ForeignChain, ChainEntry>,
     ) -> anyhow::Result<()> {
         if chains.is_empty() {
             return Ok(());
         }
 
-        let batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> = chains
-            .iter()
-            .map(|&chain| (chain, entry.clone()))
-            .collect::<BTreeMap<_, _>>()
-            .try_into()
-            .expect("non-empty: checked above");
+        let batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
+            chains.clone().try_into().expect("non-empty: checked above");
 
         for &idx in participant_indices {
             let client = self

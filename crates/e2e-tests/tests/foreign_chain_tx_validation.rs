@@ -4,12 +4,11 @@ use std::num::NonZeroU64;
 use crate::common;
 
 use anyhow::{Context, bail};
-use backon::Retryable;
+use e2e_tests::cluster::{build_providers_from_urls, placeholder_chain_entry};
 use e2e_tests::foreign_chain_mock::{
     MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
 use httpmock::prelude::*;
-use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };
@@ -53,25 +52,6 @@ struct MockServerUrls {
     arbitrum: String,
     hyper_evm: String,
     polygon: Vec<String>,
-}
-
-fn build_providers_from_urls(
-    urls: &[String],
-    chain_name: &str,
-) -> NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig> {
-    let map: BTreeMap<_, _> = urls
-        .iter()
-        .enumerate()
-        .map(|(i, url)| {
-            let cfg = ForeignChainProviderConfig {
-                rpc_url: url.clone(),
-                auth: Default::default(),
-            };
-            (format!("mock-{chain_name}-{i}").into(), cfg)
-        })
-        .collect();
-    map.try_into()
-        .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
 }
 
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
@@ -275,30 +255,33 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         })
         .await;
 
-    (|| async {
-        let available = cluster
-            .view_available_foreign_chains()
-            .await
-            .context("failed to view available chains")?;
-        anyhow::ensure!(
-            *available == expected_chains,
-            "expected available chains {expected_chains:?}, got {available:?}"
-        );
-        // The nodes dual-write, so the legacy view must stay in lockstep until
-        // the deprecated API is dropped.
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
-            .await
-            .context("failed to view supported chains")?;
-        anyhow::ensure!(
-            *supported == expected_chains,
-            "expected supported chains {expected_chains:?}, got {supported:?}"
-        );
-        Ok(())
-    })
-    .retry(common::cluster_poll_retry())
-    .await
-    .context("timed out waiting for all chains to become available")?;
+    cluster
+        .wait_for_available_foreign_chains(&expected_chains)
+        .await
+        .context("timed out waiting for all chains to become available")?;
+
+    // The nodes dual-write, so the legacy view must stay in lockstep until
+    // the deprecated API is dropped.
+    let supported = cluster
+        .view_foreign_chains_supported_by_contract()
+        .await
+        .context("failed to view supported chains")?;
+    anyhow::ensure!(
+        *supported == expected_chains,
+        "expected supported chains {expected_chains:?}, got {supported:?}"
+    );
+    let allowed = cluster
+        .view_allowed_foreign_chain_providers()
+        .await
+        .context("failed to view allowed foreign chain providers")?;
+    let expected_allowed: BTreeMap<_, _> = expected_chains
+        .iter()
+        .map(|&chain| (chain, placeholder_chain_entry(chain)))
+        .collect();
+    anyhow::ensure!(
+        allowed == expected_allowed,
+        "expected allowed providers {expected_allowed:?}, got {allowed:?}"
+    );
 
     let state = cluster
         .get_contract_state()
