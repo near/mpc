@@ -815,6 +815,7 @@ pub mod testing {
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
     };
+    use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::primitives::{MpcPeerMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId};
     use crate::tracking;
     use std::collections::{HashMap, HashSet};
@@ -963,9 +964,7 @@ pub mod testing {
         let channels = Arc::new(std::sync::Mutex::new(
             super::NetworkTaskChannelManager::new(),
         ));
-        let indexer_heights = Arc::new(crate::network::indexer_heights::IndexerHeightTracker::new(
-            &participants,
-        ));
+        let indexer_heights = Arc::new(IndexerHeightTracker::new(&participants));
         Arc::new(super::MeshNetworkClient::new(
             transport,
             channels,
