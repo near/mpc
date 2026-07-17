@@ -75,7 +75,7 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
-    let whitelisted_chains = config.whitelisted_chains.clone();
+    let whitelisted_chains = config.foreign_chains.whitelisted_chains.clone();
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
@@ -92,7 +92,11 @@ pub async fn must_setup_cluster(
     };
 
     cluster
-        .whitelist_foreign_chains(&initial_participant_indices, &whitelisted_chains)
+        .whitelist_foreign_chains(
+            &initial_participant_indices,
+            &whitelisted_chains,
+            &e2e_tests::cluster::placeholder_chain_entry(),
+        )
         .await
         .expect("failed to whitelist foreign chains");
 

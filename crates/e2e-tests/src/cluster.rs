@@ -85,9 +85,6 @@ pub struct MpcClusterConfig {
     /// An empty vec means all nodes are participants. Set to a subset to start
     /// extra non-participant nodes (useful for resharing and attestation tests).
     pub initial_participant_indices: Vec<usize>,
-    /// Per-node foreign chains configuration. If empty, all nodes get the default
-    /// (empty) config. If non-empty, must have exactly `num_nodes` entries.
-    pub node_foreign_chains_configs: Vec<mpc_node_config::ForeignChainsConfig>,
     /// Migration targets: each entry is a source node index. The i-th entry
     /// produces a target node at index `num_nodes + i` that shares the
     /// source's NEAR account but gets a distinct P2P key. Started with the
@@ -96,7 +93,38 @@ pub struct MpcClusterConfig {
     pub migration_targets: Vec<usize>,
     /// Wire format used when calling `init`. See [`ContractInitFormat`].
     pub init_format: ContractInitFormat,
+    pub foreign_chains: ForeignChainsClusterConfig,
+}
+
+/// Foreign-chain feature configuration for the cluster.
+#[derive(Default)]
+pub struct ForeignChainsClusterConfig {
+    /// Per-node configs. If empty, all nodes get the default (empty) config;
+    /// if non-empty, must have exactly `num_nodes` entries.
+    pub node_configs: Vec<mpc_node_config::ForeignChainsConfig>,
+    /// Chains whitelisted during cluster setup via a threshold vote.
     pub whitelisted_chains: BTreeSet<ForeignChain>,
+}
+
+/// Whitelist entry for tests where only whitelist membership matters; the
+/// provider content is never contacted.
+pub fn placeholder_chain_entry() -> ChainEntry {
+    let provider = |base_url: &str| ProviderConfig {
+        base_url: base_url.to_string(),
+        auth_scheme: AuthScheme::None,
+        chain_routing: ChainRouting::Embedded,
+    };
+    let mut providers =
+        NonEmptyBTreeMap::new(ProviderId("alchemy".to_string()), provider("example1.com"));
+    providers.insert(
+        ProviderId("quicknode".to_string()),
+        provider("example2.com"),
+    );
+    providers.insert(ProviderId("public".to_string()), provider("example3.com"));
+    ChainEntry {
+        providers,
+        quorum: 1,
+    }
 }
 
 /// JSON wire format used for the contract's `init` call.
@@ -164,10 +192,9 @@ impl MpcClusterConfig {
             sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
-            node_foreign_chains_configs: vec![],
             migration_targets: vec![],
             init_format: ContractInitFormat::Current,
-            whitelisted_chains: BTreeSet::new(),
+            foreign_chains: ForeignChainsClusterConfig::default(),
         }
     }
 
@@ -916,30 +943,15 @@ impl MpcCluster {
         &self,
         participant_indices: &[usize],
         chains: &BTreeSet<ForeignChain>,
+        entry: &ChainEntry,
     ) -> anyhow::Result<()> {
         if chains.is_empty() {
             return Ok(());
         }
-        let provider = |base_url: &str| ProviderConfig {
-            base_url: base_url.to_string(),
-            auth_scheme: AuthScheme::None,
-            chain_routing: ChainRouting::Embedded,
-        };
-        let mut providers =
-            NonEmptyBTreeMap::new(ProviderId("alchemy".to_string()), provider("example1.com"));
-        providers.insert(
-            ProviderId("quicknode".to_string()),
-            provider("example2.com"),
-        );
-        providers.insert(ProviderId("public".to_string()), provider("example3.com"));
-        let placeholder = ChainEntry {
-            providers,
-            quorum: 1,
-        };
 
         let batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> = chains
             .iter()
-            .map(|&chain| (chain, placeholder.clone()))
+            .map(|&chain| (chain, entry.clone()))
             .collect::<BTreeMap<_, _>>()
             .try_into()
             .expect("non-empty: checked above");
@@ -1360,10 +1372,10 @@ fn start_mpc_nodes(
             config.binary_paths[i].clone()
         };
 
-        let foreign_chains_config = if config.node_foreign_chains_configs.is_empty() {
+        let foreign_chains_config = if config.foreign_chains.node_configs.is_empty() {
             Default::default()
         } else {
-            config.node_foreign_chains_configs[i].clone()
+            config.foreign_chains.node_configs[i].clone()
         };
 
         let setup = MpcNodeSetup::new(MpcNodeSetupArgs {

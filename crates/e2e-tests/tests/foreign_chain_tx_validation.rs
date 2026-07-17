@@ -271,8 +271,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::ForeignTx,
             }];
-            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
-            c.whitelisted_chains = expected_chains.clone();
+            c.foreign_chains.node_configs = vec![fc_config.clone(), fc_config];
+            c.foreign_chains.whitelisted_chains = expected_chains.clone();
         })
         .await;
 

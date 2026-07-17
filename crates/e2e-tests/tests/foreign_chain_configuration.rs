@@ -52,7 +52,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
     // given — 3-node cluster with foreign chains on nodes 0 and 1 only
     let (cluster, _running) =
         common::must_setup_cluster(common::FOREIGN_CHAIN_POLICY_PORT_SEED, |c| {
-            c.node_foreign_chains_configs = vec![
+            c.foreign_chains.node_configs = vec![
                 solana_foreign_chains_config(), // node 0
                 solana_foreign_chains_config(), // node 1
                 ForeignChainsConfig::default(), // node 2 — no foreign chains
@@ -159,7 +159,7 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::ForeignTx,
             }];
-            c.node_foreign_chains_configs = vec![
+            c.foreign_chains.node_configs = vec![
                 solana_foreign_chains_config(), // node 0
                 solana_foreign_chains_config(), // node 1
                 ForeignChainsConfig::default(), // node 2 — no foreign chains
@@ -207,7 +207,11 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
 
     // when — the participants whitelist Solana.
     cluster
-        .whitelist_foreign_chains(&[0, 1, 2], &BTreeSet::from([ForeignChain::Solana]))
+        .whitelist_foreign_chains(
+            &[0, 1, 2],
+            &BTreeSet::from([ForeignChain::Solana]),
+            &e2e_tests::cluster::placeholder_chain_entry(),
+        )
         .await
         .expect("failed to whitelist Solana");
 
