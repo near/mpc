@@ -97,27 +97,23 @@ pub fn near_account_key() -> near_sdk::PublicKey {
     key_file.parse().expect("File contains a valid public key")
 }
 
-pub fn mock_dstack_attestation() -> Attestation {
+pub fn mock_dstack_attestation_inner() -> DstackAttestation {
     let quote = quote();
     let collateral = mpc_attestation::collateral::collateral_from_str(TEST_COLLATERAL_STRING)
         .expect("collateral.json is valid collateral");
-
     let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+    DstackAttestation::new(quote, collateral, tcb_info)
+}
 
-    Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
+pub fn mock_dstack_attestation() -> Attestation {
+    Attestation::Dstack(mock_dstack_attestation_inner())
 }
 
 /// The [`VerifiedReport`] the real `tee-verifier` would return for the fixture
 /// quote, produced by running the DCAP step at [`VALID_ATTESTATION_TIMESTAMP`]
 /// (when the fixture collateral is valid).
 pub fn verified_report() -> VerifiedReport {
-    let dstack = DstackAttestation::new(
-        quote(),
-        mpc_attestation::collateral::collateral_from_str(TEST_COLLATERAL_STRING)
-            .expect("collateral.json is valid collateral"),
-        serde_json::from_str(TEST_TCB_INFO_STRING).unwrap(),
-    );
-    dstack
+    mock_dstack_attestation_inner()
         .verify_dcap_quote(VALID_ATTESTATION_TIMESTAMP)
         .expect("fixture quote verifies at VALID_ATTESTATION_TIMESTAMP")
 }

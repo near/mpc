@@ -31,6 +31,13 @@ use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
 /// success and fully refunded on failure.
 const SUBMIT_DEPOSIT: NearToken = SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 
+async fn setup() -> SandboxTestSetup {
+    SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await
+}
+
 /// Votes `verifier` in as `mpc-contract`'s trusted verifier (all participants vote
 /// so the change crosses threshold).
 async fn trust_verifier(contract: &Contract, participants: &[Account], verifier: &AccountId) {
@@ -112,10 +119,7 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
         mpc_signer_accounts,
         contract,
         ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
+    } = setup().await;
 
     // When
     let result = submit_participant_info(
@@ -155,10 +159,7 @@ async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_re
         mpc_signer_accounts,
         contract,
         ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
+    } = setup().await;
     deploy_and_trust_verifier(&worker, &contract, &mpc_signer_accounts).await;
     let submitter = mpc_signer_accounts[0].clone();
     let balance_before = submitter.view_account().await.unwrap().balance;
@@ -199,10 +200,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
         mpc_signer_accounts,
         contract,
         ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
+    } = setup().await;
     let missing_verifier: AccountId = "nonexistent-verifier.near".parse().unwrap();
     trust_verifier(&contract, &mpc_signer_accounts, &missing_verifier).await;
     let submitter = mpc_signer_accounts[0].clone();

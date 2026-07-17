@@ -249,26 +249,12 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
         .expect("victim attestation should be stored");
 
     // When: an unrelated account submits an attestation that targets the victim's TLS key.
-    // The attacker context attaches a deposit large enough to cover any storage charge,
-    // so the call can only fail due to the ownership check — not `InsufficientDeposit`.
     let attacker_node = create_node_id(
         &"attacker.near".parse().unwrap(),
         &victim_node.tls_public_key,
     );
-    testing_env!(
-        VMContextBuilder::new()
-            .signer_account_id(attacker_node.account_id.clone())
-            .predecessor_account_id(attacker_node.account_id.clone())
-            .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
-            .build()
-    );
     let attack_result = setup
-        .contract
-        .submit_participant_info(
-            Attestation::Mock(MockAttestation::Valid),
-            attacker_node.tls_public_key.clone(),
-        )
-        .map(|_| ());
+        .try_submit_attestation_for_node(&attacker_node, Attestation::Mock(MockAttestation::Valid));
 
     // Then: the contract rejects the call with the TLS-ownership error and the victim's
     // entry is unchanged.

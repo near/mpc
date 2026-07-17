@@ -579,9 +579,9 @@ mod tests {
         authenticate_as, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
         gen_participant, gen_participants, node_id_for,
     };
-    use crate::tee::test_utils::set_block_timestamp;
+    use crate::tee::test_utils::{set_block_timestamp, whitelist_dstack_measurements};
     use assert_matches::assert_matches;
-    use mpc_attestation::attestation::{Attestation, MockAttestation, default_measurements};
+    use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
@@ -589,7 +589,7 @@ mod tests {
     use std::time::Duration;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
-        mock_dstack_attestation, p2p_tls_key, verified_report,
+        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
     };
 
     /// Helper to set up the testing environment with a specific signer
@@ -1420,9 +1420,7 @@ mod tests {
     fn verify_and_store_dstack__should_reject_and_store_nothing_when_post_dcap_checks_fail() {
         // Given
         let mut tee_state = TeeState::default();
-        let Attestation::Dstack(dstack) = mock_dstack_attestation() else {
-            panic!("fixture is a Dstack attestation");
-        };
+        let dstack = mock_dstack_attestation_inner();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
 
         // When
@@ -1443,20 +1441,13 @@ mod tests {
         set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
         let mut tee_state = TeeState::default();
         assert_eq!(tee_state.stored_attestations.len(), 0);
-        tee_state.whitelist_tee_proposal(image_digest(), Duration::MAX);
-        tee_state.add_launcher_image(launcher_image_hash(), Duration::MAX);
-        for &measurements in default_measurements() {
-            tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
-        }
-        // NodeId keys must match what the fixture quote's report_data binds.
+        whitelist_dstack_measurements(&mut tee_state, image_digest(), launcher_image_hash());
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
             account_public_key: Ed25519PublicKey(account_key()),
         };
-        let Attestation::Dstack(dstack) = mock_dstack_attestation() else {
-            panic!("fixture is a Dstack attestation");
-        };
+        let dstack = mock_dstack_attestation_inner();
 
         // When
         let result = tee_state.verify_and_store_dstack(
