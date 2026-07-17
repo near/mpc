@@ -4,8 +4,7 @@ use std::num::NonZeroU64;
 use crate::common;
 
 use anyhow::{Context, bail};
-use backon::{ConstantBuilder, Retryable};
-use e2e_tests::CLUSTER_WAIT_TIMEOUT;
+use backon::Retryable;
 use e2e_tests::foreign_chain_mock::{
     MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
@@ -281,13 +280,9 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             .view_available_foreign_chains()
             .await
             .context("failed to view available chains")?;
-        let available_set: std::collections::BTreeSet<ForeignChain> =
-            available.iter().copied().collect();
         anyhow::ensure!(
-            available_set == expected_chains,
-            "expected available chains {:?}, got {:?}",
-            expected_chains,
-            available_set
+            *available == expected_chains,
+            "expected available chains {expected_chains:?}, got {available:?}"
         );
         // The nodes dual-write, so the legacy view must stay in lockstep until
         // the deprecated API is dropped.
@@ -295,23 +290,13 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
             .view_foreign_chains_supported_by_contract()
             .await
             .context("failed to view supported chains")?;
-        let supported_set: std::collections::BTreeSet<ForeignChain> =
-            supported.iter().copied().collect();
         anyhow::ensure!(
-            supported_set == expected_chains,
-            "expected supported chains {:?}, got {:?}",
-            expected_chains,
-            supported_set
+            *supported == expected_chains,
+            "expected supported chains {expected_chains:?}, got {supported:?}"
         );
         Ok(())
     })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
+    .retry(common::cluster_poll_retry())
     .await
     .context("timed out waiting for all chains to become available")?;
 

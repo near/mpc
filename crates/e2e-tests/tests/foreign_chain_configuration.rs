@@ -1,15 +1,14 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use crate::common;
 
-use backon::{ConstantBuilder, Retryable};
-use e2e_tests::CLUSTER_WAIT_TIMEOUT;
+use backon::Retryable;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, ForeignChain, Protocol, ReconstructionThreshold,
-    SupportedForeignChains,
+    DomainConfig, DomainId, DomainPurpose, ForeignChain, ForeignChainsConfigs, Protocol,
+    ReconstructionThreshold, SupportedForeignChains,
 };
 
 const SOLANA_PROVIDER_NAME: &str = "public";
@@ -89,13 +88,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
         );
         Ok(())
     })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
+    .retry(common::cluster_poll_retry())
     .await
     .expect("timed out waiting for all three registrations with one empty");
 
@@ -123,13 +116,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
         );
         Ok(())
     })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
+    .retry(common::cluster_poll_retry())
     .await
     .expect("timed out waiting for Solana to be reported as supported");
 }
@@ -169,6 +156,18 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
 
     // when — wait for all three nodes to register (one with an empty
     // configuration) without Solana becoming available.
+    let expected_registrations: ForeignChainsConfigs = BTreeMap::from([
+        (
+            cluster.nodes[0].p2p_public_key(),
+            BTreeSet::from([ForeignChain::Solana]).into(),
+        ),
+        (
+            cluster.nodes[1].p2p_public_key(),
+            BTreeSet::from([ForeignChain::Solana]).into(),
+        ),
+        (cluster.nodes[2].p2p_public_key(), BTreeSet::new().into()),
+    ])
+    .into();
     (|| async {
         let registrations = cluster
             .view_foreign_chains_configs()
@@ -180,28 +179,16 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
             .expect("failed to view available chains");
 
         anyhow::ensure!(
-            registrations.len() == 3,
-            "expected exactly 3 registrations, got {}",
-            registrations.len()
-        );
-        let empty_registrations = registrations.values().filter(|c| c.is_empty()).count();
-        anyhow::ensure!(
-            empty_registrations == 1,
-            "expected exactly 1 empty registration (node 2), got {empty_registrations}"
+            registrations == expected_registrations,
+            "unexpected registrations: {registrations:?}"
         );
         anyhow::ensure!(
-            !available.contains(&ForeignChain::Solana),
-            "Solana must not be available before it is whitelisted"
+            available.is_empty(),
+            "no chain must be available before whitelisting, got {available:?}"
         );
         Ok(())
     })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
+    .retry(common::cluster_poll_retry())
     .await
     .expect("timed out waiting for all three registrations with one empty");
 
@@ -223,18 +210,12 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
             .expect("failed to view available chains");
 
         anyhow::ensure!(
-            available.contains(&ForeignChain::Solana),
-            "Solana should be available once whitelisted and registered by a threshold of nodes"
+            *available == BTreeSet::from([ForeignChain::Solana]),
+            "expected exactly [Solana] to be available, got {available:?}"
         );
         Ok(())
     })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
+    .retry(common::cluster_poll_retry())
     .await
     .expect("timed out waiting for Solana to become available");
 }
