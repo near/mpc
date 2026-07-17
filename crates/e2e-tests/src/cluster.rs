@@ -133,28 +133,6 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
     }
 }
 
-pub fn build_providers_from_urls(
-    urls: &[String],
-    chain_name: &str,
-) -> NonEmptyBTreeMap<
-    mpc_node_config::foreign_chains::RpcProviderName,
-    mpc_node_config::ForeignChainProviderConfig,
-> {
-    let map: BTreeMap<_, _> = urls
-        .iter()
-        .enumerate()
-        .map(|(i, url)| {
-            let cfg = mpc_node_config::ForeignChainProviderConfig {
-                rpc_url: url.clone(),
-                auth: Default::default(),
-            };
-            (format!("mock-{chain_name}-{i}").into(), cfg)
-        })
-        .collect();
-    map.try_into()
-        .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
-}
-
 /// JSON wire format used for the contract's `init` call.
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to

@@ -4,7 +4,7 @@ use std::num::NonZeroU64;
 use crate::common;
 
 use anyhow::{Context, bail};
-use e2e_tests::cluster::{build_providers_from_urls, placeholder_chain_entry};
+use e2e_tests::cluster::placeholder_chain_entry;
 use e2e_tests::foreign_chain_mock::{
     MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
@@ -152,7 +152,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
         polygon: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            providers: build_providers_from_urls(&urls.polygon, "polygon"),
+            providers: common::build_providers_from_urls(&urls.polygon, "polygon"),
         }),
         ..Default::default()
     }
