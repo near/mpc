@@ -1,6 +1,6 @@
 use crate::common::{
     REQUEST_DURING_RESHARING_PORT_SEED, damgard_etal_domain, generate_ckd_app_public_key,
-    must_get_domain, must_setup_cluster, sign_all_schemes,
+    must_get_domain, must_setup_cluster, sign_all_domains,
 };
 use near_mpc_contract_interface::types::{Protocol, ProtocolContractState};
 
@@ -47,7 +47,7 @@ async fn test_request_during_resharing() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
     for i in 0..3 {
         tracing::info!(i, "sending sign requests during resharing");
-        sign_all_schemes(&cluster, &contract_state, &mut rng).await;
+        sign_all_domains(&cluster, &contract_state, &mut rng).await;
 
         tracing::info!(i, "sending CKD request during resharing");
         let outcome = cluster

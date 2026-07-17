@@ -441,19 +441,21 @@ pub async fn send_sign_request(
     Ok(())
 }
 
-/// Sign with every scheme in `running`, asserting each request succeeds.
-pub async fn sign_all_schemes(
+/// Sign with every signing domain in `running` (including duplicates), asserting
+/// each request succeeds.
+pub async fn sign_all_domains(
     cluster: &MpcCluster,
     running: &RunningContractState,
     rng: &mut impl rand::Rng,
 ) {
-    for (label, protocol) in [
-        ("ECDSA", Protocol::CaitSith),
-        ("Damgard et al", Protocol::DamgardEtAl),
-        ("EdDSA", Protocol::Frost),
-    ] {
-        let domain = must_get_domain(running, protocol);
-        let payload = match Curve::from(protocol) {
+    let sign_domains = running
+        .domains
+        .domains
+        .iter()
+        .filter(|d| d.purpose == DomainPurpose::Sign);
+
+    for domain in sign_domains {
+        let payload = match Curve::from(domain.protocol) {
             Curve::Edwards25519 => generate_eddsa_payload(rng),
             _ => generate_ecdsa_payload(rng),
         };
@@ -463,7 +465,9 @@ pub async fn sign_all_schemes(
             .expect("sign request failed");
         assert!(
             outcome.is_success(),
-            "{label} sign request failed: {:?}",
+            "sign request for domain {:?} (protocol {:?}) failed: {:?}",
+            domain.id,
+            domain.protocol,
             outcome.failure_message()
         );
     }
