@@ -581,13 +581,16 @@ mod tests {
     };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
-    use mpc_attestation::attestation::{Attestation, MockAttestation};
+    use mpc_attestation::attestation::{Attestation, MockAttestation, default_measurements};
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
-    use test_utils::attestation::{mock_dstack_attestation, verified_report};
+    use test_utils::attestation::{
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
+        mock_dstack_attestation, p2p_tls_key, verified_report,
+    };
 
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
@@ -1432,6 +1435,45 @@ mod tests {
             Err(AttestationSubmissionError::InvalidAttestation(_))
         );
         assert!(tee_state.stored_attestations.is_empty());
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
+        // Given
+        set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
+        let mut tee_state = TeeState::default();
+        assert_eq!(tee_state.stored_attestations.len(), 0);
+        tee_state.whitelist_tee_proposal(image_digest(), Duration::MAX);
+        tee_state.add_launcher_image(launcher_image_hash(), Duration::MAX);
+        for &measurements in default_measurements() {
+            tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
+        }
+        // NodeId keys must match what the fixture quote's report_data binds.
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
+            account_public_key: Ed25519PublicKey(account_key()),
+        };
+        let Attestation::Dstack(dstack) = mock_dstack_attestation() else {
+            panic!("fixture is a Dstack attestation");
+        };
+
+        // When
+        let result = tee_state.verify_and_store_dstack(
+            node_id.clone(),
+            &dstack,
+            &verified_report(),
+            Duration::MAX,
+        );
+
+        // Then
+        assert_matches!(result, Ok(ParticipantInsertion::NewlyInsertedParticipant));
+        assert_eq!(tee_state.stored_attestations.len(), 1);
+        let stored = tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_eq!(stored.node_id, node_id);
     }
 
     /// Stale CodeHashesVotes entries from removed participants must not count toward

@@ -1,19 +1,18 @@
-//! Sandbox tests for the async [`submit_participant_info`] flow that offloads DCAP
-//! verification to a separate tee-verifier contract.
+//! Sandbox tests for the async [`submit_participant_info`] flow, driving the real
+//! `tee-verifier` (or no verifier):
+//! - Rejected: real verifier with a malformed quote.
+//! - Unavailable: a verifier account that was never deployed.
 //!
-//! Each test deploys the `test-tee-verifier` stub (returning a picked response
-//! instead of running real `dcap-qvl`), votes it in as the trusted verifier, and
-//! covers one branch of the promise chain: a Dstack submission spawns `verify_quote`
-//! with [`MpcContract::resolve_verification`] chained as its callback, which settles
-//! every outcome synchronously. When a submission fails, the top-level `submit` tx still
-//! succeeds (it returned the chained promise); the error appears on one of the receipts.
+//! The Verified verdict is covered in-process instead (`verify_and_store_dstack` under
+//! a pinned clock): real `verify_quote` checks the quote against live block time, and the
+//! sandbox clock can't be wound back to the fixture's validity window.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
         consts::{ALL_PROTOCOLS, SUBMIT_PARTICIPANT_INFO_DEPOSIT},
-        contract_build::stub_tee_verifier_contract,
+        contract_build::tee_verifier_contract,
         mpc_contract::{
             get_participant_attestation, submit_participant_info,
             submit_participant_info_with_deposit, total_gas_fee, vote_tee_verifier_change,
@@ -23,64 +22,33 @@ use crate::sandbox::{
 use mpc_contract::errors::TeeError;
 use near_mpc_contract_interface::types as dtos;
 use near_workspaces::{
-    Account, Contract, Worker, network::Sandbox, result::ExecutionFinalResult, types::NearToken,
+    Account, AccountId, Contract, Worker, network::Sandbox, result::ExecutionFinalResult,
+    types::NearToken,
 };
-use test_tee_verifier_types::StubResponse;
-use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key, verified_report};
+use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
 
 /// Deposit attached to a Dstack submission: the flat storage fee, consumed on
 /// success and fully refunded on failure.
 const SUBMIT_DEPOSIT: NearToken = SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 
-/// Deploys the stub verifier with the given response, initializes it, and votes
-/// it in as `mpc-contract`'s trusted verifier (all participants vote so the
-/// change crosses threshold).
-async fn deploy_and_trust_stub(
-    worker: &Worker<Sandbox>,
-    contract: &Contract,
-    participants: &[Account],
-    response: StubResponse,
-) {
-    let stub = worker
-        .dev_deploy(stub_tee_verifier_contract())
-        .await
-        .unwrap();
-    stub.call("new")
-        .args_borsh(response)
-        .transact()
-        .await
-        .unwrap()
-        .into_result()
-        .unwrap();
-
-    // Unchecked against the stub; voters just need to agree on the same hash.
+/// Votes `verifier` in as `mpc-contract`'s trusted verifier (all participants vote
+/// so the change crosses threshold).
+async fn trust_verifier(contract: &Contract, participants: &[Account], verifier: &AccountId) {
     let expected_code_hash = [7u8; 32];
     for account in participants {
-        vote_tee_verifier_change(account, contract, stub.id(), expected_code_hash)
+        vote_tee_verifier_change(account, contract, verifier, expected_code_hash)
             .await
             .unwrap();
     }
 }
 
-async fn setup_with_stub(
-    response: StubResponse,
-    init_config: Option<dtos::InitConfig>,
-) -> (Worker<Sandbox>, Contract, Account, NearToken) {
-    let mut builder = SandboxTestSetup::builder().with_protocols(ALL_PROTOCOLS);
-    if let Some(init_config) = init_config {
-        builder = builder.with_init_config(init_config);
-    }
-    let SandboxTestSetup {
-        worker,
-        mpc_signer_accounts,
-        contract,
-        ..
-    } = builder.build().await;
-    deploy_and_trust_stub(&worker, &contract, &mpc_signer_accounts, response).await;
-
-    let submitter = mpc_signer_accounts[0].clone();
-    let balance_before = submitter.view_account().await.unwrap().balance;
-    (worker, contract, submitter, balance_before)
+async fn deploy_and_trust_verifier(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    participants: &[Account],
+) {
+    let verifier = worker.dev_deploy(tee_verifier_contract()).await.unwrap();
+    trust_verifier(contract, participants, verifier.id()).await;
 }
 
 async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
@@ -182,8 +150,63 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
 #[tokio::test]
 async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_rejection() {
     // Given
-    let (_worker, contract, submitter, balance_before) =
-        setup_with_stub(StubResponse::Rejected("test rejection".to_string()), None).await;
+    let SandboxTestSetup {
+        worker,
+        mpc_signer_accounts,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    deploy_and_trust_verifier(&worker, &contract, &mpc_signer_accounts).await;
+    let submitter = mpc_signer_accounts[0].clone();
+    let balance_before = submitter.view_account().await.unwrap().balance;
+    let mut attestation = mock_dto_dstack_attestation();
+    let dtos::Attestation::Dstack(dstack) = &mut attestation else {
+        panic!("fixture must be a Dstack attestation");
+    };
+    dstack.quote = dtos::HexVec(vec![0u8; 16]);
+
+    // When
+    let result = submit_participant_info_with_deposit(
+        &submitter,
+        &contract,
+        &attestation,
+        &p2p_tls_key().into(),
+        SUBMIT_DEPOSIT,
+    )
+    .await
+    .unwrap();
+
+    // Then
+    assert_submission_failed_cleanly(
+        &result,
+        &contract,
+        &submitter,
+        balance_before,
+        &TeeError::QuoteRejected {
+            reason: String::new(),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_unreachable() {
+    // Given: a verifier account that was never deployed, so the verify_quote promise fails.
+    let SandboxTestSetup {
+        mpc_signer_accounts,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let missing_verifier: AccountId = "nonexistent-verifier.near".parse().unwrap();
+    trust_verifier(&contract, &mpc_signer_accounts, &missing_verifier).await;
+    let submitter = mpc_signer_accounts[0].clone();
+    let balance_before = submitter.view_account().await.unwrap().balance;
 
     // When
     let result = submit_dstack(&submitter, &contract).await;
@@ -194,129 +217,7 @@ async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_re
         &contract,
         &submitter,
         balance_before,
-        &TeeError::QuoteRejected {
-            reason: "dcap verification failed: test rejection".to_string(),
-        },
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn submit_participant_info__should_fail_and_store_nothing_on_verifier_crash() {
-    // Given: a verifier that panics, so the verify_quote promise fails.
-    let (_worker, contract, submitter, balance_before) =
-        setup_with_stub(StubResponse::Panic, None).await;
-
-    // When
-    let result = submit_dstack(&submitter, &contract).await;
-
-    // Then: the callback sees a failed promise, resolves to VerifierUnavailable,
-    // refunds, and fails the submission in a separate receipt.
-    assert_submission_failed_cleanly(
-        &result,
-        &contract,
-        &submitter,
-        balance_before,
         &TeeError::VerifierUnavailable,
     )
     .await;
-}
-
-#[tokio::test]
-async fn submit_participant_info__should_refund_and_store_nothing_when_post_dcap_checks_fail() {
-    // Given: a verifier that returns Verified, but an empty allowed-hash set, so the
-    // post-DCAP checks in resolve_verification reject the (genuinely verified) quote.
-    let (_worker, contract, submitter, balance_before) =
-        setup_with_stub(StubResponse::Verified(verified_report()), None).await;
-
-    // When
-    let result = submit_dstack(&submitter, &contract).await;
-
-    // Then: the callback's post-DCAP check rejects the (verified) quote. Asserted inline
-    // rather than via assert_submission_failed_cleanly since the error is not a TeeError.
-    let failures = result.failures();
-    assert!(
-        !failures.is_empty(),
-        "expected the promise chain to fail on a receipt, got: {result:#?}"
-    );
-    let rendered = format!("{failures:?}");
-    assert!(
-        rendered.contains("the allowed mpc image hashes list is empty"),
-        "expected the empty-allowlist rejection, got: {rendered}"
-    );
-    let stored = get_participant_attestation(&contract, &p2p_tls_key().into())
-        .await
-        .unwrap();
-    assert!(stored.is_none(), "nothing should be stored on failure");
-    assert_deposit_refunded(&submitter, balance_before, &result).await;
-}
-
-// TODO(#3787): un-ignore once the fixture allowlist setup lands; without it the
-// post-DCAP check rejects the quote, so the store happy path can't run here yet.
-#[ignore = "needs fixture allowlist setup to pass the post-DCAP checks; tracked in #3787"]
-#[tokio::test]
-async fn submit_participant_info__should_store_attestation_on_verified_quote() {
-    // Given
-    let (_worker, contract, submitter, balance_before) =
-        setup_with_stub(StubResponse::Verified(verified_report()), None).await;
-
-    // When
-    let result = submit_dstack(&submitter, &contract).await;
-
-    // Then: every receipt in the verify_quote -> resolve_verification chain
-    // succeeds, the attestation is stored, and the flat fee is consumed (not
-    // refunded), so net spend is the fee plus gas.
-    assert!(
-        result.failures().is_empty(),
-        "no receipt in the verify_quote -> resolve_verification promise chain may fail, got: {result:#?}"
-    );
-    let stored = get_participant_attestation(&contract, &p2p_tls_key().into())
-        .await
-        .unwrap();
-    assert!(stored.is_some(), "a verified attestation must be stored");
-
-    // net spend is at least the fee (the rest is gas); a refund would drop it
-    // below the fee, proving the whole fee was consumed, not returned.
-    let balance_after = submitter.view_account().await.unwrap().balance;
-    let net_spent = balance_before.saturating_sub(balance_after);
-    assert!(
-        net_spent >= SUBMIT_DEPOSIT,
-        "flat fee must be consumed, not refunded: spent {net_spent}, fee {SUBMIT_DEPOSIT}"
-    );
-}
-
-// TODO(#3787): un-ignore once the fixture allowlist setup lands; without it the
-// post-DCAP check fails fast and resolve_verification never reaches the heavy work
-// needed to run it out of gas, so this re-tests the rejection path instead.
-#[ignore = "needs fixture allowlist setup to reach the gas-heavy post-DCAP path; tracked in #3787"]
-#[tokio::test]
-async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_verification_runs_out_of_gas()
- {
-    // Given: a Verified stub and a resolve gas budget too small for the post-DCAP
-    // work, so that callback OOGs and rolls back atomically.
-    let init_config = dtos::InitConfig {
-        resolve_verification_tera_gas: Some(1),
-        ..Default::default()
-    };
-    let (_worker, contract, submitter, _balance_before) =
-        setup_with_stub(StubResponse::Verified(verified_report()), Some(init_config)).await;
-
-    // When
-    let result = submit_dstack(&submitter, &contract).await;
-
-    // Then: the OOG rolls the whole callback receipt back — the submission is reported
-    // as failed and nothing is stored. No deposit-refund assertion: on an OOG the callback
-    // dies before its `refund_to`, so the runtime returns the deposit to the predecessor
-    // (the contract), never to the submitter, and nothing returns it later.
-    assert!(
-        !result.failures().is_empty(),
-        "an OOG resolve_verification must fail the chain, got: {result:#?}"
-    );
-    let stored = get_participant_attestation(&contract, &p2p_tls_key().into())
-        .await
-        .unwrap();
-    assert!(
-        stored.is_none(),
-        "nothing should be stored on an OOG resolve"
-    );
 }
