@@ -96,18 +96,14 @@ pub struct MpcClusterConfig {
     pub foreign_chains: ForeignChainsClusterConfig,
 }
 
-/// Foreign-chain feature configuration for the cluster.
 #[derive(Default)]
 pub struct ForeignChainsClusterConfig {
     /// Per-node configs. If empty, all nodes get the default (empty) config;
     /// if non-empty, must have exactly `num_nodes` entries.
     pub node_configs: Vec<mpc_node_config::ForeignChainsConfig>,
-    /// Chains whitelisted during cluster setup via a threshold vote.
     pub whitelisted_chains: BTreeSet<ForeignChain>,
 }
 
-/// Whitelist entry for tests where only whitelist membership matters; the
-/// provider content is never contacted.
 pub fn placeholder_chain_entry() -> ChainEntry {
     let provider = |base_url: &str| ProviderConfig {
         base_url: base_url.to_string(),
@@ -921,7 +917,6 @@ impl MpcCluster {
             .await
     }
 
-    /// View the available foreign chains (threshold-covered + whitelisted).
     pub async fn view_available_foreign_chains(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
@@ -930,7 +925,6 @@ impl MpcCluster {
             .await
     }
 
-    /// View the per-node foreign chain configs keyed by TLS public key.
     pub async fn view_foreign_chains_configs(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
