@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde::de::IntoDeserializer;
 use serde::de::value::{Error as ValueError, StrDeserializer};
 
-use foreign_chain_health_check::Network;
+use foreign_chain_health_check::{Network, network_from_contract_id};
 
 /// Paths where `foreign_chains` may live, most-nested first so a wrapped config
 /// matches before a barer one.
@@ -43,11 +43,8 @@ fn classify_network(chain_id: Option<&str>, contract_id: Option<&str>) -> Option
         Some(ChainId::Testnet) => return Some(Network::Testnet),
         _ => {}
     }
-    match contract_id {
-        Some(id) if id.ends_with(".testnet") => Some(Network::Testnet),
-        Some(id) if id.ends_with(".near") || id == "v1.signer" => Some(Network::Mainnet),
-        _ => None,
-    }
+    // Shared with the node's startup check so the suffix rules never diverge.
+    contract_id.and_then(network_from_contract_id)
 }
 
 enum Format {

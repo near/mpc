@@ -647,6 +647,12 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+On startup the node probes every configured provider with a fixed golden request and logs a
+per-provider result, so config typos and un-enabled API keys surface immediately instead of on
+the first real verification request. The probe runs detached and never blocks startup; it is
+skipped when the NEAR network is neither mainnet nor testnet (golden references only exist for
+those networks).
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious

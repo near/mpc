@@ -25,7 +25,9 @@ use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
-pub use network::Network;
+pub use network::{
+    Network, NetworkResolution, SkipReason, network_from_contract_id, resolve_network_from_config,
+};
 pub use results::{ProviderResult, Status};
 
 use crate::golden::{AptosVector, BlockHashVector, SuiVector};
@@ -123,6 +125,19 @@ fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
 }
 
+fn push_result(
+    out: &mut Vec<ProviderResult>,
+    chain: &'static str,
+    name: &RpcProviderName,
+    status: Status,
+) {
+    out.push(ProviderResult {
+        chain,
+        provider: provider_name(name),
+        status,
+    });
+}
+
 fn prepare_jsonrpc(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
     let mut url = provider.rpc_url.clone();
     let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
@@ -174,11 +189,7 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
                 run_check(timeout, checks::check_evm::<Chain>(client, *tx, *bh)).await
             }
         };
-        out.push(ProviderResult {
-            chain,
-            provider: provider_name(name),
-            status,
-        });
+        push_result(out, chain, name, status);
     }
 }
 
@@ -203,11 +214,7 @@ async fn run_bitcoin(
                 run_check(timeout, checks::check_bitcoin(client, *tx, *bh)).await
             }
         };
-        out.push(ProviderResult {
-            chain: "bitcoin",
-            provider: provider_name(name),
-            status,
-        });
+        push_result(out, "bitcoin", name, status);
     }
 }
 
@@ -232,11 +239,7 @@ async fn run_starknet(
                 run_check(timeout, checks::check_starknet(client, *tx, *bh)).await
             }
         };
-        out.push(ProviderResult {
-            chain: "starknet",
-            provider: provider_name(name),
-            status,
-        });
+        push_result(out, "starknet", name, status);
     }
 }
 
@@ -271,11 +274,7 @@ async fn run_aptos(
                 .await
             }
         };
-        out.push(ProviderResult {
-            chain: "aptos",
-            provider: provider_name(name),
-            status,
-        });
+        push_result(out, "aptos", name, status);
     }
 }
 
@@ -299,11 +298,7 @@ async fn run_sui(
             Err(e) => Status::Failed(format!("{e:#}")),
             Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
         };
-        out.push(ProviderResult {
-            chain: "sui",
-            provider: provider_name(name),
-            status,
-        });
+        push_result(out, "sui", name, status);
     }
 }
 
