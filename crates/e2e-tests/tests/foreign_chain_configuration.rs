@@ -131,8 +131,7 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
 ///    node 2 with an empty configuration. Solana must NOT be available while
 ///    it is not whitelisted.
 /// 2. After the participants whitelist Solana, two registrations reach the
-///    threshold and the chain becomes available — node 2's foreign-chain-config
-///    registration is not required (it still votes for the whitelist).
+///    threshold and the chain becomes available.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn available_foreign_chains__should_require_whitelist_and_threshold_of_registrations() {
@@ -195,7 +194,7 @@ async fn available_foreign_chains__should_require_whitelist_and_threshold_of_reg
     // when — the participants whitelist Solana.
     cluster
         .whitelist_foreign_chains(
-            &[0, 1, 2],
+            &[0, 2],
             &BTreeSet::from([ForeignChain::Solana]),
             &e2e_tests::cluster::placeholder_chain_entry(),
         )

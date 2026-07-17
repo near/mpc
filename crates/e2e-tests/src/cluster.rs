@@ -950,9 +950,6 @@ impl MpcCluster {
             .try_into()
             .expect("non-empty: checked above");
 
-        // Deliberately over-votes: the proposal applies at the protocol threshold;
-        // voting from every index stays correct for any threshold (e.g. after
-        // resharing) at the cost of surplus votes leaving pending rows behind.
         for &idx in participant_indices {
             let client = self
                 .operator_client_for(idx)
