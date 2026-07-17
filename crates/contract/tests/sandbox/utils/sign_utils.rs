@@ -17,6 +17,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     SIGN,
@@ -133,7 +134,7 @@ impl DomainResponseTest {
 
 #[derive(Debug)]
 pub struct SignRequestTest {
-    pub response: SignResponseArgs,
+    pub response: SignatureRespondArgs,
     pub args: SignRequestArgs,
 }
 
@@ -170,18 +171,6 @@ impl SignRequestTest {
         attested_account: &Account,
     ) -> anyhow::Result<()> {
         submit_signature_response(&self.response, contract, attested_account).await
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct SignResponseArgs {
-    pub request: SignatureRequest,
-    pub response: SignatureRequestResponse,
-}
-
-impl SignResponseArgs {
-    pub fn json_args(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap()
     }
 }
 
@@ -338,7 +327,7 @@ async fn submit_response(
 }
 
 pub async fn submit_signature_response(
-    response: &SignResponseArgs,
+    response: &SignatureRespondArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
@@ -600,7 +589,7 @@ fn process_message(msg: &str) -> (impl Digest + use<>, Payload) {
 
 pub struct PendingSignRequest {
     pub transaction: TransactionStatus,
-    pub response: SignResponseArgs,
+    pub response: SignatureRespondArgs,
 }
 
 pub struct PendingCKDRequest {
@@ -626,7 +615,7 @@ fn gen_ed25519_sign_test(
         .with_domain_id(domain_id.0)
         .build();
     SignRequestTest {
-        response: SignResponseArgs { request, response },
+        response: SignatureRespondArgs { request, response },
         args,
     }
 }
@@ -650,7 +639,7 @@ pub fn gen_secp_256k1_sign_test(
         .with_domain_id(domain_id.0)
         .build();
     SignRequestTest {
-        response: SignResponseArgs { request, response },
+        response: SignatureRespondArgs { request, response },
         args,
     }
 }
