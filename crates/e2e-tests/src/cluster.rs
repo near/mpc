@@ -920,8 +920,6 @@ impl MpcCluster {
         if chains.is_empty() {
             return Ok(());
         }
-        // Every whitelisted chain gets the same placeholder entry: these tests only
-        // care about which chains are whitelisted, never about the provider content.
         let provider = |base_url: &str| ProviderConfig {
             base_url: base_url.to_string(),
             auth_scheme: AuthScheme::None,
@@ -944,8 +942,11 @@ impl MpcCluster {
             .map(|&chain| (chain, placeholder.clone()))
             .collect::<BTreeMap<_, _>>()
             .try_into()
-            .context("whitelist_foreign_chains: chains must be non-empty")?;
+            .expect("non-empty: checked above");
 
+        // Deliberately over-votes: the proposal applies at the protocol threshold;
+        // voting from every index stays correct for any threshold (e.g. after
+        // resharing) at the cost of surplus votes leaving pending rows behind.
         for &idx in participant_indices {
             let client = self
                 .operator_client_for(idx)
