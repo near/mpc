@@ -8,8 +8,11 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
-use crate::providers::HasParticipants;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
+use crate::providers::{
+    HasParticipants,
+    ecdsa::{EcdsaSignatureProvider, EcdsaTaskId},
+    ecdsa_common::active_participants_query,
+};
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
 use mpc_primitives::ReconstructionThreshold;
@@ -65,7 +68,7 @@ impl TripleStorage {
             threshold.inner().to_be_bytes().to_vec(),
             client.my_participant_id(),
             |participants, pair| pair.is_subset_of_active_participants(participants),
-            crate::providers::ecdsa_common::active_participants_query(client),
+            active_participants_query(client),
         )?))
     }
 }
