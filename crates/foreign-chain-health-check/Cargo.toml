@@ -18,6 +18,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 mpc-node-config = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

@@ -3743,6 +3743,7 @@ dependencies = [
  "httpmock",
  "mpc-node-config",
  "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
  "serde_json",
  "tokio",
 ]

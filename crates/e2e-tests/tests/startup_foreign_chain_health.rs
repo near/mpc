@@ -7,6 +7,7 @@ use e2e_tests::MpcNodeState;
 use e2e_tests::foreign_chain_mock::{
     MOCK_BLOCK_HASH, MOCK_TX_ID, MockAuthExpectation, MockServerExt, setup_evm_mock_with_block_hash,
 };
+use e2e_tests::metrics;
 use e2e_tests::mpc_node::MpcNodeSetup;
 use httpmock::MockServer;
 use mpc_node_config::{
@@ -123,5 +124,34 @@ async fn startup_health_check__should_probe_providers_against_test_golden() {
         idle_mock.calls(),
         0,
         "node 1 has no golden and must skip, but its provider was probed"
+    );
+
+    // Then the Prometheus gauges reflect the probe end to end: `configured` is
+    // published for every configured chain up front (so node 1 reports it even
+    // though it skips), while `healthy` is emitted only where a probe ran.
+    cluster
+        .wait_for_metric(
+            0,
+            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY,
+            |v| v == 1,
+            LOG_WAIT_TIMEOUT,
+        )
+        .await
+        .expect("node 0 should report 1 healthy `base` provider");
+    assert_eq!(
+        cluster
+            .get_metric_all_nodes(metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED)
+            .await
+            .unwrap(),
+        vec![Some(2), Some(1), None],
+        "configured: node 0 has 2 base providers, node 1 has 1, node 2 none"
+    );
+    assert_eq!(
+        cluster
+            .get_metric_all_nodes(metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY)
+            .await
+            .unwrap(),
+        vec![Some(1), None, None],
+        "healthy: only node 0 probed (1 of 2 pass); nodes 1 and 2 skipped, so unset"
     );
 }

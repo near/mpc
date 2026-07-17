@@ -1,6 +1,7 @@
 //! Healthcheck of every configured foreign-chain RPC provider, via
 //! [`foreign_chain_health_check`].
 
+use std::collections::BTreeMap;
 use std::panic::AssertUnwindSafe;
 
 use foreign_chain_health_check::{
@@ -11,14 +12,23 @@ use futures::FutureExt as _;
 use mpc_node_config::{ForeignChainsConfig, HealthCheckGoldenConfig};
 use tracing::{debug, error, info, warn};
 
+use crate::metrics;
+
 /// Startup healthcheck entrypoint: builds a [`HealthCheckRoute`] from the config
 /// and runs it, warning if a golden config is set on a public network. A probe
-/// panic is caught and logged, never propagated (diagnostic-only).
+/// panic is caught and logged, never propagated (diagnostic-only). Publishes
+/// per-chain `configured` and `healthy` provider gauges.
 pub async fn run_startup_health_check(
     foreign_chains: ForeignChainsConfig,
     network: NetworkKind,
     golden: Option<HealthCheckGoldenConfig>,
 ) {
+    for (chain, config) in foreign_chains.iter_chains() {
+        metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
+            .with_label_values(&[chain.label()])
+            .set(config.providers.len() as i64);
+    }
+
     // A config-supplied golden is only meaningful on a local chain; on
     // mainnet/testnet the built-in set is always used.
     if let NetworkKind::Public(network) = network
@@ -62,12 +72,29 @@ pub async fn run_startup_health_check(
             }
         };
         log_results(&results);
+        set_healthy_metric(&foreign_chains, &results);
     };
 
     if AssertUnwindSafe(probe).catch_unwind().await.is_err() {
         error!(
             "foreign-chain RPC provider health check panicked (diagnostic-only; node unaffected)"
         );
+    }
+}
+
+fn set_healthy_metric(foreign_chains: &ForeignChainsConfig, results: &[ProviderResult]) {
+    let mut healthy_by_chain: BTreeMap<&str, i64> = BTreeMap::new();
+    for result in results {
+        if matches!(result.status, Status::Passed) {
+            *healthy_by_chain.entry(result.chain).or_default() += 1;
+        }
+    }
+
+    for (chain, _) in foreign_chains.iter_chains() {
+        let label = chain.label();
+        metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
+            .with_label_values(&[label])
+            .set(healthy_by_chain.get(label).copied().unwrap_or(0));
     }
 }
 
@@ -277,6 +304,72 @@ mod tests {
         assert!(logs_contain(
             "running foreign-chain RPC provider health check"
         ));
+    }
+
+    #[tokio::test]
+    async fn run_startup_health_check__should_publish_configured_even_when_network_undetermined() {
+        // Given an unsupported chain with one provider and an undetermined network
+        let foreign_chains = config_with_unsupported_chain();
+
+        // When
+        run_startup_health_check(foreign_chains, NetworkKind::Undetermined, None).await;
+
+        // Then `configured` is populated up front despite the skipped probe
+        assert_eq!(
+            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
+                .with_label_values(&["ethereum"])
+                .get(),
+            1
+        );
+    }
+
+    #[test]
+    fn set_healthy_metric__should_count_healthy_providers_per_chain_across_mixes() {
+        // Given three configured chains whose per-provider outcomes span what a
+        // real run produces: base fully healthy (2/2), aptos partial (1/3), and
+        // ethereum with nothing passing (0/2).
+        let provider = || ForeignChainProviderConfig {
+            rpc_url: "https://rpc.example.com".to_string(),
+            auth: AuthConfig::None,
+        };
+        let chain = || ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(5).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            providers: NonEmptyBTreeMap::new("only".to_string().into(), provider()),
+        };
+        let foreign_chains = ForeignChainsConfig {
+            base: Some(chain()),
+            aptos: Some(chain()),
+            ethereum: Some(chain()),
+            ..Default::default()
+        };
+        let result = |chain: &'static str, provider: &str, status: Status| ProviderResult {
+            chain,
+            provider: provider.to_string(),
+            status,
+        };
+        let results = vec![
+            result("base", "a", Status::Passed),
+            result("base", "b", Status::Passed),
+            result("aptos", "a", Status::Passed),
+            result("aptos", "b", Status::Failed("boom".to_string())),
+            result("aptos", "c", Status::Skipped("unsupported".to_string())),
+            result("ethereum", "a", Status::Failed("boom".to_string())),
+            result("ethereum", "b", Status::Failed("boom".to_string())),
+        ];
+
+        // When
+        set_healthy_metric(&foreign_chains, &results);
+
+        // Then each chain's gauge equals its number of passing providers.
+        let healthy = |chain| {
+            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
+                .with_label_values(&[chain])
+                .get()
+        };
+        assert_eq!(healthy("base"), 2);
+        assert_eq!(healthy("aptos"), 1);
+        assert_eq!(healthy("ethereum"), 0);
     }
 
     #[tokio::test]

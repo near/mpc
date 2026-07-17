@@ -1273,6 +1273,29 @@ pub enum ForeignChain {
     Sui,
 }
 
+impl ForeignChain {
+    /// Stable snake_case identifier for this chain, shared by config keys,
+    /// metric labels, and health-check result keys. Exhaustive on purpose
+    /// to avoid drift.
+    pub fn label(&self) -> &'static str {
+        match self {
+            ForeignChain::Solana => "solana",
+            ForeignChain::Bitcoin => "bitcoin",
+            ForeignChain::Ethereum => "ethereum",
+            ForeignChain::Base => "base",
+            ForeignChain::Bnb => "bnb",
+            ForeignChain::Arbitrum => "arbitrum",
+            ForeignChain::Abstract => "abstract",
+            ForeignChain::Starknet => "starknet",
+            ForeignChain::Polygon => "polygon",
+            ForeignChain::HyperEvm => "hyper_evm",
+            ForeignChain::Ton => "ton",
+            ForeignChain::Aptos => "aptos",
+            ForeignChain::Sui => "sui",
+        }
+    }
+}
+
 #[derive(
     Debug,
     Clone,

@@ -30,6 +30,7 @@ use mpc_node_config::{
     AptosGolden, BlockHashGolden, ForeignChainConfig, ForeignChainProviderConfig,
     ForeignChainsConfig, HealthCheckGoldenConfig, SuiGolden,
 };
+use near_mpc_contract_interface::types::ForeignChain;
 
 pub use golden::golden_set;
 pub use network::{
@@ -55,18 +56,28 @@ pub async fn check_all_providers_with_golden(
     golden: &HealthCheckGoldenConfig,
 ) -> Vec<ProviderResult> {
     let results = join_all([
-        run_evm::<Base>("base", fc.base.as_ref(), golden.base.as_ref()).boxed(),
-        run_evm::<Bnb>("bnb", fc.bnb.as_ref(), golden.bnb.as_ref()).boxed(),
-        run_evm::<Arbitrum>("arbitrum", fc.arbitrum.as_ref(), golden.arbitrum.as_ref()).boxed(),
-        run_evm::<Polygon>("polygon", fc.polygon.as_ref(), golden.polygon.as_ref()).boxed(),
+        run_evm::<Base>(ForeignChain::Base, fc.base.as_ref(), golden.base.as_ref()).boxed(),
+        run_evm::<Bnb>(ForeignChain::Bnb, fc.bnb.as_ref(), golden.bnb.as_ref()).boxed(),
+        run_evm::<Arbitrum>(
+            ForeignChain::Arbitrum,
+            fc.arbitrum.as_ref(),
+            golden.arbitrum.as_ref(),
+        )
+        .boxed(),
+        run_evm::<Polygon>(
+            ForeignChain::Polygon,
+            fc.polygon.as_ref(),
+            golden.polygon.as_ref(),
+        )
+        .boxed(),
         run_evm::<HyperEvm>(
-            "hyper_evm",
+            ForeignChain::HyperEvm,
             fc.hyper_evm.as_ref(),
             golden.hyper_evm.as_ref(),
         )
         .boxed(),
         run_evm::<Abstract>(
-            "abstract",
+            ForeignChain::Abstract,
             fc.abstract_chain.as_ref(),
             golden.abstract_chain.as_ref(),
         )
@@ -82,15 +93,19 @@ pub async fn check_all_providers_with_golden(
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
     match &fc.ethereum {
         Some(cfg) => out.extend(all_skipped(
-            "ethereum",
+            ForeignChain::Ethereum.label(),
             cfg,
             "not yet supported by the node",
         )),
-        None => out.push(not_configured("ethereum")),
+        None => out.push(not_configured(ForeignChain::Ethereum.label())),
     }
     match &fc.solana {
-        Some(cfg) => out.extend(all_skipped("solana", cfg, "not yet supported by the node")),
-        None => out.push(not_configured("solana")),
+        Some(cfg) => out.extend(all_skipped(
+            ForeignChain::Solana.label(),
+            cfg,
+            "not yet supported by the node",
+        )),
+        None => out.push(not_configured(ForeignChain::Solana.label())),
     }
 
     out
@@ -144,10 +159,11 @@ async fn run_check(timeout: Duration, fut: impl Future<Output = anyhow::Result<(
 }
 
 async fn run_evm<Chain: EvmChain + Send + Sync>(
-    chain: &'static str,
+    chain: ForeignChain,
     cfg: Option<&ForeignChainConfig>,
     vector: Option<&BlockHashGolden>,
 ) -> Vec<ProviderResult> {
+    let chain = chain.label();
     let Some(cfg) = cfg else {
         return vec![not_configured(chain)];
     };
@@ -175,11 +191,12 @@ async fn run_bitcoin(
     cfg: Option<&ForeignChainConfig>,
     vector: Option<&BlockHashGolden>,
 ) -> Vec<ProviderResult> {
+    let chain = ForeignChain::Bitcoin.label();
     let Some(cfg) = cfg else {
-        return vec![not_configured("bitcoin")];
+        return vec![not_configured(chain)];
     };
     let Some(vector) = vector else {
-        return all_skipped("bitcoin", cfg, NO_REFERENCE_REASON);
+        return all_skipped(chain, cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed = golden::hex32(&vector.tx)
@@ -193,7 +210,7 @@ async fn run_bitcoin(
                 run_check(timeout, checks::check_bitcoin(client, *tx, *bh)).await
             }
         };
-        provider_result("bitcoin", name, status)
+        provider_result(chain, name, status)
     }))
     .await
 }
@@ -202,11 +219,12 @@ async fn run_starknet(
     cfg: Option<&ForeignChainConfig>,
     vector: Option<&BlockHashGolden>,
 ) -> Vec<ProviderResult> {
+    let chain = ForeignChain::Starknet.label();
     let Some(cfg) = cfg else {
-        return vec![not_configured("starknet")];
+        return vec![not_configured(chain)];
     };
     let Some(vector) = vector else {
-        return all_skipped("starknet", cfg, NO_REFERENCE_REASON);
+        return all_skipped(chain, cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed = golden::felt32(&vector.tx)
@@ -220,7 +238,7 @@ async fn run_starknet(
                 run_check(timeout, checks::check_starknet(client, *tx, *bh)).await
             }
         };
-        provider_result("starknet", name, status)
+        provider_result(chain, name, status)
     }))
     .await
 }
@@ -229,11 +247,12 @@ async fn run_aptos(
     cfg: Option<&ForeignChainConfig>,
     vector: Option<&AptosGolden>,
 ) -> Vec<ProviderResult> {
+    let chain = ForeignChain::Aptos.label();
     let Some(cfg) = cfg else {
-        return vec![not_configured("aptos")];
+        return vec![not_configured(chain)];
     };
     let Some(vector) = vector else {
-        return all_skipped("aptos", cfg, NO_REFERENCE_REASON);
+        return all_skipped(chain, cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed_tx = golden::hex32(&vector.tx);
@@ -257,7 +276,7 @@ async fn run_aptos(
                 .await
             }
         };
-        provider_result("aptos", name, status)
+        provider_result(chain, name, status)
     }))
     .await
 }
@@ -270,11 +289,12 @@ async fn run_sui(
     cfg: Option<&ForeignChainConfig>,
     vector: Option<&SuiGolden>,
 ) -> Vec<ProviderResult> {
+    let chain = ForeignChain::Sui.label();
     let Some(cfg) = cfg else {
-        return vec![not_configured("sui")];
+        return vec![not_configured(chain)];
     };
     let Some(vector) = vector else {
-        return all_skipped("sui", cfg, NO_REFERENCE_REASON);
+        return all_skipped(chain, cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     join_all(cfg.providers.iter().map(|(name, provider)| async move {
@@ -282,7 +302,7 @@ async fn run_sui(
             Err(e) => Status::Failed(format!("{e:#}")),
             Ok(client) => run_check(timeout, checks::check_sui(client, &vector.chain_id)).await,
         };
-        provider_result("sui", name, status)
+        provider_result(chain, name, status)
     }))
     .await
 }
@@ -339,6 +359,52 @@ mod tests {
                     auth,
                 },
             ),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_all_providers__should_key_each_configured_chain_by_its_label() {
+        // Given every supported chain configured with one provider whose auth
+        // fails to resolve, so each chain yields a result without any network
+        // call (the probe never gets past client prep).
+        let unresolvable = || AuthConfig::Header {
+            name: http::HeaderName::from_static("authorization"),
+            scheme: Some("Bearer".to_string()),
+            token: TokenConfig::Env {
+                env: "DEFINITELY_UNSET_TOKEN_ENV".to_string(),
+            },
+        };
+        let one = || Some(config_with_provider(unresolvable()));
+        let fc = ForeignChainsConfig {
+            solana: one(),
+            bitcoin: one(),
+            ethereum: one(),
+            abstract_chain: one(),
+            starknet: one(),
+            bnb: one(),
+            base: one(),
+            arbitrum: one(),
+            hyper_evm: one(),
+            polygon: one(),
+            aptos: one(),
+            sui: one(),
+        };
+
+        // When
+        let results = check_all_providers(&fc, Network::Mainnet).await;
+
+        // Then every configured chain contributes its probed provider row keyed
+        // by its `label()`, so results and metric labels share one source. The
+        // provider check rejects a `not_configured` placeholder standing in for
+        // a chain that was silently dropped from the fan-out.
+        for (dto, _) in fc.iter_chains() {
+            let label = dto.label();
+            assert!(
+                results
+                    .iter()
+                    .any(|r| r.chain == label && r.provider == "only"),
+                "no probed result keyed by {dto:?}.label() = {label:?}"
+            );
         }
     }
 
