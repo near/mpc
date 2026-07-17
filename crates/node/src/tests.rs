@@ -24,7 +24,7 @@ use crate::indexer::handler::{
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
+use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -63,6 +63,7 @@ mod multidomain;
 mod onboarding;
 mod protocol_yielding;
 mod resharing;
+mod update_participant_url;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
@@ -191,11 +192,11 @@ impl IntegrationTestSetup {
         participant_accounts: Vec<AccountId>,
         threshold: usize,
         txn_delay_blocks: u64,
-        port_seed: PortSeed,
+        ports: TestPorts,
         block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
-            generate_test_p2p_configs(&participant_accounts, threshold, port_seed).unwrap();
+            generate_test_p2p_configs(&participant_accounts, threshold, &ports).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
         let mut indexer_manager =
             FakeIndexerManager::new(clock.clone(), txn_delay_blocks, block_time);
@@ -234,14 +235,14 @@ impl IntegrationTestSetup {
                     timeout_sec: 120,
                 },
                 number_of_responder_keys: 0,
-                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_port(i)),
+                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), ports.web_ui_port(i)),
                 migration_web_ui: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
-                    port_seed.migration_web_port(i),
+                    ports.migration_web_ui_port(i),
                 ),
                 pprof_bind_address: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
-                    port_seed.pprof_web_port(i),
+                    ports.pprof_port(i),
                 ),
             };
             let secrets = SecretsConfig {
