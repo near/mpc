@@ -10,30 +10,26 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{
-    env,
+    AccountId, env,
     store::{Lazy, LookupMap},
 };
 
 use crate::{
     Config, SupportedForeignChainsByNode,
-    foreign_chain_rpc::ForeignChainRpcWhitelist,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        domain::max_reconstruction_threshold,
         signature::{SignatureRequest, YieldIndex},
-        thresholds::ThresholdParameters,
     },
-    state::{ProtocolContractState, running::RunningContractState},
-    storage_keys::StorageKey,
-    tee::tee_state::TeeState,
+    state::ProtocolContractState,
+    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
 };
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.12.0` contract still deserializes during migration.
+/// state written by the `3.13.0` contract still deserializes during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -47,13 +43,15 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     metrics: Metrics,
-    foreign_chain_rpc_whitelist: ForeignChainRpcWhitelist,
+    foreign_chains: Lazy<ForeignChainsMetadata>,
+    tee_verifier_account_id: Option<AccountId>,
+    tee_verifier_votes: TeeVerifierVotes,
 }
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
-        if let ProtocolContractState::Running(running) = &old.protocol_state {
-            validate_threshold_relation_on_migration(running);
+        if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
+            env::panic_str("Contract must be in running state when migrating.");
         }
 
         crate::MpcContract {
@@ -68,30 +66,9 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
-            foreign_chains: Lazy::new(
-                StorageKey::ForeignChainMetadata,
-                ForeignChainsMetadata {
-                    rpc_whitelist: old.foreign_chain_rpc_whitelist,
-                    ..Default::default()
-                },
-            ),
+            foreign_chains: old.foreign_chains,
+            tee_verifier_account_id: old.tee_verifier_account_id,
+            tee_verifier_votes: old.tee_verifier_votes,
         }
-    }
-}
-
-fn validate_threshold_relation_on_migration(running: &RunningContractState) {
-    let num_participants = running.parameters.participants().len() as u64;
-    let max_reconstruction_threshold = max_reconstruction_threshold(running.domains.domains());
-    if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
-        num_participants,
-        running.parameters.threshold(),
-        max_reconstruction_threshold,
-    ) {
-        env::panic_str(&format!(
-            "Migration aborted: existing state violates the GovernanceThreshold/ReconstructionThreshold relation ({err:?}). num_participants={}, governance_threshold={}, max_reconstruction_threshold={:?}. Correct it via vote_new_parameters before upgrading.",
-            num_participants,
-            running.parameters.threshold().value(),
-            max_reconstruction_threshold.map(|t| t.inner()),
-        ));
     }
 }

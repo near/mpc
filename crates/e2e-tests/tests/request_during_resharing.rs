@@ -2,8 +2,8 @@ use crate::common::{
     REQUEST_DURING_RESHARING_PORT_SEED, damgard_etal_domain, generate_ckd_app_public_key,
     must_get_domain, must_setup_cluster, sign_all_schemes,
 };
-
 use near_mpc_contract_interface::types::{Protocol, ProtocolContractState};
+
 use rand::SeedableRng;
 
 /// Tests that signature and CKD requests are processed using the previous

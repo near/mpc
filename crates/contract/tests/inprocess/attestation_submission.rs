@@ -1,29 +1,27 @@
 #![allow(non_snake_case)]
 
+use super::common;
 use mpc_contract::{
     MpcContract,
-    crypto_shared::types::PublicKeyExtended,
     errors::{Error, InvalidParameters},
     primitives::{
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{bogus_ed25519_public_key, gen_participants},
+        test_utils::{create_node_id, gen_participants, node_id_for},
         thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
     },
     tee::tee_state::NodeId,
 };
 use near_mpc_contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, Protocol, ProtocolContractState,
-    ReconstructionThreshold,
+    Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
-use near_mpc_contract_interface::types::{DomainConfig, DomainId, DomainPurpose};
 use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -79,101 +77,31 @@ impl TestSetupBuilder {
     }
 
     fn build(self) -> TestSetup {
-        // 1. Configuration & Defaults
         let participant_count = self.participant_count.unwrap_or(DEFAULT_PARTICIPANT_COUNT);
         let threshold = self.threshold.unwrap_or(DEFAULT_THRESHOLD_SIZE);
         let contract_protocol_state = self
             .contract_protocol_state
             .unwrap_or(DEFAUTL_CONTRACT_PROTOCOL_STATE);
 
-        // 2. Data Generation
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
-
         let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
-            .expect("Failed to create threshold parameters");
-
-        // Construct dummy keys for setup
-        let near_public_key =
-            near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
-
-        let keyset = Keyset::new(
-            EpochId::new(5),
-            vec![KeyForDomain {
-                domain_id: DomainId::default(),
-                key: PublicKeyExtended::Secp256k1 { near_public_key },
-                attempt: AttemptId::new(),
-            }],
-        );
-
-        let domains = vec![DomainConfig {
-            id: DomainId::default(),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: DomainPurpose::Sign,
-        }];
-
-        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-
-        let context = VMContextBuilder::new()
-            .attached_deposit(NearToken::from_yoctonear(1))
-            .predecessor_account_id(contract_account_id.clone())
-            .current_account_id(contract_account_id)
-            .build();
-
-        testing_env!(context);
-
-        let init_config = self.init_config;
-        let contract = MpcContract::init_running(
-            domains,
-            1,
-            keyset,
-            parameters.clone().into(),
-            init_config.clone(),
-        )
-        .unwrap();
+            .expect("failed to create threshold parameters");
+        let contract = common::init_contract(&parameters, self.init_config);
 
         let mut setup = TestSetup {
             contract,
             participants_list,
         };
 
-        let all_nodes: Vec<NodeId> = setup
-            .participants_list
-            .iter()
-            .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.tls_public_key.clone(),
-                account_public_key: bogus_ed25519_public_key(),
-            })
-            .collect();
-
         match contract_protocol_state {
-            // Contract is aready in running
             ContractProtocolState::Running => {}
-            // Start key generation to go into initalization
             ContractProtocolState::Initializing => {
-                for node_id in &all_nodes {
-                    let context = create_context_for_participant(&node_id.account_id);
-                    testing_env!(context);
-
-                    setup
-                        .contract
-                        .vote_add_domains(vec![DomainConfig {
-                            id: DomainId(1),
-                            protocol: Protocol::Frost,
-                            reconstruction_threshold: ReconstructionThreshold::new(2),
-                            purpose: DomainPurpose::Sign,
-                        }])
-                        .unwrap();
-                }
-
-                assert_matches!(
-                    setup.contract.state(),
-                    ProtocolContractState::Initializing(_)
-                );
+                let participants = setup.participants_list.clone();
+                common::transition_to_initializing(&mut setup.contract, &participants);
             }
             ContractProtocolState::Resharing => {
+                let all_nodes = setup.get_participant_node_ids();
                 let threshold_nodes = all_nodes.iter().take(threshold as usize);
 
                 for node_id in threshold_nodes.clone() {
@@ -184,9 +112,7 @@ impl TestSetupBuilder {
                 }
 
                 for node_id in threshold_nodes {
-                    let context = create_context_for_participant(&node_id.account_id);
-                    testing_env!(context);
-
+                    testing_env!(common::participant_context(&node_id.account_id));
                     let proposal =
                         ProposedThresholdParameters::new(parameters.clone(), BTreeMap::new());
                     setup
@@ -219,8 +145,7 @@ impl TestSetup {
         node_id: &NodeId,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        let context = create_context_for_participant(&node_id.account_id);
-        testing_env!(context);
+        testing_env!(common::participant_context(&node_id.account_id));
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
     }
@@ -250,10 +175,8 @@ impl TestSetup {
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
-            .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.tls_public_key.clone(),
-                account_public_key: bogus_ed25519_public_key(),
+            .map(|(account_id, _, participant_info)| {
+                create_node_id(account_id, &participant_info.tls_public_key)
             })
             .collect()
     }
@@ -266,14 +189,6 @@ impl TestSetup {
             expected_measurements: None,
         })
     }
-}
-
-fn create_context_for_participant(account_id: &AccountId) -> VMContext {
-    VMContextBuilder::new()
-        .signer_account_id(account_id.clone())
-        .predecessor_account_id(account_id.clone())
-        .block_timestamp(near_sdk::env::block_timestamp())
-        .build()
 }
 
 fn set_system_time(nano_seconds_since_unix_epoch: u64) {
@@ -320,11 +235,10 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     // When: an unrelated account submits an attestation that targets the victim's TLS key.
     // The attacker context attaches a deposit large enough to cover any storage charge,
     // so the call can only fail due to the ownership check — not `InsufficientDeposit`.
-    let attacker_node = NodeId {
-        account_id: "attacker.near".parse().unwrap(),
-        tls_public_key: victim_node.tls_public_key.clone(),
-        account_public_key: bogus_ed25519_public_key(),
-    };
+    let attacker_node = create_node_id(
+        &"attacker.near".parse().unwrap(),
+        &victim_node.tls_public_key,
+    );
     testing_env!(
         VMContextBuilder::new()
             .signer_account_id(attacker_node.account_id.clone())
@@ -379,10 +293,8 @@ fn clean_tee_status__should_not_touch_attestations() {
         .participants_list
         .iter()
         .take(PARTICIPANT_COUNT)
-        .map(|(account_id, _, participant_info)| NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: participant_info.tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
+        .map(|(account_id, _, participant_info)| {
+            create_node_id(account_id, &participant_info.tls_public_key)
         })
         .collect();
     for node_id in &participant_nodes {
@@ -390,11 +302,7 @@ fn clean_tee_status__should_not_touch_attestations() {
     }
 
     // Add TEE account for someone who is NOT a current participant
-    let removed_participant_node = NodeId {
-        account_id: "removed.participant.near".parse().unwrap(),
-        tls_public_key: bogus_ed25519_public_key(),
-        account_public_key: bogus_ed25519_public_key(),
-    };
+    let removed_participant_node = node_id_for(&"removed.participant.near".parse().unwrap());
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
@@ -470,19 +378,11 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     // outsider account.
     let participant_node = {
         let (account_id, _, info) = &setup.participants_list[0];
-        NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: info.tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        }
+        create_node_id(account_id, &info.tls_public_key)
     };
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
 
-    let stale_node = NodeId {
-        account_id: "stale.near".parse().unwrap(),
-        tls_public_key: bogus_ed25519_public_key(),
-        account_public_key: bogus_ed25519_public_key(),
-    };
+    let stale_node = node_id_for(&"stale.near".parse().unwrap());
     setup.submit_attestation_for_node(&stale_node, expiring_attestation);
 
     const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
@@ -530,11 +430,11 @@ macro_rules! assert_allowed_docker_image_hashes {
     ($test_setup:expr_2021, $blocktime_ns:expr_2021, $expected_value:expr_2021 $(,)?) => {{
         set_system_time($blocktime_ns);
 
-        let mut res: Vec<[u8; 32]> = $test_setup
+        let mut res: Vec<([u8; 32], Option<u64>)> = $test_setup
             .contract
             .allowed_docker_image_hashes()
             .into_iter()
-            .map(|hash| *hash)
+            .map(|entry| (*entry.image_hash, entry.expiry_timestamp_seconds))
             .collect();
 
         res.reverse();
@@ -567,20 +467,26 @@ fn only_latest_hash_after_grace_period() {
     let old_hash = [1; 32];
     let successor_hash = [2; 32];
 
+    let old_hash_expiry = Some((SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS) / NANOS_IN_SECOND);
+
     setup.vote_with_all_participants(old_hash, FIRST_ENTRY_TIME_NS);
-    assert_allowed_docker_image_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[old_hash]);
+    assert_allowed_docker_image_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[(old_hash, None)]);
     setup.vote_with_all_participants(successor_hash, SECOND_ENTRY_TIME_NS);
-    assert_allowed_docker_image_hashes!(&setup, SECOND_ENTRY_TIME_NS, &[old_hash, successor_hash]);
+    assert_allowed_docker_image_hashes!(
+        &setup,
+        SECOND_ENTRY_TIME_NS,
+        &[(old_hash, old_hash_expiry), (successor_hash, None)]
+    );
 
     assert_allowed_docker_image_hashes!(
         &setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS,
-        &[old_hash, successor_hash]
+        &[(old_hash, old_hash_expiry), (successor_hash, None)]
     );
     assert_allowed_docker_image_hashes!(
         &setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
-        &[successor_hash]
+        &[(successor_hash, None)]
     );
 }
 
@@ -611,9 +517,18 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     for hash in hashes {
         setup.vote_with_all_participants(hash, INITIAL_TIME);
     }
-    assert_allowed_docker_image_hashes!(&setup, INITIAL_TIME, &hashes);
+    let superseded_expiry = Some((INITIAL_TIME + GRACE_PERIOD * NANOS_IN_SECOND) / NANOS_IN_SECOND);
+    assert_allowed_docker_image_hashes!(
+        &setup,
+        INITIAL_TIME,
+        &[
+            (hash_1, superseded_expiry),
+            (hash_2, superseded_expiry),
+            (hash_3, None),
+        ]
+    );
     // Jump far in future
-    assert_allowed_docker_image_hashes!(&setup, u64::MAX, &[hash_3]);
+    assert_allowed_docker_image_hashes!(&setup, u64::MAX, &[(hash_3, None)]);
 }
 
 /// **Test for successor-based grace periods**
@@ -641,40 +556,60 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     let second_code_hash = [2; 32];
     let third_code_hash = [3; 32];
 
+    let first_hash_expiry = Some((SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS) / NANOS_IN_SECOND);
+    let second_hash_expiry = Some((THIRD_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS) / NANOS_IN_SECOND);
+
     test_setup.vote_with_all_participants(first_code_hash, FIRST_ENTRY_TIME_NS);
-    assert_allowed_docker_image_hashes!(&test_setup, FIRST_ENTRY_TIME_NS, &[first_code_hash]);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        FIRST_ENTRY_TIME_NS,
+        &[(first_code_hash, None)]
+    );
 
     test_setup.vote_with_all_participants(second_code_hash, SECOND_ENTRY_TIME_NS);
     assert_allowed_docker_image_hashes!(
         &test_setup,
         SECOND_ENTRY_TIME_NS,
-        &[first_code_hash, second_code_hash]
+        &[
+            (first_code_hash, first_hash_expiry),
+            (second_code_hash, None)
+        ]
     );
 
     test_setup.vote_with_all_participants(third_code_hash, THIRD_ENTRY_TIME_NS);
     assert_allowed_docker_image_hashes!(
         &test_setup,
         THIRD_ENTRY_TIME_NS,
-        &[first_code_hash, second_code_hash, third_code_hash]
+        &[
+            (first_code_hash, first_hash_expiry),
+            (second_code_hash, second_hash_expiry),
+            (third_code_hash, None),
+        ]
     );
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
-        &[second_code_hash, third_code_hash]
+        &[
+            (second_code_hash, second_hash_expiry),
+            (third_code_hash, None),
+        ]
     );
 
     let expiration_second_hash = THIRD_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS;
     assert_allowed_docker_image_hashes!(
         &test_setup,
         expiration_second_hash,
-        &[second_code_hash, third_code_hash]
+        &[
+            (second_code_hash, second_hash_expiry),
+            (third_code_hash, None),
+        ]
     );
 
     assert_allowed_docker_image_hashes!(
         &test_setup,
         expiration_second_hash + 1,
-        &[third_code_hash]
+        &[(third_code_hash, None)]
     );
 }
 
@@ -702,7 +637,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
 
     // Even far in the future, latest remains allowed
 
-    assert_allowed_docker_image_hashes!(&test_setup, u64::MAX, &[only_image_code_hash]);
+    assert_allowed_docker_image_hashes!(&test_setup, u64::MAX, &[(only_image_code_hash, None)]);
 }
 
 /// **Test for nodes starting with old but valid image hashes during grace period**
@@ -770,9 +705,16 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
         deployment_time += HASH_DEPLOYMENT_INTERVAL_NANOS;
     }
 
+    let v1_expiry = Some((deployment_times[1] + GRACE_PERIOD_NANOS) / NANOS_IN_SECOND);
+    let v2_expiry = Some((deployment_times[2] + GRACE_PERIOD_NANOS) / NANOS_IN_SECOND);
+
     // At T=10s: All three versions should be allowed (within grace periods)
     let test_time_1 = deployment_times[0] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, test_time_1, &hashes);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        test_time_1,
+        &[(hash_v1, v1_expiry), (hash_v2, v2_expiry), (hash_v3, None)]
+    );
 
     // Use existing participant nodes for testing different hash versions
     let node_ids = test_setup.get_participant_node_ids();
@@ -792,7 +734,11 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // but at T=20s it has expired and should be filtered out by allowed_docker_image_hashes()
     // T=20s: hash_v1 is expired. Verify that only hash_v2 and hash_v3 are allowed.
     let expected_after_v1_expiry = [hash_v2, hash_v3];
-    assert_allowed_docker_image_hashes!(&test_setup, v1_expiry_time + 1, &expected_after_v1_expiry);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        v1_expiry_time + 1,
+        &[(hash_v2, v2_expiry), (hash_v3, None)]
+    );
 
     // Verify that submitting attestation with expired hash_v1 now fails
     let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
@@ -812,7 +758,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[hash_v3]);
+    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[(hash_v3, None)]);
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation
@@ -833,5 +779,5 @@ fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProto
     let code_hash = [1; 32];
 
     setup.vote_with_all_participants(code_hash, 100);
-    assert_allowed_docker_image_hashes!(&setup, 100, &[code_hash]);
+    assert_allowed_docker_image_hashes!(&setup, 100, &[(code_hash, None)]);
 }

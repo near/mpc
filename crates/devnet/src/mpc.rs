@@ -14,7 +14,6 @@ use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
-use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
@@ -22,15 +21,15 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_mpc_contract_interface::call_args::VoteUpdateArgs;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
-    Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
+    Participants, ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
     ReconstructionThreshold, Threshold, ThresholdParameters, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::borsh;
 use node_types::http_server::StaticWebData;
 use rand::rngs::OsRng;
 use reqwest::Client;
@@ -509,7 +508,7 @@ impl MpcProposeUpdateContractCmd {
                 &contract,
                 method_names::PROPOSE_UPDATE,
                 &borsh::to_vec(&ProposeUpdateArgs {
-                    contract: Some(contract_code),
+                    code: Some(contract_code),
                     config: None,
                 })
                 .unwrap(),
@@ -537,12 +536,6 @@ impl MpcProposeUpdateContractCmd {
             self_exe, name, update_id
         );
     }
-}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct ProposeUpdateArgs {
-    pub contract: Option<Vec<u8>>,
-    pub config: Option<()>, // unsupported
 }
 
 impl MpcVoteUpdateCmd {
@@ -597,11 +590,6 @@ impl MpcVoteUpdateCmd {
     }
 }
 
-#[derive(Serialize)]
-struct VoteUpdateArgs {
-    id: u64,
-}
-
 impl MpcVoteAddDomainsCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
@@ -641,8 +629,7 @@ impl MpcVoteAddDomainsCmd {
             }
         };
         let mut proposal = Vec::new();
-        let mut next_domain = domains.next_domain_id;
-        for protocol in &protocols {
+        for (next_domain, protocol) in (domains.next_domain_id..).zip(&protocols) {
             let purpose = match protocol {
                 Protocol::ConfidentialKeyDerivation => DomainPurpose::CKD,
                 Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => DomainPurpose::Sign,
@@ -653,7 +640,6 @@ impl MpcVoteAddDomainsCmd {
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose,
             });
-            next_domain += 1;
         }
 
         let from_accounts = get_voter_account_ids(mpc_setup, &self.voters);

@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.12.0",
+    "version": "3.13.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -17,14 +17,14 @@ expression: abi
     "functions": [
       {
         "name": "allowed_docker_image_hashes",
-        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
+        "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/DockerImageHash"
+              "$ref": "#/definitions/AllowedMpcDockerImageHash"
             }
           }
         }
@@ -251,6 +251,11 @@ expression: abi
                       11,
                       "Aptos",
                       "ForeignChain__Aptos"
+                    ],
+                    [
+                      12,
+                      "Sui",
+                      "ForeignChain__Sui"
                     ]
                   ]
                 }
@@ -286,6 +291,9 @@ expression: abi
                 "Struct": null
               },
               "ForeignChain__Starknet": {
+                "Struct": null
+              },
+              "ForeignChain__Sui": {
                 "Struct": null
               },
               "ForeignChain__Ton": {
@@ -1002,6 +1010,10 @@ expression: abi
                       [
                         "clean_foreign_chain_data_tera_gas",
                         "u64"
+                      ],
+                      [
+                        "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
                       ]
                     ]
                   },
@@ -1199,6 +1211,20 @@ expression: abi
             }
           ]
         },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_non_participant_tee_verifier_votes",
+        "doc": " Private endpoint to drop verifier-change votes cast by non-participants\n after resharing.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
         "result": {
           "serialization_type": "json",
           "type_schema": {
@@ -1548,6 +1574,24 @@ expression: abi
         }
       },
       {
+        "name": "tee_verifier_votes",
+        "doc": " Returns the pending TEE verifier-change votes, keyed by proposal.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId2"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "update_config",
         "kind": "call",
         "modifiers": [
@@ -1563,6 +1607,28 @@ expression: abi
               }
             }
           ]
+        }
+      },
+      {
+        "name": "update_participant_url",
+        "doc": " Updates the calling participant's registered URL, keeping the TLS key and participant ID.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "url",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
         }
       },
       {
@@ -1875,6 +1941,35 @@ expression: abi
         }
       },
       {
+        "name": "vote_tee_verifier_change",
+        "doc": " Vote for a candidate account to become the trusted verifier contract\n account, committing to the code hash the voter audited. When the proposal\n crosses the signing threshold, the trusted verifier account is updated\n and all pending verifier-change votes are cleared.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "candidate_account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
+            {
+              "name": "expected_code_hash",
+              "type_schema": {
+                "$ref": "#/definitions/TeeVerifierCodeHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_update",
         "doc": " Vote for a proposed update given the [`UpdateId`] of the update.\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
         "kind": "call",
@@ -2121,6 +2216,11 @@ expression: abi
                           11,
                           "Aptos",
                           "ForeignChain__Aptos"
+                        ],
+                        [
+                          12,
+                          "Sui",
+                          "ForeignChain__Sui"
                         ]
                       ]
                     }
@@ -2156,6 +2256,9 @@ expression: abi
                     "Struct": null
                   },
                   "ForeignChain__Starknet": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Sui": {
                     "Struct": null
                   },
                   "ForeignChain__Ton": {
@@ -2249,6 +2352,17 @@ expression: abi
             }
           }
         }
+      },
+      {
+        "name": "withdraw_tee_verifier_vote",
+        "doc": " Withdraw the caller's current vote on any pending verifier-change\n proposal. No-op if the caller has not voted.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
       }
     ],
     "root_schema": {
@@ -2271,6 +2385,26 @@ expression: abi
                   "$ref": "#/definitions/DomainConfig"
                 }
               }
+            }
+          }
+        },
+        "AllowedMpcDockerImageHash": {
+          "type": "object",
+          "required": [
+            "image_hash"
+          ],
+          "properties": {
+            "expiry_timestamp_seconds": {
+              "description": "block-time at which this hash is evicted from the allowlist. None if expiration date is not yet known.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "image_hash": {
+              "$ref": "#/definitions/DockerImageHash"
             }
           }
         },
@@ -2372,6 +2506,14 @@ expression: abi
         },
         "AuthenticatedParticipantId": {
           "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParticipantId"
+            }
+          ]
+        },
+        "AuthenticatedParticipantId2": {
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
           "allOf": [
             {
               "$ref": "#/definitions/ParticipantId"
@@ -2632,6 +2774,7 @@ expression: abi
             "contract_upgrade_deposit_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
             "return_ck_and_clean_state_on_success_call_tera_gas",
             "return_signature_and_clean_state_on_success_call_tera_gas",
@@ -2683,6 +2826,12 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remove_non_participant_tee_verifier_votes_tera_gas": {
+              "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3022,7 +3171,8 @@ expression: abi
             "Polygon",
             "HyperEvm",
             "Ton",
-            "Aptos"
+            "Aptos",
+            "Sui"
           ]
         },
         "ForeignChainConfiguration": {
@@ -3177,6 +3327,18 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Sui"
+              ],
+              "properties": {
+                "Sui": {
+                  "$ref": "#/definitions/SuiRpcRequest"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },
@@ -3294,6 +3456,15 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remove_non_participant_tee_verifier_votes_tera_gas": {
+              "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": [
                 "integer",
                 "null"
@@ -4689,6 +4860,66 @@ expression: abi
         "StarknetTxId": {
           "$ref": "#/definitions/StarknetFelt"
         },
+        "SuiExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Event"
+              ],
+              "properties": {
+                "Event": {
+                  "type": "object",
+                  "required": [
+                    "event_index"
+                  ],
+                  "properties": {
+                    "event_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "SuiFinality": {
+          "description": "Sui has no reorgs; a transaction is final once it is included in a committee-certified checkpoint.",
+          "type": "string",
+          "enum": [
+            "Checkpointed"
+          ]
+        },
+        "SuiRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SuiExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/SuiFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/SuiTxId"
+            }
+          }
+        },
+        "SuiTxId": {
+          "description": "32-byte Sui transaction digest (Blake2b-256 of the signed transaction data). Sui APIs display it base58-encoded; here it is carried as raw bytes (hex in JSON).",
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
         "SupportedForeignChains": {
           "type": "array",
           "items": {
@@ -4756,6 +4987,12 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "TeeVerifierCodeHash": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-fA-F]+$"
         },
         "Threshold": {
           "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",

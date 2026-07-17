@@ -1,10 +1,12 @@
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
+        generate_and_write_backup_encryption_key_to_disk,
+        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
+    home_paths::assets_dir,
     indexer::{
         IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
         tx_sender::TransactionSender,
@@ -45,13 +47,19 @@ use tracing::info;
 
 use crate::tee::{
     AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
+    remote_attestation::{
+        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
+    },
 };
 
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
+
+    // Must run before `spawn_real_indexer` loads/validates the config, and
+    // after `init_logging` so its logs are emitted. No-op for the `start` path.
+    config.ensure_near_initialized()?;
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
@@ -194,6 +202,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
@@ -342,7 +351,7 @@ where
     let account_public_key =
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
-    let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
+    let secret_db = SecretDB::new(&assets_dir(&home_dir), secrets.local_storage_aes_key)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
@@ -354,21 +363,18 @@ where
     };
 
     // Spawn periodic attestation submission task
-    let tee_authority_clone = tee_authority.clone();
-    let tx_sender_clone = indexer_api.txn_sender.clone();
-    let tls_public_key_clone = tls_public_key.clone();
-    let account_public_key_clone = account_public_key.clone();
-    let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
-    let allowed_launcher_compose_receiver_clone =
-        indexer_api.allowed_launcher_compose_receiver.clone();
+    let submitter = AttestationSubmitter {
+        tee_authority: tee_authority.clone(),
+        tx_sender: indexer_api.txn_sender.clone(),
+        tls_public_key: tls_public_key.clone(),
+        account_public_key: account_public_key.clone(),
+        allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
+        allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
+        attestation_reader: indexer_api.attestation_reader.clone(),
+    };
     tokio::spawn(async move {
         if let Err(e) = periodic_attestation_submission(
-            tee_authority_clone,
-            tx_sender_clone,
-            tls_public_key_clone,
-            account_public_key_clone,
-            allowed_docker_images_receiver_clone,
-            allowed_launcher_compose_receiver_clone,
+            submitter,
             tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
         )
         .await
@@ -381,24 +387,20 @@ where
     });
 
     // Spawn TEE attestation monitoring task
-    let tx_sender_clone = indexer_api.txn_sender.clone();
     let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
     let account_id_clone = config.my_near_account_id.clone();
-    let allowed_docker_images_receiver_clone = indexer_api.allowed_docker_images_receiver.clone();
-    let allowed_launcher_compose_receiver_clone =
-        indexer_api.allowed_launcher_compose_receiver.clone();
+    let submitter = AttestationSubmitter {
+        tee_authority,
+        tx_sender: indexer_api.txn_sender.clone(),
+        tls_public_key,
+        account_public_key,
+        allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
+        allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
+        attestation_reader: indexer_api.attestation_reader.clone(),
+    };
     tokio::spawn(async move {
-        if let Err(e) = monitor_attestation_removal(
-            account_id_clone,
-            tee_authority,
-            tx_sender_clone,
-            tls_public_key,
-            account_public_key,
-            allowed_docker_images_receiver_clone,
-            allowed_launcher_compose_receiver_clone,
-            tee_accounts_receiver,
-        )
-        .await
+        if let Err(e) =
+            monitor_attestation_removal(submitter, account_id_clone, tee_accounts_receiver).await
         {
             tracing::error!(
                 error = ?e,

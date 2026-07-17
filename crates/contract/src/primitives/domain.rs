@@ -147,26 +147,6 @@ impl DomainRegistry {
         self.domains.get(index)
     }
 
-    /// Like [`Self::get_domain_by_index`], but with `reconstruction_threshold` overridden
-    /// by `threshold_updates` when present, so a resharing key event reshares to the new
-    /// degree. Matches the update [`Self::with_threshold_updates`] folds in on completion.
-    pub fn effective_domain_by_index(
-        &self,
-        index: usize,
-        threshold_updates: &BTreeMap<DomainId, ReconstructionThreshold>,
-    ) -> Option<DomainConfig> {
-        self.get_domain_by_index(index).map(|domain| {
-            let reconstruction_threshold = threshold_updates
-                .get(&domain.id)
-                .copied()
-                .unwrap_or(domain.reconstruction_threshold);
-            DomainConfig {
-                reconstruction_threshold,
-                ..domain.clone()
-            }
-        })
-    }
-
     /// Returns the given domain by the DomainId.
     pub fn get_domain_by_domain_id(&self, id: DomainId) -> Option<&DomainConfig> {
         self.domains.iter().find(|domain| domain.id == id)
@@ -305,16 +285,13 @@ impl AddDomainsVotes {
 #[expect(non_snake_case)]
 pub mod tests {
     use super::{
-        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry,
-        Participants, Protocol, is_valid_protocol_for_purpose, validate_domain_purpose,
+        AddDomainsVotes, Curve, DomainConfig, DomainId, DomainPurpose, DomainRegistry, Protocol,
+        is_valid_protocol_for_purpose, validate_domain_purpose,
     };
-    use crate::primitives::key_state::AuthenticatedParticipantId;
     use crate::primitives::test_utils::{
-        gen_participant, gen_participants, infer_purpose_from_protocol,
+        gen_authenticated_participants, gen_participants, infer_purpose_from_protocol,
     };
     use near_mpc_contract_interface::types::ReconstructionThreshold;
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
     use rstest::rstest;
     use std::collections::BTreeMap;
 
@@ -518,24 +495,6 @@ pub mod tests {
         assert_eq!(validate_domain_purpose(&domain).is_ok(), expected_ok);
     }
 
-    fn setup_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
-        let mut participants = Participants::new();
-        let mut accounts = Vec::new();
-        for i in 0..n {
-            let (account_id, info) = gen_participant(i);
-            accounts.push(account_id.clone());
-            participants.insert(account_id, info).unwrap();
-        }
-        let mut auth_ids = Vec::new();
-        for account_id in &accounts {
-            let mut ctx = VMContextBuilder::new();
-            ctx.signer_account_id(account_id.clone());
-            testing_env!(ctx.build());
-            auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
-        }
-        (participants, auth_ids)
-    }
-
     fn sample_proposal() -> Vec<DomainConfig> {
         vec![DomainConfig {
             id: DomainId(0),
@@ -561,7 +520,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_all_voters_still_participants() {
         // Given
-        let (participants, auth_ids) = setup_participants(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
@@ -578,7 +537,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_some_voters_removed() {
         // Given
-        let (participants, auth_ids) = setup_participants(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
@@ -597,7 +556,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_all_voters_removed() {
         // Given
-        let (_, auth_ids) = setup_participants(3);
+        let (_, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
         for auth_id in &auth_ids {
@@ -615,7 +574,7 @@ pub mod tests {
     #[test]
     fn test_get_remaining_votes_preserves_different_proposals() {
         // Given
-        let (participants, auth_ids) = setup_participants(3);
+        let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal_a = vec![DomainConfig {
             id: DomainId(0),
             protocol: Protocol::CaitSith,
@@ -811,34 +770,5 @@ pub mod tests {
             result.domains()[2].reconstruction_threshold,
             ReconstructionThreshold::new(2)
         );
-    }
-
-    #[test]
-    fn effective_domain_by_index__should_override_only_the_targeted_domains_threshold() {
-        // Given a registry with two domains and an update targeting the second.
-        let registry = registry_of(vec![
-            DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(1),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::Sign,
-            },
-        ]);
-        let updates = BTreeMap::from([(DomainId(1), ReconstructionThreshold::new(4))]);
-
-        // When reading each domain's effective config.
-        let d0 = registry.effective_domain_by_index(0, &updates).unwrap();
-        let d1 = registry.effective_domain_by_index(1, &updates).unwrap();
-
-        // Then only the targeted domain reports the new threshold.
-        assert_eq!(d0.reconstruction_threshold, ReconstructionThreshold::new(2));
-        assert_eq!(d1.reconstruction_threshold, ReconstructionThreshold::new(4));
-        assert!(registry.effective_domain_by_index(2, &updates).is_none());
     }
 }

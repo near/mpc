@@ -53,7 +53,7 @@
 //! result. The `[#1175]` summary still sits near the top of the test output.
 
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::{NodeTestPorts, port_seed};
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup,
     request_signature_and_await_response,
@@ -197,7 +197,7 @@ async fn measure_signing_latency(
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::ASSET_GENERATION_SIGNING_CONTENTION_TEST.with_case(case),
+        port_seed::ASSET_GENERATION_SIGNING_CONTENTION_TEST.with_case(case),
         DEFAULT_BLOCK_TIME,
     );
 
@@ -226,7 +226,7 @@ async fn measure_signing_latency(
                 STEADY_TRIPLES_TO_BUFFER
             },
             parallel_triple_generation_stagger_time_sec: TRIPLE_STAGGER_SEC,
-            timeout_sec: 60,
+            timeout_sec: 120,
         };
         node.config.presignature = PresignatureConfig {
             concurrency: PRESIGNATURE_CONCURRENCY,

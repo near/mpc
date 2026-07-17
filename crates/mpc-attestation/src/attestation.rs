@@ -21,10 +21,16 @@ use sha2::{Digest as _, Sha256};
 use crate::alloc::format;
 use crate::alloc::string::{String, ToString};
 
+/// How long an accepted attestation stays trusted before it must be
+/// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
+/// well within this window, so valid attestations refresh in time.
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
-#[expect(clippy::large_enum_variant)]
+// `large_enum_variant` fires only where `usize` is 64-bit; under the contract's
+// wasm32 build the variants are close enough in size that it doesn't, so gate the
+// expectation to non-wasm targets to keep it fulfilled in both configs.
+#[cfg_attr(not(target_arch = "wasm32"), expect(clippy::large_enum_variant))]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),

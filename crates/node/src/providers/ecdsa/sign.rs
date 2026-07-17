@@ -29,13 +29,13 @@ impl EcdsaSignatureProvider {
         presignature: PresignOutputWithParticipants,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
-        let domain_data = self.domain_data(sign_request.domain)?;
+        let keyshare = self.keyshare(sign_request.domain)?;
         let participants = presignature.participants.clone();
-        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let threshold: usize = keyshare.reconstruction_threshold.inner().try_into()?;
         let threshold = ReconstructionThreshold::from(threshold);
 
         let (signature, public_key) = SignComputation {
-            keygen_out: domain_data.keyshare,
+            keygen_out: keyshare.keygen_output,
             threshold,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
@@ -69,8 +69,8 @@ impl EcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
-        let domain_data = self.domain_data(sign_request.domain)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let keyshare = self.keyshare(sign_request.domain)?;
+        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
         let channel = self.new_channel_for_task(
             EcdsaTaskId::Signature {
@@ -91,15 +91,15 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         // The presignature must be owned by the leader, never one of ours.
         presignature_id.validate_owned_by(channel.sender().get_leader())?;
-        let domain_data = self.domain_data(sign_request.domain)?;
-        let threshold: usize = domain_data.reconstruction_threshold.inner().try_into()?;
+        let keyshare = self.keyshare(sign_request.domain)?;
+        let threshold: usize = keyshare.reconstruction_threshold.inner().try_into()?;
         let threshold = ReconstructionThreshold::from(threshold);
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
-            keygen_out: domain_data.keyshare,
+            keygen_out: keyshare.keygen_output,
             threshold,
-            presignature_store: domain_data.presignature_store.clone(),
+            presignature_store: keyshare.presignature_store.clone(),
             presignature_id,
             msg_hash: *sign_request
                 .payload

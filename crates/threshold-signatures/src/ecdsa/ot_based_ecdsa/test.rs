@@ -155,18 +155,14 @@ pub fn run_presign(
     pub1: &TriplePub,
     threshold: ReconstructionThreshold,
 ) -> Vec<(Participant, PresignOutput)> {
-    assert!(participants.len() == shares0.len());
-    assert!(participants.len() == shares1.len());
+    assert_eq!(participants.len(), shares0.len());
+    assert_eq!(participants.len(), shares1.len());
 
     let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
     let participant_list: Vec<Participant> = participants.iter().map(|(p, _)| *p).collect();
 
-    for (((p, keygen_out), share0), share1) in participants
-        .into_iter()
-        .zip(shares0.into_iter())
-        .zip(shares1.into_iter())
-    {
+    for (((p, keygen_out), share0), share1) in participants.into_iter().zip(shares0).zip(shares1) {
         let protocol = presign(
             &participant_list,
             p,

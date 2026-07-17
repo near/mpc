@@ -6,6 +6,8 @@ This guide provides step-by-step instructions for node operators to migrate thei
 
 Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the `backup-cli` tool to securely backup and restore your node's keyshares.
 
+**Changing only your URL?** If your node keeps the same TLS key and you only need to point peers at a new address (e.g. fixing a typo or moving to a new domain), call `update_participant_url` on the contract instead of running a migration. It updates just your registered URL; peers pick it up without a resharing or reconnecting existing sessions.
+
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
 
 ## Prerequisites
@@ -149,6 +151,15 @@ export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 
 Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
+**TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
+
+```toml
+[mpc_node_config.secrets]
+backup_encryption_key_hex = "<your 32-byte hex key>"
+```
+
+This is the key you pass to the backup-cli — if the node is already deployed, it is the value you set in `backup_encryption_key_hex` at deploy time. The node reads it from the config on every start, so you can add or change it on a running node via `update-user-config` + restart.
+
 
 
 **Note on key differences:**
@@ -167,10 +178,12 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host where your node is running (e.g., `node.example.com`)
-- **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
+- **MPC node address**: The host where your node is running (e.g., `node.example.com`). Available from the contract — your participant entry's `url` in the `state` view.
+- **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
-Both those values can be found on the contract.
+  ```bash
+  export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+  ```
 
 ### Get Contract State
 
@@ -280,7 +293,7 @@ near contract call-function as-transaction \
     \"destination_node_info\": {
       \"signer_account_pk\": \"$near_signer_public_key\",
       \"destination_node_info\": {
-        \"url\": \"new-node.example.com:80\",
+        \"url\": \"http://new-node.example.com:80\",
         \"tls_public_key\": \"$P2P_KEY\"
       }
     }
@@ -292,6 +305,8 @@ near contract call-function as-transaction \
   sign-with-keychain \
   send
 ```
+
+**Note:** The `url` in `destination_node_info` above must contain the `http://` prefix, please do not forget adding it.
 
 ### Verify Migration Was Registered on the Contract
 
@@ -394,4 +409,3 @@ The back-migration flow (returning to a previously-active node, i.e. A → B →
 1. **Restart Node A before initiating the back-migration.** Stop and start A so its migration service is reinitialized and ready to receive keyshares from B. The restart also forces A to submit a fresh on-chain attestation (see next bullet).
 
 2. **A's on-chain attestation must be current.** The contract rejects the back-migration if A's attestation has expired or been revoked while A was outside the participant set. Restarting A (limitation 1) forces a fresh attestation submission immediately; otherwise, A's normal periodic resubmission updates the attestation roughly every hour.
-

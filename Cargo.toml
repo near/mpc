@@ -11,11 +11,14 @@ members = [
     "crates/contract-history",
     "crates/devnet",
     "crates/e2e-tests",
+    "crates/foreign-chain-config-tester",
     "crates/foreign-chain-inspector",
+    "crates/foreign-chain-rpc-auth",
     "crates/foreign-chain-rpc-interfaces",
     "crates/include-measurements",
     "crates/launcher-interface",
     "crates/mpc-attestation",
+    "crates/mpc-call-args",
     "crates/near-mpc-bounded-collections",
     "crates/near-mpc-contract-interface",
     "crates/near-mpc-crypto-types",
@@ -40,7 +43,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.12.0"
+version = "3.13.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -52,10 +55,12 @@ chain-gateway = { path = "crates/chain-gateway" }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
+foreign-chain-rpc-auth = { path = "crates/foreign-chain-rpc-auth" }
 foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 launcher-interface = { path = "crates/launcher-interface" }
 mpc-attestation = { path = "crates/mpc-attestation" }
+mpc-call-args = { path = "crates/mpc-call-args" }
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-node-config = { path = "crates/node-config" }
@@ -74,7 +79,7 @@ test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
 
-aes-gcm = "0.10.3"
+aes-gcm = "0.11.0"
 anyhow = "1.0.102"
 assert_matches = "1.5.0"
 async-trait = "0.1.89"
@@ -90,7 +95,7 @@ bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
 byteorder = "1.5.0"
 bytes = { version = "1.11.1" }
-cargo-near-build = "0.11.3"
+cargo-near-build = "0.11.5"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 curve25519-dalek = { version = "4.1.3", features = [
@@ -160,7 +165,7 @@ hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
 inferno = "0.12"
 insta = { version = "1.46.3", features = ["json", "redactions"] }
-itertools = "0.14.0"
+itertools = "0.15.0"
 # Pinned to the 0.4.x line so it stays compatible with `tikv-jemalloc-ctl 0.5`
 # (and therefore `tikv-jemalloc-sys 0.5`, which is what `librocksdb-sys 0.11`
 # brings into the dep graph via `nearcore`'s `near-store`). Bumping past 0.5.x
@@ -176,7 +181,7 @@ lru = "0.18.0"
 # binary mappings into emitted pprof profiles so `pprof` can symbolicate
 # addresses through ASLR.
 mappings = "0.5"
-mockall = "0.14.0"
+mockall = "0.15.0"
 named-lock = "0.4.1"
 near-abi = "0.4.4"
 near-account-id = "2.6.0"
@@ -185,6 +190,7 @@ near-account-id = "2.6.0"
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
 near-crypto-public = { version = "0.36.0", package = "near-crypto" }
+near-gas = "0.3.4"
 near-jsonrpc-client = "0.21.1"
 near-jsonrpc-primitives = "0.36.0"
 near-kit = { version = "0.11.0", default-features = false }
@@ -194,6 +200,7 @@ near-sdk = { version = "5.28.0", features = [
     "legacy",
     "unstable",
 ] }
+near-token = "0.3.4"
 near-workspaces = { version = "0.22.2" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
@@ -231,6 +238,8 @@ sha3 = "0.10.8"
 signature = "2.2.0"
 socket2 = "0.6.3"
 subtle = "2.6.1"
+sui-rpc = "0.3.1"
+sui-sdk-types = "0.3.1"
 syn = "2.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
@@ -246,6 +255,7 @@ tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
 toml = "1.1.2"
+tonic = { version = "0.14.2", default-features = false }
 tower = "0.5.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [
@@ -256,21 +266,25 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-test = "0.2.6"
 url = "2"
+wycheproof = { version = "0.6", default-features = false, features = [
+    "ecdsa",
+    "eddsa",
+] }
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.12.0" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88

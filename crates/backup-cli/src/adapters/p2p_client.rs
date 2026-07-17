@@ -83,7 +83,7 @@ impl ports::P2PClient for MpcP2PClient {
 #[cfg(test)]
 mod tests {
     use mpc_node::migration_service::web::test_utils;
-    use mpc_node::p2p::testing::PortSeed;
+    use mpc_node::p2p::testing::port_seed;
     use rand::SeedableRng as _;
 
     use crate::adapters::p2p_client::MpcP2PClient;
@@ -95,7 +95,7 @@ mod tests {
     async fn test_get_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
-        let test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_GET_KEYSHARES).await;
+        let test_setup = test_utils::setup(port_seed::BACKUP_CLI_WEBSERVER_GET_KEYSHARES).await;
         let addr: NodeAddress = test_setup.target_address.to_string().parse().unwrap();
         let client = MpcP2PClient::new(
             addr,
@@ -132,7 +132,7 @@ mod tests {
     async fn test_put_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
-        let mut test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES).await;
+        let mut test_setup = test_utils::setup(port_seed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES).await;
         let addr: NodeAddress = test_setup.target_address.to_string().parse().unwrap();
         let client = MpcP2PClient::new(
             addr,
@@ -160,7 +160,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let mut test_setup =
-            test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME).await;
+            test_utils::setup(port_seed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES_HOSTNAME).await;
         let addr: NodeAddress = format!("localhost:{}", test_setup.target_address.port())
             .parse()
             .unwrap();

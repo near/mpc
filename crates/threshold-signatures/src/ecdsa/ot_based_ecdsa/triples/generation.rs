@@ -718,13 +718,7 @@ async fn do_generation_many<const N: usize>(
     Ok(ret)
 }
 
-/// Generate a triple through a multi-party protocol.
-///
-/// This requires a setup phase to have been conducted with these parties
-/// previously.
-///
-/// The resulting triple will be threshold shared, according to the threshold
-/// provided to this function.
+/// Validate the participant set and threshold for triple generation.
 fn validate_triple_inputs(
     participants: &[Participant],
     threshold: impl Into<ReconstructionThreshold>,
@@ -793,8 +787,9 @@ pub fn triple_generation_max_incoming_buffer_entries(
 
 /// Generate a triple through a multi-party protocol.
 ///
-/// This requires a setup phase to have been conducted with these parties
-/// previously.
+/// The base OT is run fresh per multiplication and must never be persisted or
+/// reused across runs; there is no reusable one-time setup. See the
+/// [module docs](super) for why.
 ///
 /// The resulting triple will be threshold shared, according to the threshold
 /// provided to this function.
@@ -892,7 +887,7 @@ mod test {
 
         let result = run_protocol(protocols).unwrap();
 
-        assert!(result.len() == participants.len());
+        assert_eq!(result.len(), participants.len());
         assert_eq!(result[0].1.1, result[1].1.1);
         assert_eq!(result[1].1.1, result[2].1.1);
 
@@ -978,7 +973,7 @@ mod test {
 
         let result = run_protocol(protocols).unwrap();
 
-        assert!(result.len() == participants.len());
+        assert_eq!(result.len(), participants.len());
         assert_eq!(result[0].1[0].1, result[1].1[0].1);
         assert_eq!(result[1].1[0].1, result[2].1[0].1);
 

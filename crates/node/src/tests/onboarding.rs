@@ -7,7 +7,7 @@ use crate::config::{AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::migration_service;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::DEFAULT_BLOCK_TIME;
 use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{
@@ -83,7 +83,7 @@ async fn test_onboarding() {
         account_ids,
         THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::ONBOARDING_TEST,
+        port_seed::ONBOARDING_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

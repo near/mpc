@@ -18,6 +18,7 @@ dependencies = [
   "check-docs",
   "clippy",
   "clippy-all-features",
+  "contract-check",
 ]
 
 [tasks.check-all]
@@ -48,6 +49,11 @@ args = [
 command = "cargo"
 args = ["clippy", "--all-targets", "--locked", "--", "-D", "warnings"]
 
+[tasks.contract-check]
+description = "Lint contract crates under the real build config via `cargo near check`"
+command = "bash"
+args = ["scripts/check-contract-clippy.sh"]
+
 [tasks.fmt]
 command = "cargo"
 args = ["fmt", "--", "--check"]
@@ -58,7 +64,7 @@ args = ["sort", "--workspace", "--grouped", "--check", "--check-format"]
 
 [tasks.cargo-shear]
 command = "cargo"
-args = ["shear"]
+args = ["shear", "--deny-warnings"]
 
 
 [tasks.nextest]

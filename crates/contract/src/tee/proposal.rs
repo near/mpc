@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env::sha256, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
@@ -147,9 +148,25 @@ impl LauncherHashVotes {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-pub struct AllowedMpcDockerImage {
-    pub(crate) image_hash: NodeImageHash,
-    pub(crate) added: Timestamp,
+struct WhitelistedMpcDockerImageHash {
+    image_hash: NodeImageHash,
+    added_at: Timestamp,
+}
+
+fn make_dtos_docker_image_hash(
+    prev: &WhitelistedMpcDockerImageHash,
+    next: &WhitelistedMpcDockerImageHash,
+    tee_upgrade_deadline_duration: Duration,
+) -> dtos::AllowedMpcDockerImageHash {
+    dtos::AllowedMpcDockerImageHash {
+        image_hash: prev.image_hash,
+        // A timestamp overflow means the grace period never ends, so the entry
+        // never expires.
+        expiry_timestamp_seconds: next
+            .added_at
+            .checked_add(tee_upgrade_deadline_duration)
+            .map(Timestamp::as_secs),
+    }
 }
 
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
@@ -159,23 +176,52 @@ pub struct AllowedMpcDockerImage {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
 )]
-pub(crate) struct AllowedDockerImageHashes {
+pub(super) struct StoredDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
     /// lazily cleaned up during insertions and TEE validation.
-    allowed_tee_proposals: Vec<AllowedMpcDockerImage>,
+    allowed_tee_proposals: Vec<WhitelistedMpcDockerImageHash>,
 }
 
-impl AllowedDockerImageHashes {
-    /// Checks if a Docker image hash is still valid (not expired).
-    fn valid_entries(&self, tee_upgrade_deadline_duration: Duration) -> Vec<AllowedMpcDockerImage> {
-        let current_time = Timestamp::now();
-        // get the index of the most recently enforced docker image
-        let cutoff_index = self
+impl StoredDockerImageHashes {
+    /// Returns the list of currently allowed docker image hashes, oldest first; the newest entry
+    /// has no expiry.
+    pub fn allowed_images(
+        &self,
+        tee_upgrade_deadline_duration: Duration,
+    ) -> Vec<dtos::AllowedMpcDockerImageHash> {
+        let valid = self
             .allowed_tee_proposals
+            .get(self.cutoff_index(tee_upgrade_deadline_duration)..)
+            .unwrap_or(&[]);
+
+        let Some(latest) = valid.last() else {
+            return Vec::new();
+        };
+
+        let mut res: Vec<dtos::AllowedMpcDockerImageHash> = valid
+            .windows(2)
+            .map(|window| {
+                let [prev, next] = window else {
+                    unreachable!("windows(2) always yields two-element slices")
+                };
+                make_dtos_docker_image_hash(prev, next, tee_upgrade_deadline_duration)
+            })
+            .collect();
+        res.push(dtos::AllowedMpcDockerImageHash {
+            image_hash: latest.image_hash,
+            expiry_timestamp_seconds: None,
+        });
+        res
+    }
+
+    /// Index of the oldest still-valid entry, as of the current block time.
+    fn cutoff_index(&self, tee_upgrade_deadline_duration: Duration) -> usize {
+        let current_time = Timestamp::now();
+        self.allowed_tee_proposals
             .iter()
             .rposition(|allowed_docker_image| {
                 let Some(grace_period_deadline) = allowed_docker_image
-                    .added
+                    .added_at
                     .checked_add(tee_upgrade_deadline_duration)
                 else {
                     log!("Error: timestamp overflowed when calculating grace_period_deadline.");
@@ -184,23 +230,18 @@ impl AllowedDockerImageHashes {
                 // if the grace period for this docker hash is in the past, then older hashes are no longer accepted
                 grace_period_deadline < current_time
             })
-            .unwrap_or(0);
-
-        self.allowed_tee_proposals
-            .get(cutoff_index..)
-            .unwrap_or(&[])
-            .to_vec()
+            .unwrap_or(0)
     }
 
     /// Removes all expired code hashes and returns the number of removed entries.
     /// Ensures that at least one (the latest) proposal always remains in the whitelist.
     pub fn cleanup_expired_hashes(&mut self, tee_upgrade_deadline_duration: Duration) {
-        let valid_entries = self.valid_entries(tee_upgrade_deadline_duration);
-        self.allowed_tee_proposals = valid_entries;
+        let cutoff_index = self.cutoff_index(tee_upgrade_deadline_duration);
+        self.allowed_tee_proposals.drain(..cutoff_index);
     }
 
     /// Inserts a new code hash into the list after cleaning expired entries. Maintains the sorted
-    /// order by `added` (ascending).
+    /// order by `added_at` (ascending).
     pub fn insert(&mut self, code_hash: NodeImageHash, tee_upgrade_deadline_duration: Duration) {
         self.cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
@@ -213,33 +254,26 @@ impl AllowedDockerImageHashes {
             self.allowed_tee_proposals.remove(pos);
         }
 
-        let new_entry = AllowedMpcDockerImage {
+        let new_entry = WhitelistedMpcDockerImageHash {
             image_hash: code_hash,
-            added: Timestamp::now(),
+            added_at: Timestamp::now(),
         };
 
-        // Find the correct position to maintain sorted order by `added`
+        // Find the correct position to maintain sorted order by `added_at`
         let insert_index = self
             .allowed_tee_proposals
             .iter()
             // strictly less, `<`, such that new entries take higher precedence
             // if two entries have the exact same time stamp.
-            .rposition(|entry| new_entry.added < entry.added)
+            .rposition(|entry| new_entry.added_at < entry.added_at)
             .unwrap_or(self.allowed_tee_proposals.len());
 
         self.allowed_tee_proposals.insert(insert_index, new_entry);
     }
 
-    /// Returns valid hashes without cleaning expired entries (read-only). Ensures that at least
-    /// one proposal (the latest) is always returned. Use [`Self::cleanup_expired_hashes`]
-    /// explicitly when cleanup of the internal structure is needed.
-    pub fn get(&self, tee_upgrade_deadline_duration: Duration) -> Vec<AllowedMpcDockerImage> {
-        self.valid_entries(tee_upgrade_deadline_duration)
-    }
-
     /// Returns only the image hashes of valid entries.
     pub fn get_image_hashes(&self, tee_upgrade_deadline_duration: Duration) -> Vec<NodeImageHash> {
-        self.valid_entries(tee_upgrade_deadline_duration)
+        self.allowed_images(tee_upgrade_deadline_duration)
             .into_iter()
             .map(|entry| entry.image_hash)
             .collect()
@@ -367,6 +401,7 @@ pub fn get_docker_compose_hash(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
@@ -385,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_insert_and_get() {
-        let mut allowed = AllowedDockerImageHashes::default();
+        let mut allowed = StoredDockerImageHashes::default();
         let mut current_time_nano_seconds = 0;
         testing_env!(
             VMContextBuilder::new()
@@ -431,15 +466,106 @@ mod tests {
 
         // Get proposals (should return both)
         allowed.cleanup_expired_hashes(TEST_TEE_UPGRADE_DEADLINE_DURATION);
-        let proposals: Vec<_> = allowed.get(TEST_TEE_UPGRADE_DEADLINE_DURATION);
+        let proposals: Vec<_> = allowed.allowed_images(TEST_TEE_UPGRADE_DEADLINE_DURATION);
         assert_eq!(proposals.len(), 2);
         assert_eq!(proposals[0].image_hash, dummy_code_hash(1));
         assert_eq!(proposals[1].image_hash, dummy_code_hash(2));
     }
 
     #[test]
+    fn allowed_images__should_report_eviction_time_computed_from_next_newer_entry() {
+        // Given: two entries added one second apart.
+        let mut allowed = StoredDockerImageHashes::default();
+        let first_entry_time = NANOS_IN_SECOND;
+        let second_entry_time = 2 * NANOS_IN_SECOND;
+
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(first_entry_time)
+                .build()
+        );
+        allowed.insert(dummy_code_hash(1), TEST_TEE_UPGRADE_DEADLINE_DURATION);
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(second_entry_time)
+                .build()
+        );
+        allowed.insert(dummy_code_hash(2), TEST_TEE_UPGRADE_DEADLINE_DURATION);
+
+        // When
+        let entries = allowed.allowed_images(TEST_TEE_UPGRADE_DEADLINE_DURATION);
+
+        // Then: the older entry is evicted when the grace period after the newer entry ends.
+        let expected_expiry_seconds =
+            second_entry_time / NANOS_IN_SECOND + TEST_TEE_UPGRADE_DEADLINE_DURATION.as_secs();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].image_hash, dummy_code_hash(1));
+        assert_eq!(
+            entries[0].expiry_timestamp_seconds,
+            Some(expected_expiry_seconds)
+        );
+        assert_eq!(entries[1].image_hash, dummy_code_hash(2));
+        assert_eq!(entries[1].expiry_timestamp_seconds, None);
+    }
+
+    #[test]
+    fn allowed_images__should_return_none_expiry_for_newest_entry() {
+        // Given: a single entry.
+        let mut allowed = StoredDockerImageHashes::default();
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(NANOS_IN_SECOND)
+                .build()
+        );
+        allowed.insert(dummy_code_hash(1), TEST_TEE_UPGRADE_DEADLINE_DURATION);
+
+        // When: queried long after its own grace period would have ended.
+        testing_env!(VMContextBuilder::new().block_timestamp(u64::MAX).build());
+        let entries = allowed.allowed_images(TEST_TEE_UPGRADE_DEADLINE_DURATION);
+
+        // Then: the newest (only) entry never expires.
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].expiry_timestamp_seconds, None);
+    }
+
+    #[test]
+    fn allowed_images__should_drop_expired_entries() {
+        // Given: two entries where the older one's grace period has ended.
+        let mut allowed = StoredDockerImageHashes::default();
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(NANOS_IN_SECOND)
+                .build()
+        );
+        allowed.insert(dummy_code_hash(1), TEST_TEE_UPGRADE_DEADLINE_DURATION);
+        let second_entry_time = 2 * NANOS_IN_SECOND;
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(second_entry_time)
+                .build()
+        );
+        allowed.insert(dummy_code_hash(2), TEST_TEE_UPGRADE_DEADLINE_DURATION);
+
+        // When: queried past the newer entry's grace deadline.
+        let past_grace_deadline = second_entry_time
+            + TEST_TEE_UPGRADE_DEADLINE_DURATION.as_nanos() as u64
+            + NANOS_IN_SECOND;
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(past_grace_deadline)
+                .build()
+        );
+        let entries = allowed.allowed_images(TEST_TEE_UPGRADE_DEADLINE_DURATION);
+
+        // Then: only the newest entry remains and it never expires.
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].image_hash, dummy_code_hash(2));
+        assert_eq!(entries[0].expiry_timestamp_seconds, None);
+    }
+
+    #[test]
     fn test_clean_expired() {
-        let mut allowed = AllowedDockerImageHashes::default();
+        let mut allowed = StoredDockerImageHashes::default();
         let first_entry_time_nano_seconds = NANOS_IN_SECOND;
 
         testing_env!(
@@ -471,7 +597,7 @@ mod tests {
         );
 
         allowed.cleanup_expired_hashes(TEST_TEE_UPGRADE_DEADLINE_DURATION);
-        let proposals: Vec<_> = allowed.get(TEST_TEE_UPGRADE_DEADLINE_DURATION);
+        let proposals: Vec<_> = allowed.allowed_images(TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
         // Only the second proposal should remain if the first is expired
         assert_eq!(proposals.len(), 1);
@@ -483,7 +609,7 @@ mod tests {
 
         allowed.cleanup_expired_hashes(TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
-        let proposals: Vec<_> = allowed.get(TEST_TEE_UPGRADE_DEADLINE_DURATION);
+        let proposals: Vec<_> = allowed.allowed_images(TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
         assert_eq!(proposals.len(), 1);
     }

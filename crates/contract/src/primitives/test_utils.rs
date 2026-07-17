@@ -2,6 +2,7 @@ use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
+        key_state::AuthenticatedParticipantId,
         participants::{ParticipantInfo, Participants},
         thresholds::{
             ProposedThresholdParameters, Threshold, ThresholdParameters,
@@ -12,8 +13,10 @@ use crate::{
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, NodeId, Protocol,
+    ReconstructionThreshold,
 };
+use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
 use std::collections::BTreeMap;
 // Re-export for convenience
@@ -143,6 +146,40 @@ pub fn gen_participants(n: usize) -> Participants {
         let _ = participants.insert(account_id, info);
     }
     participants
+}
+
+pub fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
+    NodeId {
+        account_id: account_id.clone(),
+        tls_public_key: tls_public_key.clone(),
+        account_public_key: bogus_ed25519_public_key(),
+    }
+}
+
+pub fn node_id_for(account_id: &AccountId) -> NodeId {
+    create_node_id(account_id, &bogus_ed25519_public_key())
+}
+
+pub fn authenticate_as(
+    account_id: &AccountId,
+    participants: &Participants,
+) -> AuthenticatedParticipantId {
+    let mut ctx = VMContextBuilder::new();
+    ctx.signer_account_id(account_id.clone());
+    testing_env!(ctx.build());
+    AuthenticatedParticipantId::new(participants).unwrap()
+}
+
+/// Build `n` participants and pre-authenticate each, returning the set alongside
+/// each participant's [`AuthenticatedParticipantId`].
+pub fn gen_authenticated_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
+    let participants = gen_participants(n);
+    let auth_ids = participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, _)| authenticate_as(account_id, &participants))
+        .collect();
+    (participants, auth_ids)
 }
 
 pub fn gen_seed() -> [u8; 32] {

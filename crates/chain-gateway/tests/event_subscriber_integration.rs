@@ -3,7 +3,6 @@ use std::time::Duration;
 use super::common::localnet::Localnet;
 use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
 use chain_gateway::{
-    Gas,
     event_subscriber::{
         block_events::{
             BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
@@ -16,14 +15,23 @@ use chain_gateway::{
 };
 use chain_gateway_test_contract::{
     args::{
-        Call, make_private_set_args, make_set_value_in_promise_args,
-        make_spawn_promise_in_callback_args,
+        make_private_set_args, make_set_value_in_promise_args, make_spawn_promise_in_callback_args,
     },
     consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
 };
 use rstest::rstest;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
+
+async fn must_recv_block_update(
+    receiver: &mut tokio::sync::mpsc::Receiver<BlockUpdate>,
+) -> BlockUpdate {
+    tokio::time::timeout(EVENT_TIMEOUT, receiver.recv())
+        .await
+        .expect("expected a block update before timeout")
+        .expect("expected a block update, channel closed")
+}
+
 struct ExecutorFunctionCallTest {
     test_account: TestAccount,
     contract_id: near_account_id::AccountId,
@@ -75,33 +83,15 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: A transaction returning a promise succeeds
-    let Call {
-        method, args, gas, ..
-    } = make_set_value_in_promise_args("succeeds", false);
+    let call = make_set_value_in_promise_args("succeeds", false);
 
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id,
-            method,
-            args.clone(),
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id, call.clone())
         .await
         .unwrap();
 
     // Then: expect a matching block update
-    let events = tokio::time::timeout(EVENT_TIMEOUT, async move {
-        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
-            if !events.is_empty() {
-                return Some(events);
-            }
-        }
-        None
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let BlockUpdate { events, .. } = must_recv_block_update(&mut receiver).await;
 
     assert_eq!(events.len(), 1);
 
@@ -125,7 +115,7 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
         *predecessor_id, test_account.account_id,
         "predecessor_id should match user account"
     );
-    assert_eq!(*args_raw, args, "args must match");
+    assert_eq!(*args_raw, call.args, "args must match");
 
     localnet.shutdown().await;
 }
@@ -148,17 +138,9 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     // Add a backmarker to not wait indefinitely or be subject to race conditions.
     let end_marker: &str = "if you read this, you can be sure that the spawned promise has failed";
 
-    let Call {
-        method, args, gas, ..
-    } = make_spawn_promise_in_callback_args(false, end_marker);
+    let call = make_spawn_promise_in_callback_args(false, end_marker);
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id.clone(),
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id.clone(), call)
         .await
         .unwrap();
 
@@ -185,14 +167,10 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     // close the localnet, such that we no longer get events
     localnet.shutdown().await;
 
-    // Then: Ensure we didin' receive any events
-    tokio::time::timeout(EVENT_TIMEOUT, async move {
-        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
-            assert!(events.is_empty(), "did not expect logged events");
-        }
-    })
-    .await
-    .unwrap();
+    // Then: shutdown closes the channel; anything buffered would be an unexpected event.
+    receiver
+        .try_recv()
+        .expect_err("expected channel to be empty");
 }
 
 struct ReceiverFunctionCallTest {
@@ -205,8 +183,14 @@ struct ReceiverFunctionCallTest {
 }
 
 async fn setup_receiver_function_call_filter() -> ReceiverFunctionCallTest {
+    setup_receiver_function_call_filter_with_buffer(1).await
+}
+
+async fn setup_receiver_function_call_filter_with_buffer(
+    buffer_size: usize,
+) -> ReceiverFunctionCallTest {
     let contract_id: near_account_id::AccountId = "test-contract.near".parse().unwrap();
-    let mut subscriber = BlockEventSubscriptions::new(1);
+    let mut subscriber = BlockEventSubscriptions::new(buffer_size);
     let private_set_event_id = subscriber.subscribe(BlockEventSubscription::ReceiverFunctionCall {
         receipt_receiver_id: contract_id.clone(),
         method_name: PRIVATE_SET.to_string(),
@@ -250,36 +234,15 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: the contract calls itself:
-    let Call {
-        method,
-        args,
-        deposit: _,
-        gas,
-    } = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
+    let call = make_private_set_args("maybe it works, maybe it doesn't", expect_success);
 
     observer_gw
-        .submit_function_call_tx(
-            &contract_signer,
-            contract_id,
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&contract_signer, contract_id, call)
         .await
         .unwrap();
 
     // Then: expect a matching block update
-    let events = tokio::time::timeout(EVENT_TIMEOUT, async move {
-        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
-            if !events.is_empty() {
-                return Some(events);
-            }
-        }
-        None
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let BlockUpdate { events, .. } = must_recv_block_update(&mut receiver).await;
 
     assert_eq!(events.len(), 1);
 
@@ -314,36 +277,15 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
     let observer_gw = &localnet.observer.chain_gateway;
 
     // When: other than the contract calls it:
-    let Call {
-        method,
-        args,
-        deposit: _,
-        gas,
-    } = make_private_set_args("this will fail", true);
+    let call = make_private_set_args("this will fail", true);
 
     observer_gw
-        .submit_function_call_tx(
-            &test_account.signer,
-            contract_id,
-            method,
-            args,
-            Gas::from_teragas(gas.into()),
-        )
+        .submit_function_call_tx(&test_account.signer, contract_id, call)
         .await
         .unwrap();
 
     // Then: expect a matching block update
-    let events = tokio::time::timeout(EVENT_TIMEOUT, async move {
-        while let Some(BlockUpdate { events, .. }) = receiver.recv().await {
-            if !events.is_empty() {
-                return Some(events);
-            }
-        }
-        None
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let BlockUpdate { events, .. } = must_recv_block_update(&mut receiver).await;
 
     assert_eq!(events.len(), 1);
 
@@ -358,6 +300,128 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
         panic!("expected ReceiverFunctionCall");
     };
     assert!(!is_success);
+
+    localnet.shutdown().await;
+}
+
+/// Two `private_set` txs are submitted sequentially, with a `view_value` sync
+/// between them to force the receipts into distinct blocks.
+/// If the buffer fits both updates, we expect to receive both block events.
+/// If the buffer does not fit both updates, we expect the latest updates to be dropped.
+#[rstest]
+#[case::buffer_fits_both_updates(2, 2)]
+#[case::buffer_drops_second_update_when_full(1, 1)]
+#[tokio::test]
+async fn test_event_subscriber_channel_buffer_handles_backpressure(
+    #[case] buffer_size: usize,
+    #[case] expected_received: usize,
+) {
+    let ReceiverFunctionCallTest {
+        test_account: _,
+        contract_id,
+        contract_signer,
+        localnet,
+        mut receiver,
+        private_set_event_id: _,
+    } = setup_receiver_function_call_filter_with_buffer(buffer_size).await;
+    let observer_gw = &localnet.observer.chain_gateway;
+
+    let mut watch_value = observer_gw
+        .subscribe_to_contract_method::<String>(contract_id.clone(), VIEW_VALUE)
+        .await;
+
+    for target in ["first", "second"] {
+        let call = make_private_set_args(target, true);
+        observer_gw
+            .submit_function_call_tx(&contract_signer, contract_id.clone(), call)
+            .await
+            .unwrap();
+        loop {
+            if watch_value
+                .latest()
+                .expect("we don't expect an error")
+                .value
+                == target
+            {
+                break;
+            }
+            tokio::time::timeout(EVENT_TIMEOUT, watch_value.changed())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+    }
+    drop(watch_value);
+
+    for _ in 0..expected_received {
+        must_recv_block_update(&mut receiver).await;
+    }
+    receiver
+        .try_recv()
+        .expect_err("expected no further updates");
+
+    localnet.shutdown().await;
+}
+
+/// Ensures a `BlockStatusHandle` from a `BlockUpdate` eventually reports finality.
+///
+/// Synchronisation: the state viewer only reports finalised contract state, so once
+/// it sees the value change, the block whose handle we hold is necessarily final too.
+#[tokio::test]
+async fn test_block_status_handle_becomes_final() {
+    // Given
+    let ExecutorFunctionCallTest {
+        test_account,
+        contract_id,
+        localnet,
+        mut receiver,
+        ..
+    } = setup_executor_function_call_filter().await;
+    let observer_gw = &localnet.observer.chain_gateway;
+
+    // When: one tx that triggers an event and changes contract state.
+    let target_value = "becomes-final";
+    let call = make_set_value_in_promise_args(target_value, false);
+    observer_gw
+        .submit_function_call_tx(&test_account.signer, contract_id.clone(), call)
+        .await
+        .unwrap();
+
+    let BlockUpdate { status, .. } = must_recv_block_update(&mut receiver).await;
+
+    // Sync on the state viewer observing the finalised state change.
+    let mut watch_value = observer_gw
+        .subscribe_to_contract_method::<String>(contract_id, VIEW_VALUE)
+        .await;
+    loop {
+        if watch_value
+            .latest()
+            .expect("we don't expect an error")
+            .value
+            == target_value
+        {
+            break;
+        }
+        tokio::time::timeout(EVENT_TIMEOUT, watch_value.changed())
+            .await
+            .expect("we expect value to change due to our function call")
+            .unwrap();
+    }
+    drop(watch_value);
+
+    // Then: the handle reports its block as final. The state viewer can see
+    // finality slightly before the streamer's tracker registers it (independent
+    // polling paths), so allow a short window for the tracker to catch up.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while status.is_final() != Some(true) {
+        if tokio::time::Instant::now() >= deadline {
+            panic!(
+                "expected the block to be final once the state viewer confirmed the change; is_final={:?}",
+                status.is_final(),
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 
     localnet.shutdown().await;
 }

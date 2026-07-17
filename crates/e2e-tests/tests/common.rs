@@ -38,6 +38,7 @@ pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
 pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
 pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 23;
+pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 24;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -388,8 +389,18 @@ pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
     }
 }
 
-/// Returns the domain running `protocol_type`, panicking if absent. Each
-/// protocol appears at most once per registry, so it identifies a unique domain.
+/// Builds a `ConfidentialKeyDerivation` (CKD) domain with reconstruction threshold `t`, which needs `t` signers.
+pub fn ckd_domain(id: u64, t: u64) -> DomainConfig {
+    DomainConfig {
+        id: DomainId(id),
+        protocol: Protocol::ConfidentialKeyDerivation,
+        reconstruction_threshold: ReconstructionThreshold::new(t),
+        purpose: DomainPurpose::CKD,
+    }
+}
+
+/// Returns the first domain running `protocol_type` (the registry allows
+/// duplicates), panicking if absent.
 pub fn must_get_domain(running: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
     running
         .domains

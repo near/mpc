@@ -6,6 +6,7 @@ use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::DomainKeyshare;
 #[cfg(test)]
 use crate::providers::PublicKeyConversion;
 use crate::providers::SignatureProvider;
@@ -15,7 +16,6 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_node_config::ConfigFile;
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 #[cfg(test)]
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -23,7 +23,7 @@ use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::frost::eddsa::KeygenOutput;
+use threshold_signatures::frost::eddsa::{Ed25519Sha512, KeygenOutput};
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
 
@@ -33,16 +33,10 @@ pub struct EddsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, EddsaKeyshare>,
 }
 
-#[derive(Clone)]
-pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput,
-    /// Per-domain reconstruction threshold `t`, used as the FROST signing
-    /// threshold.
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub(super) type EddsaKeyshare = DomainKeyshare<Ed25519Sha512>;
 
 impl EddsaSignatureProvider {
     pub fn new(
@@ -50,31 +44,19 @@ impl EddsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, EddsaKeyshare>,
     ) -> Self {
-        let per_domain_data = keyshares
-            .into_iter()
-            .map(|(domain_id, (keyshare, reconstruction_threshold))| {
-                (
-                    domain_id,
-                    PerDomainData {
-                        keyshare,
-                        reconstruction_threshold,
-                    },
-                )
-            })
-            .collect();
         Self {
             config,
             mpc_config,
             client,
             sign_request_store,
-            per_domain_data,
+            keyshares,
         }
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EddsaKeyshare> {
+        self.keyshares
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))

@@ -13,14 +13,35 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::TripleConfig;
 use mpc_primitives::ReconstructionThreshold;
+use mpc_primitives::domain::Protocol;
+use near_mpc_contract_interface::types::DomainConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
+use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
+
+/// The distinct reconstruction thresholds `t` in `thresholds`. One triple store exists per `t`.
+pub fn distinct_thresholds(
+    thresholds: impl IntoIterator<Item = ReconstructionThreshold>,
+) -> BTreeSet<ReconstructionThreshold> {
+    thresholds.into_iter().collect()
+}
+
+/// The set of reconstruction thresholds `t` that CaitSith domains generate triples under. CaitSith
+/// is the only protocol that uses triples.
+pub fn caitsith_triple_thresholds(domains: &[DomainConfig]) -> BTreeSet<ReconstructionThreshold> {
+    distinct_thresholds(
+        domains
+            .iter()
+            .filter(|d| d.protocol == Protocol::CaitSith)
+            .map(|d| d.reconstruction_threshold),
+    )
+}
 
 /// Per-`t` triple store. Holds triples generated with `n = t` participants
 /// (cait-sith triples are generated with exactly `t` parties, so the
@@ -59,6 +80,8 @@ impl Deref for TripleStorage {
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
+const TRIPLE_METRICS_REPORTING_INTERVAL: Duration = Duration::from_millis(500);
+
 impl EcdsaSignatureProvider {
     /// Reports the triple-buffer gauges summed across every per-`t` store.
     /// Each generator owns a distinct store keyed by its threshold, so a single
@@ -78,7 +101,7 @@ impl EcdsaSignatureProvider {
             metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
             metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
             metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(available);
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(TRIPLE_METRICS_REPORTING_INTERVAL).await;
         }
     }
 
@@ -133,6 +156,12 @@ impl EcdsaSignatureProvider {
                         continue;
                     }
                 };
+
+                debug_assert_eq!(
+                    participants.len(),
+                    threshold.value(),
+                    "triple routing infers t from channel size (see run_triple_generation_follower)"
+                );
 
                 let id_start = triple_store
                     .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
@@ -347,6 +376,7 @@ pub fn participants_from_triples(
 mod tests {
     use super::{
         ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleStorage,
+        caitsith_triple_thresholds,
     };
     use crate::assets::test_utils::{make_triple, triple_v2_key};
     use crate::db::{DBCol, SecretDB};
@@ -358,7 +388,9 @@ mod tests {
     use crate::tests::into_participant_ids;
     use crate::tracking;
     use futures::{FutureExt, StreamExt, stream};
-    use std::collections::HashMap;
+    use mpc_primitives::domain::{DomainId, Protocol};
+    use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose};
+    use std::collections::{BTreeSet, HashMap};
     use std::sync::Arc;
     use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
     use threshold_signatures::test_utils::generate_participants;
@@ -369,6 +401,34 @@ mod tests {
     const PARALLELISM_PER_CLIENT: usize = 4;
     const TRIPLES_PER_BATCH: usize = 10;
     const BATCHES_TO_GENERATE_PER_CLIENT: usize = 10;
+
+    fn domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
+        DomainConfig {
+            id: DomainId(id),
+            protocol,
+            reconstruction_threshold: ReconstructionThreshold::new(t),
+            purpose: DomainPurpose::Sign,
+        }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn caitsith_triple_thresholds__should_dedup_and_exclude_non_caitsith() {
+        // Given CaitSith domains with a duplicate `t` alongside non-CaitSith domains
+        let domains = [
+            domain(0, Protocol::CaitSith, 3),
+            domain(1, Protocol::CaitSith, 2),
+            domain(2, Protocol::CaitSith, 3),
+            domain(3, Protocol::DamgardEtAl, 5),
+            domain(4, Protocol::Frost, 4),
+        ];
+
+        // When / Then only the distinct CaitSith thresholds remain
+        assert_eq!(
+            caitsith_triple_thresholds(&domains),
+            BTreeSet::from([2, 3].map(ReconstructionThreshold::new))
+        );
+    }
 
     #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_many_triple_generation() {
@@ -493,7 +553,7 @@ mod tests {
 
         Ok(triples
             .into_iter()
-            .chain(passive_triples.await.unwrap().into_iter())
+            .chain(passive_triples.await.unwrap())
             .collect())
     }
 

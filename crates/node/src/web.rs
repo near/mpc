@@ -68,6 +68,7 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
+    nearcore_config: serde_json::Value,
     /// In-memory log behind the `/debug/recent_transactions` handler.
     recent_transactions: SharedRecentTransactions,
 }
@@ -151,6 +152,8 @@ struct ForeignChainsProviderCounts {
     polygon: usize,
     #[serde(skip_serializing_if = "is_zero")]
     aptos: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    sui: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
@@ -167,6 +170,7 @@ impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
             hyper_evm: config.hyper_evm.map_or(0, |c| c.providers.len()),
             polygon: config.polygon.map_or(0, |c| c.providers.len()),
             aptos: config.aptos.map_or(0, |c| c.providers.len()),
+            sui: config.sui.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -180,6 +184,11 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
 
 async fn debug_node_config(State(state): State<WebServerState>) -> Json<NodeConfigResponse> {
     Json(state.node_config.clone())
+}
+
+/// Serves the nearcore `config.json` the embedded indexer runs with.
+async fn debug_nearcore_config(State(state): State<WebServerState>) -> Json<serde_json::Value> {
+    Json(state.nearcore_config)
 }
 
 #[derive(Clone)]
@@ -321,6 +330,7 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
+    nearcore_config: serde_json::Value,
     recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     tracing::info!(?bind_address, "attempting to bind web server to address");
@@ -338,6 +348,10 @@ pub async fn start_web_server(
         )
         .route("/debug/migrations", axum::routing::get(migrations))
         .route("/debug/node_config", axum::routing::get(debug_node_config))
+        .route(
+            "/debug/nearcore_config",
+            axum::routing::get(debug_nearcore_config),
+        )
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
@@ -348,6 +362,7 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
+            nearcore_config,
             recent_transactions,
         });
 
@@ -394,6 +409,7 @@ mod tests {
     const HYPER_EVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
     const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
     const APTOS_RPC_URL: &str = "https://aptos-mainnet.nodereal.io/v1/";
+    const SUI_RPC_URL: &str = "https://fullnode.mainnet.sui.io/";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
@@ -431,6 +447,7 @@ mod tests {
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),
                 port_override: None,
+                wipe_near_data_token: 0,
                 sync_mode: SyncMode::Latest,
                 validate_genesis: false,
             },
@@ -438,7 +455,7 @@ mod tests {
                 concurrency: 1,
                 desired_triples_to_buffer: 10,
                 parallel_triple_generation_stagger_time_sec: 1,
-                timeout_sec: 60,
+                timeout_sec: 120,
             },
             presignature: PresignatureConfig {
                 concurrency: 1,
@@ -513,6 +530,7 @@ mod tests {
                     AuthConfig::None,
                 )),
                 aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
+                sui: Some(test_chain(PROVIDER_PUBLIC, SUI_RPC_URL, AuthConfig::None)),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -551,6 +569,7 @@ mod tests {
             "hyper_evm",
             "polygon",
             "aptos",
+            "sui",
         ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),
@@ -577,6 +596,7 @@ mod tests {
             HYPER_EVM_RPC_URL,
             POLYGON_RPC_URL,
             APTOS_RPC_URL,
+            SUI_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,

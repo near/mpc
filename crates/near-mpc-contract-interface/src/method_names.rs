@@ -30,6 +30,8 @@ pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE: &str = "vote_update";
 pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
+pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
+pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
@@ -45,6 +47,7 @@ pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant
 pub const SUBMIT_PARTICIPANT_INFO: &str = "submit_participant_info";
+pub const UPDATE_PARTICIPANT_URL: &str = "update_participant_url";
 pub const VERIFY_TEE: &str = "verify_tee";
 pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
 pub const START_NODE_MIGRATION: &str = "start_node_migration";
@@ -53,6 +56,8 @@ pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrat
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
+pub const REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES: &str =
+    "remove_non_participant_tee_verifier_votes";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =

@@ -5,11 +5,10 @@ mod sign;
 use std::{collections::HashMap, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
-    ElementG1, KeygenOutput, SigningShare, VerifyingKey,
+    BLS12381SHA256, ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
 
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
@@ -20,7 +19,7 @@ use crate::{
     config::{MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
-    providers::SignatureProvider,
+    providers::{DomainKeyshare, SignatureProvider},
     storage::CKDRequestStorage,
     types::{CKDId, SignatureId},
 };
@@ -44,15 +43,10 @@ pub struct CKDProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     ckd_request_store: Arc<CKDRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, CkdKeyshare>,
 }
 
-#[derive(Clone)]
-pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput,
-    /// Per-domain reconstruction threshold `t`, used as the CKD threshold.
-    pub reconstruction_threshold: ReconstructionThreshold,
-}
+pub(super) type CkdKeyshare = DomainKeyshare<BLS12381SHA256>;
 
 impl CKDProvider {
     pub fn new(
@@ -60,31 +54,19 @@ impl CKDProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, CkdKeyshare>,
     ) -> Self {
-        let per_domain_data = keyshares
-            .into_iter()
-            .map(|(domain_id, (keyshare, reconstruction_threshold))| {
-                (
-                    domain_id,
-                    PerDomainData {
-                        keyshare,
-                        reconstruction_threshold,
-                    },
-                )
-            })
-            .collect();
         Self {
             config,
             mpc_config,
             client,
             ckd_request_store,
-            per_domain_data,
+            keyshares,
         }
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<CkdKeyshare> {
+        self.keyshares
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))

@@ -11,7 +11,7 @@ use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::ecdsa_common;
-use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -24,9 +24,8 @@ use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
-use threshold_signatures::ecdsa::KeygenOutput;
-use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::ecdsa::robust_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
@@ -35,10 +34,10 @@ pub struct RobustEcdsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-pub(super) type PerDomainData = ecdsa_common::PerDomainData<PresignOutput>;
+pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
 
 #[derive(
     Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
@@ -59,21 +58,21 @@ impl RobustEcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, (KeygenOutput, ReconstructionThreshold)>,
+        keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let per_domain_data = ecdsa_common::build_per_domain_data(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
         Ok(Self {
             config,
             mpc_config,
             client,
             sign_request_store,
-            per_domain_data,
+            keyshares,
         })
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        ecdsa_common::lookup_domain_data(&self.per_domain_data, domain_id)
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
+        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
     }
 }
 
@@ -133,7 +132,6 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        // For robust-ECDSA the reconstruction lower bound equals `t`, so resharing is identical to cait-sith.
         EcdsaSignatureProvider::run_key_resharing_client_internal(
             new_threshold,
             old_threshold,
@@ -183,7 +181,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         let generate_presignatures = self
-            .per_domain_data
+            .keyshares
             .iter()
             .map(|(domain_id, data)| {
                 tracking::spawn(
@@ -191,11 +189,9 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                     presign::run_background_presignature_generation(
                         self.client.clone(),
                         self.mpc_config.clone(),
-                        data.reconstruction_threshold,
                         self.config.presignature.clone().into(),
                         *domain_id,
-                        data.presignature_store.clone(),
-                        data.keyshare.clone(),
+                        data.clone(),
                     ),
                 )
             })

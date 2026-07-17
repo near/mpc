@@ -6,10 +6,12 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use e2e_tests::foreign_chain_mock::{
-    MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
+    MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
 use httpmock::prelude::*;
-use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
+use mpc_node_config::{
+    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
+};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, DomainConfig, DomainId,
@@ -19,6 +21,16 @@ use near_mpc_contract_interface::types::{
     VerifyForeignTransactionRequestArgs,
 };
 
+/// One chain per credential-carrying [`AuthConfig`] kind: Bitcoin uses `path`,
+/// Base `header`, BNB `query`; the remaining chains use `None`.
+const PATH_AUTH_PLACEHOLDER: &str = "{api_key}";
+const PATH_AUTH_API_KEY: &str = "bitcoin-path-api-key";
+const HEADER_AUTH_NAME: &str = "authorization";
+const HEADER_AUTH_SCHEME: &str = "Bearer";
+const HEADER_AUTH_TOKEN: &str = "base-bearer-token";
+const QUERY_AUTH_PARAM: &str = "apikey";
+const QUERY_AUTH_TOKEN: &str = "bnb-query-token";
+
 struct ForeignTxTestEnv {
     cluster: e2e_tests::MpcCluster,
     foreign_tx_domain_id: DomainId,
@@ -26,6 +38,9 @@ struct ForeignTxTestEnv {
     /// Polygon is configured with multiple RPC providers so the test can verify
     /// that `FanOut` queries every one of them.
     polygon_mocks: Vec<MockServerExt>,
+    bitcoin_mock: MockServerExt,
+    base_mock: MockServerExt,
+    bnb_mock: MockServerExt,
 }
 
 struct MockServerUrls {
@@ -48,7 +63,12 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
                 "mock".to_string().into(),
                 ForeignChainProviderConfig {
                     rpc_url: urls.bitcoin.clone(),
-                    auth: Default::default(),
+                    auth: AuthConfig::Path {
+                        placeholder: PATH_AUTH_PLACEHOLDER.to_string(),
+                        token: TokenConfig::Val {
+                            val: PATH_AUTH_API_KEY.to_string(),
+                        },
+                    },
                 },
             ),
         }),
@@ -70,7 +90,12 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
                 "mock".to_string().into(),
                 ForeignChainProviderConfig {
                     rpc_url: urls.bnb.clone(),
-                    auth: Default::default(),
+                    auth: AuthConfig::Query {
+                        name: QUERY_AUTH_PARAM.to_string(),
+                        token: TokenConfig::Val {
+                            val: QUERY_AUTH_TOKEN.to_string(),
+                        },
+                    },
                 },
             ),
         }),
@@ -92,7 +117,13 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
                 "mock".to_string().into(),
                 ForeignChainProviderConfig {
                     rpc_url: urls.base.clone(),
-                    auth: Default::default(),
+                    auth: AuthConfig::Header {
+                        name: HEADER_AUTH_NAME.parse().expect("valid header name"),
+                        scheme: Some(HEADER_AUTH_SCHEME.to_string()),
+                        token: TokenConfig::Val {
+                            val: HEADER_AUTH_TOKEN.to_string(),
+                        },
+                    },
                 },
             ),
         }),
@@ -158,26 +189,45 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let arbitrum_server = MockServer::start();
     let hyper_evm_server = MockServer::start();
 
-    setup_bitcoin_mock(&bitcoin_server);
-    setup_evm_mock(&abstract_server);
-    setup_evm_mock(&bnb_server);
-    setup_starknet_mock(&starknet_server);
-    setup_evm_mock(&base_server);
-    setup_evm_mock(&arbitrum_server);
-    setup_evm_mock(&hyper_evm_server);
+    let bitcoin_mock_id = setup_bitcoin_mock(
+        &bitcoin_server,
+        MockAuthExpectation::ApiKeyInPath {
+            key: PATH_AUTH_API_KEY.to_string(),
+        },
+    );
+    let base_mock_id = setup_evm_mock(
+        &base_server,
+        MockAuthExpectation::Header {
+            name: HEADER_AUTH_NAME.to_string(),
+            value: format!("{HEADER_AUTH_SCHEME} {HEADER_AUTH_TOKEN}"),
+        },
+    );
+    let bnb_mock_id = setup_evm_mock(
+        &bnb_server,
+        MockAuthExpectation::QueryParam {
+            name: QUERY_AUTH_PARAM.to_string(),
+            value: QUERY_AUTH_TOKEN.to_string(),
+        },
+    );
+    setup_evm_mock(&abstract_server, MockAuthExpectation::None);
+    setup_starknet_mock(&starknet_server, MockAuthExpectation::None);
+    setup_evm_mock(&arbitrum_server, MockAuthExpectation::None);
+    setup_evm_mock(&hyper_evm_server, MockAuthExpectation::None);
 
     // Polygon is configured with three RPC providers so the test can assert
     // that `FanOut` queries every one of them.
     let polygon_mocks: Vec<MockServerExt> = (0..3)
         .map(|_| {
             let server = MockServer::start();
-            let mock_id = setup_evm_mock(&server);
+            let mock_id = setup_evm_mock(&server, MockAuthExpectation::None);
             MockServerExt::new(server, mock_id)
         })
         .collect();
 
     let urls = MockServerUrls {
-        bitcoin: bitcoin_server.url("/"),
+        // The configured URL carries the literal placeholder; the node must
+        // substitute the API key into it before any request can match the mock.
+        bitcoin: bitcoin_server.url(format!("/{PATH_AUTH_PLACEHOLDER}")),
         abstract_chain: abstract_server.url("/"),
         bnb: bnb_server.url("/"),
         starknet: starknet_server.url("/"),
@@ -187,12 +237,12 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         polygon: polygon_mocks.iter().map(|m| m.server.url("/")).collect(),
     };
 
+    let bitcoin_mock = MockServerExt::new(bitcoin_server, bitcoin_mock_id);
+    let base_mock = MockServerExt::new(base_server, base_mock_id);
+    let bnb_mock = MockServerExt::new(bnb_server, bnb_mock_id);
     let mock_servers = vec![
-        bitcoin_server,
         abstract_server,
-        bnb_server,
         starknet_server,
-        base_server,
         arbitrum_server,
         hyper_evm_server,
     ];
@@ -272,6 +322,9 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         foreign_tx_domain_id,
         _mock_servers: mock_servers,
         polygon_mocks,
+        bitcoin_mock,
+        base_mock,
+        bnb_mock,
     })
 }
 
@@ -443,6 +496,17 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
+/// A successful verification implies the credentialed mock answered,
+/// so this is a backstop against the mock setup being loosened to answer unauthenticated requests.
+fn assert_authenticated_provider_was_queried(mock: &MockServerExt, provider: &str) {
+    let calls = mock.calls();
+    assert!(
+        calls > 0,
+        "the {provider} mock was never hit with the expected credentials; \
+         expected >= 1 matching RPC request, got {calls}"
+    );
+}
+
 /// Verifies that every Polygon RPC provider configured in the fan-out received
 /// at least one HTTP request during the preceding `verify_polygon` call.
 ///
@@ -477,11 +541,10 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
-/// Sets up a single 2-node cluster with mock RPC servers for all chains,
-/// then submits verify_foreign_transaction requests for Bitcoin, Abstract,
-/// BNB, Base, Starknet, Arbitrum, HyperEVM, and Polygon and verifies the MPC
-/// nodes return valid signed responses. Also verifies rejection for unsupported
-/// chains and non-existent domains.
+/// Verifies all supported chains sign, and unsupported chains and non-existent
+/// domains are rejected. Bitcoin, Base and BNB require authentication (one per
+/// credential-carrying [`AuthConfig`] kind), proving the node applies configured
+/// RPC credentials end to end.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
@@ -495,11 +558,14 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     verify_bitcoin(&env)
         .await
         .expect("bitcoin verification failed");
+    assert_authenticated_provider_was_queried(&env.bitcoin_mock, "bitcoin (path auth)");
     verify_abstract(&env)
         .await
         .expect("abstract verification failed");
     verify_bnb(&env).await.expect("bnb verification failed");
+    assert_authenticated_provider_was_queried(&env.bnb_mock, "bnb (query auth)");
     verify_base(&env).await.expect("base verification failed");
+    assert_authenticated_provider_was_queried(&env.base_mock, "base (header auth)");
     verify_starknet(&env)
         .await
         .expect("starknet verification failed");

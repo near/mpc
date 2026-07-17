@@ -625,21 +625,17 @@ Note that this will be subject to changes in [#2680](https://github.com/near/mpc
 
 ##### Transaction Sender
 
-We propose the following API for the transaction sender:
+The transaction sender exposes the following API:
 
 ```rust
 /// Default impl fetches the latest final block, signs, and submits.
-pub trait SubmitFunctionCall:
-    FetchLatestFinalBlockInfo + SubmitSignedTransaction
-{
-    async fn submit_function_call_tx(
+pub trait SubmitFunctionCall {
+    fn submit_function_call_tx(
         &self,
-        signer: Arc<TransactionSigner>,
+        signer: &TransactionSigner,
         receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
-    ) -> Result<CryptoHash, ChainGatewayError>;
+        call: FunctionCallArgs,
+    ) -> impl Future<Output = Result<CryptoHash, ChainGatewayError>> + Send;
 }
 ```
 

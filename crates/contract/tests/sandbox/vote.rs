@@ -150,8 +150,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         panic!("expected running state");
     };
     let epoch_id: u64 = init_running.keyset.epoch_id.0;
-    let mut next_domain_id: u64 = init_running.domains.next_domain_id;
-    for protocol in ALL_PROTOCOLS {
+    for (next_domain_id, protocol) in (init_running.domains.next_domain_id..).zip(ALL_PROTOCOLS) {
         let curve = Curve::from(*protocol);
         let threshold = init_running.parameters.threshold.0 as usize;
 
@@ -238,7 +237,6 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         // assert that the epoch id did not change
         assert_eq!(running.keyset.epoch_id.0, epoch_id);
         assert_eq!(running.domains.next_domain_id, next_domain_id + 1);
-        next_domain_id += 1;
     }
     Ok(())
 }

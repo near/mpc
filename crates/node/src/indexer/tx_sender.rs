@@ -9,20 +9,18 @@ use crate::types::{
 };
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
-use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
 use near_time::Clock;
 use std::future::Future;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_ATTESTATION_AGE: Duration = Duration::from_secs(60 * 2);
 
 pub trait TransactionSender: Clone + Send + Sync {
     fn send(
@@ -183,6 +181,35 @@ async fn submit_tx(
     })
 }
 
+fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64) -> bool {
+    match pre_submit_expiry {
+        Some(expiry_before_submit) => stored_expiry != expiry_before_submit,
+        None => true,
+    }
+}
+
+/// Whether the attestation we submitted is now the one stored on chain.
+///
+/// Mock is matched by identity. A Dstack entry keeps no stored per-submission identity, so it is
+/// confirmed via [`attestation_expiry_changed`]: an accepted submit re-stamps the entry's expiry
+/// (to the submit block time plus
+/// [`DEFAULT_EXPIRATION_DURATION_SECONDS`](mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS)),
+/// and only the owning account may rewrite it, so a changed expiry means our submit landed.
+// TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
+fn submitted_attestation_landed(
+    pre_submit_expiry: Option<u64>,
+    stored: &VerifiedAttestation,
+    submitted: &Attestation,
+) -> bool {
+    match (stored, submitted) {
+        (VerifiedAttestation::Dstack(stored), Attestation::Dstack(_)) => {
+            attestation_expiry_changed(pre_submit_expiry, stored.expiry_timestamp_seconds)
+        }
+        (VerifiedAttestation::Mock(stored), Attestation::Mock(submitted)) => stored == submitted,
+        _ => false,
+    }
+}
+
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
@@ -240,75 +267,44 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        SubmitParticipantInfo(submit_participant_info_args) => {
-            let tls_public_key = &submit_participant_info_args.tls_public_key;
-
-            let attestation_stored_on_contract = indexer_state
+        SubmitParticipantInfo {
+            args,
+            pre_submit_expiry,
+        } => {
+            let stored_attestation = indexer_state
                 .view_client
-                .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
+                .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
                 .await?;
 
-            let Some(stored_attestation) = attestation_stored_on_contract else {
+            let Some(stored_attestation) = stored_attestation else {
+                tracing::debug!(
+                    "no attestation stored on chain for our key; submission not yet landed"
+                );
                 return Ok(TransactionStatus::NotExecuted);
             };
 
-            let submitted_attestation =
-                &submit_participant_info_args.proposed_participant_attestation;
+            let stored_expiry = match &stored_attestation {
+                VerifiedAttestation::Dstack(stored) => Some(stored.expiry_timestamp_seconds),
+                VerifiedAttestation::Mock(_) => None,
+            };
+            let attestation_landed = submitted_attestation_landed(
+                *pre_submit_expiry,
+                &stored_attestation,
+                &args.proposed_participant_attestation,
+            );
 
-            let submitted_attestation_is_on_chain =
-                match (stored_attestation, submitted_attestation) {
-                    (
-                        VerifiedAttestation::Dstack(verified_dstack_attestation),
-                        Attestation::Dstack(_),
-                    ) => {
-                        // Check if the attestation stored on chain is fresh by verifying its age
-                        // is less than `MAX_ATTESTATION_AGE`
-                        //
-                        // TODO(#1637): extract expiration timestamp from the certificate itself,
-                        // instead of using heuristics.
-                        let expiry_timestamp_seconds =
-                            verified_dstack_attestation.expiry_timestamp_seconds;
+            tracing::info!(
+                pre_submit_expiry = ?pre_submit_expiry,
+                ?stored_expiry,
+                attestation_landed,
+                "checked attestation submission on chain"
+            );
 
-                        let Some(attestation_duration_since_unix_epoch) = expiry_timestamp_seconds
-                            .checked_sub(DEFAULT_EXPIRATION_DURATION_SECONDS)
-                            .map(Duration::from_secs)
-                        else {
-                            tracing::error!(
-                                ?expiry_timestamp_seconds,
-                                "could not calculate attestation storage time"
-                            );
-
-                            return Ok(TransactionStatus::NotExecuted);
-                        };
-
-                        let timestamp_seconds_now = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .context("could not calculate system time")?;
-
-                        let attestation_age =
-                            attestation_duration_since_unix_epoch.abs_diff(timestamp_seconds_now);
-                        let attestation_is_fresh = attestation_age < MAX_ATTESTATION_AGE;
-
-                        tracing::info!(
-                            ?attestation_age,
-                            ?attestation_is_fresh,
-                            "node found dstack attestation on chain"
-                        );
-
-                        attestation_is_fresh
-                    }
-                    (
-                        VerifiedAttestation::Mock(stored_mock_attestation),
-                        Attestation::Mock(submitted_mock_attestation),
-                    ) => stored_mock_attestation == *submitted_mock_attestation,
-                    _ => false,
-                };
-
-            if submitted_attestation_is_on_chain {
-                Ok(TransactionStatus::Executed)
+            Ok(if attestation_landed {
+                TransactionStatus::Executed
             } else {
-                Ok(TransactionStatus::NotExecuted)
-            }
+                TransactionStatus::NotExecuted
+            })
         }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
@@ -318,7 +314,8 @@ async fn observe_tx_result(
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
         | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
+        | RegisterForeignChainConfig(_)
+        | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
@@ -390,4 +387,94 @@ async fn ensure_send_transaction(
         transaction_status.unwrap_or(TransactionStatus::Unknown),
         SubmittedTransaction::submitted(signer, metadata, recorded_status, submitted_at),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        Attestation, VerifiedAttestation, attestation_expiry_changed, submitted_attestation_landed,
+    };
+    use near_mpc_contract_interface::types::MockAttestation;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn attestation_expiry_changed__should_confirm_when_expiry_increases() {
+        // Given: an attestation was stored before submitting
+        let pre_submit_expiry = Some(100);
+
+        // When: the stored expiry is now higher than before (a fresh submit landed)
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
+
+        // Then: our submission is confirmed to have landed
+        assert!(landed);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn attestation_expiry_changed__should_reject_when_expiry_unchanged() {
+        // Given: an attestation was stored before submitting
+        let pre_submit_expiry = Some(200);
+
+        // When: the stored expiry is unchanged (our submit did not land)
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
+
+        // Then: the submission is treated as not executed
+        assert!(!landed);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn attestation_expiry_changed__should_confirm_when_expiry_decreases() {
+        // Given: an attestation was stored before submitting, and a contract upgrade has lowered
+        // the expiration constant, so a landed submit now stamps an *earlier* expiry
+        let pre_submit_expiry = Some(300);
+
+        // When: the stored expiry is now lower than before
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
+
+        // Then: the change still confirms our submission landed (this is why we compare for
+        // inequality rather than a strict increase)
+        assert!(landed);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn attestation_expiry_changed__should_confirm_when_no_prior_attestation() {
+        // Given: no attestation was stored before submitting
+        let pre_submit_expiry = None;
+
+        // When: an attestation is now stored
+        let landed = attestation_expiry_changed(pre_submit_expiry, 200);
+
+        // Then: its presence confirms our submission landed
+        assert!(landed);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn submitted_attestation_landed__should_confirm_matching_mock() {
+        // Given: the stored mock attestation equals the one we submitted
+        let stored = VerifiedAttestation::Mock(MockAttestation::Valid);
+        let submitted = Attestation::Mock(MockAttestation::Valid);
+
+        // When
+        let landed = submitted_attestation_landed(None, &stored, &submitted);
+
+        // Then
+        assert!(landed);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn submitted_attestation_landed__should_reject_mismatching_mock() {
+        // Given: the stored mock attestation differs from the one we submitted
+        let stored = VerifiedAttestation::Mock(MockAttestation::Valid);
+        let submitted = Attestation::Mock(MockAttestation::Invalid);
+
+        // When
+        let landed = submitted_attestation_landed(None, &stored, &submitted);
+
+        // Then
+        assert!(!landed);
+    }
 }

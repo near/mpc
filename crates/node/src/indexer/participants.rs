@@ -8,7 +8,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
 use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tokio::sync::watch;
 use url::Url;
@@ -26,11 +26,21 @@ pub fn convert_key_event_to_instance(
     key_event: &KeyEvent,
     current_height: u64,
     completed_domains: Vec<dtos::KeyForDomain>,
+    per_domain_thresholds: &BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 ) -> anyhow::Result<ContractKeyEventInstance> {
     let completed_domains: Vec<ContractKeyForDomain> = completed_domains
         .into_iter()
         .map(TryInto::try_into)
         .collect::<Result<_, _>>()?;
+
+    // `per_domain_thresholds` holds only *changed* thresholds; a domain with no
+    // entry (and the initializing path's empty map) keeps its key event's own.
+    let mut domain = key_event.domain.clone();
+    domain.reconstruction_threshold = per_domain_thresholds
+        .get(&domain.id)
+        .copied()
+        .unwrap_or(domain.reconstruction_threshold);
+
     Ok(match &key_event.instance {
         Some(current_instance) if current_height < current_instance.expires_on => {
             ContractKeyEventInstance {
@@ -39,7 +49,7 @@ pub fn convert_key_event_to_instance(
                     domain_id: key_event.domain.id,
                     attempt_id: current_instance.attempt_id,
                 },
-                domain: key_event.domain.clone(),
+                domain,
                 started: true,
                 completed: current_instance
                     .completed
@@ -55,7 +65,7 @@ pub fn convert_key_event_to_instance(
                 domain_id: key_event.domain.id,
                 attempt_id: key_event.next_attempt_id,
             },
-            domain: key_event.domain.clone(),
+            domain,
             started: false,
             completed: BTreeSet::new(),
             completed_domains,
@@ -123,6 +133,8 @@ pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
     pub reshared_keys: ContractKeyset,
     pub key_event: ContractKeyEventInstance,
+    /// Per-domain threshold updates from the accepted proposal.
+    pub per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 }
 
 /// A stripped-down version of the contract state, containing only the state
@@ -186,6 +198,7 @@ impl ContractState {
                         &state.generating_key,
                         height,
                         state.generated_keys.clone(),
+                        &BTreeMap::new(),
                     )
                     .context("failed to convert initializing key event")?,
                 })
@@ -202,6 +215,14 @@ impl ContractState {
                 })
             }
             ProtocolContractState::Resharing(state) => {
+                let key_event = convert_key_event_to_instance(
+                    &state.resharing_key,
+                    height,
+                    state.reshared_keys.clone(),
+                    &state.per_domain_thresholds,
+                )
+                .context("failed to convert resharing key event")?;
+
                 let resharing_state = Some(ContractResharingState {
                     new_participants: convert_participant_infos(
                         state.resharing_key.parameters.clone(),
@@ -211,12 +232,8 @@ impl ContractState {
                         epoch_id: state.resharing_key.epoch_id,
                         domains: state.reshared_keys.clone(),
                     },
-                    key_event: convert_key_event_to_instance(
-                        &state.resharing_key,
-                        height,
-                        state.reshared_keys.clone(),
-                    )
-                    .context("failed to convert resharing key event")?,
+                    key_event,
+                    per_domain_thresholds: state.per_domain_thresholds.clone(),
                 });
 
                 let running_state = state.previous_running_state.clone();
@@ -232,6 +249,23 @@ impl ContractState {
                 })
             }
         })
+    }
+
+    /// The participant set the P2P mesh connects to for the running job: prospective participants
+    /// during resharing, otherwise the running participants; `None` when no mesh is established.
+    ///
+    /// During resharing the single mesh is built from `new_participants` and shared by both the
+    /// signing and resharing protocols (signing routes its `old ∩ new` subset over it), so peer
+    /// addresses must be resolved against that set — using the old set would leave joining nodes
+    /// unresolved.
+    pub fn mesh_participants(&self) -> Option<&ParticipantsConfig> {
+        match self {
+            ContractState::Running(running) => Some(match &running.resharing_state {
+                Some(resharing) => &resharing.new_participants,
+                None => &running.participants,
+            }),
+            ContractState::Invalid | ContractState::Initializing(_) => None,
+        }
     }
 
     /// Returns the participation status of the given node in the current contract state.
@@ -277,7 +311,6 @@ pub async fn monitor_contract_state(
             refresh_interval_tick.tick().await;
 
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-            //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
             indexer_state.client.wait_for_full_sync().await;
 
@@ -335,19 +368,48 @@ pub async fn monitor_contract_state(
     contract_state_receiver
 }
 
+/// Sentinel address used when a participant's stored address cannot be parsed. Any value
+/// from RFC 5737 TEST-NET-1 (`192.0.2.0/24`) is guaranteed unroutable, so the participant
+/// is kept in the set but treated as unreachable rather than failing the whole conversion
+/// and stalling every node.
+const UNREACHABLE_PARTICIPANT_ADDRESS: &str = "192.0.2.1";
+
+fn parse_participant_address(
+    url: &str,
+    port_override: Option<u16>,
+) -> anyhow::Result<(String, u16)> {
+    let parsed =
+        Url::parse(url).with_context(|| format!("could not parse participant url {url}"))?;
+    let Some(address) = parsed.host_str() else {
+        anyhow::bail!("no host found in participant url {url}");
+    };
+    let Some(port) = port_override.or(parsed.port_or_known_default()) else {
+        anyhow::bail!("no port found in participant url {url}");
+    };
+    Ok((address.to_string(), port))
+}
+
 pub fn convert_participant_infos(
     threshold_parameters: ThresholdParameters,
     port_override: Option<u16>,
 ) -> anyhow::Result<ParticipantsConfig> {
     let mut converted = Vec::new();
     for (account_id, id, info) in &threshold_parameters.participants.participants {
-        let url = Url::parse(&info.url)
-            .with_context(|| format!("could not parse participant url {}", info.url))?;
-        let Some(address) = url.host_str() else {
-            anyhow::bail!("no host found in participant url {}", info.url);
-        };
-        let Some(port) = port_override.or(url.port_or_known_default()) else {
-            anyhow::bail!("no port found in participant url {}", info.url);
+        let (address, port) = match parse_participant_address(&info.url, port_override) {
+            Ok(address) => address,
+            Err(error) => {
+                tracing::warn!(
+                    target: "mpc",
+                    participant = %account_id,
+                    url = %info.url,
+                    %error,
+                    "participant address unparseable; treating node as unreachable"
+                );
+                (
+                    UNREACHABLE_PARTICIPANT_ADDRESS.to_string(),
+                    port_override.unwrap_or(0),
+                )
+            }
         };
 
         let p2p_public_key = ed25519_dalek::VerifyingKey::try_from(&info.tls_public_key)
@@ -359,7 +421,7 @@ pub fn convert_participant_infos(
 
         converted.push(ParticipantInfo {
             id: (*id).into(),
-            address: address.to_string(),
+            address,
             port,
             p2p_public_key,
             near_account_id,
@@ -374,9 +436,23 @@ pub fn convert_participant_infos(
 #[cfg(test)]
 pub mod test_utils {
 
-    use crate::config::ParticipantInfo;
+    use crate::config::{ParticipantInfo, ParticipantsConfig};
+    use crate::primitives::ParticipantId;
+    use ed25519_dalek::SigningKey;
+    use mpc_primitives::EpochId;
+    use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::{
+        AttemptId, DomainConfig, DomainId, DomainPurpose, KeyEventId, Protocol,
+        ReconstructionThreshold,
+    };
+    use near_mpc_crypto_types::Keyset;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    use super::ContractState;
+    use super::{
+        ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
+    };
 
     impl ContractState {
         /// returns the participants of the current or prospective epoch
@@ -394,16 +470,98 @@ pub mod test_utils {
             }
         }
     }
+
+    pub(crate) fn participant(
+        id: u32,
+        account: &str,
+        address: &str,
+        port: u16,
+        key_seed: u64,
+    ) -> ParticipantInfo {
+        let signing_key = SigningKey::generate(&mut StdRng::seed_from_u64(key_seed));
+        ParticipantInfo {
+            id: ParticipantId::from_raw(id),
+            address: address.to_string(),
+            port,
+            p2p_public_key: signing_key.verifying_key(),
+            near_account_id: account.parse::<AccountId>().unwrap(),
+        }
+    }
+
+    pub(crate) fn base_config() -> ParticipantsConfig {
+        ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                participant(0, "alice.near", "alice.example.com", 8080, 1),
+                participant(1, "bob.near", "bob.example.com", 8080, 2),
+            ],
+        }
+    }
+
+    pub(crate) fn me() -> AccountId {
+        "alice.near".parse().unwrap()
+    }
+
+    pub(crate) fn running(participants: ParticipantsConfig, epoch: u64) -> ContractState {
+        ContractState::Running(ContractRunningState {
+            keyset: Keyset::new(EpochId::new(epoch), vec![]),
+            domains: vec![],
+            participants,
+            resharing_state: None,
+        })
+    }
+
+    /// A `Running` state with a resharing in progress whose prospective set is `new_participants`.
+    pub(crate) fn resharing(
+        participants: ParticipantsConfig,
+        new_participants: ParticipantsConfig,
+        epoch: u64,
+    ) -> ContractState {
+        let domain = DomainConfig {
+            id: DomainId(0),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        };
+        ContractState::Running(ContractRunningState {
+            keyset: Keyset::new(EpochId::new(epoch), vec![]),
+            domains: vec![domain.clone()],
+            participants,
+            resharing_state: Some(ContractResharingState {
+                new_participants,
+                per_domain_thresholds: BTreeMap::new(),
+                reshared_keys: Keyset::new(EpochId::new(epoch), vec![]),
+                key_event: ContractKeyEventInstance {
+                    id: KeyEventId::new(EpochId::new(epoch), DomainId(0), AttemptId::new()),
+                    domain,
+                    started: false,
+                    completed: BTreeSet::new(),
+                    completed_domains: vec![],
+                },
+            }),
+        })
+    }
 }
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
+    use super::ContractState;
+    use crate::indexer::participants::{
+        UNREACHABLE_PARTICIPANT_ADDRESS, convert_participant_infos,
+    };
+    use crate::providers::PublicKeyConversion;
+    use mpc_contract::state::{
+        ProtocolContractState as InternalContractState, test_utils::gen_resharing_state,
+    };
     use near_indexer_primitives::types::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
-        ParticipantId, ParticipantInfo, Participants, Threshold, ThresholdParameters,
+        ParticipantId, ParticipantInfo, Participants, ProtocolContractState,
+        ReconstructionThreshold, Threshold, ThresholdParameters,
     };
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
+
+    use super::test_utils::{base_config, participant, resharing};
 
     fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![
@@ -421,24 +579,6 @@ mod tests {
                 "multichain-node-dev-2.testnet".to_string(),
                 "http://10.101.0.57:3000".to_string(),
                 "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k".to_string(),
-            ),
-        ]
-    }
-
-    fn create_invalid_participant_data_raw() -> Vec<(String, String, String)> {
-        // It's really only possible to have bad data in the urls, which are arbitrary strings.
-        vec![
-            // Bad URL format (missing host)
-            (
-                "multichain-node-dev-5.testnet".to_string(),
-                "http://:3000".to_string(),
-                "ed25519:5op5eGtWrVAWmNjyaLhZMm4itc8bWottr8PGUJEzcKHd".to_string(),
-            ),
-            // Bad URL format (missing http prefix)
-            (
-                "multichain-node-dev-6.testnet".to_string(),
-                "10.101.0.122:3000".to_string(),
-                "ed25519:41VQ8NxWF11cjse5WjiJBtbrGDPKLQ712Kg1oGyM9w9P".to_string(),
             ),
         ]
     }
@@ -469,10 +609,6 @@ mod tests {
 
     fn create_chain_participant_infos() -> Participants {
         create_dto_participants_from_raw(create_participant_data_raw())
-    }
-
-    fn create_invalid_chain_participant_infos() -> Participants {
-        create_dto_participants_from_raw(create_invalid_participant_data_raw())
     }
 
     // Check that the participant ids are assigned 0 to N-1 by AccountId order
@@ -530,34 +666,141 @@ mod tests {
             .for_each(|p| assert!(p.port == 443));
     }
 
-    // It is fatal if any of the participants has bad data, even if the others are OK
+    /// One participant's unparseable address must not fail the whole conversion: the entry
+    /// is kept (so participant count / threshold stay consistent with the contract) but
+    /// pointed at an unreachable sentinel address.
     #[test]
-    fn test_bad_participant_data() {
-        let chain_infos = create_chain_participant_infos();
-        for (account_id, _, bad_data) in &create_invalid_chain_participant_infos().participants {
-            let mut new_entries = chain_infos.participants.clone();
-            // Replace or add the bad entry
-            if let Some(entry) = new_entries.iter_mut().find(|(a, _, _)| a == account_id) {
-                entry.2 = bad_data.clone();
-            } else {
-                new_entries.push((
-                    account_id.clone(),
-                    ParticipantId(new_entries.len() as u32),
-                    bad_data.clone(),
-                ));
-            }
-            let new_infos = Participants {
-                next_id: ParticipantId(new_entries.len() as u32),
-                participants: new_entries,
-            };
-            let params = ThresholdParameters {
-                participants: new_infos,
-                threshold: Threshold(3),
-            };
-            print!("\n\nmy params: \n{:?}\n", params);
-            let converted = convert_participant_infos(params, None);
-            print!("\n\nmyconverted: \n{:?}\n", converted);
-            let _ = converted.expect_err("Invalid participant data should be rejected");
-        }
+    fn convert_participant_infos__should_keep_unreachable_participant_when_address_unparseable() {
+        // Given
+        let mut entries = create_chain_participant_infos().participants;
+        let original_count = entries.len();
+        entries[0].2.url = "http://:3000".to_string();
+        let account = entries[0].0.clone();
+        let params = ThresholdParameters {
+            participants: Participants {
+                next_id: ParticipantId(entries.len() as u32),
+                participants: entries,
+            },
+            threshold: Threshold(3),
+        };
+
+        // When
+        let converted = convert_participant_infos(params, None).unwrap();
+
+        // Then
+        assert_eq!(converted.participants.len(), original_count);
+        let entry = converted
+            .participants
+            .iter()
+            .find(|p| p.near_account_id == account)
+            .unwrap();
+        assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
+        assert_eq!(entry.port, 0);
+    }
+
+    /// `port_override` still applies to a participant whose address is unparseable.
+    #[test]
+    fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
+        // Given
+        let mut entries = create_chain_participant_infos().participants;
+        entries[0].2.url = "http://:3000".to_string();
+        let account = entries[0].0.clone();
+        let params = ThresholdParameters {
+            participants: Participants {
+                next_id: ParticipantId(entries.len() as u32),
+                participants: entries,
+            },
+            threshold: Threshold(3),
+        };
+
+        // When
+        let converted = convert_participant_infos(params, Some(8080)).unwrap();
+
+        // Then
+        let entry = converted
+            .participants
+            .iter()
+            .find(|p| p.near_account_id == account)
+            .unwrap();
+        assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
+        assert_eq!(entry.port, 8080);
+    }
+
+    #[test]
+    fn from_contract_state__should_override_resharing_key_threshold_from_per_domain_thresholds() {
+        // Given a resharing state where the threshold update travels only in
+        // per_domain_thresholds; the contract leaves resharing_key at the old threshold.
+        let (_, mut resharing) = gen_resharing_state(1);
+        let domain_id = resharing.resharing_key.domain().id;
+        let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
+        let new_threshold = ReconstructionThreshold::new(old_threshold.inner() + 1);
+        resharing.per_domain_thresholds = BTreeMap::from([(domain_id, new_threshold)]);
+        let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
+
+        // When converting the on-chain state into the node's representation.
+        let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
+
+        // Then the resharing key event carries the new threshold, the update is retained,
+        // and the previous registry (old side of the reshare) keeps the old threshold.
+        let ContractState::Running(running) = state else {
+            panic!("resharing maps to a running state with resharing_state populated");
+        };
+        let resharing_state = running.resharing_state.expect("resharing state present");
+        assert_eq!(
+            resharing_state.key_event.domain.reconstruction_threshold,
+            new_threshold
+        );
+        assert_eq!(
+            resharing_state.per_domain_thresholds,
+            BTreeMap::from([(domain_id, new_threshold)])
+        );
+        assert_eq!(
+            running
+                .domains
+                .iter()
+                .find(|d| d.id == domain_id)
+                .unwrap()
+                .reconstruction_threshold,
+            old_threshold
+        );
+    }
+
+    #[test]
+    fn from_contract_state__should_keep_resharing_key_threshold_when_no_update_present() {
+        // Given a resharing state with no per-domain threshold updates.
+        let (_, resharing) = gen_resharing_state(1);
+        let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
+        assert!(resharing.per_domain_thresholds.is_empty());
+        let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
+
+        // When converting the on-chain state.
+        let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
+
+        // Then the resharing key event keeps the existing threshold.
+        let ContractState::Running(running) = state else {
+            panic!("resharing maps to a running state with resharing_state populated");
+        };
+        let resharing_state = running.resharing_state.expect("resharing state present");
+        assert_eq!(
+            resharing_state.key_event.domain.reconstruction_threshold,
+            old_threshold
+        );
+    }
+
+    #[test]
+    fn mesh_participants__should_return_new_participants_during_resharing() {
+        // Given
+        let mut new_participants = base_config();
+        new_participants.participants.push(participant(
+            2,
+            "carol.near",
+            "carol.example.com",
+            7000,
+            3,
+        ));
+        let state = resharing(base_config(), new_participants.clone(), 5);
+
+        // When / Then
+        assert_eq!(state.mesh_participants(), Some(&new_participants));
     }
 }

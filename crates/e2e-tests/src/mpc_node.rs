@@ -15,7 +15,7 @@ use near_kit::AccountId;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde_json::json;
 
-use crate::port_allocator::E2ePortAllocator;
+use test_port_allocator::{E2eTestPorts, TestPorts};
 
 const DUMMY_IMAGE_HASH: &str =
     "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
@@ -471,11 +471,12 @@ impl MpcNodeSetup {
                     finality: Finality::None,
                     sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                     port_override: None,
+                    wipe_near_data_token: 0,
                 },
                 triple: TripleConfig {
                     concurrency: 2,
                     desired_triples_to_buffer: self.triples_to_buffer,
-                    timeout_sec: 60,
+                    timeout_sec: 120,
                     parallel_triple_generation_stagger_time_sec: 1,
                 },
                 presignature: PresignatureConfig {
@@ -534,7 +535,7 @@ pub struct NodePorts {
 }
 
 impl NodePorts {
-    pub fn from_allocator(ports: &E2ePortAllocator, index: usize) -> Self {
+    pub fn from_allocator(ports: &TestPorts, index: usize) -> Self {
         Self {
             p2p: ports.p2p_port(index),
             web_ui: ports.web_ui_port(index),

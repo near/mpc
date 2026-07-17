@@ -14,21 +14,25 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
     .unwrap()
 });
 
-pub static MPC_NUM_BAD_PEER_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounter> = LazyLock::new(
-    || {
-        prometheus::register_int_counter!(
+pub static MPC_NUM_BAD_PEER_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
             "mpc_num_bad_peer_presign_requests",
-            "CaitSith presignature requests from a peer whose participant-set size did not match the domain's reconstruction threshold (only meaningful for CaitSith, which pairs exactly `t` participants; robust ECDSA does not have this constraint)"
+            "Presignature requests from a peer whose participant-set size did not \
+             match the domain's reconstruction threshold",
+            &["domain_id"]
         )
         .unwrap()
-    },
-);
+    });
 
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
         prometheus::register_histogram!(
             "near_mpc_triples_generation_time_elapsed",
             "Time taken to generate a batch of triples",
+            // Batch generation takes tens of seconds, up to the configured
+            // timeout; the default buckets top out at 10s.
+            vec![5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 240.0],
         )
         .unwrap()
     });
@@ -263,6 +267,47 @@ pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = Laz
     )
     .unwrap()
 });
+
+pub static MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_indexer_latest_block_timestamp_seconds",
+            "Unix time of the latest block processed by the near indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_OWN_IMAGE_HASH_ALLOWED: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
+    prometheus::register_int_gauge!(
+        "mpc_own_image_hash_allowed",
+        "Whether the Docker image hash this node is running is in the contract's \
+             allowlist (1) or not (0)"
+    )
+    .unwrap()
+});
+
+pub static MPC_OWN_IMAGE_HASH_IS_MOST_RECENT: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_own_image_hash_is_most_recent",
+            "Whether the Docker image hash this node is running is the most recent \
+             hash in the contract's allowlist (1) or not (0)"
+        )
+        .unwrap()
+    });
+
+pub static MPC_OWN_IMAGE_HASH_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_own_image_hash_expiry_timestamp_seconds",
+            "Unix time at which the Docker image hash this node is running is evicted \
+             from the contract's allowlist. -1 when the hash never expires (newest \
+             entry) or the contract does not report expiry; 0 when the hash is already \
+             evicted. Compare against mpc_indexer_latest_block_timestamp_seconds for \
+             the remaining time"
+        )
+        .unwrap()
+    });
 
 pub static MPC_ACCESS_KEY_NONCE: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(

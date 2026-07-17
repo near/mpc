@@ -82,8 +82,9 @@ impl ResharingContractState {
                     self.prospective_epoch_id().next(),
                     self.previous_running_state
                         .domains
-                        .effective_domain_by_index(0, proposal.per_domain_thresholds())
-                        .unwrap(),
+                        .get_domain_by_index(0)
+                        .unwrap()
+                        .clone(),
                     proposal.parameters().clone(),
                 ),
                 cancellation_requests: HashSet::new(),
@@ -135,11 +136,11 @@ impl ResharingContractState {
             if let Some(next_domain) = self
                 .previous_running_state
                 .domains
-                .effective_domain_by_index(self.reshared_keys.len(), &self.per_domain_thresholds)
+                .get_domain_by_index(self.reshared_keys.len())
             {
                 self.resharing_key = KeyEvent::new(
                     self.prospective_epoch_id(),
-                    next_domain,
+                    next_domain.clone(),
                     self.resharing_key.proposed_parameters().clone(),
                 );
             } else {
