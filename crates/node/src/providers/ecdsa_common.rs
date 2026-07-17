@@ -180,19 +180,15 @@ mod tests {
                     // Given two domains configured with distinct reconstruction thresholds
                     let low = DomainId(0);
                     let high = DomainId(1);
+                    let low_threshold = ReconstructionThreshold::new(2);
+                    let high_threshold = ReconstructionThreshold::new(3);
                     let keygen_output = dummy_keygen_output();
                     let keyshares = HashMap::from([
                         (
                             low,
-                            DomainKeyshare::new(
-                                keygen_output.clone(),
-                                ReconstructionThreshold::new(2),
-                            ),
+                            DomainKeyshare::new(keygen_output.clone(), low_threshold),
                         ),
-                        (
-                            high,
-                            DomainKeyshare::new(keygen_output, ReconstructionThreshold::new(3)),
-                        ),
+                        (high, DomainKeyshare::new(keygen_output, high_threshold)),
                     ]);
                     let dir = tempfile::tempdir().unwrap();
                     let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
@@ -203,14 +199,8 @@ mod tests {
                             .unwrap();
 
                     // Then each domain keeps the threshold it was configured with
-                    assert_eq!(
-                        keyshares[&low].reconstruction_threshold,
-                        ReconstructionThreshold::new(2)
-                    );
-                    assert_eq!(
-                        keyshares[&high].reconstruction_threshold,
-                        ReconstructionThreshold::new(3)
-                    );
+                    assert_eq!(keyshares[&low].reconstruction_threshold, low_threshold);
+                    assert_eq!(keyshares[&high].reconstruction_threshold, high_threshold);
                     Ok(())
                 },
             )
