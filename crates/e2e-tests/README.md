@@ -188,7 +188,9 @@ The returned cluster exposes:
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
   `send_verify_foreign_transaction`.
 - **Foreign chains:** `view_foreign_chains_supported_by_contract`,
-  `view_foreign_chain_configurations`, `register_foreign_chain_config`.
+  `view_foreign_chain_configurations`, `view_available_foreign_chains`,
+  `view_foreign_chains_configs`, `register_foreign_chain_config`,
+  `whitelist_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
 `Drop` kills all running nodes; the temp directory is held via `test_dir` and
@@ -207,7 +209,14 @@ pub struct MpcClusterConfig {
     pub sandbox_version: String,
     pub home_base: Option<PathBuf>,
     pub initial_participant_indices: Vec<usize>,
-    pub node_foreign_chains_configs: Vec<ForeignChainsConfig>,
+    pub migration_targets: Vec<usize>,          // source node indices
+    pub init_format: ContractInitFormat,
+    pub foreign_chains: ForeignChainsClusterConfig,
+}
+
+pub struct ForeignChainsClusterConfig {
+    pub node_configs: Vec<ForeignChainsConfig>, // per-node; empty = default for all
+    pub whitelisted_chains: BTreeSet<ForeignChain>, // voted in during setup
 }
 
 impl MpcClusterConfig {
@@ -248,7 +257,8 @@ keeps parallel tests from colliding. If a test crashes and leaves an orphan
 POST `/` handler that returns hardcoded JSON-RPC responses for the methods
 the MPC nodes call during `verify_foreign_transaction`. Tests own the
 `MockServer`s directly (rather than a wrapping struct) so they can wire the
-URLs into the per-node `ForeignChainsConfig` via `MpcClusterConfig`.
+URLs into the per-node `ForeignChainsConfig` via
+`MpcClusterConfig::foreign_chains`.
 
 ---
 
