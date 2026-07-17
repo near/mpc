@@ -947,7 +947,7 @@ impl MpcCluster {
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
         self.contract
-            .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .view_borsh(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
             .await
     }
 
