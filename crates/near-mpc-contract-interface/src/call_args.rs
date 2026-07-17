@@ -56,6 +56,11 @@ pub struct VoteResharedArgs {
     pub key_event_id: KeyEventId,
 }
 
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteUpdateArgs {
+    pub id: u64,
+}
+
 #[derive(Serialize, Debug)]
 pub struct RegisterForeignChainConfigArgs {
     #[expect(deprecated)]

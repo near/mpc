@@ -11,8 +11,9 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
     DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, ParticipantId,
-    ParticipantInfo, Participants, ProposedThresholdParameters, Protocol, ProtocolContractState,
-    ProviderConfig, ProviderId, ReconstructionThreshold, Threshold, ThresholdParameters,
+    ParticipantInfo, Participants, ProposeUpdateArgs, ProposedThresholdParameters, Protocol,
+    ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold, Threshold,
+    ThresholdParameters,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -1030,8 +1031,8 @@ impl MpcCluster {
             "cannot propose contract update with no nodes"
         );
 
-        let propose_args = ProposeUpdateArgsBorsh {
-            code: Some(new_wasm),
+        let propose_args = ProposeUpdateArgs {
+            code: Some(new_wasm.to_vec()),
             config: None,
         };
         let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
@@ -1433,16 +1434,6 @@ async fn create_user_accounts(
         map.insert(account, key);
     }
     Ok(map)
-}
-
-/// Borsh-encoded mirror of the contract's `ProposeUpdateArgs`. We keep it
-/// local rather than depending on `mpc-contract` for two fields. `Config` is
-/// modeled as `Option<()>` because we never propose a config-only update; the
-/// `None` discriminator is `[0u8]` regardless of the inner type.
-#[derive(borsh::BorshSerialize)]
-struct ProposeUpdateArgsBorsh<'a> {
-    code: Option<&'a [u8]>,
-    config: Option<()>,
 }
 
 /// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and

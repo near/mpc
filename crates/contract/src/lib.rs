@@ -50,7 +50,7 @@ use crate::{
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
-    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    update::{ProposedUpdates, Update, UpdateId},
 };
 use config::Config;
 use crypto_shared::{
@@ -65,7 +65,7 @@ use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
+    self as dtos, CKDResponse, Metrics, ProposeUpdateArgs, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
