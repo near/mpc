@@ -1060,7 +1060,7 @@ async fn register_foreign_chains(
                     }
                     None => {
                         tracing::error!(
-                            "retries exceeded for register supported foreign chains transaction, issuing HaltUntilInterrupted"
+                            "retries exceeded for register supported foreign chains transaction"
                         );
                         return Err(err);
                     }
@@ -1098,7 +1098,7 @@ async fn register_foreign_chains(
                     }
                     None => {
                         tracing::error!(
-                            "retries exceeded for register supported foreign chains config transaction, issuing HaltUntilInterrupted"
+                            "retries exceeded for register supported foreign chains config transaction"
                         );
                         return Err(err);
                     }
