@@ -4,7 +4,8 @@
 //! which allows a client to derive a unique key for a specific application without revealing
 //! the application identifier to the key derivation service.
 //!
-//! The protocol is based on a combination of Oblivious Transfer (OT) and Diffie-Hellman key exchange.
+//! The protocol is a threshold BLS signature over BLS12-381, blinded with EC-ElGamal
+//! encryption so no single node ever sees the derived key.
 //!
 //! For more details, refer to the `confidential-key-derivation.md` document in the `docs` folder.
 

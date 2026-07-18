@@ -132,6 +132,7 @@ mpc-contract = { workspace = true, features = [
     "test-utils",
 ] }
 near-abi = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["call-args"] }
 near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }

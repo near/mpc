@@ -32,7 +32,7 @@ pub mod types {
     };
     pub use tee::{AllowedMpcDockerImageHash, NodeId};
 
-    pub use updates::{ProposedUpdates, UpdateHash};
+    pub use updates::{ProposeUpdateArgs, ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
     pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};

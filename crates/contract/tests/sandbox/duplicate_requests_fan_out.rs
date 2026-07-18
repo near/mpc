@@ -12,7 +12,7 @@ use crate::sandbox::{
         contract_build::parallel_contract,
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            CKDResponseArgs, SignResponseArgs, create_response_ckd, create_response_ed25519,
+            CKDResponseArgs, create_response_ckd, create_response_ed25519,
             create_response_secp256k1, submit_ckd_response, submit_signature_response,
         },
     },
@@ -20,6 +20,7 @@ use crate::sandbox::{
 use elliptic_curve::Group;
 use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, Protocol, SignRequestArgs,
 };
@@ -81,7 +82,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
             (Protocol::CaitSith | Protocol::DamgardEtAl, SharedSecretKey::Secp256k1(sk)) => {
                 let (payload, request, response) =
                     create_response_secp256k1(domain_id, &parallel_id, &scheme_tag, "", sk);
-                let response_args = SignResponseArgs { request, response };
+                let response_args = SignatureRespondArgs { request, response };
                 let sign_args = SignRequestArgs {
                     payload,
                     path: String::new(),
@@ -100,7 +101,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
             (Protocol::Frost, SharedSecretKey::Ed25519(sk)) => {
                 let (payload, request, response) =
                     create_response_ed25519(domain_id, &parallel_id, &scheme_tag, "", sk);
-                let response_args = SignResponseArgs { request, response };
+                let response_args = SignatureRespondArgs { request, response };
                 let sign_args = SignRequestArgs {
                     payload,
                     path: String::new(),
@@ -158,7 +159,7 @@ async fn run_sign_fan_out(
     contract: &near_workspaces::Contract,
     parallel: &near_workspaces::Contract,
     attested: &near_workspaces::Account,
-    response_args: &SignResponseArgs,
+    response_args: &SignatureRespondArgs,
     sign_args: &SignRequestArgs,
 ) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let statuses = submit_duplicate_sign_batches(
