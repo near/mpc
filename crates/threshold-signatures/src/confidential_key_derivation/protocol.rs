@@ -202,11 +202,10 @@ mod test {
     use crate::confidential_key_derivation::ciphersuite::hash_to_curve;
     use crate::confidential_key_derivation::hash_app_id_with_pk;
     use crate::test_utils::{
-        GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
-        expected_buffer_by_role, generate_participants, generate_test_keys, make_keygen_output,
-        run_protocol,
+        MockCryptoRng, assert_buffer_capacity, expected_buffer_by_role, generate_participants,
+        generate_test_keys, make_keygen_output, run_ckd,
     };
-    use rand::{RngCore, SeedableRng, seq::SliceRandom as _};
+    use rand::{SeedableRng, seq::SliceRandom as _};
     use rstest::rstest;
 
     #[test]
@@ -238,29 +237,12 @@ mod test {
         let (f, pk) = generate_test_keys(participants.len() - 1, &mut rng);
         let msk = f.eval_at_zero().unwrap().0;
 
-        let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
-        for p in &participants {
-            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-            let key_pair = make_keygen_output(&f, &pk, *p);
+        let key_packages: Vec<_> = participants
+            .iter()
+            .map(|p| (*p, make_keygen_output(&f, &pk, *p)))
+            .collect();
 
-            let protocol = ckd(
-                &participants,
-                coordinator,
-                *p,
-                key_pair,
-                app_id.clone(),
-                app_pk,
-                rng_p,
-            )
-            .unwrap();
-
-            protocols.push((*p, Box::new(protocol)));
-        }
-
-        let result = run_protocol(protocols).unwrap();
-
-        // test one single some for the coordinator
-        let ckd_output = check_one_coordinator_output(result, coordinator).unwrap();
+        let ckd_output = run_ckd(&key_packages, coordinator, &app_id, &app_pk, &mut rng).unwrap();
 
         // compute msk . H(pk, app_id)
         let confidential_key = ckd_output.unmask(app_sk);
