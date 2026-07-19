@@ -127,6 +127,7 @@ test-log = { workspace = true }
 test-port-allocator = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
+tokio-util = { workspace = true, features = ["io"] }
 tracing-test = { workspace = true }
 
 [lints]

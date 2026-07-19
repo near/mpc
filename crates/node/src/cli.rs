@@ -119,7 +119,7 @@ impl StartCmd {
                 format: log_format,
                 filter: std::env::var("RUST_LOG").ok(),
                 log_dir: Some(self.home_dir),
-                max_log_files: Some(100),
+                max_log_files: Some(336), // two weeks worth of hours
             },
             pccs_endpoints: mpc_node_config::default_pccs_endpoints(),
         }

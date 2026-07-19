@@ -1,6 +1,7 @@
 use mpc_node_config::{LogConfig, LogFormat};
 use std::path::Path;
-use std::time::SystemTime;
+use std::path::PathBuf;
+use std::time::Duration;
 use std::{fs, io};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::layer::SubscriberExt;
@@ -21,7 +22,10 @@ pub fn init_logging(log_config: &LogConfig) -> (WorkerGuard, std::path::PathBuf)
     });
     let _ = fs::create_dir_all(&log_dir);
     if let Some(max_log_files) = log_config.max_log_files {
-        let _ = prune_logs(&log_dir, max_log_files);
+        if let Err(err) = prune_logs(&log_dir, max_log_files) {
+            tracing::warn!(?err, ?log_dir, "failed to prune old logs on startup");
+        }
+        spawn_periodic_prune(log_dir.clone(), max_log_files);
     }
     let file_appender = tracing_appender::rolling::hourly(&log_dir, "mpc");
     let (non_blocking_writer, log_guard) = tracing_appender::non_blocking(file_appender);
@@ -51,19 +55,28 @@ fn env_filter(filter: Option<&str>) -> EnvFilter {
     }
 }
 
+fn spawn_periodic_prune(log_dir: PathBuf, max_log_files: usize) {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(60 * 60));
+        ticker.tick().await; // startup already pruned; skip the immediate tick
+        loop {
+            ticker.tick().await;
+            let dir = log_dir.clone();
+            let result = tokio::task::spawn_blocking(move || prune_logs(&dir, max_log_files)).await;
+            if let Err(err) = result {
+                tracing::warn!(?err, ?log_dir, "failed to prune old logs");
+            }
+        }
+    });
+}
+
 fn prune_logs(log_dir: &Path, max_log_files: usize) -> io::Result<()> {
     let mut files = fs::read_dir(log_dir)?
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().map(|t| t.is_file()).unwrap_or(false))
         .filter(|entry| entry.file_name().to_string_lossy().starts_with("mpc"))
         .collect::<Vec<_>>();
-
-    files.sort_by_key(|entry| {
-        entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH)
-    });
+    files.sort_by_key(|entry| entry.file_name());
     let excess = files.len().saturating_sub(max_log_files);
     for entry in files.into_iter().take(excess) {
         fs::remove_file(entry.path())?;

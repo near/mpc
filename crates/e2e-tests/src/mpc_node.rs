@@ -442,7 +442,7 @@ impl MpcNodeSetup {
                 format: LogFormat::Plain,
                 filter: Some("debug".to_string()),
                 log_dir: Some(self.home_dir.clone()),
-                max_log_files: Some(100),
+                max_log_files: Some(336), // two weeks worth of hours
             },
             near_init: Some(NearInitConfig {
                 chain_id: ChainId::Custom(self.chain_id.clone()),
