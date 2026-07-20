@@ -1,0 +1,15 @@
+# Paths excluded from the semgrep CI check (see the `semgrep` job in .github/workflows/ci.yml).
+# This file replaces semgrep's default ignore list, gitignored files are skipped regardless.
+
+# Documentation: shell snippets in guides trigger generic rules (e.g. curl over HTTP to local VMs).
+docs/
+*.md
+
+# Local-only development/test environment, talks to local VMs over plain HTTP by design.
+localnet/
+
+# Test code (semgrep's default ignore list also skips tests): panics and dummy
+# data are expected there, see docs/engineering-standards.md.
+tests/
+crates/e2e-tests/
+crates/test-utils/

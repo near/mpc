@@ -256,6 +256,40 @@ jobs:
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
 
+  # Static analysis.
+  # silence false positives with a `nosemgrep: <rule-id>` comment
+  # or a path entry in .semgrepignore.
+  semgrep:
+    name: "Semgrep"
+    needs: changes
+    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    container:
+      image: semgrep/semgrep:1.170.0@sha256:c98f8829eea377274ee4b10656458b078b88232469b2ff913f091c2317347c9d
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      # Only WARNING and ERROR findings block.
+      # panic-in-function-returning-result is excluded because intentional
+      # panics on invariant violations are allowed by docs/engineering-standards.md.
+      - name: Run semgrep
+        run: >
+          semgrep scan
+          --config p/trailofbits
+          --config p/rust
+          --config p/secrets
+          --exclude-rule trailofbits.rs.panic-in-function-returning-result.panic-in-function-returning-result
+          --severity WARNING
+          --severity ERROR
+          --error
+
   mpc-e2e-tests:
     name: "MPC E2E tests"
     needs: changes
