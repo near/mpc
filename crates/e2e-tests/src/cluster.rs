@@ -110,7 +110,7 @@ pub struct ForeignChainsClusterConfig {
     /// Per-node configs. If empty, all nodes get the default (empty) config;
     /// if non-empty, must have exactly `num_nodes` entries.
     pub node_configs: Vec<mpc_node_config::ForeignChainsConfig>,
-    pub whitelisted_chains: BTreeSet<ForeignChain>,
+    pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
 }
 
 pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {

@@ -227,7 +227,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let expected_chains: std::collections::BTreeSet<ForeignChain> = [
+    let whitelist: BTreeMap<_, _> = [
         ForeignChain::Bitcoin,
         ForeignChain::Abstract,
         ForeignChain::Bnb,
@@ -238,7 +238,10 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         ForeignChain::Polygon,
     ]
     .into_iter()
+    .map(|chain| (chain, placeholder_chain_entry(chain)))
     .collect();
+    let expected_chains: std::collections::BTreeSet<ForeignChain> =
+        whitelist.keys().copied().collect();
 
     let (cluster, _running) =
         common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
@@ -251,7 +254,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
                 purpose: DomainPurpose::ForeignTx,
             }];
             c.foreign_chains.node_configs = vec![fc_config.clone(), fc_config];
-            c.foreign_chains.whitelisted_chains = expected_chains.clone();
+            c.foreign_chains.whitelist = whitelist.clone();
         })
         .await;
 
@@ -260,8 +263,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         .await
         .context("timed out waiting for all chains to become available")?;
 
-    // The nodes dual-write, so the legacy view must stay in lockstep until
-    // the deprecated API is dropped.
+    // TODO(#3630): drop the legacy view once deprecated API is dropped.
     let supported = cluster
         .view_foreign_chains_supported_by_contract()
         .await
@@ -274,13 +276,9 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         .view_allowed_foreign_chain_providers()
         .await
         .context("failed to view allowed foreign chain providers")?;
-    let expected_allowed: BTreeMap<_, _> = expected_chains
-        .iter()
-        .map(|&chain| (chain, placeholder_chain_entry(chain)))
-        .collect();
     anyhow::ensure!(
-        allowed == expected_allowed,
-        "expected allowed providers {expected_allowed:?}, got {allowed:?}"
+        allowed == whitelist,
+        "expected allowed providers {whitelist:?}, got {allowed:?}"
     );
 
     let state = cluster

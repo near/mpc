@@ -76,7 +76,7 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
-    let whitelisted_chains = config.foreign_chains.whitelisted_chains.clone();
+    let whitelist = config.foreign_chains.whitelist.clone();
     let threshold = config.threshold;
     let cluster = MpcCluster::start(config)
         .await
@@ -93,10 +93,6 @@ pub async fn must_setup_cluster(
         panic!("expected Running state");
     };
 
-    let whitelist: std::collections::BTreeMap<_, _> = whitelisted_chains
-        .iter()
-        .map(|&chain| (chain, e2e_tests::cluster::placeholder_chain_entry(chain)))
-        .collect();
     cluster
         .whitelist_foreign_chains(&initial_participant_indices[..threshold], &whitelist)
         .await
