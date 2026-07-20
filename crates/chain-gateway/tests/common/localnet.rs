@@ -3,11 +3,11 @@ use std::time::{Duration, Instant};
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
 use chain_gateway::state_viewer::ViewMethod;
-use chain_gateway::types::ObservedState;
+use near_contract_transport::ObservedState;
 
-use chain_gateway::ViewArgs;
 use chain_gateway_test_contract::consts::VIEW_VALUE;
 use ed25519_dalek::SigningKey;
+use near_contract_transport::ViewArgs;
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};

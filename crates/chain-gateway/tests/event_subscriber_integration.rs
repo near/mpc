@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use super::common::localnet::Localnet;
 use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
-use chain_gateway::ViewArgs;
 use chain_gateway::{
     event_subscriber::{
         block_events::{
@@ -20,6 +19,7 @@ use chain_gateway_test_contract::{
     },
     consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
 };
+use near_contract_transport::ViewArgs;
 use rstest::rstest;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);

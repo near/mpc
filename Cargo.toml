@@ -19,7 +19,7 @@ members = [
     "crates/include-measurements",
     "crates/launcher-interface",
     "crates/mpc-attestation",
-    "crates/mpc-call-args",
+    "crates/near-contract-transport",
     "crates/near-mpc-bounded-collections",
     "crates/near-mpc-contract-interface",
     "crates/near-mpc-crypto-types",
@@ -62,12 +62,13 @@ foreign-chain-rpc-interfaces = { path = "crates/foreign-chain-rpc-interfaces" }
 include-measurements = { path = "crates/include-measurements" }
 launcher-interface = { path = "crates/launcher-interface" }
 mpc-attestation = { path = "crates/mpc-attestation" }
-mpc-call-args = { path = "crates/mpc-call-args" }
+
 mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-node-config = { path = "crates/node-config" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
+near-contract-transport = { path = "crates/near-contract-transport" }
 near-mpc-bounded-collections = { path = "crates/near-mpc-bounded-collections", version = "0.0.1" }
 near-mpc-contract-interface = { path = "crates/near-mpc-contract-interface", version = "0.0.1" }
 near-mpc-crypto-types = { path = "crates/near-mpc-crypto-types", version = "0.0.1" }

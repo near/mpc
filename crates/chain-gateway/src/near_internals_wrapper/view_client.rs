@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
+use near_contract_transport::{BlockHeight, ObservedState, ViewArgs, ViewContract};
 
+use crate::types::LatestFinalBlockInfo;
 use crate::{
     errors::{NearViewClientError, NearViewClientQuery},
-    primitives::{FetchLatestFinalBlockInfo, ViewContract},
-    types::{ObservedState, ViewArgs},
+    primitives::FetchLatestFinalBlockInfo,
 };
 
 /// Arc-wrapper around near-internal struct
@@ -31,6 +31,7 @@ impl NearViewClientActorHandle {
 
 impl ViewContract for NearViewClientActorHandle {
     type Error = NearViewClientError;
+    type ObservedAt = BlockHeight;
     /// calls view method contract_id::method_name(args) and returns the result
     async fn view_contract(
         &self,

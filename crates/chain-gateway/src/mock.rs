@@ -1,8 +1,8 @@
-use crate::primitives::ViewContract;
 use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
-use crate::types::ViewArgs;
-use crate::types::{LatestFinalBlockInfo, ObservedState};
+use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
+use near_contract_transport::{BlockHeight, ObservedState};
+use near_contract_transport::{ViewArgs, ViewContract};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -141,6 +141,7 @@ impl IsSyncing for MockChainState {
 
 impl ViewContract for MockChainState {
     type Error = MockError;
+    type ObservedAt = BlockHeight;
     async fn view_contract(
         &self,
         contract_id: &AccountId,

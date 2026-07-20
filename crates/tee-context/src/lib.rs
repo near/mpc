@@ -5,12 +5,11 @@ pub use errors::TeeContextError;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::{
-    NearGas, NearToken, ViewArgs,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
-    types::FunctionCallArgs,
 };
 use near_account_id::AccountId;
+use near_contract_transport::{FunctionCallArgs, NearGas, NearToken, ViewArgs};
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
@@ -256,9 +255,10 @@ mod tests {
     use assert_matches::assert_matches;
     use chain_gateway::{
         mock::{MockChainState, MockChainStateBuilder, MockError},
-        types::{LatestFinalBlockInfo, ObservedState},
+        types::LatestFinalBlockInfo,
     };
     use ed25519_dalek::SigningKey;
+    use near_contract_transport::ObservedState;
     use near_mpc_contract_interface::types::{Attestation, MockAttestation};
     /// Block height returned by [`MockChainState`] view responses.
     const MOCK_BLOCK_HEIGHT: u64 = 1;

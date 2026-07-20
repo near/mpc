@@ -4,7 +4,7 @@ use near_indexer_primitives::CryptoHash;
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::transaction_sender::TransactionSigner;
-use crate::types::FunctionCallArgs;
+use near_contract_transport::FunctionCallArgs;
 
 pub trait SubmitFunctionCall {
     fn submit_function_call_tx(
@@ -71,8 +71,8 @@ mod tests {
         types::LatestFinalBlockInfo,
     };
 
-    use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
     use near_account_id::AccountId;
+    use near_contract_transport::{FunctionCallArgs, NearGas, NearToken};
     use rand::{SeedableRng, rngs::StdRng};
 
     fn generate_test_call<R>(rng: &mut R) -> (AccountId, FunctionCallArgs)

@@ -2,10 +2,10 @@ use assert_matches::assert_matches;
 use chain_gateway::errors::ChainGatewayError;
 use chain_gateway::state_viewer::WatchContractState;
 use chain_gateway::state_viewer::{SubscribeToContractMethod, ViewMethod};
-use chain_gateway::types::ObservedState;
+use near_contract_transport::ObservedState;
 
-use chain_gateway::ViewArgs;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
+use near_contract_transport::ViewArgs;
 
 use crate::common::localnet::Localnet;
 

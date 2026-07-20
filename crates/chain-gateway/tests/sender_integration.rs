@@ -5,7 +5,7 @@ use chain_gateway_test_contract::args::make_set_value_args;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 
 use crate::common::localnet::LocalnetBuilder;
-use chain_gateway::ViewArgs;
+use near_contract_transport::ViewArgs;
 
 /// This integration test uses the `ChainGateway` struct to spin up two neard nodes
 /// for a localnet. One of the nodes is an observer node (what the MPC node would be running),
@@ -27,7 +27,7 @@ async fn test_submit_set_value_and_read_back() {
     let contract_id = &localnet.contract.account_id;
 
     // Verify initial state: get_value should return DEFAULT_VALUE
-    let initial: chain_gateway::types::ObservedState<String> = observer_gw
+    let initial: near_contract_transport::ObservedState<String> = observer_gw
         .view_method(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
         .await
         .expect("initial view call should succeed");
@@ -49,7 +49,7 @@ async fn test_submit_set_value_and_read_back() {
     loop {
         localnet.assert_nodes_alive();
 
-        let result: chain_gateway::types::ObservedState<String> = observer_gw
+        let result: near_contract_transport::ObservedState<String> = observer_gw
             .view_method(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
             .await
             .expect("view call should succeed");

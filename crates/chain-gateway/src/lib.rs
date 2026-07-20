@@ -8,8 +8,6 @@ pub mod transaction_sender;
 pub mod types;
 
 pub use chain_gateway::{ChainGateway, NodeHandle};
-pub use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
-pub use types::ViewArgs;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock;
