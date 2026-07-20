@@ -2653,6 +2653,32 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Cancels a previously started node migration for the calling account.
+    ///
+    /// Removes the caller's pending `DestinationNodeInfo` record. This is useful if the new node
+    /// is not functioning correctly or the wrong information was provided when calling
+    /// [`Self::start_node_migration`].
+    ///
+    /// This function is callable regardless of whether the protocol is in a `Running` state or
+    /// whether the signer is a current participant.
+    ///
+    /// # Errors
+    /// - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller
+    #[handle_result]
+    pub fn cancel_node_migration(&mut self) -> Result<(), Error> {
+        let account_id = Self::assert_caller_is_signer();
+
+        match self.node_migrations.remove_migration(&account_id) {
+            Some(destination_node_info) => log!(
+                "cancel_node_migration: signer={:?}, destination_node_info={:?}",
+                account_id,
+                destination_node_info
+            ),
+            None => return Err(errors::NodeMigrationError::MigrationNotFound.into()),
+        }
+        Ok(())
+    }
+
     /// Updates the calling participant's registered URL, keeping the TLS key and participant ID.
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
@@ -8132,6 +8158,48 @@ mod tests {
             MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= worst_case_cost,
             "flat fee {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
              ({bytes_grown} bytes, {worst_case_cost}) at today's storage price"
+        );
+    }
+
+    #[test]
+    fn test_cancel_node_migration() {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let (account_id, _, _) = participants
+            .participants()
+            .first()
+            .expect("expected at least one participant")
+            .clone();
+        let mut test_env = Environment::new(None, None, None);
+        test_env.set_signer(&account_id);
+        let destination_node_info = gen_random_destination_info();
+        contract
+            .start_node_migration(destination_node_info.clone())
+            .expect("participant should be able to start node migration");
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, Some(destination_node_info))
+        );
+        // Cancel the migration
+        contract
+            .cancel_node_migration()
+            .expect("caller should be able to cancel their pending migration");
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+        // Check migration was cancelled
+        assert!(contract.migration_info().is_empty());
+        let res = contract.cancel_node_migration();
+        assert_matches!(
+            res.unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::MigrationNotFound)
         );
     }
 }

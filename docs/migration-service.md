@@ -248,7 +248,7 @@ flowchart TD
 For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
 
 Note that starting a migration workflow does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. However, to avoid making the migration process a DoS attack vector, protocol state changes must have priority over any ongoing migrations.
-If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing migration processes will simply be cancelled.
+If the protocol state changes into a `Resharing` or `Initializing` state, the pending `OngoingNodeMigration` record itself is **not** cleared by the transition and remains unless the operator explicitly withdraws it with `cancel_node_migration` or starts a new migration which will replace it.
 
 ## Implementation Details
 
@@ -358,7 +358,7 @@ The contract provides the following methods:
 
 - **`start_node_migration(destination_node_info: ParticipantInfo)`** - Initiates a node migration:
     - Called by the node operator
-    - Creates an `OngoingNodeMigration` record for the given `AccountId`
+    - Creates an `OngoingNodeMigration` record for the node operator's account.
     - Stores the destination node's `ParticipantInfo` (new TLS keys, etc.)
     - Can be called multiple times to update the destination node info (only the last value is retained)
     - Returns an error if the protocol is not in `Running` state
@@ -366,7 +366,7 @@ The contract provides the following methods:
 
 - **`cancel_node_migration()`** - Cancels an ongoing node migration:
     - Called by the node operator
-    - Removes the `OngoingNodeMigration` record for the given `AccountId`
+    - Removes the `OngoingNodeMigration` record for the node operator's account.
     - Useful if the new node is not functioning correctly or wrong information was provided
 
 - **`conclude_node_migration(keyset: &Keyset)`** - Finalizes a node migration:
@@ -388,7 +388,7 @@ The contract provides the following methods:
 
 #### Migration Related Behavior
 
-- The `OngoingNodeMigration` records are automatically cleared when the protocol transitions from `Running` state to `Resharing` or `Initializing` state, effectively cancelling any in-progress migrations.
+- The `OngoingNodeMigration` records are **not** automatically cleared when the protocol transitions from `Running` state to `Resharing` or `Initializing` state.
 - **Future Enhancement**: It may be desirable for the contract to verify that calls to `conclude_node_migration(keyset)` come from the actual onboarding node by checking the transaction signer's public key _(see [(#1086)](https://github.com/near/mpc/issues/1086))_. This would prevent ill-behaved decommissioned nodes from making spurious migration calls. This would require:
     - Comparing `env::signer_account_pk()` with the public key associated with the participant (note: this is different from the TLS key currently stored as [`signer_pk`](https://github.com/near/mpc/blob/b5a9d1b2eef4de47d19b66cb25b577da2b897560/crates/contract/src/tee/tee_state.rs#L32) in TEEState)
     - Including this public key in the TEE attestation
