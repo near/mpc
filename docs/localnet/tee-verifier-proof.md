@@ -72,13 +72,21 @@ plain wasm is all localnet needs.
 
 ```console
 $ nix develop --command cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
-    Finished cargo near build
-    Binary: target/near/mpc_contract/mpc_contract.wasm
+✓ Contract successfully built! (in CARGO_NEAR_BUILD_ENVIRONMENT=host)
+     -                Binary: /Users/patryk/mpc/target/near/mpc_contract/mpc_contract.wasm
+     -                  Size: 1.5 MB (1468784 bytes)
+     - SHA-256 checksum hex : 244f4aefe283b4d10f69c3565e7915f929dccd80df25e741b1e78d6821ab6f13
+     - SHA-256 checksum bs58: 3Sjodg7aEuYk5QCnhSUgyuHGCtpWkxYkV7oKmcuzcWCz
+     -                   ABI: /Users/patryk/mpc/target/near/mpc_contract/mpc_contract_abi.json
+     -          Embedded ABI: /Users/patryk/mpc/target/near/mpc_contract/mpc_contract_abi.zst
 
 $ nix develop --command cargo near build non-reproducible-wasm --no-abi --profile=release-contract --manifest-path crates/tee-verifier/Cargo.toml --locked
-    Finished cargo near build
-    Binary: target/near/tee_verifier/tee_verifier.wasm
-    SHA-256 checksum hex : 475b182cb348798fec20e71bb3f9f85a982c7e36e1e79cfaa95ad0700ef8ea07
+✓ Contract successfully built! (in CARGO_NEAR_BUILD_ENVIRONMENT=host)
+     -                Binary: /Users/patryk/mpc/target/near/tee_verifier/tee_verifier.wasm
+     -                  Size: 365.7 KB (365666 bytes)
+     - SHA-256 checksum hex : 475b182cb348798fec20e71bb3f9f85a982c7e36e1e79cfaa95ad0700ef8ea07
+     - SHA-256 checksum bs58: 5oYWdjLumKFKhXb35YntThoKyXuZBh3in1VKpWi32Hcr
+    Finished cargo near build in 0s
 ```
 
 Launch the network:
@@ -114,22 +122,31 @@ the account was created, the wasm deployed, and every node's `vote_tee_verifier_
 call returned (each is guarded, so any failure aborts the script). Leave the script
 paused here and switch to Terminal 2.
 
-> The script's final step (`verify_foreign_transaction`) can occasionally fail with
-> `Transaction has expired`, an unrelated pre-existing near-cli timing flake that
-> happens after all the verifier work. If it does, the script drops straight into
-> its clean-up prompt — the chain is still up, so the Phase 2 checks still work.
-
 ## Phase 2 — on-chain proof (Terminal 2, while the script is paused)
 
 ### 3a. The verifier account exists with the wasm deployed
 
 ```console
 $ nix develop --command near account view-account-summary tee-verifier.test.near network-config mpc-localnet now
- tee-verifier.test.near                 At block #1375
+🦀 NEAR Dev Shell Active
+---------------------------------------------------------------------------------------------------------
+ tee-verifier.test.near                 At block #323
+                                        (CohW7hQz8eAM8g1UmrdJFzKQXshCtGqVDV9qH68z1neL)
+---------------------------------------------------------------------------------------------------------
+ NEAR Social profile unavailable        The profile can be edited at https://near.social
+                                        or using the cli command: bos social-db manage-profile
+                                        (https://github.com/bos-cli-rs/bos-cli-rs)
+---------------------------------------------------------------------------------------------------------
  Native account balance                 4.9973310937266962 NEAR
+---------------------------------------------------------------------------------------------------------
+ Validator stake                        0 NEAR
+---------------------------------------------------------------------------------------------------------
  Storage used by the account            365.8 KB
+---------------------------------------------------------------------------------------------------------
  Local Contract (SHA-256 checksum hex)  475b182cb348798fec20e71bb3f9f85a982c7e36e1e79cfaa95ad0700ef8ea07
+---------------------------------------------------------------------------------------------------------
  Access keys                            1 full access keys and 0 function-call-only access keys
+---------------------------------------------------------------------------------------------------------
 ```
 
 The on-chain code hash equals the wasm built and voted on in Phase 1.
@@ -138,17 +155,38 @@ The on-chain code hash equals the wasm built and voted on in Phase 1.
 
 ```console
 $ nix develop --command near contract inspect tee-verifier.test.near network-config mpc-localnet now
- tee-verifier.test.near     At block #1376
+🦀 NEAR Dev Shell Active
+ tee-verifier.test.near     At block #439
+                            (8YZFakUZWQEg1iU39ZAdkJ9mdd9xaR1UDX2YHtN8CmN1)
+-------------------------------------------------------------------------------------------------------------
+ Local Contract
+-------------------------------------------------------------------------------------------------------------
  SHA-256 checksum [hex]     475b182cb348798fec20e71bb3f9f85a982c7e36e1e79cfaa95ad0700ef8ea07
+-------------------------------------------------------------------------------------------------------------
  SHA-256 checksum [base58]  5oYWdjLumKFKhXb35YntThoKyXuZBh3in1VKpWi32Hcr
+-------------------------------------------------------------------------------------------------------------
  Storage used               365.8 KB (365.7 KB Wasm + 182 B data)
+-------------------------------------------------------------------------------------------------------------
+ Access keys                1 full access keys and 0 function-call-only access keys
+-------------------------------------------------------------------------------------------------------------
  Contract version           3.13.0
+-------------------------------------------------------------------------------------------------------------
+ Contract link
+-------------------------------------------------------------------------------------------------------------
  Supported standards        nep330 (1.3.0)
+-------------------------------------------------------------------------------------------------------------
+ NEAR ABI version           Info: Contract does not support NEAR ABI (https://github.com/near/abi), so there
+                            is no way to get details about the function argument and return values.
+-------------------------------------------------------------------------------------------------------------
 
  Functions: (NEAR ABI is not available, so only function names are extracted)
+
  fn __getrandom_custom(...) -> ...
+
  fn contract_source_metadata(...) -> ...
+
  fn verify_quote(...) -> ...
+
  fn ring_core_0_17_14__bn_mul_mont(...) -> ...
 ```
 
@@ -196,12 +234,3 @@ fixtures change and the file isn't regenerated. Regenerate with:
 ```bash
 UPDATE_FIXTURES=1 nix develop --command cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
 ```
-
-## Summary
-
-1. The verifier wasm builds (`--no-abi`), SHA-256 `475b182c...`.
-2. `launch-localnet.sh` created and deployed `tee-verifier.test.near` and voted it
-   in from both nodes; `tee_verifier_votes` is empty, confirming the votes applied.
-3. The deployed account's on-chain code hash equals the voted hash (`475b182c...`).
-4. A direct `verify_quote` call executed the real DCAP logic and returned a verdict
-   (`TCBInfo expired`, the expected result on today's live clock).
