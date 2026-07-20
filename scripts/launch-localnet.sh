@@ -13,8 +13,8 @@ MPC_CONTRACT_PATH="./target/near/mpc_contract/mpc_contract.wasm"
 
 # Optional TEE verifier contract. When this WASM is present it is deployed to
 # tee-verifier.test.near and voted in as the trusted verifier; when absent the
-# verifier steps are skipped so runs that never built it still work.
-TEE_VERIFIER_PATH="./target/near/tee-verifier/tee_verifier.wasm"
+# verifier steps are skipped (with a warning) so runs that never built it still work.
+TEE_VERIFIER_PATH="./target/near/tee_verifier/tee_verifier.wasm"
 
 # number of mpc-nodes in the network
 N=2
@@ -246,6 +246,8 @@ EOF
   wait_for_success "${is_contract_running_cmd}"
 
   if [[ -f "$TEE_VERIFIER_PATH" ]]; then
+    require_cmds sha256sum
+
     echo "Creating tee-verifier account"
     run_quiet_on_success "near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
 
@@ -253,15 +255,15 @@ EOF
     # The verifier is stateless, so it has no initializer to call on deploy.
     run_quiet_on_success "near contract deploy tee-verifier.test.near use-file '$TEE_VERIFIER_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
 
-    # Voters only need to agree on the same hash; the contract does not check it
-    # against the deployed bytes.
+    # expected_code_hash commits every voter to the same audited WASM; the contract
+    # only compares voters' hashes against each other, not against the deployed bytes.
     TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
 
     echo "Voting in tee-verifier"
     pids_verifier_votes=()
     for ((i = 1; i <= N; i++)); do
       node_name="mpc-node-$i.test.near"
-      run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{\"candidate_account_id\":\"tee-verifier.test.near\",\"expected_code_hash\":\"$TEE_VERIFIER_HASH\"}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send" &
+      run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{\"candidate_account_id\":\"tee-verifier.test.near\",\"expected_code_hash\":\"$TEE_VERIFIER_HASH\"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send" &
       pids_verifier_votes+=($!)
     done
 
@@ -269,7 +271,9 @@ EOF
       wait "$pid"
     done
   else
-    echo "TEE verifier WASM not found at ${TEE_VERIFIER_PATH}; skipping verifier deploy and vote"
+    echo "Warning: TEE verifier WASM not found at ${TEE_VERIFIER_PATH}; skipping verifier deploy and vote." >&2
+    echo "Warning: to include it, build the verifier and pass --tee-verifier-path:" >&2
+    echo "cargo near build non-reproducible-wasm --profile=release-contract --manifest-path crates/tee-verifier/Cargo.toml --locked" >&2
   fi
 
   signer_account="mpc-node-1.test.near"
