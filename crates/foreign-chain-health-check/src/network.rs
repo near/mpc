@@ -16,3 +16,17 @@ impl Network {
         }
     }
 }
+
+impl std::str::FromStr for Network {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mainnet" => Ok(Network::Mainnet),
+            "testnet" => Ok(Network::Testnet),
+            other => Err(format!(
+                "unknown network `{other}`, expected `mainnet` or `testnet`"
+            )),
+        }
+    }
+}

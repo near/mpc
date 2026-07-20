@@ -1,7 +1,5 @@
 //! Foreign-chain RPC provider health checks: probe every configured provider
-//! with a fixed golden request and report a per-provider result. Shared by the
-//! `foreign-chain-config-tester` operator CLI and the MPC node's startup health
-//! check so the two never drift on golden vectors or auth handling.
+//! with a fixed golden request and report a per-provider result.
 
 mod checks;
 mod golden;
@@ -31,13 +29,11 @@ pub use results::{ProviderResult, Status};
 
 use crate::golden::{AptosVector, BlockHashVector, SuiVector};
 
-/// Probe every configured provider on every configured chain with the golden
-/// reference transaction for `network`, returning one [`ProviderResult`] per
-/// provider. Each provider is checked independently: one bad provider does not
-/// stop the others from being reported. Chains that are configured but not yet
-/// supported by the node, or that have no reference transaction for `network`,
-/// are reported as [`Status::Skipped`]. An unconfigured sui still yields a
-/// placeholder `Skipped` row so its absence is visible in reports.
+/// Probe every configured provider against `network`'s golden reference
+/// transaction, one [`ProviderResult`] per provider, each checked independently.
+/// Chains with no reference for `network`, or configured but unsupported, are
+/// [`Status::Skipped`]; an unconfigured sui still yields a placeholder `Skipped`
+/// result so its absence stays visible.
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
     network: Network,
@@ -312,8 +308,8 @@ fn mark_skipped(
     }
 }
 
-/// A chain absent from the config has no providers to enumerate, so it gets a single
-/// placeholder row — this way every supported chain shows up in the report.
+/// A chain absent from the config has no providers to enumerate; emit one
+/// placeholder [`ProviderResult`] so it still appears in the returned results.
 fn mark_not_configured(chain: &'static str, out: &mut Vec<ProviderResult>) {
     out.push(ProviderResult::skipped(
         chain,
@@ -430,9 +426,8 @@ mod tests {
 
     #[tokio::test]
     async fn check_all_providers__should_report_pass_fail_and_skip_in_one_run() {
-        // Given — on the same chain, one Aptos provider serves the golden event
-        // (pass) and another serves a wrong event (fail); a separate unsupported
-        // chain is skipped. All three are exercised in a single run.
+        // Given — one Aptos provider serves the golden event (pass), another a
+        // wrong event (fail), and a separate chain is unsupported (skip).
         let healthy = MockServer::start_async().await;
         let broken = MockServer::start_async().await;
         let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
@@ -481,9 +476,8 @@ mod tests {
         // When
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
-        // Then — the broken provider does not stop the healthy one from being
-        // reported, the unsupported chain is skipped, and unconfigured sui
-        // gets its placeholder row.
+        // Then — the broken provider does not suppress the healthy one; 4 rows
+        // including the skipped chain and unconfigured sui's placeholder.
         assert_eq!(results.len(), 4);
         let status = |chain: &str, provider: &str| {
             results

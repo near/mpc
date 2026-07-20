@@ -1,4 +1,4 @@
-//! Human-readable table rendering of the shared check results.
+//! Human-readable table rendering of the check results.
 
 use std::fmt::Write as _;
 

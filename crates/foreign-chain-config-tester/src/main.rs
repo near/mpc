@@ -1,6 +1,5 @@
 //! Foreign-chain RPC config tester: probe every configured provider with a fixed
 //! golden request so operators can verify their config without running the node.
-//! The probe logic lives in `foreign-chain-health-check`, shared with the node.
 
 mod config;
 mod report;
@@ -23,27 +22,10 @@ struct Args {
     #[arg(long)]
     config: PathBuf,
 
-    /// Network the reference transactions belong to. Auto-detected from the
-    /// config (`chain_id` / `mpc_contract_id`) when omitted.
-    #[arg(long, value_enum)]
-    network: Option<NetworkArg>,
-}
-
-/// CLI mirror of [`Network`] so the shared library stays free of a `clap`
-/// dependency.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum NetworkArg {
-    Mainnet,
-    Testnet,
-}
-
-impl From<NetworkArg> for Network {
-    fn from(value: NetworkArg) -> Self {
-        match value {
-            NetworkArg::Mainnet => Network::Mainnet,
-            NetworkArg::Testnet => Network::Testnet,
-        }
-    }
+    /// Network the reference transactions belong to. Auto-detected from
+    /// the config (`chain_id` / `mpc_contract_id`) when omitted.
+    #[arg(long, value_name = "NETWORK")]
+    network: Option<Network>,
 }
 
 #[tokio::main]
@@ -53,7 +35,7 @@ async fn main() -> anyhow::Result<ExitCode> {
         .with_context(|| format!("failed to read {}", args.config.display()))?;
     let foreign_chains = config::parse_foreign_chains(&contents, &args.config)?;
     let network = match args.network {
-        Some(network) => network.into(),
+        Some(network) => network,
         None => config::detect_network(&contents, &args.config)?.ok_or_else(|| {
             anyhow::anyhow!(
                 "could not determine network from config (no chain_id / mpc_contract_id found); \
