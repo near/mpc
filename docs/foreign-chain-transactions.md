@@ -649,7 +649,9 @@ providers require no auth at all.
 
 On startup the node probes every configured provider with a fixed golden request and logs a
 per-provider result, so config typos and un-enabled API keys surface immediately instead of on
-the first real verification request. The probe runs detached and never blocks startup. On
+the first real verification request. All providers are probed concurrently, and a summary line
+reports how many passed; a check that probed nothing at all (empty or mistyped `foreign_chains`
+section) is flagged with a warning. The probe runs detached and never blocks startup. On
 mainnet and testnet the golden reference values are built into the binary. On local chains
 (localnet/sandbox/custom) the probe runs only when the node config supplies its own golden
 values via `foreign_chain_health_check_golden` (same per-chain shape as the built-in set) and

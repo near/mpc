@@ -82,6 +82,14 @@ fn log_results(results: &[ProviderResult]) {
         }
     }
     let checked = healthy + failed;
+    if checked == 0 {
+        warn!(
+            skipped = results.len(),
+            "foreign-chain RPC provider health check probed no providers; \
+             foreign_chains is empty or every configured chain was skipped"
+        );
+        return;
+    }
     info!(
         "foreign-chain RPC provider health check complete: {healthy}/{checked} providers healthy"
     );
@@ -283,5 +291,30 @@ mod tests {
         assert!(logs_contain(
             "foreign-chain RPC provider health check complete: 1/2 providers healthy"
         ));
+    }
+
+    #[test]
+    #[traced_test]
+    fn log_results__should_warn_when_no_providers_were_probed() {
+        // Given only skipped rows — nothing was actually probed
+        let results = vec![ProviderResult {
+            chain: "base",
+            provider: "-".to_string(),
+            status: Status::Skipped("not configured".to_string()),
+        }];
+
+        // When
+        log_results(&results);
+
+        // Then a check that verified nothing is flagged loudly, not reported as 0/0
+        logs_assert(|lines: &[&str]| {
+            match lines
+                .iter()
+                .any(|l| l.contains("WARN") && l.contains("probed no providers"))
+            {
+                true => Ok(()),
+                false => Err("expected a WARN when nothing was probed".to_string()),
+            }
+        });
     }
 }

@@ -3736,6 +3736,7 @@ dependencies = [
  "foreign-chain-inspector",
  "foreign-chain-rpc-auth",
  "foreign-chain-rpc-interfaces",
+ "futures",
  "hex",
  "http",
  "httpmock",

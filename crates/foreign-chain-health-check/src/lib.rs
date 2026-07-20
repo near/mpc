@@ -10,6 +10,8 @@ mod results;
 use std::future::Future;
 use std::time::Duration;
 
+use futures::future::join_all;
+
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
 use foreign_chain_inspector::base::inspector::Base;
@@ -44,7 +46,8 @@ pub async fn check_all_providers(
 }
 
 /// Probe every configured provider against `golden`'s reference transaction,
-/// one [`ProviderResult`] per provider, each checked independently.
+/// one [`ProviderResult`] per provider, each checked independently. All probes
+/// run concurrently, so a sweep takes about as long as its slowest probe.
 /// Chains with no reference in `golden`, or configured but unsupported, are
 /// [`Status::Skipped`]; a chain absent from the config still yields a single
 /// placeholder `Skipped` result so its absence stays visible.
@@ -52,69 +55,54 @@ pub async fn check_all_providers_with_golden(
     fc: &ForeignChainsConfig,
     golden: &HealthCheckGoldenConfig,
 ) -> Vec<ProviderResult> {
-    let mut out = Vec::new();
-
-    if let Some(cfg) = &fc.base {
-        run_evm::<Base>("base", cfg, golden.base.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("base", &mut out);
-    }
-    if let Some(cfg) = &fc.bnb {
-        run_evm::<Bnb>("bnb", cfg, golden.bnb.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("bnb", &mut out);
-    }
-    if let Some(cfg) = &fc.arbitrum {
-        run_evm::<Arbitrum>("arbitrum", cfg, golden.arbitrum.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("arbitrum", &mut out);
-    }
-    if let Some(cfg) = &fc.polygon {
-        run_evm::<Polygon>("polygon", cfg, golden.polygon.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("polygon", &mut out);
-    }
-    if let Some(cfg) = &fc.hyper_evm {
-        run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("hyper_evm", &mut out);
-    }
-    if let Some(cfg) = &fc.abstract_chain {
-        run_evm::<Abstract>("abstract", cfg, golden.abstract_chain.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("abstract", &mut out);
-    }
-    if let Some(cfg) = &fc.bitcoin {
-        run_bitcoin(cfg, golden.bitcoin.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("bitcoin", &mut out);
-    }
-    if let Some(cfg) = &fc.starknet {
-        run_starknet(cfg, golden.starknet.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("starknet", &mut out);
-    }
-    if let Some(cfg) = &fc.aptos {
-        run_aptos(cfg, golden.aptos.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("aptos", &mut out);
-    }
-    if let Some(cfg) = &fc.sui {
-        run_sui(cfg, golden.sui.as_ref(), &mut out).await;
-    } else {
-        mark_not_configured("sui", &mut out);
-    }
+    let (base, bnb, arbitrum, polygon, hyper_evm, abstract_chain, bitcoin, starknet, aptos, sui) = futures::join!(
+        run_evm::<Base>("base", fc.base.as_ref(), golden.base.as_ref()),
+        run_evm::<Bnb>("bnb", fc.bnb.as_ref(), golden.bnb.as_ref()),
+        run_evm::<Arbitrum>("arbitrum", fc.arbitrum.as_ref(), golden.arbitrum.as_ref()),
+        run_evm::<Polygon>("polygon", fc.polygon.as_ref(), golden.polygon.as_ref()),
+        run_evm::<HyperEvm>(
+            "hyper_evm",
+            fc.hyper_evm.as_ref(),
+            golden.hyper_evm.as_ref()
+        ),
+        run_evm::<Abstract>(
+            "abstract",
+            fc.abstract_chain.as_ref(),
+            golden.abstract_chain.as_ref()
+        ),
+        run_bitcoin(fc.bitcoin.as_ref(), golden.bitcoin.as_ref()),
+        run_starknet(fc.starknet.as_ref(), golden.starknet.as_ref()),
+        run_aptos(fc.aptos.as_ref(), golden.aptos.as_ref()),
+        run_sui(fc.sui.as_ref(), golden.sui.as_ref()),
+    );
+    let mut out: Vec<ProviderResult> = [
+        base,
+        bnb,
+        arbitrum,
+        polygon,
+        hyper_evm,
+        abstract_chain,
+        bitcoin,
+        starknet,
+        aptos,
+        sui,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
-    if let Some(cfg) = &fc.ethereum {
-        mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
-    } else {
-        mark_not_configured("ethereum", &mut out);
+    match &fc.ethereum {
+        Some(cfg) => out.extend(all_skipped(
+            "ethereum",
+            cfg,
+            "not yet supported by the node",
+        )),
+        None => out.push(not_configured("ethereum")),
     }
-    if let Some(cfg) = &fc.solana {
-        mark_skipped("solana", cfg, "not yet supported by the node", &mut out);
-    } else {
-        mark_not_configured("solana", &mut out);
+    match &fc.solana {
+        Some(cfg) => out.extend(all_skipped("solana", cfg, "not yet supported by the node")),
+        None => out.push(not_configured("solana")),
     }
 
     out
@@ -130,17 +118,12 @@ fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
 }
 
-fn push_result(
-    out: &mut Vec<ProviderResult>,
-    chain: &'static str,
-    name: &RpcProviderName,
-    status: Status,
-) {
-    out.push(ProviderResult {
+fn provider_result(chain: &'static str, name: &RpcProviderName, status: Status) -> ProviderResult {
+    ProviderResult {
         chain,
         provider: provider_name(name),
         status,
-    });
+    }
 }
 
 fn prepare_jsonrpc(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
@@ -174,90 +157,101 @@ async fn run_check(timeout: Duration, fut: impl Future<Output = anyhow::Result<(
 
 async fn run_evm<Chain: EvmChain + Send + Sync>(
     chain: &'static str,
-    cfg: &ForeignChainConfig,
+    cfg: Option<&ForeignChainConfig>,
     vector: Option<&BlockHashGolden>,
-    out: &mut Vec<ProviderResult>,
-) {
+) -> Vec<ProviderResult> {
+    let Some(cfg) = cfg else {
+        return vec![not_configured(chain)];
+    };
     let Some(vector) = vector else {
-        mark_skipped(chain, cfg, NO_REFERENCE_REASON, out);
-        return;
+        return all_skipped(chain, cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed = golden::hex32(&vector.tx)
         .and_then(|tx| golden::hex32(&vector.block_hash).map(|bh| (tx, bh)));
-    for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
+    let parsed = &parsed;
+    join_all(cfg.providers.iter().map(|(name, provider)| async move {
+        let status = match (parsed, prepare_jsonrpc(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
                 run_check(timeout, checks::check_evm::<Chain>(client, *tx, *bh)).await
             }
         };
-        push_result(out, chain, name, status);
-    }
+        provider_result(chain, name, status)
+    }))
+    .await
 }
 
 async fn run_bitcoin(
-    cfg: &ForeignChainConfig,
+    cfg: Option<&ForeignChainConfig>,
     vector: Option<&BlockHashGolden>,
-    out: &mut Vec<ProviderResult>,
-) {
+) -> Vec<ProviderResult> {
+    let Some(cfg) = cfg else {
+        return vec![not_configured("bitcoin")];
+    };
     let Some(vector) = vector else {
-        mark_skipped("bitcoin", cfg, NO_REFERENCE_REASON, out);
-        return;
+        return all_skipped("bitcoin", cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed = golden::hex32(&vector.tx)
         .and_then(|tx| golden::hex32(&vector.block_hash).map(|bh| (tx, bh)));
-    for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
+    let parsed = &parsed;
+    join_all(cfg.providers.iter().map(|(name, provider)| async move {
+        let status = match (parsed, prepare_jsonrpc(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
                 run_check(timeout, checks::check_bitcoin(client, *tx, *bh)).await
             }
         };
-        push_result(out, "bitcoin", name, status);
-    }
+        provider_result("bitcoin", name, status)
+    }))
+    .await
 }
 
 async fn run_starknet(
-    cfg: &ForeignChainConfig,
+    cfg: Option<&ForeignChainConfig>,
     vector: Option<&BlockHashGolden>,
-    out: &mut Vec<ProviderResult>,
-) {
+) -> Vec<ProviderResult> {
+    let Some(cfg) = cfg else {
+        return vec![not_configured("starknet")];
+    };
     let Some(vector) = vector else {
-        mark_skipped("starknet", cfg, NO_REFERENCE_REASON, out);
-        return;
+        return all_skipped("starknet", cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed = golden::felt32(&vector.tx)
         .and_then(|tx| golden::felt32(&vector.block_hash).map(|bh| (tx, bh)));
-    for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
+    let parsed = &parsed;
+    join_all(cfg.providers.iter().map(|(name, provider)| async move {
+        let status = match (parsed, prepare_jsonrpc(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
                 run_check(timeout, checks::check_starknet(client, *tx, *bh)).await
             }
         };
-        push_result(out, "starknet", name, status);
-    }
+        provider_result("starknet", name, status)
+    }))
+    .await
 }
 
 async fn run_aptos(
-    cfg: &ForeignChainConfig,
+    cfg: Option<&ForeignChainConfig>,
     vector: Option<&AptosGolden>,
-    out: &mut Vec<ProviderResult>,
-) {
+) -> Vec<ProviderResult> {
+    let Some(cfg) = cfg else {
+        return vec![not_configured("aptos")];
+    };
     let Some(vector) = vector else {
-        mark_skipped("aptos", cfg, NO_REFERENCE_REASON, out);
-        return;
+        return all_skipped("aptos", cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
     let parsed_tx = golden::hex32(&vector.tx);
-    for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed_tx, prepare_aptos(provider)) {
+    let parsed_tx = &parsed_tx;
+    join_all(cfg.providers.iter().map(|(name, provider)| async move {
+        let status = match (parsed_tx, prepare_aptos(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok(tx), Ok((url, header))) => {
@@ -275,8 +269,9 @@ async fn run_aptos(
                 .await
             }
         };
-        push_result(out, "aptos", name, status);
-    }
+        provider_result("aptos", name, status)
+    }))
+    .await
 }
 
 /// Sui differs from the other probes: its providers prune historical
@@ -284,22 +279,24 @@ async fn run_aptos(
 /// against. The probe verifies the provider's chain identity instead — see
 /// [`checks::check_sui`] for the mechanism.
 async fn run_sui(
-    cfg: &ForeignChainConfig,
+    cfg: Option<&ForeignChainConfig>,
     vector: Option<&SuiGolden>,
-    out: &mut Vec<ProviderResult>,
-) {
+) -> Vec<ProviderResult> {
+    let Some(cfg) = cfg else {
+        return vec![not_configured("sui")];
+    };
     let Some(vector) = vector else {
-        mark_skipped("sui", cfg, NO_REFERENCE_REASON, out);
-        return;
+        return all_skipped("sui", cfg, NO_REFERENCE_REASON);
     };
     let timeout = timeout_of(cfg);
-    for (name, provider) in cfg.providers.iter() {
+    join_all(cfg.providers.iter().map(|(name, provider)| async move {
         let status = match prepare_sui(provider, timeout) {
             Err(e) => Status::Failed(format!("{e:#}")),
             Ok(client) => run_check(timeout, checks::check_sui(client, &vector.chain_id)).await,
         };
-        push_result(out, "sui", name, status);
-    }
+        provider_result("sui", name, status)
+    }))
+    .await
 }
 
 fn prepare_sui(
@@ -319,25 +316,17 @@ fn prepare_sui(
         .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
 }
 
-fn mark_skipped(
-    chain: &'static str,
-    cfg: &ForeignChainConfig,
-    reason: &str,
-    out: &mut Vec<ProviderResult>,
-) {
-    for name in cfg.providers.keys() {
-        out.push(ProviderResult::skipped(chain, provider_name(name), reason));
-    }
+fn all_skipped(chain: &'static str, cfg: &ForeignChainConfig, reason: &str) -> Vec<ProviderResult> {
+    cfg.providers
+        .keys()
+        .map(|name| ProviderResult::skipped(chain, provider_name(name), reason))
+        .collect()
 }
 
 /// A chain absent from the config has no providers to enumerate; emit one
 /// placeholder [`ProviderResult`] so it still appears in the returned results.
-fn mark_not_configured(chain: &'static str, out: &mut Vec<ProviderResult>) {
-    out.push(ProviderResult::skipped(
-        chain,
-        "-".to_string(),
-        "not configured",
-    ));
+fn not_configured(chain: &'static str) -> ProviderResult {
+    ProviderResult::skipped(chain, "-".to_string(), "not configured")
 }
 
 #[cfg(test)]

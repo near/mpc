@@ -14,6 +14,7 @@ clap = { workspace = true, optional = true }
 foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-auth = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
+futures = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 mpc-node-config = { workspace = true }
