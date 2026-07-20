@@ -201,7 +201,7 @@ near-sdk = { version = "5.28.0", features = [
     "unstable",
 ] }
 near-token = "0.3.4"
-near-workspaces = { version = "0.22.2" }
+near-workspaces = { version = "0.23.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
 pprof = { version = "0.15.0", features = [

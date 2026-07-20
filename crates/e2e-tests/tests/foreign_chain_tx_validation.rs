@@ -1,10 +1,10 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
 use crate::common;
 
 use anyhow::{Context, bail};
-use backon::{ConstantBuilder, Retryable};
-use e2e_tests::CLUSTER_WAIT_TIMEOUT;
+use e2e_tests::cluster::placeholder_chain_entry;
 use e2e_tests::foreign_chain_mock::{
     MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
 };
@@ -152,29 +152,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
         polygon: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            providers: {
-                let mut iter = urls.polygon.iter().enumerate();
-                let (i, first_url) = iter
-                    .next()
-                    .expect("at least one polygon provider must be configured");
-                let mut providers = NonEmptyBTreeMap::new(
-                    format!("mock-{i}").into(),
-                    ForeignChainProviderConfig {
-                        rpc_url: first_url.clone(),
-                        auth: Default::default(),
-                    },
-                );
-                for (i, url) in iter {
-                    providers.insert(
-                        format!("mock-{i}").into(),
-                        ForeignChainProviderConfig {
-                            rpc_url: url.clone(),
-                            auth: Default::default(),
-                        },
-                    );
-                }
-                providers
-            },
+            providers: common::build_providers_from_urls(&urls.polygon, "polygon"),
         }),
         ..Default::default()
     }
@@ -249,21 +227,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
 
     let fc_config = build_foreign_chains_config(&urls);
 
-    let (cluster, _running) =
-        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
-            c.num_nodes = 2;
-            c.threshold = 2;
-            c.domains = vec![DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::ForeignTx,
-            }];
-            c.node_foreign_chains_configs = vec![fc_config.clone(), fc_config];
-        })
-        .await;
-
-    let expected_supported_chains: std::collections::BTreeSet<ForeignChain> = [
+    let whitelist: BTreeMap<_, _> = [
         ForeignChain::Bitcoin,
         ForeignChain::Abstract,
         ForeignChain::Bnb,
@@ -274,32 +238,48 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         ForeignChain::Polygon,
     ]
     .into_iter()
+    .map(|chain| (chain, placeholder_chain_entry(chain)))
     .collect();
+    let expected_chains: std::collections::BTreeSet<ForeignChain> =
+        whitelist.keys().copied().collect();
 
-    (|| async {
-        let supported = cluster
-            .view_foreign_chains_supported_by_contract()
-            .await
-            .context("failed to view supported chains")?;
-        let supported_set: std::collections::BTreeSet<ForeignChain> =
-            supported.iter().copied().collect();
-        anyhow::ensure!(
-            supported_set == expected_supported_chains,
-            "expected supported chains {:?}, got {:?}",
-            expected_supported_chains,
-            supported_set
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (CLUSTER_WAIT_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
-    .await
-    .context("timed out waiting for every participant to register its foreign chains")?;
+    let (cluster, _running) =
+        common::must_setup_cluster(common::FOREIGN_TX_VALIDATION_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+            c.domains = vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::ForeignTx,
+            }];
+            c.foreign_chains.node_configs = vec![fc_config.clone(), fc_config];
+            c.foreign_chains.whitelist = whitelist.clone();
+        })
+        .await;
+
+    cluster
+        .wait_for_available_foreign_chains(&expected_chains)
+        .await
+        .context("timed out waiting for all chains to become available")?;
+
+    // TODO(#3630): drop the legacy view once deprecated API is dropped.
+    let supported = cluster
+        .view_foreign_chains_supported_by_contract()
+        .await
+        .context("failed to view supported chains")?;
+    anyhow::ensure!(
+        *supported == expected_chains,
+        "expected supported chains {expected_chains:?}, got {supported:?}"
+    );
+    let allowed = cluster
+        .view_allowed_foreign_chain_providers()
+        .await
+        .context("failed to view allowed foreign chain providers")?;
+    anyhow::ensure!(
+        allowed == whitelist,
+        "expected allowed providers {whitelist:?}, got {allowed:?}"
+    );
 
     let state = cluster
         .get_contract_state()
