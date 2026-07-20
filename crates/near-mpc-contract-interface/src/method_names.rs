@@ -51,6 +51,7 @@ pub const UPDATE_PARTICIPANT_URL: &str = "update_participant_url";
 pub const VERIFY_TEE: &str = "verify_tee";
 pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
 pub const START_NODE_MIGRATION: &str = "start_node_migration";
+pub const CANCEL_NODE_MIGRATION: &str = "cancel_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
 pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";

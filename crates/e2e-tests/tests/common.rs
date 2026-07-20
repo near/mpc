@@ -39,6 +39,7 @@ pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
 pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 23;
 pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 24;
+pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 25;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
