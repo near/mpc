@@ -150,7 +150,7 @@ const CHECKPOINT_PROBE_OFFSET: u64 = 10;
 /// Sui providers prune the gRPC read path after a few weeks, so unlike the other chains
 /// there is no long-lived reference transaction to pin extracted values against. Instead
 /// this verifies the provider's chain identity (the genesis digest never changes) and runs
-/// the real inspector over a transaction from the provider's latest checkpoint.
+/// the real inspector over a transaction from a recent checkpoint (a few behind the tip).
 pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> anyhow::Result<()> {
     let info = client
         .get_service_info()
@@ -181,7 +181,7 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let checkpoint = client
         .get_checkpoint(probe_height)
         .await
-        .context("failed to fetch the latest checkpoint")?
+        .context("failed to fetch the probe checkpoint")?
         .checkpoint
         .context("provider returned no checkpoint")?;
     let digest = checkpoint
@@ -192,10 +192,9 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let tx = golden::base58_32(digest)?;
 
     let inspector = SuiInspector::new(client);
-    // Probe the first event so the extraction pipeline (BCS pass-through, address parsing,
-    // type-tag normalization, contents-name cross-check) is exercised whenever the probe
-    // transaction emits events. A transaction with no events (`LogIndexOutOfBounds`) or a
-    // failed one still proves the provider serves canonical checkpointed data.
+    // Probe the first event to exercise the full extraction pipeline when the tx emits
+    // events; a tx with no events (`LogIndexOutOfBounds`) or a failed one still proves the
+    // provider serves canonical checkpointed data.
     match inspector
         .extract(
             SuiTransactionDigest::from(tx),

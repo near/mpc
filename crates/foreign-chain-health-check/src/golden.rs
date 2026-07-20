@@ -23,7 +23,7 @@ pub struct AptosVector {
 /// Sui fullnodes prune the gRPC read path after a few weeks, so a fixed reference
 /// transaction would age out. The check instead verifies the provider's chain identity
 /// (the genesis checkpoint digest, which never changes) and probes a transaction
-/// from the provider's latest checkpoint.
+/// from a recent checkpoint (a few behind the tip).
 #[derive(Clone, Copy)]
 pub struct SuiVector {
     /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
