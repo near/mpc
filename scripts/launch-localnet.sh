@@ -273,7 +273,7 @@ EOF
   else
     echo "Warning: TEE verifier WASM not found at ${TEE_VERIFIER_PATH}; skipping verifier deploy and vote." >&2
     echo "Warning: to include it, build the verifier and pass --tee-verifier-path:" >&2
-    echo "cargo near build non-reproducible-wasm --profile=release-contract --manifest-path crates/tee-verifier/Cargo.toml --locked" >&2
+    echo "cargo near build non-reproducible-wasm --no-abi --profile=release-contract --manifest-path crates/tee-verifier/Cargo.toml --locked" >&2
   fi
 
   signer_account="mpc-node-1.test.near"
