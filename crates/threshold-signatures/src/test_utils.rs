@@ -27,11 +27,12 @@ pub type GenProtocol<C> = Vec<(Participant, Box<dyn crate::protocol::Protocol<Ou
 /// Type for a deterministic RNG
 pub use mockrng::MockCryptoRng;
 
-pub use ckd::generate_ckd_app_package;
-pub use dkg::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
+pub use ckd::{generate_ckd_app_package, run_ckd, run_ckd_pv};
 #[cfg(test)]
-pub(crate) use dkg::{
-    build_frost_key_packages_with_dealer, generate_test_keys, make_keygen_output,
+pub(crate) use dkg::build_frost_key_packages_with_dealer;
+pub use dkg::{
+    assert_public_key_invariant, deal_keygen_outputs, generate_test_keys,
+    generate_test_keys_with_secret, make_keygen_output, run_keygen, run_refresh, run_reshare,
 };
 pub use participant_simulation::Simulator;
 pub use participants::{generate_participants, generate_participants_with_random_ids};

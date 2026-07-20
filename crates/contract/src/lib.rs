@@ -50,7 +50,7 @@ use crate::{
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
-    update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
+    update::{ProposedUpdates, Update, UpdateId},
 };
 use config::Config;
 use crypto_shared::{
@@ -65,7 +65,7 @@ use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDResponse, Metrics, VerifyForeignTransactionRequest,
+    self as dtos, CKDResponse, Metrics, ProposeUpdateArgs, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
@@ -81,6 +81,7 @@ use node_migrations::NodeMigrations;
 use primitives::{
     domain::{DomainRegistry, max_reconstruction_threshold},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
+    participants::ParticipantInfo,
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
 };
@@ -2598,6 +2599,32 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Updates the calling participant's registered URL, keeping the TLS key and participant ID.
+    #[handle_result]
+    pub fn update_participant_url(&mut self, url: String) -> Result<(), Error> {
+        // TODO(#1163): require a deposit
+        let account_id = Self::assert_caller_is_signer();
+        log!(
+            "update_participant_url: signer={:?}, url={:?}",
+            account_id,
+            url
+        );
+
+        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
+            return Err(errors::InvalidState::ProtocolStateNotRunning.into());
+        };
+
+        let Some(existing_info) = running_state.parameters.participants().info(&account_id) else {
+            return Err(errors::InvalidState::NotParticipant { account_id }.into());
+        };
+
+        let new_info = ParticipantInfo {
+            url,
+            tls_public_key: existing_info.tls_public_key.clone(),
+        };
+        running_state.parameters.update_info(account_id, new_info)
+    }
+
     /// Finalizes a node migration for the calling account.
     ///
     /// This method can only be called while the protocol is in a `Running` state
@@ -2756,8 +2783,8 @@ mod tests {
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id,
-        gen_participant, gen_participants, infer_purpose_from_protocol,
+        NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
+        gen_account_id, gen_participant, gen_participants, infer_purpose_from_protocol,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::key_event::tests::Environment;
@@ -5796,11 +5823,7 @@ mod tests {
         let (target_account_id, _, target_participant_info) = &participant_list[2];
 
         // Replace the target's attestation with an expired one
-        let node_id = NodeId {
-            account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -5920,11 +5943,7 @@ mod tests {
         let participant_list: Vec<_> = participants.participants().to_vec();
         let (target_account_id, _, target_participant_info) =
             &participant_list[PARTICIPANT_COUNT - 1];
-        let node_id = NodeId {
-            account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.tls_public_key.clone(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
+        let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -6149,7 +6168,7 @@ mod tests {
         // then
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
+        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", error_string);
     }
 
     /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
@@ -6199,7 +6218,7 @@ mod tests {
         // then
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
+        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", error_string);
     }
 
     fn make_launcher_hash(byte: u8) -> LauncherImageHash {

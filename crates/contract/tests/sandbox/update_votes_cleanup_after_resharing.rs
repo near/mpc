@@ -12,13 +12,13 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::{
     primitives::{participants::Participants, thresholds::ThresholdParameters},
-    update::{ProposeUpdateArgs, UpdateId},
+    update::UpdateId,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol, ReconstructionThreshold,
 };
 use near_workspaces::Account;
 use serde_json::json;

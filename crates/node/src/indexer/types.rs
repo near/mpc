@@ -9,9 +9,9 @@ use k256::{
 use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
-    CONCLUDE_NODE_MIGRATION, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
-    START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE,
-    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+    CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
+    RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
+    SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
 use near_mpc_contract_interface::types::{self as dtos};
 use serde::Serialize;
@@ -56,6 +56,7 @@ pub enum ChainSendTransactionRequest {
     StartKeygen(contract_args::StartKeygenArgs),
     VoteReshared(contract_args::VoteResharedArgs),
     RegisterForeignChainConfig(contract_args::RegisterForeignChainConfigArgs),
+    RegisterForeignChainsConfig(contract_args::RegisterForeignChainsConfigArgs),
     StartReshare(contract_args::StartReshareArgs),
     VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -90,6 +91,9 @@ impl ChainSendTransactionRequest {
                 #[expect(deprecated)]
                 REGISTER_FOREIGN_CHAIN_CONFIG
             }
+            ChainSendTransactionRequest::RegisterForeignChainsConfig(_) => {
+                REGISTER_FOREIGN_CHAINS_CONFIG
+            }
             ChainSendTransactionRequest::StartReshare(_) => START_RESHARE_INSTANCE,
             ChainSendTransactionRequest::StartKeygen(_) => START_KEYGEN_INSTANCE,
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
@@ -111,6 +115,7 @@ impl ChainSendTransactionRequest {
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::RegisterForeignChainConfig(_)
+            | Self::RegisterForeignChainsConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)

@@ -27,7 +27,10 @@ use crate::alloc::string::{String, ToString};
 // TODO(#1639): extract timestamp from certificate itself
 pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
-#[expect(clippy::large_enum_variant)]
+// `large_enum_variant` fires only where `usize` is 64-bit; under the contract's
+// wasm32 build the variants are close enough in size that it doesn't, so gate the
+// expectation to non-wasm targets to keep it fulfilled in both configs.
+#[cfg_attr(not(target_arch = "wasm32"), expect(clippy::large_enum_variant))]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),

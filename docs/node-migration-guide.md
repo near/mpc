@@ -6,6 +6,8 @@ This guide provides step-by-step instructions for node operators to migrate thei
 
 Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the `backup-cli` tool to securely backup and restore your node's keyshares.
 
+**Changing only your URL?** If your node keeps the same TLS key and you only need to point peers at a new address (e.g. fixing a typo or moving to a new domain), call `update_participant_url` on the contract instead of running a migration. It updates just your registered URL; peers pick it up without a resharing or reconnecting existing sessions.
+
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
 
 ## Prerequisites
