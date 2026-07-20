@@ -24,7 +24,7 @@ use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
-pub use network::Network;
+pub use network::{Network, ParseNetworkError};
 pub use results::{ProviderResult, Status};
 
 use crate::golden::{AptosVector, BlockHashVector, SuiVector};

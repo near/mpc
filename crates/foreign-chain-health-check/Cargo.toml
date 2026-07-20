@@ -13,6 +13,7 @@ foreign-chain-rpc-interfaces = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 mpc-node-config = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

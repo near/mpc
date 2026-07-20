@@ -3741,6 +3741,7 @@ dependencies = [
  "mpc-node-config",
  "near-mpc-bounded-collections",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
 ]
 

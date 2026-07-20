@@ -20,10 +20,8 @@ pub struct AptosVector {
     pub event_sequence_number: u64,
 }
 
-/// Sui fullnodes prune the gRPC read path after a few weeks, so a fixed reference
-/// transaction would age out. The check instead verifies the provider's chain identity
-/// (the genesis checkpoint digest, which never changes) and probes a transaction
-/// from a recent checkpoint (a few behind the tip).
+/// Unlike other chains, Sui is verified by chain identity rather than a pinned
+/// reference transaction — see [`check_sui`](crate::checks::check_sui).
 #[derive(Clone, Copy)]
 pub struct SuiVector {
     /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
