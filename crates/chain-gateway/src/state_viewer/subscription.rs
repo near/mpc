@@ -2,6 +2,7 @@ use super::monitoring::{MonitoringTask, make_monitoring_task};
 use super::traits::{ViewRaw, WatchContractState};
 use crate::errors::ChainGatewayError;
 use crate::types::ObservedState;
+use crate::types::ViewArgs;
 use near_account_id::AccountId;
 use serde::de::DeserializeOwned;
 
@@ -58,10 +59,9 @@ where
     pub(super) async fn new<V: ViewRaw>(
         viewer: V,
         contract_id: AccountId,
-        method_name: &str,
-        args: Vec<u8>,
+        view_args: ViewArgs,
     ) -> Self {
-        let mut task = make_monitoring_task(viewer, contract_id, method_name, args).await;
+        let mut task = make_monitoring_task(viewer, contract_id, view_args).await;
         let cached: Result<ObservedState<Res>, ChainGatewayError> = task
             .last_observed
             .borrow_and_update()
@@ -76,6 +76,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::types::ViewArgs;
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
 
@@ -91,7 +92,7 @@ mod tests {
     async fn test_subscription_constructor_deserializes_initial_value() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 42.into(),
                 value: serde_json::to_vec(&"hello").unwrap(),
             }))
@@ -100,8 +101,7 @@ mod tests {
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer,
             "test.testnet".parse().unwrap(),
-            "get_value",
-            b"{}".to_vec(),
+            ViewArgs::no_args("get_value"),
         )
         .await;
 
@@ -116,14 +116,13 @@ mod tests {
         let method_name = "get_value".to_string();
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .with_view_response(Err(MockError::ViewClientError))
             .build();
 
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer,
             account_id.clone(),
-            &method_name,
-            b"{}".to_vec(),
+            ViewArgs::no_args(&method_name),
         )
         .await;
 
@@ -143,7 +142,7 @@ mod tests {
     async fn test_subscription_constructor_returns_deserialization_error_on_bad_json() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not json".to_vec(),
             }))
@@ -154,8 +153,7 @@ mod tests {
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer,
             contract_id.clone(),
-            &method_name,
-            b"{}".to_vec(),
+            ViewArgs::no_args(&method_name),
         )
         .await;
 
@@ -167,7 +165,7 @@ mod tests {
     async fn test_subscription_latest_updates_on_value_change() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&"initial").unwrap(),
             }))
@@ -176,8 +174,7 @@ mod tests {
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer.clone(),
             "test.testnet".parse().unwrap(),
-            "get_value",
-            b"{}".to_vec(),
+            ViewArgs::no_args("get_value"),
         )
         .await;
         assert_eq!(sub.latest().unwrap().value, "initial");
@@ -204,7 +201,7 @@ mod tests {
     async fn test_subscription_changed_resolves_and_updates_cache() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&"before").unwrap(),
             }))
@@ -213,8 +210,7 @@ mod tests {
         let mut sub = ContractMethodSubscription::<String>::new(
             viewer.clone(),
             "test.testnet".parse().unwrap(),
-            "get_value",
-            b"{}".to_vec(),
+            ViewArgs::no_args("get_value"),
         )
         .await;
         assert_eq!(sub.latest().unwrap().value, "before");

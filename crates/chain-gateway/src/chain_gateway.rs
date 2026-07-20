@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::path::Path;
 
+use crate::primitives::ViewContract;
+use crate::types::ViewArgs;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
 use near_indexer::StreamerMessage;
@@ -15,9 +17,7 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
-use crate::primitives::{
-    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction,
-};
+use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
 use crate::types::ObservedState;
 
 #[derive(Clone)]
@@ -37,17 +37,14 @@ impl IsSyncing for ChainGateway {
     }
 }
 
-impl QueryViewFunction for ChainGateway {
+impl ViewContract for ChainGateway {
     type Error = NearViewClientError;
-    async fn query_view_function(
+    async fn view_contract(
         &self,
         contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
+        view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
-        self.view_client
-            .query_view_function(contract_id, method_name, args)
-            .await
+        self.view_client.view_contract(contract_id, view_args).await
     }
 }
 
