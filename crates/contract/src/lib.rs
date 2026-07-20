@@ -7878,6 +7878,46 @@ mod tests {
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
     }
 
+    #[test]
+    fn node_attestation__should_match_expected_max_borsh_size() {
+        // Given: the largest entry each variant can produce (64-byte account id,
+        // all fields present at their maximum).
+        let max_dstack_borsh_size = 445;
+        let max_mock_borsh_size = 450;
+        let node_id = create_node_id(
+            &"a".repeat(64).parse().unwrap(),
+            &bogus_ed25519_public_key(),
+        );
+        let dstack = NodeAttestation {
+            node_id: node_id.clone(),
+            verified_attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                mpc_image_hash: [0xff; 32].into(),
+                launcher_compose_hash: [0xff; 32].into(),
+                expiry_timestamp_seconds: u64::MAX,
+                measurements: default_measurements()[0],
+            }),
+        };
+        let mock = NodeAttestation {
+            node_id,
+            verified_attestation: VerifiedAttestation::Mock(
+                mpc_attestation::attestation::MockAttestation::WithConstraints {
+                    mpc_docker_image_hash: Some([0xff; 32].into()),
+                    launcher_docker_compose_hash: Some([0xff; 32].into()),
+                    expiry_timestamp_seconds: Some(u64::MAX),
+                    expected_measurements: Some(default_measurements()[0]),
+                },
+            ),
+        };
+
+        // When
+        let dstack_size = borsh::to_vec(&dstack).unwrap().len();
+        let mock_size = borsh::to_vec(&mock).unwrap().len();
+
+        // Then
+        assert_eq!(dstack_size, max_dstack_borsh_size);
+        assert_eq!(mock_size, max_mock_borsh_size);
+    }
+
     // Catches only entry-size growth: fails if a schema change makes the stored entry
     // cost more than the fee at today's storage_byte_cost. It cannot see a future
     // storage_byte_cost increase on a live contract; the fee's margin covers that.
