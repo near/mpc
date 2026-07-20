@@ -142,7 +142,7 @@ For additional security, the backup and restore process encrypts keyshares durin
 - **TDX / CVM node:** set `backup_encryption_key_hex` under `[mpc_node_config.secrets]` in `user-config.toml`. There is **no** `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment-variable pathway into a CVM — the `.env` used by `deploy-launcher.sh` is not read for this key.
 - **Non-TEE node:** set the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable.
 
-**Important:** The backup encryption key must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). The node requires exactly 64 hex characters (32 bytes) with no surrounding whitespace, and **fails to start** if the configured value is malformed.
+**Important:** The backup encryption key must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). Setting the key on the node is optional (if unset, the node generates one itself — see the note below), but if a value is set it must be exactly 64 hex characters (32 bytes) with no surrounding whitespace — the node **fails to start** on a malformed value.
 
 
 ### Retrieve a key from an existing node.
