@@ -9,7 +9,7 @@ pub enum Network {
 }
 
 impl Network {
-    pub const ALL: &'static [Network] = &[Network::Mainnet, Network::Testnet];
+    pub(crate) const ALL: &'static [Network] = &[Network::Mainnet, Network::Testnet];
 
     pub fn label(self) -> &'static str {
         match self {

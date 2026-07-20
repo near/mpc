@@ -3,8 +3,8 @@
 
 mod checks;
 mod golden;
-pub mod network;
-pub mod results;
+mod network;
+mod results;
 
 use std::future::Future;
 use std::time::Duration;
@@ -32,8 +32,8 @@ use crate::golden::{AptosVector, BlockHashVector, SuiVector};
 /// Probe every configured provider against `network`'s golden reference
 /// transaction, one [`ProviderResult`] per provider, each checked independently.
 /// Chains with no reference for `network`, or configured but unsupported, are
-/// [`Status::Skipped`]; an unconfigured sui still yields a placeholder `Skipped`
-/// result so its absence stays visible.
+/// [`Status::Skipped`]; a chain absent from the config still yields a single
+/// placeholder `Skipped` result so its absence stays visible.
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
     network: Network,
@@ -43,30 +43,48 @@ pub async fn check_all_providers(
 
     if let Some(cfg) = &fc.base {
         run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
+    } else {
+        mark_not_configured("base", &mut out);
     }
     if let Some(cfg) = &fc.bnb {
         run_evm::<Bnb>("bnb", cfg, golden.bnb, network, &mut out).await;
+    } else {
+        mark_not_configured("bnb", &mut out);
     }
     if let Some(cfg) = &fc.arbitrum {
         run_evm::<Arbitrum>("arbitrum", cfg, golden.arbitrum, network, &mut out).await;
+    } else {
+        mark_not_configured("arbitrum", &mut out);
     }
     if let Some(cfg) = &fc.polygon {
         run_evm::<Polygon>("polygon", cfg, golden.polygon, network, &mut out).await;
+    } else {
+        mark_not_configured("polygon", &mut out);
     }
     if let Some(cfg) = &fc.hyper_evm {
         run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm, network, &mut out).await;
+    } else {
+        mark_not_configured("hyper_evm", &mut out);
     }
     if let Some(cfg) = &fc.abstract_chain {
         run_evm::<Abstract>("abstract", cfg, golden.abstract_chain, network, &mut out).await;
+    } else {
+        mark_not_configured("abstract", &mut out);
     }
     if let Some(cfg) = &fc.bitcoin {
         run_bitcoin(cfg, golden.bitcoin, network, &mut out).await;
+    } else {
+        mark_not_configured("bitcoin", &mut out);
     }
     if let Some(cfg) = &fc.starknet {
         run_starknet(cfg, golden.starknet, network, &mut out).await;
+    } else {
+        mark_not_configured("starknet", &mut out);
     }
     if let Some(cfg) = &fc.aptos {
         run_aptos(cfg, golden.aptos, network, &mut out).await;
+    } else {
+        mark_not_configured("aptos", &mut out);
     }
     if let Some(cfg) = &fc.sui {
         run_sui(cfg, golden.sui, network, &mut out).await;
@@ -74,12 +92,16 @@ pub async fn check_all_providers(
         mark_not_configured("sui", &mut out);
     }
 
-    // Configured but not yet supported by the node.
+    // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
     if let Some(cfg) = &fc.ethereum {
         mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
+    } else {
+        mark_not_configured("ethereum", &mut out);
     }
     if let Some(cfg) = &fc.solana {
         mark_skipped("solana", cfg, "not yet supported by the node", &mut out);
+    } else {
+        mark_not_configured("solana", &mut out);
     }
 
     out
@@ -344,7 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn check_all_providers__should_skip_configured_but_unsupported_chains() {
-        // Given
+        // Given a configured but not-yet-supported chain
         let fc = ForeignChainsConfig {
             ethereum: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
@@ -353,28 +375,51 @@ mod tests {
         // When
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
-        // Then — plus the placeholder row for unconfigured sui
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].chain, "sui");
-        assert_matches!(results[0].status, Status::Skipped(_));
-        assert_eq!(results[1].chain, "ethereum");
-        assert_matches!(results[1].status, Status::Skipped(_));
+        // Then it is reported skipped as unsupported, not probed
+        let ethereum = results
+            .iter()
+            .find(|r| r.chain == "ethereum")
+            .expect("ethereum row");
+        assert_matches!(
+            &ethereum.status,
+            Status::Skipped(reason) if reason.contains("not yet supported")
+        );
     }
 
     #[tokio::test]
-    async fn check_all_providers__should_report_absent_sui_as_not_configured() {
-        // Given — nothing configured
+    async fn check_all_providers__should_report_every_absent_chain_as_not_configured() {
+        // Given nothing configured
         let fc = ForeignChainsConfig::default();
 
         // When
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
-        // Then — sui shows up anyway, reported "not configured"
-        assert!(results.iter().any(|r| r.chain == "sui"));
-        assert!(results.iter().all(|r| matches!(
-            &r.status,
-            Status::Skipped(reason) if reason.contains("not configured")
-        )));
+        // Then every known chain still appears, each with a "not configured" placeholder
+        let expected = [
+            "base",
+            "bnb",
+            "arbitrum",
+            "polygon",
+            "hyper_evm",
+            "abstract",
+            "bitcoin",
+            "starknet",
+            "aptos",
+            "sui",
+            "ethereum",
+            "solana",
+        ];
+        for chain in expected {
+            let row = results
+                .iter()
+                .find(|r| r.chain == chain)
+                .unwrap_or_else(|| panic!("missing row for {chain}"));
+            assert_matches!(
+                &row.status,
+                Status::Skipped(reason) if reason.contains("not configured")
+            );
+        }
+        assert_eq!(results.len(), expected.len());
     }
 
     #[tokio::test]
@@ -476,9 +521,8 @@ mod tests {
         // When
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
-        // Then — the broken provider does not suppress the healthy one; 4 rows
-        // including the skipped chain and unconfigured sui's placeholder.
-        assert_eq!(results.len(), 4);
+        // Then — the broken provider does not suppress the healthy one; pass,
+        // fail, and skip all coexist in a single run.
         let status = |chain: &str, provider: &str| {
             results
                 .iter()

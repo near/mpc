@@ -150,7 +150,7 @@ const CHECKPOINT_PROBE_OFFSET: u64 = 10;
 /// Sui providers prune the gRPC read path after a few weeks, so unlike the other chains
 /// there is no long-lived reference transaction to pin extracted values against. Instead
 /// this verifies the provider's chain identity (the genesis digest never changes) and runs
-/// the real inspector over a transaction from a recent checkpoint (a few behind the tip).
+/// the real inspector over a transaction [`CHECKPOINT_PROBE_OFFSET`] checkpoints behind the tip.
 pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> anyhow::Result<()> {
     let info = client
         .get_service_info()
