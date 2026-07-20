@@ -2,7 +2,8 @@ pub mod foreign_chains;
 pub mod start;
 
 pub use foreign_chains::{
-    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
+    AptosGolden, AuthConfig, BlockHashGolden, ForeignChainConfig, ForeignChainProviderConfig,
+    ForeignChainsConfig, HealthCheckGoldenConfig, SuiGolden, TokenConfig,
 };
 pub use start::{
     ChainId, DownloadConfigType, GcpStartConfig, LogConfig, LogFormat, NearInitConfig,
@@ -146,6 +147,11 @@ pub struct ConfigFile {
     pub keygen: KeygenConfig,
     #[serde(default)]
     pub foreign_chains: ForeignChainsConfig,
+    /// Golden values for the startup RPC provider health check on local
+    /// chains, where no built-in reference set exists. Ignored on
+    /// mainnet/testnet, which always use the built-in set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreign_chain_health_check_golden: Option<HealthCheckGoldenConfig>,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,

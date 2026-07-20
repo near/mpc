@@ -3,32 +3,49 @@
 
 use foreign_chain_health_check::{
     NetworkResolution, ProviderResult, SkipReason, Status, check_all_providers,
+    check_all_providers_with_golden,
 };
-use mpc_node_config::ForeignChainsConfig;
+use mpc_node_config::{ForeignChainsConfig, HealthCheckGoldenConfig};
 use tracing::{debug, info, warn};
 
-/// Healthcheck entrypoint, dispatched from startup.
+/// Healthcheck entrypoint, dispatched from startup. On mainnet/testnet the
+/// built-in golden set is used and `golden_override` is ignored; on local
+/// chains the check runs only when `golden_override` supplies the values.
 pub async fn run_startup_health_check(
     foreign_chains: ForeignChainsConfig,
     network: NetworkResolution,
+    golden_override: Option<HealthCheckGoldenConfig>,
 ) {
-    let network = match network {
-        NetworkResolution::Probe(network) => network,
-        NetworkResolution::Skip(SkipReason::LocalChain) => {
+    let results = match (network, golden_override) {
+        (NetworkResolution::Probe(network), golden_override) => {
+            if golden_override.is_some() {
+                warn!(
+                    network = network.label(),
+                    "ignoring configured foreign_chain_health_check_golden; \
+                     the built-in golden set is always used on this network"
+                );
+            }
+            info!(
+                network = network.label(),
+                "running foreign-chain RPC provider health check"
+            );
+            check_all_providers(&foreign_chains, network).await
+        }
+        (NetworkResolution::Skip(SkipReason::LocalChain), Some(golden)) => {
+            info!(
+                "running foreign-chain RPC provider health check with config-supplied golden values"
+            );
+            check_all_providers_with_golden(&foreign_chains, &golden).await
+        }
+        (NetworkResolution::Skip(SkipReason::LocalChain), None) => {
             debug!("local or custom chain; skipping foreign-chain RPC provider health check");
             return;
         }
-        NetworkResolution::Skip(SkipReason::Undetermined) => {
+        (NetworkResolution::Skip(SkipReason::Undetermined), _) => {
             warn!("network undetermined; skipping foreign-chain RPC provider health check");
             return;
         }
     };
-
-    info!(
-        network = network.label(),
-        "running foreign-chain RPC provider health check"
-    );
-    let results = check_all_providers(&foreign_chains, network).await;
     log_results(&results);
 }
 
@@ -74,23 +91,39 @@ fn log_results(results: &[ProviderResult]) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::{AuthConfig, ForeignChainConfig, ForeignChainProviderConfig};
+    use mpc_node_config::{
+        AuthConfig, BlockHashGolden, ForeignChainConfig, ForeignChainProviderConfig,
+    };
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
     use tracing_test::traced_test;
 
+    fn chain_config(rpc_url: &str) -> ForeignChainConfig {
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(5).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                "only".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        }
+    }
+
     fn config_with_unsupported_chain() -> ForeignChainsConfig {
         ForeignChainsConfig {
-            ethereum: Some(ForeignChainConfig {
-                timeout_sec: NonZeroU64::new(5).unwrap(),
-                max_retries: NonZeroU64::new(1).unwrap(),
-                providers: NonEmptyBTreeMap::new(
-                    "only".to_string().into(),
-                    ForeignChainProviderConfig {
-                        rpc_url: "https://rpc.example.com".to_string(),
-                        auth: AuthConfig::None,
-                    },
-                ),
+            ethereum: Some(chain_config("https://rpc.example.com")),
+            ..Default::default()
+        }
+    }
+
+    fn base_golden() -> HealthCheckGoldenConfig {
+        HealthCheckGoldenConfig {
+            base: Some(BlockHashGolden {
+                tx: "aa".repeat(32),
+                block_hash: "bb".repeat(32),
             }),
             ..Default::default()
         }
@@ -106,6 +139,7 @@ mod tests {
         run_startup_health_check(
             foreign_chains,
             NetworkResolution::Skip(SkipReason::Undetermined),
+            None,
         )
         .await;
 
@@ -132,6 +166,7 @@ mod tests {
         run_startup_health_check(
             foreign_chains,
             NetworkResolution::Skip(SkipReason::LocalChain),
+            None,
         )
         .await;
 
@@ -145,6 +180,56 @@ mod tests {
                 false => Ok(()),
             },
         );
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn run_startup_health_check__should_probe_with_supplied_golden_on_a_local_chain() {
+        // Given a local chain, config-supplied golden values, and a provider
+        // nothing listens on (connection refused, no external traffic)
+        let foreign_chains = ForeignChainsConfig {
+            base: Some(chain_config("http://127.0.0.1:1")),
+            ..Default::default()
+        };
+
+        // When
+        run_startup_health_check(
+            foreign_chains,
+            NetworkResolution::Skip(SkipReason::LocalChain),
+            Some(base_golden()),
+        )
+        .await;
+
+        // Then the probe runs end to end and summarizes the one probed provider
+        assert!(logs_contain(
+            "running foreign-chain RPC provider health check with config-supplied golden values"
+        ));
+        assert!(logs_contain(
+            "foreign-chain RPC provider health check complete: 0/1 providers healthy"
+        ));
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn run_startup_health_check__should_ignore_supplied_golden_on_a_real_network() {
+        // Given a resolved (mainnet) network AND a configured golden override
+        let foreign_chains = config_with_unsupported_chain();
+
+        // When
+        run_startup_health_check(
+            foreign_chains,
+            NetworkResolution::Probe(foreign_chain_health_check::Network::Mainnet),
+            Some(base_golden()),
+        )
+        .await;
+
+        // Then the override is warned about and the built-in set is used
+        assert!(logs_contain(
+            "ignoring configured foreign_chain_health_check_golden"
+        ));
+        assert!(logs_contain(
+            "running foreign-chain RPC provider health check"
+        ));
     }
 
     #[tokio::test]

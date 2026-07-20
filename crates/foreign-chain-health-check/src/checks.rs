@@ -281,8 +281,8 @@ mod tests {
                 when.method(GET)
                     .path(format!("/transactions/by_hash/0x{tx}"));
                 then.status(200).json_body(golden_aptos_body(
-                    tx,
-                    aptos.event_type_tag,
+                    &tx,
+                    &aptos.event_type_tag,
                     aptos.event_sequence_number,
                 ));
             })
@@ -293,8 +293,8 @@ mod tests {
             server.base_url(),
             None,
             Duration::from_secs(5),
-            golden::hex32(tx).unwrap(),
-            aptos.event_type_tag,
+            golden::hex32(&tx).unwrap(),
+            &aptos.event_type_tag,
             aptos.event_sequence_number,
         )
         .await;
@@ -365,7 +365,7 @@ mod tests {
         };
 
         // When
-        let result = check_sui(client, sui.chain_id).await;
+        let result = check_sui(client, &sui.chain_id).await;
 
         // Then
         result.unwrap();
@@ -384,7 +384,7 @@ mod tests {
         let expected = golden::golden_set(Network::Mainnet).sui.unwrap();
 
         // When
-        let result = check_sui(client, expected.chain_id).await;
+        let result = check_sui(client, &expected.chain_id).await;
 
         // Then
         assert_matches!(
@@ -404,7 +404,7 @@ mod tests {
                 when.method(GET)
                     .path(format!("/transactions/by_hash/0x{tx}"));
                 then.status(200).json_body(golden_aptos_body(
-                    tx,
+                    &tx,
                     "0xdead::wrong::Event",
                     aptos.event_sequence_number,
                 ));
@@ -416,8 +416,8 @@ mod tests {
             server.base_url(),
             None,
             Duration::from_secs(5),
-            golden::hex32(tx).unwrap(),
-            aptos.event_type_tag,
+            golden::hex32(&tx).unwrap(),
+            &aptos.event_type_tag,
             aptos.event_sequence_number,
         )
         .await;

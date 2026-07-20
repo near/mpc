@@ -532,6 +532,7 @@ mod tests {
                 aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
                 sui: Some(test_chain(PROVIDER_PUBLIC, SUI_RPC_URL, AuthConfig::None)),
             },
+            foreign_chain_health_check_golden: None,
             cores: Some(4),
             separate_asset_generation_runtime: true,
         }

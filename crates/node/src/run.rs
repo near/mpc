@@ -216,6 +216,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     root_runtime.spawn(crate::foreign_chain_health::run_startup_health_check(
         node_config.foreign_chains.clone(),
         network,
+        node_config.foreign_chain_health_check_golden.clone(),
     ));
 
     // Create Indexer and wait for indexer to be synced.
