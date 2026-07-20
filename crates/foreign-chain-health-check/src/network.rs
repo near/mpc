@@ -35,7 +35,9 @@ pub enum SkipReason {
 }
 
 /// Resolve which network to probe: use `near_init.chain_id` if present, else the
-/// contract-id suffix.
+/// contract-id suffix. A local chain never falls back to the contract id — a
+/// fork of mainnet pointed at a `.near` contract must not probe real mainnet
+/// endpoints.
 pub fn resolve_network_from_config(
     near_init: Option<&NearInitConfig>,
     contract_id: &str,
