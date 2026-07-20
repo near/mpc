@@ -41,7 +41,7 @@ use tokio_util::time::FutureExt;
 use tracing::info;
 
 static CONNECT_RETRY_DEDUP: LazyLock<Deduplicator<ParticipantId>> =
-    LazyLock::new(|| Deduplicator::new(Duration::from_secs(60), Duration::from_secs(300)));
+    LazyLock::new(|| Deduplicator::new(Duration::from_secs(60), Duration::from_secs(300), 1024));
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
 /// This will send small packets immediately, reducing latency for node messages at
