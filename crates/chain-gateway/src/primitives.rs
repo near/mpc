@@ -2,7 +2,7 @@
 //!     - IsSyncing --> checks whether the node is fully synced
 //!     - ViewContract --> can call view methods on a contract
 //!     - FetchLatestFinalBlockInfo-> fetches height and hash of the latest final block
-//!     - SubmitSignedTransaction --> submits  asigned transaction to the blockchain
+//!     - SubmitSignedTransaction --> submits a signed transaction to the blockchain
 use crate::types::LatestFinalBlockInfo;
 use crate::types::{ObservedState, ViewArgs};
 use near_account_id::AccountId;

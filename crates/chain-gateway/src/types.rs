@@ -92,11 +92,20 @@ impl ObservedState<Vec<u8>> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use assert_matches::assert_matches;
     use serde::Deserialize;
 
-    use crate::{errors::ChainGatewayError, types::ObservedState};
+    use crate::{
+        errors::ChainGatewayError,
+        types::{ObservedState, ViewArgs},
+    };
+
+    #[test]
+    fn no_args__should_encode_an_empty_json_object() {
+        assert_eq!(ViewArgs::no_args("m").args, b"{}");
+    }
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct Num {
