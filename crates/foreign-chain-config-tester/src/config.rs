@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde::de::IntoDeserializer;
 use serde::de::value::{Error as ValueError, StrDeserializer};
 
-use crate::golden::Network;
+use foreign_chain_health_check::Network;
 
 /// Paths where `foreign_chains` may live, most-nested first so a wrapped config
 /// matches before a barer one.
