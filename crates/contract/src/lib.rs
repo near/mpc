@@ -110,7 +110,7 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
 /// is registered as a function-call access key, which cannot attach a deposit, so a leaked
 /// node key cannot invoke these methods.
-const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
@@ -2462,7 +2462,7 @@ impl MpcContract {
     /// The caller (`signer_account_id`) must be an existing or prospective participant.
     /// Otherwise, the transaction will fail.
     ///
-    /// Requires a deposit of at least `MINIMUM_NODE_MANAGEMENT_DEPOSIT` (excess is refunded), so
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
     /// key.
     #[payable]
@@ -2504,7 +2504,7 @@ impl MpcContract {
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
     ///
-    /// Requires a deposit of at least `MINIMUM_NODE_MANAGEMENT_DEPOSIT` (excess is refunded), so
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
     /// key.
     #[payable]
@@ -2539,7 +2539,7 @@ impl MpcContract {
 
     /// Updates the calling participant's registered URL, keeping the TLS key and participant ID.
     ///
-    /// Requires a deposit of at least `MINIMUM_NODE_MANAGEMENT_DEPOSIT` (excess is refunded), so
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
     /// key.
     #[payable]
