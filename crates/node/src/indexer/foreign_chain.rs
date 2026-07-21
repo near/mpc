@@ -71,11 +71,9 @@ pub(crate) fn supporters_by_available_chain(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use ed25519_dalek::SigningKey;
 
     fn tls_key(seed: u8) -> dtos::Ed25519PublicKey {
-        let signing_key = SigningKey::from_bytes(&[seed; 32]);
-        dtos::Ed25519PublicKey::from(&signing_key.verifying_key())
+        dtos::Ed25519PublicKey::from([seed; 32])
     }
 
     fn bitcoin_config() -> dtos::ForeignChainsConfig {
