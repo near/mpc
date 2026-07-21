@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{BoundedVec, EmptyBoundedVec, hex_serde};
+use near_mpc_bounded_collections::{BoundedVec, UpperBoundedVec, hex_serde};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
@@ -103,7 +103,7 @@ pub enum Payload {
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "hex_serde::HexString<0, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>")
         )]
-        EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
+        UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
     ),
 }
 

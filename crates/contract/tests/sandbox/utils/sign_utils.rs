@@ -564,7 +564,7 @@ pub fn create_response_ed25519(
         .try_into()
         .unwrap();
 
-    let payload = Payload::Eddsa(payload.to_vec().try_into().unwrap());
+    let payload = Payload::Eddsa(payload.into());
 
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
 

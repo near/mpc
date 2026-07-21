@@ -130,7 +130,7 @@ impl SignatureRequest {
 mod tests {
     use super::*;
     use crate::EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES;
-    use near_mpc_bounded_collections::EmptyBoundedVec;
+    use near_mpc_bounded_collections::UpperBoundedVec;
     use rstest::rstest;
 
     fn ecdsa_payload_hex() -> String {
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn serialize__should_emit_payload_v2_for_eddsa() {
         // Given
-        let bounded: EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+        let bounded: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
             eddsa_payload_bytes().try_into().unwrap();
         let args = SignRequestArgs {
             path: "test".to_string(),
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn serialize__should_roundtrip_eddsa() {
         // Given
-        let bounded: EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+        let bounded: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
             eddsa_payload_bytes().try_into().unwrap();
         let args = SignRequestArgs {
             path: "solana-path".to_string(),

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use blstrs::G1Projective;
 use group::Group;
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::EmptyBoundedVec;
+use near_mpc_bounded_collections::UpperBoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -199,7 +199,7 @@ fn make_payload(protocol: Protocol) -> Payload {
             let mut payload = vec![0; len];
             rng.fill_bytes(&mut payload);
 
-            let bounded_payload: EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+            let bounded_payload: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
                 payload.try_into().unwrap();
 
             Payload::Eddsa(bounded_payload)

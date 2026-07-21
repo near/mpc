@@ -40,7 +40,7 @@ use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Finality;
-use near_mpc_bounded_collections::EmptyBoundedVec;
+use near_mpc_bounded_collections::UpperBoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;
 use near_time::Clock;
@@ -299,7 +299,7 @@ pub async fn request_signature_and_await_response(
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
-            let bounded_payload: EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+            let bounded_payload: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
                 payload.try_into().unwrap();
 
             Payload::Eddsa(bounded_payload)
