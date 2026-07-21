@@ -8,8 +8,9 @@ docs/
 # Local-only development/test environment, talks to local VMs over plain HTTP by design.
 localnet/
 
-# Test code (semgrep's default ignore list also skips tests): panics and dummy
-# data are expected there, see docs/engineering-standards.md.
+# Integration/e2e test code: panics and dummy data are expected there.
+# Inline #[cfg(test)] modules in src/ are still scanned. 
+# Silence false positives there with per-site nosemgrep comments.
 tests/
 crates/e2e-tests/
 crates/test-utils/

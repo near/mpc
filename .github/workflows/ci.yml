@@ -277,8 +277,8 @@ jobs:
           persist-credentials: false
 
       # Only WARNING and ERROR findings block.
-      # panic-in-function-returning-result is excluded because intentional
-      # panics on invariant violations are allowed by docs/engineering-standards.md.
+      # panic-in-function-returning-result is excluded: docs/engineering-standards.md
+      # allows panics only in narrow cases, but we have a lot of such narrow cases.
       - name: Run semgrep
         run: >
           semgrep scan
