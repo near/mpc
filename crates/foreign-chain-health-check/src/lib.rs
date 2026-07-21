@@ -10,6 +10,7 @@ mod results;
 use std::future::Future;
 use std::time::Duration;
 
+use futures::future::FutureExt as _;
 use futures::future::join_all;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
@@ -32,7 +33,8 @@ use mpc_node_config::{
 
 pub use golden::golden_set;
 pub use network::{
-    Network, NetworkResolution, SkipReason, network_from_contract_id, resolve_network_from_config,
+    HealthCheckPlan, Network, NetworkKind, SkipReason, network_from_contract_id,
+    resolve_network_from_config,
 };
 pub use results::{ProviderResult, Status};
 
@@ -55,41 +57,30 @@ pub async fn check_all_providers_with_golden(
     fc: &ForeignChainsConfig,
     golden: &HealthCheckGoldenConfig,
 ) -> Vec<ProviderResult> {
-    let (base, bnb, arbitrum, polygon, hyper_evm, abstract_chain, bitcoin, starknet, aptos, sui) = futures::join!(
-        run_evm::<Base>("base", fc.base.as_ref(), golden.base.as_ref()),
-        run_evm::<Bnb>("bnb", fc.bnb.as_ref(), golden.bnb.as_ref()),
-        run_evm::<Arbitrum>("arbitrum", fc.arbitrum.as_ref(), golden.arbitrum.as_ref()),
-        run_evm::<Polygon>("polygon", fc.polygon.as_ref(), golden.polygon.as_ref()),
+    let results = join_all([
+        run_evm::<Base>("base", fc.base.as_ref(), golden.base.as_ref()).boxed(),
+        run_evm::<Bnb>("bnb", fc.bnb.as_ref(), golden.bnb.as_ref()).boxed(),
+        run_evm::<Arbitrum>("arbitrum", fc.arbitrum.as_ref(), golden.arbitrum.as_ref()).boxed(),
+        run_evm::<Polygon>("polygon", fc.polygon.as_ref(), golden.polygon.as_ref()).boxed(),
         run_evm::<HyperEvm>(
             "hyper_evm",
             fc.hyper_evm.as_ref(),
-            golden.hyper_evm.as_ref()
-        ),
+            golden.hyper_evm.as_ref(),
+        )
+        .boxed(),
         run_evm::<Abstract>(
             "abstract",
             fc.abstract_chain.as_ref(),
-            golden.abstract_chain.as_ref()
-        ),
-        run_bitcoin(fc.bitcoin.as_ref(), golden.bitcoin.as_ref()),
-        run_starknet(fc.starknet.as_ref(), golden.starknet.as_ref()),
-        run_aptos(fc.aptos.as_ref(), golden.aptos.as_ref()),
-        run_sui(fc.sui.as_ref(), golden.sui.as_ref()),
-    );
-    let mut out: Vec<ProviderResult> = [
-        base,
-        bnb,
-        arbitrum,
-        polygon,
-        hyper_evm,
-        abstract_chain,
-        bitcoin,
-        starknet,
-        aptos,
-        sui,
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+            golden.abstract_chain.as_ref(),
+        )
+        .boxed(),
+        run_bitcoin(fc.bitcoin.as_ref(), golden.bitcoin.as_ref()).boxed(),
+        run_starknet(fc.starknet.as_ref(), golden.starknet.as_ref()).boxed(),
+        run_aptos(fc.aptos.as_ref(), golden.aptos.as_ref()).boxed(),
+        run_sui(fc.sui.as_ref(), golden.sui.as_ref()).boxed(),
+    ])
+    .await;
+    let mut out: Vec<ProviderResult> = results.into_iter().flatten().collect();
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
     match &fc.ethereum {
