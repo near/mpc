@@ -1,5 +1,6 @@
 //! Foreign-chain RPC config tester: probe every configured provider with a fixed
 //! golden request so operators can verify their config without running the node.
+//! Sui is probed differently — see the README.
 
 mod config;
 mod report;
@@ -24,7 +25,7 @@ struct Args {
 
     /// Network the reference transactions belong to. Auto-detected from
     /// the config (`chain_id` / `mpc_contract_id`) when omitted.
-    #[arg(long, value_name = "NETWORK")]
+    #[arg(long, value_enum)]
     network: Option<Network>,
 }
 

@@ -1,5 +1,6 @@
 //! Foreign-chain RPC provider health checks: probe every configured provider
-//! with a fixed golden request and report a per-provider result.
+//! with a fixed golden request and report a per-provider result. Sui is the
+//! exception — see `run_sui`.
 
 mod checks;
 mod golden;
@@ -24,7 +25,7 @@ use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
-pub use network::{Network, ParseNetworkError};
+pub use network::Network;
 pub use results::{ProviderResult, Status};
 
 use crate::golden::{AptosVector, BlockHashVector, SuiVector};
@@ -278,6 +279,10 @@ async fn run_aptos(
     }
 }
 
+/// Sui differs from the other probes: its providers prune historical
+/// transactions, so there is no long-lived golden transaction to check
+/// against. The probe verifies the provider's chain identity instead — see
+/// [`checks::check_sui`] for the mechanism.
 async fn run_sui(
     cfg: &ForeignChainConfig,
     vector: Option<SuiVector>,

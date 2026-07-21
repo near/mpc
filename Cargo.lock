@@ -3732,6 +3732,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bs58 0.5.1",
+ "clap",
  "foreign-chain-inspector",
  "foreign-chain-rpc-auth",
  "foreign-chain-rpc-interfaces",
@@ -3741,7 +3742,6 @@ dependencies = [
  "mpc-node-config",
  "near-mpc-bounded-collections",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
 ]
 
