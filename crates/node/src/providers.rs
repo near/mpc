@@ -8,6 +8,7 @@
 
 pub mod ckd;
 pub mod ecdsa;
+pub mod ecdsa_common;
 pub mod eddsa;
 pub mod robust_ecdsa;
 pub mod verify_foreign_tx;
@@ -21,7 +22,27 @@ pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionThreshold;
+use threshold_signatures::{Ciphersuite, KeygenOutput, ReconstructionThreshold};
+
+/// A domain's keygen output paired with its reconstruction threshold `t`, the per-domain material
+/// the coordinator hands to each signature provider.
+#[derive(Clone)]
+pub struct DomainKeyshare<C: Ciphersuite> {
+    pub keygen_output: KeygenOutput<C>,
+    pub reconstruction_threshold: mpc_primitives::ReconstructionThreshold,
+}
+
+impl<C: Ciphersuite> DomainKeyshare<C> {
+    pub fn new(
+        keygen_output: KeygenOutput<C>,
+        reconstruction_threshold: mpc_primitives::ReconstructionThreshold,
+    ) -> Self {
+        Self {
+            keygen_output,
+            reconstruction_threshold,
+        }
+    }
+}
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {
@@ -60,6 +81,7 @@ pub trait SignatureProvider {
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
         new_threshold: ReconstructionThreshold,
+        old_threshold: ReconstructionThreshold,
         key_share: Option<Self::SecretShare>,
         public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,

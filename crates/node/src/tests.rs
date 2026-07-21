@@ -61,6 +61,7 @@ mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
 mod protocol_yielding;
+mod reconstruction_thresholds;
 mod resharing;
 mod update_participant_url;
 
