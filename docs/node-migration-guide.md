@@ -138,11 +138,11 @@ You should see your account and registered backup_cli public key listed, somethi
 
 For additional security, the backup and restore process encrypts keyshares during transport using AES encryption. You need to generate a shared encryption key (32 bytes / 64 hex characters), configure it on both your old and new nodes, and pass it to the backup-cli commands.
 
-**How you configure the key on a node depends on the deployment type** (see [Step 5](#step-5-prepare-the-new-node) for the exact placement):
-- **TDX / CVM node:** set `backup_encryption_key_hex` under `[mpc_node_config.secrets]` in `user-config.toml`. There is **no** `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment-variable pathway into a CVM — the `.env` used by `deploy-launcher.sh` is not read for this key.
+Where you set it on a node depends on the deployment (see [Step 5](#step-5-prepare-the-new-node) for exact placement):
+- **TDX / CVM node:** set `backup_encryption_key_hex` under `[mpc_node_config.secrets]` in `user-config.toml`. A CVM has no `.env` / `MPC_BACKUP_ENCRYPTION_KEY_HEX` pathway.
 - **Non-TEE node:** set the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable.
 
-**Important:** The backup encryption key must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). Setting the key on the node is optional (if unset, the node generates one itself — see the note below), but if a value is set it must be exactly 64 hex characters (32 bytes) with no surrounding whitespace — the node **fails to start** on a malformed value.
+**Important:** The key must match **exactly** between the backup-cli and the node it talks to (the old node for `get-keyshares`, the new node for `put-keyshares`) — a mismatch, including a stray trailing newline, makes the transfer fail. If set on the node it must be 64 hex characters (a malformed value stops the node from starting); if left unset, the node generates one itself (see below).
 
 
 ### Retrieve a key from an existing node.
@@ -224,20 +224,14 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 Set up your new node on the new host with the following:
 
 1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
-2. **Set the encryption key** on the backup-cli and the new node. This must be the same key you pass to the backup-cli's `put-keyshares` in [Step 7](#step-7-transfer-keyshares-to-new-node) (it can differ from the key used to back up the old node, but it's safe — and simplest — to re-use the same key throughout).
+2. **Set the encryption key** on the backup-cli and the new node, using the same key you pass to `put-keyshares` in [Step 7](#step-7-transfer-keyshares-to-new-node) (it may differ from the old node's key, but re-using one key throughout is simplest). Where to set it on the new node:
 
-   **Where to set it depends on how the new node is deployed:**
-
-   - **TDX / CVM node (most operators migrating to TDX):** set it in `user-config.toml` under `[mpc_node_config.secrets]` before deploying. On an already-running CVM, apply it with `update-user-config` + restart (see [CVM management](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#cvm-management) in the operator guide) — the node reads it from the config on every start:
+   - **TDX / CVM node:** set it in `user-config.toml` under `[mpc_node_config.secrets]` before deploying. On a running CVM, apply it with `update-user-config` + restart (see [CVM management](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#cvm-management)):
      ```toml
      [mpc_node_config.secrets]
-     backup_encryption_key_hex = "<value>"   # exactly 64 hex chars (32 bytes), no whitespace
+     backup_encryption_key_hex = "<value>"
      ```
-     The `.env` file consumed by `deploy-launcher.sh` is **not** read for this key — only `user-config.toml` is. There is no `MPC_BACKUP_ENCRYPTION_KEY_HEX` pathway into a CVM.
-
-     > **⚠️ Do not leave `backup_encryption_key_hex` unset or commented on a CVM.** If the field is absent, the node **silently generates a fresh random key inside the CVM** and starts up normally — but with a key that does not match what you pass to the backup-cli, so the transfer in Step 7 will fail to decrypt with no obvious error. Set it explicitly to the intended value; if the node already started without it, set the key via `update-user-config` and restart.
-
-   - **Non-TEE node:** add it to the `.env` file (replace `<value>` with the actual key from Step 3):
+   - **Non-TEE node:** add it to the `.env` file:
      ```env
      MPC_BACKUP_ENCRYPTION_KEY_HEX=<value>
      ```
