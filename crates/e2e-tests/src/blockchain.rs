@@ -198,6 +198,17 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
     }
 
+    pub async fn view_borsh<T: borsh::BorshDeserialize + Send + 'static>(
+        &self,
+        method: &str,
+    ) -> anyhow::Result<T> {
+        self.client
+            .view::<T>(&self.contract_id, method)
+            .borsh()
+            .await
+            .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
+    }
+
     pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
         self.view("state").await
     }
