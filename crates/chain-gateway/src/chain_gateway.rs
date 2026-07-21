@@ -1,10 +1,9 @@
 use std::future::Future;
 use std::path::Path;
 
-use crate::primitives::ViewContract;
-use crate::types::ViewArgs;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
+use near_contract_transport::{ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use nearcore::NearConfig;
@@ -18,7 +17,7 @@ use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
 use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
-use crate::types::ObservedState;
+use near_contract_transport::{BlockHeight, ObservedState};
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -39,6 +38,7 @@ impl IsSyncing for ChainGateway {
 
 impl ViewContract for ChainGateway {
     type Error = NearViewClientError;
+    type ObservedAt = BlockHeight;
     async fn view_contract(
         &self,
         contract_id: &AccountId,

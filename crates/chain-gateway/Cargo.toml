@@ -11,10 +11,10 @@ test-utils = []
 [dependencies]
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
-mpc-call-args = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }

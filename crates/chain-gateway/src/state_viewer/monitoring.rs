@@ -1,7 +1,7 @@
 use crate::errors::ChainGatewayError;
-use crate::types::ObservedState;
-use crate::types::ViewArgs;
 use near_account_id::AccountId;
+use near_contract_transport::ObservedState;
+use near_contract_transport::ViewArgs;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -112,13 +112,12 @@ fn modify(
 
 #[cfg(test)]
 mod tests {
-    use crate::types::ViewArgs;
     use crate::{
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{Call, MockChainState, MockError},
         state_viewer::monitoring::{POLL_INTERVAL, modify, monitor},
-        types::ObservedState,
     };
+    use near_contract_transport::{ObservedState, ViewArgs};
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
 

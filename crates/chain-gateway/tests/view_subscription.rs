@@ -10,7 +10,7 @@ use chain_gateway_test_contract::{
 };
 
 use crate::common::localnet::LocalnetBuilder;
-use chain_gateway::ViewArgs;
+use near_contract_transport::ViewArgs;
 
 /// Checks if subscribing to the state succeeds
 #[tokio::test]

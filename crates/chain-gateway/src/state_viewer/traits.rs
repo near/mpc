@@ -2,10 +2,9 @@ use std::future::Future;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::IsSyncing;
-use crate::primitives::ViewContract;
-use crate::types::ObservedState;
-use crate::types::ViewArgs;
 use near_account_id::AccountId;
+use near_contract_transport::{BlockHeight, ObservedState};
+use near_contract_transport::{ViewArgs, ViewContract};
 use serde::de::DeserializeOwned;
 
 use super::subscription::ContractMethodSubscription;
@@ -17,10 +16,10 @@ use super::subscription::ContractMethodSubscription;
 /// # Example
 ///
 /// ```
-/// use chain_gateway::ViewArgs;
+/// use near_contract_transport::ViewArgs;
 /// use chain_gateway::mock::{MockChainState, Call};
 /// use chain_gateway::state_viewer::{WatchContractState, SubscribeToContractMethod};
-/// use chain_gateway::types::ObservedState;
+/// use near_contract_transport::ObservedState;
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -66,10 +65,10 @@ pub trait SubscribeToContractMethod {
 /// # Example
 ///
 /// ```
-/// use chain_gateway::ViewArgs;
+/// use near_contract_transport::ViewArgs;
 /// use chain_gateway::mock::{MockChainState, Call};
 /// use chain_gateway::state_viewer::ViewMethod;
-/// use chain_gateway::types::ObservedState;
+/// use near_contract_transport::ObservedState;
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -103,8 +102,9 @@ pub trait ViewMethod {
         Res: DeserializeOwned + Send + Clone;
 }
 
-/// All other viewer traits are derived from this one
-pub(crate) trait ViewRaw: IsSyncing + ViewContract {
+/// All other viewer traits are derived from this one. Subscriptions track the
+/// height a value was observed at, so the backend must report one.
+pub(crate) trait ViewRaw: IsSyncing + ViewContract<ObservedAt = BlockHeight> {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,
@@ -127,7 +127,11 @@ pub trait WatchContractState<Res> {
     fn changed(&mut self) -> impl Future<Output = Result<(), ChainGatewayError>> + Send;
 }
 
-impl<T: IsSyncing + ViewContract> ViewRaw for T {
+impl<T> ViewRaw for T
+where
+    T: IsSyncing + ViewContract<ObservedAt = BlockHeight>,
+    <T as ViewContract>::Error: std::fmt::Display,
+{
     async fn view_raw(
         &self,
         contract_id: &AccountId,
@@ -169,18 +173,18 @@ impl<T: ViewRaw> ViewMethod for T {
     where
         Res: DeserializeOwned + Send + Clone,
     {
-        let res = self.view_raw(&contract_id, view_args).await?;
-        let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
-            ChainGatewayError::Deserialization {
-                message: err.to_string(),
-            }
-        })?;
-
-        Ok(ObservedState {
-            observed_at: res.observed_at,
-            value,
-        })
+        deserialize_observed(self.view_raw(&contract_id, view_args).await?)
     }
+}
+
+pub(crate) fn deserialize_observed<Res: DeserializeOwned>(
+    observed: ObservedState,
+) -> Result<ObservedState<Res>, ChainGatewayError> {
+    observed
+        .deserialize()
+        .map_err(|err| ChainGatewayError::Deserialization {
+            message: err.to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -189,10 +193,10 @@ mod tests {
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
     use crate::state_viewer::{SubscribeToContractMethod, ViewMethod, WatchContractState};
-    use crate::types::ObservedState;
-    use crate::types::ViewArgs;
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
+    use near_contract_transport::ObservedState;
+    use near_contract_transport::ViewArgs;
     use rand::distributions::{Alphanumeric, DistString};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};

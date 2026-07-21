@@ -1,9 +1,9 @@
 use super::monitoring::{MonitoringTask, make_monitoring_task};
-use super::traits::{ViewRaw, WatchContractState};
+use super::traits::{ViewRaw, WatchContractState, deserialize_observed};
 use crate::errors::ChainGatewayError;
-use crate::types::ObservedState;
-use crate::types::ViewArgs;
 use near_account_id::AccountId;
+use near_contract_transport::ObservedState;
+use near_contract_transport::ViewArgs;
 use serde::de::DeserializeOwned;
 
 /// Holds a Monitoring task and the latest cached value.
@@ -19,7 +19,7 @@ where
 {
     fn update_cache(&mut self) {
         let observed = self.inner.last_observed.borrow_and_update().clone();
-        self.cached = observed.and_then(|value| value.deserialize());
+        self.cached = observed.and_then(|value| deserialize_observed(value));
     }
 }
 
@@ -66,7 +66,7 @@ where
             .last_observed
             .borrow_and_update()
             .clone()
-            .and_then(|value| value.deserialize());
+            .and_then(|value| deserialize_observed(value));
         Self {
             inner: task,
             cached,
@@ -76,16 +76,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::types::ViewArgs;
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
+    use near_contract_transport::ViewArgs;
 
     use super::ContractMethodSubscription;
     use crate::errors::ChainGatewayError;
     use crate::mock::{MockChainState, MockError};
     use crate::state_viewer::WatchContractState;
     use crate::state_viewer::monitoring::POLL_INTERVAL;
-    use crate::types::ObservedState;
+    use near_contract_transport::ObservedState;
     use std::time::Duration;
 
     #[tokio::test]
