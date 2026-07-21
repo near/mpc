@@ -1,6 +1,6 @@
-use crate::primitives::{
-    FetchLatestFinalBlockInfo, IsSyncing, QueryViewFunction, SubmitSignedTransaction,
-};
+use crate::primitives::ViewContract;
+use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
+use crate::types::ViewArgs;
 use crate::types::{LatestFinalBlockInfo, ObservedState};
 use near_account_id::AccountId;
 use near_indexer::near_primitives::transaction::SignedTransaction;
@@ -12,13 +12,13 @@ use tokio::sync::Notify;
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<Mutex<Result<bool, MockError>>>,
-    query_view_function_submitter_state: Arc<Mutex<MockQueryViewFunctionState>>,
+    view_state: Arc<Mutex<MockViewState>>,
     latest_final_block: Arc<Mutex<Result<LatestFinalBlockInfo, MockError>>>,
     signed_transaction_submitter_state: Arc<Mutex<MockSignedTransactionSubmitterState>>,
     read_notify: Arc<Notify>,
 }
 
-pub struct MockQueryViewFunctionState {
+pub struct MockViewState {
     pub response: Result<ObservedState, MockError>,
     pub submitted: Vec<Call>,
 }
@@ -46,11 +46,11 @@ impl MockChainState {
 
     /// Update the view function query response.
     pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
-        let mut inner = self.query_view_function_submitter_state.lock().unwrap();
+        let mut inner = self.view_state.lock().unwrap();
         inner.response = value;
     }
 
-    /// Wait for the next query_view_function call (polls submitted.len() every 10ms).
+    /// Wait for the next view_contract call (polls submitted.len() every 10ms).
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
         tokio::time::timeout(max_wait_duration, self.read_notify.notified())
             .await
@@ -59,7 +59,7 @@ impl MockChainState {
 
     /// Returns a snapshot of all recorded view function calls.
     pub async fn view_calls(&self) -> Vec<Call> {
-        let inner = self.query_view_function_submitter_state.lock().unwrap();
+        let inner = self.view_state.lock().unwrap();
         inner.submitted.clone()
     }
 
@@ -72,7 +72,7 @@ impl MockChainState {
 
 pub struct MockChainStateBuilder {
     sync_response: Result<bool, MockError>,
-    query_view_function_response: Result<ObservedState, MockError>,
+    view_response: Result<ObservedState, MockError>,
     latest_final_block: Result<LatestFinalBlockInfo, MockError>,
     signed_transaction_submitter_response: Result<(), MockError>,
 }
@@ -87,7 +87,7 @@ impl MockChainStateBuilder {
     pub fn new() -> Self {
         Self {
             sync_response: Err(MockError::NotInitialized),
-            query_view_function_response: Err(MockError::NotInitialized),
+            view_response: Err(MockError::NotInitialized),
             latest_final_block: Err(MockError::NotInitialized),
             signed_transaction_submitter_response: Err(MockError::NotInitialized),
         }
@@ -108,19 +108,16 @@ impl MockChainStateBuilder {
         self
     }
 
-    pub fn with_query_view_function_response(
-        mut self,
-        r: Result<ObservedState, MockError>,
-    ) -> Self {
-        self.query_view_function_response = r;
+    pub fn with_view_response(mut self, r: Result<ObservedState, MockError>) -> Self {
+        self.view_response = r;
         self
     }
 
     pub fn build(self) -> MockChainState {
         MockChainState {
             sync_response: Arc::new(Mutex::new(self.sync_response)),
-            query_view_function_submitter_state: Arc::new(Mutex::new(MockQueryViewFunctionState {
-                response: self.query_view_function_response,
+            view_state: Arc::new(Mutex::new(MockViewState {
+                response: self.view_response,
                 submitted: Vec::new(),
             })),
             read_notify: Arc::new(Notify::new()),
@@ -142,19 +139,18 @@ impl IsSyncing for MockChainState {
     }
 }
 
-impl QueryViewFunction for MockChainState {
+impl ViewContract for MockChainState {
     type Error = MockError;
-    async fn query_view_function(
+    async fn view_contract(
         &self,
         contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
+        view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
-        let mut inner = self.query_view_function_submitter_state.lock().unwrap();
+        let mut inner = self.view_state.lock().unwrap();
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
-            method_name: method_name.to_string(),
-            args: args.to_vec(),
+            method_name: view_args.method_name,
+            args: view_args.args,
         });
         let response = inner.response.clone();
         drop(inner);

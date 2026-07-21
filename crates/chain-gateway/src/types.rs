@@ -12,9 +12,26 @@ pub(crate) fn to_action_gas(gas: NearGas) -> Gas {
     Gas::from_gas(gas.as_gas())
 }
 
-/// An empty argument struct for contract view calls that take no arguments.
-#[derive(Serialize)]
-pub struct NoArgs {}
+/// A NEAR view-function request: method name and encoded args.
+#[derive(Debug, Clone)]
+pub struct ViewArgs {
+    pub method_name: String,
+    pub args: Vec<u8>,
+}
+
+impl ViewArgs {
+    pub fn new(method_name: impl Into<String>, args: Vec<u8>) -> Self {
+        Self {
+            method_name: method_name.into(),
+            args,
+        }
+    }
+
+    /// A view call taking no arguments (an empty JSON object).
+    pub fn no_args(method_name: impl Into<String>) -> Self {
+        Self::new(method_name, b"{}".to_vec())
+    }
+}
 
 #[derive(
     Into, From, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Display,
@@ -75,14 +92,20 @@ impl ObservedState<Vec<u8>> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use assert_matches::assert_matches;
     use serde::Deserialize;
 
     use crate::{
         errors::ChainGatewayError,
-        types::{NoArgs, ObservedState},
+        types::{ObservedState, ViewArgs},
     };
+
+    #[test]
+    fn no_args__should_encode_an_empty_json_object() {
+        assert_eq!(ViewArgs::no_args("m").args, b"{}");
+    }
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct Num {
@@ -111,11 +134,5 @@ mod tests {
 
         let err = observed.deserialize::<Num>().unwrap_err();
         assert_matches!(err, ChainGatewayError::Deserialization { .. });
-    }
-
-    #[test]
-    fn test_no_args_serializes_to_empty_json_object() {
-        let json = serde_json::to_string(&NoArgs {}).unwrap();
-        assert_eq!(json, "{}");
     }
 }
