@@ -81,7 +81,7 @@ impl Deref for TripleStorage {
 
 pub const SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE: usize = 64;
 
-const TRIPLE_METRICS_REPORTING_INTERVAL: Duration = Duration::from_millis(500);
+const TRIPLE_METRICS_REPORTING_INTERVAL: Duration = Duration::from_secs(5);
 
 impl EcdsaSignatureProvider {
     /// Reports the triple-buffer gauges summed across every per-`t` store.
