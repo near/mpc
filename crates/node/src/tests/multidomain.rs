@@ -1,14 +1,13 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::port_seed;
+use crate::tests::common::{ckd_domain, sign_domain};
 use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
     request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_primitives::domain::{Curve, DomainId};
-use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
-};
+use mpc_primitives::domain::Curve;
+use near_mpc_contract_interface::types::Protocol;
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
@@ -32,28 +31,13 @@ async fn test_basic_multidomain() {
         std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
-    // TODO(#1689): in this test it would be desirable to add Robust ECDSA.
+    // TODO(#1689): in this test it would be desirable to add DamgardEtAl.
     // That requires having NUM_PARTICIPANTS = 5 and THRESHOLD = 5
     // which makes this test too slow to pass in CI, which should be fixed
     let mut domains = vec![
-        DomainConfig {
-            id: DomainId(0),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(1),
-            protocol: Protocol::Frost,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(2),
-            protocol: Protocol::ConfidentialKeyDerivation,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::CKD,
-        },
+        sign_domain(0, Protocol::CaitSith, 3),
+        sign_domain(1, Protocol::Frost, 3),
+        ckd_domain(2, 3),
     ];
 
     {
@@ -107,24 +91,9 @@ async fn test_basic_multidomain() {
         }
     }
     let new_domains = vec![
-        DomainConfig {
-            id: DomainId(3),
-            protocol: Protocol::Frost,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(4),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(5),
-            protocol: Protocol::ConfidentialKeyDerivation,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::CKD,
-        },
+        sign_domain(3, Protocol::Frost, 3),
+        sign_domain(4, Protocol::CaitSith, 3),
+        ckd_domain(5, 3),
     ];
 
     {

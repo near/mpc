@@ -3,7 +3,7 @@ pub mod consts;
 
 use args::{make_private_set_args, make_set_value_in_promise_args};
 use consts::DEFAULT_VALUE;
-use mpc_call_args::FunctionCallArgs;
+use near_contract_transport::FunctionCallArgs;
 
 use near_sdk::{
     Promise,

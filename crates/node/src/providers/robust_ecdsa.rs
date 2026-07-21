@@ -10,20 +10,22 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
-use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::providers::ecdsa_common;
+use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
 use threshold_signatures::MaxMalicious;
-use threshold_signatures::ReconstructionThreshold;
-use threshold_signatures::ecdsa::KeygenOutput;
-use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
+use threshold_signatures::ecdsa::robust_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
@@ -32,14 +34,10 @@ pub struct RobustEcdsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    per_domain_data: HashMap<DomainId, PerDomainData>,
+    keyshares: HashMap<DomainId, EcdsaKeyshare>,
 }
 
-#[derive(Clone)]
-pub(super) struct PerDomainData {
-    pub keyshare: KeygenOutput,
-    pub presignature_store: Arc<PresignatureStorage>,
-}
+pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
 
 #[derive(
     Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
@@ -60,45 +58,21 @@ impl RobustEcdsaSignatureProvider {
         clock: Clock,
         db: Arc<SecretDB>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let active_participants_query = {
-            let network_client = client.clone();
-            Arc::new(move || network_client.all_alive_participant_ids())
-        };
-
-        let mut per_domain_data = HashMap::new();
-        for (domain_id, keyshare) in keyshares {
-            let presignature_store = Arc::new(PresignatureStorage::new(
-                clock.clone(),
-                db.clone(),
-                client.my_participant_id(),
-                active_participants_query.clone(),
-                domain_id,
-            )?);
-            per_domain_data.insert(
-                domain_id,
-                PerDomainData {
-                    keyshare,
-                    presignature_store,
-                },
-            );
-        }
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
 
         Ok(Self {
             config,
             mpc_config,
             client,
             sign_request_store,
-            per_domain_data,
+            keyshares,
         })
     }
 
-    pub(super) fn domain_data(&self, domain_id: DomainId) -> anyhow::Result<PerDomainData> {
-        self.per_domain_data
-            .get(&domain_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EcdsaKeyshare> {
+        ecdsa_common::lookup_keyshare(&self.keyshares, domain_id)
     }
 }
 
@@ -144,47 +118,26 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        let number_of_participants = channel.participants().len();
-        let robust_ecdsa_threshold =
-            translate_threshold(threshold.value(), number_of_participants)?;
-        EcdsaSignatureProvider::run_key_generation_client_internal(
-            ReconstructionThreshold::try_from(robust_ecdsa_threshold)?,
-            channel,
-        )
-        .await
+        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_threshold: TSReconstructionThreshold,
+        old_threshold: TSReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        let number_of_participants = channel.participants().len();
-        let new_robust_ecdsa_threshold =
-            translate_threshold(new_threshold.value(), number_of_participants)?;
-
-        // This is a bad hack, but cannot think of a better way to solve it, as the struct
-        // comes directly from generic implementations, so probably this is the best place
-        // to do so anyway
-        let mut old_participants_patched = old_participants.clone();
-        let old_translated = translate_threshold(
-            old_participants.threshold.try_into()?,
-            old_participants.participants.len(),
-        )?;
-        old_participants_patched.threshold = ReconstructionThreshold::try_from(old_translated)?
-            .value()
-            .try_into()?;
-
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            ReconstructionThreshold::try_from(new_robust_ecdsa_threshold)?,
+            new_threshold,
+            old_threshold,
             my_share,
             public_key,
-            &old_participants_patched,
+            old_participants,
             channel,
         )
         .await
@@ -228,7 +181,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         let generate_presignatures = self
-            .per_domain_data
+            .keyshares
             .iter()
             .map(|(domain_id, data)| {
                 tracking::spawn(
@@ -238,8 +191,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                         self.mpc_config.clone(),
                         self.config.presignature.clone().into(),
                         *domain_id,
-                        data.presignature_store.clone(),
-                        data.keyshare.clone(),
+                        data.clone(),
                     ),
                 )
             })
@@ -247,7 +199,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
         for Err(join_error) in futures::future::join_all(generate_presignatures).await {
             tracing::error!(
-                "robust-ecdsa background presignature task ended unexpectedly: {join_error}"
+                "Damgard et al background presignature task ended unexpectedly: {join_error}"
             );
         }
 
@@ -255,105 +207,66 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 }
 
-/// Although currently the threshold is always equal to the number of signers, if in
-/// the future we might want to change that invariant, for example to achieve
-/// higher security guarantees for robust-ecdsa. In that case,
-/// this function enforces that the number of signers and the threshold
-/// computed below in `translate_threshold` stay consistent
-pub(super) fn get_number_of_signers(
-    threshold: usize,
-    number_of_participants: usize,
-) -> anyhow::Result<usize> {
+/// Derives `(num_signers, max_malicious)` for robust-ECDSA from the domain's
+/// reconstruction threshold `t`. Returns an error if `t < 2`,
+/// which the contract's threshold validation already rejects.
+pub(super) fn compute_thresholds(
+    threshold: ReconstructionThreshold,
+) -> anyhow::Result<(usize, MaxMalicious)> {
+    let t: usize = threshold.inner().try_into()?;
     anyhow::ensure!(
-        threshold <= number_of_participants,
-        "threshold ({threshold}) exceeds number of participants ({number_of_participants})"
+        t >= 2,
+        "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"
     );
-    Ok(threshold)
-}
-
-/// This function translates the current threshold from the contract
-/// to the threshold expected by the robust-ecdsa scheme, which
-/// is semantically different.
-/// The function should be no longer needed when these issues are solved:
-/// https://github.com/near/threshold-signatures/issues/255
-/// https://github.com/near/mpc/issues/1649
-pub(super) fn translate_threshold(
-    threshold: usize,
-    number_of_participants: usize,
-) -> anyhow::Result<MaxMalicious> {
-    let number_of_signers = get_number_of_signers(threshold, number_of_participants)?;
-    anyhow::ensure!(
-        number_of_signers >= 5,
-        "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers needs to be at least 5"
-    );
-    Ok(MaxMalicious::from((number_of_signers - 1) / 2))
+    let max_malicious = t
+        .checked_sub(1)
+        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA max_malicious underflow for t={t}"))?;
+    let num_signers = t
+        .checked_mul(2)
+        .and_then(|two_t| two_t.checked_sub(1))
+        .ok_or_else(|| anyhow::anyhow!("robust-ECDSA signer count overflow for t={t}"))?;
+    Ok((num_signers, MaxMalicious::from(max_malicious)))
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use rstest::rstest;
+    use super::compute_thresholds;
+    use mpc_primitives::ReconstructionThreshold;
+    use threshold_signatures::MaxMalicious;
 
-    // The resulting threshold for robust-ecdsa must always satisfy
-    // the underlying invariant that 2 * threshold + 1 <= number of signers
     #[test]
-    fn test_translate_threshold() {
-        let max_size = 30;
-        for threshold in 5..max_size {
-            for number_of_participants in threshold..max_size {
-                let number_of_signers =
-                    get_number_of_signers(threshold, number_of_participants).unwrap();
-                let new_threshold = translate_threshold(threshold, number_of_participants)
-                    .unwrap()
-                    .value();
-                assert!(
-                    2 * new_threshold < number_of_signers,
-                    "Failed for threshold={threshold}, number_of_participants={number_of_participants}"
-                );
-                assert!(
-                    new_threshold >= (threshold - 1) / 2,
-                    "The new threshold should not decrease security more than necessary: new_threshold={new_threshold}, threshold={threshold}"
-                );
-            }
+    fn compute_thresholds__should_map_t_to_2t_minus_1_signers_and_max_malicious_t_minus_1() {
+        // Given a domain reconstruction threshold t = 3
+        let t = ReconstructionThreshold::new(3);
+
+        // When
+        let (num_signers, max_malicious) = compute_thresholds(t).unwrap();
+
+        // Then num_signers = 2t - 1 = 5 and max_malicious = t - 1 = 2
+        assert_eq!(num_signers, 5);
+        assert_eq!(max_malicious, MaxMalicious::from(2));
+        // and the honest-majority invariant 2 * max_malicious + 1 <= num_signers holds.
+        assert!(2 * max_malicious.value() < num_signers);
+    }
+
+    #[test]
+    fn compute_thresholds__should_hold_invariant_across_valid_thresholds() {
+        for t in 2..30u64 {
+            let (num_signers, max_malicious) =
+                compute_thresholds(ReconstructionThreshold::new(t)).unwrap();
+            assert_eq!(num_signers, 2 * (t as usize) - 1);
+            assert_eq!(max_malicious, MaxMalicious::from((t as usize) - 1));
+            assert!(2 * max_malicious.value() < num_signers);
         }
     }
 
-    // Tests that the number of signers is below the threshold,
-    // guaranteeing that security is not reduced
     #[test]
-    fn test_get_number_of_signers_not_lower_than_threshold() {
-        let max_size = 30;
-        for threshold in 5..max_size {
-            for number_of_participants in threshold..max_size {
-                let number_of_signers =
-                    get_number_of_signers(threshold, number_of_participants).unwrap();
-                assert!(
-                    threshold <= number_of_signers && number_of_signers <= number_of_participants,
-                    "Failed for threshold={threshold}, number_of_participants={number_of_participants}"
-                );
-            }
-        }
-    }
-
-    #[rstest]
-    #[case(0, 10, true, 0)]
-    #[case(1, 10, true, 0)]
-    #[case(2, 10, true, 0)]
-    #[case(3, 10, true, 0)]
-    #[case(4, 10, true, 0)]
-    #[case(5, 10, false, 2)]
-    #[case(6, 10, false, 2)]
-    #[case(7, 10, false, 3)]
-    fn test_translate_threshold_special_cases(
-        #[case] threshold: usize,
-        #[case] number_of_participants: usize,
-        #[case] is_err: bool,
-        #[case] expected_threshold: usize,
-    ) {
-        let result = translate_threshold(threshold, number_of_participants);
-        assert_eq!(result.is_err(), is_err);
-        if !is_err {
-            assert_eq!(result.unwrap(), MaxMalicious::from(expected_threshold));
+    fn compute_thresholds__should_err_when_threshold_below_two() {
+        // Given: robust-ECDSA requires a reconstruction threshold of at least 2
+        for t in 0..2u64 {
+            // When / Then
+            compute_thresholds(ReconstructionThreshold::new(t)).unwrap_err();
         }
     }
 }

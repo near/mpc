@@ -1,10 +1,11 @@
 use std::future::Future;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
-use crate::primitives::{IsSyncing, QueryViewFunction};
-use crate::types::ObservedState;
+use crate::primitives::IsSyncing;
 use near_account_id::AccountId;
-use serde::{Serialize, de::DeserializeOwned};
+use near_contract_transport::{BlockHeight, ObservedState};
+use near_contract_transport::{ViewArgs, ViewContract};
+use serde::de::DeserializeOwned;
 
 use super::subscription::ContractMethodSubscription;
 
@@ -15,22 +16,26 @@ use super::subscription::ContractMethodSubscription;
 /// # Example
 ///
 /// ```
+/// use near_contract_transport::ViewArgs;
 /// use chain_gateway::mock::{MockChainState, Call};
 /// use chain_gateway::state_viewer::{WatchContractState, SubscribeToContractMethod};
-/// use chain_gateway::types::ObservedState;
+/// use near_contract_transport::ObservedState;
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let viewer = MockChainState::builder()
 ///         .with_syncing_status(Ok(false))
-///         .with_query_view_function_response(Ok(ObservedState {
+///         .with_view_response(Ok(ObservedState {
 ///             observed_at: 1.into(),
 ///             value: br#""hello""#.to_vec(),
 ///         }))
 ///         .build();
 ///
 ///     let mut stream = viewer
-///         .subscribe_to_contract_method::<String>("contract.near".parse().unwrap(), "get_greeting")
+///         .subscribe_to_contract_method::<String>(
+///             "contract.near".parse().unwrap(),
+///             ViewArgs::no_args("get_greeting"),
+///         )
 ///         .await;
 ///
 ///     let state = stream.latest().unwrap();
@@ -48,34 +53,38 @@ pub trait SubscribeToContractMethod {
     fn subscribe_to_contract_method<T>(
         &self,
         contract: AccountId,
-        view_method: &str,
+        view_args: ViewArgs,
     ) -> impl Future<Output = impl WatchContractState<T> + Send> + Send
     where
         T: DeserializeOwned + Send + Clone;
 }
 
-/// Performs a typed view call: serializes `args` as JSON, calls the
-/// contract and deserializes the response.
+/// Performs a typed view call: calls the contract and deserializes the
+/// JSON response.
 ///
 /// # Example
 ///
 /// ```
+/// use near_contract_transport::ViewArgs;
 /// use chain_gateway::mock::{MockChainState, Call};
 /// use chain_gateway::state_viewer::ViewMethod;
-/// use chain_gateway::types::{NoArgs, ObservedState};
+/// use near_contract_transport::ObservedState;
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let viewer = MockChainState::builder()
 ///         .with_syncing_status(Ok(false))
-///         .with_query_view_function_response(Ok(ObservedState {
+///         .with_view_response(Ok(ObservedState {
 ///             observed_at: 1.into(),
 ///             value: br#""hello""#.to_vec(),
 ///         }))
 ///         .build();
 ///
 ///     let result: ObservedState<String> = viewer
-///         .view_method("contract.near".parse().unwrap(), "get_greeting", &NoArgs {})
+///         .view_method(
+///             "contract.near".parse().unwrap(),
+///             ViewArgs::no_args("get_greeting"),
+///         )
 ///         .await
 ///         .unwrap();
 ///
@@ -84,25 +93,23 @@ pub trait SubscribeToContractMethod {
 /// }
 /// ```
 pub trait ViewMethod {
-    fn view_method<Arg, Res>(
+    fn view_method<Res>(
         &self,
         contract_id: AccountId,
-        method_name: &str,
-        args: &Arg,
+        view_args: ViewArgs,
     ) -> impl Future<Output = Result<ObservedState<Res>, ChainGatewayError>> + Send
     where
-        Arg: Serialize + Sync,
         Res: DeserializeOwned + Send + Clone;
 }
 
-/// All other viewer traits are derived from this one
-pub(crate) trait ViewRaw: IsSyncing + QueryViewFunction {
+/// All other viewer traits are derived from this one. Subscriptions track the
+/// height a value was observed at, so the backend must report one.
+pub(crate) trait ViewRaw: IsSyncing + ViewContract<ObservedAt = BlockHeight> {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,
         contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
+        view_args: ViewArgs,
     ) -> impl Future<Output = Result<ObservedState, ChainGatewayError>> + Send;
 }
 
@@ -120,20 +127,24 @@ pub trait WatchContractState<Res> {
     fn changed(&mut self) -> impl Future<Output = Result<(), ChainGatewayError>> + Send;
 }
 
-impl<T: IsSyncing + QueryViewFunction> ViewRaw for T {
+impl<T> ViewRaw for T
+where
+    T: IsSyncing + ViewContract<ObservedAt = BlockHeight>,
+    <T as ViewContract>::Error: std::fmt::Display,
+{
     async fn view_raw(
         &self,
         contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
+        view_args: ViewArgs,
     ) -> Result<ObservedState, ChainGatewayError> {
         self.wait_for_full_sync().await;
-        self.query_view_function(contract_id, method_name, args)
+        let method_name = view_args.method_name.clone();
+        self.view_contract(contract_id, view_args)
             .await
             .map_err(|err| ChainGatewayError::ViewError {
                 op: ChainGatewayOp::ViewQuery {
                     account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
+                    method_name,
                 },
                 message: err.to_string(),
             })
@@ -144,46 +155,36 @@ impl<V: ViewRaw + Clone> SubscribeToContractMethod for V {
     fn subscribe_to_contract_method<T>(
         &self,
         contract: AccountId,
-        view_method: &str,
+        view_args: ViewArgs,
     ) -> impl Future<Output = impl WatchContractState<T> + Send> + Send
     where
         T: DeserializeOwned + Send + Clone,
     {
-        ContractMethodSubscription::new(self.clone(), contract, view_method, b"{}".to_vec())
+        ContractMethodSubscription::new(self.clone(), contract, view_args)
     }
 }
 
 impl<T: ViewRaw> ViewMethod for T {
-    async fn view_method<Arg, Res>(
+    async fn view_method<Res>(
         &self,
         contract_id: AccountId,
-        method_name: &str,
-        args: &Arg,
+        view_args: ViewArgs,
     ) -> Result<ObservedState<Res>, ChainGatewayError>
     where
-        Arg: Serialize + Sync,
         Res: DeserializeOwned + Send + Clone,
     {
-        let args: Vec<u8> =
-            serde_json::to_vec(args).map_err(|err| ChainGatewayError::Serialization {
-                op: ChainGatewayOp::ViewQuery {
-                    account_id: contract_id.to_string(),
-                    method_name: method_name.to_string(),
-                },
-                message: err.to_string(),
-            })?;
-        let res = self.view_raw(&contract_id, method_name, &args).await?;
-        let value = serde_json::from_slice::<Res>(&res.value).map_err(|err| {
-            ChainGatewayError::Deserialization {
-                message: err.to_string(),
-            }
-        })?;
-
-        Ok(ObservedState {
-            observed_at: res.observed_at,
-            value,
-        })
+        deserialize_observed(self.view_raw(&contract_id, view_args).await?)
     }
+}
+
+pub(crate) fn deserialize_observed<Res: DeserializeOwned>(
+    observed: ObservedState,
+) -> Result<ObservedState<Res>, ChainGatewayError> {
+    observed
+        .deserialize()
+        .map_err(|err| ChainGatewayError::Deserialization {
+            message: err.to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -192,9 +193,10 @@ mod tests {
     use crate::errors::{ChainGatewayError, ChainGatewayOp};
     use crate::mock::{Call, MockChainState, MockError};
     use crate::state_viewer::{SubscribeToContractMethod, ViewMethod, WatchContractState};
-    use crate::types::{NoArgs, ObservedState};
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
+    use near_contract_transport::ObservedState;
+    use near_contract_transport::ViewArgs;
     use rand::distributions::{Alphanumeric, DistString};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
@@ -231,11 +233,14 @@ mod tests {
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(response.clone()))
+            .with_view_response(Ok(response.clone()))
             .build();
 
         let state = viewer
-            .view_raw(&call.contract_id, &call.method_name, &call.args)
+            .view_raw(
+                &call.contract_id,
+                ViewArgs::new(call.method_name.clone(), call.args.clone()),
+            )
             .await
             .unwrap();
 
@@ -249,11 +254,14 @@ mod tests {
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(response))
+            .with_view_response(Ok(response))
             .build();
 
         viewer
-            .view_raw(&call.contract_id, &call.method_name, &call.args)
+            .view_raw(
+                &call.contract_id,
+                ViewArgs::new(call.method_name.clone(), call.args.clone()),
+            )
             .await
             .unwrap();
 
@@ -266,11 +274,11 @@ mod tests {
         let (call, _response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::SyncError))
+            .with_view_response(Err(MockError::SyncError))
             .build();
 
         let err = viewer
-            .view_raw(&call.contract_id, &call.method_name, b"{}")
+            .view_raw(&call.contract_id, ViewArgs::no_args(&call.method_name))
             .await
             .unwrap_err();
 
@@ -292,14 +300,14 @@ mod tests {
         let (call, response) = random_view_params(&mut rng);
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(true))
-            .with_query_view_function_response(Ok(response))
+            .with_view_response(Ok(response))
             .build();
 
         let v = viewer.clone();
         let cid = call.contract_id.clone();
         let mn = call.method_name.clone();
         let a = call.args.clone();
-        let handle = tokio::spawn(async move { v.view_raw(&cid, &mn, &a).await });
+        let handle = tokio::spawn(async move { v.view_raw(&cid, ViewArgs::new(mn, a)).await });
 
         // wait_for_full_sync polls every 500ms; advance past one interval
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -321,14 +329,14 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: block_height.into(),
                 value: json_bytes,
             }))
             .build();
 
         let result = viewer
-            .view_method::<NoArgs, String>("a.testnet".parse().unwrap(), "m", &NoArgs {})
+            .view_method::<String>("a.testnet".parse().unwrap(), ViewArgs::no_args("m"))
             .await
             .unwrap();
 
@@ -340,13 +348,13 @@ mod tests {
     async fn test_view_method_propagates_view_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .with_view_response(Err(MockError::ViewClientError))
             .build();
 
         let account_id: AccountId = "a.testnet".parse().unwrap();
         let method_name = "m".to_string();
         let err = viewer
-            .view_method::<NoArgs, String>(account_id.clone(), &method_name, &NoArgs {})
+            .view_method::<String>(account_id.clone(), ViewArgs::no_args(&method_name))
             .await
             .unwrap_err();
 
@@ -366,7 +374,7 @@ mod tests {
     async fn test_view_returns_deserialization_error_on_bad_bytes() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not valid json".to_vec(),
             }))
@@ -375,7 +383,7 @@ mod tests {
         let contract_id: AccountId = "a.testnet".parse().unwrap();
         let method_name: String = "m".into();
         let err = viewer
-            .view_method::<NoArgs, String>(contract_id, &method_name, &NoArgs {})
+            .view_method::<String>(contract_id, ViewArgs::no_args(&method_name))
             .await
             .unwrap_err();
 
@@ -391,14 +399,17 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: block_height.into(),
                 value: json_bytes,
             }))
             .build();
 
         let mut sub = viewer
-            .subscribe_to_contract_method::<String>("a.testnet".parse().unwrap(), "m")
+            .subscribe_to_contract_method::<String>(
+                "a.testnet".parse().unwrap(),
+                ViewArgs::no_args("m"),
+            )
             .await;
 
         let state = sub.latest().unwrap();
@@ -410,7 +421,7 @@ mod tests {
     async fn test_subscribe_latest_returns_deserialization_error() {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: b"not json".to_vec(),
             }))
@@ -420,7 +431,10 @@ mod tests {
         let method_name: String = "m".into();
         let err = {
             let mut sub = viewer
-                .subscribe_to_contract_method::<String>(contract_id.clone(), &method_name)
+                .subscribe_to_contract_method::<String>(
+                    contract_id.clone(),
+                    ViewArgs::no_args(&method_name),
+                )
                 .await;
 
             sub.latest().unwrap_err()
@@ -436,14 +450,17 @@ mod tests {
 
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: 1.into(),
                 value: serde_json::to_vec(&initial).unwrap(),
             }))
             .build();
 
         let mut sub = viewer
-            .subscribe_to_contract_method::<String>("a.testnet".parse().unwrap(), "m")
+            .subscribe_to_contract_method::<String>(
+                "a.testnet".parse().unwrap(),
+                ViewArgs::no_args("m"),
+            )
             .await;
         assert_eq!(sub.latest().unwrap().value, initial);
 

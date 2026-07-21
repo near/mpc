@@ -19,11 +19,13 @@ on:
     - cron: "5 0 * * 0"
 
 jobs:
-  # Downstream gates use `if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}`.
-  # The `always()` overrides GitHub's implicit `success()` on `needs`, so a
+  # Downstream gates use `if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}`.
+  # `!cancelled()` overrides GitHub's implicit `success()` on `needs`, so a
   # failed detector doesn't silently skip dependents (skipped checks satisfy
   # required-check rules and could let a PR merge with zero CI signal). Only
-  # an explicit `'false'` (docs-only PR) skips the job.
+  # an explicit `'false'` (docs-only PR) skips the job. Unlike `always()`, it
+  # stops evaluating to true once the run is cancelled, so a new push cancels
+  # the in-progress run instead of queueing behind it.
   changes:
     name: "Detect non-docs changes"
     permissions:
@@ -34,7 +36,7 @@ jobs:
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -68,7 +70,7 @@ jobs:
   docker-rust-launcher-build-and-verify:
     name: "Build Rust Launcher Docker image and verify"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
@@ -107,11 +109,11 @@ jobs:
   mpc-unittests:
     name: "Cargo test: ${{ matrix.group }}"
     needs: changes
-    # Always start so GitHub expands the matrix and registers each check name
-    # ("Cargo test: node", etc.).
+    # Start (unless the run is cancelled) so GitHub expands the matrix and
+    # registers each check name ("Cargo test: node", etc.).
     # Skipping at the job level only registers unexpanded template name and
     # required checks will be stuck.
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     permissions:
@@ -163,7 +165,7 @@ jobs:
   mpc-contract-reproducible-build:
     name: "MPC contract reproducible build"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -198,7 +200,7 @@ jobs:
   nix-build-mpc-contract:
     name: "Nix build mpc-contract"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
@@ -222,7 +224,7 @@ jobs:
   nix-build-mpc-node:
     name: "Nix build mpc-node"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     permissions:
       contents: read
     uses: ./.github/workflows/nix-build-mpc-node.yml
@@ -256,10 +258,37 @@ jobs:
       - name: Run cargo-make fast checks
         run: nix develop --command cargo make check-all-fast
 
+  # Static analysis.
+  # silence false positives with a `nosemgrep: <rule-id>` comment
+  # or a path entry in .semgrepignore.
+  opengrep:
+    name: "Opengrep"
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
+
+      - name: Run opengrep
+        run: nix shell .#opengrep -c bash scripts/run-opengrep.sh
+
   mpc-e2e-tests:
     name: "MPC E2E tests"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-32x
     timeout-minutes: 60
     permissions:
@@ -314,7 +343,7 @@ jobs:
   ci-extra:
     name: "Extra CI checks"
     needs: changes
-    if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
