@@ -815,6 +815,7 @@ pub mod testing {
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
     };
+    use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::primitives::{MpcPeerMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId};
     use crate::tracking;
     use std::collections::{HashMap, HashSet};
@@ -946,6 +947,29 @@ pub mod testing {
         }
 
         transports
+    }
+
+    /// Synchronous [`MeshNetworkClient`] for unit tests. All participants are reported alive.
+    pub fn new_test_client(
+        participants: Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+    ) -> Arc<super::MeshNetworkClient> {
+        let transport = Arc::new(TestMeshTransportSender {
+            transport: Arc::new(TestMeshTransport {
+                participant_ids: participants.clone(),
+                senders: HashMap::new(),
+            }),
+            my_participant_id,
+        });
+        let channels = Arc::new(std::sync::Mutex::new(
+            super::NetworkTaskChannelManager::new(),
+        ));
+        let indexer_heights = Arc::new(IndexerHeightTracker::new(&participants));
+        Arc::new(super::MeshNetworkClient::new(
+            transport,
+            channels,
+            indexer_heights,
+        ))
     }
 
     /// Builds a channel over the given participant set, returning the raw inbound sender so
