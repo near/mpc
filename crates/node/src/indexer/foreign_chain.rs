@@ -1,17 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use backon::{BackoffBuilder, ExponentialBuilder};
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
+use crate::indexer::monitor::{fetch_with_retry, publish_if_changed};
 
 const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
-const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
-const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
@@ -34,42 +31,6 @@ pub async fn monitor_foreign_chain_supporters(
         publish_if_changed(&sender, supporters);
         tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
     }
-}
-
-/// TODO(#1956): share the retry loop with the monitors in `indexer::tee`.
-async fn fetch_with_retry<T, Fetch, FetchFuture>(fetch: Fetch, error_context: &str) -> T
-where
-    Fetch: Fn() -> FetchFuture,
-    FetchFuture: Future<Output = anyhow::Result<T>>,
-{
-    let mut backoff = ExponentialBuilder::default()
-        .with_min_delay(MIN_BACKOFF_DURATION)
-        .with_max_delay(MAX_BACKOFF_DURATION)
-        .without_max_times()
-        .with_jitter()
-        .build();
-
-    loop {
-        match fetch().await {
-            Ok(value) => return value,
-            Err(e) => {
-                tracing::error!(target: "mpc", "{error_context}: {:?}", e);
-                let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
-                tokio::time::sleep(backoff_duration).await;
-            }
-        }
-    }
-}
-
-fn publish_if_changed<T: PartialEq>(sender: &watch::Sender<T>, value: T) -> bool {
-    sender.send_if_modified(|previous| {
-        if *previous == value {
-            false
-        } else {
-            *previous = value;
-            true
-        }
-    })
 }
 
 /// The two view calls are not atomic: a change finalized between them yields
@@ -111,7 +72,6 @@ pub(crate) fn supporters_by_available_chain(
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;
-    use std::cell::Cell;
 
     fn tls_key(seed: u8) -> dtos::Ed25519PublicKey {
         let signing_key = SigningKey::from_bytes(&[seed; 32]);
@@ -160,55 +120,5 @@ mod tests {
 
         // Then
         assert_eq!(supporters, bitcoin_supporters(&[1, 2]));
-    }
-
-    #[test]
-    fn publish_if_changed__should_publish_a_changed_value() {
-        // Given
-        let (sender, receiver) = watch::channel(ForeignChainSupporters::new());
-        let supporters = bitcoin_supporters(&[1]);
-
-        // When
-        let published = publish_if_changed(&sender, supporters.clone());
-
-        // Then
-        assert!(published);
-        assert_eq!(*receiver.borrow(), supporters);
-    }
-
-    #[test]
-    fn publish_if_changed__should_not_publish_an_unchanged_value() {
-        // Given
-        let (sender, mut receiver) = watch::channel(bitcoin_supporters(&[1]));
-        receiver.mark_unchanged();
-
-        // When
-        let published = publish_if_changed(&sender, bitcoin_supporters(&[1]));
-
-        // Then
-        assert!(!published);
-        assert!(!receiver.has_changed().unwrap());
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn fetch_with_retry__should_keep_retrying_until_fetch_succeeds() {
-        // Given: a fetch that fails twice before succeeding.
-        let attempts = Cell::new(0);
-        let fetch = || {
-            let attempt = attempts.get() + 1;
-            attempts.set(attempt);
-            async move {
-                if attempt < 3 {
-                    anyhow::bail!("rpc unavailable");
-                }
-                Ok(attempt)
-            }
-        };
-
-        // When
-        let value = fetch_with_retry(fetch, "test").await;
-
-        // Then
-        assert_eq!(value, 3);
     }
 }
