@@ -33,7 +33,11 @@ impl<T: SubmitFunctionCall + Sync> CallContract for AccountCaller<T> {
         contract_id: &AccountId,
         call_args: FunctionCallArgs,
     ) -> Result<CryptoHash, ChainGatewayError> {
-        let signer = &self.signers[self.next.fetch_add(1, Ordering::Relaxed) % self.signers.len()];
+        let index = self.next.fetch_add(1, Ordering::Relaxed) % self.signers.len();
+        let signer = self
+            .signers
+            .get(index)
+            .expect("cannot fail because index is taken modulo signers.len()");
         self.submitter
             .submit_function_call_tx(signer, contract_id.clone(), call_args)
             .await
