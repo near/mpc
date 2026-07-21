@@ -27,7 +27,6 @@ pub fn participant_context(account_id: &AccountId) -> VMContext {
         .build()
 }
 
-/// Like [`participant_context`], but attaching `deposit` for payable methods.
 pub fn participant_context_with_deposit(account_id: &AccountId, deposit: NearToken) -> VMContext {
     VMContext {
         attached_deposit: deposit,
