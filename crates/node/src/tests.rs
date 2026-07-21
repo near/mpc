@@ -295,7 +295,7 @@ pub async fn request_signature_and_await_response(
             Payload::Ecdsa(payload.into())
         }
         Protocol::Frost => {
-            let len = rand::thread_rng().gen_range(0..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES);
+            let len = rand::thread_rng().gen_range(0..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES);
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
 

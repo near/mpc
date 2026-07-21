@@ -1127,8 +1127,10 @@ mod serde_tests {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod hex_serde_tests {
     use assert_matches::assert_matches;
+    use rstest::rstest;
 
     use super::*;
 
@@ -1136,6 +1138,32 @@ mod hex_serde_tests {
     struct Wrapper {
         #[serde(with = "hex_serde")]
         data: BoundedVec<u8, 2, 4>,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    struct EmptyWrapper {
+        #[serde(with = "hex_serde")]
+        data: EmptyBoundedVec<u8, 4>,
+    }
+
+    /// The generalized helper must round-trip the `PossiblyEmpty` witness,
+    /// including the empty payload (empty hex string).
+    #[rstest]
+    #[case("", vec![])]
+    #[case("abcd", vec![0xab, 0xcd])]
+    fn hex_serde__should_roundtrip_empty_bounded_vec(#[case] hex: &str, #[case] bytes: Vec<u8>) {
+        // Given
+        let original = EmptyWrapper {
+            data: bytes.try_into().unwrap(),
+        };
+
+        // When
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: EmptyWrapper = serde_json::from_str(&json).unwrap();
+
+        // Then
+        assert_eq!(json, format!(r#"{{"data":"{hex}"}}"#));
+        assert_eq!(deserialized, original);
     }
 
     #[test]

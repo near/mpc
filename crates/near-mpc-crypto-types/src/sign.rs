@@ -467,13 +467,16 @@ mod tests {
         assert_eq!(deserialized.payload.as_eddsa(), args.payload.as_eddsa());
     }
 
+    /// 31 bytes is the largest payload the old lower bound rejected, so it locks
+    /// in the exact boundary this change moves.
     #[rstest]
-    #[case("", &[])]
-    #[case("0a", &[0x0a])]
-    #[case("0a0b0c", &[0x0a, 0x0b, 0x0c])]
+    #[case(String::new(), vec![])]
+    #[case("0a".to_string(), vec![0x0a])]
+    #[case("0a0b0c".to_string(), vec![0x0a, 0x0b, 0x0c])]
+    #[case("0a".repeat(31), vec![0x0a; 31])]
     fn deserialize__should_accept_eddsa_shorter_than_32_bytes(
-        #[case] payload_hex: &str,
-        #[case] expected: &[u8],
+        #[case] payload_hex: String,
+        #[case] expected: Vec<u8>,
     ) {
         // Given
         let json = serde_json::json!({
@@ -486,6 +489,6 @@ mod tests {
         let args: SignRequestArgs = serde_json::from_value(json).unwrap();
 
         // Then
-        assert_eq!(args.payload.as_eddsa().unwrap(), expected);
+        assert_eq!(args.payload.as_eddsa().unwrap(), expected.as_slice());
     }
 }
