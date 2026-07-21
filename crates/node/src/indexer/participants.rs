@@ -133,8 +133,6 @@ pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
     pub reshared_keys: ContractKeyset,
     pub key_event: ContractKeyEventInstance,
-    /// Per-domain threshold updates from the accepted proposal.
-    pub per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
 }
 
 /// A stripped-down version of the contract state, containing only the state
@@ -233,7 +231,6 @@ impl ContractState {
                         domains: state.reshared_keys.clone(),
                     },
                     key_event,
-                    per_domain_thresholds: state.per_domain_thresholds.clone(),
                 });
 
                 let running_state = state.previous_running_state.clone();
@@ -448,7 +445,7 @@ pub mod test_utils {
     use near_mpc_crypto_types::Keyset;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
 
     use super::{
         ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
@@ -529,7 +526,6 @@ pub mod test_utils {
             participants,
             resharing_state: Some(ContractResharingState {
                 new_participants,
-                per_domain_thresholds: BTreeMap::new(),
                 reshared_keys: Keyset::new(EpochId::new(epoch), vec![]),
                 key_event: ContractKeyEventInstance {
                     id: KeyEventId::new(EpochId::new(epoch), DomainId(0), AttemptId::new()),
@@ -740,8 +736,8 @@ mod tests {
         // When converting the on-chain state into the node's representation.
         let state = ContractState::from_contract_state(&dto, 0, None).unwrap();
 
-        // Then the resharing key event carries the new threshold, the update is retained,
-        // and the previous registry (old side of the reshare) keeps the old threshold.
+        // Then the resharing key event carries the new threshold, and the previous
+        // registry (old side of the reshare) keeps the old threshold.
         let ContractState::Running(running) = state else {
             panic!("resharing maps to a running state with resharing_state populated");
         };
@@ -749,10 +745,6 @@ mod tests {
         assert_eq!(
             resharing_state.key_event.domain.reconstruction_threshold,
             new_threshold
-        );
-        assert_eq!(
-            resharing_state.per_domain_thresholds,
-            BTreeMap::from([(domain_id, new_threshold)])
         );
         assert_eq!(
             running
