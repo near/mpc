@@ -1,5 +1,5 @@
-# Paths excluded from the semgrep CI check (see the `semgrep` job in .github/workflows/ci.yml).
-# This file replaces semgrep's default ignore list, gitignored files are skipped regardless.
+# Paths excluded from the opengrep CI check (see the `opengrep` job in .github/workflows/ci.yml).
+# This file replaces the default ignore list, gitignored files are skipped regardless.
 
 # Documentation: shell snippets in guides trigger generic rules (e.g. curl over HTTP to local VMs).
 docs/

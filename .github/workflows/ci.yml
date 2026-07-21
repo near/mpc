@@ -259,16 +259,14 @@ jobs:
   # Static analysis.
   # silence false positives with a `nosemgrep: <rule-id>` comment
   # or a path entry in .semgrepignore.
-  semgrep:
-    name: "Semgrep"
+  opengrep:
+    name: "Opengrep"
     needs: changes
     if: ${{ always() && needs.changes.outputs.code_changed != 'false' }}
     runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 15
     permissions:
       contents: read
-    container:
-      image: semgrep/semgrep:1.170.0@sha256:c98f8829eea377274ee4b10656458b078b88232469b2ff913f091c2317347c9d
 
     steps:
       - name: Checkout repository
@@ -276,19 +274,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # Only WARNING and ERROR findings block.
-      # panic-in-function-returning-result is excluded: docs/engineering-standards.md
-      # allows panics only in narrow cases, but we have a lot of such narrow cases.
-      - name: Run semgrep
-        run: >
-          semgrep scan
-          --config p/trailofbits
-          --config p/rust
-          --config p/secrets
-          --exclude-rule trailofbits.rs.panic-in-function-returning-result.panic-in-function-returning-result
-          --severity WARNING
-          --severity ERROR
-          --error
+      - name: Install opengrep
+        run: |
+          curl -fsSL -o opengrep 'https://github.com/opengrep/opengrep/releases/download/v1.25.0/opengrep_manylinux_x86'
+          echo '9ac4aebb47ba3f7b0d8fc641ac8749cb6c2f253f616131a67d9631e00d4bea33  opengrep' | sha256sum -c -
+          sudo install -m755 opengrep -t /usr/bin
+
+      - name: Run opengrep
+        run: bash scripts/run-opengrep.sh
 
   mpc-e2e-tests:
     name: "MPC E2E tests"
