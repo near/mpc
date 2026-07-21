@@ -184,31 +184,33 @@ pub static MPC_NUM_TIMEOUTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock
     .unwrap()
 });
 
-pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
+pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = LazyLock::new(
+    || {
         prometheus::register_int_counter_vec!(
             "mpc_num_signature_computations_led",
-            "Number of signature computations that this node led",
+            "Number of finished signature computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
-    });
+    },
+);
 
-pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
+pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = LazyLock::new(
+    || {
         prometheus::register_int_counter_vec!(
             "mpc_num_ckd_computations_led",
-            "Number of ckd computations that this node led",
+            "Number of finished ckd computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
-    });
+    },
+);
 
 pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
             "mpc_num_verify_foreign_tx_computations_led",
-            "Number of verify foreign tx computations that this node led",
+            "Number of finished verify foreign tx computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
@@ -415,6 +417,8 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
 
 pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
 pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
+pub const MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL: &str = "failed";
+pub const MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL: &str = "deadline_exceeded";
 
 pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {

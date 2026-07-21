@@ -15,6 +15,7 @@ use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
 pub const KEY_RESHARING_PORT_SEED: u16 = 3;
@@ -39,6 +40,7 @@ pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
 pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 23;
 pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 24;
+pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 25;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -76,6 +78,8 @@ pub async fn must_setup_cluster(
 
     let initial_participant_indices = config.participant_indices();
     let presignatures_to_buffer = config.presignatures_to_buffer;
+    let whitelist = config.foreign_chains.whitelist.clone();
+    let threshold = config.threshold;
     let cluster = MpcCluster::start(config)
         .await
         .expect("failed to start cluster");
@@ -90,6 +94,11 @@ pub async fn must_setup_cluster(
     let ProtocolContractState::Running(running) = protocol_state else {
         panic!("expected Running state");
     };
+
+    cluster
+        .whitelist_foreign_chains(&initial_participant_indices[..threshold], &whitelist)
+        .await
+        .expect("failed to whitelist foreign chains");
 
     wait_for_presignatures(
         &cluster,
@@ -501,4 +510,26 @@ pub async fn send_ckd_request(
         outcome.failure_message()
     );
     Ok(())
+}
+
+pub fn build_providers_from_urls(
+    urls: &[String],
+    chain_name: &str,
+) -> near_mpc_bounded_collections::NonEmptyBTreeMap<
+    mpc_node_config::foreign_chains::RpcProviderName,
+    mpc_node_config::ForeignChainProviderConfig,
+> {
+    let map: std::collections::BTreeMap<_, _> = urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let cfg = mpc_node_config::ForeignChainProviderConfig {
+                rpc_url: url.clone(),
+                auth: Default::default(),
+            };
+            (format!("mock-{chain_name}-{i}").into(), cfg)
+        })
+        .collect();
+    map.try_into()
+        .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
 }
