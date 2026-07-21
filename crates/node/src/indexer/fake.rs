@@ -305,6 +305,16 @@ impl FakeMpcContractState {
     }
 
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
+        self.start_resharing_with_threshold_updates(new_participants, BTreeMap::new());
+    }
+
+    /// Like [`Self::start_resharing`], but also changes the given domains' reconstruction
+    /// thresholds, mirroring a proposal that carries `per_domain_thresholds`.
+    pub fn start_resharing_with_threshold_updates(
+        &mut self,
+        new_participants: ParticipantsConfig,
+        per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
+    ) {
         let (previous_running_state, prev_epoch_id) = match &self.state {
             ProtocolContractState::Running(state) => (state, state.keyset.epoch_id),
             ProtocolContractState::Resharing(state) => {
@@ -312,6 +322,13 @@ impl FakeMpcContractState {
             }
             _ => panic!("Cannot start resharing from non-running state"),
         };
+        // Mirror the real contract: `resharing_key` keeps the old threshold; the update
+        // travels only in `per_domain_thresholds`, which the node applies itself.
+        let resharing_domain = previous_running_state
+            .domains
+            .get_domain_by_index(0)
+            .unwrap()
+            .clone();
         self.state = ProtocolContractState::Resharing(ResharingContractState {
             previous_running_state: RunningContractState::new(
                 previous_running_state.domains.clone(),
@@ -322,15 +339,11 @@ impl FakeMpcContractState {
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(
                 prev_epoch_id.next(),
-                previous_running_state
-                    .domains
-                    .get_domain_by_index(0)
-                    .unwrap()
-                    .clone(),
+                resharing_domain,
                 participants_config_to_threshold_parameters(&new_participants),
             ),
             cancellation_requests: HashSet::new(),
-            per_domain_thresholds: std::collections::BTreeMap::new(),
+            per_domain_thresholds,
         });
     }
 

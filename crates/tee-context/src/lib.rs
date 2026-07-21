@@ -5,12 +5,11 @@ pub use errors::TeeContextError;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::{
-    NearGas, NearToken,
     state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
-    types::FunctionCallArgs,
 };
 use near_account_id::AccountId;
+use near_contract_transport::{FunctionCallArgs, NearGas, NearToken, ViewArgs};
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, SUBMIT_PARTICIPANT_INFO,
@@ -191,14 +190,14 @@ async fn watch_hashes(
     let mut image_sub = chain_gateway
         .subscribe_to_contract_method::<AllowedDockerImageHashesResponse>(
             governance_contract.clone(),
-            ALLOWED_DOCKER_IMAGE_HASHES,
+            ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES),
         )
         .await;
 
     let mut launcher_sub = chain_gateway
         .subscribe_to_contract_method::<Vec<LauncherDockerComposeHash>>(
             governance_contract,
-            ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            ViewArgs::no_args(ALLOWED_LAUNCHER_COMPOSE_HASHES),
         )
         .await;
 
@@ -256,9 +255,10 @@ mod tests {
     use assert_matches::assert_matches;
     use chain_gateway::{
         mock::{MockChainState, MockChainStateBuilder, MockError},
-        types::{LatestFinalBlockInfo, ObservedState},
+        types::LatestFinalBlockInfo,
     };
     use ed25519_dalek::SigningKey;
+    use near_contract_transport::ObservedState;
     use near_mpc_contract_interface::types::{Attestation, MockAttestation};
     /// Block height returned by [`MockChainState`] view responses.
     const MOCK_BLOCK_HEIGHT: u64 = 1;
@@ -296,7 +296,7 @@ mod tests {
     fn mock_chain() -> MockChainState {
         MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
@@ -321,7 +321,7 @@ mod tests {
     ) -> TeeContext<MockChainState> {
         let mock = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
@@ -334,7 +334,7 @@ mod tests {
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
         let mock_chain_state = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Ok(ObservedState {
+            .with_view_response(Ok(ObservedState {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
@@ -429,7 +429,7 @@ mod tests {
     async fn test_new_fails_when_view_errors() {
         let mock = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .with_view_response(Err(MockError::ViewClientError))
             .build();
 
         let result = TeeContext::new(mock.clone(), governance_account()).await;
@@ -469,7 +469,7 @@ mod tests {
     async fn test_watch_hashes_exits_on_initial_error() {
         let mock = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(Err(MockError::ViewClientError))
+            .with_view_response(Err(MockError::ViewClientError))
             .build();
         let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 

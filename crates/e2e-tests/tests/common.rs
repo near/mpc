@@ -7,8 +7,9 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainId, DomainPurpose, ProtocolContractState,
-    PublicKey, PublicKeyExtended, RunningContractState,
+    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
+    ProtocolContractState, PublicKey, PublicKeyExtended, ReconstructionThreshold,
+    RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 use serde_json::json;
@@ -37,9 +38,10 @@ pub const CONTRACT_UPGRADE_COMPATIBILITY_TESTNET_PORT_SEED: u16 = 19;
 pub const TIMEOUT_METRIC_PORT_SEED: u16 = 20;
 pub const MIGRATION_BACK_PORT_SEED: u16 = 21;
 pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
-pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 23;
-pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 24;
-pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 25;
+pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 23;
+pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 24;
+pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 25;
+pub const CANCEL_NODE_MIGRATION_PORT_SEED: u16 = 26;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///
@@ -387,6 +389,38 @@ pub fn must_get_bls_public_key(
     }
 }
 
+/// Builds a `DamgardEtAl` signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
+pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
+    DomainConfig {
+        id: DomainId(id),
+        protocol: Protocol::DamgardEtAl,
+        reconstruction_threshold: ReconstructionThreshold::new(t),
+        purpose: DomainPurpose::Sign,
+    }
+}
+
+/// Builds a `ConfidentialKeyDerivation` (CKD) domain with reconstruction threshold `t`, which needs `t` signers.
+pub fn ckd_domain(id: u64, t: u64) -> DomainConfig {
+    DomainConfig {
+        id: DomainId(id),
+        protocol: Protocol::ConfidentialKeyDerivation,
+        reconstruction_threshold: ReconstructionThreshold::new(t),
+        purpose: DomainPurpose::CKD,
+    }
+}
+
+/// Returns the first domain running `protocol_type` (the registry allows
+/// duplicates), panicking if absent.
+pub fn must_get_domain(running: &RunningContractState, protocol_type: Protocol) -> DomainConfig {
+    running
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.protocol == protocol_type)
+        .unwrap_or_else(|| panic!("no domain with protocol {protocol_type:?}"))
+        .clone()
+}
+
 /// Send a sign request and assert the network produced a successful response.
 ///
 /// Panics if the request can't be submitted to the contract — the test cannot
@@ -415,6 +449,38 @@ pub async fn send_sign_request(
         outcome.failure_message()
     );
     Ok(())
+}
+
+/// Sign with every signing domain in `running` (including duplicates), asserting
+/// each request succeeds.
+pub async fn sign_all_domains(
+    cluster: &MpcCluster,
+    running: &RunningContractState,
+    rng: &mut impl rand::Rng,
+) {
+    let sign_domains = running
+        .domains
+        .domains
+        .iter()
+        .filter(|d| d.purpose == DomainPurpose::Sign);
+
+    for domain in sign_domains {
+        let payload = match Curve::from(domain.protocol) {
+            Curve::Edwards25519 => generate_eddsa_payload(rng),
+            _ => generate_ecdsa_payload(rng),
+        };
+        let outcome = cluster
+            .send_sign_request(domain.id, payload, cluster.default_user_account())
+            .await
+            .expect("sign request failed");
+        assert!(
+            outcome.is_success(),
+            "sign request for domain {:?} (protocol {:?}) failed: {:?}",
+            domain.id,
+            domain.protocol,
+            outcome.failure_message()
+        );
+    }
 }
 
 /// Send a CKD request and assert the network produced a successful response.
