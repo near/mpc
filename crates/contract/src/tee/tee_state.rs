@@ -322,7 +322,6 @@ impl TeeState {
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
-    /// Returns all allowed launcher compose hashes (flattened from all non-expired launcher images).
     pub fn get_allowed_launcher_compose_hashes(
         &self,
         ttl: Duration,
@@ -382,7 +381,6 @@ impl TeeState {
         self.allowed_launcher_images.remove(launcher_hash)
     }
 
-    /// Returns all non-expired allowed launcher image hashes.
     pub fn get_allowed_launcher_hashes(&self, ttl: Duration) -> Vec<LauncherImageHash> {
         self.allowed_launcher_images.launcher_hashes(ttl)
     }

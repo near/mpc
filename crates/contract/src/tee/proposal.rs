@@ -312,9 +312,8 @@ impl AllowedLauncherImage {
     fn is_expired(&self, ttl: Duration, now: Timestamp) -> bool {
         match self.last_used.checked_add(ttl) {
             Some(deadline) => deadline < now,
-            // Overflow means the deadline is unrepresentably far in the future, so the
-            // entry is not expired. Never panic here: a bogus timestamp must not evict a hash.
-            // Unreachable in practice (`last_used` is contract-stamped), so log if it ever fires.
+            // Overflow ⇒ deadline unrepresentably far off, so treat as not expired rather than
+            // panic: a bogus timestamp must never evict a hash. Unreachable in practice.
             None => {
                 log!(
                     "is_expired: last_used + ttl overflowed; treating launcher hash as not expired"
@@ -339,7 +338,6 @@ pub(crate) struct AllowedLauncherImages {
 /// Outcome of `AllowedLauncherImages::add_or_refresh`, mirroring `ParticipantInsertion`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum AllowedLauncherImageInsertion {
-    /// A new launcher entry was created.
     Added,
     /// The launcher was already present; its `last_used` was refreshed (re-vote).
     Refreshed,
@@ -464,9 +462,7 @@ impl AllowedLauncherImages {
         }
     }
 
-    /// Returns all compose hashes across the live launcher images (flattened) — the
-    /// non-expired ones, or the most-recently-used entry as a fallback when all are expired
-    /// (see [`Self::non_expired_or_newest_indices`]).
+    /// Flattened compose hashes across the live entries (see [`Self::non_expired_or_newest_indices`]).
     pub fn all_compose_hashes(&self, ttl: Duration) -> Vec<LauncherDockerComposeHash> {
         self.non_expired_or_newest_indices(ttl)
             .into_iter()
@@ -474,9 +470,7 @@ impl AllowedLauncherImages {
             .collect()
     }
 
-    /// Returns the live allowed launcher image hashes — the non-expired ones, or the
-    /// most-recently-used entry as a fallback when all are expired (see
-    /// [`Self::non_expired_or_newest_indices`]).
+    /// Launcher hashes of the live entries (see [`Self::non_expired_or_newest_indices`]).
     pub fn launcher_hashes(&self, ttl: Duration) -> Vec<LauncherImageHash> {
         self.non_expired_or_newest_indices(ttl)
             .into_iter()
