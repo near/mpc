@@ -5,6 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
+use crate::indexer::tx_sender::TransactionProcessorError;
 use crate::indexer::types::ChainSendTransactionRequest;
 use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
 use crate::key_events::{
@@ -29,6 +30,7 @@ use crate::storage::SignRequestStorage;
 use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
+use backon::{BackoffBuilder, ExponentialBuilder};
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use mpc_node_config::ConfigFile;
@@ -41,6 +43,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
@@ -436,7 +439,11 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await;
+        if let Err(_) =
+            register_foreign_chains(&chain_txn_sender, &config_file.foreign_chains).await
+        {
+            return Ok(MpcJobResult::HaltUntilInterrupted);
+        }
 
         let resolve_peer_address =
             move |participant_id| peer_address_from_state(&contract_state_receiver, participant_id);
@@ -1025,29 +1032,81 @@ fn stop_initializing(
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
     foreign_chains: &mpc_node_config::ForeignChainsConfig,
-) {
+) -> Result<(), TransactionProcessorError> {
+    let mut backoff = ExponentialBuilder::default()
+        .with_min_delay(Duration::from_secs(5))
+        .with_max_delay(Duration::from_secs(60))
+        .with_max_times(15)
+        .with_jitter()
+        .build();
     let foreign_chain_configuration = foreign_chains.configured_chains();
-    if let Err(err) = chain_txn_sender
-        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-            contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-        ))
-        .await
-    {
-        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
+    loop {
+        match chain_txn_sender
+            .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
+                contract_args::RegisterForeignChainConfigArgs::new(
+                    foreign_chain_configuration.clone(),
+                ),
+            ))
+            .await
+        {
+            Ok(_) => {
+                break;
+            }
+            Err(err) => {
+                tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction, retrying shortly");
+                match backoff.next() {
+                    Some(backoff_duration) => {
+                        tokio::time::sleep(backoff_duration).await;
+                    }
+                    None => {
+                        tracing::error!(
+                            "retries exceeded for register supported foreign chains transaction"
+                        );
+                        return Err(err);
+                    }
+                }
+            }
+        }
     }
+
+    backoff = ExponentialBuilder::default()
+        .with_min_delay(Duration::from_secs(5))
+        .with_max_delay(Duration::from_secs(60))
+        .with_max_times(15)
+        .with_jitter()
+        .build();
     let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
         .iter_chains()
         .map(|(chain, _)| chain)
         .collect::<std::collections::BTreeSet<_>>()
         .into();
-    if let Err(err) = chain_txn_sender
-        .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
-            contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config),
-        ))
-        .await
-    {
-        tracing::warn!(error = ?err, "failed to send register foreign chains config transaction");
+    loop {
+        match chain_txn_sender
+            .send(ChainSendTransactionRequest::RegisterForeignChainsConfig(
+                contract_args::RegisterForeignChainsConfigArgs::new(foreign_chains_config.clone()),
+            ))
+            .await
+        {
+            Ok(_) => {
+                break;
+            }
+            Err(err) => {
+                tracing::warn!(error = ?err, "failed to send register supported foreign chains config transaction, retrying shortly");
+                match backoff.next() {
+                    Some(backoff_duration) => {
+                        tokio::time::sleep(backoff_duration).await;
+                    }
+                    None => {
+                        tracing::error!(
+                            "retries exceeded for register supported foreign chains config transaction"
+                        );
+                        return Err(err);
+                    }
+                }
+            }
+        }
     }
+    Ok(())
 }
 
 fn make_initializing_stop_fn(
@@ -1299,7 +1358,7 @@ mod tests {
         };
 
         // When
-        register_foreign_chains(&txn_sender, &foreign_chains).await;
+        register_foreign_chains(&txn_sender, &foreign_chains).await?;
 
         // Then: the legacy registration is emitted first, then the new one.
         let expected_legacy = foreign_chains.configured_chains();
