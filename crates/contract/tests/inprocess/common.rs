@@ -29,12 +29,10 @@ pub fn participant_context(account_id: &AccountId) -> VMContext {
 
 /// Like [`participant_context`], but attaching `deposit` for payable methods.
 pub fn participant_context_with_deposit(account_id: &AccountId, deposit: NearToken) -> VMContext {
-    VMContextBuilder::new()
-        .signer_account_id(account_id.clone())
-        .predecessor_account_id(account_id.clone())
-        .attached_deposit(deposit)
-        .block_timestamp(near_sdk::env::block_timestamp())
-        .build()
+    VMContext {
+        attached_deposit: deposit,
+        ..participant_context(account_id)
+    }
 }
 
 /// Initializes a `Running` contract with a single Sign domain from `parameters`.

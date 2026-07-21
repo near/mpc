@@ -119,12 +119,11 @@ const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
 /// A non-zero deposit is required so that the transaction must be signed by a
-/// full-access key (or a function-call access key whose `deposit` allowance is
-/// explicitly set). This prevents a **malicious frontend** from silently
+/// full-access key: function-call access keys cannot attach a deposit (their
+/// allowance covers gas only). This prevents a **malicious frontend** from silently
 /// submitting signature requests on behalf of a user via a restricted
-/// function-call access key, because such keys cannot attach deposits by
-/// default. In other words, requiring a deposit ensures the user (or their
-/// full-access key) explicitly authorised the call.
+/// function-call access key. In other words, requiring a deposit ensures the user
+/// (or their full-access key) explicitly authorised the call.
 ///
 /// See the "Deposit requirement" section in the contract README for more
 /// details.
@@ -2463,8 +2462,9 @@ impl MpcContract {
     /// The caller (`signer_account_id`) must be an existing or prospective participant.
     /// Otherwise, the transaction will fail.
     ///
-    /// Requires a non-zero deposit of `1 yoctoNEAR` (excess is refunded), which forces the call
-    /// to be signed by a full-access key rather than the node's function-call access key.
+    /// Requires a deposit of at least `MINIMUM_NODE_MANAGEMENT_DEPOSIT` (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
     #[payable]
     #[handle_result]
     pub fn register_backup_service(
@@ -2486,6 +2486,7 @@ impl MpcContract {
             }
             .into());
         }
+        // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         self.node_migrations
             .set_backup_service_info(account_id, backup_service_info);
@@ -2503,8 +2504,9 @@ impl MpcContract {
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
     ///
-    /// Requires a non-zero deposit of `1 yoctoNEAR` (excess is refunded), which forces the call
-    /// to be signed by a full-access key rather than the node's function-call access key.
+    /// Requires a deposit of at least `MINIMUM_NODE_MANAGEMENT_DEPOSIT` (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
     #[payable]
     #[handle_result]
     pub fn start_node_migration(
@@ -2528,6 +2530,7 @@ impl MpcContract {
             }
             .into());
         }
+        // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
@@ -2536,8 +2539,9 @@ impl MpcContract {
 
     /// Updates the calling participant's registered URL, keeping the TLS key and participant ID.
     ///
-    /// Requires a non-zero deposit of `1 yoctoNEAR` (excess is refunded), which forces the call
-    /// to be signed by a full-access key rather than the node's function-call access key.
+    /// Requires a deposit of at least `MINIMUM_NODE_MANAGEMENT_DEPOSIT` (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
     #[payable]
     #[handle_result]
     pub fn update_participant_url(&mut self, url: String) -> Result<(), Error> {
@@ -2560,6 +2564,7 @@ impl MpcContract {
             url,
             tls_public_key: existing_info.tls_public_key.clone(),
         };
+        // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         running_state.parameters.update_info(account_id, new_info)
     }
@@ -4665,7 +4670,7 @@ mod tests {
         };
         let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
-        test_env.set_deposit(NearToken::from_yoctonear(1));
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
         for (account_id, _, _) in participants.participants() {
             test_env.set_signer(account_id);
             // sanity check
@@ -4768,7 +4773,7 @@ mod tests {
         assert!(contract.migration_info().is_empty());
         let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
-        test_env.set_deposit(NearToken::from_yoctonear(1));
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
         for (account_id, _, _) in participants.participants() {
             test_env.set_signer(account_id);
             // sanity check
