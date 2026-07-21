@@ -293,7 +293,65 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-## 6. Send a sign request to the network
+## 6. (Optional) Deploy and vote in the TEE verifier
+
+The stateless `tee-verifier` contract exposes `verify_quote`, which the MPC
+contract calls to attest node quotes. Build it with `--no-abi` (its types don't
+derive `BorshSchema`, so the default ABI-embedding build fails; the plain WASM is
+all we need):
+
+```shell
+cargo make build-tee-verifier-optimized
+export TEE_VERIFIER_PATH="$(pwd)/target/near/tee_verifier/tee_verifier.wasm"
+```
+
+Create and deploy the verifier account. Like the MPC contract, it has no
+initializer, so we deploy without an init call:
+
+```shell
+near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+
+near contract deploy tee-verifier.test.near use-file "$TEE_VERIFIER_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
+```
+
+Now have Frodo and Sam vote it in. `expected_code_hash` commits every voter to
+the same audited WASM; the contract only compares voters' hashes against each
+other, not against the deployed bytes:
+
+```shell
+export TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
+
+near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+
+near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+Once both votes agree, the change is applied and the MPC contract has no pending
+verifier votes:
+
+```shell
+near contract call-function as-read-only mpc-contract.test.near tee_verifier_votes json-args {} network-config mpc-localnet now
+```
+
+You can call `verify_quote` directly to see it run its DCAP logic. Its arguments
+are binary (borsh), so they are read from a committed fixture file at
+`crates/tee-verifier/tests/fixtures/verify_quote_args.borsh`:
+
+```shell
+near contract call-function as-read-only tee-verifier.test.near verify_quote file-args crates/tee-verifier/tests/fixtures/verify_quote_args.borsh network-config mpc-localnet now
+```
+
+This returns `TCBInfo expired`: the contract ran the real DCAP verification and
+rejected because the fixture's collateral is time-expired against the live block
+clock. The accepting verdict is covered by the pinned-clock unit test
+`crates/tee-verifier/tests/verify_quote.rs`. Regenerate the fixture (after
+changing the quote/collateral fixtures) with:
+
+```shell
+UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
+```
+
+## 7. Send a sign request to the network
 
 Now we should be able to request a signature from the network.
 
@@ -421,7 +479,7 @@ near contract call-function as-transaction mpc-contract.test.near verify_foreign
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-## 7. Clean Up
+## 8. Clean Up
 Once you're done testing your local MPC network, you may want to clean up the environment to avoid stale data or conflicts during the next run.
 
 

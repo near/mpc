@@ -178,11 +178,16 @@ fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
         .expect("correct length")
 }
 
-/// Guards the committed `verify_quote` args fixture (see
-/// `docs/localnet/tee-verifier-proof.md`, which calls `verify_quote` on-chain
-/// with these bytes via near-cli `file-args`). near-sdk decodes the two
-/// `#[serializer(borsh)]` params as one struct, so the input is
-/// `borsh(quote) ++ borsh(collateral)`.
+/// The localnet guide (`docs/localnet/localnet.md`) calls `verify_quote` from the
+/// command line. Its arguments are binary (borsh), so they are read from a committed
+/// file.
+///
+/// This test keeps that file, `verify_quote_args.borsh`, correct: it rebuilds the
+/// bytes `verify_quote(quote, collateral)` expects (both args, concatenated) and
+/// checks they match the file. It fails if the `quote`/`collateral` fixtures change;
+/// regenerate with:
+///
+///   UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
 #[test]
 fn verify_quote_args_fixture__should_match_committed_file() {
     let mut expected = borsh::to_vec(&make_quote_bytes()).unwrap();
