@@ -6,7 +6,6 @@ use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
-use crate::indexer::monitor::{fetch_with_retry, publish_if_changed};
 
 const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -14,8 +13,7 @@ const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
 
 /// Publishes the contract's available chains mapped to their registered
-/// supporters. Failed reads are retried with backoff; the previously
-/// published value stays in effect until a read succeeds.
+/// supporters. The previously published value stays in effect until a read succeeds.
 pub async fn monitor_foreign_chain_supporters(
     sender: watch::Sender<ForeignChainSupporters>,
     indexer_state: Arc<IndexerState>,
@@ -23,12 +21,21 @@ pub async fn monitor_foreign_chain_supporters(
     indexer_state.client.wait_for_full_sync().await;
 
     loop {
-        let supporters = fetch_with_retry(
-            || read_supporters(&indexer_state),
-            "error reading foreign-chain supporters from chain",
-        )
-        .await;
-        publish_if_changed(&sender, supporters);
+        match read_supporters(&indexer_state).await {
+            Ok(supporters) => {
+                sender.send_if_modified(|previous| {
+                    if *previous == supporters {
+                        false
+                    } else {
+                        *previous = supporters;
+                        true
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e)
+            }
+        }
         tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
     }
 }

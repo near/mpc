@@ -35,7 +35,6 @@ pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
 pub mod migrations;
-mod monitor;
 pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
