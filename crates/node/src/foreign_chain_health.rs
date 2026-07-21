@@ -2,46 +2,57 @@
 //! [`foreign_chain_health_check`].
 
 use foreign_chain_health_check::{
-    NetworkResolution, ProviderResult, SkipReason, Status, check_all_providers,
+    HealthCheckPlan, NetworkKind, ProviderResult, SkipReason, Status, check_all_providers,
     check_all_providers_with_golden,
 };
 use mpc_node_config::{ForeignChainsConfig, HealthCheckGoldenConfig};
 use tracing::{debug, info, warn};
 
-/// Healthcheck entrypoint, dispatched from startup. On mainnet/testnet the
-/// built-in golden set is used and `golden_override` is ignored; on local
-/// chains the check runs only when `golden_override` supplies the values.
+/// Healthcheck entrypoint, dispatched from startup. Folds the operator's config
+/// (`network` + optional golden) into a [`HealthCheckPlan`] and runs it: probes
+/// with the built-in set on a public network, with the supplied golden on a local
+/// chain, or skips. Warns when a golden is configured on a public network, where
+/// it is ignored.
 pub async fn run_startup_health_check(
     foreign_chains: ForeignChainsConfig,
-    network: NetworkResolution,
-    golden_override: Option<HealthCheckGoldenConfig>,
+    network: NetworkKind,
+    golden: Option<HealthCheckGoldenConfig>,
 ) {
-    let results = match (network, golden_override) {
-        (NetworkResolution::Probe(network), golden_override) => {
-            if golden_override.is_some() {
-                warn!(
-                    network = network.label(),
-                    "ignoring configured foreign_chain_health_check_golden; \
-                     the built-in golden set is always used on this network"
-                );
-            }
+    // A config-supplied golden is only meaningful on a local chain; on
+    // mainnet/testnet the built-in set is always used, so flag it as ignored.
+    if let NetworkKind::Public(network) = network
+        && golden.is_some()
+    {
+        warn!(
+            network = network.label(),
+            "foreign_chain_health_check_golden is set in config but ignored on \
+             mainnet/testnet; the built-in golden set is always used — remove it \
+             from config.yaml"
+        );
+    }
+
+    let results = match HealthCheckPlan::decide(network, golden) {
+        HealthCheckPlan::ProbeBuiltIn(network) => {
             info!(
                 network = network.label(),
                 "running foreign-chain RPC provider health check"
             );
             check_all_providers(&foreign_chains, network).await
         }
-        (NetworkResolution::Skip(SkipReason::LocalChain), Some(golden)) => {
+        HealthCheckPlan::ProbeSupplied(golden) => {
             info!(
                 "running foreign-chain RPC provider health check with config-supplied golden values"
             );
             check_all_providers_with_golden(&foreign_chains, &golden).await
         }
-        (NetworkResolution::Skip(SkipReason::LocalChain), None) => {
-            debug!("local or custom chain; skipping foreign-chain RPC provider health check");
+        HealthCheckPlan::Skip(SkipReason::LocalChainWithoutGolden) => {
+            debug!(
+                "local or custom chain without golden values; \
+                 skipping foreign-chain RPC provider health check"
+            );
             return;
         }
-        (NetworkResolution::Skip(SkipReason::Undetermined), _) => {
+        HealthCheckPlan::Skip(SkipReason::Undetermined) => {
             warn!("network undetermined; skipping foreign-chain RPC provider health check");
             return;
         }
@@ -144,12 +155,7 @@ mod tests {
         let foreign_chains = config_with_unsupported_chain();
 
         // When
-        run_startup_health_check(
-            foreign_chains,
-            NetworkResolution::Skip(SkipReason::Undetermined),
-            None,
-        )
-        .await;
+        run_startup_health_check(foreign_chains, NetworkKind::Undetermined, None).await;
 
         // Then it is flagged loudly (a real deployment that can't resolve its network)
         assert!(logs_contain("network undetermined"));
@@ -171,12 +177,7 @@ mod tests {
         let foreign_chains = config_with_unsupported_chain();
 
         // When
-        run_startup_health_check(
-            foreign_chains,
-            NetworkResolution::Skip(SkipReason::LocalChain),
-            None,
-        )
-        .await;
+        run_startup_health_check(foreign_chains, NetworkKind::Local, None).await;
 
         // Then it is skipped at debug, not warned
         assert!(logs_contain(
@@ -201,12 +202,7 @@ mod tests {
         };
 
         // When
-        run_startup_health_check(
-            foreign_chains,
-            NetworkResolution::Skip(SkipReason::LocalChain),
-            Some(base_golden()),
-        )
-        .await;
+        run_startup_health_check(foreign_chains, NetworkKind::Local, Some(base_golden())).await;
 
         // Then the probe runs end to end and summarizes the one probed provider
         assert!(logs_contain(
@@ -219,21 +215,53 @@ mod tests {
 
     #[tokio::test]
     #[traced_test]
-    async fn run_startup_health_check__should_ignore_supplied_golden_on_a_real_network() {
-        // Given a resolved (mainnet) network AND a configured golden override
+    async fn run_startup_health_check__should_probe_with_the_builtin_set_on_a_real_network() {
+        // Given a real network and no config-supplied golden
         let foreign_chains = config_with_unsupported_chain();
 
         // When
         run_startup_health_check(
             foreign_chains,
-            NetworkResolution::Probe(foreign_chain_health_check::Network::Mainnet),
+            NetworkKind::Public(foreign_chain_health_check::Network::Mainnet),
+            None,
+        )
+        .await;
+
+        // Then the built-in check runs, without an ignored-golden warning
+        assert!(logs_contain(
+            "running foreign-chain RPC provider health check"
+        ));
+        logs_assert(|lines: &[&str]| {
+            match lines
+                .iter()
+                .any(|l| l.contains("foreign_chain_health_check_golden is set"))
+            {
+                true => {
+                    Err("no golden supplied; must not warn about an ignored golden".to_string())
+                }
+                false => Ok(()),
+            }
+        });
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn run_startup_health_check__should_warn_and_use_builtin_when_golden_supplied_on_a_real_network()
+     {
+        // Given a real network AND a config-supplied golden (a misconfiguration)
+        let foreign_chains = config_with_unsupported_chain();
+
+        // When
+        run_startup_health_check(
+            foreign_chains,
+            NetworkKind::Public(foreign_chain_health_check::Network::Mainnet),
             Some(base_golden()),
         )
         .await;
 
-        // Then the override is warned about and the built-in set is used
+        // Then the operator is warned the golden is ignored, and the built-in set runs
         assert!(logs_contain(
-            "ignoring configured foreign_chain_health_check_golden"
+            "foreign_chain_health_check_golden is set in config but ignored"
         ));
         assert!(logs_contain(
             "running foreign-chain RPC provider health check"
