@@ -274,6 +274,11 @@ EOF
     wait "$pid"
   done
 
+  # Confirm the vote crossed threshold: after every node has voted, pending
+  # verifier votes clear back to {} once the change is applied.
+  verifier_vote_applied_cmd="near contract call-function as-read-only mpc-contract.test.near tee_verifier_votes json-args {} network-config mpc-localnet now 2>&1 | grep -q '{}'"
+  wait_for_success "${verifier_vote_applied_cmd}"
+
   signer_account="mpc-node-1.test.near"
 
   echo "Executing signature requests"
