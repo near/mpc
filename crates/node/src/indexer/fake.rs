@@ -457,6 +457,7 @@ impl FakeMpcContractState {
                 };
                 if let Some(new_state) = result {
                     self.state = ProtocolContractState::Running(new_state);
+                    self.recompute_available_foreign_chains();
                 }
             }
             _ => {
@@ -491,6 +492,7 @@ impl FakeMpcContractState {
                         .previously_cancelled_resharing_epoch_id,
                 };
                 self.state = ProtocolContractState::Running(new_state);
+                self.recompute_available_foreign_chains();
             }
             _ => {
                 panic!(
