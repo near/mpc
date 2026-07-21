@@ -217,6 +217,7 @@ pub struct MpcClusterConfig {
 
 pub struct ForeignChainsClusterConfig {
     pub node_configs: Vec<ForeignChainsConfig>, // per-node; empty = default for all
+    pub node_health_check_goldens: Vec<Option<HealthCheckGoldenConfig>>, // per-node; None = skip startup check
     pub whitelisted_chains: BTreeSet<ForeignChain>, // voted in during setup
 }
 
