@@ -223,6 +223,13 @@ ROOT_ACCOUNT="${MPC_NETWORK_NAME}${ACCOUNT_SUFFIX}"
 MPC_CONTRACT_ACCOUNT="${MPC_CONTRACT_ACCOUNT:-mpc.${ROOT_ACCOUNT}}"
 node_account_for_i() { echo "node$1.${ROOT_ACCOUNT}"; }
 
+# TEE verifier contract account (DCAP verification, near/mpc#3642). Deployed and
+# voted in as the trusted verifier. Set TEE_VERIFIER_PATH to a prebuilt wasm to
+# skip the in-script build. Optional: VERIFIER_TERA_GAS_OVERRIDE sets
+# init_config.verifier_tera_gas (only meaningful once the async-verify PR #3714
+# lands; leave unset on main).
+TEE_VERIFIER_ACCOUNT="${TEE_VERIFIER_ACCOUNT:-tee-verifier.${ROOT_ACCOUNT}}"
+
 # (Resolved-naming echo lives further down, after ip_for_i() is defined.)
 
 NODE_RANGE_START="${NODE_RANGE_START:-0}"
@@ -1099,6 +1106,14 @@ init = {
     }
 }
 
+# near/mpc#3642: optionally set init_config.verifier_tera_gas. Real dcap_qvl
+# verify_quote burns ~173 Tgas, above the contract's 100 default, so the async
+# verify path (#3714) needs a higher budget. Off by default (unset) so this
+# stays valid on main, where InitConfig has no such field.
+_vtg = "${VERIFIER_TERA_GAS_OVERRIDE:-}"
+if _vtg:
+    init["init_config"] = {"verifier_tera_gas": int(_vtg)}
+
 with open("${INIT_ARGS_JSON}", "w") as f:
     json.dump(init, f, indent=2)
 
@@ -1144,6 +1159,60 @@ deploy_contract() {
       without-init-call network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
   near_sleep "deploy contract"
 }
+
+# --- TEE verifier (near/mpc#3642) --------------------------------------------
+# Builds/locates the tee-verifier wasm and records its sha256 (= expected_code_hash).
+# If TEE_VERIFIER_PATH already points at an existing wasm, skip the build.
+build_verifier() {
+  if [ -n "${TEE_VERIFIER_PATH:-}" ] && [ -f "$TEE_VERIFIER_PATH" ]; then
+    log "Using prebuilt tee-verifier wasm: $TEE_VERIFIER_PATH"
+  else
+    log "Building tee-verifier contract"
+    cargo near build non-reproducible-wasm --no-abi --profile=release-contract \
+      --manifest-path crates/tee-verifier/Cargo.toml --locked
+    export TEE_VERIFIER_PATH="$(pwd)/target/near/tee_verifier/tee_verifier.wasm"
+  fi
+  [ -f "$TEE_VERIFIER_PATH" ] || { err "tee-verifier wasm not found at ${TEE_VERIFIER_PATH:-<unset>}"; exit 1; }
+  export TEE_VERIFIER_HASH="$(sha256sum "$TEE_VERIFIER_PATH" | awk '{print $1}')"
+  log "TEE_VERIFIER_PATH=$TEE_VERIFIER_PATH"
+  log "TEE verifier sha256 (expected_code_hash): $TEE_VERIFIER_HASH"
+}
+
+# Creates the verifier account (paid by ROOT) and deploys the wasm (no init: stateless).
+deploy_verifier() {
+  build_verifier
+  log "Creating + deploying tee-verifier to $TEE_VERIFIER_ACCOUNT"
+  create_account_fund_myself_if_missing "$TEE_VERIFIER_ACCOUNT" "5 NEAR" "$ROOT_ACCOUNT"
+  near_tx_retry "deploy verifier to $TEE_VERIFIER_ACCOUNT" \
+     near contract deploy "$TEE_VERIFIER_ACCOUNT" use-file "$TEE_VERIFIER_PATH" \
+      without-init-call network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
+  near_sleep "deploy verifier"
+}
+
+# Votes the verifier in from `threshold` participants. Valid while the contract is
+# Initializing or Running (authenticate_update_vote allows both), so this runs
+# right after init so the account is trusted before keygen finishes.
+vote_tee_verifier_threshold() {
+  local threshold="$1"
+  if [ -z "${TEE_VERIFIER_HASH:-}" ]; then
+    [ -n "${TEE_VERIFIER_PATH:-}" ] && [ -f "$TEE_VERIFIER_PATH" ] \
+      || { err "TEE_VERIFIER_HASH unset and no TEE_VERIFIER_PATH wasm to hash"; exit 1; }
+    export TEE_VERIFIER_HASH="$(sha256sum "$TEE_VERIFIER_PATH" | awk '{print $1}')"
+  fi
+  log "Voting tee-verifier ($TEE_VERIFIER_ACCOUNT, hash=$TEE_VERIFIER_HASH) with threshold=$threshold"
+  for i in $(seq 0 $((threshold-1))); do
+    local acct
+    acct="$(node_account_for_i "$i")"
+    log "vote_tee_verifier_change as $acct"
+    near_tx_retry "vote_tee_verifier_change by $acct" \
+       near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_tee_verifier_change \
+        json-args "{\"candidate_account_id\": \"$TEE_VERIFIER_ACCOUNT\", \"expected_code_hash\": \"$TEE_VERIFIER_HASH\"}" \
+        prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as "$acct" \
+        network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send
+    near_sleep "vote_tee_verifier_change by $acct"
+  done
+}
+# ---------------------------------------------------------------------------
 
 add_node_keys_from_file() {
   local keys_file="$1"
@@ -1670,6 +1739,7 @@ main() {
     pause_phase "NEAR: build + deploy MPC contract"
     build_contract
     deploy_contract
+    deploy_verifier   # near/mpc#3642: create + deploy the trusted tee-verifier contract
     maybe_stop_after_phase near_contract
   fi
 
@@ -1700,6 +1770,9 @@ main() {
   if should_run_from_start near_init; then
     pause_phase "NEAR: init contract"
     init_contract
+    # near/mpc#3642: vote the verifier in now (contract is Initializing) so nodes'
+    # Dstack attestations can route through it once keygen starts.
+    vote_tee_verifier_threshold "$threshold"
     maybe_stop_after_phase near_init
   fi
 
