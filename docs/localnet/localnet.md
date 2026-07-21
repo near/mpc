@@ -12,6 +12,8 @@ MPC repositoy is cloned, and you are in the MPC root folder.
 
 Older versions of near CLI return from `send` before the transaction is final, which races with the immediately-following view queries used throughout this guide and `scripts/launch-localnet.sh`.
 
+To get all the pinned tooling (matching `near-cli`, `cargo-near`, and wasm toolchain versions) without installing it on your host, run the commands in this guide inside the repo's nix devshell: start it with `nix develop`, or prefix a single command with `nix develop --command`.
+
 ## Install neard and MPC node binary
 
 ### Note about `neard`
