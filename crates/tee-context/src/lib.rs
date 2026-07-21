@@ -338,6 +338,17 @@ mod tests {
         (ctx, mock_chain_state)
     }
 
+    macro_rules! assert_call_error {
+        ($result:expr, $pattern:pat) => {
+            assert_matches!(
+                $result,
+                Err(TeeContextError::ContractCall(MpcContractHandleError::Call(
+                    $pattern
+                )))
+            )
+        };
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_new_populates_allowed_hashes() {
         let (ctx, _) = create_test_context().await;
@@ -381,24 +392,14 @@ mod tests {
                 Ed25519PublicKey([0u8; 32]),
             )
             .await;
-        assert_matches!(
-            result,
-            Err(TeeContextError::ContractCall(MpcContractHandleError::Call(
-                ChainGatewayError::FetchFinalBlock { .. }
-            )))
-        );
+        assert_call_error!(result, ChainGatewayError::FetchFinalBlock { .. });
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_verify_tee_propagates_fetch_block_error() {
         let ctx = create_context_with(Err(MockError::LatestFinalBlockError), Ok(())).await;
         let result = ctx.verify_tee().await;
-        assert_matches!(
-            result,
-            Err(TeeContextError::ContractCall(MpcContractHandleError::Call(
-                ChainGatewayError::FetchFinalBlock { .. }
-            )))
-        );
+        assert_call_error!(result, ChainGatewayError::FetchFinalBlock { .. });
     }
 
     #[tokio::test(start_paused = true)]
@@ -410,24 +411,14 @@ mod tests {
                 Ed25519PublicKey([0u8; 32]),
             )
             .await;
-        assert_matches!(
-            result,
-            Err(TeeContextError::ContractCall(MpcContractHandleError::Call(
-                ChainGatewayError::SubmitSignedTransaction { .. }
-            )))
-        );
+        assert_call_error!(result, ChainGatewayError::SubmitSignedTransaction { .. });
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_verify_tee_propagates_submit_error() {
         let ctx = create_context_with(Ok(default_block_info()), Err(MockError::RpcError)).await;
         let result = ctx.verify_tee().await;
-        assert_matches!(
-            result,
-            Err(TeeContextError::ContractCall(MpcContractHandleError::Call(
-                ChainGatewayError::SubmitSignedTransaction { .. }
-            )))
-        );
+        assert_call_error!(result, ChainGatewayError::SubmitSignedTransaction { .. });
     }
 
     #[tokio::test(start_paused = true)]
