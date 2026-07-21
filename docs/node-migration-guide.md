@@ -97,7 +97,7 @@ near contract call-function as-transaction \
   register_backup_service \
   json-args '{"backup_service_info":{"public_key":"ed25519:AbC123..."}}' \
   prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' \
+  attached-deposit '1 yoctoNEAR' \
   sign-as $SIGNER_ACCOUNT_ID \
   network-config $NEAR_NETWORK \
   sign-with-keychain \
@@ -299,7 +299,7 @@ near contract call-function as-transaction \
     }
   }" \
   prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' \
+  attached-deposit '1 yoctoNEAR' \
   sign-as $SIGNER_ACCOUNT_ID \
   network-config $NEAR_NETWORK \
   sign-with-keychain \
