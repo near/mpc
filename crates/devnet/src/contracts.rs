@@ -3,13 +3,12 @@ use std::collections::BTreeMap;
 use blstrs::G1Projective;
 use group::Group;
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_bounded_collections::EmptyBoundedVec;
 use near_mpc_contract_interface::{
     method_names,
     types::{
         Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
-        EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload,
-        Protocol, SignRequestArgs,
+        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload, Protocol, SignRequestArgs,
     },
 };
 use near_primitives::action::Action;
@@ -196,17 +195,12 @@ fn make_payload(protocol: Protocol) -> Payload {
         }
         Protocol::Frost => {
             let mut rng = rand::thread_rng();
-            let len = rng.gen_range(
-                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-            );
+            let len = rng.gen_range(0..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES);
             let mut payload = vec![0; len];
             rng.fill_bytes(&mut payload);
 
-            let bounded_payload: BoundedVec<
-                u8,
-                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-            > = payload.try_into().unwrap();
+            let bounded_payload: EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+                payload.try_into().unwrap();
 
             Payload::Eddsa(bounded_payload)
         }

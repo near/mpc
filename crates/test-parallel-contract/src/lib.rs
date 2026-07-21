@@ -115,7 +115,7 @@ impl TestContract {
                 &target_contract,
                 &eddsa_calls_by_domain,
                 seed + 1_000_000, // tweak seed offset to avoid collision if needed
-                &|bytes| Payload::Eddsa(bytes.into()),
+                &|bytes| Payload::Eddsa(bytes.to_vec().try_into().unwrap()),
             ));
         };
         if let Some(ckd_calls_by_domain) = ckd_calls_by_domain {

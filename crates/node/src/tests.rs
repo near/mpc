@@ -3,9 +3,8 @@ use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-    VerifyForeignTransactionRequestArgs,
+    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
@@ -41,7 +40,7 @@ use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Finality;
-use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_bounded_collections::EmptyBoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;
 use near_time::Clock;
@@ -296,17 +295,12 @@ pub async fn request_signature_and_await_response(
             Payload::Ecdsa(payload.into())
         }
         Protocol::Frost => {
-            let len = rand::thread_rng().gen_range(
-                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-            );
+            let len = rand::thread_rng().gen_range(0..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES);
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
-            let bounded_payload: BoundedVec<
-                u8,
-                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-            > = payload.try_into().unwrap();
+            let bounded_payload: EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+                payload.try_into().unwrap();
 
             Payload::Eddsa(bounded_payload)
         }

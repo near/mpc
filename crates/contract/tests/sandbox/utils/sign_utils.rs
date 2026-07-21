@@ -16,7 +16,6 @@ use mpc_contract::{
     },
 };
 use near_account_id::AccountId;
-use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
@@ -565,8 +564,7 @@ pub fn create_response_ed25519(
         .try_into()
         .unwrap();
 
-    let bytes = BoundedVec::from(payload);
-    let payload = Payload::Eddsa(bytes);
+    let payload = Payload::Eddsa(payload.to_vec().try_into().unwrap());
 
     let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
 

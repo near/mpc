@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{BoundedVec, hex_serde};
+use near_mpc_bounded_collections::{BoundedVec, EmptyBoundedVec, hex_serde};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
@@ -62,7 +62,6 @@ pub struct CkdAppId(pub [u8; 32]);
 
 pub const ECDSA_PAYLOAD_SIZE_BYTES: usize = 32;
 
-pub const EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES: usize = 32;
 // Transaction signatures for Solana is over the whole transaction payload,
 // not the transaction hash. The max size for a solana transaction is 1232 bytes,
 // to fit in a single UDP packet, hence the 1232 byte upper bounds.
@@ -102,11 +101,9 @@ pub enum Payload {
         #[serde(with = "hex_serde")]
         #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(
-                with = "hex_serde::HexString<EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>"
-            )
+            schemars(with = "hex_serde::HexString<0, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>")
         )]
-        BoundedVec<u8, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
+        EmptyBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES>,
     ),
 }
 

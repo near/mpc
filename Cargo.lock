@@ -7013,6 +7013,7 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-sdk",
  "rand 0.8.6",
+ "rstest",
  "schemars 0.8.22",
  "serde",
  "serde_json",

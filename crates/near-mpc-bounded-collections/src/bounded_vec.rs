@@ -737,11 +737,12 @@ pub mod hex_serde {
         serializer.serialize_str(&hex::encode(value.as_slice()))
     }
 
-    pub fn deserialize<'de, D, const L: usize, const U: usize>(
+    pub fn deserialize<'de, D, const L: usize, const U: usize, W>(
         deserializer: D,
-    ) -> Result<BoundedVec<u8, L, U>, D::Error>
+    ) -> Result<BoundedVec<u8, L, U, W>, D::Error>
     where
         D: serde::Deserializer<'de>,
+        BoundedVec<u8, L, U, W>: TryFrom<Vec<u8>, Error = BoundedVecOutOfBounds>,
     {
         let hex_str = String::deserialize(deserializer)?;
         let bytes: Vec<u8> = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
