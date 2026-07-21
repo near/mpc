@@ -147,7 +147,7 @@ For additional security, the backup and restore process encrypts keyshares durin
 
 ### Retrieve a key from an existing node.
 
-**Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in your home directory. On a **non-TEE** node you can retrieve it with:
+**Note:** If your node has been running without an encryption key configured, the node automatically generates one and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME_DIR` directory. On a **non-TEE** node you can retrieve it with:
 
 ```bash
 export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
