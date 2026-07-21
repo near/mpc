@@ -274,14 +274,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install opengrep
-        run: |
-          curl -fsSL -o opengrep 'https://github.com/opengrep/opengrep/releases/download/v1.25.0/opengrep_manylinux_x86'
-          echo '9ac4aebb47ba3f7b0d8fc641ac8749cb6c2f253f616131a67d9631e00d4bea33  opengrep' | sha256sum -c -
-          sudo install -m755 opengrep -t /usr/bin
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Restore /nix from cache
+        uses: ./.github/actions/restore-nix-cache
 
       - name: Run opengrep
-        run: bash scripts/run-opengrep.sh
+        run: nix shell .#opengrep -c bash scripts/run-opengrep.sh
 
   mpc-e2e-tests:
     name: "MPC E2E tests"

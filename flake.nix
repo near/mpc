@@ -66,6 +66,7 @@
         mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
         };
+        opengrep = pkgs.callPackage ./nix/opengrep.nix { };
       });
 
       devShells = forAllSystems (
