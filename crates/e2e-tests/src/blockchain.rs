@@ -1,6 +1,7 @@
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_kit::FinalExecutionOutcome;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
@@ -134,6 +135,14 @@ pub struct DeployedContract {
 impl DeployedContract {
     pub fn contract_id(&self) -> &str {
         &self.contract_id
+    }
+
+    /// A typed [`MpcContractHandle`] on this contract, calling as `caller`.
+    pub fn contract_handle(
+        &self,
+        caller: NearKitCaller,
+    ) -> anyhow::Result<MpcContractHandle<NearKitCaller>> {
+        Ok(MpcContractHandle::new(caller, self.contract_id.parse()?))
     }
 
     pub async fn call(
