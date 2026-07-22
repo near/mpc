@@ -1006,6 +1006,7 @@ pub mod testing {
         pub const ASSET_GENERATION_SIGNING_CONTENTION_TEST: TestPorts =
             TestPorts::mpc_node_tests(22);
         pub const UPDATE_PARTICIPANT_URL_TEST: TestPorts = TestPorts::mpc_node_tests(23);
+        pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(24);
         pub const RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST: TestPorts =
             TestPorts::mpc_node_tests(24);
         pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: TestPorts =

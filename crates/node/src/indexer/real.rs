@@ -79,8 +79,7 @@ pub fn spawn_real_indexer(
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
-    let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
-        watch::channel(Default::default());
+    let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) = watch::channel(None);
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();

@@ -370,7 +370,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+        foreign_chain_supporters_receiver: watch::Receiver<Option<ForeignChainSupporters>>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -697,11 +697,12 @@ where
                 // to resharing survivors (active ∩ prospective), so a chain only
                 // counts as available when a quorum of nodes that can sign now
                 // and remain after the reshare supports it.
-                let supporters_by_foreign_chain = spawn_supporters_by_foreign_chain(
-                    foreign_chain_supporters_receiver,
-                    running_mpc_config.participants.clone(),
-                    foreign_tx_reconstruction_threshold(&running_state.domains),
-                );
+                let (supporters_by_foreign_chain, _supporters_resolver_task) =
+                    spawn_supporters_by_foreign_chain(
+                        foreign_chain_supporters_receiver,
+                        running_mpc_config.participants.clone(),
+                        foreign_tx_reconstruction_threshold(&running_state.domains),
+                    );
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),

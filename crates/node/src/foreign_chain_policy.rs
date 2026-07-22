@@ -8,6 +8,7 @@ use tokio::sync::watch;
 use crate::config::ParticipantsConfig;
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::primitives::ParticipantId;
+use crate::tracking::{self, AutoAbortTask};
 
 /// Participants supporting each available foreign chain; chains without a
 /// signing quorum are omitted.
@@ -15,15 +16,19 @@ pub(crate) type SupportersByForeignChain = BTreeMap<dtos::ForeignChain, HashSet<
 
 /// Resolves the indexer's TLS-key supporters channel against the current
 /// participant set, publishing each available chain's supporting participants
-/// (filtered by the ForeignTx reconstruction threshold; `None` means no
-/// ForeignTx domain, so no chain is available). The spawned task exits when
-/// the upstream sender is dropped (indexer shutdown) or every receiver of the
-/// returned channel is dropped.
+/// (filtered by the ForeignTx reconstruction threshold; a `None` threshold
+/// means no ForeignTx domain, so no chain is available). The published value
+/// is `None` until the upstream delivers its first snapshot. Must be called
+/// from a tracked task; dropping the returned [`AutoAbortTask`] stops the
+/// resolver, as does dropping the upstream sender or every receiver.
 pub(crate) fn spawn_supporters_by_foreign_chain(
-    mut upstream: watch::Receiver<ForeignChainSupporters>,
+    mut upstream: watch::Receiver<Option<ForeignChainSupporters>>,
     participants_config: ParticipantsConfig,
     foreign_tx_reconstruction_threshold: Option<u64>,
-) -> watch::Receiver<SupportersByForeignChain> {
+) -> (
+    watch::Receiver<Option<SupportersByForeignChain>>,
+    AutoAbortTask<()>,
+) {
     let init_value = resolve_supporters_by_foreign_chain(
         &upstream.borrow_and_update(),
         &participants_config,
@@ -31,7 +36,7 @@ pub(crate) fn spawn_supporters_by_foreign_chain(
     );
     let (sender, receiver) = watch::channel(init_value);
 
-    tokio::spawn(async move {
+    let task = tracking::spawn("foreign-chain supporters resolver", async move {
         loop {
             let new_value = tokio::select! {
                 res = await_updated_supporters(
@@ -60,14 +65,14 @@ pub(crate) fn spawn_supporters_by_foreign_chain(
             });
         }
     });
-    receiver
+    (receiver, task)
 }
 
 async fn await_updated_supporters(
-    upstream: &mut watch::Receiver<ForeignChainSupporters>,
+    upstream: &mut watch::Receiver<Option<ForeignChainSupporters>>,
     participants_config: &ParticipantsConfig,
     foreign_tx_reconstruction_threshold: Option<u64>,
-) -> anyhow::Result<SupportersByForeignChain> {
+) -> anyhow::Result<Option<SupportersByForeignChain>> {
     upstream
         .changed()
         .await
@@ -96,21 +101,26 @@ pub(crate) fn foreign_tx_reconstruction_threshold(domains: &[dtos::DomainConfig]
 // different block than `participants_config`. Only supporters resolving to
 // `participants_config` — the participants this node can sign with — count
 // towards the quorum.
+// Returns `None` while no upstream snapshot exists yet: "not known" must stay
+// distinguishable from "no chain available".
 fn resolve_supporters_by_foreign_chain(
-    supporters_by_tls_key: &ForeignChainSupporters,
+    supporters_by_tls_key: &Option<ForeignChainSupporters>,
     participants_config: &ParticipantsConfig,
     foreign_tx_reconstruction_threshold: Option<u64>,
-) -> SupportersByForeignChain {
+) -> Option<SupportersByForeignChain> {
+    let supporters_by_tls_key = supporters_by_tls_key.as_ref()?;
     let Some(threshold) = foreign_tx_reconstruction_threshold else {
-        return SupportersByForeignChain::new();
+        return Some(SupportersByForeignChain::new());
     };
-    supporters_by_tls_key
-        .iter()
-        .filter_map(|(chain, tls_keys)| {
-            let ids = resolve_participant_ids(tls_keys, participants_config);
-            (ids.len() as u64 >= threshold).then_some((*chain, ids))
-        })
-        .collect()
+    Some(
+        supporters_by_tls_key
+            .iter()
+            .filter_map(|(chain, tls_keys)| {
+                let ids = resolve_participant_ids(tls_keys, participants_config);
+                (ids.len() as u64 >= threshold).then_some((*chain, ids))
+            })
+            .collect(),
+    )
 }
 
 /// Resolves TLS keys to the matching participants' ids; keys not belonging to a
@@ -132,6 +142,7 @@ fn resolve_participant_ids(
 mod tests {
     use super::*;
     use crate::config::{ParticipantInfo, ParticipantsConfig};
+    use crate::tracking::start_root_task;
     use ed25519_dalek::SigningKey;
     use std::time::Duration;
 
@@ -187,10 +198,10 @@ mod tests {
                 make_participant_info(3, &keys[2]),
             ],
         );
-        let supporters_by_tls_key = BTreeMap::from([(
+        let supporters_by_tls_key = Some(BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
             keys.iter().map(tls_key_for).collect::<BTreeSet<_>>(),
-        )]);
+        )]));
 
         // When
         let supporters = resolve_supporters_by_foreign_chain(
@@ -202,14 +213,14 @@ mod tests {
         // Then
         assert_eq!(
             supporters,
-            BTreeMap::from([(
+            Some(BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
                 HashSet::from([
                     ParticipantId::from_raw(1),
                     ParticipantId::from_raw(2),
                     ParticipantId::from_raw(3),
                 ]),
-            )])
+            )]))
         );
     }
 
@@ -225,10 +236,10 @@ mod tests {
                 make_participant_info(2, &key2),
             ],
         );
-        let supporters_by_tls_key = BTreeMap::from([(
+        let supporters_by_tls_key = Some(BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
             BTreeSet::from([tls_key_for(&key1)]),
-        )]);
+        )]));
 
         // When
         let supporters = resolve_supporters_by_foreign_chain(
@@ -238,7 +249,32 @@ mod tests {
         );
 
         // Then
-        assert!(supporters.is_empty());
+        assert_eq!(supporters, Some(SupportersByForeignChain::new()));
+    }
+
+    #[test]
+    fn resolve_supporters_by_foreign_chain__should_ignore_participants_threshold() {
+        // Given: a participants threshold far above the single supporter.
+        let key1 = make_signing_key(1);
+        let participants_config = participants(100, vec![make_participant_info(1, &key1)]);
+        let supporters_by_tls_key = Some(BTreeMap::from([(
+            dtos::ForeignChain::Bitcoin,
+            BTreeSet::from([tls_key_for(&key1)]),
+        )]));
+
+        // When
+        let supporters = resolve_supporters_by_foreign_chain(
+            &supporters_by_tls_key,
+            &participants_config,
+            Some(1),
+        );
+
+        // Then: only the ForeignTx domain threshold applies.
+        assert!(
+            supporters
+                .expect("snapshot present")
+                .contains_key(&dtos::ForeignChain::Bitcoin)
+        );
     }
 
     #[test]
@@ -246,17 +282,30 @@ mod tests {
         // Given: a supported chain but no ForeignTx domain (no threshold).
         let key1 = make_signing_key(1);
         let participants_config = participants(1, vec![make_participant_info(1, &key1)]);
-        let supporters_by_tls_key = BTreeMap::from([(
+        let supporters_by_tls_key = Some(BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
             BTreeSet::from([tls_key_for(&key1)]),
-        )]);
+        )]));
 
         // When
         let supporters =
             resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config, None);
 
         // Then
-        assert!(supporters.is_empty());
+        assert_eq!(supporters, Some(SupportersByForeignChain::new()));
+    }
+
+    #[test]
+    fn resolve_supporters_by_foreign_chain__should_return_none_before_first_upstream_snapshot() {
+        // Given
+        let key1 = make_signing_key(1);
+        let participants_config = participants(1, vec![make_participant_info(1, &key1)]);
+
+        // When
+        let supporters = resolve_supporters_by_foreign_chain(&None, &participants_config, Some(1));
+
+        // Then
+        assert_eq!(supporters, None);
     }
 
     #[test]
@@ -300,60 +349,66 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_supporters_by_foreign_chain__should_publish_resolved_map_on_upstream_change() {
-        // Given: no chain has supporters yet.
-        let key1 = make_signing_key(1);
-        let participants_config = participants(1, vec![make_participant_info(1, &key1)]);
-        let (upstream_sender, upstream_receiver) = watch::channel(ForeignChainSupporters::new());
-        let mut supporters =
-            spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, Some(1));
-        assert!(supporters.borrow().is_empty());
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given: the upstream has not delivered a snapshot yet.
+            let key1 = make_signing_key(1);
+            let participants_config = participants(1, vec![make_participant_info(1, &key1)]);
+            let (upstream_sender, upstream_receiver) = watch::channel(None);
+            let (mut supporters, _resolver_task) =
+                spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, Some(1));
+            assert!(supporters.borrow().is_none());
 
-        // When: Bitcoin becomes available with the participant registered for it.
-        upstream_sender
-            .send(BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                BTreeSet::from([tls_key_for(&key1)]),
-            )]))
-            .unwrap();
-        tokio::time::timeout(Duration::from_secs(5), supporters.changed())
-            .await
-            .unwrap()
-            .unwrap();
+            // When: Bitcoin becomes available with the participant registered for it.
+            upstream_sender
+                .send(Some(BTreeMap::from([(
+                    dtos::ForeignChain::Bitcoin,
+                    BTreeSet::from([tls_key_for(&key1)]),
+                )])))
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(5), supporters.changed())
+                .await
+                .unwrap()
+                .unwrap();
 
-        // Then
-        assert_eq!(
-            *supporters.borrow(),
-            BTreeMap::from([(
-                dtos::ForeignChain::Bitcoin,
-                HashSet::from([ParticipantId::from_raw(1)]),
-            )])
-        );
+            // Then
+            assert_eq!(
+                *supporters.borrow(),
+                Some(BTreeMap::from([(
+                    dtos::ForeignChain::Bitcoin,
+                    HashSet::from([ParticipantId::from_raw(1)]),
+                )]))
+            );
+        });
+        root.await;
     }
 
     #[tokio::test]
     async fn spawn_supporters_by_foreign_chain__should_omit_chain_without_quorum_of_participants() {
-        // Given: threshold 2, Bitcoin registered by one participant and a stranger.
-        let key1 = make_signing_key(1);
-        let key2 = make_signing_key(2);
-        let stranger_key = make_signing_key(9);
-        let participants_config = participants(
-            2,
-            vec![
-                make_participant_info(1, &key1),
-                make_participant_info(2, &key2),
-            ],
-        );
-        let upstream = BTreeMap::from([(
-            dtos::ForeignChain::Bitcoin,
-            BTreeSet::from([tls_key_for(&key1), tls_key_for(&stranger_key)]),
-        )]);
+        let (root, _root_handle) = start_root_task("test-root", async move {
+            // Given: threshold 2, Bitcoin registered by one participant and a stranger.
+            let key1 = make_signing_key(1);
+            let key2 = make_signing_key(2);
+            let stranger_key = make_signing_key(9);
+            let participants_config = participants(
+                2,
+                vec![
+                    make_participant_info(1, &key1),
+                    make_participant_info(2, &key2),
+                ],
+            );
+            let upstream = BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                BTreeSet::from([tls_key_for(&key1), tls_key_for(&stranger_key)]),
+            )]);
 
-        // When
-        let (_upstream_sender, upstream_receiver) = watch::channel(upstream);
-        let supporters =
-            spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, Some(2));
+            // When
+            let (_upstream_sender, upstream_receiver) = watch::channel(Some(upstream));
+            let (supporters, _resolver_task) =
+                spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, Some(2));
 
-        // Then: the stranger's key does not count towards the quorum.
-        assert!(supporters.borrow().is_empty());
+            // Then: the stranger's key does not count towards the quorum.
+            assert_eq!(*supporters.borrow(), Some(SupportersByForeignChain::new()));
+        });
+        root.await;
     }
 }

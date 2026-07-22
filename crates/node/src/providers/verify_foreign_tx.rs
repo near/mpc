@@ -148,29 +148,10 @@ impl ForeignChainInspectors<HttpClient> {
 pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
-    /// Participants supporting each available foreign chain (threshold-filtered).
-    /// Gates request execution and drives leader presignature selection.
-    supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+    /// `None` until the indexer delivers its first supporters snapshot.
+    supporters_by_foreign_chain: watch::Receiver<Option<SupportersByForeignChain>>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-}
-
-impl VerifyForeignTxProvider {
-    pub fn new(
-        config: Arc<ConfigFile>,
-        supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
-        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
-        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-    ) -> anyhow::Result<Self> {
-        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
-        Ok(Self {
-            config,
-            inspectors,
-            supporters_by_foreign_chain,
-            verify_foreign_tx_request_store,
-            ecdsa_signature_provider,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
@@ -188,6 +169,22 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 }
 
 impl VerifyForeignTxProvider {
+    pub fn new(
+        config: Arc<ConfigFile>,
+        supporters_by_foreign_chain: watch::Receiver<Option<SupportersByForeignChain>>,
+        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+    ) -> anyhow::Result<Self> {
+        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
+        Ok(Self {
+            config,
+            inspectors,
+            supporters_by_foreign_chain,
+            verify_foreign_tx_request_store,
+            ecdsa_signature_provider,
+        })
+    }
+
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::VerifyForeignTxTaskId(task) => match task {

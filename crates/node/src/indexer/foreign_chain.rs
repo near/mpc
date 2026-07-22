@@ -14,10 +14,11 @@ pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed
 
 /// Updates the contract's available chains mapped to their registered
 /// supporters in watch channel.
-/// The previously updated values stays in effect until viewing new state
-/// from contract succeeds.
+/// The channel holds `None` until the first successful read; afterwards the
+/// previously published value stays in effect until viewing new state from
+/// contract succeeds.
 pub async fn monitor_foreign_chain_supporters(
-    sender: watch::Sender<ForeignChainSupporters>,
+    sender: watch::Sender<Option<ForeignChainSupporters>>,
     indexer_state: Arc<IndexerState>,
 ) {
     indexer_state.client.wait_for_full_sync().await;
@@ -26,10 +27,10 @@ pub async fn monitor_foreign_chain_supporters(
         match read_supporters(&indexer_state).await {
             Ok(supporters) => {
                 sender.send_if_modified(|previous| {
-                    if *previous == supporters {
+                    if previous.as_ref() == Some(&supporters) {
                         false
                     } else {
-                        *previous = supporters;
+                        *previous = Some(supporters);
                         true
                     }
                 });
