@@ -132,10 +132,17 @@ sha256sum /tmp/onchain_verifier_locked.wasm
 
 ## 6. Vote the verifier in (participants)
 
-Publish `$VERIFIER_ACCOUNT` and `H_source` so every operator can rerun the
-[step 4 audit](#4-audit-the-deployed-account-before-locking) before voting. Each participant then votes for the same
-`(candidate_account_id, expected_code_hash)` pair. Voters who submit different hashes
-land in different buckets and never combine, so the published hash must match exactly.
+Publish `$VERIFIER_ACCOUNT` and `H_source` so every operator can independently audit the
+account before voting. Each operator confirms both verifier requirements:
+
+- the deployed code hash matches `H_source` (`near contract download-wasm regular
+  "$VERIFIER_ACCOUNT" ...` then `sha256sum`, as in [step 4](#4-audit-the-deployed-account-before-locking)); and
+- the account is locked — `near account list-keys "$VERIFIER_ACCOUNT" network-config
+  "$NETWORK" now` returns no keys, so the code can never be replaced.
+
+Each participant then votes for the same `(candidate_account_id, expected_code_hash)`
+pair. Voters who submit different hashes land in different buckets and never combine, so
+the published hash must match exactly.
 
 Read the current signing threshold; the change applies once that many participants
 have voted for the same pair:
