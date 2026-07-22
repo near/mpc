@@ -7,21 +7,29 @@
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
 use crate::call_args::{
-    RequestAppPrivateKeyArgs, SignArgs, SubmitParticipantInfoArgs, VerifyForeignTransactionArgs,
+    RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs, SignArgs,
+    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
+    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
     VoteUpdateArgs,
 };
 use crate::deposits::{
-    DepositOverflowError, SIGN_DEPOSIT_YOCTONEAR, STORAGE_BYTE_COST_YOCTONEAR,
-    propose_update_required_deposit_yoctonear,
+    DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
+    STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    PROPOSE_UPDATE, REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_UPDATE,
+    PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
+    REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
+    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
+    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, Attestation, CKDAppPublicKey, CKDRequestArgs, Ed25519PublicKey, PayloadBytesError,
-    ProposeUpdateArgs, SignRequestArgs, VerifyForeignTransactionRequestArgs,
+    AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
+    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain, PayloadBytesError,
+    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
+    SupportedForeignChains, VerifyForeignTransactionRequestArgs,
 };
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
 /// Default gas for handle-issued calls without a method-specific amount.
 // TODO(#166): 300 Tgas used to be the protocol maximum and higher than most methods
@@ -32,6 +40,8 @@ pub const SIGN_GAS: NearGas = NearGas::from_tgas(15);
 // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
 // which costs significantly more than a plain CKD or sign request.
 pub const CKD_PV_GAS: NearGas = NearGas::from_tgas(100);
+
+pub const VOTE_FOREIGN_CHAIN_GAS: NearGas = NearGas::from_tgas(30);
 
 /// Typed interface to the MPC signer contract at a fixed account, generic over
 /// the transport backend `C`.
@@ -56,18 +66,13 @@ impl<C: CallContract> MpcContractHandle<C> {
         request: SignRequestArgs,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&SignArgs::new(request))?;
-        self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: SIGN.to_string(),
-                    args,
-                    gas: SIGN_GAS,
-                    deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
-                },
-            )
-            .await
-            .map_err(MpcContractHandleError::Call)
+        self.call(FunctionCallArgs::new(
+            SIGN,
+            args,
+            SIGN_GAS,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+        ))
+        .await
     }
 
     pub async fn request_app_private_key(
@@ -79,18 +84,13 @@ impl<C: CallContract> MpcContractHandle<C> {
             CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
         };
         let args = serde_json::to_vec(&RequestAppPrivateKeyArgs::new(request))?;
-        self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: REQUEST_APP_PRIVATE_KEY.to_string(),
-                    args,
-                    gas,
-                    deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
-                },
-            )
-            .await
-            .map_err(MpcContractHandleError::Call)
+        self.call(FunctionCallArgs::new(
+            REQUEST_APP_PRIVATE_KEY,
+            args,
+            gas,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+        ))
+        .await
     }
 
     pub async fn verify_foreign_transaction(
@@ -98,45 +98,32 @@ impl<C: CallContract> MpcContractHandle<C> {
         request: VerifyForeignTransactionRequestArgs,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VerifyForeignTransactionArgs::new(request))?;
-        self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: VERIFY_FOREIGN_TRANSACTION.to_string(),
-                    args,
-                    gas: SIGN_GAS,
-                    deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
-                },
-            )
-            .await
-            .map_err(MpcContractHandleError::Call)
+        self.call(FunctionCallArgs::new(
+            VERIFY_FOREIGN_TRANSACTION,
+            args,
+            SIGN_GAS,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+        ))
+        .await
     }
 
     pub async fn propose_update(
         &self,
         args: ProposeUpdateArgs,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let payload_bytes = args.payload_bytes().map_err(|err| match err {
-            PayloadBytesError::Serialize(err) => MpcContractHandleError::Serialize(err),
-            PayloadBytesError::Overflow => MpcContractHandleError::Deposit(DepositOverflowError),
-        })?;
+        let payload_bytes = args.payload_bytes()?;
         let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
             payload_bytes,
             STORAGE_BYTE_COST_YOCTONEAR,
         )?);
         let args = borsh::to_vec(&args)?;
-        self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: PROPOSE_UPDATE.to_string(),
-                    args,
-                    gas: MAX_GAS,
-                    deposit,
-                },
-            )
-            .await
-            .map_err(MpcContractHandleError::Call)
+        self.call(FunctionCallArgs::new(
+            PROPOSE_UPDATE,
+            args,
+            MAX_GAS,
+            deposit,
+        ))
+        .await
     }
 
     pub async fn vote_update(
@@ -144,16 +131,135 @@ impl<C: CallContract> MpcContractHandle<C> {
         id: u64,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
+        self.call(FunctionCallArgs::no_deposit(VOTE_UPDATE, args, MAX_GAS))
+            .await
+    }
+
+    pub async fn vote_add_domains(
+        &self,
+        domains: Vec<DomainConfig>,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteAddDomainsArgs::new(domains))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_ADD_DOMAINS,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_new_parameters(
+        &self,
+        prospective_epoch_id: EpochId,
+        proposal: ProposedGovernanceThresholdParameters,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteNewParametersArgs::new(prospective_epoch_id, proposal))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_NEW_PARAMETERS,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_cancel_keygen(
+        &self,
+        next_domain_id: u64,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteCancelKeygenArgs::new(next_domain_id))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_CANCEL_KEYGEN,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_cancel_resharing(
+        &self,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_CANCEL_RESHARING,
+            b"{}".to_vec(),
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn update_participant_url(
+        &self,
+        url: String,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&UpdateParticipantUrlArgs::new(url))?;
+        self.call(FunctionCallArgs::no_deposit(
+            UPDATE_PARTICIPANT_URL,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn register_backup_service(
+        &self,
+        backup_service_info: BackupServiceInfo,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RegisterBackupServiceArgs::new(backup_service_info))?;
+        self.call(FunctionCallArgs::new(
+            REGISTER_BACKUP_SERVICE,
+            args,
+            MAX_GAS,
+            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
+        ))
+        .await
+    }
+
+    pub async fn start_node_migration(
+        &self,
+        destination_node_info: DestinationNodeInfo,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&StartNodeMigrationArgs::new(destination_node_info))?;
+        self.call(FunctionCallArgs::new(
+            START_NODE_MIGRATION,
+            args,
+            MAX_GAS,
+            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
+        ))
+        .await
+    }
+
+    pub async fn register_foreign_chain_support(
+        &self,
+        foreign_chain_support: SupportedForeignChains,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args =
+            serde_json::to_vec(&RegisterForeignChainSupportArgs::new(foreign_chain_support))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REGISTER_FOREIGN_CHAIN_SUPPORT,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_update_foreign_chain_providers(
+        &self,
+        batch: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = borsh::to_vec(&batch)?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+            args,
+            VOTE_FOREIGN_CHAIN_GAS,
+        ))
+        .await
+    }
+
+    async fn call(
+        &self,
+        call_args: FunctionCallArgs,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: VOTE_UPDATE.to_string(),
-                    args,
-                    gas: MAX_GAS,
-                    deposit: NearToken::from_yoctonear(0),
-                },
-            )
+            .call_contract(&self.contract_id, call_args)
             .await
             .map_err(MpcContractHandleError::Call)
     }
@@ -167,35 +273,23 @@ impl<C: CallContract> MpcContractHandle<C> {
             proposed_participant_attestation,
             tls_public_key,
         ))?;
-        self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
-                    args,
-                    gas: MAX_GAS,
-                    // The node's function-call key cannot attach a deposit; attestation storage is
-                    // funded by the contract's own balance.
-                    deposit: NearToken::from_yoctonear(0),
-                },
-            )
-            .await
-            .map_err(MpcContractHandleError::Call)
+        // The node's function-call key cannot attach a deposit; attestation storage is
+        // funded by the contract's own balance.
+        self.call(FunctionCallArgs::no_deposit(
+            SUBMIT_PARTICIPANT_INFO,
+            args,
+            MAX_GAS,
+        ))
+        .await
     }
 
     pub async fn verify_tee(&self) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        self.caller
-            .call_contract(
-                &self.contract_id,
-                FunctionCallArgs {
-                    method_name: VERIFY_TEE.to_string(),
-                    args: b"{}".to_vec(),
-                    gas: MAX_GAS,
-                    deposit: NearToken::from_yoctonear(0),
-                },
-            )
-            .await
-            .map_err(MpcContractHandleError::Call)
+        self.call(FunctionCallArgs::no_deposit(
+            VERIFY_TEE,
+            b"{}".to_vec(),
+            MAX_GAS,
+        ))
+        .await
     }
 }
 
@@ -211,18 +305,33 @@ pub enum MpcContractHandleError<E> {
     Call(E),
 }
 
+impl<E> From<PayloadBytesError> for MpcContractHandleError<E> {
+    fn from(value: PayloadBytesError) -> Self {
+        match value {
+            PayloadBytesError::Serialize(err) => MpcContractHandleError::Serialize(err),
+            PayloadBytesError::Overflow => MpcContractHandleError::Deposit(DepositOverflowError),
+        }
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::MpcContractHandle;
     use crate::types::{
-        AccountId, Attestation, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId,
-        BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, DomainId,
-        Ed25519PublicKey, ForeignChainRpcRequest, ForeignTxPayloadVersion, MockAttestation,
-        Payload, ProposeUpdateArgs, SignRequestArgs, VerifyForeignTransactionRequestArgs,
+        AccountId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractor, BitcoinRpcRequest,
+        BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
+        ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose,
+        Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+        GovernanceThreshold, GovernanceThresholdParameters, MockAttestation, ParticipantId,
+        ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
+        ReconstructionThreshold, SignRequestArgs, VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Mutex;
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
@@ -343,6 +452,81 @@ mod tests {
             .unwrap();
         handle.vote_update(7).await.unwrap();
         handle
+            .vote_add_domains(vec![DomainConfig {
+                id: DomainId(0),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            }])
+            .await
+            .unwrap();
+        handle
+            .vote_new_parameters(
+                EpochId::new(7),
+                ProposedGovernanceThresholdParameters {
+                    parameters: GovernanceThresholdParameters {
+                        threshold: GovernanceThreshold(1),
+                        participants: Participants {
+                            next_id: ParticipantId(1),
+                            participants: vec![(
+                                "alice.near".parse().unwrap(),
+                                ParticipantId(0),
+                                ParticipantInfo {
+                                    url: "http://localhost:7".to_string(),
+                                    tls_public_key: Ed25519PublicKey::from([7u8; 32]),
+                                },
+                            )],
+                        },
+                    },
+                    per_domain_thresholds: BTreeMap::new(),
+                },
+            )
+            .await
+            .unwrap();
+        handle.vote_cancel_keygen(7).await.unwrap();
+        handle.vote_cancel_resharing().await.unwrap();
+        handle
+            .update_participant_url("http://localhost:7".to_string())
+            .await
+            .unwrap();
+        handle
+            .register_backup_service(BackupServiceInfo {
+                public_key: Ed25519PublicKey::from([7u8; 32]),
+            })
+            .await
+            .unwrap();
+        handle
+            .start_node_migration(DestinationNodeInfo {
+                signer_account_pk: Ed25519PublicKey::from([7u8; 32]),
+                destination_node_info: ParticipantInfo {
+                    url: "http://localhost:7".to_string(),
+                    tls_public_key: Ed25519PublicKey::from([7u8; 32]),
+                },
+            })
+            .await
+            .unwrap();
+        handle
+            .register_foreign_chain_support(BTreeSet::from([ForeignChain::Bitcoin]).into())
+            .await
+            .unwrap();
+        handle
+            .vote_update_foreign_chain_providers(NonEmptyBTreeMap::new(
+                ForeignChain::Bitcoin,
+                ChainEntry {
+                    providers: NonEmptyBTreeMap::new(
+                        ProviderId("alchemy".to_string()),
+                        ProviderConfig {
+                            base_url: "http://localhost:7".to_string(),
+                            auth_scheme: AuthScheme::None,
+                            chain_routing: ChainRouting::Embedded,
+                        },
+                    ),
+                    quorum: 1,
+                },
+            ))
+            .await
+            .unwrap();
+        handle
             .submit_participant_info(
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey::from([7u8; 32]),
@@ -353,7 +537,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 9);
+        assert_eq!(calls.len(), 18);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
