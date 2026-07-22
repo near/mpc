@@ -78,8 +78,6 @@ impl<C: CallContract> MpcContractHandle<C> {
 pub enum MpcContractHandleError<E> {
     #[error("failed to serialize call arguments: {0}")]
     Serialize(#[from] serde_json::Error),
-    #[error("failed to borsh-encode call arguments: {0}")]
-    Encode(#[from] std::io::Error),
     #[error("contract call failed: {0}")]
     Call(E),
 }
