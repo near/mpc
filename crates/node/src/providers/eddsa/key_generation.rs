@@ -10,10 +10,12 @@ use threshold_signatures::participants::Participant;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
-        threshold: ReconstructionThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
-        let key = KeyGenerationComputation { threshold }
+        let key = KeyGenerationComputation {
+            reconstruction_threshold,
+        }
             .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
             .await?;
         tracing::info!("Eddsa key generation completed");
@@ -25,7 +27,7 @@ impl EddsaSignatureProvider {
 /// Runs the key generation protocol, returning the key generated.
 /// This protocol is identical for the leader and the followers.
 pub struct KeyGenerationComputation {
-    threshold: ReconstructionThreshold,
+    reconstruction_threshold: ReconstructionThreshold,
 }
 
 #[async_trait::async_trait]
@@ -41,7 +43,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
         let protocol = threshold_signatures::keygen::<Ed25519Sha512, _, _>(
             &cs_participants,
             me.into(),
-            self.threshold,
+            self.reconstruction_threshold,
             OsRng,
         )?;
         run_protocol("eddsa key generation", channel, protocol).await
@@ -108,7 +110,7 @@ mod tests {
                 .ok_or_else(|| anyhow::anyhow!("No channel"))?
         };
         let key = KeyGenerationComputation {
-            threshold: ReconstructionThreshold::from(3),
+            reconstruction_threshold: ReconstructionThreshold::from(3),
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
         .await?;

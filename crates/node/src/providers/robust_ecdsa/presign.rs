@@ -43,7 +43,7 @@ pub(super) async fn run_background_presignature_generation(
 ) -> ! {
     let keygen_out = keyshare.keygen_output;
     let presignature_store = keyshare.presignature_store;
-    let threshold = keyshare.reconstruction_threshold;
+    let reconstruction_threshold = keyshare.reconstruction_threshold;
 
     let in_flight_generations = InFlightGenerationTracker::new();
     let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
@@ -62,7 +62,8 @@ pub(super) async fn run_background_presignature_generation(
         .collect();
 
     let (num_signers, damgard_et_al_threshold) =
-        compute_thresholds(threshold).expect("contract validation guarantees a valid threshold");
+        compute_thresholds(reconstruction_threshold)
+            .expect("contract validation guarantees a valid threshold");
 
     loop {
         progress_tracker.update_progress();

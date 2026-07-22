@@ -72,7 +72,7 @@ pub trait SignatureProvider {
     ///
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput>;
 
@@ -80,8 +80,8 @@ pub trait SignatureProvider {
     /// Both leaders and followers call this function.
     /// It drains `channel_receiver` until the required task is found, meaning these clients must not be run in parallel.
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
-        old_threshold: ReconstructionThreshold,
+        new_reconstruction_threshold: ReconstructionThreshold,
+        old_reconstruction_threshold: ReconstructionThreshold,
         key_share: Option<Self::SecretShare>,
         public_key: Self::PublicKey,
         old_participants: &ParticipantsConfig,

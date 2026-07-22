@@ -96,17 +96,21 @@ impl EcdsaSignatureProvider {
     /// follower protocol with an unexpected `t`).
     pub(super) fn triple_store_for_t(
         &self,
-        threshold: ReconstructionThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
     ) -> anyhow::Result<Arc<TripleStorage>> {
-        self.triple_stores.get(&threshold).cloned().ok_or_else(|| {
-            let mut configured: Vec<u64> = self.triple_stores.keys().map(|t| t.inner()).collect();
-            configured.sort();
-            anyhow::anyhow!(
-                "No triple store configured for t = {} (configured: {:?})",
-                threshold.inner(),
-                configured,
-            )
-        })
+        self.triple_stores
+            .get(&reconstruction_threshold)
+            .cloned()
+            .ok_or_else(|| {
+                let mut configured: Vec<u64> =
+                    self.triple_stores.keys().map(|t| t.inner()).collect();
+                configured.sort();
+                anyhow::anyhow!(
+                    "No triple store configured for t = {} (configured: {:?})",
+                    reconstruction_threshold.inner(),
+                    configured,
+                )
+            })
     }
 
     pub(super) fn new_channel_for_task(
@@ -165,23 +169,27 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: TSReconstructionThreshold,
+        reconstruction_threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
+        EcdsaSignatureProvider::run_key_generation_client_internal(
+            reconstruction_threshold,
+            channel,
+        )
+        .await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: TSReconstructionThreshold,
-        old_threshold: TSReconstructionThreshold,
+        new_reconstruction_threshold: TSReconstructionThreshold,
+        old_reconstruction_threshold: TSReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            new_threshold,
-            old_threshold,
+            new_reconstruction_threshold,
+            old_reconstruction_threshold,
             my_share,
             public_key,
             old_participants,
@@ -245,8 +253,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // by a generator running at its own threshold.
         let mut generate_triples = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
-            let threshold_usize: usize = t.inner().try_into()?;
-            let threshold_bound = TSReconstructionThreshold::from(threshold_usize);
+            let reconstruction_threshold_usize: usize = t.inner().try_into()?;
+            let reconstruction_threshold_bound =
+                TSReconstructionThreshold::from(reconstruction_threshold_usize);
             generate_triples.push(tracking::spawn(
                 &format!("generate triples for t={}", t.inner()),
                 Self::run_background_triple_generation(
@@ -254,7 +263,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     self.mpc_config.clone(),
                     self.config.triple.clone().into(),
                     triple_store.clone(),
-                    threshold_bound,
+                    reconstruction_threshold_bound,
                 ),
             ));
         }
