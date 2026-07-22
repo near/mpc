@@ -1,6 +1,9 @@
 #![allow(non_snake_case)]
 
-use super::common::{init_contract, participant_context, transition_to_initializing};
+use super::common::{
+    init_contract, participant_context, participant_context_with_deposit,
+    transition_to_initializing,
+};
 use mpc_contract::{
     MpcContract,
     errors::{Error, InvalidState},
@@ -13,7 +16,7 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     ParticipantInfo as DtoParticipantInfo, ProtocolContractState,
 };
-use near_sdk::testing_env;
+use near_sdk::{NearToken, testing_env};
 use std::str::FromStr;
 
 use assert_matches::assert_matches;
@@ -45,7 +48,10 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     assert_ne!(original_info.url, new_url);
 
     // When
-    testing_env!(participant_context(&account_id));
+    testing_env!(participant_context_with_deposit(
+        &account_id,
+        NearToken::from_yoctonear(1)
+    ));
     contract.update_participant_url(new_url.clone()).unwrap();
 
     // Then
@@ -54,6 +60,22 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     assert_eq!(updated.tls_public_key, original_info.tls_public_key);
     let other = participant_info(&contract, &other_account);
     assert_eq!(other.url, other_info.url);
+}
+
+#[test]
+#[should_panic(expected = "Attached deposit is lower than required")]
+fn update_participant_url__should_reject_when_no_deposit_attached() {
+    // Given
+    let participants = gen_participants(3);
+    let participant_list = participants.participants().clone();
+    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let mut contract = init_contract(&parameters, None);
+    let (account_id, _, _) = participant_list[0].clone();
+
+    // panics via `require_deposit` before the URL is updated
+    // When, Then
+    testing_env!(participant_context(&account_id));
+    let _ = contract.update_participant_url("https://relocated.example.com:9000".to_string());
 }
 
 #[test]

@@ -142,7 +142,7 @@ async fn print_register_command(
   register_backup_service \
   json-args '{{"backup_service_info":{{"public_key":"{}"}}}}' \
   prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' \
+  attached-deposit '1 yoctoNEAR' \
   sign-as {} \
   network-config {} \
   sign-with-keychain \

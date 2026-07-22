@@ -166,6 +166,18 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
 
+    /// Like [`Self::call_from`], but with an attached `deposit`.
+    pub async fn call_from_deposit(
+        &self,
+        client: &ClientHandle,
+        method: &str,
+        args: serde_json::Value,
+        deposit: near_kit::NearToken,
+    ) -> anyhow::Result<FinalExecutionOutcome> {
+        self.call_from_with_deposit(client, method, args, MAX_GAS, deposit)
+            .await
+    }
+
     /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
     pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
         &self,

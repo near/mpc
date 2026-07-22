@@ -7,13 +7,16 @@ use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
-    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, ParticipantId,
-    ParticipantInfo, Participants, ProposeUpdateArgs, ProposedThresholdParameters, Protocol,
-    ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold, Threshold,
-    ThresholdParameters,
+use near_mpc_contract_interface::{
+    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
+    method_names,
+    types::{
+        AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
+        ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
+        ProposedThresholdParameters, Protocol, ProtocolContractState, ProviderConfig, ProviderId,
+        ReconstructionThreshold, Threshold, ThresholdParameters,
+    },
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -47,6 +50,7 @@ const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // which costs significantly more than a plain CKD or sign request.
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -57,6 +61,9 @@ const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1)
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
 const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const SUBMIT_PARTICIPANT_INFO_DEPOSIT: near_kit::NearToken =
+    near_kit::NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR);
+const SUBMIT_PARTICIPANT_INFO_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
@@ -881,10 +888,11 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_deposit(
                 &client,
                 method_names::REGISTER_BACKUP_SERVICE,
                 json!({ "backup_service_info": backup_service_info }),
+                NODE_MANAGEMENT_DEPOSIT,
             )
             .await
     }
@@ -1025,10 +1033,11 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_deposit(
                 &client,
                 method_names::START_NODE_MIGRATION,
                 json!({ "destination_node_info": destination_node_info }),
+                NODE_MANAGEMENT_DEPOSIT,
             )
             .await
     }
@@ -1041,10 +1050,11 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_deposit(
                 &client,
                 method_names::UPDATE_PARTICIPANT_URL,
                 json!({ "url": url }),
+                NODE_MANAGEMENT_DEPOSIT,
             )
             .await
     }
@@ -1330,13 +1340,15 @@ async fn init_contract(
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
-            .call_from(
+            .call_from_with_deposit(
                 &client,
                 method_names::SUBMIT_PARTICIPANT_INFO,
                 json!({
                     "proposed_participant_attestation": { "Mock": "Valid" },
                     "tls_public_key": pubkey,
                 }),
+                SUBMIT_PARTICIPANT_INFO_GAS,
+                SUBMIT_PARTICIPANT_INFO_DEPOSIT,
             )
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;

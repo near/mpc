@@ -14,9 +14,9 @@ pub use crypto::{
 };
 pub use key_state::{KeyForDomain, Keyset};
 pub use primitives::{
-    CKDResponse, CkdAppId, ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Ed25519Signature, K256AffinePoint, K256Scalar,
-    K256Signature, Payload, SignatureResponse, Tweak,
+    CKDResponse, CkdAppId, ECDSA_PAYLOAD_SIZE_BYTES, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    Ed25519Signature, K256AffinePoint, K256Scalar, K256Signature, Payload, SignatureResponse,
+    Tweak,
 };
 pub use sign::{SignRequestArgs, SignatureRequest};
 

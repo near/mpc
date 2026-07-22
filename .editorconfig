@@ -24,3 +24,11 @@ end_of_line = unset
 # string equality and hex/key parsing.
 [crates/test-utils/assets/{app_compose.json,app_compose_with_services.json,mpc_image_digest.txt,*.pub}]
 insert_final_newline = false
+
+# Binary borsh fixture (a real DCAP quote+collateral) exercised byte-exact by the
+# localnet verify_quote call; the text rules do not apply.
+[crates/tee-verifier/tests/fixtures/*.borsh]
+end_of_line = unset
+insert_final_newline = false
+trim_trailing_whitespace = false
+charset = unset
