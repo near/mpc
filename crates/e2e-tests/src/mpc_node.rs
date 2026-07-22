@@ -283,11 +283,8 @@ impl MpcNodeSetup {
         &self.near_signer_key
     }
 
-    /// The NEAR signer public key formatted as `"ed25519:<base58>"`.
-    pub fn near_signer_public_key_str(&self) -> String {
-        String::from(&Ed25519PublicKey::from(
-            &self.near_signer_key.verifying_key(),
-        ))
+    pub fn near_signer_public_key(&self) -> Ed25519PublicKey {
+        Ed25519PublicKey::from(&self.near_signer_key.verifying_key())
     }
 
     /// Path to the mpc-node binary.

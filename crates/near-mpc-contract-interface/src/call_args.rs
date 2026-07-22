@@ -1,8 +1,9 @@
 //! Argument types for the NEAR MPC signer contract function calls.
 
 use crate::types::{
-    Attestation, CKDRequest, CKDRequestArgs, CKDResponse, Ed25519PublicKey, KeyEventId, Keyset,
-    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
+    Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, DestinationNodeInfo,
+    DomainConfig, Ed25519PublicKey, EpochId, KeyEventId, Keyset, ProposedThresholdParameters,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, SupportedForeignChains,
     VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
@@ -21,6 +22,42 @@ pub struct RequestAppPrivateKeyArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VerifyForeignTransactionArgs {
     pub request: VerifyForeignTransactionRequestArgs,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteAddDomainsArgs {
+    pub domains: Vec<DomainConfig>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteNewParametersArgs {
+    pub prospective_epoch_id: EpochId,
+    pub proposal: ProposedThresholdParameters,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteCancelKeygenArgs {
+    pub next_domain_id: u64,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct UpdateParticipantUrlArgs {
+    pub url: String,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RegisterBackupServiceArgs {
+    pub backup_service_info: BackupServiceInfo,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct StartNodeMigrationArgs {
+    pub destination_node_info: DestinationNodeInfo,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RegisterForeignChainSupportArgs {
+    pub foreign_chain_support: SupportedForeignChains,
 }
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
