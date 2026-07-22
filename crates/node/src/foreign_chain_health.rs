@@ -2,24 +2,21 @@
 //! [`foreign_chain_health_check`].
 
 use foreign_chain_health_check::{
-    HealthCheckPlan, NetworkKind, ProviderResult, SkipReason, Status, check_all_providers,
+    HealthCheckRoute, NetworkKind, ProviderResult, SkipReason, Status, check_all_providers,
     check_all_providers_with_golden,
 };
 use mpc_node_config::{ForeignChainsConfig, HealthCheckGoldenConfig};
 use tracing::{debug, info, warn};
 
-/// Healthcheck entrypoint, dispatched from startup. Folds the operator's config
-/// (`network` + optional golden) into a [`HealthCheckPlan`] and runs it: probes
-/// with the built-in set on a public network, with the supplied golden on a local
-/// chain, or skips. Warns when a golden is configured on a public network, where
-/// it is ignored.
+/// Startup healthcheck entrypoint: builds a [`HealthCheckRoute`] from the config
+/// and runs it, warning if a golden config is set on a public network.
 pub async fn run_startup_health_check(
     foreign_chains: ForeignChainsConfig,
     network: NetworkKind,
     golden: Option<HealthCheckGoldenConfig>,
 ) {
     // A config-supplied golden is only meaningful on a local chain; on
-    // mainnet/testnet the built-in set is always used, so flag it as ignored.
+    // mainnet/testnet the built-in set is always used.
     if let NetworkKind::Public(network) = network
         && golden.is_some()
     {
@@ -31,28 +28,28 @@ pub async fn run_startup_health_check(
         );
     }
 
-    let results = match HealthCheckPlan::decide(network, golden) {
-        HealthCheckPlan::ProbeBuiltIn(network) => {
+    let results = match HealthCheckRoute::decide(network, golden) {
+        HealthCheckRoute::ProbeBuiltIn(network) => {
             info!(
                 network = network.label(),
                 "running foreign-chain RPC provider health check"
             );
             check_all_providers(&foreign_chains, network).await
         }
-        HealthCheckPlan::ProbeSupplied(golden) => {
+        HealthCheckRoute::ProbeSupplied(golden) => {
             info!(
                 "running foreign-chain RPC provider health check with config-supplied golden values"
             );
             check_all_providers_with_golden(&foreign_chains, &golden).await
         }
-        HealthCheckPlan::Skip(SkipReason::LocalChainWithoutGolden) => {
+        HealthCheckRoute::Skip(SkipReason::LocalChainWithoutGolden) => {
             debug!(
                 "local or custom chain without golden values; \
                  skipping foreign-chain RPC provider health check"
             );
             return;
         }
-        HealthCheckPlan::Skip(SkipReason::Undetermined) => {
+        HealthCheckRoute::Skip(SkipReason::Undetermined) => {
             warn!("network undetermined; skipping foreign-chain RPC provider health check");
             return;
         }

@@ -147,9 +147,8 @@ pub struct ConfigFile {
     pub keygen: KeygenConfig,
     #[serde(default)]
     pub foreign_chains: ForeignChainsConfig,
-    /// Golden values for the startup RPC provider health check on local
-    /// chains, where no built-in reference set exists. Ignored on
-    /// mainnet/testnet, which always use the built-in set.
+    /// Golden values for the startup health check on local chains, which have no
+    /// built-in set. Ignored on mainnet/testnet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_chain_health_check_golden: Option<HealthCheckGoldenConfig>,
     /// This value is only considered when the node is run in normal node. It defines the number of

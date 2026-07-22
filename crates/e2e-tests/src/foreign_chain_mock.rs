@@ -136,13 +136,13 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
     mock_id
 }
 
+/// Mock EVM JSON-RPC server using the default block hash [`MOCK_BLOCK_HASH`].
 pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
     setup_evm_mock_with_block_hash(server, auth, MOCK_BLOCK_HASH)
 }
 
-/// Like [`setup_evm_mock`], but serving `block_hash` (un-prefixed 64-char hex)
-/// as the receipt's block hash, so a test can control whether a probe against
-/// its own golden values passes or fails.
+/// Mock EVM JSON-RPC server serving `block_hash` (un-prefixed 64-char hex) as the
+/// transaction's block hash, matched against a probe's golden to force pass/fail.
 pub fn setup_evm_mock_with_block_hash(
     server: &MockServer,
     auth: MockAuthExpectation,

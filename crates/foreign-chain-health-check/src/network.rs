@@ -19,7 +19,7 @@ impl Network {
 }
 
 /// What kind of network the node runs against. Pure classification;
-/// [`HealthCheckPlan::decide`] turns it into an action.
+/// [`HealthCheckRoute::decide`] turns it into an action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NetworkKind {
     /// A public network (mainnet/testnet) with a built-in golden set.
@@ -31,15 +31,28 @@ pub enum NetworkKind {
 }
 
 /// The decided health-check action — one variant per behavior, built by
-/// [`HealthCheckPlan::decide`].
+/// [`HealthCheckRoute::decide`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HealthCheckPlan {
+pub enum HealthCheckRoute {
     /// Built-in golden set. No golden field — a supplied one can't reach here.
     ProbeBuiltIn(Network),
     /// Operator-supplied golden. Boxed to keep the enum small.
     ProbeSupplied(Box<HealthCheckGoldenConfig>),
     /// Do not probe.
     Skip(SkipReason),
+}
+
+impl HealthCheckRoute {
+    pub fn decide(network: NetworkKind, golden: Option<HealthCheckGoldenConfig>) -> Self {
+        match network {
+            NetworkKind::Public(network) => Self::ProbeBuiltIn(network),
+            NetworkKind::Local => match golden {
+                Some(golden) => Self::ProbeSupplied(Box::new(golden)),
+                None => Self::Skip(SkipReason::LocalChainWithoutGolden),
+            },
+            NetworkKind::Undetermined => Self::Skip(SkipReason::Undetermined),
+        }
+    }
 }
 
 /// Why the startup health check does not probe.
@@ -52,8 +65,7 @@ pub enum SkipReason {
 }
 
 /// Resolve the network kind: `near_init.chain_id` if present, else the
-/// contract-id suffix. A local chain never falls back to the contract id — a
-/// mainnet fork pointed at a `.near` contract must not probe real mainnet.
+/// contract-id suffix.
 pub fn resolve_network_from_config(
     near_init: Option<&NearInitConfig>,
     contract_id: &str,
@@ -68,24 +80,6 @@ pub fn resolve_network_from_config(
             Some(network) => NetworkKind::Public(network),
             None => NetworkKind::Undetermined,
         },
-    }
-}
-
-impl HealthCheckPlan {
-    /// Fold the supplied golden into the resolved network — the sole home of the
-    /// golden-precedence rule:
-    /// - public → built-in set (a supplied golden is dropped);
-    /// - local → supplied golden, else skip;
-    /// - undetermined → skip.
-    pub fn decide(network: NetworkKind, golden: Option<HealthCheckGoldenConfig>) -> Self {
-        match network {
-            NetworkKind::Public(network) => Self::ProbeBuiltIn(network),
-            NetworkKind::Local => match golden {
-                Some(golden) => Self::ProbeSupplied(Box::new(golden)),
-                None => Self::Skip(SkipReason::LocalChainWithoutGolden),
-            },
-            NetworkKind::Undetermined => Self::Skip(SkipReason::Undetermined),
-        }
     }
 }
 
@@ -170,9 +164,15 @@ mod tests {
             resolve_network_from_config(None, "foo.near"),
             NetworkKind::Public(Network::Mainnet)
         );
+        // Real deployed contracts: mainnet `v1.signer` has no `.near` suffix, so
+        // it is matched explicitly; testnet is caught by the `.testnet` suffix.
         assert_eq!(
             resolve_network_from_config(None, "v1.signer"),
             NetworkKind::Public(Network::Mainnet)
+        );
+        assert_eq!(
+            resolve_network_from_config(None, "v1.signer-prod.testnet"),
+            NetworkKind::Public(Network::Testnet)
         );
     }
 
@@ -187,44 +187,46 @@ mod tests {
     #[test]
     fn decide__should_probe_builtin_and_drop_golden_on_a_public_network() {
         // Given a public network AND a config-supplied golden
-        let plan = HealthCheckPlan::decide(NetworkKind::Public(Network::Mainnet), Some(golden()));
+        let plan = HealthCheckRoute::decide(
+            NetworkKind::Public(Network::Mainnet),
+            Some(HealthCheckGoldenConfig::default()),
+        );
 
         // Then the built-in set is used and the golden is dropped (unrepresentable)
-        assert_eq!(plan, HealthCheckPlan::ProbeBuiltIn(Network::Mainnet));
+        assert_eq!(plan, HealthCheckRoute::ProbeBuiltIn(Network::Mainnet));
     }
 
     #[test]
     fn decide__should_probe_with_supplied_golden_on_a_local_chain() {
         // Given a local chain with supplied golden values
-        let golden = golden();
-        let plan = HealthCheckPlan::decide(NetworkKind::Local, Some(golden.clone()));
+        let golden = HealthCheckGoldenConfig::default();
+        let plan = HealthCheckRoute::decide(NetworkKind::Local, Some(golden.clone()));
 
         // Then those values drive the probe
-        assert_eq!(plan, HealthCheckPlan::ProbeSupplied(Box::new(golden)));
+        assert_eq!(plan, HealthCheckRoute::ProbeSupplied(Box::new(golden)));
     }
 
     #[test]
     fn decide__should_skip_a_local_chain_without_golden() {
         // Given a local chain and no golden
-        let plan = HealthCheckPlan::decide(NetworkKind::Local, None);
+        let plan = HealthCheckRoute::decide(NetworkKind::Local, None);
 
         // Then it skips, distinguishing the reason for the caller's log level
         assert_eq!(
             plan,
-            HealthCheckPlan::Skip(SkipReason::LocalChainWithoutGolden)
+            HealthCheckRoute::Skip(SkipReason::LocalChainWithoutGolden)
         );
     }
 
     #[test]
     fn decide__should_skip_when_undetermined_even_with_golden() {
         // Given an undetermined network, a supplied golden must not make it probe
-        let plan = HealthCheckPlan::decide(NetworkKind::Undetermined, Some(golden()));
+        let plan = HealthCheckRoute::decide(
+            NetworkKind::Undetermined,
+            Some(HealthCheckGoldenConfig::default()),
+        );
 
         // Then it skips
-        assert_eq!(plan, HealthCheckPlan::Skip(SkipReason::Undetermined));
-    }
-
-    fn golden() -> HealthCheckGoldenConfig {
-        HealthCheckGoldenConfig::default()
+        assert_eq!(plan, HealthCheckRoute::Skip(SkipReason::Undetermined));
     }
 }

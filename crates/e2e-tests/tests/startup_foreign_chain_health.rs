@@ -31,45 +31,57 @@ fn node_setup(cluster: &e2e_tests::MpcCluster, idx: usize) -> &MpcNodeSetup {
     }
 }
 
-/// The startup foreign-chain RPC provider health check runs on the real
-/// startup path of the spawned mpc-node binary, probing the providers a node
-/// has configured against golden values supplied by this test case.
+/// The startup foreign-chain health check runs on the real mpc-node startup
+/// path, probing each node's configured providers against test-supplied golden.
 ///
-/// Node 0 carries a `base` config with two providers — one serving the golden
-/// block hash, one serving a different one — plus the matching golden values;
-/// its probe must genuinely pass one provider and fail the other. Node 1 has
-/// no golden values, so on this local chain it must skip without probing.
+/// Node 0 (two `base` providers + golden) must pass one and fail the other;
+/// node 1 (a provider, no golden) must skip on this local chain.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn startup_health_check__should_probe_providers_against_test_golden() {
-    // Given — two mock base providers: `healthy` answers with the golden
-    // block hash, `broken` with a different one.
+    // Given three mock providers: `healthy` serves the golden hash, `broken` a
+    // different one, and `idle` (node 1's) must never be contacted.
     let healthy_server = MockServer::start_async().await;
     let broken_server = MockServer::start_async().await;
+    let idle_server = MockServer::start_async().await;
     let healthy_id =
         setup_evm_mock_with_block_hash(&healthy_server, MockAuthExpectation::None, MOCK_BLOCK_HASH);
     let broken_id =
         setup_evm_mock_with_block_hash(&broken_server, MockAuthExpectation::None, &"cc".repeat(32));
+    let idle_id =
+        setup_evm_mock_with_block_hash(&idle_server, MockAuthExpectation::None, MOCK_BLOCK_HASH);
     let healthy_mock = MockServerExt::new(healthy_server, healthy_id);
     let broken_mock = MockServerExt::new(broken_server, broken_id);
+    let idle_mock = MockServerExt::new(idle_server, idle_id);
 
-    let mut providers = NonEmptyBTreeMap::new(
+    let mut node0_providers = NonEmptyBTreeMap::new(
         "healthy".to_string().into(),
         provider(healthy_mock.server.base_url()),
     );
-    providers.insert(
+    node0_providers.insert(
         "broken".to_string().into(),
         provider(broken_mock.server.base_url()),
     );
-    let foreign_chains = ForeignChainsConfig {
+    let node0_chains = ForeignChainsConfig {
         base: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            providers,
+            providers: node0_providers,
         }),
         ..Default::default()
     };
-    // The golden targets and the expected result are both owned by the test.
+    let node1_chains = ForeignChainsConfig {
+        base: Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            providers: NonEmptyBTreeMap::new(
+                "idle".to_string().into(),
+                provider(idle_mock.server.base_url()),
+            ),
+        }),
+        ..Default::default()
+    };
+    // Golden for node 0 only; node 1 has no entry, so it skips.
     let golden = HealthCheckGoldenConfig {
         base: Some(BlockHashGolden {
             tx: MOCK_TX_ID.to_string(),
@@ -78,27 +90,18 @@ async fn startup_health_check__should_probe_providers_against_test_golden() {
         ..Default::default()
     };
 
-    // When — the cluster starts: node 0 with providers + golden, the rest bare.
+    // When
     let (cluster, _running) =
         common::must_setup_cluster(common::STARTUP_FOREIGN_CHAIN_HEALTH_PORT_SEED, |c| {
-            c.foreign_chains.node_configs = vec![
-                foreign_chains,
-                ForeignChainsConfig::default(),
-                ForeignChainsConfig::default(),
-            ];
+            c.foreign_chains.node_configs =
+                vec![node0_chains, node1_chains, ForeignChainsConfig::default()];
             c.foreign_chains.node_health_check_goldens = vec![Some(golden)];
         })
         .await;
 
-    // Then — node 0 probed on startup and got one pass, one fail.
+    // Then — node 0's 1-pass/1-fail verdict, the one log line we match on (its
+    // wording is pinned by the node's unit tests).
     let node0 = node_setup(&cluster, 0);
-    node0
-        .wait_for_log_substring(
-            "running foreign-chain RPC provider health check with config-supplied golden values",
-            LOG_WAIT_TIMEOUT,
-        )
-        .await
-        .expect("node 0 did not run the startup health check");
     node0
         .wait_for_log_substring(
             "foreign-chain RPC provider health check complete: 1/2 providers healthy",
@@ -106,7 +109,8 @@ async fn startup_health_check__should_probe_providers_against_test_golden() {
         )
         .await
         .expect("node 0 did not report the expected pass/fail summary");
-    // Receipt + finality head + canonical block lookups.
+    // Both probed over HTTP: healthy served the full receipt + finality-head +
+    // canonical-block sequence, broken at least one.
     assert!(
         healthy_mock.calls() >= 3,
         "healthy provider got {} calls, expected the full probe sequence",
@@ -114,20 +118,10 @@ async fn startup_health_check__should_probe_providers_against_test_golden() {
     );
     assert!(broken_mock.calls() >= 1, "broken provider was never probed");
 
-    // Then — node 1 has no golden values: it skipped without probing.
-    let node1 = node_setup(&cluster, 1);
-    node1
-        .wait_for_log_substring(
-            "local or custom chain; skipping foreign-chain RPC provider health check",
-            LOG_WAIT_TIMEOUT,
-        )
-        .await
-        .expect("node 1 did not log the local-chain skip");
-    assert!(
-        !node1
-            .stdout_log()
-            .expect("node 1 stdout log unreadable")
-            .contains("running foreign-chain RPC provider health check"),
-        "node 1 must not probe without golden values"
+    // Then — node 1 skipped (no golden), so its provider was never contacted.
+    assert_eq!(
+        idle_mock.calls(),
+        0,
+        "node 1 has no golden and must skip, but its provider was probed"
     );
 }

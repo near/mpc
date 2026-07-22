@@ -33,7 +33,7 @@ use mpc_node_config::{
 
 pub use golden::golden_set;
 pub use network::{
-    HealthCheckPlan, Network, NetworkKind, SkipReason, network_from_contract_id,
+    HealthCheckRoute, Network, NetworkKind, SkipReason, network_from_contract_id,
     resolve_network_from_config,
 };
 pub use results::{ProviderResult, Status};
@@ -47,12 +47,9 @@ pub async fn check_all_providers(
     check_all_providers_with_golden(fc, &golden::golden_set(network)).await
 }
 
-/// Probe every configured provider against `golden`'s reference transaction,
-/// one [`ProviderResult`] per provider, each checked independently. All probes
-/// run concurrently, so a sweep takes about as long as its slowest probe.
-/// Chains with no reference in `golden`, or configured but unsupported, are
-/// [`Status::Skipped`]; a chain absent from the config still yields a single
-/// placeholder `Skipped` result so its absence stays visible.
+/// Probe every configured provider against `golden`, one [`ProviderResult`] each,
+/// all concurrently. Chains with no golden reference or not yet supported are
+/// [`Status::Skipped`]; an absent chain yields one placeholder so it stays visible.
 pub async fn check_all_providers_with_golden(
     fc: &ForeignChainsConfig,
     golden: &HealthCheckGoldenConfig,
@@ -329,6 +326,7 @@ mod tests {
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
+    use std::time::Duration;
 
     fn config_with_provider(auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
@@ -513,5 +511,115 @@ mod tests {
         assert_matches!(status("aptos", "healthy"), Status::Passed);
         assert_matches!(status("aptos", "broken"), Status::Failed(_));
         assert_matches!(status("ethereum", "only"), Status::Skipped(_));
+    }
+
+    #[tokio::test]
+    async fn check_all_providers__should_order_rows_by_config_not_completion() {
+        // Given `aaa` (sorted first) responds slower than `zzz`, so completion
+        // order is the reverse of config order.
+        let slow = MockServer::start_async().await;
+        let fast = MockServer::start_async().await;
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
+        let tx = aptos.tx.clone();
+        let body = aptos_event_body(&tx, &aptos.event_type_tag, aptos.event_sequence_number);
+        slow.mock_async(|when, then| {
+            when.method(GET)
+                .path(format!("/transactions/by_hash/0x{tx}"));
+            then.status(200)
+                .json_body(body.clone())
+                .delay(Duration::from_millis(50));
+        })
+        .await;
+        fast.mock_async(|when, then| {
+            when.method(GET)
+                .path(format!("/transactions/by_hash/0x{tx}"));
+            then.status(200).json_body(body.clone());
+        })
+        .await;
+
+        let mut providers =
+            NonEmptyBTreeMap::new("aaa".to_string().into(), aptos_provider(slow.base_url()));
+        providers.insert("zzz".to_string().into(), aptos_provider(fast.base_url()));
+        let fc = ForeignChainsConfig {
+            aptos: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(5).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                providers,
+            }),
+            ..Default::default()
+        };
+
+        // When
+        let results = check_all_providers(&fc, Network::Mainnet).await;
+
+        // Then the Aptos rows are in config (sorted) order by position — a
+        // completion-ordered fan-out would place `zzz` first here — and both pass.
+        let aptos: Vec<&ProviderResult> = results.iter().filter(|r| r.chain == "aptos").collect();
+        assert_eq!(aptos.len(), 2);
+        assert_eq!(aptos[0].provider, "aaa");
+        assert_matches!(&aptos[0].status, Status::Passed);
+        assert_eq!(aptos[1].provider, "zzz");
+        assert_matches!(&aptos[1].status, Status::Passed);
+    }
+
+    #[tokio::test]
+    async fn check_all_providers__should_isolate_a_hanging_provider_from_a_healthy_one() {
+        // Given one healthy provider and one that hangs past the 1s timeout.
+        let healthy = MockServer::start_async().await;
+        let hanging = MockServer::start_async().await;
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
+        let tx = aptos.tx.clone();
+        let body = aptos_event_body(&tx, &aptos.event_type_tag, aptos.event_sequence_number);
+        healthy
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path(format!("/transactions/by_hash/0x{tx}"));
+                then.status(200).json_body(body.clone());
+            })
+            .await;
+        hanging
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path(format!("/transactions/by_hash/0x{tx}"));
+                then.status(200)
+                    .json_body(body.clone())
+                    .delay(Duration::from_secs(3));
+            })
+            .await;
+
+        let mut providers = NonEmptyBTreeMap::new(
+            "healthy".to_string().into(),
+            aptos_provider(healthy.base_url()),
+        );
+        providers.insert(
+            "hanging".to_string().into(),
+            aptos_provider(hanging.base_url()),
+        );
+        let fc = ForeignChainsConfig {
+            aptos: Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(1).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                providers,
+            }),
+            ..Default::default()
+        };
+
+        // When
+        let results = check_all_providers(&fc, Network::Mainnet).await;
+
+        // Then
+        let status = |provider: &str| {
+            results
+                .iter()
+                .find(|r| r.chain == "aptos" && r.provider == provider)
+                .map(|r| &r.status)
+                .unwrap_or_else(|| panic!("missing aptos/{provider}"))
+        };
+        assert_matches!(status("healthy"), Status::Passed);
+        let Status::Failed(reason) = status("hanging") else {
+            panic!("expected the hanging provider to fail");
+        };
+        assert!(reason.contains("timed out"), "reason: {reason}");
+        assert_eq!(results.iter().filter(|r| r.chain == "aptos").count(), 2);
     }
 }
