@@ -7,6 +7,7 @@
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
 use crate::call_args::SubmitParticipantInfoArgs;
+use crate::deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR;
 use crate::method_names::{SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
 use crate::types::{AccountId, Attestation, Ed25519PublicKey};
 
@@ -14,8 +15,6 @@ use crate::types::{AccountId, Attestation, Ed25519PublicKey};
 // TODO(#166): 300 Tgas is the protocol maximum and higher than most methods
 // need; benchmark per method and reduce.
 pub const MAX_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
-
-pub const SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR: u128 = 100;
 
 /// Typed interface to the MPC signer contract at a fixed account, generic over
 /// the transport backend `C`.
