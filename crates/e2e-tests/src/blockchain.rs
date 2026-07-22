@@ -1,4 +1,5 @@
 use ed25519_dalek::SigningKey;
+use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_kit::FinalExecutionOutcome;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
@@ -17,11 +18,29 @@ pub struct NearBlockchain {
     rpc_url: String,
 }
 
-/// A `near_kit::Near` client bound to a specific account.
-/// Wrapped in a struct to keep `near_kit` out of the public API surface,
-/// making it easier to swap the underlying client (e.g. for testnet).
-pub struct ClientHandle {
+/// A `near_kit::Near` client bound to a specific account: the e2e
+/// [`CallContract`] backend.
+pub struct NearKitCaller {
     inner: near_kit::Near,
+}
+
+impl CallContract for NearKitCaller {
+    type Output = FinalExecutionOutcome;
+    type Error = near_kit::Error;
+
+    async fn call_contract(
+        &self,
+        contract_id: &near_kit::AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<Self::Output, Self::Error> {
+        self.inner
+            .call(contract_id, &call_args.method_name)
+            .args_raw(call_args.args)
+            .gas(call_args.gas)
+            .deposit(call_args.deposit)
+            .send()
+            .await
+    }
 }
 
 impl NearBlockchain {
@@ -88,8 +107,8 @@ impl NearBlockchain {
         })
     }
 
-    pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<ClientHandle> {
-        Ok(ClientHandle {
+    pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<NearKitCaller> {
+        Ok(NearKitCaller {
             inner: self.make_client(account_id, key)?,
         })
     }
@@ -133,7 +152,7 @@ impl DeployedContract {
 
     pub async fn call_from(
         &self,
-        client: &ClientHandle,
+        client: &NearKitCaller,
         method: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<FinalExecutionOutcome> {
@@ -149,7 +168,7 @@ impl DeployedContract {
 
     pub async fn call_from_with_deposit(
         &self,
-        client: &ClientHandle,
+        client: &NearKitCaller,
         method: &str,
         args: serde_json::Value,
         gas: near_kit::Gas,
@@ -169,7 +188,7 @@ impl DeployedContract {
     /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
     pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
         &self,
-        client: &ClientHandle,
+        client: &NearKitCaller,
         method: &str,
         args: A,
         gas: near_kit::Gas,
