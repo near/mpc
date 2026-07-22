@@ -18,7 +18,7 @@ base64 = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
-chain-gateway = { workspace = true }
+chain-gateway = { workspace = true, features = ["node-internals"] }
 clap = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
@@ -46,7 +46,7 @@ near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
-near-contract-transport = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }

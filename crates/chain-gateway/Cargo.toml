@@ -6,6 +6,9 @@ edition = { workspace = true }
 autotests = false
 
 [features]
+# Assembling a ChainGateway over an externally started nearcore node's actor
+# handles. Migration bridge for the MPC node; see `ChainGateway::from_actor_handles`.
+node-internals = []
 test-utils = []
 
 [dependencies]

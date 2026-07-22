@@ -4,6 +4,8 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 
 use self::stats::IndexerStats;
 use anyhow::Context;
+use chain_gateway::ChainGateway;
+use chain_gateway::state_viewer::ViewMethod;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_account_id::AccountId;
@@ -11,10 +13,11 @@ use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
 use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
+use near_contract_transport::{ViewArgs, ViewContract};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
     types::{BlockHeight, BlockReference, Finality},
-    views::{BlockView, QueryRequest, QueryResponseKind},
+    views::BlockView,
 };
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
@@ -75,8 +78,16 @@ impl IndexerState {
         rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
         mpc_contract_id: AccountId,
     ) -> Self {
+        let chain_gateway = ChainGateway::from_actor_handles(
+            view_client.clone(),
+            client.clone(),
+            rpc_handler.clone(),
+        );
         Self {
-            view_client: IndexerViewClient { view_client },
+            view_client: IndexerViewClient {
+                chain_gateway,
+                view_client,
+            },
             client: IndexerClient { client },
             rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
@@ -85,8 +96,13 @@ impl IndexerState {
     }
 }
 
+/// Contract views over the chain-gateway view ladder ([`ViewMethod`]),
+/// assembled from the indexer's own actor handles.
 #[derive(Clone)]
 pub(crate) struct IndexerViewClient {
+    chain_gateway: ChainGateway,
+    /// Raw handle for block queries ([`Self::latest_final_block`]), which are
+    /// not contract views.
     view_client: MultithreadRuntimeHandle<ViewClientActor>,
 }
 
@@ -105,39 +121,18 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         chain_signature_request: &dtos::SignatureRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> = serde_json::to_string(
-            &contract_args::GetPendingSignatureRequestArgs::new(chain_signature_request.clone()),
-        )
-        .unwrap()
-        .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        let args = serde_json::to_vec(&contract_args::GetPendingSignatureRequestArgs::new(
+            chain_signature_request.clone(),
+        ))?;
+        let observed = self
+            .chain_gateway
+            .view_method::<Option<YieldIndex>>(
+                mpc_contract_id.clone(),
+                ViewArgs::new(GET_PENDING_REQUEST, args),
+            )
             .await
-            .context("failed to query for pending request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+            .context("failed to query for pending request")?;
+        Ok(observed.value)
     }
 
     pub(crate) async fn get_pending_ckd_request(
@@ -145,39 +140,18 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         chain_ckd_request: &dtos::CKDRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> = serde_json::to_string(
-            &contract_args::GetPendingCKDRequestArgs::new(chain_ckd_request.clone()),
-        )
-        .unwrap()
-        .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_CKD_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        let args = serde_json::to_vec(&contract_args::GetPendingCKDRequestArgs::new(
+            chain_ckd_request.clone(),
+        ))?;
+        let observed = self
+            .chain_gateway
+            .view_method::<Option<YieldIndex>>(
+                mpc_contract_id.clone(),
+                ViewArgs::new(GET_PENDING_CKD_REQUEST, args),
+            )
             .await
-            .context("failed to query for pending CKD request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending CKD request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+            .context("failed to query for pending CKD request")?;
+        Ok(observed.value)
     }
 
     pub(crate) async fn get_pending_verify_foreign_tx_request(
@@ -185,80 +159,37 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
         chain_verify_foreign_tx_request: &dtos::VerifyForeignTransactionRequest,
     ) -> anyhow::Result<Option<YieldIndex>> {
-        let get_pending_request_args: Vec<u8> =
-            serde_json::to_string(&contract_args::GetPendingVerifyForeignTxRequestArgs::new(
-                chain_verify_foreign_tx_request.clone(),
-            ))
-            .unwrap()
-            .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
-            args: get_pending_request_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        let args = serde_json::to_vec(&contract_args::GetPendingVerifyForeignTxRequestArgs::new(
+            chain_verify_foreign_tx_request.clone(),
+        ))?;
+        let observed = self
+            .chain_gateway
+            .view_method::<Option<YieldIndex>>(
+                mpc_contract_id.clone(),
+                ViewArgs::new(GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, args),
+            )
             .await
-            .context("failed to query for pending verify foreign tx request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => {
-                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
-                    .context("failed to deserialize pending verify foreign tx request response")
-            }
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+            .context("failed to query for pending verify foreign tx request")?;
+        Ok(observed.value)
     }
 
     pub(crate) async fn get_participant_attestation(
         &self,
         mpc_contract_id: &AccountId,
-        participant_tls_public_key: &near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<near_mpc_contract_interface::types::VerifiedAttestation>> {
-        let get_attestation_args: Vec<u8> = serde_json::to_string(
-            &contract_args::GetAttestationArgs::new(participant_tls_public_key),
-        )
-        .unwrap()
-        .into_bytes();
-
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
-            method_name: GET_ATTESTATION.to_string(),
-            args: get_attestation_args.into(),
-        };
-        let block_reference = BlockReference::Finality(Finality::Final);
-
-        let query = near_client::Query {
-            block_reference,
-            request,
-        };
-
-        let query_response = self
-            .view_client
-            .send_async(query)
+        participant_tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> anyhow::Result<Option<dtos::VerifiedAttestation>> {
+        let args = serde_json::to_vec(&contract_args::GetAttestationArgs::new(
+            participant_tls_public_key,
+        ))?;
+        let observed = self
+            .chain_gateway
+            .view_method::<Option<dtos::VerifiedAttestation>>(
+                mpc_contract_id.clone(),
+                ViewArgs::new(GET_ATTESTATION, args),
+            )
             .await
-            .context("failed to query for pending request")??;
-
-        match query_response.kind {
-            QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<near_mpc_contract_interface::types::VerifiedAttestation>,
-            >(&call_result.result)
-            .context("failed to deserialize pending request response"),
-            _ => {
-                anyhow::bail!("Unexpected result from a view client function call");
-            }
-        }
+            .context("failed to query stored attestation")?;
+        Ok(observed.value)
     }
 
     pub(crate) async fn get_supported_chains(
@@ -287,42 +218,36 @@ impl IndexerViewClient {
             .await
     }
 
-    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
+    /// Borsh-decoding view-fn query, over the raw [`ViewContract`] seam (the
+    /// [`ViewMethod`] ladder is JSON-only).
     pub(crate) async fn get_allowed_foreign_chain_providers(
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
-            args: vec![].into(),
-        };
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
+        let observed = self
+            .chain_gateway
+            .view_contract(
+                &mpc_contract_id,
+                ViewArgs::new(ALLOWED_FOREIGN_CHAIN_PROVIDERS, vec![]),
+            )
+            .await?;
 
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => borsh::from_slice::<
-                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
-            >(&result.result)
-            .with_context(|| {
-                let preview: String = result
-                    .result
-                    .iter()
-                    .take(32)
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                format!(
-                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
-                    result.result.len(),
-                    result.result.len().min(32),
-                )
-            }),
-            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
-        }
+        borsh::from_slice::<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>>(
+            &observed.value,
+        )
+        .with_context(|| {
+            let preview: String = observed
+                .value
+                .iter()
+                .take(32)
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            format!(
+                "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
+                observed.value.len(),
+                observed.value.len().min(32),
+            )
+        })
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
@@ -389,30 +314,13 @@ impl IndexerViewClient {
         endpoint: &str,
     ) -> anyhow::Result<(u64, State)>
     where
-        State: for<'de> Deserialize<'de>,
+        State: for<'de> Deserialize<'de> + Send,
     {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: endpoint.to_string(),
-            args: vec![].into(),
-        };
-
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
-
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => Ok((
-                response.block_height,
-                serde_json::from_slice(&result.result)?,
-            )),
-            _ => {
-                anyhow::bail!("got unexpected response querying mpc contract state")
-            }
-        }
+        let observed = self
+            .chain_gateway
+            .view_method::<State>(mpc_contract_id, ViewArgs::no_args(endpoint))
+            .await?;
+        Ok((observed.observed_at.into(), observed.value))
     }
 }
 

@@ -99,7 +99,7 @@ pub trait ViewMethod {
         view_args: ViewArgs,
     ) -> impl Future<Output = Result<ObservedState<Res>, ChainGatewayError>> + Send
     where
-        Res: DeserializeOwned + Send + Clone;
+        Res: DeserializeOwned + Send;
 }
 
 /// All other viewer traits are derived from this one. Subscriptions track the
@@ -171,7 +171,7 @@ impl<T: ViewRaw> ViewMethod for T {
         view_args: ViewArgs,
     ) -> Result<ObservedState<Res>, ChainGatewayError>
     where
-        Res: DeserializeOwned + Send + Clone,
+        Res: DeserializeOwned + Send,
     {
         deserialize_observed(self.view_raw(&contract_id, view_args).await?)
     }

@@ -94,6 +94,29 @@ impl NodeHandle {
     }
 }
 
+// TODO(#3907): drop once the node starts its nearcore through
+// [`ChainGateway::start`].
+#[cfg(feature = "node-internals")]
+impl ChainGateway {
+    /// Assembles a gateway over the actor handles of a nearcore node started
+    /// outside of [`ChainGateway::start`].
+    pub fn from_actor_handles(
+        view_client: near_async::multithread::MultithreadRuntimeHandle<
+            near_client::ViewClientActor,
+        >,
+        client: near_async::tokio::TokioRuntimeHandle<near_client::client_actor::ClientActor>,
+        rpc_handler: near_async::multithread::MultithreadRuntimeHandle<
+            near_client::RpcHandlerActor,
+        >,
+    ) -> Self {
+        Self {
+            view_client: NearViewClientActorHandle::new(view_client),
+            client: NearClientActorHandle::new(client),
+            rpc_handler: NearRpcActorHandle::new(rpc_handler),
+        }
+    }
+}
+
 impl ChainGateway {
     /// Spawns a near node with `indexer_config`.
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
