@@ -1033,6 +1033,17 @@ impl MpcCluster {
             .await
     }
 
+    /// Cancel a previously started node migration for a specific node.
+    pub async fn cancel_node_migration(
+        &self,
+        node_index: usize,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        let client = self.operator_client_for(node_index)?;
+        self.contract
+            .call_from(&client, method_names::CANCEL_NODE_MIGRATION, json!({}))
+            .await
+    }
+
     /// Update the registered URL of a specific node, called from that node's own operator account.
     pub async fn update_participant_url(
         &self,
