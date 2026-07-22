@@ -15,18 +15,8 @@ pub fn init_logging(log_config: &LogConfig) -> (WorkerGuard, std::path::PathBuf)
         LogFormat::Json => fmt::layer().json().boxed(),
         LogFormat::Plain => fmt::layer().boxed(),
     };
-    let log_dir = log_config.log_dir.clone().unwrap_or_else(|| {
-        std::env::current_dir()
-            .unwrap_or_else(|_| ".".into())
-            .join("logs")
-    });
+    let log_dir = get_log_dir_from_config(log_config);
     let _ = fs::create_dir_all(&log_dir);
-    if let Some(max_log_files) = log_config.max_log_files {
-        if let Err(err) = prune_logs(&log_dir, max_log_files) {
-            tracing::warn!(?err, ?log_dir, "failed to prune old logs on startup");
-        }
-        spawn_periodic_prune(log_dir.clone(), max_log_files);
-    }
     let file_appender = tracing_appender::rolling::hourly(&log_dir, "mpc");
     let (non_blocking_writer, log_guard) = tracing_appender::non_blocking(file_appender);
     let file_layer = match log_config.format {
@@ -55,19 +45,35 @@ fn env_filter(filter: Option<&str>) -> EnvFilter {
     }
 }
 
-fn spawn_periodic_prune(log_dir: PathBuf, max_log_files: usize) {
-    tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(Duration::from_secs(60 * 60));
-        ticker.tick().await; // startup already pruned; skip the immediate tick
-        loop {
-            ticker.tick().await;
-            let dir = log_dir.clone();
-            let result = tokio::task::spawn_blocking(move || prune_logs(&dir, max_log_files)).await;
-            if let Err(err) = result {
-                tracing::warn!(?err, ?log_dir, "failed to prune old logs");
+fn get_log_dir_from_config(log_config: &LogConfig) -> PathBuf {
+    log_config.log_dir.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_else(|_| ".".into())
+            .join("logs")
+    })
+}
+
+pub fn spawn_periodic_prune(handle: &tokio::runtime::Handle, log_config: &LogConfig) {
+    let log_dir = get_log_dir_from_config(log_config);
+    if let Some(max_log_files) = log_config.max_log_files {
+        handle.spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(60 * 60));
+            loop {
+                ticker.tick().await;
+                let dir = log_dir.clone();
+                let result =
+                    tokio::task::spawn_blocking(move || prune_logs(&dir, max_log_files)).await;
+                if let Err(err) = result {
+                    tracing::warn!(?err, ?log_dir, "failed to prune old logs");
+                }
             }
-        }
-    });
+        });
+    } else {
+        tracing::warn!(
+            ?log_dir,
+            "max log files not set in config, log cleanup skipped"
+        );
+    }
 }
 
 fn prune_logs(log_dir: &Path, max_log_files: usize) -> io::Result<()> {

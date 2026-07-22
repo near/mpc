@@ -1,3 +1,10 @@
+use crate::tee::{
+    AllowedImageHashesFile, monitor_allowed_image_hashes,
+    remote_attestation::{
+        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
+    },
+};
+use crate::tracing::spawn_periodic_prune;
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
@@ -45,13 +52,6 @@ use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{
-        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
-    },
-};
-
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
@@ -93,7 +93,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         .build()?;
 
     let _tokio_enter_guard = root_runtime.enter();
-
+    spawn_periodic_prune(&root_runtime.handle(), &config.log);
     // Install the SIGTERM handler as the first thing after the runtime is
     // built, BEFORE any expensive startup (indexer bootstrap, contract
     // state fetch, attestation generation). A SIGTERM arriving during
