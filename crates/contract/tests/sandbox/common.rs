@@ -145,6 +145,7 @@ pub async fn init_contract_running(
     next_domain_id: u64,
     keyset: Keyset,
     params: ThresholdParameters,
+    init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
         .call(method_names::INIT_RUNNING)
@@ -153,6 +154,7 @@ pub async fn init_contract_running(
             "next_domain_id": next_domain_id,
             "keyset": keyset,
             "parameters": params,
+            "init_config": init_config,
         }))
         .gas(GAS_FOR_INIT)
         .transact()
@@ -311,6 +313,7 @@ impl SandboxTestSetupBuilder {
                 next_domain_id,
                 keyset,
                 threshold_parameters,
+                self.init_config,
             )
             .await;
         } else {

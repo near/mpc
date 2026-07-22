@@ -7,13 +7,14 @@ edition = { workspace = true }
 [dependencies]
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
-mpc-attestation = { workspace = true, features = ["test-utils"] }
+mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
+tee-verifier-interface = { workspace = true }
 
 [lints]
 workspace = true

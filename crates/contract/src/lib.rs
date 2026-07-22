@@ -2846,6 +2846,13 @@ mod tests {
     use rstest::rstest;
     use sha2::{Digest, Sha256};
 
+    use crate::tee::{
+        test_utils::whitelist_dstack_measurements, verification_context::VerificationContext,
+    };
+    use test_utils::attestation::{
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
+        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+    };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
@@ -4540,6 +4547,76 @@ mod tests {
         let _ = contract
             .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
             .expect("Expected panic if predecessor != signer");
+    }
+
+    fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let contract_account_id = env::current_account_id();
+        let context = VMContextBuilder::new()
+            .current_account_id(contract_account_id.clone())
+            .predecessor_account_id(contract_account_id)
+            .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+            .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
+            .build();
+        testing_env!(context);
+
+        contract.tee_state = TeeState::default();
+        whitelist_dstack_measurements(
+            &mut contract.tee_state,
+            image_digest(),
+            launcher_image_hash(),
+        );
+
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
+            account_public_key: Ed25519PublicKey(account_key()),
+        };
+        let attestation = mock_dstack_attestation_inner();
+        (
+            contract,
+            VerificationContext {
+                node_id,
+                attestation,
+            },
+        )
+    }
+
+    #[test]
+    fn resolve_verification__should_store_on_verified_verdict() {
+        // Given
+        let (mut contract, context) = dstack_verification_setup();
+        let node_id = context.node_id.clone();
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(contract.tee_state.stored_attestations.len(), 1);
+        let stored = contract
+            .tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_eq!(stored.node_id, node_id);
+    }
+
+    #[test]
+    fn resolve_verification__should_return_fail_promise_and_store_nothing_on_verifier_unavailable()
+    {
+        // Given
+        let (mut contract, context) = dstack_verification_setup();
+
+        // When
+        let result = contract.resolve_verification(context, Err(PromiseError::Failed));
+
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Promise(_)));
+        assert!(contract.tee_state.stored_attestations.is_empty());
     }
 
     #[test]

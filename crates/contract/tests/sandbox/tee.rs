@@ -8,7 +8,8 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            vote_add_launcher_hash, vote_for_hash,
+            submit_participant_info_with_deposit, total_gas_fee, vote_add_launcher_hash,
+            vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -267,13 +268,11 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key().into();
     let success = submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
-        &mock_attestation,
-        &tls_key,
+        &Attestation::Mock(MockAttestation::Valid),
+        &p2p_tls_key().into(),
     )
     .await?
     .is_success();
@@ -306,13 +305,10 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     assert!(!result.is_success());
 
     // Verify the error message indicates unauthorized access
-    match result.into_result() {
-        Err(failure) => {
-            let error_msg = format!("{:?}", failure);
-            assert!(error_msg.contains("Method clean_tee_status is private"));
-        }
-        Ok(_) => panic!("Call should have failed"),
-    }
+    let failure = result
+        .into_result()
+        .expect_err("clean_tee_status must reject a non-private caller");
+    assert!(format!("{failure:?}").contains("Method clean_tee_status is private"));
 
     Ok(())
 }
@@ -1002,16 +998,14 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
     let below_fee = SUBMIT_PARTICIPANT_INFO_DEPOSIT.saturating_sub(NearToken::from_yoctonear(1));
 
     // When
-    let result = outsider
-        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
-        .args_json((
-            Attestation::Mock(MockAttestation::Valid),
-            fresh_tls_key.clone(),
-        ))
-        .deposit(below_fee)
-        .max_gas()
-        .transact()
-        .await?;
+    let result = submit_participant_info_with_deposit(
+        &outsider,
+        &contract,
+        &Attestation::Mock(MockAttestation::Valid),
+        &fresh_tls_key,
+        below_fee,
+    )
+    .await?;
 
     // Then
     assert!(
@@ -1054,16 +1048,13 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_the_fl
     let balance_before = outsider.view_account().await?.balance;
 
     // When
-    let result = outsider
-        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
-        .args_json((
-            Attestation::Mock(MockAttestation::Valid),
-            fresh_tls_key.clone(),
-        ))
-        .deposit(SUBMIT_PARTICIPANT_INFO_DEPOSIT)
-        .max_gas()
-        .transact()
-        .await?;
+    let result = submit_participant_info(
+        &outsider,
+        &contract,
+        &Attestation::Mock(MockAttestation::Valid),
+        &fresh_tls_key,
+    )
+    .await?;
 
     // Then
     assert!(
@@ -1075,13 +1066,9 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_the_fl
         stored.is_some(),
         "the attestation entry should be stored on-chain"
     );
-    // The whole flat fee is consumed (no excess refund); `spent` also covers gas,
-    // so it must be at least the fee.
     let balance_after = outsider.view_account().await?.balance;
-    let spent = balance_before.saturating_sub(balance_after);
-    assert!(
-        spent >= SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-        "caller must be charged the full flat fee ({SUBMIT_PARTICIPANT_INFO_DEPOSIT}), spent {spent}"
-    );
+    let net_spent = balance_before.saturating_sub(balance_after);
+    let non_gas_spent = net_spent.saturating_sub(total_gas_fee(&result));
+    assert_eq!(non_gas_spent, SUBMIT_PARTICIPANT_INFO_DEPOSIT);
     Ok(())
 }

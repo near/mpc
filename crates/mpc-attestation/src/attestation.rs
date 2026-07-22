@@ -94,7 +94,9 @@ impl AcceptedAttestation {
 }
 
 #[expect(clippy::large_enum_variant)]
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)

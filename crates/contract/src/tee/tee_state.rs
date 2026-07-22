@@ -579,7 +579,7 @@ mod tests {
         authenticate_as, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
         gen_participant, gen_participants, node_id_for,
     };
-    use crate::tee::test_utils::set_block_timestamp;
+    use crate::tee::test_utils::{set_block_timestamp, whitelist_dstack_measurements};
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
@@ -587,6 +587,10 @@ mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
+    use test_utils::attestation::{
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
+        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+    };
 
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
@@ -1410,6 +1414,57 @@ mod tests {
             add_participant_result,
             Err(AttestationSubmissionError::InvalidAttestation(_))
         )
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_reject_and_store_nothing_when_post_dcap_checks_fail() {
+        // Given
+        let mut tee_state = TeeState::default();
+        let dstack = mock_dstack_attestation_inner();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+
+        // When
+        let result =
+            tee_state.verify_and_store_dstack(node_id, &dstack, &verified_report(), Duration::MAX);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(AttestationSubmissionError::InvalidAttestation(_))
+        );
+        assert!(tee_state.stored_attestations.is_empty());
+    }
+
+    #[test]
+    fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
+        // Given
+        set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
+        let mut tee_state = TeeState::default();
+        assert_eq!(tee_state.stored_attestations.len(), 0);
+        whitelist_dstack_measurements(&mut tee_state, image_digest(), launcher_image_hash());
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
+            account_public_key: Ed25519PublicKey(account_key()),
+        };
+        let dstack = mock_dstack_attestation_inner();
+
+        // When
+        let result = tee_state.verify_and_store_dstack(
+            node_id.clone(),
+            &dstack,
+            &verified_report(),
+            Duration::MAX,
+        );
+
+        // Then
+        assert_matches!(result, Ok(ParticipantInsertion::NewlyInsertedParticipant));
+        assert_eq!(tee_state.stored_attestations.len(), 1);
+        let stored = tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_eq!(stored.node_id, node_id);
     }
 
     /// Stale CodeHashesVotes entries from removed participants must not count toward
