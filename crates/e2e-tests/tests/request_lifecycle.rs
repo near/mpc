@@ -1,17 +1,17 @@
-use crate::common;
-
-use near_mpc_contract_interface::types::{
-    Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
-    SignatureResponse,
+use crate::common::{
+    ROBUST_ECDSA_PORT_SEED, SIGN_REQUEST_PER_SCHEME_PORT_SEED, damgard_etal_domain,
+    generate_ckd_app_public_key, generate_ecdsa_payload, generate_eddsa_payload, must_get_domain,
+    must_setup_cluster,
 };
+
+use near_mpc_contract_interface::types::{Curve, DomainPurpose, Protocol, SignatureResponse};
 use rand::SeedableRng;
 
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
     // given
-    let (cluster, running) =
-        common::must_setup_cluster(common::SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
+    let (cluster, running) = must_setup_cluster(SIGN_REQUEST_PER_SCHEME_PORT_SEED, |_| {}).await;
 
     assert!(
         !running.domains.domains.is_empty(),
@@ -23,8 +23,8 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
         match domain.purpose {
             DomainPurpose::Sign => {
                 let payload = match Curve::from(domain.protocol) {
-                    Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
-                    Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
+                    Curve::Secp256k1 => generate_ecdsa_payload(&mut rng),
+                    Curve::Edwards25519 => generate_eddsa_payload(&mut rng),
                     _ => continue,
                 };
 
@@ -62,7 +62,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
                 let outcome = cluster
                     .send_ckd_request(
                         domain.id,
-                        common::generate_ckd_app_public_key(&mut rng),
+                        generate_ckd_app_public_key(&mut rng),
                         cluster.default_user_account(),
                     )
                     .await
@@ -86,27 +86,17 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
 #[expect(non_snake_case)]
 async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     // given
-    let (cluster, running) = common::must_setup_cluster(common::ROBUST_ECDSA_PORT_SEED, |c| {
+    let (cluster, running) = must_setup_cluster(ROBUST_ECDSA_PORT_SEED, |c| {
         c.num_nodes = 6;
         c.initial_participant_indices = (0..6).collect();
         c.threshold = 5;
-        c.domains = vec![DomainConfig {
-            id: DomainId(0),
-            protocol: Protocol::DamgardEtAl,
-            reconstruction_threshold: ReconstructionThreshold::new(3),
-            purpose: DomainPurpose::Sign,
-        }];
+        c.domains = vec![damgard_etal_domain(0, 3)];
         c.triples_to_buffer = 0;
         c.presignatures_to_buffer = 6;
     })
     .await;
 
-    let domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| d.protocol == Protocol::DamgardEtAl)
-        .expect("no DamgardEtAl domain found");
+    let domain = must_get_domain(&running, Protocol::DamgardEtAl);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
@@ -114,7 +104,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
     let outcome = cluster
         .send_sign_request(
             domain.id,
-            common::generate_ecdsa_payload(&mut rng),
+            generate_ecdsa_payload(&mut rng),
             cluster.default_user_account(),
         )
         .await

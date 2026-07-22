@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -6,14 +6,16 @@ use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
     method_names,
     types::{
-        AccountId as ContractAccountId, CKDAppPublicKey, DomainConfig, DomainId, DomainPurpose,
-        Ed25519PublicKey, EpochId, ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
-        ProposedThresholdParameters, Protocol, ProtocolContractState, ReconstructionThreshold,
-        Threshold, ThresholdParameters,
+        AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
+        ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
+        ProposedThresholdParameters, Protocol, ProtocolContractState, ProviderConfig, ProviderId,
+        ReconstructionThreshold, Threshold, ThresholdParameters,
     },
 };
 use rand::SeedableRng;
@@ -34,6 +36,15 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 // triple/presignature generation past 120 s; the most pressure-sensitive
 // consumer is `wait_for_presignatures` (see `parallel_sign_calls` test).
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
+pub const CLUSTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+pub fn cluster_poll_retry() -> ConstantBuilder {
+    ConstantBuilder::default()
+        .with_delay(CLUSTER_POLL_INTERVAL)
+        .with_max_times(
+            (CLUSTER_WAIT_TIMEOUT.as_millis() / CLUSTER_POLL_INTERVAL.as_millis()) as usize,
+        )
+}
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
 // which costs significantly more than a plain CKD or sign request.
@@ -52,6 +63,7 @@ const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const SUBMIT_PARTICIPANT_INFO_DEPOSIT: near_kit::NearToken =
     near_kit::NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR);
 const SUBMIT_PARTICIPANT_INFO_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
+const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
@@ -88,9 +100,6 @@ pub struct MpcClusterConfig {
     /// An empty vec means all nodes are participants. Set to a subset to start
     /// extra non-participant nodes (useful for resharing and attestation tests).
     pub initial_participant_indices: Vec<usize>,
-    /// Per-node foreign chains configuration. If empty, all nodes get the default
-    /// (empty) config. If non-empty, must have exactly `num_nodes` entries.
-    pub node_foreign_chains_configs: Vec<mpc_node_config::ForeignChainsConfig>,
     /// Migration targets: each entry is a source node index. The i-th entry
     /// produces a target node at index `num_nodes + i` that shares the
     /// source's NEAR account but gets a distinct P2P key. Started with the
@@ -99,6 +108,35 @@ pub struct MpcClusterConfig {
     pub migration_targets: Vec<usize>,
     /// Wire format used when calling `init`. See [`ContractInitFormat`].
     pub init_format: ContractInitFormat,
+    pub foreign_chains: ForeignChainsClusterConfig,
+}
+
+#[derive(Default)]
+pub struct ForeignChainsClusterConfig {
+    /// Per-node configs. If empty, all nodes get the default (empty) config;
+    /// if non-empty, must have exactly `num_nodes` entries.
+    pub node_configs: Vec<mpc_node_config::ForeignChainsConfig>,
+    pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
+}
+
+pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
+    let chain = format!("{chain:?}").to_lowercase();
+    let provider = |name: &str| ProviderConfig {
+        base_url: format!("{name}.{chain}.example.com"),
+        auth_scheme: AuthScheme::None,
+        chain_routing: ChainRouting::Embedded,
+    };
+    let mut providers =
+        NonEmptyBTreeMap::new(ProviderId(format!("alchemy-{chain}")), provider("alchemy"));
+    providers.insert(
+        ProviderId(format!("quicknode-{chain}")),
+        provider("quicknode"),
+    );
+    providers.insert(ProviderId(format!("public-{chain}")), provider("public"));
+    ChainEntry {
+        providers,
+        quorum: 1,
+    }
 }
 
 /// JSON wire format used for the contract's `init` call.
@@ -166,9 +204,9 @@ impl MpcClusterConfig {
             sandbox_version: test_utils::DEFAULT_SANDBOX_VERSION.to_string(),
             home_base: None,
             initial_participant_indices: vec![],
-            node_foreign_chains_configs: vec![],
             migration_targets: vec![],
             init_format: ContractInitFormat::Current,
+            foreign_chains: ForeignChainsClusterConfig::default(),
         }
     }
 
@@ -895,6 +933,96 @@ impl MpcCluster {
             .await
     }
 
+    pub async fn view_available_foreign_chains(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
+        self.contract
+            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
+            .await
+    }
+
+    pub async fn view_foreign_chains_configs(
+        &self,
+    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
+        self.contract
+            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
+            .await
+    }
+
+    pub async fn view_allowed_foreign_chain_providers(
+        &self,
+    ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
+        self.contract
+            .view_borsh(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .await
+    }
+
+    /// Polls until the registered per-node configs equal `expected`.
+    pub async fn wait_for_foreign_chains_registrations(
+        &self,
+        expected: &near_mpc_contract_interface::types::ForeignChainsConfigs,
+    ) -> anyhow::Result<()> {
+        (|| async {
+            let registrations = self.view_foreign_chains_configs().await?;
+            anyhow::ensure!(
+                registrations == *expected,
+                "expected registrations {expected:?}, got {registrations:?}"
+            );
+            Ok(())
+        })
+        .retry(cluster_poll_retry())
+        .await
+    }
+
+    /// Polls until the available-chains view equals `expected`.
+    pub async fn wait_for_available_foreign_chains(
+        &self,
+        expected: &BTreeSet<ForeignChain>,
+    ) -> anyhow::Result<()> {
+        (|| async {
+            let available = self.view_available_foreign_chains().await?;
+            anyhow::ensure!(
+                *available == *expected,
+                "expected available chains {expected:?}, got {available:?}"
+            );
+            Ok(())
+        })
+        .retry(cluster_poll_retry())
+        .await
+    }
+
+    pub async fn whitelist_foreign_chains(
+        &self,
+        participant_indices: &[usize],
+        chains: &BTreeMap<ForeignChain, ChainEntry>,
+    ) -> anyhow::Result<()> {
+        if chains.is_empty() {
+            return Ok(());
+        }
+
+        let batch: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
+            chains.clone().try_into().expect("non-empty: checked above");
+
+        for &idx in participant_indices {
+            let client = self
+                .operator_client_for(idx)
+                .with_context(|| format!("whitelist_foreign_chains: node {idx}"))?;
+            self.contract
+                .call_from_borsh_with_deposit(
+                    &client,
+                    method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+                    batch.clone(),
+                    VOTE_FOREIGN_CHAIN_GAS,
+                    near_kit::NearToken::from_yoctonear(0),
+                )
+                .await
+                .with_context(|| {
+                    format!("vote_update_foreign_chain_providers from node {idx} failed")
+                })?;
+        }
+        Ok(())
+    }
+
     /// Start node migration for a specific node.
     pub async fn start_node_migration(
         &self,
@@ -1290,10 +1418,10 @@ fn start_mpc_nodes(
             config.binary_paths[i].clone()
         };
 
-        let foreign_chains_config = if config.node_foreign_chains_configs.is_empty() {
+        let foreign_chains_config = if config.foreign_chains.node_configs.is_empty() {
             Default::default()
         } else {
-            config.node_foreign_chains_configs[i].clone()
+            config.foreign_chains.node_configs[i].clone()
         };
 
         let setup = MpcNodeSetup::new(MpcNodeSetupArgs {

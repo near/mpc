@@ -3,6 +3,7 @@
 /// public keys; rather the public keys come from the contract on chain.
 /// Still, TLS requires us to have signed certificates, so this is just to
 /// satisfy the TLS protocol.
+// nosemgrep: generic.secrets.security.detected-private-key.detected-private-key
 pub const DUMMY_ISSUER_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----
 MFECAQEwBQYDK2VwBCIEIGkMPQEb0GXxgFXbgojLebmHnCUpS3QYqJrYcfyFqHtW
 gSEAAbdC8KDpDZPqZalKndJm2N6EXn+cNxIb2gRa21P5mcs=

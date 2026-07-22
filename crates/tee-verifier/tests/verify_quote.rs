@@ -177,3 +177,31 @@ fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
         .try_into()
         .expect("correct length")
 }
+
+/// The localnet guide (`docs/localnet/localnet.md`) calls `verify_quote` from the
+/// command line. Its arguments are binary (borsh), so they are read from a committed
+/// file.
+///
+/// This test keeps that file, `verify_quote_args.borsh`, correct: it rebuilds the
+/// bytes `verify_quote(quote, collateral)` expects (both args, concatenated) and
+/// checks they match the file. It fails if the `quote`/`collateral` fixtures change;
+/// regenerate with:
+///
+///   UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
+#[test]
+fn verify_quote_args_fixture__should_match_committed_file() {
+    let mut expected = borsh::to_vec(&make_quote_bytes()).unwrap();
+    expected.extend(borsh::to_vec(&make_collateral()).unwrap());
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/verify_quote_args.borsh"
+    );
+    if std::env::var_os("UPDATE_FIXTURES").is_some() {
+        std::fs::write(path, &expected).unwrap();
+    }
+    let committed = std::fs::read(path).unwrap();
+    assert_eq!(
+        expected, committed,
+        "verify_quote_args.borsh is stale; regenerate with UPDATE_FIXTURES=1"
+    );
+}
