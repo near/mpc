@@ -11,8 +11,8 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
-        ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
+        AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, CKDRequestArgs,
+        ChainEntry, ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
         ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
         ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
         ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, Threshold,
@@ -47,9 +47,6 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
         )
 }
 const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
-// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
-// which costs significantly more than a plain CKD or sign request.
-const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
@@ -835,35 +832,20 @@ impl MpcCluster {
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.
-    ///
-    /// Gas is derived from the `CKDAppPublicKey` variant.
     pub async fn send_ckd_request(
         &self,
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let gas = match app_public_key {
-            CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
-            CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
-        };
-        let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "derivation_path": "test",
-                "app_public_key": app_public_key,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::REQUEST_APP_PRIVATE_KEY,
-                args,
-                gas,
-                SIGN_DEPOSIT,
-            )
+        self.contract_handle(account_id)
+            .request_app_private_key(CKDRequestArgs::new(
+                "test".to_string(),
+                app_public_key,
+                domain_id,
+            ))
             .await
+            .context("failed to send CKD request")
     }
 
     /// View migration info from the contract.

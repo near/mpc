@@ -9,6 +9,18 @@ deposit:  1 yoctoNEAR
 args:     {"request":{"path":"test","payload_v2":{"Ecdsa":"0707070707070707070707070707070707070707070707070707070707070707"},"domain_id":0}}
 
 contract: mpc.near
+method:   request_app_private_key
+gas:      15.0 Tgas
+deposit:  1 yoctoNEAR
+args:     {"request":{"derivation_path":"test","app_public_key":{"AppPublicKey":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE"},"domain_id":0}}
+
+contract: mpc.near
+method:   request_app_private_key
+gas:      100.0 Tgas
+deposit:  1 yoctoNEAR
+args:     {"request":{"derivation_path":"test","app_public_key":{"AppPublicKeyPV":{"pk1":"bls12381g1:FxBq18owLGrqcS3FKniTZAU8RRA3qqPBsp3AJNKX2nM52MxAEUuiwXK5AJ9sYXqJE","pk2":"bls12381g2:3RQWGwhrtwbaRTSzb4kKP61FKsJC27zTqsPzKuda9q4xbkt42afkgamdyLqHFQsybmu1vqwXsCXUdAezZpU927qCVcAGK7gGWjHWeSqrVbSEBVyVdsbBPZ9JX2jxRrkHhTt"}},"domain_id":0}}
+
+contract: mpc.near
 method:   submit_participant_info
 gas:      300.0 Tgas
 deposit:  0.1 NEAR
