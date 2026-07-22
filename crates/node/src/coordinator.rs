@@ -1,7 +1,9 @@
 use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
-use crate::foreign_chain_policy::spawn_supporters_by_foreign_chain;
+use crate::foreign_chain_policy::{
+    foreign_tx_reconstruction_threshold, spawn_supporters_by_foreign_chain,
+};
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
@@ -691,11 +693,14 @@ where
                     ckd_keyshares,
                 ));
 
-                // Spawned here because resolving supporters needs the current
-                // participant set.
+                // `running_mpc_config.participants` is the running set retained
+                // to resharing survivors (active ∩ prospective), so a chain only
+                // counts as available when a quorum of nodes that can sign now
+                // and remain after the reshare supports it.
                 let supporters_by_foreign_chain = spawn_supporters_by_foreign_chain(
                     foreign_chain_supporters_receiver,
                     running_mpc_config.participants.clone(),
+                    foreign_tx_reconstruction_threshold(&running_state.domains),
                 );
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(

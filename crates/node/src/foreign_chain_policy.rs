@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use anyhow::Context;
 use near_mpc_contract_interface::types as dtos;
@@ -15,21 +15,30 @@ pub(crate) type SupportersByForeignChain = BTreeMap<dtos::ForeignChain, HashSet<
 
 /// Resolves the indexer's TLS-key supporters channel against the current
 /// participant set, publishing each available chain's supporting participants
-/// (threshold-filtered). The spawned task exits when the upstream sender is
-/// dropped (indexer shutdown) or every receiver of the returned channel is
-/// dropped.
+/// (filtered by the ForeignTx reconstruction threshold; `None` means no
+/// ForeignTx domain, so no chain is available). The spawned task exits when
+/// the upstream sender is dropped (indexer shutdown) or every receiver of the
+/// returned channel is dropped.
 pub(crate) fn spawn_supporters_by_foreign_chain(
     mut upstream: watch::Receiver<ForeignChainSupporters>,
     participants_config: ParticipantsConfig,
+    foreign_tx_reconstruction_threshold: Option<u64>,
 ) -> watch::Receiver<SupportersByForeignChain> {
-    let init_value =
-        resolve_supporters_by_foreign_chain(&upstream.borrow_and_update(), &participants_config);
+    let init_value = resolve_supporters_by_foreign_chain(
+        &upstream.borrow_and_update(),
+        &participants_config,
+        foreign_tx_reconstruction_threshold,
+    );
     let (sender, receiver) = watch::channel(init_value);
 
     tokio::spawn(async move {
         loop {
             let new_value = tokio::select! {
-                res = await_updated_supporters(&mut upstream, &participants_config) => match res {
+                res = await_updated_supporters(
+                    &mut upstream,
+                    &participants_config,
+                    foreign_tx_reconstruction_threshold,
+                ) => match res {
                     Ok(value) => value,
                     Err(e) => {
                         tracing::info!("stopping foreign-chain supporters monitor: {e:#}");
@@ -57,6 +66,7 @@ pub(crate) fn spawn_supporters_by_foreign_chain(
 async fn await_updated_supporters(
     upstream: &mut watch::Receiver<ForeignChainSupporters>,
     participants_config: &ParticipantsConfig,
+    foreign_tx_reconstruction_threshold: Option<u64>,
 ) -> anyhow::Result<SupportersByForeignChain> {
     upstream
         .changed()
@@ -66,20 +76,39 @@ async fn await_updated_supporters(
     Ok(resolve_supporters_by_foreign_chain(
         &supporters,
         participants_config,
+        foreign_tx_reconstruction_threshold,
     ))
 }
 
-// TODO(#3640): filter with the ForeignTx domain's reconstruction threshold once
-// it is available in the node; the participants threshold is a stand-in.
+/// Mirrors the contract's availability rule: the max reconstruction threshold
+/// across ForeignTx domains, `None` when no such domain exists.
+pub(crate) fn foreign_tx_reconstruction_threshold(domains: &[dtos::DomainConfig]) -> Option<u64> {
+    domains
+        .iter()
+        .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
+        .map(|domain| domain.reconstruction_threshold.inner())
+        .max()
+}
+
+// Recomputed node-side even though the contract already threshold-gates
+// availability: the upstream snapshot keys supporters by TLS key over all
+// registrations (prospective or stale ones included) and may come from a
+// different block than `participants_config`. Only supporters resolving to
+// `participants_config` — the participants this node can sign with — count
+// towards the quorum.
 fn resolve_supporters_by_foreign_chain(
     supporters_by_tls_key: &ForeignChainSupporters,
     participants_config: &ParticipantsConfig,
+    foreign_tx_reconstruction_threshold: Option<u64>,
 ) -> SupportersByForeignChain {
+    let Some(threshold) = foreign_tx_reconstruction_threshold else {
+        return SupportersByForeignChain::new();
+    };
     supporters_by_tls_key
         .iter()
         .filter_map(|(chain, tls_keys)| {
             let ids = resolve_participant_ids(tls_keys, participants_config);
-            (ids.len() as u64 >= participants_config.threshold).then_some((*chain, ids))
+            (ids.len() as u64 >= threshold).then_some((*chain, ids))
         })
         .collect()
 }
@@ -87,7 +116,7 @@ fn resolve_supporters_by_foreign_chain(
 /// Resolves TLS keys to the matching participants' ids; keys not belonging to a
 /// participant are dropped.
 fn resolve_participant_ids(
-    tls_keys: &HashSet<dtos::Ed25519PublicKey>,
+    tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
     participants_config: &ParticipantsConfig,
 ) -> HashSet<ParticipantId> {
     participants_config
@@ -137,7 +166,7 @@ mod tests {
         let participant_key = make_signing_key(1);
         let stranger_key = make_signing_key(9);
         let participants_config = participants(1, vec![make_participant_info(1, &participant_key)]);
-        let tls_keys = HashSet::from([tls_key_for(&participant_key), tls_key_for(&stranger_key)]);
+        let tls_keys = BTreeSet::from([tls_key_for(&participant_key), tls_key_for(&stranger_key)]);
 
         // When
         let ids = resolve_participant_ids(&tls_keys, &participants_config);
@@ -160,12 +189,15 @@ mod tests {
         );
         let supporters_by_tls_key = BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
-            keys.iter().map(tls_key_for).collect::<HashSet<_>>(),
+            keys.iter().map(tls_key_for).collect::<BTreeSet<_>>(),
         )]);
 
         // When
-        let supporters =
-            resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config);
+        let supporters = resolve_supporters_by_foreign_chain(
+            &supporters_by_tls_key,
+            &participants_config,
+            Some(2),
+        );
 
         // Then
         assert_eq!(
@@ -195,15 +227,75 @@ mod tests {
         );
         let supporters_by_tls_key = BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
-            HashSet::from([tls_key_for(&key1)]),
+            BTreeSet::from([tls_key_for(&key1)]),
+        )]);
+
+        // When
+        let supporters = resolve_supporters_by_foreign_chain(
+            &supporters_by_tls_key,
+            &participants_config,
+            Some(2),
+        );
+
+        // Then
+        assert!(supporters.is_empty());
+    }
+
+    #[test]
+    fn resolve_supporters_by_foreign_chain__should_return_empty_map_when_no_foreign_tx_domain() {
+        // Given: a supported chain but no ForeignTx domain (no threshold).
+        let key1 = make_signing_key(1);
+        let participants_config = participants(1, vec![make_participant_info(1, &key1)]);
+        let supporters_by_tls_key = BTreeMap::from([(
+            dtos::ForeignChain::Bitcoin,
+            BTreeSet::from([tls_key_for(&key1)]),
         )]);
 
         // When
         let supporters =
-            resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config);
+            resolve_supporters_by_foreign_chain(&supporters_by_tls_key, &participants_config, None);
 
         // Then
         assert!(supporters.is_empty());
+    }
+
+    #[test]
+    fn foreign_tx_reconstruction_threshold__should_return_max_across_foreign_tx_domains() {
+        // Given: two ForeignTx domains and one Sign domain with a higher threshold.
+        let domain = |id: u64, purpose, threshold: u64| dtos::DomainConfig {
+            id: dtos::DomainId(id),
+            protocol: dtos::Protocol::CaitSith,
+            reconstruction_threshold: dtos::ReconstructionThreshold::new(threshold),
+            purpose,
+        };
+        let domains = vec![
+            domain(0, dtos::DomainPurpose::Sign, 7),
+            domain(1, dtos::DomainPurpose::ForeignTx, 3),
+            domain(2, dtos::DomainPurpose::ForeignTx, 5),
+        ];
+
+        // When
+        let threshold = foreign_tx_reconstruction_threshold(&domains);
+
+        // Then
+        assert_eq!(threshold, Some(5));
+    }
+
+    #[test]
+    fn foreign_tx_reconstruction_threshold__should_return_none_without_foreign_tx_domain() {
+        // Given
+        let domains = vec![dtos::DomainConfig {
+            id: dtos::DomainId(0),
+            protocol: dtos::Protocol::CaitSith,
+            reconstruction_threshold: dtos::ReconstructionThreshold::new(2),
+            purpose: dtos::DomainPurpose::Sign,
+        }];
+
+        // When
+        let threshold = foreign_tx_reconstruction_threshold(&domains);
+
+        // Then
+        assert_eq!(threshold, None);
     }
 
     #[tokio::test]
@@ -213,14 +305,14 @@ mod tests {
         let participants_config = participants(1, vec![make_participant_info(1, &key1)]);
         let (upstream_sender, upstream_receiver) = watch::channel(ForeignChainSupporters::new());
         let mut supporters =
-            spawn_supporters_by_foreign_chain(upstream_receiver, participants_config);
+            spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, Some(1));
         assert!(supporters.borrow().is_empty());
 
         // When: Bitcoin becomes available with the participant registered for it.
         upstream_sender
             .send(BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
-                HashSet::from([tls_key_for(&key1)]),
+                BTreeSet::from([tls_key_for(&key1)]),
             )]))
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), supporters.changed())
@@ -253,12 +345,13 @@ mod tests {
         );
         let upstream = BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
-            HashSet::from([tls_key_for(&key1), tls_key_for(&stranger_key)]),
+            BTreeSet::from([tls_key_for(&key1), tls_key_for(&stranger_key)]),
         )]);
 
         // When
         let (_upstream_sender, upstream_receiver) = watch::channel(upstream);
-        let supporters = spawn_supporters_by_foreign_chain(upstream_receiver, participants_config);
+        let supporters =
+            spawn_supporters_by_foreign_chain(upstream_receiver, participants_config, Some(2));
 
         // Then: the stranger's key does not count towards the quorum.
         assert!(supporters.borrow().is_empty());
