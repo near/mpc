@@ -1816,6 +1816,7 @@ dependencies = [
  "near-crypto 2.13.1",
  "near-indexer",
  "near-indexer-primitives",
+ "near-mpc-bounded-collections",
  "near-o11y 2.13.1",
  "near-sdk",
  "near-store",
