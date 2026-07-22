@@ -21,6 +21,14 @@ Chain-gateway pipeline counters, in
 | [`mpc_block_updates_dropped_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | block updates that won't be received by the node (containing signature requests, responses, etc.) | should be zero or flat. If it increases, the consumer is starved or the MPC node is not working correctly |
 | [`mpc_num_fail_on_timeout_indexed`](../../crates/node/src/metrics.rs) | number of calls to `fail_on_timeout` in the MPC contract. Counts the number of failed requests (aggregate over all request types). May contain false positives if `mpc_finalized_blocks_indexed_total` diverges from `mpc_blocks_indexed_total`, as it may count transactions on non-finalized forks. | should be near zero in healthy operation. Sustained non-zero rate means the node (or the cluster) is missing the response deadline or the blockchain has a lot of forks. |
 
+Foreign-chain RPC provider health, set once at startup (labeled by `chain`), in
+[`metrics.rs`](../../crates/node/src/metrics.rs):
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_foreign_chain_rpc_providers_configured`](../../crates/node/src/metrics.rs) | RPC providers configured per foreign chain (**N**) | the denominator; changes only when the config changes |
+| [`mpc_foreign_chain_rpc_providers_healthy`](../../crates/node/src/metrics.rs) | providers that passed the startup probe per foreign chain (**n**) | `n < N` usually means a typo or an API key that isn't enabled. It can also be benign: a reachable provider that can't serve the golden reference tx (unsupported chain, no reference for the current network, or a pruned non-archival provider) counts as unhealthy too, so check the logs before treating it as a hard failure |
+
 ## Recommended alerts
 
 ```promql

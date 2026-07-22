@@ -740,6 +740,40 @@ impl MpcCluster {
         })
     }
 
+    /// Polls a single node's metric until `predicate` holds (or times out).
+    pub async fn wait_for_metric(
+        &self,
+        node_index: usize,
+        name: &str,
+        predicate: impl Fn(i64) -> bool,
+        timeout: Duration,
+    ) -> anyhow::Result<()> {
+        let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
+        (|| async {
+            let value = match &self.nodes[node_index] {
+                MpcNodeState::Running(n) => n.get_metric(name).await?,
+                MpcNodeState::Stopped(_) => None,
+            };
+            anyhow::ensure!(
+                value.is_some_and(&predicate),
+                "metric {name} predicate not satisfied on node {node_index} (value: {value:?})"
+            );
+            Ok(())
+        })
+        .retry(
+            ConstantBuilder::default()
+                .with_delay(POLL_INTERVAL)
+                .with_max_times(max_times),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "metric {name} predicate not satisfied on node {node_index} within {}s",
+                timeout.as_secs()
+            )
+        })
+    }
+
     pub fn wipe_db(&self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
             match &self.nodes[idx] {
