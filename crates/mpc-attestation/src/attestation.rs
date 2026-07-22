@@ -94,7 +94,9 @@ impl AcceptedAttestation {
 }
 
 #[expect(clippy::large_enum_variant)]
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -349,10 +351,9 @@ impl Attestation {
         }
     }
 
-    /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
-    /// the post-DCAP checks. Behind the `local-verify` feature, which pulls in
-    /// `dcap-qvl`. Used by off-chain callers and, today, by `mpc-contract`.
-    // TODO(#3264): contract drops this once DCAP moves to the verifier contract.
+    /// Full local verification: runs the DCAP quote verification and then the
+    /// post-DCAP checks. Behind the `local-verify` feature, which pulls in
+    /// `dcap-qvl`. Used by off-chain callers (node, tee-authority, attestation-cli).
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,

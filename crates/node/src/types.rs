@@ -1,8 +1,9 @@
 use std::fmt;
 
-use chain_gateway::{event_subscriber::block_events::BlockContext, types::BlockHeight};
+use chain_gateway::event_subscriber::block_events::BlockContext;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
+use near_contract_transport::BlockHeight;
 use near_crypto::Signature;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::{BlockHeight as NearBlockHeight, Nonce};

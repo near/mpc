@@ -150,7 +150,7 @@ const CHECKPOINT_PROBE_OFFSET: u64 = 10;
 /// Sui providers prune the gRPC read path after a few weeks, so unlike the other chains
 /// there is no long-lived reference transaction to pin extracted values against. Instead
 /// this verifies the provider's chain identity (the genesis digest never changes) and runs
-/// the real inspector over a transaction from the provider's latest checkpoint.
+/// the real inspector over a transaction [`CHECKPOINT_PROBE_OFFSET`] checkpoints behind the tip.
 pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> anyhow::Result<()> {
     let info = client
         .get_service_info()
@@ -181,7 +181,7 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let checkpoint = client
         .get_checkpoint(probe_height)
         .await
-        .context("failed to fetch the latest checkpoint")?
+        .context("failed to fetch the probe checkpoint")?
         .checkpoint
         .context("provider returned no checkpoint")?;
     let digest = checkpoint
@@ -192,10 +192,9 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let tx = golden::base58_32(digest)?;
 
     let inspector = SuiInspector::new(client);
-    // Probe the first event so the extraction pipeline (BCS pass-through, address parsing,
-    // type-tag normalization, contents-name cross-check) is exercised whenever the probe
-    // transaction emits events. A transaction with no events (`LogIndexOutOfBounds`) or a
-    // failed one still proves the provider serves canonical checkpointed data.
+    // Probe the first event to exercise the full extraction pipeline when the tx emits
+    // events; a tx with no events (`LogIndexOutOfBounds`) or a failed one still proves the
+    // provider serves canonical checkpointed data.
     match inspector
         .extract(
             SuiTransactionDigest::from(tx),
@@ -253,6 +252,7 @@ pub async fn check_aptos(
 mod tests {
     use super::*;
     use crate::golden;
+    use crate::network::Network;
     use assert_matches::assert_matches;
     use httpmock::prelude::*;
 
@@ -274,7 +274,7 @@ mod tests {
     async fn check_aptos__should_pass_when_provider_returns_golden_event() {
         // Given
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(golden::Network::Mainnet).aptos.unwrap();
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
         let tx = aptos.tx;
         let mock = server
             .mock_async(|when, then| {
@@ -359,7 +359,7 @@ mod tests {
     #[tokio::test]
     async fn check_sui__should_pass_when_provider_is_on_the_expected_network() {
         // Given
-        let sui = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
+        let sui = golden::golden_set(Network::Mainnet).sui.unwrap();
         let client = MockSuiClient {
             chain_id: sui.chain_id.to_string(),
         };
@@ -375,13 +375,13 @@ mod tests {
     async fn check_sui__should_fail_when_chain_id_differs() {
         // Given — a provider on a different network.
         let client = MockSuiClient {
-            chain_id: golden::golden_set(golden::Network::Testnet)
+            chain_id: golden::golden_set(Network::Testnet)
                 .sui
                 .unwrap()
                 .chain_id
                 .to_string(),
         };
-        let expected = golden::golden_set(golden::Network::Mainnet).sui.unwrap();
+        let expected = golden::golden_set(Network::Mainnet).sui.unwrap();
 
         // When
         let result = check_sui(client, expected.chain_id).await;
@@ -397,7 +397,7 @@ mod tests {
     async fn check_aptos__should_fail_when_event_type_tag_differs() {
         // Given
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(golden::Network::Mainnet).aptos.unwrap();
+        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
         let tx = aptos.tx;
         server
             .mock_async(|when, then| {

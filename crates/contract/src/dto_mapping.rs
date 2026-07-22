@@ -472,6 +472,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.fail_on_timeout_tera_gas {
             config.fail_on_timeout_tera_gas = v;
         }
+        if let Some(v) = config_ext.fail_attestation_submission_tera_gas {
+            config.fail_attestation_submission_tera_gas = v;
+        }
         if let Some(v) = config_ext.clean_tee_status_tera_gas {
             config.clean_tee_status_tera_gas = v;
         }
@@ -489,6 +492,12 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         }
         if let Some(v) = config_ext.remove_non_participant_tee_verifier_votes_tera_gas {
             config.remove_non_participant_tee_verifier_votes_tera_gas = v;
+        }
+        if let Some(v) = config_ext.verifier_tera_gas {
+            config.verifier_tera_gas = v;
+        }
+        if let Some(v) = config_ext.resolve_verification_tera_gas {
+            config.resolve_verification_tera_gas = v;
         }
 
         config
@@ -510,6 +519,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             return_ck_and_clean_state_on_success_call_tera_gas: value
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: value.fail_attestation_submission_tera_gas,
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             clean_invalid_attestations_tera_gas: value.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
@@ -519,6 +529,8 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
             remove_non_participant_tee_verifier_votes_tera_gas: value
                 .remove_non_participant_tee_verifier_votes_tera_gas,
+            verifier_tera_gas: value.verifier_tera_gas,
+            resolve_verification_tera_gas: value.resolve_verification_tera_gas,
         }
     }
 }
@@ -538,6 +550,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             return_ck_and_clean_state_on_success_call_tera_gas: value
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: value.fail_attestation_submission_tera_gas,
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             clean_invalid_attestations_tera_gas: value.clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
@@ -547,6 +560,8 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             clean_foreign_chain_data_tera_gas: value.clean_foreign_chain_data_tera_gas,
             remove_non_participant_tee_verifier_votes_tera_gas: value
                 .remove_non_participant_tee_verifier_votes_tera_gas,
+            verifier_tera_gas: value.verifier_tera_gas,
+            resolve_verification_tera_gas: value.resolve_verification_tera_gas,
         }
     }
 }
