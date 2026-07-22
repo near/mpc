@@ -10,6 +10,9 @@ use crate::{
 use borsh::{self, BorshDeserialize, BorshSerialize};
 use derive_more::Deref;
 use near_account_id::AccountId;
+use near_mpc_contract_interface::deposits::{
+    DepositOverflowError, propose_update_required_deposit_yoctonear,
+};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, UpdateHash};
 use near_sdk::{
@@ -113,7 +116,8 @@ impl TryFrom<ProposeUpdateArgs> for Update {
 )]
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,
-    pub(super) bytes_used: u128,
+    // TODO(#3965): remove this field, it's not read anywhere.
+    pub bytes_used: u128,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,8 +145,12 @@ impl Default for ProposedUpdates {
 }
 
 impl ProposedUpdates {
-    pub fn required_deposit(update: &Update) -> NearToken {
-        required_deposit(bytes_used(update))
+    pub fn required_deposit(payload_bytes: u128) -> Result<NearToken, DepositOverflowError> {
+        propose_update_required_deposit_yoctonear(
+            payload_bytes,
+            env::storage_byte_cost().as_yoctonear(),
+        )
+        .map(NearToken::from_yoctonear)
     }
 
     /// Propose an update given the new contract code and/or config.
@@ -274,10 +282,6 @@ fn bytes_used(update: &Update) -> u128 {
     }
 
     bytes_used
-}
-
-fn required_deposit(bytes_used: u128) -> NearToken {
-    env::storage_byte_cost().saturating_mul(bytes_used)
 }
 
 #[cfg(test)]

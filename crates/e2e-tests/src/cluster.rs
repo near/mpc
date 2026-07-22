@@ -57,8 +57,6 @@ const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_y
 // load. Override to 240 blocks (~30 s in sandbox) as a comfortable
 // budget over mainnet's effective headroom.
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
-const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
-const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
@@ -1067,16 +1065,14 @@ impl MpcCluster {
             code: Some(new_wasm.to_vec()),
             config: None,
         };
-        let proposer_client = self.operator_client_for(PROPOSER_NODE_INDEX)?;
+        let proposer_account = self
+            .nodes
+            .get(PROPOSER_NODE_INDEX)
+            .expect("need at least one node")
+            .account_id();
         let outcome = self
-            .contract
-            .call_from_borsh_with_deposit(
-                &proposer_client,
-                method_names::PROPOSE_UPDATE,
-                propose_args,
-                CONTRACT_UPDATE_GAS,
-                CONTRACT_UPDATE_DEPOSIT,
-            )
+            .contract_handle(proposer_account)
+            .propose_update(propose_args)
             .await
             .context("failed to call propose_update")?;
         anyhow::ensure!(
@@ -1084,19 +1080,14 @@ impl MpcCluster {
             "propose_update failed: {:?}",
             outcome.failure_message()
         );
-        let proposal_id: UpdateId = outcome
+        let proposal_id: u64 = outcome
             .json()
-            .context("propose_update did not return a JSON UpdateId")?;
+            .context("propose_update did not return a JSON update id")?;
 
-        for (i, _) in self.nodes.iter().enumerate() {
-            let client = self.operator_client_for(i)?;
+        for (i, node) in self.nodes.iter().enumerate() {
             let vote_outcome = self
-                .contract
-                .call_from(
-                    &client,
-                    method_names::VOTE_UPDATE,
-                    json!({ "id": proposal_id }),
-                )
+                .contract_handle(node.account_id())
+                .vote_update(proposal_id)
                 .await
                 .with_context(|| format!("node {i} failed to call vote_update"))?;
             anyhow::ensure!(
@@ -1460,11 +1451,6 @@ async fn create_user_accounts(
     }
     Ok(map)
 }
-
-/// JSON mirror of the contract's `UpdateId`. `propose_update` returns it and
-/// `vote_update` consumes it via the `id` field; both wire it as a bare u64.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-struct UpdateId(u64);
 
 fn build_participants(
     indices: &[usize],

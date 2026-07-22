@@ -7018,6 +7018,7 @@ dependencies = [
  "near-contract-transport",
  "near-mpc-bounded-collections",
  "near-mpc-crypto-types",
+ "near-sdk",
  "rstest",
  "schemars 0.8.22",
  "serde",
