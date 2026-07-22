@@ -1,15 +1,19 @@
 //! Healthcheck of every configured foreign-chain RPC provider, via
 //! [`foreign_chain_health_check`].
 
+use std::panic::AssertUnwindSafe;
+
 use foreign_chain_health_check::{
     HealthCheckRoute, NetworkKind, ProviderResult, SkipReason, Status, check_all_providers,
     check_all_providers_with_golden,
 };
+use futures::FutureExt as _;
 use mpc_node_config::{ForeignChainsConfig, HealthCheckGoldenConfig};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Startup healthcheck entrypoint: builds a [`HealthCheckRoute`] from the config
-/// and runs it, warning if a golden config is set on a public network.
+/// and runs it, warning if a golden config is set on a public network. A probe
+/// panic is caught and logged, never propagated (diagnostic-only).
 pub async fn run_startup_health_check(
     foreign_chains: ForeignChainsConfig,
     network: NetworkKind,
@@ -28,33 +32,43 @@ pub async fn run_startup_health_check(
         );
     }
 
-    let results = match HealthCheckRoute::decide(network, golden) {
-        HealthCheckRoute::ProbeBuiltIn(network) => {
-            info!(
-                network = network.label(),
-                "running foreign-chain RPC provider health check"
-            );
-            check_all_providers(&foreign_chains, network).await
-        }
-        HealthCheckRoute::ProbeSupplied(golden) => {
-            info!(
-                "running foreign-chain RPC provider health check with config-supplied golden values"
-            );
-            check_all_providers_with_golden(&foreign_chains, &golden).await
-        }
-        HealthCheckRoute::Skip(SkipReason::LocalChainWithoutGolden) => {
-            debug!(
-                "local or custom chain without golden values; \
-                 skipping foreign-chain RPC provider health check"
-            );
-            return;
-        }
-        HealthCheckRoute::Skip(SkipReason::Undetermined) => {
-            warn!("network undetermined; skipping foreign-chain RPC provider health check");
-            return;
-        }
+    // Catch a probe panic (e.g. an inspector bug) and log it, rather than
+    // letting it vanish with the spawned task's dropped join handle.
+    let probe = async move {
+        let results = match HealthCheckRoute::decide(network, golden) {
+            HealthCheckRoute::ProbeBuiltIn(network) => {
+                info!(
+                    network = network.label(),
+                    "running foreign-chain RPC provider health check"
+                );
+                check_all_providers(&foreign_chains, network).await
+            }
+            HealthCheckRoute::ProbeSupplied(golden) => {
+                info!(
+                    "running foreign-chain RPC provider health check with config-supplied golden values"
+                );
+                check_all_providers_with_golden(&foreign_chains, &golden).await
+            }
+            HealthCheckRoute::Skip(SkipReason::LocalChainWithoutGolden) => {
+                debug!(
+                    "local or custom chain without golden values; \
+                     skipping foreign-chain RPC provider health check"
+                );
+                return;
+            }
+            HealthCheckRoute::Skip(SkipReason::Undetermined) => {
+                warn!("network undetermined; skipping foreign-chain RPC provider health check");
+                return;
+            }
+        };
+        log_results(&results);
     };
-    log_results(&results);
+
+    if AssertUnwindSafe(probe).catch_unwind().await.is_err() {
+        error!(
+            "foreign-chain RPC provider health check panicked (diagnostic-only; node unaffected)"
+        );
+    }
 }
 
 fn log_results(results: &[ProviderResult]) {
