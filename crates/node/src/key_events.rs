@@ -64,30 +64,33 @@ pub async fn keygen_computation_inner(
 
     let (keyshare, public_key) = match domain.protocol {
         Protocol::CaitSith => {
-            let keyshare =
-                EcdsaSignatureProvider::run_key_generation_client(reconstruction_threshold, channel)
-                    .await?;
+            let keyshare = EcdsaSignatureProvider::run_key_generation_client(
+                reconstruction_threshold,
+                channel,
+            )
+            .await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
                 keyshare.public_key.to_element().to_affine(),
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         Protocol::DamgardEtAl => {
-            let keyshare =
-                RobustEcdsaSignatureProvider::run_key_generation_client(
-                    reconstruction_threshold,
-                    channel,
-                )
-                .await?;
+            let keyshare = RobustEcdsaSignatureProvider::run_key_generation_client(
+                reconstruction_threshold,
+                channel,
+            )
+            .await?;
             let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::try_from(
                 keyshare.public_key.to_element().to_affine(),
             )?);
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         Protocol::Frost => {
-            let keyshare =
-                EddsaSignatureProvider::run_key_generation_client(reconstruction_threshold, channel)
-                    .await?;
+            let keyshare = EddsaSignatureProvider::run_key_generation_client(
+                reconstruction_threshold,
+                channel,
+            )
+            .await?;
             let public_key = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(
                 keyshare.public_key.to_element().compress(),
             ));

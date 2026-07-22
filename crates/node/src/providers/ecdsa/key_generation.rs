@@ -15,8 +15,8 @@ impl EcdsaSignatureProvider {
         let key = KeyGenerationComputation {
             reconstruction_threshold,
         }
-            .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
-            .await?;
+        .perform_leader_centric_computation(channel, std::time::Duration::from_secs(60))
+        .await?;
         tracing::info!("Ecdsa secp256k1 key generation completed");
 
         Ok(key)

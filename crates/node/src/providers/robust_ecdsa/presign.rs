@@ -61,9 +61,8 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let (num_signers, damgard_et_al_threshold) =
-        compute_thresholds(reconstruction_threshold)
-            .expect("contract validation guarantees a valid threshold");
+    let (num_signers, damgard_et_al_threshold) = compute_thresholds(reconstruction_threshold)
+        .expect("contract validation guarantees a valid threshold");
 
     loop {
         progress_tracker.update_progress();
