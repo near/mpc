@@ -84,10 +84,23 @@ impl AcceptedAttestation {
         }
     }
 
-    /// Assembles the acceptance for a verified `Mock` attestation.
-    fn mock(mock_attestation: &MockAttestation) -> Self {
+    /// Assembles the acceptance for a verified `Mock` attestation, stamping the
+    /// expiry just like [`AcceptedAttestation::dstack`].
+    ///
+    /// Without an expiry, a [`MockAttestation::Valid`] entry passes re-verification
+    /// forever and can never be removed from contract storage (see #3293). We
+    /// therefore stamp accepted mocks with a
+    /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] window (see [`MockAttestation::with_expiry`])
+    /// so the standard re-verification / cleanup flow eventually evicts them.
+    fn mock(mock_attestation: &MockAttestation, current_timestamp_seconds: u64) -> Self {
+        let expiry_timestamp_seconds =
+            current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
         Self {
-            attestation: VerifiedAttestation::Mock(mock_attestation.clone()),
+            attestation: VerifiedAttestation::Mock(
+                mock_attestation
+                    .clone()
+                    .with_expiry(expiry_timestamp_seconds),
+            ),
             advisory_ids: Vec::new(),
         }
     }
@@ -129,7 +142,36 @@ impl MockAttestation {
             allowed_launcher_docker_compose_hashes,
             accepted_measurements,
         )?;
-        Ok(AcceptedAttestation::mock(self))
+        Ok(AcceptedAttestation::mock(self, current_timestamp_seconds))
+    }
+
+    /// Returns a copy stamped with `expiry_timestamp_seconds`, unless the mock
+    /// already carries an explicit expiry (which is preserved). A bare
+    /// [`MockAttestation::Valid`] becomes an otherwise-unconstrained
+    /// [`MockAttestation::WithConstraints`] so that, once stored, it eventually
+    /// expires and becomes eligible for cleanup. [`MockAttestation::Invalid`] is
+    /// returned unchanged — it never reaches acceptance.
+    pub fn with_expiry(self, expiry_timestamp_seconds: u64) -> Self {
+        match self {
+            MockAttestation::Valid => MockAttestation::WithConstraints {
+                mpc_docker_image_hash: None,
+                launcher_docker_compose_hash: None,
+                expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+                expected_measurements: None,
+            },
+            MockAttestation::Invalid => MockAttestation::Invalid,
+            MockAttestation::WithConstraints {
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
+                expiry_timestamp_seconds: existing_expiry,
+                expected_measurements,
+            } => MockAttestation::WithConstraints {
+                mpc_docker_image_hash,
+                launcher_docker_compose_hash,
+                expiry_timestamp_seconds: existing_expiry.or(Some(expiry_timestamp_seconds)),
+                expected_measurements,
+            },
+        }
     }
 
     /// Checks the mock's constraints, returning only pass/fail. Lets the
@@ -490,10 +532,85 @@ fn verify_measurements(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use alloc::vec;
 
     use super::*;
+
+    #[test]
+    fn with_expiry__should_convert_valid_to_expiring_constraints() {
+        // Given / When
+        let stamped = MockAttestation::Valid.with_expiry(42);
+
+        // Then
+        assert_matches::assert_matches!(
+            stamped,
+            MockAttestation::WithConstraints {
+                mpc_docker_image_hash: None,
+                launcher_docker_compose_hash: None,
+                expiry_timestamp_seconds: Some(42),
+                expected_measurements: None,
+            }
+        );
+    }
+
+    #[test]
+    fn with_expiry__should_fill_missing_expiry_and_keep_other_constraints() {
+        // Given: a constrained mock with an image-hash constraint but no expiry.
+        let image_hash = NodeImageHash::from([7; 32]);
+        let mock = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some(image_hash),
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: None,
+            expected_measurements: None,
+        };
+
+        // When
+        let stamped = mock.with_expiry(42);
+
+        // Then: the expiry is filled in and the other constraints are preserved.
+        assert_matches::assert_matches!(
+            stamped,
+            MockAttestation::WithConstraints {
+                mpc_docker_image_hash: Some(hash),
+                expiry_timestamp_seconds: Some(42),
+                ..
+            } if hash == image_hash
+        );
+    }
+
+    #[test]
+    fn with_expiry__should_preserve_existing_expiry() {
+        // Given: a mock that already carries an explicit expiry.
+        let mock = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(100),
+            expected_measurements: None,
+        };
+
+        // When
+        let stamped = mock.with_expiry(42);
+
+        // Then: the caller-set expiry wins over the default.
+        assert_matches::assert_matches!(
+            stamped,
+            MockAttestation::WithConstraints {
+                expiry_timestamp_seconds: Some(100),
+                ..
+            }
+        );
+    }
+
+    #[test]
+    fn with_expiry__should_leave_invalid_unchanged() {
+        // Given / When
+        let stamped = MockAttestation::Invalid.with_expiry(42);
+
+        // Then
+        assert_matches::assert_matches!(stamped, MockAttestation::Invalid);
+    }
 
     #[test]
     fn mock_constrained_verification_passes_if_hash_in_allowed_list() {
