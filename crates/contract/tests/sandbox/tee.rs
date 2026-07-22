@@ -3,12 +3,13 @@
 use crate::sandbox::{
     common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
     utils::{
-        consts::ALL_PROTOCOLS,
+        consts::{ALL_PROTOCOLS, SUBMIT_PARTICIPANT_INFO_DEPOSIT},
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            vote_add_launcher_hash, vote_for_hash,
+            submit_participant_info_with_deposit, total_gas_fee, vote_add_launcher_hash,
+            vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -267,13 +268,11 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key().into();
     let success = submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
-        &mock_attestation,
-        &tls_key,
+        &Attestation::Mock(MockAttestation::Valid),
+        &p2p_tls_key().into(),
     )
     .await?
     .is_success();
@@ -306,13 +305,10 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     assert!(!result.is_success());
 
     // Verify the error message indicates unauthorized access
-    match result.into_result() {
-        Err(failure) => {
-            let error_msg = format!("{:?}", failure);
-            assert!(error_msg.contains("Method clean_tee_status is private"));
-        }
-        Ok(_) => panic!("Call should have failed"),
-    }
+    let failure = result
+        .into_result()
+        .expect_err("clean_tee_status must reject a non-private caller");
+    assert!(format!("{failure:?}").contains("Method clean_tee_status is private"));
 
     Ok(())
 }
@@ -982,5 +978,97 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         "expected TEE-validation-failed rejection, got: {sign_err}"
     );
 
+    Ok(())
+}
+
+/// A submission attaching less than the flat storage fee is rejected before the
+/// entry is stored.
+#[tokio::test]
+async fn submit_participant_info__should_reject_new_attestation_below_flat_fee() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
+    let below_fee = SUBMIT_PARTICIPANT_INFO_DEPOSIT.saturating_sub(NearToken::from_yoctonear(1));
+
+    // When
+    let result = submit_participant_info_with_deposit(
+        &outsider,
+        &contract,
+        &Attestation::Mock(MockAttestation::Valid),
+        &fresh_tls_key,
+        below_fee,
+    )
+    .await?;
+
+    // Then
+    assert!(
+        !result.is_success(),
+        "submission below the flat fee must fail: {result:?}"
+    );
+    let error_msg = format!("{:?}", result.into_result());
+    assert!(
+        error_msg.contains("Attached deposit is lower than required"),
+        "expected an insufficient-deposit error, got: {error_msg}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_none(),
+        "no attestation should be stored when the deposit is rejected"
+    );
+    let storage_after = worker.view_account(contract.id()).await?.storage_usage;
+    assert_eq!(
+        storage_after, storage_before,
+        "contract storage must not grow when the submission is rejected"
+    );
+    Ok(())
+}
+
+/// A submission attaching exactly the flat fee is stored, and the caller is
+/// charged the whole fee with no excess refunded (the fee far exceeds the true
+/// storage cost by design).
+#[tokio::test]
+async fn submit_participant_info__should_store_new_attestation_and_charge_the_flat_fee()
+-> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+    let balance_before = outsider.view_account().await?.balance;
+
+    // When
+    let result = submit_participant_info(
+        &outsider,
+        &contract,
+        &Attestation::Mock(MockAttestation::Valid),
+        &fresh_tls_key,
+    )
+    .await?;
+
+    // Then
+    assert!(
+        result.is_success(),
+        "submission attaching the flat fee should succeed: {result:?}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_some(),
+        "the attestation entry should be stored on-chain"
+    );
+    let balance_after = outsider.view_account().await?.balance;
+    let net_spent = balance_before.saturating_sub(balance_after);
+    let non_gas_spent = net_spent.saturating_sub(total_gas_fee(&result));
+    assert_eq!(non_gas_spent, SUBMIT_PARTICIPANT_INFO_DEPOSIT);
     Ok(())
 }

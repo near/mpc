@@ -86,7 +86,7 @@ mod tests {
         let mut args = vec![0u8; 16];
         rng.fill(&mut args[..]);
         let gas = NearGas::from_gas(300);
-        let deposit = NearToken::from_yoctonear(0);
+        let deposit = NearToken::from_near(0);
         (
             receiver_id,
             FunctionCallArgs {
