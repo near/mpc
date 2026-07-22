@@ -3,7 +3,7 @@ use super::consts::{
     SET_VALUE_IN_PROMISE_GAS, SPAWN_PROMISE_WITH_CALLBACK, SPAWN_PROMISE_WITH_CALLBACK_GAS,
 };
 
-use mpc_call_args::{FunctionCallArgs, NearToken};
+use near_contract_transport::{FunctionCallArgs, NearToken};
 
 pub fn make_set_value_args(value: &str) -> FunctionCallArgs {
     FunctionCallArgs {

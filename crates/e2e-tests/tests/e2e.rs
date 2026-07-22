@@ -3,6 +3,7 @@ mod ckd_verification;
 mod cleanup_lagging_node;
 mod common;
 mod contract_upgrade_compatibility;
+mod distinct_reconstruction_thresholds;
 mod foreign_chain_configuration;
 mod foreign_chain_tx_validation;
 mod key_resharing;

@@ -1,6 +1,7 @@
 use super::IndexerAPI;
 use super::ReadAttestationExpiry;
 use super::ReadSupportedForeignChain;
+use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
@@ -305,6 +306,16 @@ impl FakeMpcContractState {
     }
 
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
+        self.start_resharing_with_threshold_updates(new_participants, BTreeMap::new());
+    }
+
+    /// Like [`Self::start_resharing`], but also changes the given domains' reconstruction
+    /// thresholds, mirroring a proposal that carries `per_domain_thresholds`.
+    pub fn start_resharing_with_threshold_updates(
+        &mut self,
+        new_participants: ParticipantsConfig,
+        per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
+    ) {
         let (previous_running_state, prev_epoch_id) = match &self.state {
             ProtocolContractState::Running(state) => (state, state.keyset.epoch_id),
             ProtocolContractState::Resharing(state) => {
@@ -312,6 +323,13 @@ impl FakeMpcContractState {
             }
             _ => panic!("Cannot start resharing from non-running state"),
         };
+        // Mirror the real contract: `resharing_key` keeps the old threshold; the update
+        // travels only in `per_domain_thresholds`, which the node applies itself.
+        let resharing_domain = previous_running_state
+            .domains
+            .get_domain_by_index(0)
+            .unwrap()
+            .clone();
         self.state = ProtocolContractState::Resharing(ResharingContractState {
             previous_running_state: RunningContractState::new(
                 previous_running_state.domains.clone(),
@@ -322,15 +340,11 @@ impl FakeMpcContractState {
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(
                 prev_epoch_id.next(),
-                previous_running_state
-                    .domains
-                    .get_domain_by_index(0)
-                    .unwrap()
-                    .clone(),
+                resharing_domain,
                 participants_config_to_threshold_parameters(&new_participants),
             ),
             cancellation_requests: HashSet::new(),
-            per_domain_thresholds: std::collections::BTreeMap::new(),
+            per_domain_thresholds,
         });
     }
 
@@ -435,6 +449,7 @@ impl FakeMpcContractState {
                 };
                 if let Some(new_state) = result {
                     self.state = ProtocolContractState::Running(new_state);
+                    self.recompute_available_foreign_chains();
                 }
             }
             _ => {
@@ -469,6 +484,7 @@ impl FakeMpcContractState {
                         .previously_cancelled_resharing_epoch_id,
                 };
                 self.state = ProtocolContractState::Running(new_state);
+                self.recompute_available_foreign_chains();
             }
             _ => {
                 panic!(
@@ -545,6 +561,8 @@ struct FakeIndexerCore {
     block_update_sender: broadcast::Sender<ChainBlockUpdate>,
     /// Broadcasts the contract state to each node.
     migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
+    /// Mirrors the real indexer's foreign-chain supporters watch channel.
+    foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -577,6 +595,7 @@ impl FakeIndexerCore {
             let clock = self.clock.clone();
             let state_change_sender = self.state_change_sender.clone();
             let migration_state_sender = self.migration_change_sender.clone();
+            let foreign_chain_supporters_sender = self.foreign_chain_supporters_sender.clone();
             async move {
                 loop {
                     {
@@ -592,6 +611,18 @@ impl FakeIndexerCore {
                         state_change_sender.send(config).ok();
                         let migration_state = state.migration_service.get_all();
                         migration_state_sender.send(migration_state).ok();
+                        let supporters = supporters_by_available_chain(
+                            state.available_foreign_chains(),
+                            state.foreign_chains_configs(),
+                        );
+                        foreign_chain_supporters_sender.send_if_modified(|previous| {
+                            if *previous != supporters {
+                                *previous = supporters;
+                                true
+                            } else {
+                                false
+                            }
+                        });
                     }
                     clock.sleep(Duration::seconds(1)).await;
                 }
@@ -865,6 +896,10 @@ pub struct FakeIndexerManager {
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 
+    /// Cloned into each node's `IndexerAPI`; tracks the fake contract's
+    /// foreign-chain supporters.
+    foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
 
@@ -1052,6 +1087,8 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
+        let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
+            watch::channel(Default::default());
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
@@ -1064,6 +1101,7 @@ impl FakeIndexerManager {
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
             migration_change_sender: migration_change_sender.clone(),
+            foreign_chain_supporters_sender,
             signature_response_sender,
             ckd_response_sender,
             block_time,
@@ -1085,6 +1123,7 @@ impl FakeIndexerManager {
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
             contract,
+            foreign_chain_supporters_receiver,
             account_id_by_uid,
             verify_foreign_tx_response_receiver,
             verify_foreign_tx_request_sender,
@@ -1170,6 +1209,7 @@ impl FakeIndexerManager {
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
             foreign_chain_policy_reader,
+            foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 

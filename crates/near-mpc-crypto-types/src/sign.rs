@@ -129,7 +129,9 @@ impl SignatureRequest {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_mpc_bounded_collections::BoundedVec;
+    use crate::EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES;
+    use near_mpc_bounded_collections::UpperBoundedVec;
+    use rstest::rstest;
 
     fn ecdsa_payload_hex() -> String {
         "0707070707070707070707070707070707070707070707070707070707070707".to_string()
@@ -407,7 +409,8 @@ mod tests {
     #[test]
     fn serialize__should_emit_payload_v2_for_eddsa() {
         // Given
-        let bounded: BoundedVec<u8, 32, 1232> = eddsa_payload_bytes().try_into().unwrap();
+        let bounded: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+            eddsa_payload_bytes().try_into().unwrap();
         let args = SignRequestArgs {
             path: "test".to_string(),
             payload: Payload::Eddsa(bounded),
@@ -446,7 +449,8 @@ mod tests {
     #[test]
     fn serialize__should_roundtrip_eddsa() {
         // Given
-        let bounded: BoundedVec<u8, 32, 1232> = eddsa_payload_bytes().try_into().unwrap();
+        let bounded: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+            eddsa_payload_bytes().try_into().unwrap();
         let args = SignRequestArgs {
             path: "solana-path".to_string(),
             payload: Payload::Eddsa(bounded),
@@ -461,5 +465,30 @@ mod tests {
         assert_eq!(deserialized.path, args.path);
         assert_eq!(deserialized.domain_id, args.domain_id);
         assert_eq!(deserialized.payload.as_eddsa(), args.payload.as_eddsa());
+    }
+
+    /// 31 bytes is the largest payload the old lower bound rejected, so it locks
+    /// in the exact boundary this change moves.
+    #[rstest]
+    #[case(String::new(), vec![])]
+    #[case("0a".to_string(), vec![0x0a])]
+    #[case("0a0b0c".to_string(), vec![0x0a, 0x0b, 0x0c])]
+    #[case("0a".repeat(31), vec![0x0a; 31])]
+    fn deserialize__should_accept_eddsa_shorter_than_32_bytes(
+        #[case] payload_hex: String,
+        #[case] expected: Vec<u8>,
+    ) {
+        // Given
+        let json = serde_json::json!({
+            "path": "solana-path",
+            "payload_v2": {"Eddsa": payload_hex},
+            "domain_id": 1
+        });
+
+        // When
+        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(args.payload.as_eddsa().unwrap(), expected.as_slice());
     }
 }

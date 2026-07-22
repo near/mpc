@@ -13,16 +13,16 @@ use threshold_signatures::participants::Participant;
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
         new_threshold: ReconstructionThreshold,
+        old_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
-        let old_threshold: usize = old_participants.threshold.try_into()?;
         let new_keyshare = KeyResharingComputation {
             threshold: new_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: ReconstructionThreshold::from(old_threshold),
+            old_threshold,
             my_share,
             public_key,
         }

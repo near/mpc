@@ -1809,13 +1809,14 @@ dependencies = [
  "derive_more 2.1.1",
  "ed25519-dalek",
  "insta",
- "mpc-call-args",
  "near-account-id",
  "near-async",
  "near-client",
+ "near-contract-transport",
  "near-crypto 2.13.1",
  "near-indexer",
  "near-indexer-primitives",
+ "near-mpc-bounded-collections",
  "near-o11y 2.13.1",
  "near-sdk",
  "near-store",
@@ -1839,7 +1840,7 @@ name = "chain-gateway-test-contract"
 version = "3.13.0"
 dependencies = [
  "borsh",
- "mpc-call-args",
+ "near-contract-transport",
  "near-sdk",
  "serde_json",
 ]
@@ -5847,14 +5848,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpc-call-args"
-version = "3.13.0"
-dependencies = [
- "near-gas",
- "near-token",
-]
-
-[[package]]
 name = "mpc-contract"
 version = "3.13.0"
 dependencies = [
@@ -5989,6 +5982,7 @@ dependencies = [
  "near-async",
  "near-client",
  "near-config-utils 2.13.1",
+ "near-contract-transport",
  "near-crypto 2.13.1",
  "near-indexer",
  "near-indexer-primitives",
@@ -6516,6 +6510,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-contract-transport"
+version = "3.13.0"
+dependencies = [
+ "derive_more 2.1.1",
+ "near-account-id",
+ "near-gas",
+ "near-token",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "near-crypto"
 version = "0.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7026,6 +7032,7 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-sdk",
  "rand 0.8.6",
+ "rstest",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -11467,6 +11474,7 @@ dependencies = [
  "ed25519-dalek",
  "mpc-primitives",
  "near-account-id",
+ "near-contract-transport",
  "near-mpc-contract-interface",
  "serde",
  "serde_json",
