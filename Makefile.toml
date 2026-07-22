@@ -187,6 +187,20 @@ args = [
   "--locked",
 ]
 
+[tasks.build-tee-verifier-optimized]
+description = "Build the tee-verifier WASM for localnet"
+command = "cargo"
+args = [
+  "near",
+  "build",
+  "non-reproducible-wasm",
+  "--no-abi",
+  "--profile=release-contract",
+  "--manifest-path",
+  "crates/tee-verifier/Cargo.toml",
+  "--locked",
+]
+
 [tasks.build-test-parallel-contract-optimized]
 description = "Build the test-parallel-contract WASM used by the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
