@@ -27,6 +27,13 @@ pub fn participant_context(account_id: &AccountId) -> VMContext {
         .build()
 }
 
+pub fn participant_context_with_deposit(account_id: &AccountId, deposit: NearToken) -> VMContext {
+    VMContext {
+        attached_deposit: deposit,
+        ..participant_context(account_id)
+    }
+}
+
 /// Initializes a `Running` contract with a single Sign domain from `parameters`.
 pub fn init_contract(
     parameters: &ThresholdParameters,

@@ -1,7 +1,12 @@
 #[derive(Debug, thiserror::Error)]
 pub enum TeeContextError {
-    #[error("chain gateway error: {0}")]
-    ChainGateway(#[from] chain_gateway::errors::ChainGatewayError),
-    #[error("serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
+    #[error("allowed-hashes watcher closed before delivering an initial value")]
+    HashWatcherClosed,
+    #[error(transparent)]
+    ContractCall(
+        #[from]
+        near_mpc_contract_interface::client::MpcContractHandleError<
+            chain_gateway::errors::ChainGatewayError,
+        >,
+    ),
 }

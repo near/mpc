@@ -92,9 +92,9 @@ near_call_ro() {
     json-args "$args" network-config "$NEAR_NETWORK_CONFIG" now 2>&1
 }
 near_call_tx() {
-  local method="$1" args="$2" signer="$3"
+  local method="$1" args="$2" signer="$3" deposit="${4:-0 NEAR}"
   near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" "$method" \
-    json-args "$args" prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
+    json-args "$args" prepaid-gas '300.0 Tgas' attached-deposit "$deposit" \
     sign-as "$signer" network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send 2>&1
 }
 

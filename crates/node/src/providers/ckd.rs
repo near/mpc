@@ -8,10 +8,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use threshold_signatures::confidential_key_derivation::{
-    ElementG1, KeygenOutput, SigningShare, VerifyingKey,
+    BLS12381SHA256, ElementG1, KeygenOutput, SigningShare, VerifyingKey,
 };
 
-use threshold_signatures::ReconstructionThreshold;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 
 use mpc_node_config::ConfigFile;
 
@@ -19,7 +19,7 @@ use crate::{
     config::{MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
-    providers::SignatureProvider,
+    providers::{DomainKeyshare, SignatureProvider},
     storage::CKDRequestStorage,
     types::{CKDId, SignatureId},
 };
@@ -43,8 +43,10 @@ pub struct CKDProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     ckd_request_store: Arc<CKDRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
+    keyshares: HashMap<DomainId, CkdKeyshare>,
 }
+
+pub(super) type CkdKeyshare = DomainKeyshare<BLS12381SHA256>;
 
 impl CKDProvider {
     pub fn new(
@@ -52,7 +54,7 @@ impl CKDProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         ckd_request_store: Arc<CKDRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, CkdKeyshare>,
     ) -> Self {
         Self {
             config,
@@ -61,6 +63,13 @@ impl CKDProvider {
             ckd_request_store,
             keyshares,
         }
+    }
+
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<CkdKeyshare> {
+        self.keyshares
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -79,14 +88,15 @@ impl SignatureProvider for CKDProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_threshold: TSReconstructionThreshold,
+        old_threshold: TSReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -94,6 +104,7 @@ impl SignatureProvider for CKDProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_resharing_client_internal(
             new_threshold,
+            old_threshold,
             key_share,
             public_key,
             old_participants,

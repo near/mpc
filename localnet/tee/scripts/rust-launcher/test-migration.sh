@@ -151,7 +151,7 @@ register_backup_service() {
   [ -n "$pk" ] || fatal "could not derive backup-cli public key"
   log "Registering backup-cli pk=$pk for account=$acct"
   near_call_tx register_backup_service \
-    "{\"backup_service_info\":{\"public_key\":\"$pk\"}}" "$acct" \
+    "{\"backup_service_info\":{\"public_key\":\"$pk\"}}" "$acct" '1 yoctoNEAR' \
     | tail -5
 
   wait_for_source_indexer_backup_service "$B_SOURCE_INDEX" "$pk"
@@ -442,7 +442,7 @@ do_start_node_migration() {
   args="$(jq -nc \
     --arg pk "$signer_pk" --arg url "$url" --arg tls "$tls_pk" \
     '{destination_node_info: {signer_account_pk:$pk, destination_node_info: {url:$url, tls_public_key:$tls}}}')"
-  near_call_tx start_node_migration "$args" "$source_acct" | tail -5
+  near_call_tx start_node_migration "$args" "$source_acct" '1 yoctoNEAR' | tail -5
 
   # Wait for the source node's indexer to see the active_migration entry —
   # backup-cli's PUT relies on it (else mid-PUT the destination_node_info

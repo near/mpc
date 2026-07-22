@@ -37,6 +37,8 @@ pub struct InitConfig {
     pub return_ck_and_clean_state_on_success_call_tera_gas: Option<u64>,
     /// Prepaid gas for a `fail_on_timeout` call.
     pub fail_on_timeout_tera_gas: Option<u64>,
+    /// Prepaid gas for a `fail_attestation_submission` call.
+    pub fail_attestation_submission_tera_gas: Option<u64>,
     /// Prepaid gas for a `clean_tee_status` call.
     pub clean_tee_status_tera_gas: Option<u64>,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
@@ -49,6 +51,10 @@ pub struct InitConfig {
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub remove_non_participant_tee_verifier_votes_tera_gas: Option<u64>,
+    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    pub verifier_tera_gas: Option<u64>,
+    /// Prepaid gas for the `resolve_verification` callback.
+    pub resolve_verification_tera_gas: Option<u64>,
 }
 
 /// Configuration parameters of the contract.
@@ -87,6 +93,8 @@ pub struct Config {
     pub return_ck_and_clean_state_on_success_call_tera_gas: u64,
     /// Prepaid gas for a `fail_on_timeout` call.
     pub fail_on_timeout_tera_gas: u64,
+    /// Prepaid gas for a `fail_attestation_submission` call.
+    pub fail_attestation_submission_tera_gas: u64,
     /// Prepaid gas for a `clean_tee_status` call.
     pub clean_tee_status_tera_gas: u64,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
@@ -99,6 +107,10 @@ pub struct Config {
     pub clean_foreign_chain_data_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub remove_non_participant_tee_verifier_votes_tera_gas: u64,
+    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    pub verifier_tera_gas: u64,
+    /// Prepaid gas for the `resolve_verification` callback.
+    pub resolve_verification_tera_gas: u64,
 }
 
 #[cfg(test)]
@@ -117,12 +129,15 @@ mod tests {
             return_signature_and_clean_state_on_success_call_tera_gas: Some(7),
             return_ck_and_clean_state_on_success_call_tera_gas: Some(7),
             fail_on_timeout_tera_gas: Some(2),
+            fail_attestation_submission_tera_gas: Some(2),
             clean_tee_status_tera_gas: Some(10),
             clean_invalid_attestations_tera_gas: Some(10),
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
             remove_non_participant_update_votes_tera_gas: Some(5),
             clean_foreign_chain_data_tera_gas: Some(5),
             remove_non_participant_tee_verifier_votes_tera_gas: Some(5),
+            verifier_tera_gas: Some(100),
+            resolve_verification_tera_gas: Some(60),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
@@ -167,12 +182,15 @@ mod tests {
             return_signature_and_clean_state_on_success_call_tera_gas: None,
             return_ck_and_clean_state_on_success_call_tera_gas: None,
             fail_on_timeout_tera_gas: None,
+            fail_attestation_submission_tera_gas: None,
             clean_tee_status_tera_gas: None,
             clean_invalid_attestations_tera_gas: None,
             cleanup_orphaned_node_migrations_tera_gas: None,
             remove_non_participant_update_votes_tera_gas: None,
             clean_foreign_chain_data_tera_gas: None,
             remove_non_participant_tee_verifier_votes_tera_gas: None,
+            verifier_tera_gas: None,
+            resolve_verification_tera_gas: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);
