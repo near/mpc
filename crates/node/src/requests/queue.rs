@@ -442,6 +442,12 @@ impl DropReason {
     }
 }
 
+pub(super) struct EligibleLeadersAndHeights {
+    pub eligible_leaders: HashSet<ParticipantId>,
+    pub maximum_height: u64,
+    pub my_indexer_height: u64,
+}
+
 impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     PendingRequests<RequestType, ChainRespondArgsType>
 {
@@ -525,7 +531,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
 
     /// Returns the set of participants that are eligible to be leaders for the requests,
     /// the maximum height available across alive participants, and our own indexer height.
-    pub(super) fn eligible_leaders_and_heights(&self) -> (HashSet<ParticipantId>, u64, u64) {
+    pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
         // Collect the indexer heights and alive participants. Calculate maximum available height
         // from the alive nodes. Then, filter out the participants that are not alive or are too
         // stale.
@@ -550,7 +556,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             })
             .copied()
             .collect::<HashSet<_>>();
-        (eligible_leaders, maximum_height, my_indexer_height)
+        EligibleLeadersAndHeights {
+            eligible_leaders,
+            maximum_height,
+            my_indexer_height,
+        }
     }
 
     /// Returns the list of requests that we should attempt to generate a response for,
@@ -587,8 +597,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
         let now = self.clock.now();
 
-        let (eligible_leaders, _maximum_height, my_indexer_height) =
-            self.eligible_leaders_and_heights();
+        let EligibleLeadersAndHeights {
+            eligible_leaders,
+            my_indexer_height,
+            ..
+        } = self.eligible_leaders_and_heights();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
 
         let mut result = Vec::new();
@@ -1329,10 +1342,35 @@ mod tests {
         }
 
         // Then
-        let _ = pending_requests.get_requests_to_attempt();
+        assert!(pending_requests.get_requests_to_attempt().is_empty());
         assert!(
             pending_requests.requests.contains_key(&req.id),
             "request must not be dropped as timed out while our own indexer is behind"
         );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_time_out_request_when_own_indexer_advanced_past_expiration()
+    {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_follower();
+        let block_height = setup.update(&mut pending_requests);
+        let me = setup.participant_ids[TestSetup::MY_INDEX];
+
+        // When
+        setup
+            .network_api
+            .set_height(me, block_height + REQUEST_EXPIRATION_BLOCKS);
+        for (i, p) in setup.participant_ids.iter().enumerate() {
+            if i != TestSetup::MY_INDEX {
+                setup.network_api.set_height(*p, block_height);
+            }
+        }
+
+        // Then
+        assert!(pending_requests.get_requests_to_attempt().is_empty());
+        assert!(!pending_requests.requests.contains_key(&req.id));
     }
 }
