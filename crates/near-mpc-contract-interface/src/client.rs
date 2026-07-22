@@ -6,10 +6,12 @@
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
-use crate::call_args::{SignArgs, SubmitParticipantInfoArgs};
+use crate::call_args::{RequestAppPrivateKeyArgs, SignArgs, SubmitParticipantInfoArgs};
 use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
-use crate::method_names::{SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
-use crate::types::{AccountId, Attestation, Ed25519PublicKey, SignRequestArgs};
+use crate::method_names::{REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
+use crate::types::{
+    AccountId, Attestation, CKDAppPublicKey, CKDRequestArgs, Ed25519PublicKey, SignRequestArgs,
+};
 
 /// Default gas for handle-issued calls without a method-specific amount.
 // TODO(#166): 300 Tgas is the protocol maximum and higher than most methods
@@ -17,6 +19,8 @@ use crate::types::{AccountId, Attestation, Ed25519PublicKey, SignRequestArgs};
 pub const MAX_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
 
 pub const SIGN_GAS: NearGas = NearGas::from_tgas(15);
+
+pub const CKD_PV_GAS: NearGas = NearGas::from_tgas(100);
 
 /// Typed interface to the MPC signer contract at a fixed account, generic over
 /// the transport backend `C`.
@@ -48,6 +52,29 @@ impl<C: CallContract> MpcContractHandle<C> {
                     method_name: SIGN.to_string(),
                     args,
                     gas: SIGN_GAS,
+                    deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
+    pub async fn request_app_private_key(
+        &self,
+        request: CKDRequestArgs,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let gas = match request.app_public_key {
+            CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
+            CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
+        };
+        let args = serde_json::to_vec(&RequestAppPrivateKeyArgs::new(request))?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: REQUEST_APP_PRIVATE_KEY.to_string(),
+                    args,
+                    gas,
                     deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
                 },
             )
@@ -107,10 +134,11 @@ pub enum MpcContractHandleError<E> {
 mod tests {
     use super::MpcContractHandle;
     use crate::types::{
-        AccountId, Attestation, DomainId, Ed25519PublicKey, MockAttestation, Payload,
-        SignRequestArgs,
+        AccountId, Attestation, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, DomainId,
+        Ed25519PublicKey, MockAttestation, Payload, SignRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
+    use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use std::sync::Mutex;
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
@@ -168,6 +196,25 @@ mod tests {
             .await
             .unwrap();
         handle
+            .request_app_private_key(CKDRequestArgs {
+                derivation_path: "test".to_string(),
+                app_public_key: CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey([7u8; 48])),
+                domain_id: DomainId(0),
+            })
+            .await
+            .unwrap();
+        handle
+            .request_app_private_key(CKDRequestArgs {
+                derivation_path: "test".to_string(),
+                app_public_key: CKDAppPublicKey::AppPublicKeyPV(CKDAppPublicKeyPV {
+                    pk1: Bls12381G1PublicKey([7u8; 48]),
+                    pk2: Bls12381G2PublicKey([7u8; 96]),
+                }),
+                domain_id: DomainId(0),
+            })
+            .await
+            .unwrap();
+        handle
             .submit_participant_info(
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey::from([7u8; 32]),
@@ -178,7 +225,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 3);
+        assert_eq!(calls.len(), 5);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
