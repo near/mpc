@@ -40,9 +40,7 @@ export VERIFIER_ACCOUNT=tee-verifier.testnet
 ## 1. Reproducibly build the verifier and record its hash
 
 The hash produced here is `H_source`, the value every operator independently
-reproduces and the `expected_code_hash` they commit to when voting. Use the
-reproducible (docker) build: only it yields a hash others can reproduce from the public
-source.
+reproduces and the `expected_code_hash` they commit to when voting.
 
 ```shell
 cargo near build reproducible-wasm --manifest-path crates/tee-verifier/Cargo.toml
