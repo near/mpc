@@ -1646,6 +1646,10 @@ impl MpcContract {
         {
             log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
             self.tee_verifier_account_id = Some(new_verifier);
+            // Shorten already-stored attestations so any the rotated-out verifier
+            // accepted age out within the cap window; entries submitted after this
+            // rotation are verified by the new verifier and keep the normal window.
+            self.tee_state.cap_stored_attestation_expiries_on_rotation();
         }
         Ok(())
     }
@@ -3935,6 +3939,75 @@ mod tests {
         // candidate becomes the trusted verifier.
         vote_as(&mut contract, &participant_account_ids[1]);
         assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote_tee_verifier_change__should_cap_stored_expiries_when_threshold_reached() {
+        // Given a running contract with a stored attestation expiring far in the future.
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
+        let participant_account_ids: Vec<AccountId> = participants
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+
+        const FAR_FUTURE_EXPIRY_SECONDS: u64 = 10_000_000;
+        let tls_key = Ed25519PublicKey([50u8; 32]);
+        contract.tee_state.stored_attestations.insert(
+            tls_key.clone(),
+            NodeAttestation {
+                node_id: NodeId {
+                    account_id: participant_account_ids[0].clone(),
+                    tls_public_key: tls_key.clone(),
+                    account_public_key: Ed25519PublicKey([51u8; 32]),
+                },
+                verified_attestation: VerifiedAttestation::Mock(
+                    MpcMockAttestation::WithConstraints {
+                        mpc_docker_image_hash: None,
+                        launcher_docker_compose_hash: None,
+                        expiry_timestamp_seconds: Some(FAR_FUTURE_EXPIRY_SECONDS),
+                        expected_measurements: None,
+                    },
+                ),
+            },
+        );
+
+        let candidate: AccountId = "verifier.near".parse().unwrap();
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.clone())
+                    .predecessor_account_id(account_id.clone())
+                    .block_timestamp(0)
+                    .build()
+            );
+            contract
+                .vote_tee_verifier_change(candidate.clone(), code_hash)
+                .expect("vote should succeed");
+        };
+
+        // When the rotation crosses threshold (block time 0, so the cap ceiling is now + 1 day).
+        vote_as(&mut contract, &participant_account_ids[0]);
+        vote_as(&mut contract, &participant_account_ids[1]);
+        assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+
+        // Then the stored attestation's expiry is shortened to the 1-day cap window.
+        const ONE_DAY_SECONDS: u64 = 60 * 60 * 24;
+        let stored = contract
+            .tee_state
+            .stored_attestations
+            .get(&tls_key)
+            .unwrap();
+        let VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
+            expiry_timestamp_seconds: Some(expiry),
+            ..
+        }) = &stored.verified_attestation
+        else {
+            panic!("expected a capped WithConstraints attestation");
+        };
+        assert_eq!(*expiry, ONE_DAY_SECONDS);
     }
 
     #[test]

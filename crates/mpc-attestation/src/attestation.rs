@@ -23,9 +23,13 @@ use crate::alloc::string::{String, ToString};
 
 /// How long an accepted attestation stays trusted before it must be
 /// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
-/// well within this window, so valid attestations refresh in time.
+/// well within this window, so valid attestations refresh in time. The window
+/// stays wide (7 days) so a transient global PCCS/collateral outage cannot
+/// expire every node at once; the contract shortens stored entries to a much
+/// tighter window only on a verifier rotation (see the attestation-verifier
+/// design doc, §Governance and upgrades).
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
 // `large_enum_variant` fires only where `usize` is 64-bit; under the contract's
 // wasm32 build the variants are close enough in size that it doesn't, so gate the
@@ -254,6 +258,28 @@ impl VerifiedAttestation {
                 allowed_launcher_docker_compose_hashes,
                 allowed_measurements,
             ),
+        }
+    }
+
+    /// Lowers this attestation's expiry to `ceiling_seconds` if it is currently later; never
+    /// extends it. Used by the contract to shorten already-stored attestations on a verifier
+    /// rotation. A `Mock` without an expiry (`Valid`/`Invalid`, or `WithConstraints`/`None`) is
+    /// left untouched.
+    pub fn cap_expiry(&mut self, ceiling_seconds: u64) {
+        match self {
+            Self::Dstack(ValidatedDstackAttestation {
+                expiry_timestamp_seconds,
+                ..
+            }) => {
+                *expiry_timestamp_seconds = (*expiry_timestamp_seconds).min(ceiling_seconds);
+            }
+            Self::Mock(MockAttestation::WithConstraints {
+                expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+                ..
+            }) => {
+                *expiry_timestamp_seconds = (*expiry_timestamp_seconds).min(ceiling_seconds);
+            }
+            Self::Mock(_) => {}
         }
     }
 }
@@ -737,5 +763,86 @@ mod tests {
         attestation
             .re_verify(0, &[], &[], &[])
             .expect("no measurements constraint should skip the check");
+    }
+
+    fn dstack_with_expiry(expiry_timestamp_seconds: u64) -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: NodeImageHash::from([1; 32]),
+            launcher_compose_hash: LauncherDockerComposeHash::from([2; 32]),
+            expiry_timestamp_seconds,
+            measurements: default_measurements()[0],
+        })
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn cap_expiry__should_lower_dstack_expiry_above_ceiling() {
+        // Given: a Dstack attestation expiring later than the ceiling
+        let mut attestation = dstack_with_expiry(1_000);
+
+        // When
+        attestation.cap_expiry(600);
+
+        // Then: expiry is lowered to the ceiling
+        let VerifiedAttestation::Dstack(dstack) = attestation else {
+            panic!("expected Dstack");
+        };
+        assert_eq!(dstack.expiry_timestamp_seconds, 600);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn cap_expiry__should_not_extend_dstack_expiry_below_ceiling() {
+        // Given: a Dstack attestation already expiring before the ceiling
+        let mut attestation = dstack_with_expiry(500);
+
+        // When
+        attestation.cap_expiry(600);
+
+        // Then: expiry is left unchanged (never extended)
+        let VerifiedAttestation::Dstack(dstack) = attestation else {
+            panic!("expected Dstack");
+        };
+        assert_eq!(dstack.expiry_timestamp_seconds, 500);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn cap_expiry__should_lower_mock_with_constraints_expiry() {
+        // Given: a Mock attestation carrying an expiry above the ceiling
+        let mut attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(1_000),
+            expected_measurements: None,
+        });
+
+        // When
+        attestation.cap_expiry(600);
+
+        // Then
+        assert_matches::assert_matches!(
+            attestation,
+            VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+                expiry_timestamp_seconds: Some(600),
+                ..
+            })
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn cap_expiry__should_leave_mock_without_expiry_untouched() {
+        // Given: a Mock attestation with no expiry
+        let mut attestation = VerifiedAttestation::Mock(MockAttestation::Valid);
+
+        // When
+        attestation.cap_expiry(600);
+
+        // Then: still the same variant, no panic
+        assert_matches::assert_matches!(
+            attestation,
+            VerifiedAttestation::Mock(MockAttestation::Valid)
+        );
     }
 }
