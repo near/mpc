@@ -8,11 +8,10 @@ license = { workspace = true }
 chain-gateway = { workspace = true }
 mpc-primitives = { workspace = true }
 near-contract-transport = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["client"] }
 
 near-account-id = { workspace = true }
-near-mpc-contract-interface = { workspace = true, features = ["call-args"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -23,6 +22,7 @@ assert_matches = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 ed25519-dalek = { workspace = true }
 mpc-primitives = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }
 
 [lints]
