@@ -61,15 +61,15 @@ where
             state.last_cleanup = now;
         }
 
-        if !state.entries.contains_key(key) && state.entries.len() >= self.max_entries {
-            if let Some(oldest_key) = state
+        if !state.entries.contains_key(key)
+            && state.entries.len() >= self.max_entries
+            && let Some(oldest_key) = state
                 .entries
                 .iter()
                 .min_by_key(|(_, entry)| entry.last_seen)
                 .map(|(k, _)| k.clone())
-            {
-                state.entries.remove(&oldest_key);
-            }
+        {
+            state.entries.remove(&oldest_key);
         }
 
         match state.entries.entry(key.clone()) {
