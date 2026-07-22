@@ -7000,6 +7000,7 @@ dependencies = [
  "hex",
  "insta",
  "mpc-primitives",
+ "near-contract-transport",
  "near-mpc-bounded-collections",
  "near-mpc-crypto-types",
  "rstest",
@@ -7009,6 +7010,8 @@ dependencies = [
  "serde_repr",
  "serde_with",
  "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
