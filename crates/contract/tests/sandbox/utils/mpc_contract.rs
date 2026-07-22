@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
-use super::consts::SUBMIT_PARTICIPANT_INFO_DEPOSIT;
-use super::transactions::all_receipts_successful;
+use super::transactions::{SandboxCaller, all_receipts_successful};
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
+    client::MpcContractHandle,
     method_names,
     types::{Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold},
 };
@@ -57,14 +57,11 @@ pub async fn submit_participant_info(
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    submit_participant_info_with_deposit(
-        account,
-        contract,
-        attestation,
-        tls_key,
-        SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-    )
-    .await
+    let contract_handle = MpcContractHandle::new(SandboxCaller(account), contract.id().clone());
+    let result = contract_handle
+        .submit_participant_info(attestation.clone(), tls_key.clone())
+        .await?;
+    Ok(result)
 }
 
 pub async fn submit_participant_info_with_deposit(
