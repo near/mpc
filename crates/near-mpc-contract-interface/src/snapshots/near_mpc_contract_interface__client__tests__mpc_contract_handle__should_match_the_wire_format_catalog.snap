@@ -1,0 +1,15 @@
+---
+source: crates/near-mpc-contract-interface/src/client.rs
+expression: catalog
+---
+contract: mpc.near
+method:   submit_participant_info
+gas:      300.0 Tgas
+deposit:  0.100 NEAR
+args:     {"proposed_participant_attestation":{"Mock":"Valid"},"tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
+
+contract: mpc.near
+method:   verify_tee
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {}
