@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::Context;
 use e2e_tests::MpcNodeState;
-use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
@@ -106,13 +105,7 @@ async fn test_web_endpoints() {
     for domain in &running.domains.domains {
         let outcome = match domain.purpose {
             DomainPurpose::Sign => {
-                let payload = match domain.protocol {
-                    Protocol::CaitSith | Protocol::DamgardEtAl => {
-                        common::generate_ecdsa_payload(&mut rng)
-                    }
-                    Protocol::Frost => common::generate_eddsa_payload(&mut rng),
-                    _ => continue,
-                };
+                let payload = common::must_get_payload_for_domain(domain, &mut rng);
                 cluster
                     .send_sign_request(domain.id, payload, cluster.default_user_account())
                     .await

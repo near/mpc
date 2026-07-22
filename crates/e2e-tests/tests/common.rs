@@ -347,6 +347,16 @@ pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
         .build()
 }
 
+/// Payload matching the signature scheme of `domain`. Panics for
+/// non-signing curves.
+pub fn must_get_payload_for_domain(domain: &DomainConfig, rng: &mut impl rand::Rng) -> Payload {
+    match Curve::from(domain.protocol) {
+        Curve::Secp256k1 => generate_ecdsa_payload(rng),
+        Curve::Edwards25519 => generate_eddsa_payload(rng),
+        c => panic!("unsupported curve in test: {c:?}"),
+    }
+}
+
 pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> Payload {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
@@ -463,12 +473,12 @@ pub async fn sign_all_domains(
         .filter(|d| d.purpose == DomainPurpose::Sign);
 
     for domain in sign_domains {
-        let payload = match Curve::from(domain.protocol) {
-            Curve::Edwards25519 => generate_eddsa_payload(rng),
-            _ => generate_ecdsa_payload(rng),
-        };
         let outcome = cluster
-            .send_sign_request(domain.id, payload, cluster.default_user_account())
+            .send_sign_request(
+                domain.id,
+                must_get_payload_for_domain(domain, rng),
+                cluster.default_user_account(),
+            )
             .await
             .expect("sign request failed");
         assert!(

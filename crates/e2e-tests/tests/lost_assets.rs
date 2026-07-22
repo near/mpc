@@ -1,7 +1,6 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use mpc_primitives::domain::Curve;
 use near_mpc_contract_interface::types::DomainPurpose;
 use rand::SeedableRng;
 
@@ -78,11 +77,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         .find(|d| matches!(d.purpose, DomainPurpose::Sign))
     {
         for _ in 0..PRESIGNATURES_TO_BUFFER {
-            let payload = match Curve::from(domain.protocol) {
-                Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
-                Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
-                _ => break,
-            };
+            let payload = common::must_get_payload_for_domain(domain, &mut rng);
             let outcome = cluster
                 .send_sign_request(domain.id, payload, cluster.default_user_account())
                 .await
@@ -115,11 +110,7 @@ async fn dead_node_presignatures_purged_and_signing_recovers() {
         .iter()
         .find(|d| matches!(d.purpose, DomainPurpose::Sign))
     {
-        let payload = match Curve::from(domain.protocol) {
-            Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
-            Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
-            _ => return,
-        };
+        let payload = common::must_get_payload_for_domain(domain, &mut rng);
         let outcome = cluster
             .send_sign_request(domain.id, payload, cluster.default_user_account())
             .await
