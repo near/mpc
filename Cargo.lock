@@ -3199,6 +3199,7 @@ dependencies = [
  "mpc-node-config",
  "mpc-primitives",
  "near-account-id",
+ "near-contract-transport",
  "near-indexer-primitives",
  "near-kit",
  "near-mpc-bounded-collections",
