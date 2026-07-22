@@ -2,6 +2,11 @@
 #[cfg(feature = "call-args")]
 pub mod call_args;
 
+pub mod deposits;
+
+#[cfg(feature = "client")]
+pub mod client;
+
 pub mod method_names;
 pub mod types {
     pub use attestation::{

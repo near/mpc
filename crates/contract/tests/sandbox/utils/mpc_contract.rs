@@ -1,13 +1,24 @@
 use std::collections::BTreeSet;
 
+use super::consts::SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
+use near_mpc_contract_interface::{
+    method_names,
+    types::{Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold},
 };
-use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
+use near_workspaces::{
+    Account, AccountId, Contract, result::ExecutionFinalResult, types::NearToken,
+};
+
+pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
+    result
+        .outcomes()
+        .iter()
+        .map(|outcome| outcome.tokens_burnt)
+        .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+}
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract
@@ -40,21 +51,55 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
         .collect())
 }
 
-/// Helper function to submit participant info with TEE attestation.
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    let result = account
+    submit_participant_info_with_deposit(
+        account,
+        contract,
+        attestation,
+        tls_key,
+        SUBMIT_PARTICIPANT_INFO_DEPOSIT,
+    )
+    .await
+}
+
+pub async fn submit_participant_info_with_deposit(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &Ed25519PublicKey,
+    deposit: NearToken,
+) -> anyhow::Result<ExecutionFinalResult> {
+    Ok(account
         .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
         .args_json((attestation, tls_key))
+        .deposit(deposit)
         .max_gas()
         .transact()
-        .await?;
-    dbg!(&result);
-    Ok(result)
+        .await?)
+}
+
+pub async fn vote_tee_verifier_change(
+    account: &Account,
+    contract: &Contract,
+    candidate_account_id: &AccountId,
+    expected_code_hash: [u8; 32],
+) -> anyhow::Result<()> {
+    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
+    all_receipts_successful(
+        account
+            .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
+            .args_json(serde_json::json!({
+                "candidate_account_id": candidate_account_id,
+                "expected_code_hash": expected_code_hash,
+            }))
+            .transact()
+            .await?,
+    )
 }
 
 pub async fn get_participant_attestation(

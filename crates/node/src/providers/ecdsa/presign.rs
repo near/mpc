@@ -1,21 +1,18 @@
-use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{ParticipantId, UniqueId};
+use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
-use crate::providers::HasParticipants;
 use crate::providers::ecdsa::triple::participants_from_triples;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
+use crate::providers::ecdsa::{
+    EcdsaKeyshare, EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage,
+};
+use crate::providers::ecdsa_common;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_node_config::PresignatureConfig;
-use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
-use near_time::Clock;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::Duration;
@@ -26,32 +23,8 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::{
 };
 use threshold_signatures::participants::Participant;
 
-#[derive(derive_more::Deref)]
-pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
-
-impl PresignatureStorage {
-    pub fn new(
-        clock: Clock,
-        db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
-        domain_id: DomainId,
-    ) -> anyhow::Result<Self> {
-        Ok(Self(DistributedAssetStorage::<
-            PresignOutputWithParticipants,
-        >::new(
-            clock,
-            db,
-            crate::db::DBCol::Presignature,
-            domain_id.0.to_be_bytes().to_vec(),
-            my_participant_id,
-            |participants, presignature| {
-                presignature.is_subset_of_active_participants(participants)
-            },
-            alive_participant_ids_query,
-        )?))
-    }
-}
+pub type PresignatureStorage = ecdsa_common::PresignatureStorage<PresignOutput>;
+pub type PresignOutputWithParticipants = ecdsa_common::PresignOutputWithParticipants<PresignOutput>;
 
 impl EcdsaSignatureProvider {
     /// Continuously generates presignatures, trying to maintain the desired number of
@@ -66,13 +39,20 @@ impl EcdsaSignatureProvider {
     /// so that needs to be separately handled.
     pub(super) async fn run_background_presignature_generation(
         client: Arc<MeshNetworkClient>,
-        threshold: TSReconstructionThreshold,
         config: Arc<PresignatureConfig>,
         triple_store: Arc<TripleStorage>,
         domain_id: DomainId,
-        presignature_store: Arc<PresignatureStorage>,
-        keygen_out: KeygenOutput,
+        keyshare: EcdsaKeyshare,
     ) -> ! {
+        let keygen_out = keyshare.keygen_output;
+        let presignature_store = keyshare.presignature_store;
+        let threshold_usize: usize = keyshare
+            .reconstruction_threshold
+            .inner()
+            .try_into()
+            .expect("contract validation guarantees a valid threshold");
+        let threshold = TSReconstructionThreshold::from(threshold_usize);
+
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
             desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
@@ -177,20 +157,30 @@ impl EcdsaSignatureProvider {
         // owned by the leader, never one of ours.
         id.validate_owned_by(leader)?;
         paired_triple_id.validate_owned_by(leader)?;
-        let domain_data = self.domain_data(domain_id)?;
+        let keyshare = self.keyshare(domain_id)?;
 
-        // Triple store to consume from is keyed by the presign's `t`, which
-        // equals the number of presign participants (same as triple
-        // participants — the leader pairs them).
-        let threshold_usize: usize = channel.participants().len();
-        let threshold = ReconstructionThreshold::new(threshold_usize.try_into()?);
+        // The triple store is keyed by the domain's reconstruction threshold
+        // `t`. For cait-sith the leader pairs exactly `t` participants, so the
+        // channel participant count must match — cross-check it.
+        let threshold = keyshare.reconstruction_threshold;
+        let threshold_usize: usize = threshold.inner().try_into()?;
+        if channel.participants().len() != threshold_usize {
+            metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS
+                .with_label_values(&[&domain_id.to_string()])
+                .inc();
+            anyhow::bail!(
+                "CaitSith presign participant count ({}) does not match domain threshold t={}",
+                channel.participants().len(),
+                threshold_usize,
+            );
+        }
         let triple_store = self.triple_store_for_t(threshold)?;
         FollowerPresignComputation {
             threshold: TSReconstructionThreshold::from(threshold_usize),
-            keygen_out: domain_data.keyshare,
+            keygen_out: keyshare.keygen_output,
             triple_store,
             paired_triple_id,
-            out_presignature_store: domain_data.presignature_store,
+            out_presignature_store: keyshare.presignature_store,
             out_presignature_id: id,
         }
         .perform_leader_centric_computation(
@@ -200,20 +190,6 @@ impl EcdsaSignatureProvider {
         .await?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresignOutputWithParticipants {
-    pub presignature: PresignOutput,
-    pub participants: Vec<ParticipantId>,
-}
-
-impl HasParticipants for PresignOutputWithParticipants {
-    fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
-        self.participants
-            .iter()
-            .all(|p| active_participants.contains(p))
     }
 }
 

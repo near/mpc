@@ -1,4 +1,7 @@
-use crate::common;
+use crate::common::{
+    CKD_PV_VERIFICATION_PORT_SEED, CKD_VERIFICATION_PORT_SEED, must_get_bls_public_key,
+    must_get_domain, must_setup_cluster,
+};
 
 use anyhow::Context;
 use blstrs::{G1Projective, G2Projective, Scalar};
@@ -7,8 +10,7 @@ use group::ff::Field as _;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::kdf::derive_app_id;
 use near_mpc_contract_interface::types::{
-    Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, Curve,
-    DomainPurpose,
+    Bls12381G1PublicKey, Bls12381G2PublicKey, CKDAppPublicKey, CKDAppPublicKeyPV, Protocol,
 };
 use rand::SeedableRng;
 use threshold_signatures::confidential_key_derivation::{
@@ -42,20 +44,11 @@ fn verify_ckd(
 #[expect(non_snake_case)]
 async fn ckd_response__passes_cryptographic_verification() {
     // given
-    let (cluster, running) =
-        common::must_setup_cluster(common::CKD_VERIFICATION_PORT_SEED, |_| {}).await;
+    let (cluster, running) = must_setup_cluster(CKD_VERIFICATION_PORT_SEED, |_| {}).await;
 
-    let bls_domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| {
-            Curve::from(d.protocol) == Curve::Bls12381 && matches!(d.purpose, DomainPurpose::CKD)
-        })
-        .expect("no Bls12381 CKD domain found")
-        .clone();
+    let bls_domain = must_get_domain(&running, Protocol::ConfidentialKeyDerivation);
 
-    let mpc_pk = common::must_get_bls_public_key(&running, bls_domain.id);
+    let mpc_pk = must_get_bls_public_key(&running, bls_domain.id);
     let user = cluster.default_user_account().clone();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
@@ -95,20 +88,11 @@ async fn ckd_response__passes_cryptographic_verification() {
 #[expect(non_snake_case)]
 async fn ckd_pv_response__passes_cryptographic_verification() {
     // given
-    let (cluster, running) =
-        common::must_setup_cluster(common::CKD_PV_VERIFICATION_PORT_SEED, |_| {}).await;
+    let (cluster, running) = must_setup_cluster(CKD_PV_VERIFICATION_PORT_SEED, |_| {}).await;
 
-    let bls_domain = running
-        .domains
-        .domains
-        .iter()
-        .find(|d| {
-            Curve::from(d.protocol) == Curve::Bls12381 && matches!(d.purpose, DomainPurpose::CKD)
-        })
-        .expect("no Bls12381 CKD domain found")
-        .clone();
+    let bls_domain = must_get_domain(&running, Protocol::ConfidentialKeyDerivation);
 
-    let mpc_pk = common::must_get_bls_public_key(&running, bls_domain.id);
+    let mpc_pk = must_get_bls_public_key(&running, bls_domain.id);
     let user = cluster.default_user_account().clone();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(2);
