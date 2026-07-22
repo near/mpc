@@ -1,8 +1,7 @@
 # Deploy the TEE verifier contract
 
 This runbook deploys the stateless [`tee-verifier`](../crates/tee-verifier) contract and
-makes it the trusted verifier for the MPC contract. The steps are the same on `mainnet` and `testnet`; only
-account funding differs ([step 2](#2-create-the-verifier-account)).
+makes it the trusted verifier for the MPC contract.
 
 ## Overview
 
