@@ -7,12 +7,11 @@ use blstrs::{G1Projective, Scalar};
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
 use group::Group;
 use near_mpc_contract_interface::types::{
-    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
-    ProtocolContractState, PublicKey, PublicKeyExtended, ReconstructionThreshold,
+    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose, Payload,
+    Protocol, ProtocolContractState, PublicKey, PublicKeyExtended, ReconstructionThreshold,
     RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
-use serde_json::json;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -348,16 +347,16 @@ pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
         .build()
 }
 
-pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
+pub fn generate_ecdsa_payload(rng: &mut impl rand::Rng) -> Payload {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
-    json!({ "Ecdsa": hex::encode(bytes) })
+    Payload::Ecdsa(bytes.into())
 }
 
-pub fn generate_eddsa_payload(rng: &mut impl rand::Rng) -> serde_json::Value {
+pub fn generate_eddsa_payload(rng: &mut impl rand::Rng) -> Payload {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
-    json!({ "Eddsa": hex::encode(bytes) })
+    Payload::Eddsa(bytes.into())
 }
 
 pub fn generate_ckd_app_public_key(rng: &mut impl rand::Rng) -> CKDAppPublicKey {

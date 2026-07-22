@@ -13,9 +13,10 @@ use near_mpc_contract_interface::{
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
         ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants,
+        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
         ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
-        ProviderConfig, ProviderId, ReconstructionThreshold, Threshold, ThresholdParameters,
+        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, Threshold,
+        ThresholdParameters,
     },
 };
 use rand::SeedableRng;
@@ -803,6 +804,15 @@ impl MpcCluster {
         self.blockchain.client_for(account_id.as_ref(), key)
     }
 
+    /// A typed [`MpcContractHandle`] on the MPC contract, calling as the given
+    /// user account.
+    pub fn contract_handle(
+        &self,
+        account_id: &AccountId,
+    ) -> anyhow::Result<MpcContractHandle<NearKitCaller>> {
+        self.contract.contract_handle(self.user_client(account_id)?)
+    }
+
     pub fn default_user_account(&self) -> &AccountId {
         self.user_accounts
             .keys()
@@ -814,20 +824,17 @@ impl MpcCluster {
     pub async fn send_sign_request(
         &self,
         domain_id: DomainId,
-        payload: serde_json::Value,
+        payload: Payload,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "path": "test",
-                "payload_v2": payload,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+        self.contract_handle(account_id)?
+            .sign(SignRequestArgs {
+                path: "test".to_string(),
+                payload,
+                domain_id,
+            })
             .await
+            .context("failed to send sign request")
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.
@@ -1329,11 +1336,10 @@ async fn init_contract(
 
     for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
-        let client = blockchain.client_for(&account, &near_keys[i])?;
-        let contract_handle = MpcContractHandle::new(client, contract.contract_id().parse()?);
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
-        contract_handle
+        contract
+            .contract_handle(blockchain.client_for(&account, &near_keys[i])?)?
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;

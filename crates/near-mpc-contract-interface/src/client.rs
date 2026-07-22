@@ -6,16 +6,17 @@
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
-use crate::call_args::SubmitParticipantInfoArgs;
-use crate::method_names::{SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
-use crate::types::{AccountId, Attestation, Ed25519PublicKey};
+use crate::call_args::{SignArgs, SubmitParticipantInfoArgs};
+use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
+use crate::method_names::{SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
+use crate::types::{AccountId, Attestation, Ed25519PublicKey, SignRequestArgs};
 
-/// Gas attached to every handle-issued call.
+/// Default gas for handle-issued calls without a method-specific amount.
 // TODO(#166): 300 Tgas is the protocol maximum and higher than most methods
 // need; benchmark per method and reduce.
 pub const MAX_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
 
-pub const SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR: u128 = 100;
+pub const SIGN_GAS: NearGas = NearGas::from_tgas(15);
 
 /// Typed interface to the MPC signer contract at a fixed account, generic over
 /// the transport backend `C`.
@@ -35,6 +36,25 @@ impl<C> MpcContractHandle<C> {
 }
 
 impl<C: CallContract> MpcContractHandle<C> {
+    pub async fn sign(
+        &self,
+        request: SignRequestArgs,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&SignArgs::new(request))?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: SIGN.to_string(),
+                    args,
+                    gas: SIGN_GAS,
+                    deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
     pub async fn submit_participant_info(
         &self,
         proposed_participant_attestation: Attestation,
@@ -86,7 +106,10 @@ pub enum MpcContractHandleError<E> {
 #[expect(non_snake_case)]
 mod tests {
     use super::MpcContractHandle;
-    use crate::types::{AccountId, Attestation, Ed25519PublicKey, MockAttestation};
+    use crate::types::{
+        AccountId, Attestation, DomainId, Ed25519PublicKey, MockAttestation, Payload,
+        SignRequestArgs,
+    };
     use near_contract_transport::{CallContract, FunctionCallArgs};
     use std::sync::Mutex;
 
@@ -121,7 +144,7 @@ mod tests {
             "contract: {contract_id}\nmethod:   {}\ngas:      {}\ndeposit:  {}\nargs:     {}",
             call.method_name,
             call.gas,
-            call.deposit,
+            call.deposit.exact_amount_display(),
             String::from_utf8_lossy(&call.args),
         )
     }
@@ -137,6 +160,14 @@ mod tests {
 
         // When: every handle method, once, in declaration order
         handle
+            .sign(SignRequestArgs {
+                path: "test".to_string(),
+                payload: Payload::Ecdsa([7u8; 32].into()),
+                domain_id: DomainId(0),
+            })
+            .await
+            .unwrap();
+        handle
             .submit_participant_info(
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey::from([7u8; 32]),
@@ -147,7 +178,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 2);
+        assert_eq!(calls.len(), 3);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
