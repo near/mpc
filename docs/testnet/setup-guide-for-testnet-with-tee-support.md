@@ -16,13 +16,12 @@ been removed (#2951, #2952).
 This guide walks the **manual two-node** (`frodo` + `sam`) flow end-to-end —
 useful when learning the system or debugging individual steps.
 
-For deploying **N nodes at once** (or scaling up existing networks), use
-`localnet/tee/scripts/rust-launcher/deploy-tee-cluster.sh` with
-`MODE=testnet NEAR_NETWORK_CONFIG=testnet`. It automates account
-creation, contract deployment, key generation, attestation, and voting
-in a resumable script. See
-[`how-to-run-deploy-tee-cluster.md`](../../localnet/tee/scripts/rust-launcher/how-to-run-deploy-tee-cluster.md)
-for the full reference.
+For deploying **N nodes at once** (or scaling up existing networks), the
+automated deploy tooling (`deploy-tee-cluster.sh` — resumable and phase-based:
+account creation, contract deployment, key generation, attestation, and voting)
+lives in the internal `near/mpc-private` repo under `tools/tee-cluster/`. It runs
+against a local mpc checkout via `MPC_REPO_ROOT`; see that directory's `README.md`
+and `how-to-run-deploy-tee-cluster.md` for the full reference.
 
 
 ## High-Level Steps
