@@ -2149,6 +2149,12 @@ impl MpcContract {
         self.tee_verifier_votes.pending()
     }
 
+    /// Returns the trusted TEE verifier contract account, or [`None`] until
+    /// participants vote one in via [`Self::vote_tee_verifier_change`].
+    pub fn tee_verifier_account_id(&self) -> Option<AccountId> {
+        self.tee_verifier_account_id.clone()
+    }
+
     /// Presence check for a pending signature request, exposed as a view call.
     ///
     /// **The returned `YieldIndex` is an arbitrary representative, not "the" yield
@@ -4057,6 +4063,33 @@ mod tests {
         // candidate becomes the trusted verifier.
         vote_as(&mut contract, &participant_account_ids[1]);
         assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn tee_verifier_account_id__should_report_none_until_threshold_then_the_candidate() {
+        // Given
+        let (mut contract, _, _) = setup_tee_test_contract(3, 2);
+        let voters = participant_account_ids(&contract);
+        let candidate: AccountId = "verifier.near".parse().unwrap();
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            Environment::new(None, Some(account_id.clone()), None);
+            contract
+                .vote_tee_verifier_change(candidate.clone(), code_hash)
+                .expect("vote should succeed");
+        };
+
+        assert_eq!(contract.tee_verifier_account_id(), None);
+
+        // When
+        vote_as(&mut contract, &voters[0]);
+        assert_eq!(contract.tee_verifier_account_id(), None);
+        vote_as(&mut contract, &voters[1]);
+
+        // Then
+        assert_eq!(contract.tee_verifier_account_id(), Some(candidate));
     }
 
     #[test]

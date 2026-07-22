@@ -328,8 +328,14 @@ near contract call-function as-transaction mpc-contract.test.near vote_tee_verif
 near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-Once both votes agree, the change is applied and the MPC contract has no pending
-verifier votes:
+Once both votes agree, the change is applied. Read the resolved verifier; it
+returns `tee-verifier.test.near`:
+
+```shell
+near contract call-function as-read-only mpc-contract.test.near tee_verifier_account_id json-args {} network-config mpc-localnet now
+```
+
+As corroboration, the MPC contract now has no pending verifier votes:
 
 ```shell
 near contract call-function as-read-only mpc-contract.test.near tee_verifier_votes json-args {} network-config mpc-localnet now

@@ -15,7 +15,8 @@ use crate::sandbox::{
         contract_build::tee_verifier_contract,
         mpc_contract::{
             get_participant_attestation, submit_participant_info,
-            submit_participant_info_with_deposit, total_gas_fee, vote_tee_verifier_change,
+            submit_participant_info_with_deposit, tee_verifier_account_id, total_gas_fee,
+            vote_tee_verifier_change,
         },
     },
 };
@@ -149,6 +150,24 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
         .await
         .unwrap();
     assert!(stored.is_none(), "no attestation should be stored");
+}
+
+#[tokio::test]
+async fn tee_verifier_account_id__should_return_none_until_a_verifier_is_voted_in() {
+    // Given
+    let SandboxTestSetup {
+        mpc_signer_accounts,
+        contract,
+        ..
+    } = setup().await;
+    assert_eq!(tee_verifier_account_id(&contract).await, None);
+
+    // When
+    let verifier: AccountId = "verifier.near".parse().unwrap();
+    trust_verifier(&contract, &mpc_signer_accounts, &verifier).await;
+
+    // Then
+    assert_eq!(tee_verifier_account_id(&contract).await, Some(verifier));
 }
 
 #[tokio::test]
