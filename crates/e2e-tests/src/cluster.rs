@@ -774,6 +774,22 @@ impl MpcCluster {
         })
     }
 
+    /// Fetches a node's `/debug/node_config` and returns the parsed JSON.
+    pub async fn fetch_node_config(&self, node_index: usize) -> anyhow::Result<serde_json::Value> {
+        let web_address = match &self.nodes[node_index] {
+            MpcNodeState::Running(n) => n.web_address(),
+            MpcNodeState::Stopped(_) => anyhow::bail!("node {node_index} is not running"),
+        };
+        let url = format!("http://{web_address}/debug/node_config");
+        let body = reqwest::get(&url)
+            .await
+            .context("GET /debug/node_config failed")?
+            .text()
+            .await
+            .context("failed to read /debug/node_config body")?;
+        serde_json::from_str(&body).context("failed to parse /debug/node_config JSON")
+    }
+
     pub fn wipe_db(&self, indices: &[usize]) -> anyhow::Result<()> {
         for &idx in indices {
             match &self.nodes[idx] {

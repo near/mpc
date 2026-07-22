@@ -15,6 +15,7 @@ use tokio::sync::{RwLock, watch};
 use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
+use crate::foreign_chain_health::ProviderHealthSnapshot;
 use crate::indexer::IndexerAPI;
 use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
 use crate::indexer::handler::{
@@ -115,6 +116,8 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+                let (_, dummy_foreign_chains_health_receiver) =
+                    watch::channel(ProviderHealthSnapshot::new());
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
@@ -125,6 +128,7 @@ impl OneNodeTestConfig {
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
+                    dummy_foreign_chains_health_receiver,
                     serde_json::json!({}),
                     SharedRecentTransactions::default(),
                 )

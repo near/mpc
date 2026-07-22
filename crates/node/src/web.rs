@@ -1,4 +1,5 @@
 use crate::config::SecretsConfig;
+use crate::foreign_chain_health::ProviderHealthSnapshot;
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
@@ -68,6 +69,7 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
+    foreign_chains_health: watch::Receiver<ProviderHealthSnapshot>,
     nearcore_config: serde_json::Value,
     /// In-memory log behind the `/debug/recent_transactions` handler.
     recent_transactions: SharedRecentTransactions,
@@ -98,6 +100,7 @@ struct NodeConfigResponse {
     ckd: CKDConfig,
     keygen: KeygenConfig,
     foreign_chains_provider_counts: ForeignChainsProviderCounts,
+    foreign_chains_provider_health: ProviderHealthSnapshot,
     cores: Option<usize>,
     separate_asset_generation_runtime: bool,
 }
@@ -118,6 +121,7 @@ impl From<ConfigFile> for NodeConfigResponse {
             ckd: config.ckd,
             keygen: config.keygen,
             foreign_chains_provider_counts: config.foreign_chains.into(),
+            foreign_chains_provider_health: ProviderHealthSnapshot::new(),
             cores: config.cores,
             separate_asset_generation_runtime: config.separate_asset_generation_runtime,
         }
@@ -183,7 +187,9 @@ async fn debug_tasks(State(state): State<WebServerState>) -> String {
 }
 
 async fn debug_node_config(State(state): State<WebServerState>) -> Json<NodeConfigResponse> {
-    Json(state.node_config.clone())
+    let mut response = state.node_config.clone();
+    response.foreign_chains_provider_health = state.foreign_chains_health.borrow().clone();
+    Json(response)
 }
 
 /// Serves the nearcore `config.json` the embedded indexer runs with.
@@ -330,6 +336,7 @@ pub async fn start_web_server(
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
+    foreign_chains_health: watch::Receiver<ProviderHealthSnapshot>,
     nearcore_config: serde_json::Value,
     recent_transactions: SharedRecentTransactions,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
@@ -362,6 +369,7 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
+            foreign_chains_health,
             nearcore_config,
             recent_transactions,
         });
@@ -540,11 +548,16 @@ mod tests {
 
     #[test]
     fn node_config_response_json____should_expose_provider_counts_but_no_sensitive_info() {
-        // Given
-        let config = test_config();
+        // Given a response with the health overlay populated, as
+        // `debug_node_config` does at request time.
+        let mut response = NodeConfigResponse::from(test_config());
+        response.foreign_chains_provider_health =
+            [("solana".to_string(), 1i64), ("aptos".to_string(), 0i64)]
+                .into_iter()
+                .collect();
 
         // When
-        let json = serde_json::to_string(&NodeConfigResponse::from(config)).unwrap();
+        let json = serde_json::to_string(&response).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let object = value
             .as_object()
@@ -609,5 +622,30 @@ mod tests {
                 "JSON response must not contain `{needle}`, got: {json}"
             );
         }
+
+        let health = object
+            .get("foreign_chains_provider_health")
+            .expect("response must contain `foreign_chains_provider_health`")
+            .as_object()
+            .expect("`foreign_chains_provider_health` must be an object");
+        assert_eq!(health.get("solana").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(health.get("aptos").and_then(|v| v.as_u64()), Some(0));
+    }
+
+    #[test]
+    fn node_config_response_json____should_present_empty_health_map_before_any_probe() {
+        // Given a response straight from config, before the probe publishes
+        let response = NodeConfigResponse::from(test_config());
+
+        // When
+        let value: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&response).unwrap()).unwrap();
+
+        // Then the health field is present as an empty object, never omitted, so
+        // it mirrors the always-present `foreign_chains_provider_counts`.
+        assert_eq!(
+            value["foreign_chains_provider_health"],
+            serde_json::json!({})
+        );
     }
 }
