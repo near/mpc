@@ -1178,8 +1178,11 @@ expression: abi
       },
       {
         "name": "register_backup_service",
-        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n # Notes\n - A deposit requirement may be added in the future.",
+        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
         "params": {
           "serialization_type": "json",
           "args": [
@@ -2282,8 +2285,11 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
         "params": {
           "serialization_type": "json",
           "args": [
@@ -2403,8 +2409,11 @@ expression: abi
       },
       {
         "name": "update_participant_url",
-        "doc": " Updates the calling participant's registered URL, keeping the TLS key and participant ID.",
+        "doc": " Updates the calling participant's registered URL, keeping the TLS key and participant ID.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
         "params": {
           "serialization_type": "json",
           "args": [

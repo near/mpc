@@ -50,6 +50,7 @@ const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
 // which costs significantly more than a plain CKD or sign request.
 const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
 const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -887,10 +888,11 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_deposit(
                 &client,
                 method_names::REGISTER_BACKUP_SERVICE,
                 json!({ "backup_service_info": backup_service_info }),
+                NODE_MANAGEMENT_DEPOSIT,
             )
             .await
     }
@@ -1031,10 +1033,11 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_deposit(
                 &client,
                 method_names::START_NODE_MIGRATION,
                 json!({ "destination_node_info": destination_node_info }),
+                NODE_MANAGEMENT_DEPOSIT,
             )
             .await
     }
@@ -1047,10 +1050,11 @@ impl MpcCluster {
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
+            .call_from_deposit(
                 &client,
                 method_names::UPDATE_PARTICIPANT_URL,
                 json!({ "url": url }),
+                NODE_MANAGEMENT_DEPOSIT,
             )
             .await
     }

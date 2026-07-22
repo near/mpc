@@ -8,24 +8,26 @@ use crate::tee::{measurements::ContractExpectedMeasurements, tee_state::TeeState
 use mpc_attestation::attestation::default_measurements;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_account_id::AccountId;
-use near_sdk::{BlockHeight, PublicKey, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, testing_env};
 use rand::Rng;
 use std::time::Duration;
 
 /// Test environment for managing VM context state.
 ///
 /// Provides convenient methods for setting up and manipulating the NEAR VM testing
-/// environment, including signer, block height, and random seed.
+/// environment, including signer, block height, random seed, and attached deposit.
 pub struct Environment {
     pub signer: AccountId,
     pub block_height: BlockHeight,
     pub seed: [u8; 32],
+    pub deposit: NearToken,
 }
 
 impl Environment {
     /// Creates a new test environment with optional overrides.
     ///
-    /// If parameters are `None`, random/default values are generated.
+    /// If parameters are `None`, random/default values are generated. The attached deposit
+    /// defaults to zero; use [`Environment::set_deposit`] to change it.
     /// Automatically sets up the VM context with [`testing_env!`].
     pub fn new(
         block_height: Option<BlockHeight>,
@@ -33,19 +35,16 @@ impl Environment {
         seed: Option<[u8; 32]>,
     ) -> Self {
         let seed = seed.unwrap_or(gen_seed());
-        let mut ctx = VMContextBuilder::new();
         let block_height = block_height.unwrap_or(rand::thread_rng().r#gen());
-        ctx.block_height(block_height);
-        ctx.random_seed(seed);
         let signer = signer.unwrap_or(gen_account_id());
-        ctx.signer_account_id(signer.clone());
-        ctx.predecessor_account_id(signer.clone());
-        testing_env!(ctx.build());
-        Environment {
+        let env = Environment {
             signer,
             block_height,
             seed,
-        }
+            deposit: NearToken::from_yoctonear(0),
+        };
+        env.set();
+        env
     }
 
     /// Sets the signer's public key in the VM context.
@@ -56,12 +55,19 @@ impl Environment {
         ctx.random_seed(self.seed);
         ctx.signer_account_id(self.signer.clone());
         ctx.predecessor_account_id(self.signer.clone());
+        ctx.attached_deposit(self.deposit);
         testing_env!(ctx.build());
     }
 
     /// Changes the signer account and applies the new context.
     pub fn set_signer(&mut self, signer: &AccountId) {
         self.signer = signer.clone();
+        self.set();
+    }
+
+    /// Sets the attached deposit and applies the new context.
+    pub fn set_deposit(&mut self, deposit: NearToken) {
+        self.deposit = deposit;
         self.set();
     }
 
@@ -72,6 +78,7 @@ impl Environment {
         ctx.random_seed(self.seed);
         ctx.signer_account_id(self.signer.clone());
         ctx.predecessor_account_id(self.signer.clone());
+        ctx.attached_deposit(self.deposit);
         testing_env!(ctx.build());
     }
 
