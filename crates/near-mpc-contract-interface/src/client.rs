@@ -8,14 +8,19 @@ use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken
 
 use crate::call_args::{
     RequestAppPrivateKeyArgs, SignArgs, SubmitParticipantInfoArgs, VerifyForeignTransactionArgs,
+    VoteUpdateArgs,
 };
-use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
+use crate::deposits::{
+    PROPOSE_UPDATE_DEPOSIT_MILLINEAR, SIGN_DEPOSIT_YOCTONEAR,
+    SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
+};
 use crate::method_names::{
-    REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
+    PROPOSE_UPDATE, REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_UPDATE,
 };
 use crate::types::{
-    AccountId, Attestation, CKDAppPublicKey, CKDRequestArgs, Ed25519PublicKey, SignRequestArgs,
-    VerifyForeignTransactionRequestArgs,
+    AccountId, Attestation, CKDAppPublicKey, CKDRequestArgs, Ed25519PublicKey, ProposeUpdateArgs,
+    SignRequestArgs, VerifyForeignTransactionRequestArgs,
 };
 
 /// Default gas for handle-issued calls without a method-specific amount.
@@ -106,6 +111,44 @@ impl<C: CallContract> MpcContractHandle<C> {
             .map_err(MpcContractHandleError::Call)
     }
 
+    pub async fn propose_update(
+        &self,
+        args: ProposeUpdateArgs,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = borsh::to_vec(&args)?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: PROPOSE_UPDATE.to_string(),
+                    args,
+                    gas: MAX_GAS,
+                    deposit: NearToken::from_millinear(PROPOSE_UPDATE_DEPOSIT_MILLINEAR),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
+    pub async fn vote_update(
+        &self,
+        id: u64,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: VOTE_UPDATE.to_string(),
+                    args,
+                    gas: MAX_GAS,
+                    deposit: NearToken::from_yoctonear(0),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
     pub async fn submit_participant_info(
         &self,
         proposed_participant_attestation: Attestation,
@@ -149,6 +192,8 @@ impl<C: CallContract> MpcContractHandle<C> {
 pub enum MpcContractHandleError<E> {
     #[error("failed to serialize call arguments: {0}")]
     Serialize(#[from] serde_json::Error),
+    #[error("failed to borsh-encode call arguments: {0}")]
+    Encode(#[from] std::io::Error),
     #[error("contract call failed: {0}")]
     Call(E),
 }
@@ -161,7 +206,7 @@ mod tests {
         AccountId, Attestation, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId,
         BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, DomainId,
         Ed25519PublicKey, ForeignChainRpcRequest, ForeignTxPayloadVersion, MockAttestation,
-        Payload, SignRequestArgs, VerifyForeignTransactionRequestArgs,
+        Payload, ProposeUpdateArgs, SignRequestArgs, VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
@@ -194,12 +239,16 @@ mod tests {
     /// Renders a recorded call as its reviewable wire format
     /// (method, gas, deposit, args).
     fn render(contract_id: &AccountId, call: &FunctionCallArgs) -> String {
+        let args = if call.args.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
+            String::from_utf8_lossy(&call.args).into_owned()
+        } else {
+            format!("0x{}", hex::encode(&call.args))
+        };
         format!(
-            "contract: {contract_id}\nmethod:   {}\ngas:      {}\ndeposit:  {}\nargs:     {}",
+            "contract: {contract_id}\nmethod:   {}\ngas:      {}\ndeposit:  {}\nargs:     {args}",
             call.method_name,
             call.gas,
             call.deposit.exact_amount_display(),
-            String::from_utf8_lossy(&call.args),
         )
     }
 
@@ -253,6 +302,14 @@ mod tests {
             .await
             .unwrap();
         handle
+            .propose_update(ProposeUpdateArgs {
+                code: Some(vec![7u8; 4]),
+                config: None,
+            })
+            .await
+            .unwrap();
+        handle.vote_update(7).await.unwrap();
+        handle
             .submit_participant_info(
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey::from([7u8; 32]),
@@ -263,7 +320,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 6);
+        assert_eq!(calls.len(), 8);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
