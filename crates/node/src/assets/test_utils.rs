@@ -43,8 +43,8 @@ pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
 }
 
 /// Generates a 4-participant test fixture with threshold 3. Returns the epoch
-/// data, the local participant's ID, and the threshold so callers don't have
-/// to restate the magic number alongside the fixture.
+/// data, the local participant's ID, and the reconstruction threshold so
+/// callers don't have to restate the magic number alongside the fixture.
 pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThreshold) {
     let threshold = ReconstructionThreshold::new(3);
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());

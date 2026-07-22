@@ -37,7 +37,7 @@ const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS: u64 = 5;
 /// Gas attached to the cross-contract `verify_quote` call on the TEE verifier.
-const DEFAULT_VERIFIER_TERA_GAS: u64 = 100;
+const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
 /// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;

@@ -6,6 +6,7 @@ use crate::config::{MpcConfig, ParticipantsConfig};
 use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
+use crate::providers::DomainKeyshare;
 #[cfg(test)]
 use crate::providers::PublicKeyConversion;
 use crate::providers::SignatureProvider;
@@ -21,8 +22,8 @@ use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
-use threshold_signatures::ReconstructionThreshold;
-use threshold_signatures::frost::eddsa::KeygenOutput;
+use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
+use threshold_signatures::frost::eddsa::{Ed25519Sha512, KeygenOutput};
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
 
@@ -32,8 +33,10 @@ pub struct EddsaSignatureProvider {
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
-    keyshares: HashMap<DomainId, KeygenOutput>,
+    keyshares: HashMap<DomainId, EddsaKeyshare>,
 }
+
+pub(super) type EddsaKeyshare = DomainKeyshare<Ed25519Sha512>;
 
 impl EddsaSignatureProvider {
     pub fn new(
@@ -41,7 +44,7 @@ impl EddsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
-        keyshares: HashMap<DomainId, KeygenOutput>,
+        keyshares: HashMap<DomainId, EddsaKeyshare>,
     ) -> Self {
         Self {
             config,
@@ -50,6 +53,13 @@ impl EddsaSignatureProvider {
             sign_request_store,
             keyshares,
         }
+    }
+
+    pub(super) fn keyshare(&self, domain_id: DomainId) -> anyhow::Result<EddsaKeyshare> {
+        self.keyshares
+            .get(&domain_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
     }
 }
 
@@ -84,14 +94,15 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: ReconstructionThreshold,
+        threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: ReconstructionThreshold,
+        new_threshold: TSReconstructionThreshold,
+        old_threshold: TSReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
@@ -99,6 +110,7 @@ impl SignatureProvider for EddsaSignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_resharing_client_internal(
             new_threshold,
+            old_threshold,
             key_share,
             public_key,
             old_participants,
