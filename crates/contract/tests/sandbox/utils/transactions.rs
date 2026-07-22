@@ -3,8 +3,7 @@ use near_sdk::Gas;
 use near_workspaces::{Account, AccountId, Contract, result::ExecutionFinalResult};
 use serde::Serialize;
 
-/// The sandbox-test [`CallContract`] backend: transacts as the wrapped
-/// [`Account`] via near-workspaces.
+/// [`CallContract`] adapter used only by the sandbox integration tests.
 pub struct SandboxCaller<'a>(pub &'a Account);
 
 impl CallContract for SandboxCaller<'_> {

@@ -59,10 +59,10 @@ pub async fn submit_participant_info(
 ) -> anyhow::Result<ExecutionFinalResult> {
     // TODO(#3906): check if inlining is nicer once we ported the entire contract interface.
     let contract_handle = MpcContractHandle::new(SandboxCaller(account), contract.id().clone());
-    let result = contract_handle
+    contract_handle
         .submit_participant_info(attestation.clone(), tls_key.clone())
-        .await?;
-    Ok(result)
+        .await
+        .map_err(Into::into)
 }
 
 pub async fn vote_tee_verifier_change(
