@@ -72,12 +72,10 @@ fn update_participant_url__should_reject_when_no_deposit_attached() {
     let mut contract = init_contract(&parameters, None);
     let (account_id, _, _) = participant_list[0].clone();
 
-    // When
+    // panics via `require_deposit` before the URL is updated
+    // When, Then
     testing_env!(participant_context(&account_id));
     let _ = contract.update_participant_url("https://relocated.example.com:9000".to_string());
-
-    // Then
-    // panics via `require_deposit` before the URL is updated
 }
 
 #[test]

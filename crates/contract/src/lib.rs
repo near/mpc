@@ -5018,11 +5018,9 @@ mod tests {
         let mut test_env = Environment::new(None, Some(account_id), None);
         test_env.set_deposit(NearToken::from_yoctonear(0));
 
-        // When
-        let _ = contract.start_node_migration(gen_random_destination_info());
-
-        // Then
         // panics via `require_deposit` before the migration is stored
+        // When, Then
+        let _ = contract.start_node_migration(gen_random_destination_info());
     }
 
     #[test]
@@ -5041,11 +5039,9 @@ mod tests {
             public_key: bogus_ed25519_public_key(),
         };
 
-        // When
-        let _ = contract.register_backup_service(backup_service_info);
-
-        // Then
         // panics via `require_deposit` before the backup service is stored
+        // When, Then
+        let _ = contract.register_backup_service(backup_service_info);
     }
 
     #[test]
