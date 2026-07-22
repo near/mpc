@@ -178,7 +178,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut request_lines = Vec::new();
-        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
+        let (eligible_leaders, maximum_height, _my_indexer_height) =
+            self.eligible_leaders_and_heights();
         let online_participants = self.network_api.alive_participants();
         let indexer_heights = self.network_api.indexer_heights();
 

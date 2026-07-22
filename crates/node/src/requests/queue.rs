@@ -524,8 +524,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     }
 
     /// Returns the set of participants that are eligible to be leaders for the requests,
-    /// as well as the maximum height available.
-    pub(super) fn eligible_leaders_and_maximum_height(&self) -> (HashSet<ParticipantId>, u64) {
+    /// the maximum height available across alive participants, and our own indexer height.
+    pub(super) fn eligible_leaders_and_heights(&self) -> (HashSet<ParticipantId>, u64, u64) {
         // Collect the indexer heights and alive participants. Calculate maximum available height
         // from the alive nodes. Then, filter out the participants that are not alive or are too
         // stale.
@@ -535,6 +535,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             .iter()
             .map(|p| indexer_heights.get(p).copied().unwrap_or(0))
             .max()
+            .unwrap_or(0);
+        let my_indexer_height = indexer_heights
+            .get(&self.my_participant_id)
+            .copied()
             .unwrap_or(0);
         let eligible_leaders = self
             .all_participants
@@ -546,7 +550,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             })
             .copied()
             .collect::<HashSet<_>>();
-        (eligible_leaders, maximum_height)
+        (eligible_leaders, maximum_height, my_indexer_height)
     }
 
     /// Returns the list of requests that we should attempt to generate a response for,
@@ -583,7 +587,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         };
         let now = self.clock.now();
 
-        let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
+        let (eligible_leaders, _maximum_height, my_indexer_height) =
+            self.eligible_leaders_and_heights();
         tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
 
         let mut result = Vec::new();
@@ -601,9 +606,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         }
         let mut requests_to_remove: Vec<(RequestId, Removal)> = Vec::new();
 
-        // any request strictly older than `cutoff_block` will be considered expired
+        // Any request strictly older than `cutoff_block` is considered expired. This is measured
+        // against our own indexer height to prevent spurious timeouts for old requests
         let cutoff_block: BlockHeight =
-            (maximum_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1).into();
+            (my_indexer_height.saturating_sub(REQUEST_EXPIRATION_BLOCKS) + 1).into();
 
         for (id, request) in &mut self.requests {
             let _span = tracing::debug_span!(
@@ -1300,6 +1306,33 @@ mod tests {
         assert!(
             !pending_requests.requests.contains_key(&req1.id),
             "expired request should be removed from the queue"
+        );
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_not_time_out_request_when_own_indexer_is_behind() {
+        // Given
+        let (mut pending_requests, mut setup) = TestSetup::new();
+        let req = setup.add_request_follower();
+        let block_height = setup.update(&mut pending_requests);
+        let me = setup.participant_ids[TestSetup::MY_INDEX];
+
+        // When
+        setup.network_api.set_height(me, block_height);
+        for (i, p) in setup.participant_ids.iter().enumerate() {
+            if i != TestSetup::MY_INDEX {
+                setup
+                    .network_api
+                    .set_height(*p, block_height + REQUEST_EXPIRATION_BLOCKS);
+            }
+        }
+
+        // Then
+        let _ = pending_requests.get_requests_to_attempt();
+        assert!(
+            pending_requests.requests.contains_key(&req.id),
+            "request must not be dropped as timed out while our own indexer is behind"
         );
     }
 }
