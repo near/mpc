@@ -84,7 +84,7 @@ pub enum ProtocolError {
     ZeroScalar,
 
     #[error(
-        "sid: {sid}. Check vector length of {actual} did not match the security parameter of {expected} for {participant:?}."
+        "sid: {sid}. small_t length {actual} did not match the security parameter {expected} for {participant:?}."
     )]
     InvalidSmallTLength {
         sid: String,
@@ -94,7 +94,7 @@ pub enum ProtocolError {
     },
 
     #[error(
-        "sid: {sid}. Linear consistency check failed: local q matrix does not match the received small_t proof for participant {participant:?}."
+        "sid: {sid}. Linear consistency check failed, the local q matrix does not match the received small_t for participant {participant:?}."
     )]
     QMatrixConsistencyCheckFailed {
         sid: String,

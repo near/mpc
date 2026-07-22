@@ -103,7 +103,7 @@ pub async fn random_ot_extension_sender(
     // Step 10
     if small_t.len() != SECURITY_PARAMETER {
         return Err(ProtocolError::InvalidSmallTLength {
-            sid: String::from_utf8_lossy(params.sid).to_string(),
+            sid: hex::encode(params.sid),
             expected: SECURITY_PARAMETER,
             actual: small_t.len(),
             participant: chan.to,
@@ -122,7 +122,7 @@ pub async fn random_ot_extension_sender(
             DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
         if !bool::from(small_q_j.ct_eq(&(small_t_j ^ delta_j_x))) {
             return Err(ProtocolError::QMatrixConsistencyCheckFailed {
-                sid: String::from_utf8_lossy(params.sid).to_string(),
+                sid: hex::encode(params.sid),
                 participant: chan.to,
             });
         }
