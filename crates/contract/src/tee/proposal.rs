@@ -297,7 +297,6 @@ pub struct AllowedLauncherImage {
 }
 
 impl AllowedLauncherImage {
-    /// Creates an entry with `last_used` stamped to now.
     pub(crate) fn new(
         launcher_hash: LauncherImageHash,
         compose_hashes: Vec<LauncherDockerComposeHash>,

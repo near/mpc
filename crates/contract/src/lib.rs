@@ -793,9 +793,7 @@ impl MpcContract {
             }
         })?;
 
-        // Refresh-on-use is gated to current participants: building an
-        // AuthenticatedParticipantId succeeds only when the signer is a current
-        // participant, so a prospective (non-participant) node cannot keep a
+        // Refresh-on-use is gated to current participants: a non-participant node cannot keep a
         // launcher hash alive.
         let authenticated_participant = self
             .protocol_state

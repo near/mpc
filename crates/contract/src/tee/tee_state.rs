@@ -329,11 +329,9 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes(ttl)
     }
 
-    /// Refreshes the `last_used` timestamp of the launcher image referenced by the
-    /// stored attestation for `tls_public_key` — the "refresh on use" signal that keeps an
-    /// in-use launcher hash from expiring. The [`AuthenticatedParticipantId`] is a
-    /// capability token (value intentionally unused): requiring it means a non-participant
-    /// submission cannot keep a launcher hash alive.
+    /// Refreshes the `last_used` timestamp of the launcher image referenced by the stored
+    /// attestation for `tls_public_key`. The [`AuthenticatedParticipantId`] is an unused
+    /// capability token — requiring it means only a current participant can refresh.
     pub(crate) fn refresh_launcher_usage(
         &mut self,
         tls_public_key: &Ed25519PublicKey,
@@ -596,6 +594,23 @@ mod tests {
         testing_env!(builder.build());
     }
 
+    impl TeeState {
+        /// Adds a participant with zero TEE-upgrade deadline and launcher TTL, for tests
+        /// that do not exercise expiry.
+        fn add_participant_no_expiry(
+            &mut self,
+            node_id: NodeId,
+            attestation: Attestation,
+        ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
+            self.add_participant(
+                node_id,
+                attestation,
+                Duration::from_secs(0),
+                Duration::from_secs(0),
+            )
+        }
+    }
+
     #[test]
     fn clean_non_participant_votes__should_not_touch_attestations() {
         // Given
@@ -688,20 +703,10 @@ mod tests {
         });
 
         tee_state
-            .add_participant(
-                fresh_node.clone(),
-                fresh,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(fresh_node.clone(), fresh)
             .unwrap();
         tee_state
-            .add_participant(
-                stale_node.clone(),
-                stale,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(stale_node.clone(), stale)
             .unwrap();
 
         assert_eq!(tee_state.stored_attestations.len(), 2);
@@ -748,12 +753,7 @@ mod tests {
         for idx in 0..10 {
             let node_id = node_id_for(&format!("node{idx}.near").parse().unwrap());
             tee_state
-                .add_participant(
-                    node_id,
-                    expired.clone(),
-                    Duration::from_secs(0),
-                    Duration::from_secs(0),
-                )
+                .add_participant_no_expiry(node_id, expired.clone())
                 .unwrap();
         }
         assert_eq!(tee_state.stored_attestations.len(), 10);
@@ -796,12 +796,7 @@ mod tests {
             expected_measurements: None,
         });
         tee_state
-            .add_participant(
-                node_id.clone(),
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id.clone(), attestation)
             .unwrap();
 
         // When: cleanup runs while the attestation is still valid.
@@ -944,12 +939,7 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(
-                node_id,
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id, attestation)
             .unwrap();
 
         // then
@@ -969,12 +959,7 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(
-                node_id.clone(),
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id.clone(), attestation)
             .unwrap();
 
         // then
@@ -995,12 +980,7 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(
-                node_id.clone(),
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id.clone(), attestation)
             .unwrap();
 
         // then
@@ -1026,20 +1006,10 @@ mod tests {
 
         // when
         tee_state
-            .add_participant(
-                node_1.clone(),
-                Attestation::Mock(MockAttestation::Valid),
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_1.clone(), Attestation::Mock(MockAttestation::Valid))
             .unwrap();
         tee_state
-            .add_participant(
-                node_2.clone(),
-                Attestation::Mock(MockAttestation::Valid),
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_2.clone(), Attestation::Mock(MockAttestation::Valid))
             .unwrap();
 
         // then
@@ -1074,12 +1044,7 @@ mod tests {
         });
 
         tee_state
-            .add_participant(
-                node_id.clone(),
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id.clone(), attestation)
             .unwrap();
 
         // when
@@ -1112,12 +1077,7 @@ mod tests {
         });
 
         tee_state
-            .add_participant(
-                node_id.clone(),
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id.clone(), attestation)
             .unwrap();
 
         // when
@@ -1162,12 +1122,7 @@ mod tests {
         });
 
         tee_state
-            .add_participant(
-                node_id.clone(),
-                attestation,
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-            )
+            .add_participant_no_expiry(node_id.clone(), attestation)
             .unwrap();
 
         // when
