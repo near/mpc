@@ -2048,8 +2048,9 @@ For errors caught before the transaction executes (account balance, nonce, acces
 
 ```
 ERROR mpc_node::indexer::tx_sender: Failed to forward transaction
-  SubmitParticipantInfo(...) err=unexpected ProcessTxResponse:
+  err=unexpected ProcessTxResponse:
   InvalidTx(LackBalanceForState { signer_id: ..., amount: ... })
+  method=submit_participant_info
 ```
 
 The error after `err=` is the NEAR runtime error. Common ones:
@@ -2071,7 +2072,7 @@ The `reason` is the same `VerificationError` the client-side WARN reports (see s
 
 - **`MeasurementsNotAllowed`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`EmptyMeasurementsList`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
-- **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0`, so call `submit_participant_info` manually with `--deposit` once. Exact amount tracked in [#903](https://github.com/near/mpc/issues/903).
+- **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0.1 NEAR` on every submission (`SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR`), so keep at least that much spare balance on the node account. Seeing this error means the contract's requirement exceeds the node's constant ([#903](https://github.com/near/mpc/issues/903)).
 - **`Caller is not the signer account.`** — the access key used to sign does not match the node's `my_near_account_id`.
 
 If you see no error logs at all but `get_attestation` still returns `null`, the node has not yet generated a quote. Check `mpc_tee_attestation_attempts_total` on the `/metrics` endpoint.

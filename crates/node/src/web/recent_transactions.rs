@@ -160,10 +160,7 @@ mod tests {
     use std::str::FromStr;
 
     /// A submitted (Executed) transaction with the given method and hash.
-    fn test_transaction_with_hash(
-        method: &'static str,
-        tx_hash: CryptoHash,
-    ) -> SubmittedTransaction {
+    fn test_transaction_with_hash(method: &str, tx_hash: CryptoHash) -> SubmittedTransaction {
         SubmittedTransaction {
             metadata: Some(SubmittedTxMetadata {
                 tx_hash,
@@ -173,7 +170,7 @@ mod tests {
             }),
             signer_account_id: AccountId::from_str("responder.near").unwrap(),
             signer_public_key: Ed25519PublicKey::from([7u8; 32]),
-            method,
+            method: method.to_string(),
             submitted_at: Utc::from_unix_timestamp(1_700_000_000).unwrap(),
             status: SubmittedTransactionStatus::Executed,
         }
@@ -225,7 +222,7 @@ mod tests {
         // faithfully list every submission, so neither is merged or dropped.
         let first = test_transaction_with_hash("respond", hash(1));
         let second = SubmittedTransaction {
-            method: "respond_again",
+            method: "respond_again".to_string(),
             ..test_transaction_with_hash("respond_again", hash(1))
         };
         let mut buffer = RecentTransactions::default();

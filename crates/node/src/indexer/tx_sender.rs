@@ -1,6 +1,6 @@
-use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
 use super::tx_signer::{TransactionSigner, TransactionSigners};
+use super::types::ChainSendTransactionRequest;
 use crate::config::RespondConfig;
 use crate::metrics;
 use crate::types::{
@@ -10,7 +10,11 @@ use crate::types::{
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
+use near_contract_transport::{CallContract, FunctionCallArgs};
+use near_mpc_contract_interface::call_args as contract_args;
+use near_mpc_contract_interface::method_names::{
+    RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, SUBMIT_PARTICIPANT_INFO,
+};
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
 use near_time::Clock;
 use std::future::Future;
@@ -27,11 +31,6 @@ pub trait TransactionSender: Clone + Send + Sync {
         &self,
         transaction: ChainSendTransactionRequest,
     ) -> impl Future<Output = Result<(), TransactionProcessorError>> + Send;
-
-    fn send_and_wait(
-        &self,
-        transaction: ChainSendTransactionRequest,
-    ) -> impl Future<Output = Result<TransactionStatus, TransactionProcessorError>> + Send;
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -43,6 +42,7 @@ pub enum TransactionProcessorError {
 #[derive(Clone, Debug)]
 pub struct TransactionProcessorHandle {
     transaction_sender: mpsc::Sender<TransactionSenderSubmission>,
+    mpc_contract_id: AccountId,
 }
 
 impl TransactionProcessorHandle {
@@ -52,45 +52,68 @@ impl TransactionProcessorHandle {
         config: RespondConfig,
         indexer_state: Arc<IndexerState>,
         tx_logger: impl LogTransaction,
-    ) -> anyhow::Result<impl TransactionSender> {
+    ) -> anyhow::Result<TransactionProcessorHandle> {
         let mut signers = TransactionSigners::new(config, owner_account_id, owner_secret_key)
             .context("Failed to initialize transaction signers")?;
+        let mpc_contract_id = indexer_state.mpc_contract_id.clone();
 
         let (transaction_sender, mut transaction_receiver) =
             mpsc::channel::<TransactionSenderSubmission>(TRANSACTION_PROCESSOR_CHANNEL_SIZE);
 
         tokio::spawn(async move {
             while let Some(transaction_submission) = transaction_receiver.recv().await {
-                let tx_request = transaction_submission.transaction;
-                let tx_response_channel = transaction_submission.response_sender;
+                let TransactionSenderSubmission {
+                    contract_id,
+                    call,
+                    response_sender,
+                } = transaction_submission;
 
-                let tx_signer = signers.signer_for(&tx_request);
+                let tx_signer = signers.signer_for(&call.method_name);
                 let indexer_state = indexer_state.clone();
                 let tx_logger = tx_logger.clone();
                 tokio::spawn(async move {
-                    let Ok(txn_json) = serde_json::to_string(&tx_request) else {
-                        tracing::error!(target: "mpc", "Failed to serialize response args");
-                        return;
-                    };
-                    tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
+                    tracing::debug!(
+                        target = "mpc",
+                        "tx args {:?}",
+                        String::from_utf8_lossy(&call.args)
+                    );
                     let (transaction_status, recent_transaction) = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
-                        tx_request,
-                        txn_json,
+                        contract_id,
+                        call,
                     )
                     .await;
 
                     tx_logger.log_transaction(recent_transaction);
 
-                    if let Some(tx_response_channel) = tx_response_channel {
-                        let _ = tx_response_channel.send(transaction_status);
+                    if let Some(response_sender) = response_sender {
+                        let _ = response_sender.send(transaction_status);
                     }
                 });
             }
         });
 
-        Ok(TransactionProcessorHandle { transaction_sender })
+        Ok(TransactionProcessorHandle {
+            transaction_sender,
+            mpc_contract_id,
+        })
+    }
+
+    async fn submit(
+        &self,
+        contract_id: AccountId,
+        call: FunctionCallArgs,
+        response_sender: Option<oneshot::Sender<TransactionStatus>>,
+    ) -> Result<(), TransactionProcessorError> {
+        self.transaction_sender
+            .send(TransactionSenderSubmission {
+                contract_id,
+                call,
+                response_sender,
+            })
+            .await
+            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
     }
 }
 
@@ -99,28 +122,35 @@ impl TransactionSender for TransactionProcessorHandle {
         &self,
         transaction: ChainSendTransactionRequest,
     ) -> Result<(), TransactionProcessorError> {
-        self.transaction_sender
-            .send(TransactionSenderSubmission {
-                transaction,
-                response_sender: None,
-            })
-            .await
-            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
+        let call = match transaction.into_function_call() {
+            Ok(call) => call,
+            // Parity with the pre-queue-currency behavior: a request that fails
+            // to serialize is logged and dropped, and the fire-and-forget send
+            // still reports acceptance.
+            Err(error) => {
+                tracing::error!(target: "mpc", %error, "Failed to serialize response args");
+                return Ok(());
+            }
+        };
+        self.submit(self.mpc_contract_id.clone(), call, None).await
     }
+}
 
-    async fn send_and_wait(
+impl CallContract for TransactionProcessorHandle {
+    type Output = TransactionStatus;
+    type Error = TransactionProcessorError;
+
+    /// Enqueues the call and waits until the processor has submitted it and
+    /// observed (or failed to observe) its on-chain effect.
+    async fn call_contract(
         &self,
-        transaction: ChainSendTransactionRequest,
+        contract_id: &AccountId,
+        call_args: FunctionCallArgs,
     ) -> Result<TransactionStatus, TransactionProcessorError> {
         let (response_sender, response_receiver) = oneshot::channel();
 
-        self.transaction_sender
-            .send(TransactionSenderSubmission {
-                transaction,
-                response_sender: Some(response_sender),
-            })
-            .await
-            .map_err(|_| TransactionProcessorError::ProcessorIsClosed)?;
+        self.submit(contract_id.clone(), call_args, Some(response_sender))
+            .await?;
 
         response_receiver
             .await
@@ -129,7 +159,8 @@ impl TransactionSender for TransactionProcessorHandle {
 }
 
 struct TransactionSenderSubmission {
-    transaction: ChainSendTransactionRequest,
+    contract_id: AccountId,
+    call: FunctionCallArgs,
     response_sender: Option<oneshot::Sender<TransactionStatus>>,
 }
 
@@ -145,17 +176,14 @@ pub enum TransactionStatus {
 async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    method: String,
-    params_ser: String,
-    gas: Gas,
+    contract_id: AccountId,
+    call: FunctionCallArgs,
 ) -> anyhow::Result<SubmittedTxMetadata> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
-        indexer_state.mpc_contract_id.clone(),
-        method,
-        params_ser.into(),
-        gas,
+        contract_id,
+        call,
         block.header.hash,
         block.header.height,
     );
@@ -210,16 +238,52 @@ fn submitted_attestation_landed(
     }
 }
 
+/// Baseline for the `submit_participant_info` landing check (see
+/// [`submitted_attestation_landed`]): the Dstack expiry stored on chain before
+/// we submit. `None` for every other method, for a non-Dstack stored entry,
+/// and on a failed read — a broken read must not block the submission (the
+/// confirmation just can't use a baseline).
+async fn pre_submit_attestation_expiry(
+    indexer_state: &Arc<IndexerState>,
+    call: &FunctionCallArgs,
+) -> Option<u64> {
+    if call.method_name != SUBMIT_PARTICIPANT_INFO {
+        return None;
+    }
+    let args: contract_args::SubmitParticipantInfoArgs = match serde_json::from_slice(&call.args) {
+        Ok(args) => args,
+        Err(error) => {
+            tracing::warn!(%error, "could not read pre-submit attestation baseline; submitting without it");
+            return None;
+        }
+    };
+    match indexer_state
+        .view_client
+        .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
+        .await
+    {
+        Ok(Some(VerifiedAttestation::Dstack(stored))) => Some(stored.expiry_timestamp_seconds),
+        Ok(_) => None,
+        Err(error) => {
+            tracing::warn!(%error, "could not read pre-submit attestation baseline; submitting without it");
+            None
+        }
+    }
+}
+
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
 async fn observe_tx_result(
     indexer_state: Arc<IndexerState>,
-    request: &ChainSendTransactionRequest,
+    call: &FunctionCallArgs,
+    pre_submit_expiry: Option<u64>,
 ) -> anyhow::Result<TransactionStatus> {
-    match request {
-        Respond(respond_args) => {
+    match call.method_name.as_str() {
+        RESPOND => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state.
             // A successful respond removes the request from contract state.
+            let respond_args: contract_args::SignatureRespondArgs =
+                serde_json::from_slice(&call.args)?;
             let pending_request_response = indexer_state
                 .view_client
                 .get_pending_request(&indexer_state.mpc_contract_id, &respond_args.request)
@@ -232,10 +296,11 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        CKDRespond(respond_args) => {
+        RESPOND_CKD => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending ckd request still exists in the contract state.
             // A successful respond removes the request from contract state.
+            let respond_args: contract_args::CKDRespondArgs = serde_json::from_slice(&call.args)?;
             let pending_request_response = indexer_state
                 .view_client
                 .get_pending_ckd_request(&indexer_state.mpc_contract_id, &respond_args.request)
@@ -248,10 +313,12 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        VerifyForeignTransactionRespond(respond_args) => {
+        RESPOND_VERIFY_FOREIGN_TX => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending verify foreign tx request still exists in the contract state.
             // A successful respond removes the request from contract state.
+            let respond_args: contract_args::VerifyForeignTransactionRespondArgs =
+                serde_json::from_slice(&call.args)?;
             let pending_request_response = indexer_state
                 .view_client
                 .get_pending_verify_foreign_tx_request(
@@ -267,10 +334,9 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
-        SubmitParticipantInfo {
-            args,
-            pre_submit_expiry,
-        } => {
+        SUBMIT_PARTICIPANT_INFO => {
+            let args: contract_args::SubmitParticipantInfoArgs =
+                serde_json::from_slice(&call.args)?;
             let stored_attestation = indexer_state
                 .view_client
                 .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
@@ -288,7 +354,7 @@ async fn observe_tx_result(
                 VerifiedAttestation::Mock(_) => None,
             };
             let attestation_landed = submitted_attestation_landed(
-                *pre_submit_expiry,
+                pre_submit_expiry,
                 &stored_attestation,
                 &args.proposed_participant_attestation,
             );
@@ -307,15 +373,7 @@ async fn observe_tx_result(
             })
         }
         // We don't care. The contract state change will handle this.
-        StartKeygen(_)
-        | StartReshare(_)
-        | VotePk(_)
-        | VoteReshared(_)
-        | VoteAbortKeyEventInstance(_)
-        | VerifyTee()
-        | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_)
-        | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
+        _ => Ok(TransactionStatus::Unknown),
     }
 }
 
@@ -326,21 +384,23 @@ async fn observe_tx_result(
 async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
-    request: ChainSendTransactionRequest,
-    params_ser: String,
+    contract_id: AccountId,
+    call: FunctionCallArgs,
 ) -> (TransactionStatus, SubmittedTransaction) {
-    let method = request.method();
+    let method = call.method_name.clone();
     let signer = SignerContext {
         account_id: tx_signer.account_id().clone(),
         public_key: Ed25519PublicKey::from(&tx_signer.public_key()),
-        method,
+        method: method.clone(),
     };
+    // The landing-check baseline must be captured before the transaction is
+    // submitted.
+    let pre_submit_expiry = pre_submit_attestation_expiry(&indexer_state, &call).await;
     let submitted_metadata = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
-        method.to_string(),
-        params_ser.clone(),
-        request.gas_required(),
+        contract_id,
+        call.clone(),
     )
     .await;
 
@@ -352,9 +412,9 @@ async fn ensure_send_transaction(
         Ok(metadata) => metadata,
         Err(err) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-                .with_label_values(&[method, "local_error"])
+                .with_label_values(&[method.as_str(), "local_error"])
                 .inc();
-            tracing::error!(%err, "Failed to forward transaction {:?}", request);
+            tracing::error!(%err, method, "Failed to forward transaction");
             return (
                 TransactionStatus::NotExecuted,
                 SubmittedTransaction::submit_failed(signer, submitted_at),
@@ -366,7 +426,8 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
+    let transaction_status =
+        observe_tx_result(indexer_state.clone(), &call, pre_submit_expiry).await;
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
@@ -375,12 +436,12 @@ async fn ensure_send_transaction(
         }
         Ok(TransactionStatus::Unknown) => ("unknown", SubmittedTransactionStatus::Unknown),
         Err(err) => {
-            tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
+            tracing::warn!(target:"mpc", %err, method, "encountered error trying to confirm result of transaction");
             ("unknown_err", SubmittedTransactionStatus::ObserveError)
         }
     };
     metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
-        .with_label_values(&[method, outcome_label])
+        .with_label_values(&[method.as_str(), outcome_label])
         .inc();
 
     (

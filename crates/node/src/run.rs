@@ -8,8 +8,9 @@ use crate::{
     db::SecretDB,
     home_paths::assets_dir,
     indexer::{
-        IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
-        tx_sender::TransactionSender,
+        IndexerAPI, ReadSupportedForeignChain,
+        real::spawn_real_indexer,
+        tx_sender::{TransactionSender, TransactionStatus},
     },
     keyshare::{GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
@@ -30,6 +31,8 @@ use anyhow::{Context, anyhow};
 use itertools::Itertools;
 use mpc_attestation::report_data::ReportDataV1;
 use mpc_node_config::{ConfigFile, StartConfig};
+use near_contract_transport::CallContract;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
@@ -337,7 +340,8 @@ async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
     tee_authority: TeeAuthority,
 ) -> anyhow::Result<()>
 where
-    TransactionSenderImpl: TransactionSender + 'static,
+    TransactionSenderImpl: TransactionSender + CallContract<Output = TransactionStatus> + 'static,
+    TransactionSenderImpl::Error: std::error::Error + Send + Sync + 'static,
     ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     let root_task_handle = tracking::current_task();
@@ -362,15 +366,19 @@ where
         }),
     };
 
+    let contract_handle = MpcContractHandle::new(
+        indexer_api.txn_sender.clone(),
+        config.indexer.mpc_contract_id.clone(),
+    );
+
     // Spawn periodic attestation submission task
     let submitter = AttestationSubmitter {
         tee_authority: tee_authority.clone(),
-        tx_sender: indexer_api.txn_sender.clone(),
+        contract_handle: contract_handle.clone(),
         tls_public_key: tls_public_key.clone(),
         account_public_key: account_public_key.clone(),
         allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        attestation_reader: indexer_api.attestation_reader.clone(),
     };
     tokio::spawn(async move {
         if let Err(e) = periodic_attestation_submission(
@@ -391,12 +399,11 @@ where
     let account_id_clone = config.my_near_account_id.clone();
     let submitter = AttestationSubmitter {
         tee_authority,
-        tx_sender: indexer_api.txn_sender.clone(),
+        contract_handle,
         tls_public_key,
         account_public_key,
         allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        attestation_reader: indexer_api.attestation_reader.clone(),
     };
     tokio::spawn(async move {
         if let Err(e) =

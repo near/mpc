@@ -303,7 +303,7 @@ pub struct SubmittedTransaction {
     /// The access key (public key) the transaction was signed with.
     pub signer_public_key: Ed25519PublicKey,
     /// The contract method invoked (e.g. `respond`, `respond_ckd`).
-    pub method: &'static str,
+    pub method: String,
     /// Wall-clock time at which the transaction was routed (or, on the
     /// submit-failed path, at which the failure was recorded). Captured at
     /// submission time, not when the outcome was later observed.
@@ -317,7 +317,7 @@ pub struct SubmittedTransaction {
 pub struct SignerContext {
     pub account_id: AccountId,
     pub public_key: Ed25519PublicKey,
-    pub method: &'static str,
+    pub method: String,
 }
 
 /// The metadata of a successfully built-and-submitted transaction, captured in
@@ -394,7 +394,7 @@ mod tests {
     /// A submitted (Executed) transaction whose hash is fixed
     /// (`CryptoHash::default()`). Used by the `Display` tests, which pin the
     /// exact rendered txid.
-    fn test_transaction(method: &'static str) -> SubmittedTransaction {
+    fn test_transaction(method: &str) -> SubmittedTransaction {
         SubmittedTransaction {
             metadata: Some(SubmittedTxMetadata {
                 tx_hash: CryptoHash::default(),
@@ -404,7 +404,7 @@ mod tests {
             }),
             signer_account_id: AccountId::from_str("responder.near").unwrap(),
             signer_public_key: Ed25519PublicKey::from([7u8; 32]),
-            method,
+            method: method.to_string(),
             submitted_at: Utc::from_unix_timestamp(1_700_000_000).unwrap(),
             status: SubmittedTransactionStatus::Executed,
         }

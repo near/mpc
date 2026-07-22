@@ -1,5 +1,4 @@
 use super::IndexerAPI;
-use super::ReadAttestationExpiry;
 use super::ReadSupportedForeignChain;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
@@ -63,18 +62,6 @@ pub struct FakeMpcContractState {
 #[derive(Clone)]
 pub struct FakeReadSupportedForeignChain {
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
-}
-
-struct FakeAttestationExpiryReader;
-
-impl ReadAttestationExpiry for FakeAttestationExpiryReader {
-    fn read_stored_dstack_expiry<'a>(
-        &'a self,
-        _tls_public_key: &'a near_mpc_contract_interface::types::Ed25519PublicKey,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
-    {
-        Box::pin(async { Ok(None) })
-    }
 }
 
 impl ReadSupportedForeignChain for FakeReadSupportedForeignChain {
@@ -838,9 +825,6 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, Into::into(abort.key_event_id));
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
-                    ChainSendTransactionRequest::SubmitParticipantInfo { .. } => {
-                        // TODO(#1203): Submitting participant info is not implemented for tests yet.
-                    }
                     ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
                         let mut contract = contract.lock().await;
                         contract.conclude_node_migration(account_id, conclude_migration_args);
@@ -1210,7 +1194,6 @@ impl FakeIndexerManager {
             my_migration_info_receiver,
             foreign_chain_policy_reader,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
-            attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

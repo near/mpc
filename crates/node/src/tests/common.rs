@@ -5,7 +5,7 @@ use near_mpc_contract_interface::types::{
 use tokio::sync::mpsc;
 
 use crate::indexer::{
-    tx_sender::{TransactionProcessorError, TransactionSender, TransactionStatus},
+    tx_sender::{TransactionProcessorError, TransactionSender},
     types::ChainSendTransactionRequest,
 };
 
@@ -43,12 +43,5 @@ impl TransactionSender for MockTransactionSender {
             .send(transaction)
             .await
             .map_err(|_| TransactionProcessorError::ProcessorIsClosed)
-    }
-
-    async fn send_and_wait(
-        &self,
-        _transaction: ChainSendTransactionRequest,
-    ) -> Result<TransactionStatus, TransactionProcessorError> {
-        unimplemented!()
     }
 }

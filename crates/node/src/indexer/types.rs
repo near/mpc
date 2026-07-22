@@ -6,12 +6,12 @@ use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
-use near_indexer_primitives::types::Gas;
+use near_contract_transport::{FunctionCallArgs, NearGas, NearToken};
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
-    SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+    RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE, VERIFY_TEE,
+    VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
 };
 use near_mpc_contract_interface::types::{self as dtos};
 use serde::Serialize;
@@ -22,7 +22,8 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 #[expect(deprecated)]
 use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
 
-const MAX_GAS: Gas = Gas::from_teragas(300);
+// TODO(#166): This is too high in most settings
+const MAX_GAS: NearGas = NearGas::from_tgas(300);
 
 const MAX_RECOVERY_ID: u8 = 3;
 
@@ -60,21 +61,6 @@ pub enum ChainSendTransactionRequest {
     StartReshare(contract_args::StartReshareArgs),
     VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs),
     VerifyTee(),
-    // Boxed as this variant is big, 2168 bytes.
-    // Big discrepancies in variant sizes will lead to memory fragmentation
-    // due to rust's memory layout for enums.
-    //
-    // For more info see clippy lint:
-    // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-    SubmitParticipantInfo {
-        #[serde(flatten)]
-        args: Box<contract_args::SubmitParticipantInfoArgs>,
-        /// Pre-submit expiry baseline for the landing check. Skipped from serialization so it never
-        /// reaches the on-chain call args.
-        #[serde(skip)]
-        pre_submit_expiry: Option<u64>,
-    },
-
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
     VerifyForeignTransactionRespond(contract_args::VerifyForeignTransactionRespondArgs),
 }
@@ -100,7 +86,6 @@ impl ChainSendTransactionRequest {
                 VOTE_ABORT_KEY_EVENT_INSTANCE
             }
             ChainSendTransactionRequest::VerifyTee() => VERIFY_TEE,
-            ChainSendTransactionRequest::SubmitParticipantInfo { .. } => SUBMIT_PARTICIPANT_INFO,
             ChainSendTransactionRequest::ConcludeNodeMigration(_) => CONCLUDE_NODE_MIGRATION,
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
                 RESPOND_VERIFY_FOREIGN_TX
@@ -108,7 +93,7 @@ impl ChainSendTransactionRequest {
         }
     }
 
-    pub fn gas_required(&self) -> Gas {
+    pub fn gas_required(&self) -> NearGas {
         match self {
             Self::Respond(_)
             | Self::CKDRespond(_)
@@ -119,12 +104,22 @@ impl ChainSendTransactionRequest {
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
-            // TODO(#166): This is too high in most settings
             | Self::VerifyTee()
-            | Self::SubmitParticipantInfo { .. }
             | Self::ConcludeNodeMigration(_)
             | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
         }
+    }
+
+    /// The queue currency of the transaction processor: the request's method,
+    /// serialized arguments, gas, and deposit. Every enum-sent method attaches
+    /// zero deposit.
+    pub fn into_function_call(self) -> Result<FunctionCallArgs, serde_json::Error> {
+        Ok(FunctionCallArgs {
+            method_name: self.method().to_string(),
+            gas: self.gas_required(),
+            deposit: NearToken::from_yoctonear(0),
+            args: serde_json::to_vec(&self)?,
+        })
     }
 }
 
@@ -304,31 +299,30 @@ mod recovery_id_tests {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod request_serialization_tests {
-    use super::{ChainSendTransactionRequest, contract_args, dtos};
+    use super::{ChainSendTransactionRequest, MAX_GAS, START_KEYGEN_INSTANCE, contract_args, dtos};
 
-    fn mock_submit_args() -> contract_args::SubmitParticipantInfoArgs {
-        contract_args::SubmitParticipantInfoArgs::new(
-            dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-            dtos::Ed25519PublicKey([7u8; 32]),
-        )
-    }
-
-    /// The request serializes as the on-chain call args, so the node-internal `pre_submit_expiry`
-    /// must not leak into the payload — it has to serialize exactly like the bare args. Guards the
-    /// `#[serde(flatten)]` + `#[serde(skip)]` on the `SubmitParticipantInfo` variant.
+    /// The queue message carries the request as the bare on-chain call args
+    /// (the enum is `#[serde(untagged)]`), keyed by the variant's method name.
     #[test]
-    #[expect(non_snake_case)]
-    fn submit_participant_info__should_serialize_as_bare_args() {
-        let request = ChainSendTransactionRequest::SubmitParticipantInfo {
-            args: Box::new(mock_submit_args()),
-            pre_submit_expiry: Some(123),
-        };
+    fn into_function_call__should_carry_the_bare_args_under_the_variant_method() {
+        // Given
+        let args = contract_args::StartKeygenArgs::new(dtos::KeyEventId::new(
+            dtos::EpochId::new(1),
+            dtos::DomainId(2),
+            dtos::AttemptId::new(),
+        ));
+        let expected_args = serde_json::to_vec(&args).unwrap();
+        let request = ChainSendTransactionRequest::StartKeygen(args);
 
-        let request_json = serde_json::to_string(&request).unwrap();
-        let args_json = serde_json::to_string(&mock_submit_args()).unwrap();
+        // When
+        let call = request.into_function_call().unwrap();
 
-        assert_eq!(request_json, args_json);
-        assert!(!request_json.contains("pre_submit_expiry"));
+        // Then
+        assert_eq!(call.method_name, START_KEYGEN_INSTANCE);
+        assert_eq!(call.gas, MAX_GAS);
+        assert_eq!(call.deposit.as_yoctonear(), 0);
+        assert_eq!(call.args, expected_args);
     }
 }

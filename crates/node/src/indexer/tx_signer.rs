@@ -1,14 +1,15 @@
 use crate::config::RespondConfig;
-use crate::indexer::types::ChainSendTransactionRequest;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ecdsa::signature::Signer;
 use near_account_id::AccountId;
+use near_contract_transport::FunctionCallArgs;
 use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
-use near_indexer_primitives::types::{Balance, Gas};
+use near_indexer_primitives::types::Gas;
+use near_mpc_contract_interface::method_names;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -39,17 +40,15 @@ impl TransactionSigner {
     pub(crate) fn create_and_sign_function_call_tx(
         &self,
         receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
+        call: FunctionCallArgs,
         block_hash: CryptoHash,
         block_height: u64,
     ) -> SignedTransaction {
         let action = FunctionCallAction {
-            method_name,
-            args,
-            gas,
-            deposit: Balance::from_near(0),
+            method_name: call.method_name,
+            args: call.args,
+            gas: Gas::from_gas(call.gas.as_gas()),
+            deposit: call.deposit,
         };
 
         let verifying_key = self.signing_key.verifying_key();
@@ -136,10 +135,9 @@ impl TransactionSigners {
         self.owner_signer.clone()
     }
 
-    pub fn signer_for(&mut self, req: &ChainSendTransactionRequest) -> Arc<TransactionSigner> {
-        match req {
-            ChainSendTransactionRequest::Respond(_) => self.next_respond_signer(),
-            ChainSendTransactionRequest::CKDRespond(_) => self.next_respond_signer(),
+    pub fn signer_for(&mut self, method_name: &str) -> Arc<TransactionSigner> {
+        match method_name {
+            method_names::RESPOND | method_names::RESPOND_CKD => self.next_respond_signer(),
             _ => self.owner_signer(),
         }
     }
