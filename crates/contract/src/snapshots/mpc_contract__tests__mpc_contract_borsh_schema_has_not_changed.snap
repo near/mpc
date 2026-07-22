@@ -215,6 +215,10 @@ BorshSchemaContainer {
                         "u64",
                     ),
                     (
+                        "fail_attestation_submission_tera_gas",
+                        "u64",
+                    ),
+                    (
                         "clean_tee_status_tera_gas",
                         "u64",
                     ),
@@ -236,6 +240,14 @@ BorshSchemaContainer {
                     ),
                     (
                         "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "verifier_tera_gas",
+                        "u64",
+                    ),
+                    (
+                        "resolve_verification_tera_gas",
                         "u64",
                     ),
                     (

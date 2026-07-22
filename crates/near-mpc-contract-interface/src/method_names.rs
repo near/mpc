@@ -66,6 +66,11 @@ pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
+pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
+pub const FAIL_ATTESTATION_SUBMISSION: &str = "fail_attestation_submission";
+
+// TEE verifier contract (the method `mpc-contract` calls cross-contract)
+pub const VERIFY_QUOTE: &str = "verify_quote";
 
 // View methods
 pub const STATE: &str = "state";

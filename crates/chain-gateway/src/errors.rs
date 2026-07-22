@@ -112,9 +112,6 @@ pub enum ChainGatewayError {
     #[error("starting neard node failed with {msg}")]
     StartupFailed { msg: String },
 
-    #[error("serialization error while {op}: {message}")]
-    Serialization { op: ChainGatewayOp, message: String },
-
     #[error("failed to submit signed transaction while {op}: {message}")]
     SubmitSignedTransaction { op: ChainGatewayOp, message: String },
 

@@ -4,10 +4,13 @@
 //! attestation behavior, and general contract state management.
 
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
+use crate::tee::{measurements::ContractExpectedMeasurements, tee_state::TeeState};
+use mpc_attestation::attestation::default_measurements;
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_account_id::AccountId;
-use near_sdk::test_utils::VMContextBuilder;
-use near_sdk::{BlockHeight, PublicKey, testing_env};
+use near_sdk::{BlockHeight, PublicKey, test_utils::VMContextBuilder, testing_env};
 use rand::Rng;
+use std::time::Duration;
 
 /// Test environment for managing VM context state.
 ///
@@ -92,4 +95,16 @@ pub fn set_block_timestamp(timestamp_nanos: u64) {
             .block_timestamp(timestamp_nanos)
             .build()
     );
+}
+
+pub fn whitelist_dstack_measurements(
+    tee_state: &mut TeeState,
+    image: NodeImageHash,
+    launcher: LauncherImageHash,
+) {
+    tee_state.whitelist_tee_proposal(image, Duration::MAX);
+    tee_state.add_launcher_image(launcher, Duration::MAX);
+    for &measurements in default_measurements() {
+        tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
+    }
 }

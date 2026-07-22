@@ -22,6 +22,7 @@ use near_sdk::{
 
 use crate::{
     SupportedForeignChainsByNode,
+    config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
     primitives::{
@@ -33,11 +34,13 @@ use crate::{
     update::ProposedUpdates,
 };
 
-/// The `Config` layout written by the `3.13.0` contract, before
-/// `launcher_hash_unused_ttl_seconds` and `clean_expired_launcher_hashes_tera_gas` were
-/// appended.
+/// Shadow of the `3.13.0` [`Config`]: the deployed layout predates this release's new
+/// `Config` fields — the async attestation gas fields (`fail_attestation_submission_tera_gas`,
+/// `verifier_tera_gas`, `resolve_verification_tera_gas`) and the launcher-eviction fields
+/// (`launcher_hash_unused_ttl_seconds`, `clean_expired_launcher_hashes_tera_gas`) — so
+/// migrating `3.13.0` state deserializes the old field set and defaults the new ones.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct OldConfig {
+struct OldConfig {
     key_event_timeout_blocks: u64,
     tee_upgrade_deadline_duration_seconds: u64,
     contract_upgrade_deposit_tera_gas: u64,
@@ -54,9 +57,11 @@ pub struct OldConfig {
     remove_non_participant_tee_verifier_votes_tera_gas: u64,
 }
 
-impl From<OldConfig> for crate::Config {
+impl From<OldConfig> for Config {
     fn from(old: OldConfig) -> Self {
-        crate::Config {
+        // Carry the deployed values; the new fields (async attestation gas + launcher
+        // eviction) are added in this release, so take their defaults.
+        Config {
             key_event_timeout_blocks: old.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
@@ -78,8 +83,7 @@ impl From<OldConfig> for crate::Config {
             clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
             remove_non_participant_tee_verifier_votes_tera_gas: old
                 .remove_non_participant_tee_verifier_votes_tera_gas,
-            // New in this version: default the launcher-eviction TTL and its cleanup gas.
-            ..crate::Config::default()
+            ..Config::default()
         }
     }
 }
