@@ -154,4 +154,22 @@ async fn startup_health_check__should_probe_providers_against_test_golden() {
         vec![Some(1), None, None],
         "healthy: only node 0 probed (1 of 2 pass); nodes 1 and 2 skipped, so unset"
     );
+
+    // Then the same counts surface on `/debug/node_config`: node 0 overlays its
+    // probed `base` count, while the skipped nodes report an empty map (the
+    // field is always present, mirroring the provider counts).
+    let node0_config = cluster.fetch_node_config(0).await.unwrap();
+    assert_eq!(
+        node0_config["foreign_chains_provider_health"],
+        serde_json::json!({ "base": 1 }),
+        "node 0 must expose its healthy `base` count on /debug/node_config"
+    );
+    for skipped in [1, 2] {
+        let config = cluster.fetch_node_config(skipped).await.unwrap();
+        assert_eq!(
+            config["foreign_chains_provider_health"],
+            serde_json::json!({}),
+            "node {skipped} skipped its probe, so its health map must be empty"
+        );
+    }
 }

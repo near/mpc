@@ -6,6 +6,7 @@ use crate::{
     },
     coordinator::Coordinator,
     db::SecretDB,
+    foreign_chain_health::ProviderHealthSnapshot,
     home_paths::assets_dir,
     indexer::{
         IndexerAPI, ReadSupportedForeignChain, real::spawn_real_indexer,
@@ -184,6 +185,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         watch::channel(ProtocolContractState::NotInitialized);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel((0, BTreeMap::new()));
+    let (foreign_chains_health_sender, foreign_chains_health_receiver) =
+        watch::channel(ProviderHealthSnapshot::new());
 
     // Buffer behind the recent-transactions debug page. The indexer forwards
     // records over `recent_tx_sender`; the drain task records them into the
@@ -202,6 +205,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
+            foreign_chains_health_receiver,
             read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
@@ -217,6 +221,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         node_config.foreign_chains.clone(),
         network,
         node_config.foreign_chain_health_check_golden.clone(),
+        foreign_chains_health_sender,
     ));
 
     // Create Indexer and wait for indexer to be synced.

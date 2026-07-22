@@ -10,18 +10,24 @@ use foreign_chain_health_check::{
 };
 use futures::FutureExt as _;
 use mpc_node_config::{ForeignChainsConfig, HealthCheckGoldenConfig};
+use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
 use crate::metrics;
 
+/// Healthy provider count per configured chain, keyed by `chain.label()`.
+pub type ProviderHealthSnapshot = BTreeMap<String, i64>;
+
 /// Startup healthcheck entrypoint: builds a [`HealthCheckRoute`] from the config
 /// and runs it, warning if a golden config is set on a public network. A probe
 /// panic is caught and logged, never propagated (diagnostic-only). Publishes
-/// per-chain `configured` and `healthy` provider gauges.
+/// per-chain `configured` and `healthy` provider gauges, plus a healthy-count
+/// snapshot over `health_publisher`.
 pub async fn run_startup_health_check(
     foreign_chains: ForeignChainsConfig,
     network: NetworkKind,
     golden: Option<HealthCheckGoldenConfig>,
+    health_publisher: watch::Sender<ProviderHealthSnapshot>,
 ) {
     for (chain, config) in foreign_chains.iter_chains() {
         metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
@@ -72,7 +78,7 @@ pub async fn run_startup_health_check(
             }
         };
         log_results(&results);
-        set_healthy_metric(&foreign_chains, &results);
+        set_healthy_metric(&foreign_chains, &results, &health_publisher);
     };
 
     if AssertUnwindSafe(probe).catch_unwind().await.is_err() {
@@ -82,7 +88,13 @@ pub async fn run_startup_health_check(
     }
 }
 
-fn set_healthy_metric(foreign_chains: &ForeignChainsConfig, results: &[ProviderResult]) {
+/// Emits the per-chain healthy-provider gauge and pushes the same counts to
+/// `health_publisher`.
+fn set_healthy_metric(
+    foreign_chains: &ForeignChainsConfig,
+    results: &[ProviderResult],
+    health_publisher: &watch::Sender<ProviderHealthSnapshot>,
+) {
     let mut healthy_by_chain: BTreeMap<&str, i64> = BTreeMap::new();
     for result in results {
         if matches!(result.status, Status::Passed) {
@@ -90,12 +102,16 @@ fn set_healthy_metric(foreign_chains: &ForeignChainsConfig, results: &[ProviderR
         }
     }
 
+    let mut counts = ProviderHealthSnapshot::new();
     for (chain, _) in foreign_chains.iter_chains() {
         let label = chain.label();
+        let healthy = healthy_by_chain.get(label).copied().unwrap_or(0);
         metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
             .with_label_values(&[label])
-            .set(healthy_by_chain.get(label).copied().unwrap_or(0));
+            .set(healthy);
+        counts.insert(label.to_string(), healthy);
     }
+    let _ = health_publisher.send(counts);
 }
 
 fn log_results(results: &[ProviderResult]) {
@@ -191,11 +207,13 @@ mod tests {
     async fn run_startup_health_check__should_warn_when_network_undetermined() {
         // Given
         let foreign_chains = config_with_unsupported_chain();
+        let (publisher, snapshot) = watch::channel(ProviderHealthSnapshot::new());
 
         // When
-        run_startup_health_check(foreign_chains, NetworkKind::Undetermined, None).await;
+        run_startup_health_check(foreign_chains, NetworkKind::Undetermined, None, publisher).await;
 
-        // Then it is flagged loudly (a real deployment that can't resolve its network)
+        // Then it is flagged loudly (a real deployment that can't resolve its
+        // network) and no snapshot is published
         assert!(logs_contain("network undetermined"));
         logs_assert(|lines: &[&str]| {
             match lines
@@ -206,6 +224,7 @@ mod tests {
                 false => Err("expected a WARN for undetermined network".to_string()),
             }
         });
+        assert!(snapshot.borrow().is_empty());
     }
 
     #[tokio::test]
@@ -213,9 +232,10 @@ mod tests {
     async fn run_startup_health_check__should_skip_quietly_on_a_local_chain() {
         // Given a known local/dev chain (no golden vectors)
         let foreign_chains = config_with_unsupported_chain();
+        let (publisher, _snapshot) = watch::channel(ProviderHealthSnapshot::new());
 
         // When
-        run_startup_health_check(foreign_chains, NetworkKind::Local, None).await;
+        run_startup_health_check(foreign_chains, NetworkKind::Local, None, publisher).await;
 
         // Then it is skipped at debug, not warned
         assert!(logs_contain(
@@ -238,9 +258,16 @@ mod tests {
             base: Some(chain_config("http://127.0.0.1:1")),
             ..Default::default()
         };
+        let (publisher, _snapshot) = watch::channel(ProviderHealthSnapshot::new());
 
         // When
-        run_startup_health_check(foreign_chains, NetworkKind::Local, Some(base_golden())).await;
+        run_startup_health_check(
+            foreign_chains,
+            NetworkKind::Local,
+            Some(base_golden()),
+            publisher,
+        )
+        .await;
 
         // Then the probe runs end to end and summarizes the one probed provider
         assert!(logs_contain(
@@ -256,12 +283,14 @@ mod tests {
     async fn run_startup_health_check__should_probe_with_the_builtin_set_on_a_real_network() {
         // Given a real network and no config-supplied golden
         let foreign_chains = config_with_unsupported_chain();
+        let (publisher, _snapshot) = watch::channel(ProviderHealthSnapshot::new());
 
         // When
         run_startup_health_check(
             foreign_chains,
             NetworkKind::Public(foreign_chain_health_check::Network::Mainnet),
             None,
+            publisher,
         )
         .await;
 
@@ -288,12 +317,14 @@ mod tests {
      {
         // Given a real network AND a config-supplied golden (a misconfiguration)
         let foreign_chains = config_with_unsupported_chain();
+        let (publisher, _snapshot) = watch::channel(ProviderHealthSnapshot::new());
 
         // When
         run_startup_health_check(
             foreign_chains,
             NetworkKind::Public(foreign_chain_health_check::Network::Mainnet),
             Some(base_golden()),
+            publisher,
         )
         .await;
 
@@ -310,9 +341,10 @@ mod tests {
     async fn run_startup_health_check__should_publish_configured_even_when_network_undetermined() {
         // Given an unsupported chain with one provider and an undetermined network
         let foreign_chains = config_with_unsupported_chain();
+        let (publisher, _snapshot) = watch::channel(ProviderHealthSnapshot::new());
 
         // When
-        run_startup_health_check(foreign_chains, NetworkKind::Undetermined, None).await;
+        run_startup_health_check(foreign_chains, NetworkKind::Undetermined, None, publisher).await;
 
         // Then `configured` is populated up front despite the skipped probe
         assert_eq!(
@@ -323,8 +355,29 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn run_startup_health_check__should_publish_healthy_snapshot_after_probe() {
+        // Given an unsupported chain (probed but resolves to skip, so 0 healthy)
+        // on a determined network
+        let foreign_chains = config_with_unsupported_chain();
+        let (publisher, snapshot) = watch::channel(ProviderHealthSnapshot::new());
+
+        // When
+        run_startup_health_check(
+            foreign_chains,
+            NetworkKind::Public(foreign_chain_health_check::Network::Mainnet),
+            None,
+            publisher,
+        )
+        .await;
+
+        // Then a snapshot with per-chain healthy counts is published
+        let counts = snapshot.borrow();
+        assert_eq!(counts.get("ethereum"), Some(&0));
+    }
+
     #[test]
-    fn set_healthy_metric__should_count_healthy_providers_per_chain_across_mixes() {
+    fn set_healthy_metric__should_count_passed_providers_per_chain_and_publish() {
         // Given three configured chains whose per-provider outcomes span what a
         // real run produces: base fully healthy (2/2), aptos partial (1/3), and
         // ethereum with nothing passing (0/2).
@@ -359,9 +412,15 @@ mod tests {
         ];
 
         // When
-        set_healthy_metric(&foreign_chains, &results);
+        let (publisher, receiver) = watch::channel(ProviderHealthSnapshot::new());
+        set_healthy_metric(&foreign_chains, &results, &publisher);
 
-        // Then each chain's gauge equals its number of passing providers.
+        // Then both the gauge and the pushed snapshot report each chain's
+        // passing count, including 0 for a chain where nothing passed.
+        let counts = receiver.borrow();
+        assert_eq!(counts.get("base"), Some(&2));
+        assert_eq!(counts.get("aptos"), Some(&1));
+        assert_eq!(counts.get("ethereum"), Some(&0));
         let healthy = |chain| {
             metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
                 .with_label_values(&[chain])
