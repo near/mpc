@@ -12,8 +12,10 @@ const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
 
-/// Publishes the contract's available chains mapped to their registered
-/// supporters. The previously published value stays in effect until a read succeeds.
+/// Updates the contract's available chains mapped to their registered
+/// supporters in watch channel.
+/// The previously updated values stays in effect until viewing new state
+/// from contract succeeds.
 pub async fn monitor_foreign_chain_supporters(
     sender: watch::Sender<ForeignChainSupporters>,
     indexer_state: Arc<IndexerState>,
@@ -43,14 +45,14 @@ pub async fn monitor_foreign_chain_supporters(
 /// The two view calls are not atomic: a change finalized between them yields
 /// a transiently inconsistent snapshot, corrected on the next poll.
 async fn read_supporters(indexer_state: &IndexerState) -> anyhow::Result<ForeignChainSupporters> {
-    let (_height, available_chains) = indexer_state
-        .view_client
-        .get_available_chains(&indexer_state.mpc_contract_id)
-        .await?;
-    let (_height, configs) = indexer_state
-        .view_client
-        .get_foreign_chains_configs(&indexer_state.mpc_contract_id)
-        .await?;
+    let ((_, available_chains), (_, configs)) = tokio::try_join!(
+        indexer_state
+            .view_client
+            .get_available_chains(&indexer_state.mpc_contract_id),
+        indexer_state
+            .view_client
+            .get_foreign_chains_configs(&indexer_state.mpc_contract_id)
+    )?;
     Ok(supporters_by_available_chain(&available_chains, &configs))
 }
 

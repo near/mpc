@@ -57,8 +57,6 @@ pub struct FakeMpcContractState {
     supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode,
     available_foreign_chains: dtos::AvailableForeignChains,
     foreign_chains_configs: dtos::ForeignChainsConfigs,
-    /// Mirrors the real indexer's foreign-chain supporters watch channel.
-    foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
     pub migration_service: NodeMigrations,
 }
 
@@ -109,7 +107,6 @@ impl FakeMpcContractState {
             supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
-            foreign_chain_supporters_sender: watch::channel(Default::default()).0,
             migration_service: NodeMigrations::default(),
         }
     }
@@ -273,24 +270,6 @@ impl FakeMpcContractState {
             .map(|(chain, _)| chain)
             .collect::<BTreeSet<_>>()
             .into();
-
-        self.publish_foreign_chain_supporters();
-    }
-
-    fn publish_foreign_chain_supporters(&self) {
-        let supporters = supporters_by_available_chain(
-            &self.available_foreign_chains,
-            &self.foreign_chains_configs,
-        );
-        self.foreign_chain_supporters_sender
-            .send_if_modified(|previous| {
-                if *previous != supporters {
-                    *previous = supporters;
-                    true
-                } else {
-                    false
-                }
-            });
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
@@ -569,6 +548,8 @@ struct FakeIndexerCore {
     block_update_sender: broadcast::Sender<ChainBlockUpdate>,
     /// Broadcasts the contract state to each node.
     migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
+    /// Mirrors the real indexer's foreign-chain supporters watch channel.
+    foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -601,6 +582,7 @@ impl FakeIndexerCore {
             let clock = self.clock.clone();
             let state_change_sender = self.state_change_sender.clone();
             let migration_state_sender = self.migration_change_sender.clone();
+            let foreign_chain_supporters_sender = self.foreign_chain_supporters_sender.clone();
             async move {
                 loop {
                     {
@@ -616,6 +598,18 @@ impl FakeIndexerCore {
                         state_change_sender.send(config).ok();
                         let migration_state = state.migration_service.get_all();
                         migration_state_sender.send(migration_state).ok();
+                        let supporters = supporters_by_available_chain(
+                            state.available_foreign_chains(),
+                            state.foreign_chains_configs(),
+                        );
+                        foreign_chain_supporters_sender.send_if_modified(|previous| {
+                            if *previous != supporters {
+                                *previous = supporters;
+                                true
+                            } else {
+                                false
+                            }
+                        });
                     }
                     clock.sleep(Duration::seconds(1)).await;
                 }
@@ -1080,10 +1074,9 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
-        let contract_state = FakeMpcContractState::new();
-        let foreign_chain_supporters_receiver =
-            contract_state.foreign_chain_supporters_sender.subscribe();
-        let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
+        let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
+            watch::channel(Default::default());
+        let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),
@@ -1095,6 +1088,7 @@ impl FakeIndexerManager {
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
             migration_change_sender: migration_change_sender.clone(),
+            foreign_chain_supporters_sender,
             signature_response_sender,
             ckd_response_sender,
             block_time,
