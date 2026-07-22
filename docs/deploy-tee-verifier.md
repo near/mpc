@@ -5,12 +5,13 @@ makes it the trusted verifier for the MPC contract.
 
 ## Overview
 
-Deploying puts the audited verifier code on-chain at a locked account, but the MPC
-contract does not trust an account just because code lives there. The active participants
-must vote that account (and its code hash) in, which is what makes it the trusted
-verifier. So this runbook has two halves: deploy and lock the account
-([steps 1-5](#1-reproducibly-build-the-verifier-and-record-its-hash)), then have
-participants vote it in ([step 6](#6-vote-the-verifier-in-participants)).
+Putting the verifier code on-chain is not enough for the MPC contract to use it: the
+contract only calls a verifier the participants have voted to trust. So this runbook has
+two halves. First, deploy the verifier to its own account and lock it — remove the
+account's keys so the code can never change
+([steps 1-5](#1-reproducibly-build-the-verifier-and-record-its-hash)). Then the
+participants vote that account, together with its code hash, in as the trusted verifier
+([step 6](#6-vote-the-verifier-in-participants)).
 
 ## Prerequisites
 
