@@ -16,7 +16,7 @@ use near_time::Clock;
 #[test_log::test]
 async fn test_basic_multidomain() {
     const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -25,14 +25,14 @@ async fn test_basic_multidomain() {
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::BASIC_MULTIDOMAIN_TEST,
         std::time::Duration::from_millis(600), // helps to avoid flaky test
     );
 
     // TODO(#1689): in this test it would be desirable to add DamgardEtAl.
-    // That requires having NUM_PARTICIPANTS = 5 and THRESHOLD = 5
+    // That requires having NUM_PARTICIPANTS = 5 and GOVERNANCE_THRESHOLD = 5
     // which makes this test too slow to pass in CI, which should be fixed
     let mut domains = vec![
         sign_domain(0, Protocol::CaitSith, 3),

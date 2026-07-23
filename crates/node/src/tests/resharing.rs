@@ -35,9 +35,9 @@ fn infer_purpose_from_protocol(protocol: Protocol) -> DomainPurpose {
 async fn test_key_resharing_simple(
     #[case] case: u16,
     #[case] protocol: Protocol,
-    #[case] threshold: usize,
+    #[case] governance_threshold: usize,
 ) {
-    let num_participants: usize = threshold + 1;
+    let num_participants: usize = governance_threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -46,7 +46,7 @@ async fn test_key_resharing_simple(
         (0..num_participants)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        threshold,
+        governance_threshold,
         TXN_DELAY_BLOCKS,
         port_seed::KEY_RESHARING_SIMPLE_TEST.with_case(case),
         DEFAULT_BLOCK_TIME,
@@ -166,7 +166,7 @@ async fn test_key_resharing_simple(
 #[test_log::test]
 async fn test_key_resharing_multistage() {
     const NUM_PARTICIPANTS: usize = 6;
-    const THRESHOLD: usize = 4;
+    const GOVERNANCE_THRESHOLD: usize = 4;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -175,7 +175,7 @@ async fn test_key_resharing_multistage() {
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::KEY_RESHARING_MULTISTAGE_TEST,
         std::time::Duration::from_millis(600),
@@ -384,7 +384,7 @@ async fn test_key_resharing_multistage() {
 #[test_log::test]
 async fn test_signature_requests_in_resharing_are_processed() {
     const NUM_PARTICIPANTS: usize = 5;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -393,7 +393,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::KEY_RESHARING_SIGNATURE_BUFFERING_TEST,
         DEFAULT_BLOCK_TIME,

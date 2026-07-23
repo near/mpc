@@ -71,7 +71,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
  {
     // Given a 5-node cluster with three domains at distinct thresholds.
     const NUM_PARTICIPANTS: usize = 5;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -80,7 +80,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::RECONSTRUCTION_THRESHOLD_AVAILABILITY_TEST,
         DEFAULT_BLOCK_TIME,
@@ -166,7 +166,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
 async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_ones() {
     // Given a cluster starting with 4 of an eventual 5 participants.
     const NUM_PARTICIPANTS: usize = 5;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -175,7 +175,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::RECONSTRUCTION_THRESHOLD_RESHARING_TEST,
         DEFAULT_BLOCK_TIME,
