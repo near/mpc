@@ -5,8 +5,8 @@ use crate::sandbox::{
     },
     utils::{
         consts::{
-            ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
-            GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
+            ALL_PROTOCOLS, GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE,
+            MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN, PROPOSE_UPDATE_DEPOSIT_OVERPAY,
         },
         contract_build::{current_contract, migration_contract},
         interface::IntoContractType,
@@ -268,7 +268,7 @@ async fn test_propose_update_contract_many() {
             .call(contract.id(), method_names::PROPOSE_UPDATE)
             .args_borsh(current_contract_proposal())
             .max_gas()
-            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+            .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
             .transact()
             .await
             .unwrap();
@@ -323,7 +323,7 @@ async fn test_vote_update_gas_before_threshold() {
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(current_contract_proposal())
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .unwrap();
@@ -404,7 +404,7 @@ async fn test_propose_incorrect_updates() {
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh((dummy_contract_proposal(), dummy_config))
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .unwrap();
@@ -416,7 +416,7 @@ async fn test_propose_incorrect_updates() {
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(())
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .unwrap();
@@ -471,7 +471,7 @@ async fn only_one_vote_from_participant() {
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(current_contract_proposal())
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .unwrap();
@@ -483,7 +483,7 @@ async fn only_one_vote_from_participant() {
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(current_contract_proposal())
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .unwrap();

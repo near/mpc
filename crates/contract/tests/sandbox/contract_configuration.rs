@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     upgrade_from_current_contract::current_contract_proposal,
-    utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+    utils::consts::{GAS_FOR_VOTE_UPDATE, PROPOSE_UPDATE_DEPOSIT_OVERPAY},
 };
 use mpc_contract::update::UpdateId;
 use near_mpc_contract_interface::method_names;
@@ -48,7 +48,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(current_contract_proposal())
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .unwrap();

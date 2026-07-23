@@ -19,12 +19,11 @@ blstrs = ["near-mpc-crypto-types/blstrs"]
 # Helper to build mpc contract function call arguments
 call-args = []
 # The typed client (`MpcContractHandle`) over the transport traits. Pulls in
-# the transport crate and serde_json.
+# the transport crate.
 client = [
     "call-args",
     "dep:near-contract-transport",
     "near-contract-transport/traits",
-    "dep:serde_json",
     "dep:thiserror",
 ]
 ed25519-dalek = ["near-mpc-crypto-types/ed25519-dalek"]
@@ -39,7 +38,7 @@ near-contract-transport = { workspace = true, optional = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-crypto-types = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 serde_repr = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }

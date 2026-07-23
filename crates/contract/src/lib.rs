@@ -1333,10 +1333,11 @@ impl MpcContract {
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
         let proposer = self.voter_or_panic();
+        let payload_bytes = args.payload_bytes().expect("config serializes to JSON");
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
-        let required = ProposedUpdates::required_deposit(&update);
+        let required = ProposedUpdates::required_deposit(payload_bytes);
         if attached < required {
             return Err(InvalidParameters::InsufficientDeposit {
                 attached: attached.as_yoctonear(),

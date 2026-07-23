@@ -29,7 +29,7 @@ args:     {"request":{"request":{"Bitcoin":{"tx_id":"070707070707070707070707070
 contract: mpc.near
 method:   propose_update
 gas:      300.0 Tgas
-deposit:  17 NEAR
+deposit:  0.32772 NEAR
 args:     0x01040000000707070700
 
 contract: mpc.near

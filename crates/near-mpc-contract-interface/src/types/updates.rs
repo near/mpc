@@ -60,3 +60,21 @@ pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
     pub config: Option<Config>,
 }
+
+impl ProposeUpdateArgs {
+    /// Bytes the proposal stores on chain: the code length or the config's
+    /// JSON length. Sizes the deposit on both the contract and client side.
+    pub fn payload_bytes(&self) -> Result<u128, serde_json::Error> {
+        debug_assert!(
+            !(self.code.is_some() && self.config.is_some()),
+            "proposals carry code or config, not both"
+        );
+        Ok(self.code.as_ref().map_or(0, |code| code.len() as u128)
+            + self
+                .config
+                .as_ref()
+                .map(serde_json::to_vec)
+                .transpose()?
+                .map_or(0, |config| config.len() as u128))
+    }
+}

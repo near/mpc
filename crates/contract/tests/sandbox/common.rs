@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+    consts::{GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN, PROPOSE_UPDATE_DEPOSIT_OVERPAY},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
@@ -357,7 +357,7 @@ pub async fn propose_and_vote_contract_binary(
             config: None,
         })
         .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await
         .expect("propose update call succeeds");

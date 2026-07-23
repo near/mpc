@@ -11,8 +11,8 @@ use crate::call_args::{
     VoteUpdateArgs,
 };
 use crate::deposits::{
-    PROPOSE_UPDATE_DEPOSIT_MILLINEAR, SIGN_DEPOSIT_YOCTONEAR,
-    SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
+    SIGN_DEPOSIT_YOCTONEAR, STORAGE_BYTE_COST_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
+    propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
     PROPOSE_UPDATE, REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO,
@@ -116,6 +116,10 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         args: ProposeUpdateArgs,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
+            args.payload_bytes()?,
+            STORAGE_BYTE_COST_YOCTONEAR,
+        ));
         let args = borsh::to_vec(&args)?;
         self.caller
             .call_contract(
@@ -124,7 +128,7 @@ impl<C: CallContract> MpcContractHandle<C> {
                     method_name: PROPOSE_UPDATE.to_string(),
                     args,
                     gas: MAX_GAS,
-                    deposit: NearToken::from_millinear(PROPOSE_UPDATE_DEPOSIT_MILLINEAR),
+                    deposit,
                 },
             )
             .await

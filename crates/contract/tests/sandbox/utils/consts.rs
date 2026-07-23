@@ -40,12 +40,11 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(190);
 
 /* --- Deposit constants --- */
-/// This is the current deposit required for a contract deploy. This is subject to change but make
-/// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
-/// not be getting that big.
+/// Over-approximation of `propose_update`'s size-dependent required deposit,
+/// good for contracts up to ~1.7mb.
 ///
 /// TODO(#2756): Reduce this to the minimal value possible
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(17000);
+pub const PROPOSE_UPDATE_DEPOSIT_OVERPAY: NearToken = NearToken::from_millinear(17000);
 
 /// Attached to `submit_participant_info`; the contract requires exactly this flat
 /// fee to store the bounded attestation entry, with no refund.

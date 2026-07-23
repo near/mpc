@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
-        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
+        consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE, PROPOSE_UPDATE_DEPOSIT_OVERPAY},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
@@ -49,7 +49,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             code: Some(code.clone()),
             config: None,
         })
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .deposit(PROPOSE_UPDATE_DEPOSIT_OVERPAY)
         .transact()
         .await?
         .json()?;
