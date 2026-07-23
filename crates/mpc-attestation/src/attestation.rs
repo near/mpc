@@ -25,7 +25,7 @@ use crate::alloc::string::{String, ToString};
 /// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
 /// well within this window, so valid attestations refresh in time.
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
 // `large_enum_variant` fires only where `usize` is 64-bit; under the contract's
 // wasm32 build the variants are close enough in size that it doesn't, so gate the
