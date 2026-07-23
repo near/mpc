@@ -138,11 +138,8 @@ impl DeployedContract {
     }
 
     /// A typed [`MpcContractHandle`] on this contract, calling as `caller`.
-    pub fn handle_for(
-        &self,
-        caller: NearKitCaller,
-    ) -> anyhow::Result<MpcContractHandle<NearKitCaller>> {
-        Ok(MpcContractHandle::new(caller, self.contract_id.parse()?))
+    pub fn handle_for(&self, caller: NearKitCaller) -> MpcContractHandle<NearKitCaller> {
+        MpcContractHandle::new(caller, self.contract_id.parse().unwrap())
     }
 
     pub async fn call(

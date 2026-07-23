@@ -805,13 +805,9 @@ impl MpcCluster {
         self.blockchain.client_for(account_id.as_ref(), key)
     }
 
-    /// A typed [`MpcContractHandle`] on the MPC contract, calling as the given
-    /// user account.
-    pub fn contract_handle(
-        &self,
-        account_id: &AccountId,
-    ) -> anyhow::Result<MpcContractHandle<NearKitCaller>> {
-        self.contract.handle_for(self.user_client(account_id)?)
+    pub fn contract_handle(&self, account_id: &AccountId) -> MpcContractHandle<NearKitCaller> {
+        self.contract
+            .handle_for(self.user_client(account_id).unwrap())
     }
 
     pub fn default_user_account(&self) -> &AccountId {
@@ -828,7 +824,7 @@ impl MpcCluster {
         payload: Payload,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        self.contract_handle(account_id)?
+        self.contract_handle(account_id)
             .sign(SignRequestArgs {
                 path: "test".to_string(),
                 payload,
@@ -1343,7 +1339,7 @@ async fn init_contract(
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
-            .handle_for(blockchain.client_for(&account, &near_keys[i])?)?
+            .handle_for(blockchain.client_for(&account, &near_keys[i]).unwrap())
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
