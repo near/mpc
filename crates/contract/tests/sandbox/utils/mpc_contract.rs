@@ -140,11 +140,8 @@ pub async fn vote_for_hash(
     contract: &Contract,
     image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
-    let result = account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": image_hash}))
-        .transact()
-        .await?;
+    let contract_handle = MpcContractHandle::new(SandboxCaller(account), contract.id().clone());
+    let result = contract_handle.vote_code_hash(*image_hash).await?;
     all_receipts_successful(result)?;
     Ok(())
 }

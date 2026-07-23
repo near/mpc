@@ -5,6 +5,7 @@ use crate::sandbox::utils::{
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
+    transactions::SandboxCaller,
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -29,6 +30,7 @@ use near_mpc_contract_interface::types::{
     TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
+    client::MpcContractHandle,
     method_names,
     types::{
         self as dtos, Attestation, BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest,
@@ -124,14 +126,10 @@ pub async fn init_contract(
     params: ThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
-    let result = contract
-        .call(method_names::INIT)
-        .args_json(json!({
-            "parameters": params,
-            "init_config": init_config,
-        }))
-        .gas(GAS_FOR_INIT)
-        .transact()
+    let contract_handle =
+        MpcContractHandle::new(SandboxCaller(contract.as_account()), contract.id().clone());
+    let result = contract_handle
+        .init(params.into(), init_config)
         .await
         .unwrap();
     assert!(result.is_success(), "init failed: {:?}", result);
