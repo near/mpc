@@ -12,7 +12,7 @@ use crate::method_names::{SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
 use crate::types::{AccountId, Attestation, Ed25519PublicKey, SignRequestArgs};
 
 /// Default gas for handle-issued calls without a method-specific amount.
-// TODO(#166): 300 Tgas is the protocol maximum and higher than most methods
+// TODO(#166): 300 Tgas used to be the protocol maximum and higher than most methods
 // need; benchmark per method and reduce.
 pub const MAX_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
 
