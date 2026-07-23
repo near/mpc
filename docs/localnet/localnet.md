@@ -335,12 +335,6 @@ returns `tee-verifier.test.near`:
 near contract call-function as-read-only mpc-contract.test.near tee_verifier_account_id json-args {} network-config mpc-localnet now
 ```
 
-As corroboration, the MPC contract now has no pending verifier votes:
-
-```shell
-near contract call-function as-read-only mpc-contract.test.near tee_verifier_votes json-args {} network-config mpc-localnet now
-```
-
 You can call `verify_quote` directly to see it run its DCAP logic. Its arguments
 are binary (borsh), so they are read from a committed fixture file at
 `crates/tee-verifier/tests/fixtures/verify_quote_args.borsh`:

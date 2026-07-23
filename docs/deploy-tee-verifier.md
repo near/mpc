@@ -169,11 +169,4 @@ Read the resolved verifier; once the threshold is reached it returns `$VERIFIER_
 near contract call-function as-read-only "$SIGNER_CONTRACT" tee_verifier_account_id json-args {} network-config "$NETWORK" now
 ```
 
-As corroboration, pending votes clear to `{}` once the threshold is reached:
-
-```shell
-near contract call-function as-read-only "$SIGNER_CONTRACT" tee_verifier_votes json-args {} network-config "$NETWORK" now
-```
-
-The threshold-crossing transaction also logs `vote_tee_verifier_change: new verifier =
-$VERIFIER_ACCOUNT`. The contract stays `Running` throughout.
+The contract stays `Running` throughout.
