@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.13.3] - 2026-07-23
+
+### 🐛 Bug Fixes
+
+- [#3941](https://github.com/near/mpc/pull/3941): Extend max collateral age (#3941)
+
+
 ## [3.13.2] - 2026-07-15
 
 ### 🐛 Bug Fixes
