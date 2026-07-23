@@ -308,6 +308,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
         peers_to_consider: &[ParticipantId],
     ) {
         info!(
+            // Subtract the freebie for this node itself, so the count reflects the peers we still wait on.
             "Waiting for {:?} participants to be ready.",
             required_ready_count - 1
         );

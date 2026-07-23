@@ -8,7 +8,7 @@ use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
 
 const NUM_PARTICIPANTS: usize = 2;
-const GOVERNANCE_THRESHOLD: usize = 2;
+const RECONSTRUCTION_THRESHOLD: usize = 2;
 
 pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId {
     KeyEventId::new(
@@ -26,7 +26,7 @@ pub fn generate_dummy_keyshares<R: CryptoRng + RngCore + SeedableRng + Send + 's
 ) -> (Keyshare, Keyshare) {
     let keyshares: std::collections::HashMap<_, _> = run_keygen::<Secp256K1Sha256, _>(
         &generate_participants_with_random_ids(NUM_PARTICIPANTS, rng),
-        GOVERNANCE_THRESHOLD,
+        RECONSTRUCTION_THRESHOLD,
         rng,
     )
     .into_iter()
@@ -67,7 +67,7 @@ pub fn generate_dummy_keyshare<R: CryptoRng + RngCore + SeedableRng + Send + 'st
 ) -> Keyshare {
     let key = run_keygen::<Secp256K1Sha256, _>(
         &generate_participants_with_random_ids(NUM_PARTICIPANTS, rng),
-        GOVERNANCE_THRESHOLD,
+        RECONSTRUCTION_THRESHOLD,
         rng,
     )
     .into_iter()
