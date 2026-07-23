@@ -188,7 +188,7 @@ impl DeployedContract {
     /// Like [`Self::call_from`], but with an attached `deposit`.
     pub async fn call_from_deposit(
         &self,
-        client: &ClientHandle,
+        client: &NearKitCaller,
         method: &str,
         args: serde_json::Value,
         deposit: near_kit::NearToken,
