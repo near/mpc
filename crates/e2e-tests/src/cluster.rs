@@ -829,11 +829,7 @@ impl MpcCluster {
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.contract_handle(account_id)?
-            .sign(SignRequestArgs {
-                path: "test".to_string(),
-                payload,
-                domain_id,
-            })
+            .sign(SignRequestArgs::new("test".to_string(), payload, domain_id))
             .await
             .context("failed to send sign request")
     }

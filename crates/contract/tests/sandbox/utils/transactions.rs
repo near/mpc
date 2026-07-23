@@ -1,6 +1,8 @@
 use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_sdk::Gas;
-use near_workspaces::{Account, AccountId, Contract, result::ExecutionFinalResult};
+use near_workspaces::{
+    Account, AccountId, Contract, operations::TransactionStatus, result::ExecutionFinalResult,
+};
 use serde::Serialize;
 
 /// [`CallContract`] adapter used only by the sandbox integration tests.
@@ -21,6 +23,30 @@ impl CallContract for SandboxCaller<'_> {
             .gas(call_args.gas)
             .deposit(call_args.deposit)
             .transact()
+            .await
+    }
+}
+
+/// [`CallContract`] adapter used only by the sandbox integration tests.
+/// Sends the transactions to the network without waiting for it to be completed.
+/// Returns a [`TransactionStatus`], which can be awaited.
+pub struct AsyncSandboxCaller<'a>(pub &'a Account);
+
+impl CallContract for AsyncSandboxCaller<'_> {
+    type Output = TransactionStatus;
+    type Error = near_workspaces::error::Error;
+
+    async fn call_contract(
+        &self,
+        contract_id: &AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<Self::Output, Self::Error> {
+        self.0
+            .call(contract_id, &call_args.method_name)
+            .args(call_args.args)
+            .gas(call_args.gas)
+            .deposit(call_args.deposit)
+            .transact_async()
             .await
     }
 }

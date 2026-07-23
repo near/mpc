@@ -160,11 +160,11 @@ mod tests {
 
         // When: every handle method, once, in declaration order
         handle
-            .sign(SignRequestArgs {
-                path: "test".to_string(),
-                payload: Payload::Ecdsa([7u8; 32].into()),
-                domain_id: DomainId(0),
-            })
+            .sign(SignRequestArgs::new(
+                "test".to_string(),
+                Payload::Ecdsa([7u8; 32].into()),
+                DomainId(0),
+            ))
             .await
             .unwrap();
         handle
