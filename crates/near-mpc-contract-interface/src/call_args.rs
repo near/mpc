@@ -3,7 +3,8 @@
 use crate::types::{
     Attestation, CKDRequest, CKDRequestArgs, CKDResponse, Ed25519PublicKey, KeyEventId, Keyset,
     PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,11 @@ pub struct SignArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RequestAppPrivateKeyArgs {
     pub request: CKDRequestArgs,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VerifyForeignTransactionArgs {
+    pub request: VerifyForeignTransactionRequestArgs,
 }
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]

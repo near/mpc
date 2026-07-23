@@ -46,8 +46,7 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
             (CLUSTER_WAIT_TIMEOUT.as_millis() / CLUSTER_POLL_INTERVAL.as_millis()) as usize,
         )
 }
-const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
-const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+
 const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
@@ -1047,16 +1046,10 @@ impl MpcCluster {
         request: &near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
-        let client = self.user_client(&user)?;
-        self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::VERIFY_FOREIGN_TRANSACTION,
-                json!({ "request": serde_json::to_value(request)? }),
-                SIGN_GAS,
-                SIGN_DEPOSIT,
-            )
+        self.contract_handle(&user)
+            .verify_foreign_transaction(request.clone())
             .await
+            .context("failed to send verify_foreign_transaction request")
     }
 
     /// Propose a contract code update and cast votes until `vote_update` reports

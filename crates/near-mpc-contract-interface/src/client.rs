@@ -6,11 +6,16 @@
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
-use crate::call_args::{RequestAppPrivateKeyArgs, SignArgs, SubmitParticipantInfoArgs};
+use crate::call_args::{
+    RequestAppPrivateKeyArgs, SignArgs, SubmitParticipantInfoArgs, VerifyForeignTransactionArgs,
+};
 use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
-use crate::method_names::{REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
+use crate::method_names::{
+    REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
+};
 use crate::types::{
     AccountId, Attestation, CKDAppPublicKey, CKDRequestArgs, Ed25519PublicKey, SignRequestArgs,
+    VerifyForeignTransactionRequestArgs,
 };
 
 /// Default gas for handle-issued calls without a method-specific amount.
@@ -83,6 +88,25 @@ impl<C: CallContract> MpcContractHandle<C> {
             .map_err(MpcContractHandleError::Call)
     }
 
+    pub async fn verify_foreign_transaction(
+        &self,
+        request: VerifyForeignTransactionRequestArgs,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VerifyForeignTransactionArgs::new(request))?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: VERIFY_FOREIGN_TRANSACTION.to_string(),
+                    args,
+                    gas: SIGN_GAS,
+                    deposit: NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
     pub async fn submit_participant_info(
         &self,
         proposed_participant_attestation: Attestation,
@@ -135,8 +159,10 @@ pub enum MpcContractHandleError<E> {
 mod tests {
     use super::MpcContractHandle;
     use crate::types::{
-        AccountId, Attestation, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, DomainId,
-        Ed25519PublicKey, MockAttestation, Payload, SignRequestArgs,
+        AccountId, Attestation, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId,
+        BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, DomainId,
+        Ed25519PublicKey, ForeignChainRpcRequest, ForeignTxPayloadVersion, MockAttestation,
+        Payload, SignRequestArgs, VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
@@ -216,6 +242,18 @@ mod tests {
             .await
             .unwrap();
         handle
+            .verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
+                request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                    tx_id: BitcoinTxId([7u8; 32]),
+                    confirmations: BlockConfirmations(1),
+                    extractors: vec![BitcoinExtractor::BlockHash],
+                }),
+                domain_id: DomainId(0),
+                payload_version: ForeignTxPayloadVersion::V1,
+            })
+            .await
+            .unwrap();
+        handle
             .submit_participant_info(
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey::from([7u8; 32]),
@@ -226,7 +264,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 5);
+        assert_eq!(calls.len(), 6);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
