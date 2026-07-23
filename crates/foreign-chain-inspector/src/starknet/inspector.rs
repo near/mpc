@@ -1,14 +1,16 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::starknet::{
-    BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse, GetTransactionReceiptArgs,
-    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+    BlockId, ChainIdArgs, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+    GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
+    StarknetFinalityStatus, parse_felt,
 };
 use jsonrpsee::core::client::ClientT;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
+const CHAIN_ID_METHOD: &str = "starknet_chainId";
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -80,6 +82,26 @@ where
         Self { client }
     }
 
+    /// The network's chain identifier (`starknet_chainId`) as a felt, e.g. `0x534e5f4d41494e`
+    /// (`SN_MAIN`). The RPC returns a possibly-short felt string; it is padded to a full felt.
+    pub async fn chain_id(&self) -> Result<H256, ForeignChainInspectionError> {
+        let felt: String = self.client.request(CHAIN_ID_METHOD, &ChainIdArgs).await?;
+        parse_felt(&felt).map_err(ForeignChainInspectionError::MalformedRpcResponse)
+    }
+
+    /// Fetches a block and its transaction hashes by id (e.g. `BlockId::Tag(Latest)` for the
+    /// head).
+    pub async fn block_with_tx_hashes(
+        &self,
+        block_id: BlockId,
+    ) -> Result<GetBlockWithTxHashesResponse, ForeignChainInspectionError> {
+        let args = GetBlockWithTxHashesArgs { block_id };
+        Ok(self
+            .client
+            .request(GET_BLOCK_WITH_TX_HASHES_METHOD, &args)
+            .await?)
+    }
+
     /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
     /// block at `receipt_block_number` and comparing hashes. `starknet_getBlockWithTxHashes`
     /// only ever resolves to a canonical block, so a mismatch means the receipt was indexed
@@ -94,14 +116,10 @@ where
         receipt_block_number: u64,
         receipt_block_hash: H256,
     ) -> Result<(), ForeignChainInspectionError> {
-        let args = GetBlockWithTxHashesArgs {
-            block_id: BlockId::Number {
+        let canonical = self
+            .block_with_tx_hashes(BlockId::Number {
                 block_number: receipt_block_number,
-            },
-        };
-        let canonical: GetBlockWithTxHashesResponse = self
-            .client
-            .request(GET_BLOCK_WITH_TX_HASHES_METHOD, &args)
+            })
             .await?;
 
         let hash_matches = canonical.block_hash == receipt_block_hash;
