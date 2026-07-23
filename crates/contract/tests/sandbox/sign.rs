@@ -14,7 +14,7 @@ use mpc_contract::{
     errors,
     primitives::{
         participants::Participants,
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
 use near_account_id::AccountId;
@@ -298,8 +298,9 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
     // Empty candidates should fail.
     let participants = Participants::new();
-    let threshold = Threshold::new(0);
-    let proposed_parameters = ThresholdParameters::new_unvalidated(participants, threshold);
+    let threshold = GovernanceThreshold::new(0);
+    let proposed_parameters =
+        GovernanceThresholdParameters::new_unvalidated(participants, threshold);
     let result = contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({
@@ -313,7 +314,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     );
 
     let proposed_parameters =
-        ThresholdParameters::new(candidates(None), Threshold::new(3)).unwrap();
+        GovernanceThresholdParameters::new(candidates(None), GovernanceThreshold::new(3)).unwrap();
     let result = contract
         .call(method_names::INIT)
         .args_json(serde_json::json!({

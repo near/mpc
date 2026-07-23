@@ -224,22 +224,25 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// to splitting them, and the redundancy is harmless.
 const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Maximum age accepted for PCCS collateral. Hard-coded at 7 days.
+/// Maximum age accepted for PCCS collateral. Hard-coded at 31 days.
 /// Lives in the node binary (governed via image-hash approval), not
 /// as per-operator configuration.
 ///
-/// 7 days is stricter than Intel's 30-day `nextUpdate` window but
-/// more permissive than any default PCCS refresh schedule (Intel
-/// reference and Phala both refresh ~daily), so legitimate operators
-/// have ample headroom. This is the freshness bound on the collateral's
-/// Intel signature and is independent of the contract's attestation
-/// expiry (`DEFAULT_EXPIRATION_DURATION_SECONDS`); the two windows serve
+/// Intel sets each collateral's `nextUpdate` 30 days after issuance and
+/// expects a refresh at least that often (see
+/// <https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/02/infrastructure_setup/>);
+/// 31 days accepts collateral for its full Intel-declared validity plus a
+/// day of headroom, so operators refreshing on Intel's own schedule are
+/// never rejected for age. This is the freshness bound on the
+/// collateral's Intel signature and is independent of the contract's
+/// attestation expiry
+/// (`DEFAULT_EXPIRATION_DURATION_SECONDS`); the two windows serve
 /// different purposes and are not required to match.
 ///
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,
 /// `qe_identity.issueDate`, and PCK CRL `thisUpdate`.
-const MAX_COLLATERAL_AGE: time::Duration = time::Duration::days(7);
+const MAX_COLLATERAL_AGE: time::Duration = time::Duration::days(31);
 
 /// Grace window for collateral whose Intel-issued timestamp (TCB Info /
 /// QE Identity `issueDate`, or PCK CRL `thisUpdate`) is slightly in our
@@ -1155,7 +1158,7 @@ mod tests {
     /// clock. Constructed relative to the fixture PCK CRL's
     /// `thisUpdate` so the fixture CRL is fresh for tests that exercise
     /// only the JSON-field path; the offset is well under
-    /// [`MAX_COLLATERAL_AGE`] so a 7-day-back JSON `issueDate` still
+    /// [`MAX_COLLATERAL_AGE`] so a slightly-back JSON `issueDate` still
     /// fits without underflowing into the future-grace path.
     fn test_now() -> time::OffsetDateTime {
         let crl_thisupdate =
@@ -1166,11 +1169,11 @@ mod tests {
     /// Offset of [`test_now`] from the fixture CRL's `thisUpdate`. ~43
     /// minutes — long enough that downstream `rfc3339(test_now() - X)`
     /// round-trips don't lose sub-minute precision, short enough that
-    /// the CRL stays freshly within the 7-day window.
+    /// the CRL stays freshly within [`MAX_COLLATERAL_AGE`].
     const TEST_NOW_OFFSET_FROM_FIXTURE_CRL: time::Duration = time::Duration::minutes(43);
 
-    /// Collateral whose `issueDate` is 6 days old (well within the 7-day
-    /// window) is accepted.
+    /// Collateral whose `issueDate` is 6 days old (well within
+    /// [`MAX_COLLATERAL_AGE`]) is accepted.
     #[test]
     fn check_collateral_freshness__should_accept_within_window() {
         let issued = rfc3339(test_now() - time::Duration::days(6));
@@ -1185,7 +1188,7 @@ mod tests {
     /// Typed `TooStale` variant identifies which field tripped the check.
     #[test]
     fn check_collateral_freshness__should_reject_when_tcb_info_too_old() {
-        let stale_tcb = rfc3339(test_now() - time::Duration::days(8));
+        let stale_tcb = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::days(1));
         let fresh_qe = rfc3339(test_now() - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&stale_tcb, &fresh_qe);
 
@@ -1206,7 +1209,7 @@ mod tests {
     #[test]
     fn check_collateral_freshness__should_reject_when_qe_identity_too_old() {
         let fresh_tcb = rfc3339(test_now() - time::Duration::days(1));
-        let stale_qe = rfc3339(test_now() - time::Duration::days(8));
+        let stale_qe = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&fresh_tcb, &stale_qe);
 
         let err = check_collateral_freshness(&collateral, test_now()).unwrap_err();
@@ -1281,8 +1284,8 @@ mod tests {
     #[test]
     fn check_collateral_freshness__should_reject_when_pck_crl_too_old() {
         // Fixture CRL's thisUpdate is 2026-03-30T11:17:23Z; pick a `now`
-        // ~9 days later so the CRL is past the 7-day window.
-        let now = test_now() + time::Duration::days(9);
+        // past MAX_COLLATERAL_AGE so the CRL is stale.
+        let now = test_now() + MAX_COLLATERAL_AGE + time::Duration::days(1);
         // JSON fields fresh relative to `now` so only the CRL trips.
         let fresh_iso = rfc3339(now - time::Duration::days(1));
         let collateral = collateral_with_issue_dates(&fresh_iso, &fresh_iso);

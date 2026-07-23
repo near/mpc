@@ -5,7 +5,7 @@ use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
 use near_sdk::near;
 use std::collections::BTreeMap;
 
-pub use near_mpc_contract_interface::types::Threshold;
+pub use near_mpc_contract_interface::types::GovernanceThreshold;
 
 /// Minimum absolute threshold required.
 const MIN_THRESHOLD_ABSOLUTE: u64 = 2;
@@ -24,24 +24,27 @@ pub(crate) fn governance_threshold_upper_relative_bound(n: u64) -> u64 {
     n
 }
 
-/// Stores the threshold key parameters: the owners of key shares
-/// (`participants`) and the cryptographic `threshold`. This is the stored,
-/// always-current shape.
+/// Stores the governance parameters: the current `participants` and the
+/// governance `threshold` (the number of participants that must agree to
+/// approve a governance action). This is the stored, always-current shape.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ThresholdParameters {
+pub struct GovernanceThresholdParameters {
     participants: Participants,
-    threshold: Threshold,
+    threshold: GovernanceThreshold,
 }
 
-impl ThresholdParameters {
-    /// Constructs Threshold parameters from `participants` and `threshold` if the
+impl GovernanceThresholdParameters {
+    /// Constructs GovernanceThreshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relative validation criteria.
-    pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
-        match Self::validate_threshold(participants.len() as u64, threshold) {
-            Ok(_) => Ok(ThresholdParameters {
+    pub fn new(
+        participants: Participants,
+        governance_threshold: GovernanceThreshold,
+    ) -> Result<Self, Error> {
+        match Self::validate_governance_threshold(participants.len() as u64, governance_threshold) {
+            Ok(_) => Ok(GovernanceThresholdParameters {
                 participants,
-                threshold,
+                threshold: governance_threshold,
             }),
             Err(err) => Err(err),
         }
@@ -53,7 +56,7 @@ impl ThresholdParameters {
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
     /// - threshold must not exceed the upper bound (now set to 100%)
-    fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
+    fn validate_governance_threshold(n_shares: u64, k: GovernanceThreshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
                 max: n_shares,
@@ -85,16 +88,16 @@ impl ThresholdParameters {
 
     /// Validates the GovernanceThreshold `k` against both the participant count and the
     /// largest ReconstructionThreshold across all domains. Layers the cross-domain rule
-    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_threshold`:
+    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_governance_threshold`:
     /// the network must never be able to govern with fewer parties than are required to
     /// reconstruct any domain's key. Call this at every point where the GovernanceThreshold,
     /// a ReconstructionThreshold, or the participant set changes.
     pub fn validate_governance_against_reconstruction(
         num_participants: u64,
-        governance: Threshold,
+        governance: GovernanceThreshold,
         max_reconstruction_threshold: Option<ReconstructionThreshold>,
     ) -> Result<(), Error> {
-        Self::validate_threshold(num_participants, governance)?;
+        Self::validate_governance_threshold(num_participants, governance)?;
         if let Some(max_reconstruction_threshold) = max_reconstruction_threshold
             && governance.value() < max_reconstruction_threshold.inner()
         {
@@ -108,14 +111,17 @@ impl ThresholdParameters {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
+        Self::validate_governance_threshold(self.participants.len() as u64, self.threshold())?;
         self.participants.validate()
     }
 
     /// Validates the incoming proposal against the current one, ensuring it's allowed based on the
     /// current participants and threshold settings. Also verifies the TEE quote of the participant
     /// who submitted the proposal.
-    pub fn validate_incoming_proposal(&self, proposal: &ThresholdParameters) -> Result<(), Error> {
+    pub fn validate_incoming_proposal(
+        &self,
+        proposal: &GovernanceThresholdParameters,
+    ) -> Result<(), Error> {
         // ensure the proposed threshold parameters are valid:
         // if performance issue, inline and merge with loop below
         proposal.validate()?;
@@ -182,7 +188,7 @@ impl ThresholdParameters {
         Ok(())
     }
 
-    pub fn threshold(&self) -> Threshold {
+    pub fn threshold(&self) -> GovernanceThreshold {
         self.threshold
     }
     /// Returns the map of Participants.
@@ -192,10 +198,13 @@ impl ThresholdParameters {
 
     /// Test-only: builds parameters without threshold validation.
     #[cfg(feature = "test-utils")]
-    pub fn new_unvalidated(participants: Participants, threshold: Threshold) -> Self {
-        ThresholdParameters {
+    pub fn new_unvalidated(
+        participants: Participants,
+        governance_threshold: GovernanceThreshold,
+    ) -> Self {
+        GovernanceThresholdParameters {
             participants,
-            threshold,
+            threshold: governance_threshold,
         }
     }
 
@@ -214,25 +223,25 @@ impl ThresholdParameters {
     }
 }
 
-/// A proposal submitted to `vote_new_parameters`: the new [`ThresholdParameters`]
+/// A proposal submitted to `vote_new_parameters`: the new [`GovernanceThresholdParameters`]
 /// plus per-domain `ReconstructionThreshold` updates applied to the
 /// [`super::domain::DomainRegistry`] when resharing completes. An empty map keeps
 /// the current thresholds; a populated map must reference only existing domains
 /// (validated in `RunningContractState::process_new_parameters_proposal`).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ProposedThresholdParameters {
-    parameters: ThresholdParameters,
+pub struct ProposedGovernanceThresholdParameters {
+    parameters: GovernanceThresholdParameters,
     #[serde(default)]
     per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
-impl ProposedThresholdParameters {
+impl ProposedGovernanceThresholdParameters {
     pub fn new(
-        parameters: ThresholdParameters,
+        parameters: GovernanceThresholdParameters,
         per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
     ) -> Self {
-        ProposedThresholdParameters {
+        ProposedGovernanceThresholdParameters {
             parameters,
             per_domain_thresholds,
         }
@@ -250,7 +259,7 @@ impl ProposedThresholdParameters {
     }
 
     /// The proposed stored parameters (participants + threshold).
-    pub fn parameters(&self) -> &ThresholdParameters {
+    pub fn parameters(&self) -> &GovernanceThresholdParameters {
         &self.parameters
     }
 
@@ -265,7 +274,7 @@ impl ProposedThresholdParameters {
     }
 
     /// Delegates to the proposed parameters' threshold.
-    pub fn threshold(&self) -> Threshold {
+    pub fn threshold(&self) -> GovernanceThreshold {
         self.parameters.threshold()
     }
 }
@@ -279,8 +288,8 @@ mod tests {
             participants::{ParticipantId, Participants},
             test_utils::{gen_participant, gen_participants, gen_threshold_params},
             thresholds::{
-                ProposedThresholdParameters, Threshold, ThresholdParameters,
-                governance_threshold_lower_relative_bound,
+                GovernanceThreshold, GovernanceThresholdParameters,
+                ProposedGovernanceThresholdParameters, governance_threshold_lower_relative_bound,
                 governance_threshold_upper_relative_bound,
             },
         },
@@ -295,25 +304,37 @@ mod tests {
     fn test_threshold() {
         for _ in 0..20 {
             let v = rand::thread_rng().r#gen::<u64>();
-            let x = Threshold::new(v);
+            let x = GovernanceThreshold::new(v);
             assert_eq!(v, x.value());
         }
     }
 
     #[test]
-    fn test_validate_threshold() {
+    fn test_validate_governance_threshold() {
         let n = rand::thread_rng().gen_range(2..600) as u64;
         let min_threshold = governance_threshold_lower_relative_bound(n);
         let max_threshold = governance_threshold_upper_relative_bound(n);
         for k in 0..min_threshold {
-            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
+            let _ = GovernanceThresholdParameters::validate_governance_threshold(
+                n,
+                GovernanceThreshold::new(k),
+            )
+            .unwrap_err();
         }
         for k in min_threshold..=max_threshold {
-            ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
+            GovernanceThresholdParameters::validate_governance_threshold(
+                n,
+                GovernanceThreshold::new(k),
+            )
+            .unwrap();
         }
         // Anything above the upper cap (up to and beyond n) must be rejected.
         for k in (max_threshold + 1)..=(n + 1) {
-            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
+            let _ = GovernanceThresholdParameters::validate_governance_threshold(
+                n,
+                GovernanceThreshold::new(k),
+            )
+            .unwrap_err();
         }
     }
 
@@ -325,19 +346,23 @@ mod tests {
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {
-            let invalid_threshold = Threshold::new(k as u64);
-            let _ = ThresholdParameters::new(participants.clone(), invalid_threshold).unwrap_err();
+            let invalid_threshold = GovernanceThreshold::new(k as u64);
+            let _ = GovernanceThresholdParameters::new(participants.clone(), invalid_threshold)
+                .unwrap_err();
         }
         // Thresholds above the upper cap (including up to n and beyond) are rejected.
         for k in (max_threshold + 1)..=(n + 1) {
-            let invalid_threshold = Threshold::new(k as u64);
-            let _ = ThresholdParameters::new(participants.clone(), invalid_threshold).unwrap_err();
+            let invalid_threshold = GovernanceThreshold::new(k as u64);
+            let _ = GovernanceThresholdParameters::new(participants.clone(), invalid_threshold)
+                .unwrap_err();
         }
         for k in min_threshold..=max_threshold {
-            let threshold = Threshold::new(k as u64);
-            let tp = ThresholdParameters::new(participants.clone(), threshold);
-            let tp = tp.expect("Threshold parameters should be valid for the given threshold");
-            tp.validate().expect("Threshold parameters should validate");
+            let threshold = GovernanceThreshold::new(k as u64);
+            let tp = GovernanceThresholdParameters::new(participants.clone(), threshold);
+            let tp =
+                tp.expect("GovernanceThreshold parameters should be valid for the given threshold");
+            tp.validate()
+                .expect("GovernanceThreshold parameters should validate");
             assert_eq!(tp.threshold(), threshold);
             assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
@@ -355,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_threshold__should_not_produce_empty_window_for_small_n() {
+    fn validate_governance_threshold__should_not_produce_empty_window_for_small_n() {
         // The relative upper cap is clamped up to the ceil(0.6n) lower bound, so the
         // feasible window must always hold at least one valid threshold.
         for n in 2..=12u64 {
@@ -363,7 +388,11 @@ mod tests {
             let upper = governance_threshold_upper_relative_bound(n);
             assert!(upper >= lower, "empty window at n={n}: [{lower}, {upper}]");
             // The clamped boundary value must validate.
-            ThresholdParameters::validate_threshold(n, Threshold::new(upper)).unwrap();
+            GovernanceThresholdParameters::validate_governance_threshold(
+                n,
+                GovernanceThreshold::new(upper),
+            )
+            .unwrap();
         }
     }
 
@@ -372,11 +401,11 @@ mod tests {
      {
         // Given 10 participants and a governance threshold of 6 (a valid value on its own).
         let n = 10;
-        let governance = Threshold::new(6);
+        let governance = GovernanceThreshold::new(6);
         // When the largest reconstruction threshold is 7 (above governance).
         // Then the relation is rejected.
         assert_matches!(
-            ThresholdParameters::validate_governance_against_reconstruction(
+            GovernanceThresholdParameters::validate_governance_against_reconstruction(
                 n,
                 governance,
                 Some(ReconstructionThreshold::new(7))
@@ -389,13 +418,13 @@ mod tests {
             ))
         );
         // ...but is accepted when governance meets or exceeds the max reconstruction threshold.
-        ThresholdParameters::validate_governance_against_reconstruction(
+        GovernanceThresholdParameters::validate_governance_against_reconstruction(
             n,
             governance,
             Some(ReconstructionThreshold::new(6)),
         )
         .unwrap();
-        ThresholdParameters::validate_governance_against_reconstruction(
+        GovernanceThresholdParameters::validate_governance_against_reconstruction(
             n,
             governance,
             Some(ReconstructionThreshold::new(5)),
@@ -421,7 +450,8 @@ mod tests {
             .participants
             .subset(0..params.threshold.value() as usize);
         new_participants.add_random_participants_till_n(params.participants.len());
-        let proposal = ThresholdParameters::new_unvalidated(new_participants, params.threshold);
+        let proposal =
+            GovernanceThresholdParameters::new_unvalidated(new_participants, params.threshold);
 
         assert_matches!(
             params.validate_incoming_proposal(&proposal),
@@ -434,11 +464,14 @@ mod tests {
         // Proposal with less than threshold number of shared participants should not be allowed.
         // Use a fixed-size set to ensure the threshold arithmetic is predictable.
         let large_params =
-            ThresholdParameters::new(gen_participants(10), Threshold::new(6)).unwrap();
+            GovernanceThresholdParameters::new(gen_participants(10), GovernanceThreshold::new(6))
+                .unwrap();
         let mut new_participants = large_params.participants.subset(0..5); // 5 < threshold of 6
         new_participants.add_random_participants_till_n(10);
-        let proposal =
-            ThresholdParameters::new_unvalidated(new_participants, large_params.threshold);
+        let proposal = GovernanceThresholdParameters::new_unvalidated(
+            new_participants,
+            large_params.threshold,
+        );
         assert_eq!(
             large_params
                 .validate_incoming_proposal(&proposal)
@@ -451,13 +484,16 @@ mod tests {
             .participants
             .subset(0..params.threshold.value() as usize);
         new_participants.add_random_participants_till_n(50);
-        let proposal = ThresholdParameters::new_unvalidated(new_participants, params.threshold);
+        let proposal =
+            GovernanceThresholdParameters::new_unvalidated(new_participants, params.threshold);
         let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
     }
 
     #[test]
     fn test_proposal_participant_id_changed() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
+                .unwrap();
 
         // Take an existing participant and change their ID
         let (account, old_id, info) = params.participants.participants()[0].clone();
@@ -472,7 +508,7 @@ mod tests {
             .collect();
         new_participants_vec.push((account.clone(), wrong_id, info));
 
-        let proposal = ThresholdParameters::new_unvalidated(
+        let proposal = GovernanceThresholdParameters::new_unvalidated(
             Participants::init(ParticipantId(wrong_id.get() + 1), new_participants_vec),
             params.threshold,
         );
@@ -488,7 +524,9 @@ mod tests {
 
     #[test]
     fn test_proposal_participant_info_changed() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
+                .unwrap();
 
         // Take an existing participant and change their info
         let (account, id, _) = params.participants.participants()[0].clone();
@@ -503,7 +541,7 @@ mod tests {
             .collect();
         new_participants_vec.push((account.clone(), id, changed_info));
 
-        let proposal = ThresholdParameters::new_unvalidated(
+        let proposal = GovernanceThresholdParameters::new_unvalidated(
             Participants::init(params.participants.next_id(), new_participants_vec),
             params.threshold,
         );
@@ -517,7 +555,9 @@ mod tests {
 
     #[test]
     fn test_proposal_new_participant_reuses_old_id() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
+                .unwrap();
 
         // Remove one old participant and add a new one that reuses their ID.
         // This way the proposal passes basic validate() (no duplicates), but
@@ -535,7 +575,7 @@ mod tests {
             .collect();
         new_participants_vec.push((new_account.clone(), reused_id, new_info));
 
-        let proposal = ThresholdParameters::new_unvalidated(
+        let proposal = GovernanceThresholdParameters::new_unvalidated(
             Participants::init(params.participants.next_id(), new_participants_vec),
             params.threshold,
         );
@@ -553,7 +593,9 @@ mod tests {
     fn test_proposal_non_contiguous_new_ids_fail() {
         // Test that the lowest new id equals to the `next_id` of the previous set.
         // Use a high threshold so adding one participant doesn't violate the 60% rule.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(5))
+                .unwrap();
 
         let wrong_id = params.participants.next_id().0 + 1;
 
@@ -565,7 +607,7 @@ mod tests {
             .unwrap();
 
         let tampered_params =
-            ThresholdParameters::new_unvalidated(tampered_participants, params.threshold);
+            GovernanceThresholdParameters::new_unvalidated(tampered_participants, params.threshold);
 
         assert_eq!(
             params
@@ -577,7 +619,9 @@ mod tests {
 
     #[test]
     fn test_proposal_non_unique_ids() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(5))
+                .unwrap();
 
         // Create proposal with duplicate participants (doubled list)
         let tampered_participants = Participants::init(
@@ -590,11 +634,11 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        // Use a valid threshold for the doubled size so validate_threshold passes
+        // Use a valid threshold for the doubled size so validate_governance_threshold passes
         // and the duplicate check in participants.validate() is reached.
-        let tampered_params = ThresholdParameters::new_unvalidated(
+        let tampered_params = GovernanceThresholdParameters::new_unvalidated(
             tampered_participants,
-            Threshold::new(6), // 60% of 10 = 6
+            GovernanceThreshold::new(6), // 60% of 10 = 6
         );
         assert_eq!(
             params
@@ -606,13 +650,16 @@ mod tests {
 
     #[test]
     fn test_remove_only() {
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
+                .unwrap();
 
         let new_participants = params
             .participants
             .subset(0..params.threshold.value() as usize);
 
-        let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
+        let new_params =
+            GovernanceThresholdParameters::new(new_participants, params.threshold).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
         result.unwrap();
@@ -621,13 +668,16 @@ mod tests {
     #[test]
     fn test_simultaneous_remove_and_insert() {
         let n = 5;
-        let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(n), GovernanceThreshold::new(3))
+                .unwrap();
 
         let mut new_participants = params.participants.clone();
         new_participants.add_random_participants_till_n(n + 2);
         let new_participants = new_participants.subset(2..n + 2);
 
-        let new_params = ThresholdParameters::new(new_participants, params.threshold).unwrap();
+        let new_params =
+            GovernanceThresholdParameters::new(new_participants, params.threshold).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
         result.unwrap();
@@ -637,7 +687,9 @@ mod tests {
     fn test_new_participant_id_too_high() {
         // When proposal's next_id is higher than max_id + 1, it should fail with
         // NewParticipantIdsTooHigh.
-        let params = ThresholdParameters::new(gen_participants(5), Threshold::new(5)).unwrap();
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(5))
+                .unwrap();
         let next_id = params.participants.next_id();
 
         // Add one new participant with the correct next_id, but set the proposal's
@@ -647,12 +699,12 @@ mod tests {
         new_participants_vec.push((new_account, next_id, new_info));
 
         // 6 participants with threshold 5
-        let proposal = ThresholdParameters::new_unvalidated(
+        let proposal = GovernanceThresholdParameters::new_unvalidated(
             Participants::init(
                 ParticipantId(next_id.get() + 2), // too high: should be next_id + 1
                 new_participants_vec,
             ),
-            Threshold::new(5),
+            GovernanceThreshold::new(5),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
@@ -667,7 +719,7 @@ mod tests {
         let mut updates = BTreeMap::new();
         updates.insert(DomainId(0), ReconstructionThreshold::new(3));
         updates.insert(DomainId(2), ReconstructionThreshold::new(4));
-        let proposal = ProposedThresholdParameters::new(params.clone(), updates.clone());
+        let proposal = ProposedGovernanceThresholdParameters::new(params.clone(), updates.clone());
 
         // When / Then the accessors expose the wrapped parameters and the updates,
         // and the participants/threshold delegates match the wrapped parameters.
@@ -684,7 +736,7 @@ mod tests {
         // stripped out — the shape an older client predating per-domain
         // reconstruction thresholds would submit to `vote_new_parameters`.
         let params = gen_threshold_params(10);
-        let proposal = ProposedThresholdParameters::new(params, BTreeMap::new());
+        let proposal = ProposedGovernanceThresholdParameters::new(params, BTreeMap::new());
         let mut json = serde_json::to_value(&proposal).unwrap();
         json.as_object_mut()
             .unwrap()
@@ -692,7 +744,7 @@ mod tests {
             .expect("empty map should still serialize as a field");
 
         // When deserializing the field-less JSON
-        let parsed: ProposedThresholdParameters = serde_json::from_value(json).unwrap();
+        let parsed: ProposedGovernanceThresholdParameters = serde_json::from_value(json).unwrap();
 
         // Then the missing field defaults to an empty (no-change) map and the
         // rest of the proposal is preserved.
@@ -707,11 +759,11 @@ mod tests {
         let mut updates = BTreeMap::new();
         updates.insert(DomainId(0), ReconstructionThreshold::new(3));
         updates.insert(DomainId(2), ReconstructionThreshold::new(4));
-        let proposal = ProposedThresholdParameters::new(params, updates);
+        let proposal = ProposedGovernanceThresholdParameters::new(params, updates);
 
         // When serializing to JSON and back
         let json = serde_json::to_string(&proposal).unwrap();
-        let parsed: ProposedThresholdParameters = serde_json::from_str(&json).unwrap();
+        let parsed: ProposedGovernanceThresholdParameters = serde_json::from_str(&json).unwrap();
 
         // Then the proposal round-trips unchanged
         assert_eq!(parsed, proposal);
@@ -724,11 +776,11 @@ mod tests {
         let mut updates = BTreeMap::new();
         updates.insert(DomainId(0), ReconstructionThreshold::new(3));
         updates.insert(DomainId(2), ReconstructionThreshold::new(4));
-        let proposal = ProposedThresholdParameters::new(params, updates);
+        let proposal = ProposedGovernanceThresholdParameters::new(params, updates);
 
         // When serializing to borsh and back
         let bytes = borsh::to_vec(&proposal).unwrap();
-        let parsed: ProposedThresholdParameters = borsh::from_slice(&bytes).unwrap();
+        let parsed: ProposedGovernanceThresholdParameters = borsh::from_slice(&bytes).unwrap();
 
         // Then the proposal round-trips unchanged
         assert_eq!(parsed, proposal);

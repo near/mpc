@@ -24,8 +24,8 @@ use crate::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        threshold_votes::ThresholdParametersVotes,
-        thresholds::{ProposedThresholdParameters, ThresholdParameters},
+        threshold_votes::GovernanceThresholdParametersVotes,
+        thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
     },
     state::{
         ProtocolContractState,
@@ -214,21 +214,23 @@ impl IntoContractType<Participants> for dtos::Participants {
     }
 }
 
-impl TryIntoContractType<ThresholdParameters> for dtos::ThresholdParameters {
+impl TryIntoContractType<GovernanceThresholdParameters> for dtos::GovernanceThresholdParameters {
     type Error = Error;
 
-    fn try_into_contract_type(self) -> Result<ThresholdParameters, Self::Error> {
+    fn try_into_contract_type(self) -> Result<GovernanceThresholdParameters, Self::Error> {
         // Validate eagerly at the DTO boundary so invalid proposal parameters are rejected here.
-        ThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
+        GovernanceThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
     }
 }
 
-impl TryIntoContractType<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
+impl TryIntoContractType<ProposedGovernanceThresholdParameters>
+    for dtos::ProposedGovernanceThresholdParameters
+{
     type Error = Error;
 
-    fn try_into_contract_type(self) -> Result<ProposedThresholdParameters, Self::Error> {
+    fn try_into_contract_type(self) -> Result<ProposedGovernanceThresholdParameters, Self::Error> {
         // Validates the inner threshold parameters; see the conversion above.
-        Ok(ProposedThresholdParameters::new(
+        Ok(ProposedGovernanceThresholdParameters::new(
             self.parameters.try_into_contract_type()?,
             self.per_domain_thresholds,
         ))
@@ -584,14 +586,14 @@ mod test_conversions {
         }
     }
 
-    impl From<ThresholdParameters> for dtos::ThresholdParameters {
-        fn from(params: ThresholdParameters) -> Self {
+    impl From<GovernanceThresholdParameters> for dtos::GovernanceThresholdParameters {
+        fn from(params: GovernanceThresholdParameters) -> Self {
             (&params).into_dto_type()
         }
     }
 
-    impl From<ProposedThresholdParameters> for dtos::ProposedThresholdParameters {
-        fn from(params: ProposedThresholdParameters) -> Self {
+    impl From<ProposedGovernanceThresholdParameters> for dtos::ProposedGovernanceThresholdParameters {
+        fn from(params: ProposedGovernanceThresholdParameters) -> Self {
             (&params).into_dto_type()
         }
     }
@@ -686,18 +688,20 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
     }
 }
 
-impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
-    fn into_dto_type(self) -> dtos::ThresholdParameters {
-        dtos::ThresholdParameters {
+impl IntoInterfaceType<dtos::GovernanceThresholdParameters> for &GovernanceThresholdParameters {
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParameters {
+        dtos::GovernanceThresholdParameters {
             participants: self.participants().into_dto_type(),
             threshold: self.threshold(),
         }
     }
 }
 
-impl IntoInterfaceType<dtos::ProposedThresholdParameters> for &ProposedThresholdParameters {
-    fn into_dto_type(self) -> dtos::ProposedThresholdParameters {
-        dtos::ProposedThresholdParameters {
+impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
+    for &ProposedGovernanceThresholdParameters
+{
+    fn into_dto_type(self) -> dtos::ProposedGovernanceThresholdParameters {
+        dtos::ProposedGovernanceThresholdParameters {
             parameters: self.parameters().into_dto_type(),
             per_domain_thresholds: self.per_domain_thresholds().clone(),
         }
@@ -706,14 +710,16 @@ impl IntoInterfaceType<dtos::ProposedThresholdParameters> for &ProposedThreshold
 
 // --- Voting types ---
 
-impl IntoInterfaceType<dtos::ThresholdParametersVotes> for &ThresholdParametersVotes {
-    fn into_dto_type(self) -> dtos::ThresholdParametersVotes {
+impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
+    for &GovernanceThresholdParametersVotes
+{
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotes {
         let proposal_by_account = self
             .proposal_by_account
             .iter()
             .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
             .collect();
-        dtos::ThresholdParametersVotes {
+        dtos::GovernanceThresholdParametersVotes {
             proposal_by_account,
         }
     }
@@ -868,7 +874,7 @@ mod tests {
     use super::*;
     use crate::errors::InvalidThreshold;
     use crate::primitives::test_utils::gen_participants;
-    use crate::primitives::thresholds::Threshold;
+    use crate::primitives::thresholds::GovernanceThreshold;
     use assert_matches::assert_matches;
 
     const TEST_THRESHOLD: u64 = 2;
@@ -921,21 +927,25 @@ mod tests {
     }
 
     /// Ensures that the JSON produced by serializing the internal
-    /// [`ThresholdParameters`] type can be deserialized into the DTO
-    /// [`dtos::ThresholdParameters`] type and vice versa, producing identical
+    /// [`GovernanceThresholdParameters`] type can be deserialized into the DTO
+    /// [`dtos::GovernanceThresholdParameters`] type and vice versa, producing identical
     /// JSON in both directions.
     #[test]
     fn threshold_parameters_serde_is_compatible_with_dto() {
-        let internal =
-            ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
+        let internal = GovernanceThresholdParameters::new(
+            test_participants(),
+            GovernanceThreshold::new(TEST_THRESHOLD),
+        )
+        .unwrap();
         let json = serde_json::to_value(&internal).unwrap();
 
-        let dto: dtos::ThresholdParameters = serde_json::from_value(json.clone()).unwrap();
+        let dto: dtos::GovernanceThresholdParameters =
+            serde_json::from_value(json.clone()).unwrap();
 
         let dto_json = serde_json::to_value(&dto).unwrap();
         assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
 
-        let roundtrip: ThresholdParameters = serde_json::from_value(dto_json).unwrap();
+        let roundtrip: GovernanceThresholdParameters = serde_json::from_value(dto_json).unwrap();
         assert_eq!(internal, roundtrip);
     }
 
@@ -943,11 +953,14 @@ mod tests {
     /// serialization matches the internal type's serialization.
     #[test]
     fn into_dto_type_preserves_serialization() {
-        let internal =
-            ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
+        let internal = GovernanceThresholdParameters::new(
+            test_participants(),
+            GovernanceThreshold::new(TEST_THRESHOLD),
+        )
+        .unwrap();
         let internal_json = serde_json::to_value(&internal).unwrap();
 
-        let dto: dtos::ThresholdParameters = (&internal).into_dto_type();
+        let dto: dtos::GovernanceThresholdParameters = (&internal).into_dto_type();
         let dto_json = serde_json::to_value(&dto).unwrap();
 
         assert_eq!(internal_json, dto_json);
@@ -958,13 +971,13 @@ mod tests {
     #[test]
     fn try_into_contract_type__should_reject_threshold_below_relative_requirement() {
         // Given a DTO with 5 participants and a threshold of 2 (below the 60% bound of 3).
-        let dto = dtos::ThresholdParameters {
+        let dto = dtos::GovernanceThresholdParameters {
             participants: (&gen_participants(5)).into_dto_type(),
-            threshold: Threshold::new(2),
+            threshold: GovernanceThreshold::new(2),
         };
 
         // When converting the DTO into the contract type.
-        let result: Result<ThresholdParameters, Error> = dto.try_into_contract_type();
+        let result: Result<GovernanceThresholdParameters, Error> = dto.try_into_contract_type();
 
         // Then conversion fails with the relative-threshold error.
         assert_matches!(

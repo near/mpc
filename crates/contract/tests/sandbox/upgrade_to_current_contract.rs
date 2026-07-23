@@ -14,7 +14,7 @@ use crate::sandbox::{
 use mpc_contract::primitives::{
     key_state::{EpochId, Keyset},
     participants::Participants,
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
@@ -52,8 +52,9 @@ async fn init_old_contract(
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
-    let threshold = Threshold::new(threshold);
-    let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
+    let threshold = GovernanceThreshold::new(threshold);
+    let threshold_parameters =
+        GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
 
     contract
         .call(method_names::INIT)
@@ -440,9 +441,9 @@ async fn init_running_rejects_external_callers_pre_initialization() {
     let number_of_participants = 2;
     let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
 
-    let threshold_parameters = ThresholdParameters::new(
+    let threshold_parameters = GovernanceThresholdParameters::new(
         participants.clone(),
-        Threshold::new(number_of_participants as u64),
+        GovernanceThreshold::new(number_of_participants as u64),
     )
     .unwrap();
 

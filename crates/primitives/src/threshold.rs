@@ -1,8 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-/// Cryptographic threshold (`k`) for a distributed key: the minimum number of
-/// participants that must collaborate to produce a signature.
+/// Network-wide governance threshold (`k`): the minimum number of participants
+/// that must agree to approve a governance action (participant set changes,
+/// resharing, parameter updates). Distinct from a domain's
+/// [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.
 #[derive(
     Clone,
     Copy,
@@ -24,9 +26,9 @@ use serde::{Deserialize, Serialize};
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Threshold(pub u64);
+pub struct GovernanceThreshold(pub u64);
 
-impl Threshold {
+impl GovernanceThreshold {
     pub fn new(value: u64) -> Self {
         Self(value)
     }
@@ -69,8 +71,8 @@ impl ReconstructionThreshold {
     }
 }
 
-impl From<Threshold> for ReconstructionThreshold {
-    fn from(value: Threshold) -> Self {
+impl From<GovernanceThreshold> for ReconstructionThreshold {
+    fn from(value: GovernanceThreshold) -> Self {
         Self(value.value())
     }
 }
