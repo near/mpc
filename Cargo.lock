@@ -5925,6 +5925,7 @@ dependencies = [
  "hex",
  "mpc-primitives",
  "near-account-id",
+ "near-contract-transport",
  "near-crypto 0.36.0",
  "near-jsonrpc-client 0.21.1",
  "near-jsonrpc-primitives 0.36.0",
