@@ -11,4 +11,5 @@ use super::tee_state::NodeId;
 pub struct VerificationContext {
     pub(crate) node_id: NodeId,
     pub(crate) attestation: DstackAttestation,
+    pub(crate) caller_is_not_participant: bool,
 }

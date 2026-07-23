@@ -8,8 +8,8 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            submit_participant_info_and_measure_kept_deposit, vote_add_launcher_hash,
-            vote_for_hash,
+            submit_participant_info_and_measure_kept_deposit, submit_participant_info_with_deposit,
+            vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -21,8 +21,8 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
-use near_workspaces::Contract;
-use near_workspaces::types::NearToken;
+use near_workspaces::types::{KeyType, NearToken, SecretKey};
+use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
@@ -277,6 +277,75 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
     .await?
     .is_success();
     assert!(success);
+    Ok(())
+}
+
+/// Regression test for #3925: a participant re-attesting through a function-call access key (which
+/// cannot attach a deposit) must succeed with zero deposit, and the same call with a deposit must
+/// be rejected by the protocol.
+#[tokio::test]
+async fn submit_participant_info__should_accept_zero_deposit_via_function_call_key() -> Result<()> {
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    // Setup already stored an attestation for this participant, so re-attesting is the free path.
+    let account = &mpc_signer_accounts[0];
+    let participants = assert_running_return_participants(&contract).await?;
+    let tls_key = participants
+        .participants
+        .iter()
+        .find(|(id, _, _)| id == account.id())
+        .map(|(_, _, info)| info.tls_public_key.clone())
+        .expect("participant must exist");
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+
+    let fc_sk = SecretKey::from_random(KeyType::ED25519);
+    account
+        .batch(account.id())
+        .add_key(
+            fc_sk.public_key(),
+            AccessKey::function_call_access(contract.id(), &[], None),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
+
+    // Zero deposit through the fc key succeeds.
+    let zero = submit_participant_info_with_deposit(
+        &fc_account,
+        &contract,
+        &attestation,
+        &tls_key,
+        NearToken::from_yoctonear(0),
+    )
+    .await?;
+    assert!(
+        zero.is_success(),
+        "zero-deposit fc submission must succeed: {zero:?}"
+    );
+
+    // A deposit through the fc key is rejected at tx validation (the original bug).
+    let with_deposit = submit_participant_info_with_deposit(
+        &fc_account,
+        &contract,
+        &attestation,
+        &tls_key,
+        SUBMIT_PARTICIPANT_INFO_DEPOSIT,
+    )
+    .await;
+    let err = format!("{with_deposit:?}");
+    assert!(
+        err.contains("DepositWithFunctionCall"),
+        "fc submission with a deposit must be rejected: {err}"
+    );
     Ok(())
 }
 

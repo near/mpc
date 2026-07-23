@@ -8,7 +8,6 @@ use k256::{
 };
 use near_indexer_primitives::types::{Balance, Gas};
 use near_mpc_contract_interface::call_args as contract_args;
-use near_mpc_contract_interface::deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
@@ -129,12 +128,8 @@ impl ChainSendTransactionRequest {
     }
 
     pub fn deposit_required(&self) -> Balance {
-        match self {
-            Self::SubmitParticipantInfo { .. } => {
-                Balance::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR)
-            }
-            _ => Balance::from_near(0),
-        }
+        // The node signs with a function-call access key, which cannot attach a deposit.
+        Balance::from_near(0)
     }
 }
 

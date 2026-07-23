@@ -161,19 +161,29 @@ fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
-/// Charges the storage growth since `initial_storage` and refunds the rest. The
-/// [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`] floor guarantees the refund never underflows.
-fn keep_storage_delta_and_refund_rest(account_id: &AccountId, initial_storage: u64) {
+/// Requires at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`], then keeps the storage delta since
+/// `initial_storage` and refunds the excess.
+fn charge_storage(account_id: &AccountId, initial_storage: u64) -> Result<(), Error> {
+    let attached = env::attached_deposit();
+    if attached < MINIMUM_ATTESTATION_STORAGE_DEPOSIT {
+        return Err(InvalidParameters::InsufficientDeposit {
+            attached: attached.as_yoctonear(),
+            required: MINIMUM_ATTESTATION_STORAGE_DEPOSIT.as_yoctonear(),
+        }
+        .into());
+    }
+
     // saturating_sub: a shrink charges nothing rather than underflowing.
     let bytes_grown = env::storage_usage().saturating_sub(initial_storage);
     let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
-    match env::attached_deposit().checked_sub(cost) {
+    match attached.checked_sub(cost) {
         Some(refund) => refund_to(account_id, refund),
         // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor, which
         // minimum_attestation_storage_deposit__should_cover_worst_case_entry pins to the
         // worst-case entry cost.
         None => log!("attestation storage cost {cost} exceeded deposit for {account_id}"),
     }
+    Ok(())
 }
 
 impl Default for MpcContract {
@@ -798,11 +808,12 @@ impl MpcContract {
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// The caller must attach at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`],
-    /// enough to cover the worst-case stored entry. On success only the actual
-    /// storage delta is kept and the excess is refunded, so a re-submission that
-    /// changes no stored bytes is charged nothing. The full deposit is refunded if
-    /// the attestation is not accepted.
+    /// Storage is charged to the caller only when a new entry is stored or the caller is not a
+    /// current participant. A participant re-attesting an existing entry is charged nothing and
+    /// need not attach any deposit, so the node's function-call access key can re-attest. When a
+    /// charge applies, the caller must attach at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`]
+    /// (enough to cover the worst-case stored entry); only the actual storage delta is kept and
+    /// the excess is refunded. The full deposit is refunded if the attestation is not accepted.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -839,30 +850,30 @@ impl MpcContract {
             account_public_key,
         };
 
-        let attached = env::attached_deposit();
-        if attached < MINIMUM_ATTESTATION_STORAGE_DEPOSIT {
-            return Err(InvalidParameters::InsufficientDeposit {
-                attached: attached.as_yoctonear(),
-                required: MINIMUM_ATTESTATION_STORAGE_DEPOSIT.as_yoctonear(),
-            }
-            .into());
-        }
+        // Non-participants pay per entry so an outsider cannot drain the contract; participants
+        // re-attest for free.
+        let caller_is_not_participant = !self
+            .protocol_state
+            .is_existing_or_prospective_participant(&account_id)
+            .unwrap_or(false);
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
                 let initial_storage = env::storage_usage();
-                self.tee_state.verify_and_store_mock(
+                let insertion = self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
-                keep_storage_delta_and_refund_rest(&account_id, initial_storage);
+                if insertion.is_new() || caller_is_not_participant {
+                    charge_storage(&account_id, initial_storage)?;
+                }
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation)?,
+                self.submit_dstack_attestation(node_id, attestation, caller_is_not_participant)?,
             )),
         }
     }
@@ -874,6 +885,7 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         attestation: DstackAttestation,
+        caller_is_not_participant: bool,
     ) -> Result<Promise, Error> {
         let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
             return Err(TeeError::VerifierNotConfigured.into());
@@ -894,6 +906,7 @@ impl MpcContract {
                     .resolve_verification(VerificationContext {
                         node_id,
                         attestation,
+                        caller_is_not_participant,
                     }),
             ))
     }
@@ -2383,8 +2396,8 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response, then keeps the storage delta
-    /// and refunds the excess deposit.
+    /// [`VerificationResult::Verified`] response, then charges the storage delta unless a
+    /// participant re-attested an existing entry.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -2395,17 +2408,22 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
         let initial_storage = env::storage_usage();
-        if let Err(err) = self.tee_state.verify_and_store_dstack(
+        let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            log!("post-DCAP check failed for {account_id}: {err}");
-            return Err(err.into());
-        }
+            Ok(insertion) => insertion,
+            Err(err) => {
+                log!("post-DCAP check failed for {account_id}: {err}");
+                return Err(err.into());
+            }
+        };
 
-        keep_storage_delta_and_refund_rest(account_id, initial_storage);
+        if insertion.is_new() || context.caller_is_not_participant {
+            charge_storage(account_id, initial_storage)?;
+        }
         Ok(())
     }
 
@@ -4679,6 +4697,9 @@ mod tests {
             VerificationContext {
                 node_id,
                 attestation,
+                // Fixed, not parametrized: this flag only affects charging, which the mock VM
+                // can't observe, so true and false would store identical state here.
+                caller_is_not_participant: true,
             },
         )
     }
@@ -8116,19 +8137,21 @@ mod tests {
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
     }
 
+    const MAX_HASH: [u8; 32] = [0xff; 32];
+
     // Catches entry-size growth: fails if a schema change makes the largest storable entry
     // cost more than the deposit at today's storage_byte_cost. It cannot see a future
     // storage_byte_cost increase on a live contract; the deposit's margin covers that.
     #[rstest]
     #[case::dstack(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-        mpc_image_hash: [0xff; 32].into(),
-        launcher_compose_hash: [0xff; 32].into(),
+        mpc_image_hash: MAX_HASH.into(),
+        launcher_compose_hash: MAX_HASH.into(),
         expiry_timestamp_seconds: u64::MAX,
         measurements: default_measurements()[0],
     }))]
     #[case::mock(VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
-        mpc_docker_image_hash: Some([0xff; 32].into()),
-        launcher_docker_compose_hash: Some([0xff; 32].into()),
+        mpc_docker_image_hash: Some(MAX_HASH.into()),
+        launcher_docker_compose_hash: Some(MAX_HASH.into()),
         expiry_timestamp_seconds: Some(u64::MAX),
         expected_measurements: Some(default_measurements()[0]),
     }))]

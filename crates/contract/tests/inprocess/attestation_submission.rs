@@ -278,18 +278,18 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     assert_eq!(stored_before, stored_after);
 }
 
-/// Rejects a submission whose attached deposit is below the storage cost, so a caller
-/// cannot store an attestation without paying for it.
+/// A non-participant storing a new entry must cover its storage cost, so an outsider cannot
+/// store an attestation without paying for it.
 #[test]
-fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
+fn submit_participant_info__should_reject_when_non_participant_deposit_is_below_storage_cost() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
-    let node = setup.get_participant_node_ids()[0].clone();
+    let newcomer = node_id_for(&"newcomer.near".parse().unwrap());
     let attached_deposit = NearToken::from_yoctonear(1);
     testing_env!(
         VMContextBuilder::new()
-            .signer_account_id(node.account_id.clone())
-            .predecessor_account_id(node.account_id.clone())
+            .signer_account_id(newcomer.account_id.clone())
+            .predecessor_account_id(newcomer.account_id.clone())
             .attached_deposit(attached_deposit)
             .build()
     );
@@ -299,7 +299,7 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
         .contract
         .submit_participant_info(
             Attestation::Mock(MockAttestation::Valid),
-            node.tls_public_key.clone(),
+            newcomer.tls_public_key.clone(),
         )
         .map(|_| ());
 
@@ -309,6 +309,38 @@ fn submit_participant_info__should_reject_when_deposit_is_below_storage_cost() {
         Err(Error::InvalidParameters(InvalidParameters::InsufficientDeposit { attached, required }))
             if *attached == attached_deposit.as_yoctonear() && required > attached
     );
+}
+
+/// A current participant re-attesting an existing entry is charged nothing and need not attach
+/// any deposit, so the node's function-call access key can re-attest.
+#[test]
+fn submit_participant_info__should_charge_nothing_when_participant_reattests_with_zero_deposit() {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let node = setup.get_participant_node_ids()[0].clone();
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+    setup.submit_attestation_for_node(&node, attestation.clone());
+    let stored_before = setup
+        .contract
+        .get_attestation(node.tls_public_key.clone())
+        .unwrap()
+        .expect("participant attestation should be stored");
+
+    // When: the same participant re-attests with no attached deposit.
+    testing_env!(common::participant_context(&node.account_id));
+    let result = setup
+        .contract
+        .submit_participant_info(attestation, node.tls_public_key.clone())
+        .map(|_| ());
+
+    // Then: the submission succeeds and the stored entry is unchanged.
+    assert_matches!(&result, Ok(()));
+    let stored_after = setup
+        .contract
+        .get_attestation(node.tls_public_key)
+        .unwrap()
+        .expect("participant attestation should still be stored");
+    assert_eq!(stored_before, stored_after);
 }
 
 /// Test that a `Dstack` submission is rejected when no verifier is configured.

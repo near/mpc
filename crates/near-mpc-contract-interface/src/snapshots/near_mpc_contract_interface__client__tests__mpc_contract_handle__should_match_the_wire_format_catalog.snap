@@ -11,7 +11,7 @@ args:     {"request":{"path":"test","payload_v2":{"Ecdsa":"070707070707070707070
 contract: mpc.near
 method:   submit_participant_info
 gas:      300.0 Tgas
-deposit:  0.1 NEAR
+deposit:  0 NEAR
 args:     {"proposed_participant_attestation":{"Mock":"Valid"},"tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
 
 contract: mpc.near

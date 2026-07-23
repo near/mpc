@@ -386,7 +386,7 @@ pub struct Contract {
 }
 ```
 
-_Note_: submit_participant_info - can be called either by the node or by the operator.
+_Note_: submit_participant_info - can be called either by the node or by the operator. Storage is charged only when a new entry is stored or the caller is not a current participant, so a participant re-attesting an existing entry attaches no deposit and the node's function-call access key can re-attest. A first-time (join) submission stores a new entry, so it must attach a deposit to cover it; that submission is made by the operator's full-access key (step 6), since a function-call key cannot attach a deposit.
 
 ## MPC Node changes:
 
