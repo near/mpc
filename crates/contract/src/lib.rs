@@ -826,11 +826,31 @@ impl MpcContract {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+                let launcher_unused_ttl =
+                    Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
+
+                // Capability token: only a current participant may keep its launcher hash alive.
+                let authenticated_participant = self
+                    .protocol_state
+                    .threshold_parameters()
+                    .ok()
+                    .and_then(|params| AuthenticatedParticipantId::new(params.participants()).ok());
+                let tls_public_key_for_refresh = node_id.tls_public_key.clone();
+
                 self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
+                    launcher_unused_ttl,
                 )?;
+
+                // A `WithConstraints` mock may reference a launcher hash; refresh-on-use keeps
+                // it alive, matching the dstack path. No-op for mocks without a launcher.
+                if let Some(participant) = &authenticated_participant {
+                    self.tee_state
+                        .refresh_launcher_usage(&tls_public_key_for_refresh, participant);
+                }
+
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
@@ -5351,6 +5371,7 @@ mod tests {
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
+                Duration::MAX,
             );
             assert_matches::assert_matches!(
                 insertion_result,
@@ -6000,7 +6021,12 @@ mod tests {
         };
         contract
             .tee_state
-            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(
+                node_id,
+                expiring_attestation,
+                TEE_UPGRADE_DURATION,
+                Duration::MAX,
+            )
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
@@ -6115,7 +6141,12 @@ mod tests {
         };
         contract
             .tee_state
-            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(
+                node_id,
+                expiring_attestation,
+                TEE_UPGRADE_DURATION,
+                Duration::MAX,
+            )
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -7562,6 +7593,7 @@ mod tests {
                 },
                 MpcMockAttestation::Valid,
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
+                Duration::MAX,
             )
             .expect("attestation insertion should succeed");
 
