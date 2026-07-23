@@ -240,9 +240,7 @@ impl TeeState {
             },
         );
 
-        // `IterableMap` defers writes to flush-on-Drop, so without an explicit
-        // flush the just-inserted entry reads as a zero storage delta and the
-        // caller would charge nothing for it.
+        // Flush the deferred write now so the caller's storage_usage read charges for it.
         self.stored_attestations.flush();
 
         Ok(match previous {

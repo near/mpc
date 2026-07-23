@@ -159,18 +159,17 @@ fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
-/// Charges this submission's storage delta and refunds the excess. `initial_storage`
-/// must be captured before the store has flushed (see
-/// [`TeeState::store_verified_attestation`]); the [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`]
-/// floor guarantees the refund never underflows.
+/// Charges the storage growth since `initial_storage` and refunds the rest. The
+/// [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`] floor guarantees the refund never underflows.
 fn keep_storage_delta_and_refund_rest(account_id: &AccountId, initial_storage: u64) {
     // saturating_sub: a shrink charges nothing rather than underflowing.
     let bytes_grown = env::storage_usage().saturating_sub(initial_storage);
     let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
     match env::attached_deposit().checked_sub(cost) {
         Some(refund) => refund_to(account_id, refund),
-        // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor; logged so a
-        // drifted invariant is observable rather than a silent storage subsidy.
+        // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor, which
+        // minimum_attestation_storage_deposit__should_cover_worst_case_entry pins to the
+        // worst-case entry cost.
         None => log!("attestation storage cost {cost} exceeded deposit for {account_id}"),
     }
 }
@@ -8079,56 +8078,46 @@ mod tests {
     // Catches entry-size growth: fails if a schema change makes the largest storable entry
     // cost more than the deposit at today's storage_byte_cost. It cannot see a future
     // storage_byte_cost increase on a live contract; the deposit's margin covers that.
-    #[test]
-    fn minimum_attestation_storage_deposit__should_cover_worst_case_entry() {
+    #[rstest]
+    #[case::dstack(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+        mpc_image_hash: [0xff; 32].into(),
+        launcher_compose_hash: [0xff; 32].into(),
+        expiry_timestamp_seconds: u64::MAX,
+        measurements: default_measurements()[0],
+    }))]
+    #[case::mock(VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
+        mpc_docker_image_hash: Some([0xff; 32].into()),
+        launcher_docker_compose_hash: Some([0xff; 32].into()),
+        expiry_timestamp_seconds: Some(u64::MAX),
+        expected_measurements: Some(default_measurements()[0]),
+    }))]
+    fn minimum_attestation_storage_deposit__should_cover_worst_case_entry(
+        #[case] verified_attestation: VerifiedAttestation,
+    ) {
         testing_env!(VMContextBuilder::new().build());
         // NEAR caps an account id at 64 bytes; every other NodeId field is fixed-size.
         let node_id = create_node_id(
             &"a".repeat(64).parse().unwrap(),
             &bogus_ed25519_public_key(),
         );
-        let cost_of = |verified_attestation| {
-            let mut tee_state = TeeState::default();
-            let before = env::storage_usage();
-            tee_state.stored_attestations.insert(
-                node_id.tls_public_key.clone(),
-                NodeAttestation {
-                    node_id: node_id.clone(),
-                    verified_attestation,
-                },
-            );
-            tee_state.stored_attestations.flush();
-            let bytes_grown = env::storage_usage() - before;
-            let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
-            (bytes_grown, cost)
-        };
 
-        // Given: the largest entry each variant can store. The Mock arm is not
-        // feature-gated, so a caller can force either variant.
-        let dstack = VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-            mpc_image_hash: [0xff; 32].into(),
-            launcher_compose_hash: [0xff; 32].into(),
-            expiry_timestamp_seconds: u64::MAX,
-            measurements: default_measurements()[0],
-        });
-        let mock = VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
-            mpc_docker_image_hash: Some([0xff; 32].into()),
-            launcher_docker_compose_hash: Some([0xff; 32].into()),
-            expiry_timestamp_seconds: Some(u64::MAX),
-            expected_measurements: Some(default_measurements()[0]),
-        });
+        let mut tee_state = TeeState::default();
+        let before = env::storage_usage();
+        tee_state.stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id,
+                verified_attestation,
+            },
+        );
+        tee_state.stored_attestations.flush();
+        let bytes_grown = env::storage_usage() - before;
+        let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
 
-        // When
-        let (dstack_bytes, dstack_cost) = cost_of(dstack);
-        let (mock_bytes, mock_cost) = cost_of(mock);
-        let (worst_bytes, worst_cost) =
-            std::cmp::max((dstack_bytes, dstack_cost), (mock_bytes, mock_cost));
-
-        // Then: the minimum deposit covers the worst case with headroom to spare.
         assert!(
-            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= worst_cost,
+            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= cost,
             "minimum deposit {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
-             ({worst_bytes} bytes, {worst_cost}) at today's storage price"
+             ({bytes_grown} bytes, {cost}) at today's storage price"
         );
     }
 }
