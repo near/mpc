@@ -7,6 +7,7 @@ use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
@@ -46,11 +47,7 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
             (CLUSTER_WAIT_TIMEOUT.as_millis() / CLUSTER_POLL_INTERVAL.as_millis()) as usize,
         )
 }
-const SIGN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(15);
-// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
-// which costs significantly more than a plain CKD or sign request.
-const CKD_PV_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
-const SIGN_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
+
 const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
@@ -835,35 +832,20 @@ impl MpcCluster {
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.
-    ///
-    /// Gas is derived from the `CKDAppPublicKey` variant.
     pub async fn send_ckd_request(
         &self,
         domain_id: DomainId,
         app_public_key: CKDAppPublicKey,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let gas = match app_public_key {
-            CKDAppPublicKey::AppPublicKey(_) => SIGN_GAS,
-            CKDAppPublicKey::AppPublicKeyPV(_) => CKD_PV_GAS,
-        };
-        let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "derivation_path": "test",
-                "app_public_key": app_public_key,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::REQUEST_APP_PRIVATE_KEY,
-                args,
-                gas,
-                SIGN_DEPOSIT,
-            )
+        self.contract_handle(account_id)
+            .request_app_private_key(CKDRequestArgs::new(
+                "test".to_string(),
+                app_public_key,
+                domain_id,
+            ))
             .await
+            .context("failed to send CKD request")
     }
 
     /// View migration info from the contract.
@@ -1065,16 +1047,10 @@ impl MpcCluster {
         request: &near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         let user = self.default_user_account().clone();
-        let client = self.user_client(&user)?;
-        self.contract
-            .call_from_with_deposit(
-                &client,
-                method_names::VERIFY_FOREIGN_TRANSACTION,
-                json!({ "request": serde_json::to_value(request)? }),
-                SIGN_GAS,
-                SIGN_DEPOSIT,
-            )
+        self.contract_handle(&user)
+            .verify_foreign_transaction(request.clone())
             .await
+            .context("failed to send verify_foreign_transaction request")
     }
 
     /// Propose a contract code update and cast votes until `vote_update` reports
