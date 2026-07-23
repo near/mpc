@@ -69,7 +69,8 @@ use near_time::Clock;
 use std::time::Duration;
 
 const NUM_PARTICIPANTS: usize = 4;
-const THRESHOLD: usize = 3;
+const GOVERNANCE_THRESHOLD: usize = 3;
+const RECONSTRUCTION_THRESHOLD: usize = 3;
 const TXN_DELAY_BLOCKS: u64 = 1;
 
 // The only knob that differs between the two scenarios is the desired triple
@@ -195,7 +196,7 @@ async fn measure_signing_latency(
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::ASSET_GENERATION_SIGNING_CONTENTION_TEST.with_case(case),
         DEFAULT_BLOCK_TIME,
@@ -204,7 +205,7 @@ async fn measure_signing_latency(
     let ecdsa_domain = DomainConfig {
         id: DomainId(0),
         protocol: Protocol::CaitSith,
-        reconstruction_threshold: ReconstructionThreshold::new(THRESHOLD as u64),
+        reconstruction_threshold: ReconstructionThreshold::new(RECONSTRUCTION_THRESHOLD as u64),
         purpose: DomainPurpose::Sign,
     };
 
