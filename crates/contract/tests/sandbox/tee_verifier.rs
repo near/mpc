@@ -11,11 +11,11 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
-        consts::{ALL_PROTOCOLS, SUBMIT_PARTICIPANT_INFO_DEPOSIT},
+        consts::ALL_PROTOCOLS,
         contract_build::tee_verifier_contract,
         mpc_contract::{
-            get_participant_attestation, submit_participant_info,
-            submit_participant_info_with_deposit, total_gas_fee, vote_tee_verifier_change,
+            get_participant_attestation, submit_participant_info, tee_verifier_account_id,
+            total_gas_fee, vote_tee_verifier_change,
         },
     },
 };
@@ -26,10 +26,6 @@ use near_workspaces::{
     types::NearToken,
 };
 use test_utils::attestation::{mock_dto_dstack_attestation, p2p_tls_key};
-
-/// Deposit attached to a Dstack submission: the flat storage fee, consumed on
-/// success and fully refunded on failure.
-const SUBMIT_DEPOSIT: NearToken = SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 
 async fn setup() -> SandboxTestSetup {
     SandboxTestSetup::builder()
@@ -59,12 +55,11 @@ async fn deploy_and_trust_verifier(
 }
 
 async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
-    submit_participant_info_with_deposit(
+    submit_participant_info(
         submitter,
         contract,
         &mock_dto_dstack_attestation(),
         &p2p_tls_key().into(),
-        SUBMIT_DEPOSIT,
     )
     .await
     .unwrap()
@@ -152,6 +147,24 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
 }
 
 #[tokio::test]
+async fn tee_verifier_account_id__should_return_none_until_a_verifier_is_voted_in() {
+    // Given
+    let SandboxTestSetup {
+        mpc_signer_accounts,
+        contract,
+        ..
+    } = setup().await;
+    assert_eq!(tee_verifier_account_id(&contract).await, None);
+
+    // When
+    let verifier: AccountId = "verifier.near".parse().unwrap();
+    trust_verifier(&contract, &mpc_signer_accounts, &verifier).await;
+
+    // Then
+    assert_eq!(tee_verifier_account_id(&contract).await, Some(verifier));
+}
+
+#[tokio::test]
 async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_rejection() {
     // Given
     let SandboxTestSetup {
@@ -170,15 +183,10 @@ async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_re
     dstack.quote = dtos::HexVec(vec![0u8; 16]);
 
     // When
-    let result = submit_participant_info_with_deposit(
-        &submitter,
-        &contract,
-        &attestation,
-        &p2p_tls_key().into(),
-        SUBMIT_DEPOSIT,
-    )
-    .await
-    .unwrap();
+    let result =
+        submit_participant_info(&submitter, &contract, &attestation, &p2p_tls_key().into())
+            .await
+            .unwrap();
 
     // Then
     assert_submission_failed_cleanly(
