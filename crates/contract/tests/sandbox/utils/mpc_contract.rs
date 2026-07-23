@@ -65,6 +65,22 @@ pub async fn submit_participant_info(
         .map_err(Into::into)
 }
 
+/// Submits an attestation and returns the non-gas amount the caller was left
+/// out of pocket, i.e. the kept storage deposit after subtracting gas fees.
+pub async fn submit_participant_info_and_measure_kept_deposit(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &Ed25519PublicKey,
+) -> anyhow::Result<NearToken> {
+    let balance_before = account.view_account().await?.balance;
+    let result = submit_participant_info(account, contract, attestation, tls_key).await?;
+    assert!(result.is_success(), "submission should succeed: {result:?}");
+    let balance_after = account.view_account().await?.balance;
+    let net_spent = balance_before.saturating_sub(balance_after);
+    Ok(net_spent.saturating_sub(total_gas_fee(&result)))
+}
+
 pub async fn vote_tee_verifier_change(
     account: &Account,
     contract: &Contract,

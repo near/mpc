@@ -115,10 +115,9 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// node key cannot invoke these methods.
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
-/// Flat fee a node attaches to [`MpcContract::submit_participant_info`] for its
-/// stored attestation entry. The entry is bounded, so the fee is fixed and
-/// nothing is refunded; its margin over the true cost absorbs storage-price and
-/// layout changes. A unit test asserts it covers the worst-case entry.
+/// Minimum a node must attach to [`MpcContract::submit_participant_info`],
+/// sized to cover the worst-case stored entry. Only the actual storage delta is
+/// kept; the excess is refunded.
 const MINIMUM_ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(100);
 
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
@@ -157,6 +156,19 @@ fn refund_to(account_id: &AccountId, amount: NearToken) {
     if amount > NearToken::from_near(0) {
         log!("refund {amount} to {account_id}");
         Promise::new(account_id.clone()).transfer(amount).detach();
+    }
+}
+
+/// Charges this submission's storage delta and refunds the excess. `initial_storage`
+/// must be captured before the store has flushed (see
+/// [`TeeState::store_verified_attestation`]); the [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`]
+/// floor guarantees the refund never underflows.
+fn keep_storage_delta_and_refund_rest(account_id: &AccountId, initial_storage: u64) {
+    // saturating_sub: a shrink charges nothing rather than underflowing.
+    let bytes_grown = env::storage_usage().saturating_sub(initial_storage);
+    let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
+    if let Some(refund) = env::attached_deposit().checked_sub(cost) {
+        refund_to(account_id, refund);
     }
 }
 
@@ -782,8 +794,11 @@ impl MpcContract {
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole
-    /// fee is kept on success and refunded if the attestation is not accepted.
+    /// The caller must attach at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`],
+    /// enough to cover the worst-case stored entry. On success only the actual
+    /// storage delta is kept and the excess is refunded, so a re-submission that
+    /// changes no stored bytes is charged nothing. The full deposit is refunded if
+    /// the attestation is not accepted.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -833,11 +848,13 @@ impl MpcContract {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+                let initial_storage = env::storage_usage();
                 self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
+                keep_storage_delta_and_refund_rest(&account_id, initial_storage);
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
@@ -2301,8 +2318,9 @@ impl MpcContract {
     }
 
     /// Verify-quote callback: on a verifier verdict it runs the post-DCAP
-    /// checks and stores the attestation, refunding the flat fee if the
-    /// attestation is not accepted.
+    /// checks and stores the attestation, keeping the storage delta and
+    /// refunding the excess. Refunds the full deposit if the attestation is not
+    /// accepted.
     #[private]
     #[payable]
     pub fn resolve_verification(
@@ -2352,9 +2370,8 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. The deposit was already
-    /// checked against the flat fee in [`Self::submit_participant_info`], so this
-    /// only verifies and stores.
+    /// [`VerificationResult::Verified`] response, then keeps the storage delta
+    /// and refunds the excess deposit.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -2364,6 +2381,7 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
+        let initial_storage = env::storage_usage();
         if let Err(err) = self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.attestation,
@@ -2374,6 +2392,7 @@ impl MpcContract {
             return Err(err.into());
         }
 
+        keep_storage_delta_and_refund_rest(account_id, initial_storage);
         Ok(())
     }
 
@@ -8049,43 +8068,59 @@ mod tests {
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
     }
 
-    // Catches only entry-size growth: fails if a schema change makes the stored entry
-    // cost more than the fee at today's storage_byte_cost. It cannot see a future
-    // storage_byte_cost increase on a live contract; the fee's margin covers that.
+    // Catches entry-size growth: fails if a schema change makes the largest storable entry
+    // cost more than the deposit at today's storage_byte_cost. It cannot see a future
+    // storage_byte_cost increase on a live contract; the deposit's margin covers that.
     #[test]
     fn minimum_attestation_storage_deposit__should_cover_worst_case_entry() {
-        // Given: the largest entry a submission can store. NEAR caps an account id
-        // at 64 bytes; every other field is fixed-size, so this is the worst case.
         testing_env!(VMContextBuilder::new().build());
+        // NEAR caps an account id at 64 bytes; every other NodeId field is fixed-size.
         let node_id = create_node_id(
             &"a".repeat(64).parse().unwrap(),
             &bogus_ed25519_public_key(),
         );
-        let worst_case = NodeAttestation {
-            node_id: node_id.clone(),
-            verified_attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                mpc_image_hash: [0xff; 32].into(),
-                launcher_compose_hash: [0xff; 32].into(),
-                expiry_timestamp_seconds: u64::MAX,
-                measurements: default_measurements()[0],
-            }),
+        let cost_of = |verified_attestation| {
+            let mut tee_state = TeeState::default();
+            let before = env::storage_usage();
+            tee_state.stored_attestations.insert(
+                node_id.tls_public_key.clone(),
+                NodeAttestation {
+                    node_id: node_id.clone(),
+                    verified_attestation,
+                },
+            );
+            tee_state.stored_attestations.flush();
+            let bytes_grown = env::storage_usage() - before;
+            let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
+            (bytes_grown, cost)
         };
 
-        // When: the entry is inserted and flushed, so storage_usage reflects it.
-        let mut tee_state = TeeState::default();
-        let storage_before = env::storage_usage();
-        tee_state
-            .stored_attestations
-            .insert(node_id.tls_public_key.clone(), worst_case);
-        tee_state.stored_attestations.flush();
-        let bytes_grown = env::storage_usage() - storage_before;
-        let worst_case_cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
+        // Given: the largest entry each variant can store. The Mock arm is not
+        // feature-gated, so a caller can force either variant.
+        let dstack = VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: [0xff; 32].into(),
+            launcher_compose_hash: [0xff; 32].into(),
+            expiry_timestamp_seconds: u64::MAX,
+            measurements: default_measurements()[0],
+        });
+        let mock = VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some([0xff; 32].into()),
+            launcher_docker_compose_hash: Some([0xff; 32].into()),
+            expiry_timestamp_seconds: Some(u64::MAX),
+            expected_measurements: Some(default_measurements()[0]),
+        });
 
-        // Then: the flat fee covers the worst-case cost with headroom to spare.
+        // When
+        let (dstack_bytes, dstack_cost) = cost_of(dstack);
+        let (mock_bytes, mock_cost) = cost_of(mock);
+        let (worst_bytes, worst_cost) =
+            std::cmp::max((dstack_bytes, dstack_cost), (mock_bytes, mock_cost));
+
+        // Then: the minimum deposit covers the worst case with headroom to spare.
         assert!(
-            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= worst_case_cost,
-            "flat fee {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
-             ({bytes_grown} bytes, {worst_case_cost}) at today's storage price"
+            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= worst_cost,
+            "minimum deposit {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
+             ({worst_bytes} bytes, {worst_cost}) at today's storage price"
         );
     }
 }

@@ -8,7 +8,8 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            total_gas_fee, vote_add_launcher_hash, vote_for_hash,
+            submit_participant_info_and_measure_kept_deposit, vote_add_launcher_hash,
+            vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -1031,13 +1032,12 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
     Ok(())
 }
 
-/// A submission attaching exactly the flat fee is stored, and the caller is
-/// charged the whole fee with no excess refunded (the fee far exceeds the true
-/// storage cost by design).
+/// A first submission is stored, and only the actual storage delta is kept; the
+/// excess over the true cost is refunded.
 #[tokio::test]
-async fn submit_participant_info__should_store_new_attestation_and_charge_the_flat_fee()
+async fn submit_participant_info__should_store_new_attestation_and_keep_only_the_storage_delta()
 -> Result<()> {
-    // Given
+    // given
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
@@ -1046,10 +1046,9 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_the_fl
         .await;
     let outsider = worker.dev_create_account().await?;
     let fresh_tls_key = bogus_ed25519_public_key();
-    let balance_before = outsider.view_account().await?.balance;
 
-    // When
-    let result = submit_participant_info(
+    // when
+    let kept = submit_participant_info_and_measure_kept_deposit(
         &outsider,
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -1057,19 +1056,54 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_the_fl
     )
     .await?;
 
-    // Then
-    assert!(
-        result.is_success(),
-        "submission attaching the flat fee should succeed: {result:?}"
-    );
+    // then
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(stored.is_some(), "the entry should be stored on-chain");
     assert!(
-        stored.is_some(),
-        "the attestation entry should be stored on-chain"
+        kept > NearToken::from_yoctonear(0) && kept < SUBMIT_PARTICIPANT_INFO_DEPOSIT,
+        "a new entry keeps a nonzero storage delta below the full deposit, refunding the rest: \
+         kept {kept}"
     );
-    let balance_after = outsider.view_account().await?.balance;
-    let net_spent = balance_before.saturating_sub(balance_after);
-    let non_gas_spent = net_spent.saturating_sub(total_gas_fee(&result));
-    assert_eq!(non_gas_spent, SUBMIT_PARTICIPANT_INFO_DEPOSIT);
+    Ok(())
+}
+
+/// Re-submitting an identical entry changes no stored bytes, so the second call
+/// keeps nothing.
+#[tokio::test]
+async fn submit_participant_info__should_not_overcharge_identical_resubmission() -> Result<()> {
+    // given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+    let first_kept = submit_participant_info_and_measure_kept_deposit(
+        &outsider,
+        &contract,
+        &attestation,
+        &fresh_tls_key,
+    )
+    .await?;
+
+    // when
+    let resubmission_kept = submit_participant_info_and_measure_kept_deposit(
+        &outsider,
+        &contract,
+        &attestation,
+        &fresh_tls_key,
+    )
+    .await?;
+
+    // then
+    assert_eq!(
+        resubmission_kept,
+        NearToken::from_yoctonear(0),
+        "an identical re-submission stores no new bytes and must keep nothing: \
+         first kept {first_kept}, resubmission kept {resubmission_kept}"
+    );
     Ok(())
 }
