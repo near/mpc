@@ -13,8 +13,8 @@ use near_mpc_contract_interface::{
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
         ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
+        ForeignChain, InitConfig, MockAttestation, ParticipantId, ParticipantInfo, Participants,
+        Payload, ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
         ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, Threshold,
         ThresholdParameters,
     },
@@ -142,27 +142,14 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to
 /// `init` lands, add a `Legacy*` variant emitting the now-old shape and
-/// branch on it in `init_parameters_json` so tests can still target the
-/// previous production contract. After the breaking change has rolled out to
-/// Mainnet/Testnet, drop the obsolete variant.
+/// branch on it at the `init` call site in `init_contract` so tests can still
+/// target the previous production contract. After the breaking change has
+/// rolled out to Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
     /// Current `ThresholdParameters` shape.
     #[default]
     Current,
-}
-
-impl ContractInitFormat {
-    /// JSON shape for the `parameters` argument of the contract's `init` call,
-    /// in the wire format that the targeted contract expects.
-    fn init_parameters_json(
-        self,
-        params: &ThresholdParameters,
-    ) -> serde_json::Result<serde_json::Value> {
-        match self {
-            Self::Current => serde_json::to_value(params),
-        }
-    }
 }
 
 impl MpcClusterConfig {
@@ -1320,14 +1307,13 @@ async fn init_contract(
         ?init_format,
         "initializing contract"
     );
-    let init_config = json!({ "key_event_timeout_blocks": KEY_EVENT_TIMEOUT_BLOCKS });
-    let parameters_json = init_format.init_parameters_json(&params)?;
-    let outcome = contract
-        .call(
-            method_names::INIT,
-            json!({ "parameters": parameters_json, "init_config": init_config }),
-        )
-        .await?;
+    let init_config = InitConfig {
+        key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
+        ..InitConfig::default()
+    };
+    let outcome = match init_format {
+        ContractInitFormat::Current => contract.handle().init(params, Some(init_config)).await?,
+    };
     anyhow::ensure!(
         outcome.is_success(),
         "init failed: {:?}",

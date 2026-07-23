@@ -137,6 +137,13 @@ impl DeployedContract {
         self.contract_id.to_string()
     }
 
+    /// Handle signing as the contract account itself.
+    pub fn handle(&self) -> MpcContractHandle<NearKitCaller> {
+        self.handle_for(NearKitCaller {
+            inner: self.client.clone(),
+        })
+    }
+
     pub fn handle_for(&self, caller: NearKitCaller) -> MpcContractHandle<NearKitCaller> {
         MpcContractHandle::new(caller, self.contract_id.clone())
     }
