@@ -1,4 +1,6 @@
-//! Per-provider golden checks: run a fixed request and verify the extracted value.
+//! Per-provider checks. Golden-transaction chains run a fixed request and verify the
+//! extracted value; identity-based chains (Sui, Starknet) verify the chain identity and
+//! inspect a dynamically discovered recent transaction instead.
 
 use std::time::Duration;
 
@@ -17,7 +19,7 @@ use foreign_chain_inspector::{
     evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
     http_client::HttpClient,
     starknet::{
-        StarknetExtractedValue, StarknetTransactionHash,
+        StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
     sui::{
@@ -26,8 +28,10 @@ use foreign_chain_inspector::{
     },
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::starknet::{BlockId, BlockTag};
 use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use http::{HeaderName, HeaderValue};
+use jsonrpsee::core::client::ClientT;
 
 use crate::golden;
 
@@ -122,25 +126,92 @@ pub async fn check_bitcoin(
     }
 }
 
-pub async fn check_starknet(
-    client: HttpClient,
-    tx: [u8; 32],
-    expected_block_hash: [u8; 32],
-) -> anyhow::Result<()> {
+/// Where probing starts: this many blocks below the L1-accepted head.
+const HEAD_PROBE_OFFSET: u64 = 10;
+
+/// Cap on the exponential walk-back (the step doubles each try) before giving up.
+const MAX_WALKBACK_BLOCKS: u64 = 1024;
+
+/// Verifies the network via `starknet_chainId`, then runs the inspector at `AcceptedOnL1`
+/// over a transaction from a recent block — walking back past empty or not-yet-final ones.
+/// Requires provider JSON-RPC v0.9+ (the `l1_accepted` block tag).
+pub async fn check_starknet<C>(client: C, expected_chain_id: &str) -> anyhow::Result<()>
+where
+    C: ClientT + Send + Sync,
+{
     let inspector = StarknetInspector::new(client);
-    let values = inspector
-        .extract(
-            StarknetTransactionHash::from(tx),
-            StarknetFinality::AcceptedOnL1,
-            vec![StarknetExtractor::BlockHash],
-        )
-        .await?;
-    match values.into_iter().next().context("RPC returned no value")? {
-        StarknetExtractedValue::BlockHash(hash) => {
-            let got: [u8; 32] = hash.into();
-            verify_block_hash(expected_block_hash, got)
+
+    let chain_id = inspector
+        .chain_id()
+        .await
+        .context("failed to fetch chain id")?;
+    let expected = golden::felt32(expected_chain_id).context("invalid expected chain id")?;
+    if *chain_id.as_fixed_bytes() != expected {
+        return Err(Mismatch::ChainId {
+            expected: expected_chain_id.to_string(),
+            got: format!("{chain_id:#x}"),
         }
-        StarknetExtractedValue::Log(_) => bail!("expected a block hash, got a log"),
+        .into());
+    }
+
+    let head = inspector
+        .block_with_tx_hashes(BlockId::Tag(BlockTag::L1Accepted))
+        .await
+        .context("failed to fetch the latest L1-accepted block")?;
+    let probe_number = head
+        .block_number
+        .checked_sub(HEAD_PROBE_OFFSET)
+        .with_context(|| {
+            format!(
+                "chain height {} is below the probe offset {HEAD_PROBE_OFFSET}",
+                head.block_number
+            )
+        })?;
+    let mut block = inspector
+        .block_with_tx_hashes(BlockId::Number {
+            block_number: probe_number,
+        })
+        .await
+        .context("failed to fetch the probe block")?;
+
+    // Walk back until a transaction verifies. An empty block or a `NotFinalized` receipt (a
+    // lagging load-balanced backend) steps earlier; any other error is a real failure.
+    let mut step = 1;
+    let mut walked_back = 0;
+    loop {
+        if let Some(tx) = block.transactions.first() {
+            let tx_hash = StarknetTransactionHash::from(*tx.as_fixed_bytes());
+            match inspector
+                .extract(
+                    tx_hash,
+                    StarknetFinality::AcceptedOnL1,
+                    vec![StarknetExtractor::Log { log_index: 0 }],
+                )
+                .await
+            {
+                Ok(_)
+                | Err(ForeignChainInspectionError::TransactionFailed)
+                | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => return Ok(()),
+                Err(ForeignChainInspectionError::NotFinalized) => {}
+                Err(e) => {
+                    return Err(e).context("failed to inspect a transaction from a recent block");
+                }
+            }
+        }
+        walked_back += step;
+        if walked_back > MAX_WALKBACK_BLOCKS {
+            bail!("no L1-final transaction within {MAX_WALKBACK_BLOCKS} blocks of the probe block");
+        }
+        let earlier = block.block_number.checked_sub(step).context(
+            "walked back past the genesis block without finding an L1-final transaction",
+        )?;
+        block = inspector
+            .block_with_tx_hashes(BlockId::Number {
+                block_number: earlier,
+            })
+            .await
+            .context("failed to fetch an earlier block")?;
+        step *= 2;
     }
 }
 
@@ -254,7 +325,252 @@ mod tests {
     use crate::golden;
     use crate::network::Network;
     use assert_matches::assert_matches;
+    use foreign_chain_rpc_interfaces::starknet::{
+        GetBlockWithTxHashesResponse, GetTransactionReceiptResponse, H256, StarknetEvent,
+        StarknetExecutionStatus, StarknetFinalityStatus,
+    };
     use httpmock::prelude::*;
+    use jsonrpsee::core::client::{BatchResponse, error::Error as RpcError};
+    use jsonrpsee::core::params::BatchRequestBuilder;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A [`ClientT`] that returns queued JSON values in call order, ignoring method and params
+    /// (mirrors the inspector crate's sequential mock). Lets `check_starknet`'s fixed call
+    /// sequence — chainId, L1-accepted head, probe block, receipt, canonical block — be scripted.
+    struct SequentialMockClient {
+        responses: Vec<serde_json::Value>,
+        calls: AtomicUsize,
+    }
+
+    impl SequentialMockClient {
+        fn new(responses: Vec<serde_json::Value>) -> Self {
+            Self {
+                responses,
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl ClientT for SequentialMockClient {
+        async fn request<R, Params>(&self, _method: &str, _params: Params) -> Result<R, RpcError>
+        where
+            R: serde::de::DeserializeOwned,
+        {
+            let i = self.calls.fetch_add(1, Ordering::SeqCst);
+            let value = self.responses.get(i).cloned().unwrap_or_else(|| {
+                panic!(
+                    "mock received call #{} but only {} responses were queued",
+                    i + 1,
+                    self.responses.len()
+                )
+            });
+            serde_json::from_value(value).map_err(RpcError::ParseError)
+        }
+
+        async fn notification<Params>(
+            &self,
+            _method: &str,
+            _params: Params,
+        ) -> Result<(), RpcError> {
+            unimplemented!("notification() not used in tests")
+        }
+
+        async fn batch_request<'a, R>(
+            &self,
+            _batch: BatchRequestBuilder<'a>,
+        ) -> Result<BatchResponse<'a, R>, RpcError>
+        where
+            R: serde::de::DeserializeOwned + std::fmt::Debug + 'a,
+        {
+            unimplemented!("batch_request() not used in tests")
+        }
+    }
+
+    const STARKNET_MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
+
+    fn starknet_receipt() -> GetTransactionReceiptResponse {
+        GetTransactionReceiptResponse {
+            block_hash: H256::from([4; 32]),
+            block_number: 842_750,
+            events: vec![StarknetEvent {
+                data: vec![H256::from([0xab; 32])],
+                from_address: H256::from([0x11; 32]),
+                keys: vec![H256::from([0xcc; 32])],
+            }],
+            finality_status: StarknetFinalityStatus::AcceptedOnL1,
+            execution_status: StarknetExecutionStatus::Succeeded,
+        }
+    }
+
+    fn json(value: impl serde::Serialize) -> serde_json::Value {
+        serde_json::to_value(value).unwrap()
+    }
+
+    #[tokio::test]
+    async fn check_starknet__should_pass_when_chain_id_matches_and_a_recent_tx_verifies() {
+        // Given a provider on the expected network whose probe block (10 below the latest
+        // L1-accepted head) carries a transaction the inspector can verify (final, canonical, succeeded).
+        let receipt = starknet_receipt();
+        let head = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([9; 32]),
+            block_number: 900_000,
+            transactions: vec![],
+        };
+        let probe = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([8; 32]),
+            block_number: 899_990,
+            transactions: vec![H256::from([3; 32])],
+        };
+        let canonical = GetBlockWithTxHashesResponse {
+            block_hash: receipt.block_hash,
+            block_number: receipt.block_number,
+            transactions: vec![],
+        };
+        let client = SequentialMockClient::new(vec![
+            json(STARKNET_MAINNET_CHAIN_ID),
+            json(&head),
+            json(&probe),
+            json(&receipt),
+            json(&canonical),
+        ]);
+
+        // When
+        let result = check_starknet(client, STARKNET_MAINNET_CHAIN_ID).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_starknet__should_fail_when_chain_id_differs() {
+        // Given a provider reporting a different network's chain id; the probe must reject it
+        // before spending any further calls.
+        let client = SequentialMockClient::new(vec![json("0x534e5f5345504f4c4941")]);
+
+        // When
+        let result = check_starknet(client, STARKNET_MAINNET_CHAIN_ID).await;
+
+        // Then
+        assert_matches!(
+            result.unwrap_err().downcast_ref::<Mismatch>(),
+            Some(Mismatch::ChainId { .. })
+        );
+    }
+
+    #[tokio::test]
+    async fn check_starknet__should_walk_back_when_the_probe_block_is_empty() {
+        // Given the right network, an empty probe block, and a verifiable transaction in the
+        // block before it.
+        let receipt = starknet_receipt();
+        let head = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([9; 32]),
+            block_number: 900_000,
+            transactions: vec![],
+        };
+        let empty_probe = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([8; 32]),
+            block_number: 899_990,
+            transactions: vec![],
+        };
+        let earlier = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([7; 32]),
+            block_number: 899_989,
+            transactions: vec![H256::from([3; 32])],
+        };
+        let canonical = GetBlockWithTxHashesResponse {
+            block_hash: receipt.block_hash,
+            block_number: receipt.block_number,
+            transactions: vec![],
+        };
+        let client = SequentialMockClient::new(vec![
+            json(STARKNET_MAINNET_CHAIN_ID),
+            json(&head),
+            json(&empty_probe),
+            json(&earlier),
+            json(&receipt),
+            json(&canonical),
+        ]);
+
+        // When
+        let result = check_starknet(client, STARKNET_MAINNET_CHAIN_ID).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_starknet__should_walk_back_when_the_probe_tx_is_not_yet_l1_final() {
+        // Given the right network: the probe block's tx is only L2-accepted (as a lagging
+        // load-balanced backend would report), but a tx in an earlier block is L1-final.
+        let l2_receipt = GetTransactionReceiptResponse {
+            finality_status: StarknetFinalityStatus::AcceptedOnL2,
+            ..starknet_receipt()
+        };
+        let l1_receipt = starknet_receipt();
+        let head = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([9; 32]),
+            block_number: 900_000,
+            transactions: vec![],
+        };
+        let probe = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([8; 32]),
+            block_number: 899_990,
+            transactions: vec![H256::from([3; 32])],
+        };
+        let earlier = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([7; 32]),
+            block_number: 899_989,
+            transactions: vec![H256::from([4; 32])],
+        };
+        let canonical = GetBlockWithTxHashesResponse {
+            block_hash: l1_receipt.block_hash,
+            block_number: l1_receipt.block_number,
+            transactions: vec![],
+        };
+        let client = SequentialMockClient::new(vec![
+            json(STARKNET_MAINNET_CHAIN_ID),
+            json(&head),
+            json(&probe),
+            json(&l2_receipt), // probe tx: not yet L1-final -> walk back
+            json(&earlier),
+            json(&l1_receipt), // earlier tx: L1-final -> pass
+            json(&canonical),
+        ]);
+
+        // When
+        let result = check_starknet(client, STARKNET_MAINNET_CHAIN_ID).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_starknet__should_fail_when_no_l1_final_tx_within_the_walkback_cap() {
+        // Given the right network but every block within the walk-back cap is empty.
+        let head = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([9; 32]),
+            block_number: 1_000_000,
+            transactions: vec![],
+        };
+        let empty = GetBlockWithTxHashesResponse {
+            block_hash: H256::from([8; 32]),
+            block_number: 1_000_000,
+            transactions: vec![],
+        };
+        // More empty blocks than the exponential walk-back can consume before hitting the cap.
+        let responses = [json(STARKNET_MAINNET_CHAIN_ID), json(&head)]
+            .into_iter()
+            .chain(std::iter::repeat_with(|| json(&empty)).take(16))
+            .collect();
+        let client = SequentialMockClient::new(responses);
+
+        // When
+        let result = check_starknet(client, STARKNET_MAINNET_CHAIN_ID).await;
+
+        // Then
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("no L1-final transaction"), "{error}");
+    }
 
     fn golden_aptos_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {
         serde_json::json!({
@@ -356,16 +672,18 @@ mod tests {
         }
     }
 
+    /// Sui mainnet's genesis checkpoint digest (`get_service_info` chain id).
+    const SUI_MAINNET_CHAIN_ID: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
+
     #[tokio::test]
     async fn check_sui__should_pass_when_provider_is_on_the_expected_network() {
         // Given
-        let sui = golden::golden_set(Network::Mainnet).sui.unwrap();
         let client = MockSuiClient {
-            chain_id: sui.chain_id.to_string(),
+            chain_id: SUI_MAINNET_CHAIN_ID.to_string(),
         };
 
         // When
-        let result = check_sui(client, sui.chain_id).await;
+        let result = check_sui(client, SUI_MAINNET_CHAIN_ID).await;
 
         // Then
         result.unwrap();
@@ -373,18 +691,13 @@ mod tests {
 
     #[tokio::test]
     async fn check_sui__should_fail_when_chain_id_differs() {
-        // Given — a provider on a different network.
+        // Given — a provider on a different network (the testnet genesis digest).
         let client = MockSuiClient {
-            chain_id: golden::golden_set(Network::Testnet)
-                .sui
-                .unwrap()
-                .chain_id
-                .to_string(),
+            chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD".to_string(),
         };
-        let expected = golden::golden_set(Network::Mainnet).sui.unwrap();
 
         // When
-        let result = check_sui(client, expected.chain_id).await;
+        let result = check_sui(client, SUI_MAINNET_CHAIN_ID).await;
 
         // Then
         assert_matches!(

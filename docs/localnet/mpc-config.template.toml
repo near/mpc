@@ -104,3 +104,7 @@ rpc_url = "https://archive.mainnet.sui.io"
 
 [node.foreign_chains.sui.providers.public.auth]
 kind = "none"
+
+[node.foreign_chain_health_check.identities]
+starknet = "0x534e5f4d41494e"
+sui = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"

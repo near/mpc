@@ -1,6 +1,6 @@
-//! Foreign-chain RPC provider health checks: probe every configured provider
-//! with a fixed golden request and report a per-provider result. Sui is the
-//! exception — see `run_sui`.
+//! Foreign-chain RPC provider health checks: probe every configured provider and report a
+//! per-provider result. Most chains run a fixed golden request; identity-based chains (Sui,
+//! Starknet) verify the chain identity and a recent transaction instead — see `checks`.
 
 mod checks;
 mod golden;
@@ -28,16 +28,27 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 pub use network::Network;
 pub use results::{ProviderResult, Status};
 
-use crate::golden::{AptosVector, BlockHashVector, SuiVector};
+use crate::golden::{AptosVector, BlockHashVector};
 
-/// Probe every configured provider against `network`'s golden reference
-/// transaction, one [`ProviderResult`] per provider, each checked independently.
-/// Chains with no reference for `network`, or configured but unsupported, are
-/// [`Status::Skipped`]; a chain absent from the config still yields a single
-/// placeholder `Skipped` result so its absence stays visible.
+/// Expected chain identities from `foreign_chain_health_check.identities`, one field per
+/// identity-probed chain.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ExpectedIdentities {
+    pub starknet: Option<String>,
+    pub sui: Option<String>,
+}
+
+/// Probe every configured provider against its reference (a configured identity, or for the
+/// chains still using pinned golden transactions, `network`'s golden vector), one
+/// [`ProviderResult`] per provider, each checked independently.
+/// Golden chains with no reference for `network`, or configured but unsupported chains, are
+/// [`Status::Skipped`]; a chain absent from the config still yields a single placeholder
+/// `Skipped` result so its absence stays visible.
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
     network: Network,
+    identities: &ExpectedIdentities,
 ) -> Vec<ProviderResult> {
     let golden = golden::golden_set(network);
     let mut out = Vec::new();
@@ -78,7 +89,7 @@ pub async fn check_all_providers(
         mark_not_configured("bitcoin", &mut out);
     }
     if let Some(cfg) = &fc.starknet {
-        run_starknet(cfg, golden.starknet, network, &mut out).await;
+        run_starknet(cfg, identities.starknet.as_deref(), &mut out).await;
     } else {
         mark_not_configured("starknet", &mut out);
     }
@@ -88,7 +99,7 @@ pub async fn check_all_providers(
         mark_not_configured("aptos", &mut out);
     }
     if let Some(cfg) = &fc.sui {
-        run_sui(cfg, golden.sui, network, &mut out).await;
+        run_sui(cfg, identities.sui.as_deref(), &mut out).await;
     } else {
         mark_not_configured("sui", &mut out);
     }
@@ -109,10 +120,7 @@ pub async fn check_all_providers(
 }
 
 fn no_reference_reason(network: Network) -> String {
-    format!(
-        "no {} reference transaction for this chain",
-        network.label()
-    )
+    format!("no {} reference for this chain", network.label())
 }
 
 fn timeout_of(cfg: &ForeignChainConfig) -> Duration {
@@ -213,23 +221,19 @@ async fn run_bitcoin(
 
 async fn run_starknet(
     cfg: &ForeignChainConfig,
-    vector: Option<BlockHashVector>,
-    network: Network,
+    expected_chain_id: Option<&str>,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
-        mark_skipped("starknet", cfg, &no_reference_reason(network), out);
+    let Some(expected_chain_id) = expected_chain_id else {
+        mark_missing_identity("starknet", cfg, out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed = golden::felt32(vector.tx)
-        .and_then(|tx| golden::felt32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, bh)), Ok(client)) => {
-                run_check(timeout, checks::check_starknet(client, *tx, *bh)).await
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => {
+                run_check(timeout, checks::check_starknet(client, expected_chain_id)).await
             }
         };
         out.push(ProviderResult {
@@ -285,19 +289,18 @@ async fn run_aptos(
 /// [`checks::check_sui`] for the mechanism.
 async fn run_sui(
     cfg: &ForeignChainConfig,
-    vector: Option<SuiVector>,
-    network: Network,
+    expected_chain_id: Option<&str>,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
-        mark_skipped("sui", cfg, &no_reference_reason(network), out);
+    let Some(expected) = expected_chain_id else {
+        mark_missing_identity("sui", cfg, out);
         return;
     };
     let timeout = timeout_of(cfg);
     for (name, provider) in cfg.providers.iter() {
         let status = match prepare_sui(provider, timeout) {
             Err(e) => Status::Failed(format!("{e:#}")),
-            Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
+            Ok(client) => run_check(timeout, checks::check_sui(client, expected)).await,
         };
         out.push(ProviderResult {
             chain: "sui",
@@ -322,6 +325,24 @@ fn prepare_sui(
     };
     GrpcSuiClient::new(url, header, timeout)
         .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
+}
+
+/// A configured identity-probed chain without an expected identity is a config error:
+/// every provider row fails until `foreign_chain_health_check.identities.<chain>` is set.
+fn mark_missing_identity(
+    chain: &'static str,
+    cfg: &ForeignChainConfig,
+    out: &mut Vec<ProviderResult>,
+) {
+    for name in cfg.providers.keys() {
+        out.push(ProviderResult {
+            chain,
+            provider: provider_name(name),
+            status: Status::Failed(format!(
+                "no expected identity configured: set foreign_chain_health_check.identities.{chain}"
+            )),
+        });
+    }
 }
 
 fn mark_skipped(
@@ -370,6 +391,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn check_all_providers__should_fail_identity_chain_without_configured_identity() {
+        // Given a configured identity-probed chain but no expected identity in config
+        let fc = ForeignChainsConfig {
+            starknet: Some(config_with_provider(AuthConfig::None)),
+            ..Default::default()
+        };
+
+        // When
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
+
+        // Then the provider fails with a pointer to the config key, without being probed
+        let starknet = results
+            .iter()
+            .find(|r| r.chain == "starknet")
+            .expect("starknet row");
+        assert_matches!(
+            &starknet.status,
+            Status::Failed(reason)
+                if reason.contains("foreign_chain_health_check.identities.starknet")
+        );
+    }
+
+    #[tokio::test]
     async fn check_all_providers__should_skip_configured_but_unsupported_chains() {
         // Given a configured but not-yet-supported chain
         let fc = ForeignChainsConfig {
@@ -378,7 +423,8 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
 
         // Then it is reported skipped as unsupported, not probed
         let ethereum = results
@@ -397,7 +443,8 @@ mod tests {
         let fc = ForeignChainsConfig::default();
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
 
         // Then every known chain still appears, each with a "not configured" placeholder
         let expected = [
@@ -443,7 +490,8 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
 
         // Then
         assert_eq!(results[0].chain, "base");
@@ -524,7 +572,8 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
 
         // Then — the broken provider does not suppress the healthy one; pass,
         // fail, and skip all coexist in a single run.

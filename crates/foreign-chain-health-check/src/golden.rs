@@ -1,6 +1,8 @@
-//! Per-network reference transactions and the value an inspector must extract
-//! from each. A mainnet transaction does not exist on testnet (and vice versa),
-//! so the vectors are network-specific; `None` means the chain is skipped.
+//! Per-network golden transactions for the chains still probed against a pinned
+//! reference, plus decoding helpers. A mainnet transaction does not exist on testnet
+//! (and vice versa), so the vectors are network-specific; `None` means the chain is
+//! skipped. Identity-probed chains (Sui, Starknet) carry no built-in reference — their
+//! expected identities come from configuration.
 
 use anyhow::Context;
 
@@ -20,17 +22,6 @@ pub struct AptosVector {
     pub event_sequence_number: u64,
 }
 
-/// Unlike other chains, Sui is verified by chain identity rather than a pinned
-/// reference transaction — see [`check_sui`](crate::checks::check_sui).
-#[derive(Clone, Copy)]
-pub struct SuiVector {
-    /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
-    /// returns it (`sui.rpc.v2`: "the digest of the genesis checkpoint"). Its 4-byte
-    /// prefix is the well-known Sui chain identifier — mainnet `0x35834a8a`, testnet
-    /// `0x4c78adac` — which is the value to grep against Sui docs to verify these.
-    pub chain_id: &'static str,
-}
-
 pub struct GoldenSet {
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
@@ -39,9 +30,7 @@ pub struct GoldenSet {
     pub hyper_evm: Option<BlockHashVector>,
     pub abstract_chain: Option<BlockHashVector>,
     pub bitcoin: Option<BlockHashVector>,
-    pub starknet: Option<BlockHashVector>,
     pub aptos: Option<AptosVector>,
-    pub sui: Option<SuiVector>,
 }
 
 pub fn golden_set(network: Network) -> GoldenSet {
@@ -80,17 +69,10 @@ const MAINNET: GoldenSet = GoldenSet {
         tx: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
         block_hash: "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab",
     }),
-    starknet: Some(BlockHashVector {
-        tx: "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
-        block_hash: "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5",
-    }),
     aptos: Some(AptosVector {
         tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
         event_type_tag: "0x1::block::NewBlockEvent",
         event_sequence_number: 822_198_006,
-    }),
-    sui: Some(SuiVector {
-        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
     }),
 };
 
@@ -108,17 +90,10 @@ const TESTNET: GoldenSet = GoldenSet {
         tx: "5acaa0890f8c1f1b2ac114c25b38d376f23beda1b59e9bcba33256d6e11d7e8e",
         block_hash: "000000000000021f43445ab447b3fc85e93eca26b56a4f23ef6c017682038ca2",
     }),
-    starknet: Some(BlockHashVector {
-        tx: "0x115b24c74eade5ee4c01e63cce5aa462fc2d59d040f5b088a31ad44c9aa58dc",
-        block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
-    }),
     aptos: Some(AptosVector {
         tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
         event_type_tag: "0x1::block::NewBlockEvent",
         event_sequence_number: 302_761_912,
-    }),
-    sui: Some(SuiVector {
-        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
     }),
 };
 
@@ -205,15 +180,8 @@ mod tests {
                 hex32(v.tx).unwrap();
                 hex32(v.block_hash).unwrap();
             }
-            if let Some(v) = set.starknet {
-                felt32(v.tx).unwrap();
-                felt32(v.block_hash).unwrap();
-            }
             if let Some(v) = set.aptos {
                 hex32(v.tx).unwrap();
-            }
-            if let Some(v) = set.sui {
-                base58_32(v.chain_id).unwrap();
             }
         }
     }
