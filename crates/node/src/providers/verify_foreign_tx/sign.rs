@@ -56,7 +56,8 @@ impl VerifyForeignTxProvider {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
         // Also checked in `execute_foreign_chain_request`; checked early here
-        // because `take_owned` below irreversibly consumes a presignature.
+        // because `take_owned` below irreversibly consumes a presignature. An
+        // availability flip between the two checks still costs one presignature.
         ensure_chain_is_available(
             &self.supporters_by_foreign_chain.borrow(),
             &foreign_tx_request.request,

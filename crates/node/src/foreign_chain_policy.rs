@@ -95,14 +95,14 @@ pub(crate) fn foreign_tx_reconstruction_threshold(domains: &[dtos::DomainConfig]
         .max()
 }
 
-// Recomputed node-side even though the contract already threshold-gates
-// availability: the upstream snapshot keys supporters by TLS key over all
-// registrations (prospective or stale ones included) and may come from a
-// different block than `participants_config`. Only supporters resolving to
-// `participants_config` — the participants this node can sign with — count
-// towards the quorum.
-// Returns `None` while no upstream snapshot exists yet: "not known" must stay
-// distinguishable from "no chain available".
+/// Recomputed node-side even though the contract already threshold-gates
+/// availability: the upstream snapshot keys supporters by TLS key over all
+/// registrations (prospective or stale ones included) and may come from a
+/// different block than `participants_config`. Only supporters resolving to
+/// `participants_config` — the participants this node can sign with — count
+/// towards the quorum.
+/// Returns `None` while no upstream snapshot exists yet: "not known" must stay
+/// distinguishable from "no chain available".
 fn resolve_supporters_by_foreign_chain(
     supporters_by_tls_key: &Option<ForeignChainSupporters>,
     participants_config: &ParticipantsConfig,

@@ -93,8 +93,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
-    // Covers the fake core's 1s contract poll plus resolver propagation.
-    const AVAILABILITY_PROPAGATION_WAIT: Duration = Duration::from_secs(3);
+    const SUPPORTERS_PUBLISH_WAIT: Duration = Duration::from_secs(10);
     const UNAVAILABLE_RESPONSE_WAIT: Duration = Duration::from_secs(15);
 
     // Given: four nodes with a mocked Bitcoin RPC (so inspection would
@@ -167,7 +166,22 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         contract.register_foreign_chains_config("test3".parse().unwrap(), BTreeSet::new().into());
         assert!(contract.available_foreign_chains().is_empty());
     }
-    tokio::time::sleep(AVAILABILITY_PROPAGATION_WAIT).await;
+    // Wait for the fake core to publish the post-change snapshot on the shared
+    // upstream channel; the per-node resolver fan-out from it is in-process,
+    // covered by the extra second.
+    let mut supporters = setup.indexer.subscribe_foreign_chain_supporters();
+    tokio::time::timeout(SUPPORTERS_PUBLISH_WAIT, async {
+        while !supporters
+            .borrow_and_update()
+            .as_ref()
+            .is_some_and(|map| map.is_empty())
+        {
+            supporters.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("timed out waiting for the empty supporters snapshot to publish");
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Then: nodes reject the request against their supporters snapshot,
     // even though inspection itself would succeed. The distinct tx id keeps

@@ -1133,6 +1133,13 @@ impl FakeIndexerManager {
             .unwrap()
     }
 
+    /// The supporters channel every node's `IndexerAPI` receives.
+    pub fn subscribe_foreign_chain_supporters(
+        &self,
+    ) -> watch::Receiver<Option<ForeignChainSupporters>> {
+        self.foreign_chain_supporters_receiver.clone()
+    }
+
     /// Sends a signature request to the fake blockchain.
     pub fn request_signature(&self, request: SignatureRequestFromChain) {
         self.signature_request_sender.send(request).unwrap();
