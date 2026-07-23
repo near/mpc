@@ -8,21 +8,22 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
+    client::MpcContractHandle,
     method_names,
     types::{
-        AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
-        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
-        ProposedThresholdParameters, Protocol, ProtocolContractState, ProviderConfig, ProviderId,
-        ReconstructionThreshold, Threshold, ThresholdParameters,
+        AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
+        ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
+        ForeignChain, GovernanceThreshold, GovernanceThresholdParameters, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs,
     },
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::json;
 
-use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
+use crate::blockchain::{DeployedContract, NearBlockchain, NearKitCaller};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use test_port_allocator::TestPorts;
@@ -61,9 +62,6 @@ const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_y
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
 const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
-const SUBMIT_PARTICIPANT_INFO_DEPOSIT: near_kit::NearToken =
-    near_kit::NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR);
-const SUBMIT_PARTICIPANT_INFO_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
@@ -79,7 +77,7 @@ const KEY_SEED_MIGRATION_NEAR_SIGNER: u64 = 400;
 pub struct MpcClusterConfig {
     /// Number of MPC nodes to start.
     pub num_nodes: usize,
-    /// Threshold for signing (number of nodes required).
+    /// GovernanceThreshold for signing (number of nodes required).
     pub threshold: usize,
     /// Signature domains to initialize after contract setup.
     pub domains: Vec<DomainConfig>,
@@ -149,7 +147,7 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `ThresholdParameters` shape.
+    /// Current `GovernanceThresholdParameters` shape.
     #[default]
     Current,
 }
@@ -159,7 +157,7 @@ impl ContractInitFormat {
     /// in the wire format that the targeted contract expects.
     fn init_parameters_json(
         self,
-        params: &ThresholdParameters,
+        params: &GovernanceThresholdParameters,
     ) -> serde_json::Result<serde_json::Value> {
         match self {
             Self::Current => serde_json::to_value(params),
@@ -580,9 +578,9 @@ impl MpcCluster {
 
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
-        let proposal = ProposedThresholdParameters {
-            parameters: ThresholdParameters {
-                threshold: Threshold(new_threshold as u64),
+        let proposal = ProposedGovernanceThresholdParameters {
+            parameters: GovernanceThresholdParameters {
+                threshold: GovernanceThreshold(new_threshold as u64),
                 participants,
             },
             per_domain_thresholds: std::collections::BTreeMap::new(),
@@ -799,12 +797,17 @@ impl MpcCluster {
         Ok(())
     }
 
-    pub fn user_client(&self, account_id: &AccountId) -> anyhow::Result<ClientHandle> {
+    pub fn user_client(&self, account_id: &AccountId) -> anyhow::Result<NearKitCaller> {
         let key = self
             .user_accounts
             .get(account_id)
             .with_context(|| format!("unknown user account: {account_id}"))?;
         self.blockchain.client_for(account_id.as_ref(), key)
+    }
+
+    pub fn contract_handle(&self, account_id: &AccountId) -> MpcContractHandle<NearKitCaller> {
+        self.contract
+            .handle_for(self.user_client(account_id).unwrap())
     }
 
     pub fn default_user_account(&self) -> &AccountId {
@@ -818,20 +821,17 @@ impl MpcCluster {
     pub async fn send_sign_request(
         &self,
         domain_id: DomainId,
-        payload: serde_json::Value,
+        payload: Payload,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "path": "test",
-                "payload_v2": payload,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+        self.contract_handle(account_id)
+            .sign(SignRequestArgs {
+                path: "test".to_string(),
+                payload,
+                domain_id,
+            })
             .await
+            .context("failed to send sign request")
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.
@@ -873,8 +873,8 @@ impl MpcCluster {
         self.contract.view(method_names::MIGRATION_INFO).await
     }
 
-    /// Build a [`ClientHandle`] for the operator key of the given node.
-    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<ClientHandle> {
+    /// Build a [`NearKitCaller`] for the operator key of the given node.
+    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<NearKitCaller> {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
@@ -1309,8 +1309,8 @@ async fn init_contract(
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
-    let params = ThresholdParameters {
-        threshold: Threshold(threshold as u64),
+    let params = GovernanceThresholdParameters {
+        threshold: GovernanceThreshold(threshold as u64),
         participants,
     };
 
@@ -1336,20 +1336,11 @@ async fn init_contract(
 
     for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
-        let client = blockchain.client_for(&account, &near_keys[i])?;
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
-            .call_from_with_deposit(
-                &client,
-                method_names::SUBMIT_PARTICIPANT_INFO,
-                json!({
-                    "proposed_participant_attestation": { "Mock": "Valid" },
-                    "tls_public_key": pubkey,
-                }),
-                SUBMIT_PARTICIPANT_INFO_GAS,
-                SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-            )
+            .handle_for(blockchain.client_for(&account, &near_keys[i]).unwrap())
+            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
     }

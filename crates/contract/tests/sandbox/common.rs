@@ -15,7 +15,10 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
-        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+        thresholds::{
+            GovernanceThreshold, GovernanceThresholdParameters,
+            ProposedGovernanceThresholdParameters,
+        },
     },
     tee::tee_state::NodeId,
     update::UpdateId,
@@ -113,15 +116,15 @@ pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
 }
 
 /// Creates threshold parameters with 60% threshold (rounded up).
-pub fn make_threshold_params(participants: &Participants) -> ThresholdParameters {
-    let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
-    ThresholdParameters::new(participants.clone(), threshold).unwrap()
+pub fn make_threshold_params(participants: &Participants) -> GovernanceThresholdParameters {
+    let threshold = GovernanceThreshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
+    GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap()
 }
 
 /// Initialize the contract with the given parameters.
 pub async fn init_contract(
     contract: &Contract,
-    params: ThresholdParameters,
+    params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
@@ -144,7 +147,7 @@ pub async fn init_contract_running(
     domains: Vec<DomainConfig>,
     next_domain_id: u64,
     keyset: Keyset,
-    params: ThresholdParameters,
+    params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
@@ -592,10 +595,11 @@ pub async fn execute_key_generation_and_add_random_state(
 
     // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
+        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(threshold.0 + 1))
+            .unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
-        "proposal": ProposedThresholdParameters::new(
+        "proposal": ProposedGovernanceThresholdParameters::new(
             dummy_threshold_parameters,
             BTreeMap::new(),
         ),

@@ -789,7 +789,7 @@ expression: abi
             {
               "name": "parameters",
               "type_schema": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/GovernanceThresholdParameters"
               }
             },
             {
@@ -844,7 +844,7 @@ expression: abi
             {
               "name": "parameters",
               "type_schema": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/GovernanceThresholdParameters"
               }
             },
             {
@@ -2372,6 +2372,21 @@ expression: abi
         }
       },
       {
+        "name": "tee_verifier_account_id",
+        "doc": " Returns the trusted TEE verifier contract account, or [`None`] until\n participants vote one in via [`Self::vote_tee_verifier_change`].",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      {
         "name": "tee_verifier_votes",
         "doc": " Returns the pending TEE verifier-change votes, keyed by proposal.",
         "kind": "view",
@@ -2635,7 +2650,7 @@ expression: abi
             {
               "name": "proposal",
               "type_schema": {
-                "$ref": "#/definitions/ProposedThresholdParameters"
+                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
               }
             }
           ]
@@ -3871,7 +3886,7 @@ expression: abi
           }
         },
         "EpochId": {
-          "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
+          "description": "An EpochId uniquely identifies a GovernanceThresholdParameters (but not vice-versa). Every time we change the GovernanceThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -4193,6 +4208,43 @@ expression: abi
             "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
+        "GovernanceThreshold": {
+          "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "GovernanceThresholdParameters": {
+          "description": "GovernanceThreshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedGovernanceThresholdParameters`].",
+          "type": "object",
+          "required": [
+            "participants",
+            "threshold"
+          ],
+          "properties": {
+            "participants": {
+              "$ref": "#/definitions/Participants"
+            },
+            "threshold": {
+              "$ref": "#/definitions/GovernanceThreshold"
+            }
+          }
+        },
+        "GovernanceThresholdParametersVotes": {
+          "description": "Votes for threshold parameter changes.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
+              }
+            }
+          }
+        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
@@ -4458,12 +4510,12 @@ expression: abi
               "$ref": "#/definitions/AttemptId"
             },
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParameters"
             }
           }
         },
         "KeyEventId": {
-          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the ThresholdParameters that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
+          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the GovernanceThresholdParameters that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
           "type": "object",
           "required": [
             "attempt_id",
@@ -4895,7 +4947,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
           "type": "object",
           "required": [
             "next_id",
@@ -5039,15 +5091,15 @@ expression: abi
             }
           }
         },
-        "ProposedThresholdParameters": {
-          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`ThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`ThresholdParameters`].",
+        "ProposedGovernanceThresholdParameters": {
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`GovernanceThresholdParameters`].",
           "type": "object",
           "required": [
             "parameters"
           ],
           "properties": {
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParameters"
             },
             "per_domain_thresholds": {
               "default": {},
@@ -5432,10 +5484,10 @@ expression: abi
               "$ref": "#/definitions/Keyset2"
             },
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParameters"
             },
             "parameters_votes": {
-              "$ref": "#/definitions/ThresholdParametersVotes"
+              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [
@@ -5845,43 +5897,6 @@ expression: abi
           "maxLength": 64,
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
-        },
-        "Threshold": {
-          "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "ThresholdParameters": {
-          "description": "Threshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedThresholdParameters`].",
-          "type": "object",
-          "required": [
-            "participants",
-            "threshold"
-          ],
-          "properties": {
-            "participants": {
-              "$ref": "#/definitions/Participants"
-            },
-            "threshold": {
-              "$ref": "#/definitions/Threshold"
-            }
-          }
-        },
-        "ThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ProposedThresholdParameters"
-              }
-            }
-          }
         },
         "TonAddress": {
           "type": "object",

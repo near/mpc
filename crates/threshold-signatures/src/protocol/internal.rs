@@ -479,7 +479,7 @@ impl SharedChannel {
 /// This can be seen as a separate "namespace" for `SharedChannel`.
 pub struct PrivateChannel {
     header: MessageHeader,
-    to: Participant,
+    pub(crate) to: Participant,
     comms: Comms,
 }
 

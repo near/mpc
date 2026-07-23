@@ -16,7 +16,7 @@ use super::primitives::DomainId;
 // Simple Wrapper Types (newtypes)
 // =============================================================================
 
-pub use mpc_primitives::{AttemptId, EpochId, ReconstructionThreshold, Threshold};
+pub use mpc_primitives::{AttemptId, EpochId, GovernanceThreshold, ReconstructionThreshold};
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(
@@ -127,36 +127,36 @@ pub use mpc_primitives::KeyEventId;
 pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 
 // =============================================================================
-// Threshold/Participants Types
+// GovernanceThreshold/Participants Types
 // =============================================================================
 
-/// Threshold parameters for distributed key operations: the current
+/// GovernanceThreshold parameters for distributed key operations: the current
 /// participant set and the governance threshold. This is the stored,
 /// always-current shape; per-domain reconstruction-threshold *proposals* live
-/// on [`ProposedThresholdParameters`].
+/// on [`ProposedGovernanceThresholdParameters`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct ThresholdParameters {
+pub struct GovernanceThresholdParameters {
     pub participants: Participants,
-    pub threshold: Threshold,
+    pub threshold: GovernanceThreshold,
 }
 
 /// A proposed set of threshold parameters submitted to `vote_new_parameters`:
-/// the proposed [`ThresholdParameters`] plus per-domain `ReconstructionThreshold`
+/// the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold`
 /// updates for the resharing it would trigger. An empty `per_domain_thresholds`
 /// keeps the current ones; a populated map must reference only existing domains
 /// (contract-validated), is applied to the `DomainRegistry` on resharing, and
-/// never persists onto the stored [`ThresholdParameters`].
+/// never persists onto the stored [`GovernanceThresholdParameters`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct ProposedThresholdParameters {
-    pub parameters: ThresholdParameters,
+pub struct ProposedGovernanceThresholdParameters {
+    pub parameters: GovernanceThresholdParameters,
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
@@ -171,8 +171,9 @@ pub struct ProposedThresholdParameters {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct ThresholdParametersVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>,
+pub struct GovernanceThresholdParametersVotes {
+    pub proposal_by_account:
+        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
 }
 
 /// Votes for adding new domains.
@@ -212,7 +213,7 @@ pub struct KeyEventInstance {
 pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
-    pub parameters: ThresholdParameters,
+    pub parameters: GovernanceThresholdParameters,
     pub instance: Option<KeyEventInstance>,
     pub next_attempt_id: AttemptId,
 }
@@ -244,8 +245,8 @@ pub struct InitializingContractState {
 pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
-    pub parameters: ThresholdParameters,
-    pub parameters_votes: ThresholdParametersVotes,
+    pub parameters: GovernanceThresholdParameters,
+    pub parameters_votes: GovernanceThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
@@ -280,13 +281,13 @@ pub enum ProtocolContractState {
     Resharing(ResharingContractState),
 }
 
-fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
+fn params_to_string(output: &mut String, parameters: &GovernanceThresholdParameters) {
     output.push_str("    Participants:\n");
     for (account_id, id, info) in &parameters.participants.participants {
         output.push_str(&format!("      ID {}: {} ({})\n", id, account_id, info.url));
     }
     output.push_str(&format!(
-        "    Threshold: {}\n",
+        "    GovernanceThreshold: {}\n",
         parameters.threshold.value()
     ));
 }
@@ -460,17 +461,18 @@ mod tests {
     fn proposed_threshold_parameters__handles_current_proposal_payload() {
         // Given
         let participants = sample_participants();
-        let proposal = serde_json::to_value(ProposedThresholdParameters {
-            parameters: ThresholdParameters {
+        let proposal = serde_json::to_value(ProposedGovernanceThresholdParameters {
+            parameters: GovernanceThresholdParameters {
                 participants,
-                threshold: Threshold::new(1),
+                threshold: GovernanceThreshold::new(1),
             },
             per_domain_thresholds: BTreeMap::from([(DomainId(0), ReconstructionThreshold::new(1))]),
         })
         .unwrap();
 
         // When
-        let parsed: ProposedThresholdParameters = serde_json::from_value(proposal).unwrap();
+        let parsed: ProposedGovernanceThresholdParameters =
+            serde_json::from_value(proposal).unwrap();
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 1);
@@ -485,13 +487,14 @@ mod tests {
         let proposal = serde_json::from_value(serde_json::json!( {
             "parameters": {
                 "participants": participants,
-        "threshold": Threshold::new(1),
+        "threshold": GovernanceThreshold::new(1),
             }
         }))
         .unwrap();
 
         // When
-        let parsed: ProposedThresholdParameters = serde_json::from_value(proposal).unwrap();
+        let parsed: ProposedGovernanceThresholdParameters =
+            serde_json::from_value(proposal).unwrap();
 
         // Then
         assert_eq!(parsed.per_domain_thresholds.len(), 0);

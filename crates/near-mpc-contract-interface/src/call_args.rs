@@ -2,10 +2,15 @@
 
 use crate::types::{
     Attestation, CKDRequest, CKDResponse, Ed25519PublicKey, KeyEventId, Keyset, PublicKey,
-    SignatureRequest, SignatureResponse, VerifyForeignTransactionRequest,
+    SignRequestArgs, SignatureRequest, SignatureResponse, VerifyForeignTransactionRequest,
     VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct SignArgs {
+    pub request: SignRequestArgs,
+}
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
 pub struct SignatureRespondArgs {
