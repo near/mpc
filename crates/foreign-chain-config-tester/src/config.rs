@@ -4,6 +4,7 @@
 //! locate the `foreign_chains` subtree wherever it lives and deserialize just
 //! that into the canonical [`ForeignChainsConfig`].
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, bail};
@@ -31,6 +32,20 @@ const CONTRACT_ID_PATHS: &[&[&str]] = &[
     &["mpc_node_config", "node", "indexer", "mpc_contract_id"],
     &["node", "indexer", "mpc_contract_id"],
     &["indexer", "mpc_contract_id"],
+];
+
+/// Where config-seeded per-chain identity references may live, overriding the built-in set.
+/// An `identities` map (chain label -> expected identity) under a sibling of `foreign_chains`,
+/// so it never collides with that subtree.
+const IDENTITY_OVERRIDE_PATHS: &[&[&str]] = &[
+    &[
+        "mpc_node_config",
+        "node",
+        "foreign_chain_health_check",
+        "identities",
+    ],
+    &["node", "foreign_chain_health_check", "identities"],
+    &["foreign_chain_health_check", "identities"],
 ];
 
 fn classify_network(chain_id: Option<&str>, contract_id: Option<&str>) -> Option<Network> {
@@ -98,6 +113,45 @@ fn toml_str<'a>(root: &'a toml::Value, path: &[&str]) -> Option<&'a str> {
 
 fn yaml_str<'a>(root: &'a serde_yaml::Value, path: &[&str]) -> Option<&'a str> {
     path.iter().try_fold(root, |v, k| v.get(k))?.as_str()
+}
+
+/// Config-seeded per-chain identity references, keyed by chain label, overriding the
+/// built-in set. Empty when absent.
+pub fn detect_identity_overrides(
+    contents: &str,
+    path: &Path,
+) -> anyhow::Result<BTreeMap<String, String>> {
+    Ok(match format_from_path(path)? {
+        Format::Yaml => {
+            let root: serde_yaml::Value =
+                serde_yaml::from_str(contents).context("parse YAML config")?;
+            IDENTITY_OVERRIDE_PATHS
+                .iter()
+                .find_map(|p| p.iter().try_fold(&root, |v, k| v.get(k)))
+                .and_then(|v| v.as_mapping())
+                .map(|m| {
+                    m.iter()
+                        .filter_map(|(k, v)| {
+                            Some((k.as_str()?.to_string(), v.as_str()?.to_string()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        Format::Toml => {
+            let root: toml::Value = toml::from_str(contents).context("parse TOML config")?;
+            IDENTITY_OVERRIDE_PATHS
+                .iter()
+                .find_map(|p| p.iter().try_fold(&root, |v, k| v.get(*k)))
+                .and_then(|v| v.as_table())
+                .map(|t| {
+                    t.iter()
+                        .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+    })
 }
 
 /// `None` when the config carries no conclusive network signal.
@@ -265,5 +319,46 @@ foreign_chains:
 
         // Then
         assert_eq!(network, None);
+    }
+
+    #[test]
+    fn detect_identity_overrides__should_read_seeded_map_from_dstack_toml() {
+        // Given an `identities` map nested under the dstack `mpc_node_config.node` prefix
+        let toml = "[mpc_node_config.node.foreign_chain_health_check.identities]\n\
+                    starknet = \"0x534e5f4d41494e\"\n";
+
+        // When
+        let ids = detect_identity_overrides(toml, Path::new("user-config.toml")).unwrap();
+
+        // Then
+        assert_eq!(
+            ids.get("starknet").map(String::as_str),
+            Some("0x534e5f4d41494e")
+        );
+    }
+
+    #[test]
+    fn detect_identity_overrides__should_read_seeded_map_from_top_level_yaml() {
+        // Given
+        let yaml = "foreign_chain_health_check:\n  identities:\n    starknet: \"0x534e5f5345504f4c4941\"\n";
+
+        // When
+        let ids = detect_identity_overrides(yaml, Path::new("config.yaml")).unwrap();
+
+        // Then
+        assert_eq!(
+            ids.get("starknet").map(String::as_str),
+            Some("0x534e5f5345504f4c4941")
+        );
+    }
+
+    #[test]
+    fn detect_identity_overrides__should_be_empty_when_absent() {
+        // Given / When
+        let ids =
+            detect_identity_overrides("home_dir = \"/data\"\n", Path::new("config.toml")).unwrap();
+
+        // Then
+        assert!(ids.is_empty());
     }
 }

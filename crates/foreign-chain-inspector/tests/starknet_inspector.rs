@@ -46,6 +46,7 @@ fn canonical_block_for(receipt: &GetTransactionReceiptResponse) -> GetBlockWithT
     GetBlockWithTxHashesResponse {
         block_hash: receipt.block_hash,
         block_number: receipt.block_number,
+        transactions: vec![],
     }
 }
 
@@ -413,6 +414,7 @@ async fn extract__should_return_non_canonical_block_when_receipt_block_hash_diff
     let canonical_block = GetBlockWithTxHashesResponse {
         block_hash: H256::from(canonical_hash_bytes),
         block_number,
+        transactions: vec![],
     };
 
     let mock_client = SequentialResponseMockClientBuilder::new()

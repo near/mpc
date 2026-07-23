@@ -1,12 +1,13 @@
-//! Foreign-chain RPC provider health checks: probe every configured provider
-//! with a fixed golden request and report a per-provider result. Sui is the
-//! exception — see `run_sui`.
+//! Foreign-chain RPC provider health checks: probe every configured provider and report a
+//! per-provider result. Most chains run a fixed golden request; identity-based chains (Sui,
+//! Starknet) verify the chain identity and a recent transaction instead — see `checks`.
 
 mod checks;
 mod golden;
 mod network;
 mod results;
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::time::Duration;
 
@@ -28,16 +29,45 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 pub use network::Network;
 pub use results::{ProviderResult, Status};
 
-use crate::golden::{AptosVector, BlockHashVector, SuiVector};
+use crate::golden::{AptosVector, BlockHashVector, IdentityVector, SuiVector};
 
-/// Probe every configured provider against `network`'s golden reference
-/// transaction, one [`ProviderResult`] per provider, each checked independently.
+/// Config-seeded identity references keyed by chain label, overriding the built-in golden
+/// set. Each value is the identity a provider must report for that chain (for Starknet, the
+/// felt chain id). Useful for probing a local or custom network the built-in set doesn't
+/// know about.
+#[derive(Default)]
+pub struct ReferenceOverrides {
+    identities: BTreeMap<String, String>,
+}
+
+impl ReferenceOverrides {
+    pub fn from_identities(identities: BTreeMap<String, String>) -> Self {
+        Self { identities }
+    }
+
+    fn get(&self, chain: &str) -> Option<&str> {
+        self.identities.get(chain).map(String::as_str)
+    }
+}
+
+/// The config-seeded identity override for `chain`, falling back to the built-in reference.
+fn resolve_identity<'a>(
+    overrides: &'a ReferenceOverrides,
+    chain: &str,
+    builtin: Option<IdentityVector>,
+) -> Option<&'a str> {
+    overrides.get(chain).or(builtin.map(|v| v.identity))
+}
+
+/// Probe every configured provider against `network`'s reference values, one
+/// [`ProviderResult`] per provider, each checked independently.
 /// Chains with no reference for `network`, or configured but unsupported, are
 /// [`Status::Skipped`]; a chain absent from the config still yields a single
 /// placeholder `Skipped` result so its absence stays visible.
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
     network: Network,
+    overrides: &ReferenceOverrides,
 ) -> Vec<ProviderResult> {
     let golden = golden::golden_set(network);
     let mut out = Vec::new();
@@ -78,7 +108,8 @@ pub async fn check_all_providers(
         mark_not_configured("bitcoin", &mut out);
     }
     if let Some(cfg) = &fc.starknet {
-        run_starknet(cfg, golden.starknet, network, &mut out).await;
+        let expected = resolve_identity(overrides, "starknet", golden.starknet);
+        run_starknet(cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("starknet", &mut out);
     }
@@ -109,10 +140,7 @@ pub async fn check_all_providers(
 }
 
 fn no_reference_reason(network: Network) -> String {
-    format!(
-        "no {} reference transaction for this chain",
-        network.label()
-    )
+    format!("no {} reference for this chain", network.label())
 }
 
 fn timeout_of(cfg: &ForeignChainConfig) -> Duration {
@@ -213,23 +241,20 @@ async fn run_bitcoin(
 
 async fn run_starknet(
     cfg: &ForeignChainConfig,
-    vector: Option<BlockHashVector>,
+    expected_chain_id: Option<&str>,
     network: Network,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
+    let Some(expected_chain_id) = expected_chain_id else {
         mark_skipped("starknet", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed = golden::felt32(vector.tx)
-        .and_then(|tx| golden::felt32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, bh)), Ok(client)) => {
-                run_check(timeout, checks::check_starknet(client, *tx, *bh)).await
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => {
+                run_check(timeout, checks::check_starknet(client, expected_chain_id)).await
             }
         };
         out.push(ProviderResult {
@@ -378,7 +403,8 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ReferenceOverrides::default()).await;
 
         // Then it is reported skipped as unsupported, not probed
         let ethereum = results
@@ -397,7 +423,8 @@ mod tests {
         let fc = ForeignChainsConfig::default();
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ReferenceOverrides::default()).await;
 
         // Then every known chain still appears, each with a "not configured" placeholder
         let expected = [
@@ -443,7 +470,8 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ReferenceOverrides::default()).await;
 
         // Then
         assert_eq!(results[0].chain, "base");
@@ -524,7 +552,8 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results =
+            check_all_providers(&fc, Network::Mainnet, &ReferenceOverrides::default()).await;
 
         // Then — the broken provider does not suppress the healthy one; pass,
         // fail, and skip all coexist in a single run.

@@ -62,12 +62,23 @@ impl ToRpcParams for &GetTransactionReceiptArgs {
     to_rpc_params_impl!();
 }
 
-/// Block identifier accepted by Starknet block-lookup RPCs. The inspector's canonical-chain
-/// check uses `Number`; add more variants only when a caller actually needs them.
+/// Block identifier accepted by Starknet block-lookup RPCs. `Number` targets a height (used by
+/// the canonical-chain check); `Tag` targets a named head such as the latest L1-accepted block
+/// (used by the health probe to discover a recent transaction).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum BlockId {
+    Tag(BlockTag),
     Number { block_number: u64 },
+}
+
+/// A named Starknet block, serialized as the bare string the JSON-RPC spec expects.
+/// `L1Accepted` requires provider JSON-RPC v0.9+ (the spec release that introduced the tag);
+/// add more tags only when a caller actually needs them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockTag {
+    L1Accepted,
 }
 
 /// Partial RPC response for `starknet_getBlockWithTxHashes`.
@@ -77,6 +88,10 @@ pub struct GetBlockWithTxHashesResponse {
     #[serde(deserialize_with = "deserialize_starknet_felt")]
     pub block_hash: H256,
     pub block_number: u64,
+    /// Transaction hashes in block order. Empty unless the response carried them: the
+    /// canonical-chain check ignores them, the health probe reads them to pick a recent tx.
+    #[serde(default, deserialize_with = "deserialize_starknet_felt_vec")]
+    pub transactions: Vec<H256>,
 }
 
 /// Request args for `starknet_getBlockWithTxHashes`.
@@ -97,6 +112,15 @@ impl Serialize for GetBlockWithTxHashesArgs {
 
 impl ToRpcParams for &GetBlockWithTxHashesArgs {
     to_rpc_params_impl!();
+}
+
+/// `starknet_chainId` takes no parameters.
+pub struct ChainIdArgs;
+
+impl ToRpcParams for &ChainIdArgs {
+    fn to_rpc_params(self) -> Result<Option<Box<serde_json::value::RawValue>>, serde_json::Error> {
+        Ok(None)
+    }
 }
 
 /// Starknet felt values use `0x`-prefixed hex like Ethereum, but may omit leading
@@ -136,7 +160,7 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+        BlockId, BlockTag, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
         GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
     };
 
@@ -216,6 +240,20 @@ mod tests {
     }
 
     #[test]
+    fn serialize_block_id__should_render_l1_accepted_tag_as_bare_string() {
+        // given
+        let args = GetBlockWithTxHashesArgs {
+            block_id: BlockId::Tag(BlockTag::L1Accepted),
+        };
+
+        // when
+        let serialized = serde_json::to_value(&args).unwrap();
+
+        // then — a named tag is a bare string, not a `{ block_number }` object.
+        assert_eq!(serialized, serde_json::json!(["l1_accepted"]));
+    }
+
+    #[test]
     fn deserialize_get_block_with_tx_hashes_response__should_accept_short_hex_block_hash() {
         let json = serde_json::json!({
             "block_hash": SHORT_HEX_BLOCK_HASH,
@@ -229,6 +267,7 @@ mod tests {
             GetBlockWithTxHashesResponse {
                 block_hash: parse_felt(SHORT_HEX_BLOCK_HASH).unwrap(),
                 block_number: TEST_BLOCK_NUMBER,
+                transactions: vec![],
             }
         );
     }
