@@ -37,11 +37,14 @@ pub struct GovernanceThresholdParameters {
 impl GovernanceThresholdParameters {
     /// Constructs GovernanceThreshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relative validation criteria.
-    pub fn new(participants: Participants, threshold: GovernanceThreshold) -> Result<Self, Error> {
-        match Self::validate_governance_threshold(participants.len() as u64, threshold) {
+    pub fn new(
+        participants: Participants,
+        governance_threshold: GovernanceThreshold,
+    ) -> Result<Self, Error> {
+        match Self::validate_governance_threshold(participants.len() as u64, governance_threshold) {
             Ok(_) => Ok(GovernanceThresholdParameters {
                 participants,
-                threshold,
+                threshold: governance_threshold,
             }),
             Err(err) => Err(err),
         }
@@ -195,10 +198,13 @@ impl GovernanceThresholdParameters {
 
     /// Test-only: builds parameters without threshold validation.
     #[cfg(feature = "test-utils")]
-    pub fn new_unvalidated(participants: Participants, threshold: GovernanceThreshold) -> Self {
+    pub fn new_unvalidated(
+        participants: Participants,
+        governance_threshold: GovernanceThreshold,
+    ) -> Self {
         GovernanceThresholdParameters {
             participants,
-            threshold,
+            threshold: governance_threshold,
         }
     }
 
