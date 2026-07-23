@@ -184,13 +184,13 @@ pub enum InvalidState {
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum InvalidThreshold {
-    #[error("Threshold does not meet the minimum absolute requirement")]
+    #[error("GovernanceThreshold does not meet the minimum absolute requirement")]
     MinAbsRequirementFailed,
     #[error(
         "GovernanceThreshold is below the minimum required relative to the participant count: require at least {required}, found {found}"
     )]
     MinRelRequirementFailed { required: u64, found: u64 },
-    #[error("Threshold must not exceed number of participants: max {max}, found {found}")]
+    #[error("GovernanceThreshold must not exceed number of participants: max {max}, found {found}")]
     MaxRequirementFailed { max: u64, found: u64 },
     #[error(
         "GovernanceThreshold exceeds the maximum allowed relative to the participant count: max {max}, found {found}"

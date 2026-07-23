@@ -9,7 +9,7 @@ use crate::{
     primitives::{
         key_state::AuthenticatedParticipantId,
         participants::Participants,
-        thresholds::ThresholdParameters,
+        thresholds::GovernanceThresholdParameters,
         votes::{ProposalHash, ProposalHashEncoding, Votes},
     },
     storage_keys::StorageKey,
@@ -65,7 +65,7 @@ impl TeeVerifierVotes {
         &mut self,
         proposal: VerifierChangeProposal,
         participant: AuthenticatedParticipantId,
-        threshold_parameters: &ThresholdParameters,
+        threshold_parameters: &GovernanceThresholdParameters,
     ) -> Result<Option<AccountId>, Error> {
         let protocol_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
@@ -111,10 +111,16 @@ impl TeeVerifierVotes {
 mod tests {
     use super::*;
     use crate::primitives::test_utils::{gen_authenticated_participants, gen_participants};
-    use mpc_primitives::Threshold;
+    use mpc_primitives::GovernanceThreshold;
 
-    fn threshold_params(participants: &Participants, threshold: u64) -> ThresholdParameters {
-        ThresholdParameters::new_unvalidated(participants.clone(), Threshold::new(threshold))
+    fn threshold_params(
+        participants: &Participants,
+        threshold: u64,
+    ) -> GovernanceThresholdParameters {
+        GovernanceThresholdParameters::new_unvalidated(
+            participants.clone(),
+            GovernanceThreshold::new(threshold),
+        )
     }
 
     fn proposal(account: &str, hash_byte: u8) -> VerifierChangeProposal {
@@ -130,7 +136,7 @@ mod tests {
         threshold: u64,
     ) -> (
         Participants,
-        ThresholdParameters,
+        GovernanceThresholdParameters,
         Vec<AuthenticatedParticipantId>,
         TeeVerifierVotes,
     ) {

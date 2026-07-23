@@ -74,7 +74,7 @@ pub fn validate_domain_reconstruction_threshold(
 
 /// The largest `ReconstructionThreshold` across `domains`, or `None` if there are none
 /// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
-/// Feeds [`ThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::ThresholdParameters::validate_governance_against_reconstruction).
+/// Feeds [`GovernanceThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::GovernanceThresholdParameters::validate_governance_against_reconstruction).
 pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
     domains
         .iter()

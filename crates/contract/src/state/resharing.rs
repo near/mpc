@@ -6,7 +6,7 @@ use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use crate::primitives::thresholds::ProposedThresholdParameters;
+use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
 use near_sdk::near;
@@ -18,8 +18,8 @@ use near_sdk::near;
 /// This state is reached by calling vote_new_parameters from the Running state.
 ///
 /// This state keeps the previous running state because:
-///  - The previous running state's ThresholdParameters are needed in order to facilitate the
-///    possible re-proposal of a new ThresholdParameters, in case the currently proposed set of
+///  - The previous running state's GovernanceThresholdParameters are needed in order to facilitate the
+///    possible re-proposal of a new GovernanceThresholdParameters, in case the currently proposed set of
 ///    participants are no longer all online. For tracking the votes we also use the same
 ///    tracking structure in the running state.
 ///  - The previous running state's keys are needed to copy the public keys.
@@ -56,7 +56,7 @@ impl ResharingContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id().next();
         if prospective_epoch_id != expected_prospective_epoch_id {
@@ -217,8 +217,11 @@ pub mod tests {
             domain::AddDomainsVotes,
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
-            threshold_votes::ThresholdParametersVotes,
-            thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+            threshold_votes::GovernanceThresholdParametersVotes,
+            thresholds::{
+                GovernanceThreshold, GovernanceThresholdParameters,
+                ProposedGovernanceThresholdParameters,
+            },
         },
         state::test_utils::{gen_resharing_state, gen_running_state_with_params},
     };
@@ -355,7 +358,7 @@ pub mod tests {
         assert_eq!(running_state.domains, state.previous_running_state.domains);
         assert_eq!(
             running_state.parameters_votes,
-            ThresholdParametersVotes::default()
+            GovernanceThresholdParametersVotes::default()
         );
         assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }
@@ -416,17 +419,21 @@ pub mod tests {
         // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
         // should be rejected, since all re-proposals must be valid against the original.
         let mut new_participants_1 = old_participants.clone();
-        // Threshold valid for the grown set (1.5x): old_len sits within
+        // GovernanceThreshold valid for the grown set (1.5x): old_len sits within
         // [ceil(0.6 * 1.5n), 1.5n].
-        let new_threshold = Threshold::new(old_participants.len() as u64);
+        let new_threshold = GovernanceThreshold::new(old_participants.len() as u64);
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
-        let new_params_1 = ThresholdParameters::new(new_participants_1, new_threshold).unwrap();
-        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        let new_params_1 =
+            GovernanceThresholdParameters::new(new_participants_1, new_threshold).unwrap();
+        let new_params_2 =
+            GovernanceThresholdParameters::new(new_participants_2, new_threshold).unwrap();
         // Proposals carry an empty (no-change) set of per-domain threshold updates.
-        let proposed_1 = ProposedThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
-        let proposed_2 = ProposedThresholdParameters::new(new_params_2.clone(), BTreeMap::new());
+        let proposed_1 =
+            ProposedGovernanceThresholdParameters::new(new_params_1.clone(), BTreeMap::new());
+        let proposed_2 =
+            ProposedGovernanceThresholdParameters::new(new_params_2.clone(), BTreeMap::new());
         state
             .previous_running_state
             .parameters
@@ -492,7 +499,7 @@ pub mod tests {
     /// `per_domain_thresholds` updates must be applied to the new
     /// `DomainRegistry`. The updates live only on the proposal /
     /// resharing state, so the stored `RunningContractState.parameters`
-    /// (a plain `ThresholdParameters`) cannot carry them at all.
+    /// (a plain `GovernanceThresholdParameters`) cannot carry them at all.
     ///
     /// Pins a participant set with GovernanceThreshold >= 3 (unchanged across the
     /// resharing) and moves the domain to that threshold — the max reconstruction the
@@ -511,7 +518,8 @@ pub mod tests {
         assert_ne!(new_threshold, original_threshold);
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(domain_id, new_threshold);
-        let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
+        let proposal =
+            ProposedGovernanceThresholdParameters::new(current_params.clone(), threshold_updates);
 
         // Drive the proposal to acceptance so we transition into Resharing
         // through the real vote path (which also exercises the fail-fast
@@ -550,7 +558,7 @@ pub mod tests {
         }
 
         // Then the new running state's registry carries the updated
-        // threshold. (The stored parameters are a plain `ThresholdParameters`
+        // threshold. (The stored parameters are a plain `GovernanceThresholdParameters`
         // and structurally cannot carry pending threshold updates.)
         let new_running = new_running.expect("resharing should have transitioned to Running");
         assert_eq!(
@@ -577,7 +585,8 @@ pub mod tests {
         assert_ne!(frost_new_threshold, default_threshold);
         let mut threshold_updates = BTreeMap::new();
         threshold_updates.insert(frost_id, frost_new_threshold);
-        let proposal = ProposedThresholdParameters::new(current_params.clone(), threshold_updates);
+        let proposal =
+            ProposedGovernanceThresholdParameters::new(current_params.clone(), threshold_updates);
 
         // Drive the proposal to acceptance via the real vote path.
         let prospective_epoch_id = running.prospective_epoch_id();

@@ -8,8 +8,8 @@ use crate::primitives::{
         validate_domain_reconstruction_threshold,
     },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
-    threshold_votes::ThresholdParametersVotes,
-    thresholds::{ProposedThresholdParameters, ThresholdParameters},
+    threshold_votes::GovernanceThresholdParametersVotes,
+    thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
@@ -33,9 +33,9 @@ pub struct RunningContractState {
     /// distributed key, so that the nodes can identify which local keyshare to use.
     pub keyset: Keyset,
     /// The current participants and threshold.
-    pub parameters: ThresholdParameters,
+    pub parameters: GovernanceThresholdParameters,
     /// Votes for proposals for a new set of participants and threshold.
-    pub parameters_votes: ThresholdParametersVotes,
+    pub parameters_votes: GovernanceThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
     /// The previous epoch id for a resharing state that was cancelled.
@@ -48,7 +48,7 @@ impl RunningContractState {
     pub fn new(
         domains: DomainRegistry,
         keyset: Keyset,
-        parameters: ThresholdParameters,
+        parameters: GovernanceThresholdParameters,
         add_domains_votes: AddDomainsVotes,
     ) -> Self {
         let remaining_add_domain_votes =
@@ -57,7 +57,7 @@ impl RunningContractState {
             domains,
             keyset,
             parameters,
-            parameters_votes: ThresholdParametersVotes::default(),
+            parameters_votes: GovernanceThresholdParametersVotes::default(),
             add_domains_votes: remaining_add_domain_votes,
             previously_cancelled_resharing_epoch_id: None,
         }
@@ -65,7 +65,7 @@ impl RunningContractState {
 
     pub fn transition_to_resharing_no_checks(
         &mut self,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
     ) -> Option<ResharingContractState> {
         if let Some(first_domain) = self.domains.get_domain_by_index(0) {
             let epoch_id = self.prospective_epoch_id();
@@ -106,7 +106,7 @@ impl RunningContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
     ) -> Result<Option<ResharingContractState>, Error> {
         let expected_prospective_epoch_id = self.prospective_epoch_id();
 
@@ -142,7 +142,7 @@ impl RunningContractState {
     /// Returns true if all participants of the proposed parameters voted for it.
     pub(super) fn process_new_parameters_proposal(
         &mut self,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
     ) -> Result<bool, Error> {
         // ensure the proposal is valid against the current parameters
         self.parameters
@@ -182,7 +182,7 @@ impl RunningContractState {
 
         // The GovernanceThreshold must dominate every domain's effective ReconstructionThreshold;
         // enforced here so the state transition is self-contained (single source of truth).
-        ThresholdParameters::validate_governance_against_reconstruction(
+        GovernanceThresholdParameters::validate_governance_against_reconstruction(
             new_num_participants,
             proposal.threshold(),
             max_reconstruction_threshold(&effective_domains),
@@ -227,7 +227,7 @@ impl RunningContractState {
         // Keep trust assumptions consistent: a domain must never require more shares to
         // reconstruct than the GovernanceThreshold demands to govern. Route through the
         // canonical helper so the cross-domain invariant has a single source of truth.
-        ThresholdParameters::validate_governance_against_reconstruction(
+        GovernanceThresholdParameters::validate_governance_against_reconstruction(
             num_participants,
             self.parameters.threshold(),
             max_reconstruction_threshold(&domains),
@@ -268,7 +268,7 @@ pub mod running_tests {
     use crate::errors::{Error, InvalidThreshold};
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
-    use crate::primitives::threshold_votes::ThresholdParametersVotes;
+    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
         gen_running_state, gen_running_state_with_params, gen_valid_params_proposal,
@@ -380,7 +380,10 @@ pub mod running_tests {
             // If there are no domains, we should transition directly to Running with a higher
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(state.parameters_votes, ThresholdParametersVotes::default());
+            assert_eq!(
+                state.parameters_votes,
+                GovernanceThresholdParametersVotes::default()
+            );
             assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
         } else {
             let resharing = resharing.unwrap();

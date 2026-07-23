@@ -4,7 +4,7 @@ use crate::errors::KeyEventError;
 use crate::errors::VoteError;
 use crate::primitives::key_state::KeyEventId;
 use crate::primitives::key_state::{AttemptId, EpochId};
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::AuthenticatedParticipantId;
 use near_mpc_contract_interface::types::{DomainConfig, DomainId};
 use near_sdk::BlockHeight;
@@ -20,7 +20,7 @@ pub struct KeyEvent {
     /// The domain that we're generating or resharing the key for.
     domain: DomainConfig,
     /// The participants and threshold that shall participate in the key event.
-    parameters: ThresholdParameters,
+    parameters: GovernanceThresholdParameters,
     /// If exists, the current attempt to generate or reshare the key.
     instance: Option<KeyEventInstance>,
     /// The ID of the next attempt to generate or reshare the key.
@@ -31,7 +31,7 @@ impl KeyEvent {
     pub fn new(
         epoch_id: EpochId,
         domain: DomainConfig,
-        proposed_parameters: ThresholdParameters,
+        proposed_parameters: GovernanceThresholdParameters,
     ) -> Self {
         KeyEvent {
             epoch_id,
@@ -47,7 +47,7 @@ impl KeyEvent {
     pub fn from_raw(
         epoch_id: EpochId,
         domain: DomainConfig,
-        parameters: ThresholdParameters,
+        parameters: GovernanceThresholdParameters,
         instance: Option<KeyEventInstance>,
         next_attempt_id: AttemptId,
     ) -> Self {
@@ -105,7 +105,7 @@ impl KeyEvent {
         self.domain.clone()
     }
 
-    pub fn proposed_parameters(&self) -> &ThresholdParameters {
+    pub fn proposed_parameters(&self) -> &GovernanceThresholdParameters {
         &self.parameters
     }
 

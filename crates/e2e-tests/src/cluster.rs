@@ -13,10 +13,10 @@ use near_mpc_contract_interface::{
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
         ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
-        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs, Threshold,
-        ThresholdParameters,
+        ForeignChain, GovernanceThreshold, GovernanceThresholdParameters, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs,
     },
 };
 use rand::SeedableRng;
@@ -77,7 +77,7 @@ const KEY_SEED_MIGRATION_NEAR_SIGNER: u64 = 400;
 pub struct MpcClusterConfig {
     /// Number of MPC nodes to start.
     pub num_nodes: usize,
-    /// Threshold for signing (number of nodes required).
+    /// GovernanceThreshold for signing (number of nodes required).
     pub threshold: usize,
     /// Signature domains to initialize after contract setup.
     pub domains: Vec<DomainConfig>,
@@ -147,7 +147,7 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `ThresholdParameters` shape.
+    /// Current `GovernanceThresholdParameters` shape.
     #[default]
     Current,
 }
@@ -157,7 +157,7 @@ impl ContractInitFormat {
     /// in the wire format that the targeted contract expects.
     fn init_parameters_json(
         self,
-        params: &ThresholdParameters,
+        params: &GovernanceThresholdParameters,
     ) -> serde_json::Result<serde_json::Value> {
         match self {
             Self::Current => serde_json::to_value(params),
@@ -578,9 +578,9 @@ impl MpcCluster {
 
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
-        let proposal = ProposedThresholdParameters {
-            parameters: ThresholdParameters {
-                threshold: Threshold(new_threshold as u64),
+        let proposal = ProposedGovernanceThresholdParameters {
+            parameters: GovernanceThresholdParameters {
+                threshold: GovernanceThreshold(new_threshold as u64),
                 participants,
             },
             per_domain_thresholds: std::collections::BTreeMap::new(),
@@ -1309,8 +1309,8 @@ async fn init_contract(
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
-    let params = ThresholdParameters {
-        threshold: Threshold(threshold as u64),
+    let params = GovernanceThresholdParameters {
+        threshold: GovernanceThreshold(threshold as u64),
         participants,
     };
 

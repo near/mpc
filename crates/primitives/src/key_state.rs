@@ -2,8 +2,8 @@ use crate::domain::DomainId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-/// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
-/// Every time we change the ThresholdParameters (participants and threshold),
+/// An EpochId uniquely identifies a GovernanceThresholdParameters (but not vice-versa).
+/// Every time we change the GovernanceThresholdParameters (participants and threshold),
 /// we increment EpochId.
 /// Locally on each node, each keyshare is uniquely identified by the tuple
 /// (EpochId, DomainId, AttemptId).
@@ -91,7 +91,7 @@ impl AttemptId {
 }
 
 /// A unique identifier for a key event (generation or resharing):
-/// `epoch_id`: identifies the ThresholdParameters that this key is intended to function in.
+/// `epoch_id`: identifies the GovernanceThresholdParameters that this key is intended to function in.
 /// `domain_id`: the domain this key is intended for.
 /// `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts
 ///               yielded partially valid results. This is incremented for each attempt within the
