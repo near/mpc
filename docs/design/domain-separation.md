@@ -932,7 +932,7 @@ Resolved: the `GovernanceThreshold` is now constrained relative to the cryptogra
 - `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap is retained in the code but currently set to 100%
 (effectively disabled due to non-convergence of opinions on what would be a good upper bound).
 
-These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
+These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_governance_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
 ### 7.2 Backward-Compatible View Methods
 

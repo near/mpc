@@ -38,7 +38,7 @@ impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relative validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
-        match Self::validate_threshold(participants.len() as u64, threshold) {
+        match Self::validate_governance_threshold(participants.len() as u64, threshold) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
@@ -53,7 +53,7 @@ impl ThresholdParameters {
     /// - threshold can not exceed the number of shares `n_shares`.
     /// - threshold must be at least 60% of the number of shares (rounded upwards).
     /// - threshold must not exceed the upper bound (now set to 100%)
-    fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
+    fn validate_governance_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed {
                 max: n_shares,
@@ -85,7 +85,7 @@ impl ThresholdParameters {
 
     /// Validates the GovernanceThreshold `k` against both the participant count and the
     /// largest ReconstructionThreshold across all domains. Layers the cross-domain rule
-    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_threshold`:
+    /// `GovernanceThreshold >= max(ReconstructionThreshold)` on top of `validate_governance_threshold`:
     /// the network must never be able to govern with fewer parties than are required to
     /// reconstruct any domain's key. Call this at every point where the GovernanceThreshold,
     /// a ReconstructionThreshold, or the participant set changes.
@@ -94,7 +94,7 @@ impl ThresholdParameters {
         governance: Threshold,
         max_reconstruction_threshold: Option<ReconstructionThreshold>,
     ) -> Result<(), Error> {
-        Self::validate_threshold(num_participants, governance)?;
+        Self::validate_governance_threshold(num_participants, governance)?;
         if let Some(max_reconstruction_threshold) = max_reconstruction_threshold
             && governance.value() < max_reconstruction_threshold.inner()
         {
@@ -108,7 +108,7 @@ impl ThresholdParameters {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
+        Self::validate_governance_threshold(self.participants.len() as u64, self.threshold())?;
         self.participants.validate()
     }
 
@@ -301,19 +301,21 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_threshold() {
+    fn test_validate_governance_threshold() {
         let n = rand::thread_rng().gen_range(2..600) as u64;
         let min_threshold = governance_threshold_lower_relative_bound(n);
         let max_threshold = governance_threshold_upper_relative_bound(n);
         for k in 0..min_threshold {
-            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
+            let _ = ThresholdParameters::validate_governance_threshold(n, Threshold::new(k))
+                .unwrap_err();
         }
         for k in min_threshold..=max_threshold {
-            ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
+            ThresholdParameters::validate_governance_threshold(n, Threshold::new(k)).unwrap();
         }
         // Anything above the upper cap (up to and beyond n) must be rejected.
         for k in (max_threshold + 1)..=(n + 1) {
-            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
+            let _ = ThresholdParameters::validate_governance_threshold(n, Threshold::new(k))
+                .unwrap_err();
         }
     }
 
@@ -363,7 +365,7 @@ mod tests {
             let upper = governance_threshold_upper_relative_bound(n);
             assert!(upper >= lower, "empty window at n={n}: [{lower}, {upper}]");
             // The clamped boundary value must validate.
-            ThresholdParameters::validate_threshold(n, Threshold::new(upper)).unwrap();
+            ThresholdParameters::validate_governance_threshold(n, Threshold::new(upper)).unwrap();
         }
     }
 
@@ -590,7 +592,7 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        // Use a valid threshold for the doubled size so validate_threshold passes
+        // Use a valid threshold for the doubled size so validate_governance_threshold passes
         // and the duplicate check in participants.validate() is reached.
         let tampered_params = ThresholdParameters::new_unvalidated(
             tampered_participants,

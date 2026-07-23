@@ -30,7 +30,7 @@ const ALL_PROTOCOLS: [Protocol; 4] = [
 pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
 /// Default per-domain reconstruction threshold used by test fixtures. `2` is
-/// the minimum valid value (`validate_domain_threshold` requires `t >= 2`).
+/// the minimum valid value (`validate_domain_reconstruction_threshold` requires `t >= 2`).
 /// Works for participant counts `>= 3`, which is what `gen_threshold_params`
 /// produces — needed because fixtures may include `DamgardEtAl` domains,
 /// whose `2t - 1 <= n` bound becomes `n >= 3` at `t = 2`.
