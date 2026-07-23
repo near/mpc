@@ -6,10 +6,12 @@
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
-use crate::call_args::{SignArgs, SubmitParticipantInfoArgs};
+use crate::call_args::{InitArgs, SignArgs, SubmitParticipantInfoArgs};
 use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
-use crate::method_names::{SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
-use crate::types::{AccountId, Attestation, Ed25519PublicKey, SignRequestArgs};
+use crate::method_names::{INIT, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
+use crate::types::{
+    AccountId, Attestation, Ed25519PublicKey, InitConfig, SignRequestArgs, ThresholdParameters,
+};
 
 /// Default gas for handle-issued calls without a method-specific amount.
 // TODO(#166): 300 Tgas used to be the protocol maximum and higher than most methods
@@ -36,6 +38,26 @@ impl<C> MpcContractHandle<C> {
 }
 
 impl<C: CallContract> MpcContractHandle<C> {
+    pub async fn init(
+        &self,
+        parameters: ThresholdParameters,
+        init_config: Option<InitConfig>,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&InitArgs::new(parameters, init_config))?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: INIT.to_string(),
+                    args,
+                    gas: MAX_GAS,
+                    deposit: NearToken::from_yoctonear(0),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
     pub async fn sign(
         &self,
         request: SignRequestArgs,
@@ -107,8 +129,9 @@ pub enum MpcContractHandleError<E> {
 mod tests {
     use super::MpcContractHandle;
     use crate::types::{
-        AccountId, Attestation, DomainId, Ed25519PublicKey, MockAttestation, Payload,
-        SignRequestArgs,
+        AccountId, Attestation, DomainId, Ed25519PublicKey, InitConfig, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, SignRequestArgs, Threshold,
+        ThresholdParameters,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
     use std::sync::Mutex;
@@ -160,6 +183,26 @@ mod tests {
 
         // When: every handle method, once, in declaration order
         handle
+            .init(
+                ThresholdParameters {
+                    threshold: Threshold(1),
+                    participants: Participants {
+                        next_id: ParticipantId(1),
+                        participants: vec![(
+                            "alice.near".parse().unwrap(),
+                            ParticipantId(0),
+                            ParticipantInfo {
+                                url: "http://localhost:7".to_string(),
+                                tls_public_key: Ed25519PublicKey::from([7u8; 32]),
+                            },
+                        )],
+                    },
+                },
+                Some(InitConfig::default()),
+            )
+            .await
+            .unwrap();
+        handle
             .sign(SignRequestArgs {
                 path: "test".to_string(),
                 payload: Payload::Ecdsa([7u8; 32].into()),
@@ -178,7 +221,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 3);
+        assert_eq!(calls.len(), 4);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))

@@ -3,6 +3,12 @@ source: crates/near-mpc-contract-interface/src/client.rs
 expression: catalog
 ---
 contract: mpc.near
+method:   init
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"parameters":{"participants":{"next_id":1,"participants":[["alice.near",0,{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}]]},"threshold":1},"init_config":{"key_event_timeout_blocks":null,"tee_upgrade_deadline_duration_seconds":null,"contract_upgrade_deposit_tera_gas":null,"sign_call_gas_attachment_requirement_tera_gas":null,"ckd_call_gas_attachment_requirement_tera_gas":null,"return_signature_and_clean_state_on_success_call_tera_gas":null,"return_ck_and_clean_state_on_success_call_tera_gas":null,"fail_on_timeout_tera_gas":null,"fail_attestation_submission_tera_gas":null,"clean_tee_status_tera_gas":null,"clean_invalid_attestations_tera_gas":null,"cleanup_orphaned_node_migrations_tera_gas":null,"remove_non_participant_update_votes_tera_gas":null,"clean_foreign_chain_data_tera_gas":null,"remove_non_participant_tee_verifier_votes_tera_gas":null,"verifier_tera_gas":null,"resolve_verification_tera_gas":null}}
+
+contract: mpc.near
 method:   sign
 gas:      15.0 Tgas
 deposit:  1 yoctoNEAR

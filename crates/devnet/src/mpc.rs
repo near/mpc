@@ -1,5 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
+use crate::caller::DevnetCaller;
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -22,6 +23,7 @@ use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::call_args::VoteUpdateArgs;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
@@ -365,7 +367,14 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let mut access_key = setup.accounts.account(&contract).any_access_key().await;
+        let contract_handle = MpcContractHandle::new(
+            DevnetCaller::new(
+                setup.accounts.account(&contract).any_access_key_arc(),
+                near_primitives::views::TxExecutionStatus::Final,
+                true,
+            ),
+            contract.clone(),
+        );
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -386,32 +395,15 @@ impl MpcInitContractCmd {
             },
             threshold: Threshold::new(self.threshold),
         };
-        let args = serde_json::to_vec(&InitV2Args {
-            parameters,
-            init_config: near_mpc_contract_interface::types::InitConfig::default(),
-        })
-        .unwrap();
-
-        access_key
-            .submit_tx_to_call_function(
-                &contract,
-                method_names::INIT,
-                &args,
-                300,
-                0,
-                near_primitives::views::TxExecutionStatus::Final,
-                true,
+        contract_handle
+            .init(
+                parameters,
+                Some(near_mpc_contract_interface::types::InitConfig::default()),
             )
             .await
             .into_return_value()
             .unwrap();
     }
-}
-
-#[derive(Serialize)]
-struct InitV2Args {
-    parameters: ThresholdParameters,
-    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
