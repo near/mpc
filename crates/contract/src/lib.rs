@@ -118,7 +118,7 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear
 /// Minimum a node must attach to [`MpcContract::submit_participant_info`],
 /// sized to cover the worst-case stored entry. Only the actual storage delta is
 /// kept; the excess is refunded.
-const MINIMUM_ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(100);
+pub const MINIMUM_ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(100);
 
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
@@ -167,8 +167,11 @@ fn keep_storage_delta_and_refund_rest(account_id: &AccountId, initial_storage: u
     // saturating_sub: a shrink charges nothing rather than underflowing.
     let bytes_grown = env::storage_usage().saturating_sub(initial_storage);
     let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
-    if let Some(refund) = env::attached_deposit().checked_sub(cost) {
-        refund_to(account_id, refund);
+    match env::attached_deposit().checked_sub(cost) {
+        Some(refund) => refund_to(account_id, refund),
+        // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor covers the
+        // worst-case entry; log rather than fail so a drifted invariant is observable.
+        None => log!("attestation storage cost {cost} exceeded deposit for {account_id}"),
     }
 }
 

@@ -77,8 +77,14 @@ pub async fn submit_participant_info_and_measure_kept_deposit(
     let result = submit_participant_info(account, contract, attestation, tls_key).await?;
     assert!(result.is_success(), "submission should succeed: {result:?}");
     let balance_after = account.view_account().await?.balance;
-    let net_spent = balance_before.saturating_sub(balance_after);
-    Ok(net_spent.saturating_sub(total_gas_fee(&result)))
+    assert!(
+        balance_after < balance_before,
+        "caller balance must not increase: {balance_before} -> {balance_after}"
+    );
+    let net_spent = balance_before - balance_after;
+    let gas = total_gas_fee(&result);
+    assert!(net_spent >= gas, "net spend {net_spent} must cover gas {gas}");
+    Ok(net_spent - gas)
 }
 
 pub async fn vote_tee_verifier_change(
