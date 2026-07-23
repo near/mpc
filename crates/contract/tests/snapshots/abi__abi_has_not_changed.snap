@@ -4209,7 +4209,7 @@ expression: abi
           }
         },
         "GovernanceThreshold": {
-          "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",
+          "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
