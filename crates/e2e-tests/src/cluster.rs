@@ -8,21 +8,21 @@ use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
+    client::MpcContractHandle,
     method_names,
     types::{
-        AccountId as ContractAccountId, AuthScheme, CKDAppPublicKey, ChainEntry, ChainRouting,
-        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
-        ProposedThresholdParameters, Protocol, ProtocolContractState, ProviderConfig, ProviderId,
-        ReconstructionThreshold, Threshold, ThresholdParameters,
+        AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
+        ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
+        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants,
+        ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
+        ProviderConfig, ProviderId, ReconstructionThreshold, Threshold, ThresholdParameters,
     },
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::json;
 
-use crate::blockchain::{ClientHandle, DeployedContract, NearBlockchain};
+use crate::blockchain::{DeployedContract, NearBlockchain, NearKitCaller};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use test_port_allocator::TestPorts;
@@ -61,9 +61,6 @@ const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_y
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
 const CONTRACT_UPDATE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(17_000);
 const CONTRACT_UPDATE_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
-const SUBMIT_PARTICIPANT_INFO_DEPOSIT: near_kit::NearToken =
-    near_kit::NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR);
-const SUBMIT_PARTICIPANT_INFO_GAS: near_kit::Gas = near_kit::Gas::from_tgas(300);
 const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
@@ -799,7 +796,7 @@ impl MpcCluster {
         Ok(())
     }
 
-    pub fn user_client(&self, account_id: &AccountId) -> anyhow::Result<ClientHandle> {
+    pub fn user_client(&self, account_id: &AccountId) -> anyhow::Result<NearKitCaller> {
         let key = self
             .user_accounts
             .get(account_id)
@@ -873,8 +870,8 @@ impl MpcCluster {
         self.contract.view(method_names::MIGRATION_INFO).await
     }
 
-    /// Build a [`ClientHandle`] for the operator key of the given node.
-    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<ClientHandle> {
+    /// Build a [`NearKitCaller`] for the operator key of the given node.
+    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<NearKitCaller> {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
@@ -1337,19 +1334,11 @@ async fn init_contract(
     for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
         let client = blockchain.client_for(&account, &near_keys[i])?;
+        let contract_handle = MpcContractHandle::new(client, contract.contract_id().parse()?);
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
-        contract
-            .call_from_with_deposit(
-                &client,
-                method_names::SUBMIT_PARTICIPANT_INFO,
-                json!({
-                    "proposed_participant_attestation": { "Mock": "Valid" },
-                    "tls_public_key": pubkey,
-                }),
-                SUBMIT_PARTICIPANT_INFO_GAS,
-                SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-            )
+        contract_handle
+            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
     }
