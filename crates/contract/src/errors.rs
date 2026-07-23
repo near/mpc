@@ -267,8 +267,13 @@ pub enum DomainError {
         MIN_RECONSTRUCTION_THRESHOLD
     )]
     ReconstructionThresholdTooLow,
-    #[error("Reconstruction threshold {threshold} exceeds participant count {participants}.")]
-    ReconstructionThresholdExceedsParticipants { threshold: u64, participants: u64 },
+    #[error(
+        "Reconstruction threshold {reconstruction_threshold} exceeds participant count {participants}."
+    )]
+    ReconstructionThresholdExceedsParticipants {
+        reconstruction_threshold: u64,
+        participants: u64,
+    },
     #[error(
         "Protocol {protocol:?} requires at least {required} participants, found {participants}."
     )]
@@ -278,9 +283,9 @@ pub enum DomainError {
         participants: u64,
     },
     #[error(
-        "Reconstruction threshold {threshold} overflowed when computing the DamgardEtAl bound."
+        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the DamgardEtAl bound."
     )]
-    ReconstructionThresholdOverflow { threshold: u64 },
+    ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
     #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]

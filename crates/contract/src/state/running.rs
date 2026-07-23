@@ -5,7 +5,7 @@ use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
     domain::{
         AddDomainsVotes, DomainRegistry, max_reconstruction_threshold, validate_domain_purpose,
-        validate_domain_threshold,
+        validate_domain_reconstruction_threshold,
     },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     threshold_votes::ThresholdParametersVotes,
@@ -177,7 +177,7 @@ impl RunningContractState {
             })
             .collect();
         for domain in &effective_domains {
-            validate_domain_threshold(domain, new_num_participants)?;
+            validate_domain_reconstruction_threshold(domain, new_num_participants)?;
         }
 
         // The GovernanceThreshold must dominate every domain's effective ReconstructionThreshold;
@@ -222,7 +222,7 @@ impl RunningContractState {
             .expect("participant count fits in u64");
         for domain in &domains {
             validate_domain_purpose(domain)?;
-            validate_domain_threshold(domain, num_participants)?;
+            validate_domain_reconstruction_threshold(domain, num_participants)?;
         }
         // Keep trust assumptions consistent: a domain must never require more shares to
         // reconstruct than the GovernanceThreshold demands to govern. Route through the
