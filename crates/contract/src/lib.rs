@@ -169,8 +169,8 @@ fn keep_storage_delta_and_refund_rest(account_id: &AccountId, initial_storage: u
     let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
     match env::attached_deposit().checked_sub(cost) {
         Some(refund) => refund_to(account_id, refund),
-        // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor covers the
-        // worst-case entry; log rather than fail so a drifted invariant is observable.
+        // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor; logged so a
+        // drifted invariant is observable rather than a silent storage subsidy.
         None => log!("attestation storage cost {cost} exceeded deposit for {account_id}"),
     }
 }

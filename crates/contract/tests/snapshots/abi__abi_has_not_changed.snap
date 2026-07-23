@@ -1317,7 +1317,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks and stores the attestation, refunding the flat fee if the\n attestation is not accepted.",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks and stores the attestation, keeping the storage delta and\n refunding the excess. Refunds the full deposit if the attestation is not\n accepted.",
         "kind": "call",
         "modifiers": [
           "payable",
@@ -2342,7 +2342,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole\n fee is kept on success and refunded if the attestation is not accepted.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n The caller must attach at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`],\n enough to cover the worst-case stored entry. On success only the actual\n storage delta is kept and the excess is refunded, so a re-submission that\n changes no stored bytes is charged nothing. The full deposit is refunded if\n the attestation is not accepted.",
         "kind": "call",
         "modifiers": [
           "payable"
