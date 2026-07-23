@@ -59,7 +59,6 @@ pub fn init_contract(
     let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
     testing_env!(
         VMContextBuilder::new()
-            .attached_deposit(NearToken::from_yoctonear(1))
             .predecessor_account_id(contract_account_id.clone())
             .current_account_id(contract_account_id)
             .build()

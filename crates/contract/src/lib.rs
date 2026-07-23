@@ -1077,13 +1077,15 @@ impl MpcContract {
         };
         // TODO(#3556): replace this with a per-scheme
         // `required_active_signers(protocol, reconstruction_threshold)`.
-        let Some(threshold) = self.protocol_state.domain_registry().ok().and_then(|r| {
-            r.domains()
-                .iter()
-                .filter(|d| d.purpose == DomainPurpose::ForeignTx)
-                .map(|d| d.reconstruction_threshold.inner())
-                .max()
-        }) else {
+        let Some(reconstruction_threshold) =
+            self.protocol_state.domain_registry().ok().and_then(|r| {
+                r.domains()
+                    .iter()
+                    .filter(|d| d.purpose == DomainPurpose::ForeignTx)
+                    .map(|d| d.reconstruction_threshold.inner())
+                    .max()
+            })
+        else {
             // No op if contract isn't in Running or Resharing state, or
             // there is no foreign tx domain registered.
             // Not panicking is intentional.
@@ -1098,7 +1100,7 @@ impl MpcContract {
             .collect();
         self.foreign_chains
             .get_mut()
-            .update_available_chains_config_cache(&active_tls_keys, threshold);
+            .update_available_chains_config_cache(&active_tls_keys, reconstruction_threshold);
     }
 
     #[deprecated(
@@ -2044,7 +2046,10 @@ impl MpcContract {
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
         let num_participants = parameters.participants().len() as u64;
         for domain in domains.domains() {
-            crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
+            crate::primitives::domain::validate_domain_reconstruction_threshold(
+                domain,
+                num_participants,
+            )?;
         }
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
         ThresholdParameters::validate_governance_against_reconstruction(
@@ -4414,7 +4419,7 @@ mod tests {
         assert_matches!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
-                threshold: 4,
+                reconstruction_threshold: 4,
                 participants: 3,
             })
         );
