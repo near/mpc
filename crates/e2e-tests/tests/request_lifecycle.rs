@@ -1,7 +1,7 @@
 use crate::common::{
     ROBUST_ECDSA_PORT_SEED, SIGN_REQUEST_PER_SCHEME_PORT_SEED, damgard_etal_domain,
-    generate_ckd_app_public_key, generate_ecdsa_payload, generate_eddsa_payload, must_get_domain,
-    must_setup_cluster,
+    generate_ckd_app_public_key, generate_ecdsa_payload, must_get_domain,
+    must_get_payload_for_domain, must_setup_cluster,
 };
 
 use near_mpc_contract_interface::types::{Curve, DomainPurpose, Protocol, SignatureResponse};
@@ -22,11 +22,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
         tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, curve = ?Curve::from(domain.protocol), "sending request");
         match domain.purpose {
             DomainPurpose::Sign => {
-                let payload = match Curve::from(domain.protocol) {
-                    Curve::Secp256k1 => generate_ecdsa_payload(&mut rng),
-                    Curve::Edwards25519 => generate_eddsa_payload(&mut rng),
-                    _ => continue,
-                };
+                let payload = must_get_payload_for_domain(domain, &mut rng);
 
                 // when
                 let outcome = cluster

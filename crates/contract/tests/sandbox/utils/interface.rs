@@ -27,14 +27,16 @@ impl IntoContractType<Participants> for &dtos::Participants {
     }
 }
 
-impl IntoContractType<mpc_contract::primitives::thresholds::ThresholdParameters>
-    for &dtos::ThresholdParameters
+impl IntoContractType<mpc_contract::primitives::thresholds::GovernanceThresholdParameters>
+    for &dtos::GovernanceThresholdParameters
 {
-    fn into_contract_type(self) -> mpc_contract::primitives::thresholds::ThresholdParameters {
+    fn into_contract_type(
+        self,
+    ) -> mpc_contract::primitives::thresholds::GovernanceThresholdParameters {
         let participants: Participants = (&self.participants).into_contract_type();
-        mpc_contract::primitives::thresholds::ThresholdParameters::new(
+        mpc_contract::primitives::thresholds::GovernanceThresholdParameters::new(
             participants,
-            mpc_contract::primitives::thresholds::Threshold::new(self.threshold.0),
+            mpc_contract::primitives::thresholds::GovernanceThreshold::new(self.threshold.0),
         )
         .unwrap()
     }

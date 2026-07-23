@@ -13,9 +13,10 @@ use near_mpc_contract_interface::{
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
         ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants,
-        ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
-        ProviderConfig, ProviderId, ReconstructionThreshold, Threshold, ThresholdParameters,
+        ForeignChain, GovernanceThreshold, GovernanceThresholdParameters, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs,
     },
 };
 use rand::SeedableRng;
@@ -76,7 +77,7 @@ const KEY_SEED_MIGRATION_NEAR_SIGNER: u64 = 400;
 pub struct MpcClusterConfig {
     /// Number of MPC nodes to start.
     pub num_nodes: usize,
-    /// Threshold for signing (number of nodes required).
+    /// GovernanceThreshold for signing (number of nodes required).
     pub threshold: usize,
     /// Signature domains to initialize after contract setup.
     pub domains: Vec<DomainConfig>,
@@ -146,7 +147,7 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `ThresholdParameters` shape.
+    /// Current `GovernanceThresholdParameters` shape.
     #[default]
     Current,
 }
@@ -156,7 +157,7 @@ impl ContractInitFormat {
     /// in the wire format that the targeted contract expects.
     fn init_parameters_json(
         self,
-        params: &ThresholdParameters,
+        params: &GovernanceThresholdParameters,
     ) -> serde_json::Result<serde_json::Value> {
         match self {
             Self::Current => serde_json::to_value(params),
@@ -577,9 +578,9 @@ impl MpcCluster {
 
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
-        let proposal = ProposedThresholdParameters {
-            parameters: ThresholdParameters {
-                threshold: Threshold(new_threshold as u64),
+        let proposal = ProposedGovernanceThresholdParameters {
+            parameters: GovernanceThresholdParameters {
+                threshold: GovernanceThreshold(new_threshold as u64),
                 participants,
             },
             per_domain_thresholds: std::collections::BTreeMap::new(),
@@ -804,6 +805,11 @@ impl MpcCluster {
         self.blockchain.client_for(account_id.as_ref(), key)
     }
 
+    pub fn contract_handle(&self, account_id: &AccountId) -> MpcContractHandle<NearKitCaller> {
+        self.contract
+            .handle_for(self.user_client(account_id).unwrap())
+    }
+
     pub fn default_user_account(&self) -> &AccountId {
         self.user_accounts
             .keys()
@@ -815,20 +821,17 @@ impl MpcCluster {
     pub async fn send_sign_request(
         &self,
         domain_id: DomainId,
-        payload: serde_json::Value,
+        payload: Payload,
         account_id: &AccountId,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.user_client(account_id)?;
-        let args = json!({
-            "request": {
-                "domain_id": domain_id,
-                "path": "test",
-                "payload_v2": payload,
-            }
-        });
-        self.contract
-            .call_from_with_deposit(&client, method_names::SIGN, args, SIGN_GAS, SIGN_DEPOSIT)
+        self.contract_handle(account_id)
+            .sign(SignRequestArgs {
+                path: "test".to_string(),
+                payload,
+                domain_id,
+            })
             .await
+            .context("failed to send sign request")
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.
@@ -1306,8 +1309,8 @@ async fn init_contract(
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
-    let params = ThresholdParameters {
-        threshold: Threshold(threshold as u64),
+    let params = GovernanceThresholdParameters {
+        threshold: GovernanceThreshold(threshold as u64),
         participants,
     };
 
@@ -1333,11 +1336,10 @@ async fn init_contract(
 
     for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
-        let client = blockchain.client_for(&account, &near_keys[i])?;
-        let contract_handle = MpcContractHandle::new(client, contract.contract_id().parse()?);
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
-        contract_handle
+        contract
+            .handle_for(blockchain.client_for(&account, &near_keys[i]).unwrap())
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;

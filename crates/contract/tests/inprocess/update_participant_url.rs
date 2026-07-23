@@ -9,7 +9,7 @@ use mpc_contract::{
     errors::{Error, InvalidState},
     primitives::{
         test_utils::gen_participants,
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
 use near_account_id::AccountId;
@@ -40,7 +40,8 @@ fn update_participant_url__should_change_url_keeping_tls_key_and_id() {
     // Given
     let participants = gen_participants(3);
     let participant_list = participants.participants().clone();
-    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let parameters =
+        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
     let mut contract = init_contract(&parameters, None);
     let (account_id, _, original_info) = participant_list[0].clone();
     let (other_account, _, other_info) = participant_list[1].clone();
@@ -68,7 +69,8 @@ fn update_participant_url__should_reject_when_no_deposit_attached() {
     // Given
     let participants = gen_participants(3);
     let participant_list = participants.participants().clone();
-    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let parameters =
+        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
     let mut contract = init_contract(&parameters, None);
     let (account_id, _, _) = participant_list[0].clone();
 
@@ -82,7 +84,8 @@ fn update_participant_url__should_reject_when_no_deposit_attached() {
 fn update_participant_url__should_reject_non_participant() {
     // Given
     let participants = gen_participants(3);
-    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let parameters =
+        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
     let mut contract = init_contract(&parameters, None);
     let outsider = AccountId::from_str("outsider.near").unwrap();
 
@@ -102,7 +105,8 @@ fn update_participant_url__should_reject_when_not_running() {
     // Given
     let participants = gen_participants(3);
     let participant_list = participants.participants().clone();
-    let parameters = ThresholdParameters::new(participants, Threshold::new(2)).unwrap();
+    let parameters =
+        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
     let mut contract = init_contract(&parameters, None);
     transition_to_initializing(&mut contract, &participant_list);
     let (account_id, _, _) = participant_list[0].clone();

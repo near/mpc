@@ -1,6 +1,7 @@
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
 use near_kit::FinalExecutionOutcome;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
@@ -103,7 +104,7 @@ impl NearBlockchain {
         let client = self.make_client(name, key)?;
         Ok(DeployedContract {
             client,
-            contract_id: name.to_string(),
+            contract_id: name.parse().unwrap(),
         })
     }
 
@@ -128,12 +129,16 @@ impl NearBlockchain {
 /// Handle to a deployed MPC signer contract.
 pub struct DeployedContract {
     client: near_kit::Near,
-    contract_id: String,
+    contract_id: near_account_id::AccountId,
 }
 
 impl DeployedContract {
-    pub fn contract_id(&self) -> &str {
-        &self.contract_id
+    pub fn contract_id(&self) -> String {
+        self.contract_id.to_string()
+    }
+
+    pub fn handle_for(&self, caller: NearKitCaller) -> MpcContractHandle<NearKitCaller> {
+        MpcContractHandle::new(caller, self.contract_id.clone())
     }
 
     pub async fn call(

@@ -1,16 +1,8 @@
 use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::{Curve, DomainConfig, DomainPurpose};
-use rand::{RngCore, SeedableRng};
-
-fn must_get_payload_for_domain(domain: &DomainConfig, rng: &mut impl RngCore) -> serde_json::Value {
-    match Curve::from(domain.protocol) {
-        Curve::Secp256k1 => common::generate_ecdsa_payload(rng),
-        Curve::Edwards25519 => common::generate_eddsa_payload(rng),
-        c => panic!("unsupported curve in test: {c:?}"),
-    }
-}
+use near_mpc_contract_interface::types::DomainPurpose;
+use rand::SeedableRng;
 
 /// When a sign request can't be answered (because too many participants are
 /// down), the contract calls `fail_on_timeout` and each alive node's indexer
@@ -38,7 +30,7 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
     // when — kill node 0, then submit a request no one can answer
     cluster.kill_nodes(&[0]).expect("failed to kill node 0");
 
-    let payload = must_get_payload_for_domain(domain, &mut rng);
+    let payload = common::must_get_payload_for_domain(domain, &mut rng);
 
     // then — node 1's indexer must observe fail_on_timeout. We can't `.await`
     // the second sign request: the contract's yield + auto-timeout completes
