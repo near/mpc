@@ -6,7 +6,9 @@ use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
-    types::{Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold},
+    types::{
+        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
+    },
 };
 use near_workspaces::{
     Account, AccountId, Contract, result::ExecutionFinalResult, types::NearToken,
@@ -124,7 +126,7 @@ pub async fn assert_running_return_participants(
     Ok(running_state.parameters.participants)
 }
 
-pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
+pub async fn assert_running_return_threshold(contract: &Contract) -> GovernanceThreshold {
     let final_state: ProtocolContractState = get_state(contract).await;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(

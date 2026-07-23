@@ -25,7 +25,7 @@ use mpc_contract::primitives::{
     domain::DomainRegistry,
     key_state::{EpochId, KeyEventId, Keyset},
     participants::{ParticipantId, ParticipantInfo, Participants},
-    thresholds::{Threshold, ThresholdParameters},
+    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use mpc_contract::state::{
     ProtocolContractState, initializing::InitializingContractState, key_event::KeyEvent,
@@ -214,7 +214,7 @@ impl FakeMpcContractState {
 
     /// TLS key of `account_id` in any participant set of the current phase.
     fn participant_tls_key(&self, account_id: &AccountId) -> Option<dtos::Ed25519PublicKey> {
-        let parameter_sets: Vec<&ThresholdParameters> = match &self.state {
+        let parameter_sets: Vec<&GovernanceThresholdParameters> = match &self.state {
             ProtocolContractState::NotInitialized => vec![],
             ProtocolContractState::Initializing(state) => {
                 vec![state.generating_key.proposed_parameters()]
@@ -471,9 +471,11 @@ impl FakeMpcContractState {
                 new_participants
                     .update_info(account_id, participant_info)
                     .unwrap();
-                let new_parameters =
-                    ThresholdParameters::new(new_participants, state.parameters.threshold())
-                        .unwrap();
+                let new_parameters = GovernanceThresholdParameters::new(
+                    new_participants,
+                    state.parameters.threshold(),
+                )
+                .unwrap();
                 let new_state = RunningContractState {
                     domains: state.domains.clone(),
                     keyset: state.keyset.clone(),
@@ -522,7 +524,7 @@ pub fn participant_info_from_config(info: &config::ParticipantInfo) -> Participa
 
 fn participants_config_to_threshold_parameters(
     participants_config: &ParticipantsConfig,
-) -> ThresholdParameters {
+) -> GovernanceThresholdParameters {
     let mut participants = Participants::new();
     let mut infos = participants_config.participants.clone();
     infos.sort_by_key(|info| info.id);
@@ -536,7 +538,11 @@ fn participants_config_to_threshold_parameters(
             )
             .expect("Failed to insert participant");
     }
-    ThresholdParameters::new(participants, Threshold::new(participants_config.threshold)).unwrap()
+    GovernanceThresholdParameters::new(
+        participants,
+        GovernanceThreshold::new(participants_config.threshold),
+    )
+    .unwrap()
 }
 
 /// Runs the fake indexer's shared state and logic. There's one instance of this per test.

@@ -12,7 +12,7 @@ use crate::primitives::{
     participants::{ParticipantId, Participants},
     test_utils::{gen_participant, gen_participants, gen_threshold_params},
     thresholds::{
-        ProposedThresholdParameters, Threshold, ThresholdParameters,
+        GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
         governance_threshold_lower_relative_bound,
     },
 };
@@ -21,7 +21,9 @@ use std::collections::BTreeMap;
 
 /// Generates a valid resharing proposal from `params` with empty (no-change)
 /// per-domain threshold updates.
-pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresholdParameters {
+pub fn gen_valid_params_proposal(
+    params: &GovernanceThresholdParameters,
+) -> ProposedGovernanceThresholdParameters {
     let mut rng = rand::thread_rng();
     let current_k = params.threshold().value() as usize;
     let current_n = params.participants().len();
@@ -62,9 +64,11 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ProposedThresh
     }
 
     let threshold = governance_threshold_lower_relative_bound(new_participants.len() as u64);
-    let parameters = ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap();
+    let parameters =
+        GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold))
+            .unwrap();
     // Empty per-domain threshold updates (no change); see the doc comment.
-    ProposedThresholdParameters::new(parameters, BTreeMap::new())
+    ProposedGovernanceThresholdParameters::new(parameters, BTreeMap::new())
 }
 
 /// Generates a resharing state with the given number of domains.
@@ -106,9 +110,9 @@ pub fn gen_running_state_with_params(
     num_participants: usize,
     governance_threshold: u64,
 ) -> RunningContractState {
-    let threshold_parameters = ThresholdParameters::new(
+    let threshold_parameters = GovernanceThresholdParameters::new(
         gen_participants(num_participants),
-        Threshold::new(governance_threshold),
+        GovernanceThreshold::new(governance_threshold),
     )
     .expect("valid threshold parameters");
 

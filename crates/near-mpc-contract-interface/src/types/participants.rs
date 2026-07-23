@@ -30,7 +30,7 @@ pub struct ParticipantInfo {
 /// DTO representation of the contract-internal `Participants` type.
 ///
 /// It decouples the JSON wire format (used in view methods like `state()` via
-/// [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the
+/// [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters) from the
 /// internal `Participants` representation, allowing internal changes (e.g.,
 /// migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861))
 /// without breaking the public API.

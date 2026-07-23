@@ -365,7 +365,7 @@ pub struct Contract {
     pub fn vote_new_parameters(
            &mut self,
            prospective_epoch_id: EpochId,
-           proposal: ThresholdParameters,
+           proposal: GovernanceThresholdParameters,
        ) -> Result<(), Error>
 
     ///If the vote threshold is reached and the new Docker image hash

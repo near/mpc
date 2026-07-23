@@ -4,7 +4,7 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        thresholds::ThresholdParameters,
+        thresholds::GovernanceThresholdParameters,
     },
 };
 use near_account_id::AccountId;
@@ -36,7 +36,7 @@ pub fn participant_context_with_deposit(account_id: &AccountId, deposit: NearTok
 
 /// Initializes a `Running` contract with a single Sign domain from `parameters`.
 pub fn init_contract(
-    parameters: &ThresholdParameters,
+    parameters: &GovernanceThresholdParameters,
     init_config: Option<InitConfig>,
 ) -> MpcContract {
     let near_public_key =
