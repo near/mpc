@@ -94,23 +94,23 @@ impl SignatureProvider for EddsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: TSReconstructionThreshold,
+        reconstruction_threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        Self::run_key_generation_client_internal(threshold, channel).await
+        Self::run_key_generation_client_internal(reconstruction_threshold, channel).await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: TSReconstructionThreshold,
-        old_threshold: TSReconstructionThreshold,
+        new_reconstruction_threshold: TSReconstructionThreshold,
+        old_reconstruction_threshold: TSReconstructionThreshold,
         key_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         Self::run_key_resharing_client_internal(
-            new_threshold,
-            old_threshold,
+            new_reconstruction_threshold,
+            old_reconstruction_threshold,
             key_share,
             public_key,
             old_participants,

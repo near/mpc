@@ -46,12 +46,13 @@ impl EcdsaSignatureProvider {
     ) -> ! {
         let keygen_out = keyshare.keygen_output;
         let presignature_store = keyshare.presignature_store;
-        let threshold_usize: usize = keyshare
+        let reconstruction_threshold_usize: usize = keyshare
             .reconstruction_threshold
             .inner()
             .try_into()
             .expect("contract validation guarantees a valid threshold");
-        let threshold = TSReconstructionThreshold::from(threshold_usize);
+        let reconstruction_threshold =
+            TSReconstructionThreshold::from(reconstruction_threshold_usize);
 
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
@@ -112,7 +113,7 @@ impl EcdsaSignatureProvider {
                             let _in_flight = in_flight;
                             let _semaphore_guard = parallelism_limiter.acquire().await?;
                             let presignature = PresignComputation {
-                                threshold,
+                                reconstruction_threshold,
                                 triple0,
                                 triple1,
                                 keygen_out,
@@ -162,21 +163,23 @@ impl EcdsaSignatureProvider {
         // The triple store is keyed by the domain's reconstruction threshold
         // `t`. For cait-sith the leader pairs exactly `t` participants, so the
         // channel participant count must match — cross-check it.
-        let threshold = keyshare.reconstruction_threshold;
-        let threshold_usize: usize = threshold.inner().try_into()?;
-        if channel.participants().len() != threshold_usize {
+        let reconstruction_threshold = keyshare.reconstruction_threshold;
+        let reconstruction_threshold_usize: usize = reconstruction_threshold.inner().try_into()?;
+        if channel.participants().len() != reconstruction_threshold_usize {
             metrics::MPC_NUM_BAD_PEER_PRESIGN_REQUESTS
                 .with_label_values(&[&domain_id.to_string()])
                 .inc();
             anyhow::bail!(
                 "CaitSith presign participant count ({}) does not match domain threshold t={}",
                 channel.participants().len(),
-                threshold_usize,
+                reconstruction_threshold_usize,
             );
         }
-        let triple_store = self.triple_store_for_t(threshold)?;
+        let triple_store = self.triple_store_for_t(reconstruction_threshold)?;
         FollowerPresignComputation {
-            threshold: TSReconstructionThreshold::from(threshold_usize),
+            reconstruction_threshold: TSReconstructionThreshold::from(
+                reconstruction_threshold_usize,
+            ),
             keygen_out: keyshare.keygen_output,
             triple_store,
             paired_triple_id,
@@ -196,7 +199,7 @@ impl EcdsaSignatureProvider {
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub struct PresignComputation {
-    threshold: TSReconstructionThreshold,
+    reconstruction_threshold: TSReconstructionThreshold,
     triple0: TripleGenerationOutput,
     triple1: TripleGenerationOutput,
     keygen_out: KeygenOutput,
@@ -219,7 +222,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
                 triple0: self.triple0,
                 triple1: self.triple1,
                 keygen_out: self.keygen_out,
-                threshold: self.threshold,
+                threshold: self.reconstruction_threshold,
             },
         )?;
         let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
@@ -236,7 +239,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 /// The difference is: we need to read the triples from the triple store (which may fail),
 /// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
-    pub threshold: TSReconstructionThreshold,
+    pub reconstruction_threshold: TSReconstructionThreshold,
     pub paired_triple_id: UniqueId,
     pub keygen_out: KeygenOutput,
     pub triple_store: Arc<TripleStorage>,
@@ -250,7 +253,7 @@ impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
         let (triple0, triple1) = self.triple_store.take_unowned(self.paired_triple_id)?;
         let presignature = PresignComputation {
-            threshold: self.threshold,
+            reconstruction_threshold: self.reconstruction_threshold,
             triple0,
             triple1,
             keygen_out: self.keygen_out,
