@@ -811,7 +811,7 @@ impl MpcCluster {
         &self,
         account_id: &AccountId,
     ) -> anyhow::Result<MpcContractHandle<NearKitCaller>> {
-        self.contract.contract_handle(self.user_client(account_id)?)
+        self.contract.handle_for(self.user_client(account_id)?)
     }
 
     pub fn default_user_account(&self) -> &AccountId {
@@ -1343,7 +1343,7 @@ async fn init_contract(
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
-            .contract_handle(blockchain.client_for(&account, &near_keys[i])?)?
+            .handle_for(blockchain.client_for(&account, &near_keys[i])?)?
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;

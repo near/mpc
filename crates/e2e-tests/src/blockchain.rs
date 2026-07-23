@@ -138,7 +138,7 @@ impl DeployedContract {
     }
 
     /// A typed [`MpcContractHandle`] on this contract, calling as `caller`.
-    pub fn contract_handle(
+    pub fn handle_for(
         &self,
         caller: NearKitCaller,
     ) -> anyhow::Result<MpcContractHandle<NearKitCaller>> {
