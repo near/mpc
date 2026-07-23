@@ -239,7 +239,7 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// Applies uniformly to the three periodically re-signed pieces of
 /// collateral that share Intel's 30-day window: `tcb_info.issueDate`,
 /// `qe_identity.issueDate`, and PCK CRL `thisUpdate`.
-const MAX_COLLATERAL_AGE: time::Duration = time::Duration::days(7);
+const MAX_COLLATERAL_AGE: time::Duration = time::Duration::days(31);
 
 /// Grace window for collateral whose Intel-issued timestamp (TCB Info /
 /// QE Identity `issueDate`, or PCK CRL `thisUpdate`) is slightly in our
