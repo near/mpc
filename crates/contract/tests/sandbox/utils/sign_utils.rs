@@ -1,3 +1,5 @@
+use crate::sandbox::utils::transactions::AsyncSandboxCaller;
+
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
     DomainKey, SharedSecretKey, derive_secret_key_ed25519, derive_secret_key_secp256k1,
@@ -17,9 +19,9 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    SIGN,
 };
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
@@ -297,7 +299,9 @@ async fn submit_sign_request(
     request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, SIGN, request).await
+    let contract_handle =
+        MpcContractHandle::new(AsyncSandboxCaller(account), contract.id().clone());
+    Ok(contract_handle.sign(request.clone()).await?)
 }
 
 async fn submit_ckd_request(

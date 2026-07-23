@@ -9,6 +9,7 @@
 //! containing the derived tweak, payload, and domain ID.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use derive_more::Constructor;
 use near_account_id::AccountId;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -21,7 +22,7 @@ use mpc_primitives::domain::DomainId;
 /// for compatibility with existing consumers. Deserialization accepts both
 /// `payload_v2` and the deprecated `payload` (as raw `[u8; 32]`) plus
 /// `key_version` as an alias for `domain_id`.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Constructor)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
