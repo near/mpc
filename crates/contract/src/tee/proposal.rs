@@ -476,6 +476,15 @@ impl AllowedLauncherImages {
             .map(|i| self.entries[i].launcher_hash)
             .collect()
     }
+
+    /// Test-only: `last_used` (in seconds) of the entry for `launcher_hash`, if present.
+    #[cfg(test)]
+    pub(crate) fn last_used_secs(&self, launcher_hash: &LauncherImageHash) -> Option<u64> {
+        self.entries
+            .iter()
+            .find(|e| &e.launcher_hash == launcher_hash)
+            .map(|e| e.last_used.as_secs())
+    }
 }
 
 /// Given a launcher image hash and MPC docker image hash, compute the launcher docker compose hash

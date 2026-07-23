@@ -4726,6 +4726,116 @@ mod tests {
     }
 
     #[test]
+    fn resolve_verification__refreshes_launcher_for_participant() {
+        // T0 (earlier): launcher last_used is set. T1 (attestation validity): resolve runs.
+        const T0_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
+        let t1_seconds = VALID_ATTESTATION_TIMESTAMP;
+
+        let (mut contract, context) = dstack_verification_setup();
+
+        let participant: AccountId = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()[0]
+            .0
+            .clone();
+
+        // Push the launcher's last_used back to T0 so a refresh to T1 is observable.
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .build()
+        );
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher_image_hash(), &[image_digest()]);
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(T0_SECONDS)
+        );
+
+        // Resolve at T1 with the signer set to a current participant. Predecessor stays the
+        // contract account for the `#[private]` callback.
+        let contract_account_id = env::current_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_account_id.clone())
+                .predecessor_account_id(contract_account_id)
+                .signer_account_id(participant)
+                .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+                .block_timestamp(t1_seconds * 1_000_000_000)
+                .build()
+        );
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(t1_seconds)
+        );
+    }
+
+    #[test]
+    fn resolve_verification__does_not_refresh_for_non_participant() {
+        const T0_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
+        let t1_seconds = VALID_ATTESTATION_TIMESTAMP;
+
+        let (mut contract, context) = dstack_verification_setup();
+
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .build()
+        );
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher_image_hash(), &[image_digest()]);
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(T0_SECONDS)
+        );
+
+        // Resolve at T1 but with a non-participant signer: the submission still stores, but
+        // the launcher's last_used must not be extended.
+        let non_participant: AccountId = "non-participant.near".parse().unwrap();
+        let contract_account_id = env::current_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_account_id.clone())
+                .predecessor_account_id(contract_account_id)
+                .signer_account_id(non_participant)
+                .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+                .block_timestamp(t1_seconds * 1_000_000_000)
+                .build()
+        );
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(T0_SECONDS)
+        );
+    }
+
+    #[test]
     fn resolve_verification__should_return_fail_promise_and_store_nothing_on_verifier_unavailable()
     {
         // Given
