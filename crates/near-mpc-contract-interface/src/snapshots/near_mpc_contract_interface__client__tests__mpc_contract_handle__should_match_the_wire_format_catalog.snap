@@ -39,6 +39,60 @@ deposit:  0 NEAR
 args:     {"id":7}
 
 contract: mpc.near
+method:   vote_add_domains
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"domains":[{"id":0,"protocol":"CaitSith","reconstruction_threshold":2,"purpose":"Sign"}]}
+
+contract: mpc.near
+method:   vote_new_parameters
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"prospective_epoch_id":7,"proposal":{"parameters":{"participants":{"next_id":1,"participants":[["alice.near",0,{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}]]},"threshold":1},"per_domain_thresholds":{}}}
+
+contract: mpc.near
+method:   vote_cancel_keygen
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"next_domain_id":7}
+
+contract: mpc.near
+method:   vote_cancel_resharing
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {}
+
+contract: mpc.near
+method:   update_participant_url
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"url":"http://localhost:7"}
+
+contract: mpc.near
+method:   register_backup_service
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"backup_service_info":{"public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}}
+
+contract: mpc.near
+method:   start_node_migration
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"destination_node_info":{"signer_account_pk":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx","destination_node_info":{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}}}
+
+contract: mpc.near
+method:   register_foreign_chain_support
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"foreign_chain_support":["Bitcoin"]}
+
+contract: mpc.near
+method:   vote_update_foreign_chain_providers
+gas:      30.0 Tgas
+deposit:  0 NEAR
+args:     0x01000000010100000007000000616c6368656d7912000000687474703a2f2f6c6f63616c686f73743a3703000100000000000000
+
+contract: mpc.near
 method:   submit_participant_info
 gas:      300.0 Tgas
 deposit:  0.1 NEAR

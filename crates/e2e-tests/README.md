@@ -123,13 +123,14 @@ impl NearBlockchain {
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
-client. It exposes `call` (from the contract account), `call_from`/
-`call_from_with_deposit` (from an arbitrary `NearKitCaller`), `view`, and
-`state()` (parsed `ProtocolContractState`).
+client. It exposes `call` (from the contract account, used only for `init`),
+`contract_handle` (a typed `MpcContractHandle` calling as a given
+`NearKitCaller`), `view`, and `state()` (parsed `ProtocolContractState`).
 
 `NearKitCaller` binds a signer to a non-contract account (nodes voting, users
 submitting sign requests) and implements the `CallContract` transport trait,
-so typed calls can go through `MpcContractHandle`.
+so typed calls go through `MpcContractHandle` — the single source of each
+method's wire format, gas, and deposit.
 
 ### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 

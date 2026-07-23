@@ -40,7 +40,6 @@ async fn migration_endpoint__should_track_migration_state() {
         };
         let web_addr = node.web_address();
         let account_id = node_state.account_id().to_string();
-        let p2p_public_key = node_state.p2p_public_key_str();
 
         // Given: the migration state carried over from prior iterations
         //         (empty on the first iteration).
@@ -53,9 +52,11 @@ async fn migration_endpoint__should_track_migration_state() {
             .expect("endpoint state mismatch");
 
         // When: register a bogus backup service for this node.
-        let backup_service_info = serde_json::json!({ "public_key": p2p_public_key });
+        let backup_info = BackupServiceInfo {
+            public_key: node_state.p2p_public_key(),
+        };
         let outcome = cluster
-            .register_backup_service(i, backup_service_info)
+            .register_backup_service(i, backup_info.clone())
             .await
             .expect("failed to register backup service");
         assert!(
@@ -63,9 +64,6 @@ async fn migration_endpoint__should_track_migration_state() {
             "register_backup_service failed: {:?}",
             outcome.failure_message()
         );
-        let backup_info = BackupServiceInfo {
-            public_key: node_state.p2p_public_key(),
-        };
         expected_migrations.insert(account_id.clone(), (Some(backup_info.clone()), None));
 
         // Then: contract and endpoint both expose the backup registration.
@@ -77,13 +75,13 @@ async fn migration_endpoint__should_track_migration_state() {
             .expect("endpoint state mismatch after backup registration");
 
         // When: start node migration with a bogus destination.
-        let destination_node_info = serde_json::json!({
-            "signer_account_pk": p2p_public_key,
-            "destination_node_info": {
-                "url": "http://bogus:1234",
-                "tls_public_key": p2p_public_key,
+        let destination_node_info = DestinationNodeInfo {
+            signer_account_pk: node_state.p2p_public_key(),
+            destination_node_info: ParticipantInfo {
+                url: "http://bogus:1234".to_string(),
+                tls_public_key: node_state.p2p_public_key(),
             },
-        });
+        };
         let outcome = cluster
             .start_node_migration(i, destination_node_info)
             .await

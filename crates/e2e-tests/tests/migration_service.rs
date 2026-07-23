@@ -10,7 +10,8 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ProtocolContractState,
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
+    ProtocolContractState,
 };
 use rand::SeedableRng;
 
@@ -250,7 +251,9 @@ async fn register_backup_service_and_wait(
     let outcome = cluster
         .register_backup_service(
             source_idx,
-            serde_json::json!({ "public_key": backup_public_key }),
+            BackupServiceInfo {
+                public_key: backup_public_key.clone(),
+            },
         )
         .await
         .context("failed to register backup service")?;
@@ -343,15 +346,15 @@ async fn start_migration_and_wait(
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
-    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
+    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
 
-    let destination_node_info = serde_json::json!({
-        "signer_account_pk": target_signer_pk,
-        "destination_node_info": {
-            "url": target_p2p_url,
-            "tls_public_key": target_p2p_key,
+    let destination_node_info = DestinationNodeInfo {
+        signer_account_pk: target_signer_pk,
+        destination_node_info: ParticipantInfo {
+            url: target_p2p_url,
+            tls_public_key: target_p2p_key.clone(),
         },
-    });
+    };
     let outcome = cluster
         .start_node_migration(source_idx, destination_node_info)
         .await
