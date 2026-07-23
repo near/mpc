@@ -13,9 +13,10 @@ use near_mpc_contract_interface::{
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
         ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, MockAttestation, ParticipantId, ParticipantInfo, Participants,
-        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-        ProviderConfig, ProviderId, ReconstructionThreshold, GovernanceThreshold, GovernanceThresholdParameters,
+        ForeignChain, GovernanceThreshold, GovernanceThresholdParameters, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold,
     },
 };
 use rand::SeedableRng;
