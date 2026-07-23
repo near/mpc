@@ -75,6 +75,12 @@ deposit:  0 NEAR
 args:     {}
 
 contract: mpc.near
+method:   vote_code_hash
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"code_hash":"0707070707070707070707070707070707070707070707070707070707070707"}
+
+contract: mpc.near
 method:   update_participant_url
 gas:      300.0 Tgas
 deposit:  1 yoctoNEAR

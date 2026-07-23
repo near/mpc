@@ -27,7 +27,7 @@ use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, EpochId, GovernanceThreshold, GovernanceThresholdParameters,
-    NodeImageHash, ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
+    ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
     ReconstructionThreshold, protocol_state_to_string,
 };
@@ -836,22 +836,17 @@ impl MpcVoteApprovedHashCmd {
 
         for account_id in accounts.iter().take(threshold as usize) {
             let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
-            let contract = contract.clone();
-            let code_hash = self.mpc_docker_image_hash.into();
-
-            voting_futures.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_CODE_HASH,
-                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
-                    300,
-                    0,
+            let contract_handle = MpcContractHandle::new(
+                DevnetCaller::new(
+                    account.any_access_key_arc(),
                     near_primitives::views::TxExecutionStatus::Final,
                     true,
-                )
-                .await
-            });
+                ),
+                contract.clone(),
+            );
+            let code_hash = self.mpc_docker_image_hash.into();
+
+            voting_futures.push(async move { contract_handle.vote_code_hash(code_hash).await });
         }
 
         let voting_results = futures::future::join_all(voting_futures).await;
@@ -910,11 +905,6 @@ pub async fn read_contract_state(
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
     proposal: ProposedGovernanceThresholdParameters,
-}
-
-#[derive(Serialize)]
-struct VoteCodeHashArgs {
-    code_hash: NodeImageHash,
 }
 
 impl MpcDescribeCmd {
