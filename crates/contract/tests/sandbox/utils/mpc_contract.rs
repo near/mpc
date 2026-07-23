@@ -84,6 +84,15 @@ pub async fn vote_tee_verifier_change(
     )
 }
 
+pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
+    contract
+        .view(method_names::TEE_VERIFIER_ACCOUNT_ID)
+        .await
+        .unwrap()
+        .json()
+        .unwrap()
+}
+
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
