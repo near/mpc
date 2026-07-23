@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_threshold__should_not_produce_empty_window_for_small_n() {
+    fn validate_governance_threshold__should_not_produce_empty_window_for_small_n() {
         // The relative upper cap is clamped up to the ceil(0.6n) lower bound, so the
         // feasible window must always hold at least one valid threshold.
         for n in 2..=12u64 {
