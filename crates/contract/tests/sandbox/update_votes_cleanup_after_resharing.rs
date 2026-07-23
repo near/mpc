@@ -1,12 +1,11 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
-        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
         resharing_utils::do_resharing,
-        transactions::execute_async_transactions,
+        transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
 use anyhow::Result;
@@ -21,7 +20,6 @@ use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol, ReconstructionThreshold,
 };
 use near_workspaces::Account;
-use serde_json::json;
 use sha2::Digest;
 use std::collections::BTreeMap;
 
@@ -44,23 +42,17 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     // Propose update and have first 2 participants vote on it
     let code = vec![1u8; 1000];
     let update_id: UpdateId = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
             code: Some(code.clone()),
             config: None,
         })
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
         .await?
         .json()?;
 
-    execute_async_transactions(
-        &mpc_signer_accounts[0..2],
-        &contract,
-        method_names::VOTE_UPDATE,
-        &json!({"id": update_id}),
-        GAS_FOR_VOTE_UPDATE,
-    )
+    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| async move {
+        handle.vote_update(*update_id).await
+    })
     .await?;
 
     let proposals_before: dtos::ProposedUpdates = contract
@@ -175,13 +167,10 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
     }];
-    execute_async_transactions(
-        &mpc_signer_accounts[0..2],
-        &contract,
-        method_names::VOTE_ADD_DOMAINS,
-        &json!({"domains": domains_to_add}),
-        GAS_FOR_VOTE_NEW_DOMAIN,
-    )
+    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| {
+        let domains_to_add = domains_to_add.clone();
+        async move { handle.vote_add_domains(domains_to_add).await }
+    })
     .await?;
 
     let state: dtos::ProtocolContractState = get_state(&contract).await;

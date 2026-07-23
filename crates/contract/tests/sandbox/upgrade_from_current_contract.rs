@@ -6,22 +6,19 @@ use crate::sandbox::{
     utils::{
         consts::{
             ALL_PROTOCOLS, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
-            GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
+            MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
         },
         contract_build::{current_contract, migration_contract},
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
+        transactions::CallMpcContract,
     },
 };
 use mpc_contract::update::UpdateId;
-use near_mpc_contract_interface::deposits::{
-    STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
-};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractState};
-use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 
 pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
@@ -60,14 +57,11 @@ async fn test_propose_contract_max_size_upload() {
 
     // check that we can propose an update with the maximum contract size.
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((ProposeUpdateArgs {
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
             code: Some(vec![0; 1536 * 1024 - 400]), //3900 seems to not work locally
             config: None,
-        },))
-        .max_gas()
-        .deposit(NearToken::from_near(40))
-        .transact()
+        })
         .await
         .unwrap();
     dbg!(&execution);
@@ -92,9 +86,9 @@ async fn test_propose_update_config() {
 
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
-        .call(method_names::PROPOSE_UPDATE)
-        .args_borsh((dummy_contract_proposal(),))
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .propose_update(dummy_contract_proposal())
         .await
         .unwrap();
     dbg!(&execution);
@@ -134,23 +128,12 @@ async fn test_propose_update_config() {
         code: None,
         config: Some(new_config.clone()),
     };
-    let deposit = NearToken::from_yoctonear(
-        propose_update_required_deposit_yoctonear(
-            propose_args
-                .payload_bytes()
-                .expect("config serializes to JSON"),
-            STORAGE_BYTE_COST_YOCTONEAR,
-        )
-        .expect("the deposit for a config proposal fits in u128"),
-    );
 
     let mut proposals = Vec::with_capacity(mpc_signer_accounts.len());
     for account in &mpc_signer_accounts {
         let propose_execution = account
-            .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh((propose_args.clone(),))
-            .deposit(deposit)
-            .transact()
+            .call_mpc(contract.id())
+            .propose_update(propose_args.clone())
             .await
             .unwrap();
         dbg!(&propose_execution);
@@ -173,12 +156,8 @@ async fn test_propose_update_config() {
     for (i, voter) in mpc_signer_accounts.iter().enumerate() {
         dbg!(voter.id());
         let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": first_proposal,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
+            .call_mpc(contract.id())
+            .vote_update(**first_proposal)
             .await
             .unwrap();
 
@@ -233,15 +212,10 @@ async fn test_invalid_contract_deploy() {
         .await;
     dbg!(contract.id());
 
-    const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
-
     // Let's propose a contract update instead now.
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh((invalid_contract_proposal(),))
-        .max_gas()
-        .deposit(CONTRACT_DEPLOY)
-        .transact()
+        .call_mpc(contract.id())
+        .propose_update(invalid_contract_proposal())
         .await
         .unwrap();
     dbg!(&execution);
@@ -282,11 +256,8 @@ async fn test_propose_update_contract_many() {
     // and that we can have many at once living in the contract state.
     for i in 0..PROPOSAL_COUNT {
         let execution = mpc_signer_accounts[i % mpc_signer_accounts.len()]
-            .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh(current_contract_proposal())
-            .max_gas()
-            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-            .transact()
+            .call_mpc(contract.id())
+            .propose_update(current_contract_proposal())
             .await
             .unwrap();
 
@@ -305,12 +276,8 @@ async fn test_propose_update_contract_many() {
     for proposal in proposals {
         let voter = mpc_signer_accounts.first().unwrap();
         let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": proposal,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
+            .call_mpc(contract.id())
+            .vote_update(*proposal)
             .await
             .unwrap();
         dbg!(&execution);
@@ -337,11 +304,8 @@ async fn test_vote_update_gas_before_threshold() {
         .await;
 
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
+        .call_mpc(contract.id())
+        .propose_update(current_contract_proposal())
         .await
         .unwrap();
 
@@ -484,24 +448,17 @@ async fn only_one_vote_from_participant() {
         .await;
     dbg!(contract.id());
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
+    let contract_handle = mpc_signer_accounts[0].call_mpc(contract.id());
+    let execution = contract_handle
+        .propose_update(current_contract_proposal())
         .await
         .unwrap();
     dbg!(&execution);
     assert!(execution.is_success());
     let proposal_a: UpdateId = execution.json().unwrap();
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
+    let execution = contract_handle
+        .propose_update(current_contract_proposal())
         .await
         .unwrap();
     dbg!(&execution);
@@ -509,12 +466,8 @@ async fn only_one_vote_from_participant() {
     let proposal_b: UpdateId = execution.json().unwrap();
 
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_a,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
+        .call_mpc(contract.id())
+        .vote_update(*proposal_a)
         .await
         .unwrap();
     dbg!(&execution);
@@ -523,12 +476,8 @@ async fn only_one_vote_from_participant() {
     assert!(!update_occurred);
 
     let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_b,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
+        .call_mpc(contract.id())
+        .vote_update(*proposal_b)
         .await
         .unwrap();
     dbg!(&execution);
@@ -537,12 +486,8 @@ async fn only_one_vote_from_participant() {
     assert!(!update_occurred);
 
     let execution = mpc_signer_accounts[1]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_a,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
+        .call_mpc(contract.id())
+        .vote_update(*proposal_a)
         .await
         .unwrap();
     dbg!(&execution);
@@ -551,12 +496,8 @@ async fn only_one_vote_from_participant() {
     assert!(!update_occurred);
 
     let execution = mpc_signer_accounts[1]
-        .call(contract.id(), method_names::VOTE_UPDATE)
-        .args_json(serde_json::json!({
-            "id": proposal_b,
-        }))
-        .gas(GAS_FOR_VOTE_UPDATE)
-        .transact()
+        .call_mpc(contract.id())
+        .vote_update(*proposal_b)
         .await
         .unwrap();
     dbg!(&execution);
