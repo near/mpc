@@ -159,63 +159,6 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
-    pub async fn call_from(
-        &self,
-        client: &NearKitCaller,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
-    }
-
-    pub async fn call_from_with_deposit(
-        &self,
-        client: &NearKitCaller,
-        method: &str,
-        args: serde_json::Value,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
-    }
-
-    /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
-    pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
-        &self,
-        client: &NearKitCaller,
-        method: &str,
-        args: A,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args_borsh(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("contract call `{method}` (borsh args, with deposit) failed: {e}")
-            })
-    }
-
     pub async fn view<T: DeserializeOwned + Send + 'static>(
         &self,
         method: &str,
