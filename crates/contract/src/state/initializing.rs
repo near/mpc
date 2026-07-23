@@ -157,7 +157,7 @@ pub mod tests {
     use crate::primitives::test_utils::{
         NUM_PROTOCOLS, bogus_ed25519_public_key_extended, gen_account_id,
     };
-    use crate::primitives::threshold_votes::ThresholdParametersVotes;
+    use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::gen_initializing_state;
@@ -309,7 +309,7 @@ pub mod tests {
         assert_eq!(running_state.domains, state.domains);
         assert_eq!(
             running_state.parameters_votes,
-            ThresholdParametersVotes::default()
+            GovernanceThresholdParametersVotes::default()
         );
         assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }

@@ -5,8 +5,9 @@ use crate::{
         key_state::AuthenticatedParticipantId,
         participants::{ParticipantInfo, Participants},
         thresholds::{
-            ProposedThresholdParameters, Threshold, ThresholdParameters,
-            governance_threshold_lower_relative_bound, governance_threshold_upper_relative_bound,
+            GovernanceThreshold, GovernanceThresholdParameters,
+            ProposedGovernanceThresholdParameters, governance_threshold_lower_relative_bound,
+            governance_threshold_upper_relative_bound,
         },
     },
 };
@@ -189,7 +190,7 @@ pub fn gen_seed() -> [u8; 32] {
     seed
 }
 
-pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
+pub fn gen_threshold_params(max_n: usize) -> GovernanceThresholdParameters {
     // Lower bound is 3 (not 2) so the produced parameters are compatible with
     // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
@@ -198,14 +199,15 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = governance_threshold_lower_relative_bound(n as u64) as usize;
     let k_max = governance_threshold_upper_relative_bound(n as u64) as usize;
     let k = rng.gen_range(k_min..k_max + 1);
-    ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+    GovernanceThresholdParameters::new(gen_participants(n), GovernanceThreshold::new(k as u64))
+        .unwrap()
 }
 
 /// Like [`gen_threshold_params`] but wrapped as a proposal with an empty
 /// (no-change) set of per-domain threshold updates — the shape
 /// `vote_new_parameters` accepts.
-pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedThresholdParameters {
-    ProposedThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
+pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedGovernanceThresholdParameters {
+    ProposedGovernanceThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
 }
 
 /// Infer a default purpose from the protocol.
