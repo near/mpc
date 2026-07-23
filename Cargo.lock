@@ -5883,6 +5883,7 @@ dependencies = [
  "mpc-primitives",
  "near-abi",
  "near-account-id",
+ "near-contract-transport",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-sdk",
