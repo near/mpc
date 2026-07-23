@@ -6,11 +6,12 @@
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
-use crate::call_args::{InitArgs, SignArgs, SubmitParticipantInfoArgs};
+use crate::call_args::{InitArgs, SignArgs, SubmitParticipantInfoArgs, VoteCodeHashArgs};
 use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
-use crate::method_names::{INIT, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE};
+use crate::method_names::{INIT, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_CODE_HASH};
 use crate::types::{
-    AccountId, Attestation, Ed25519PublicKey, InitConfig, SignRequestArgs, ThresholdParameters,
+    AccountId, Attestation, Ed25519PublicKey, InitConfig, NodeImageHash, SignRequestArgs,
+    ThresholdParameters,
 };
 
 /// Default gas for handle-issued calls without a method-specific amount.
@@ -77,6 +78,25 @@ impl<C: CallContract> MpcContractHandle<C> {
             .map_err(MpcContractHandleError::Call)
     }
 
+    pub async fn vote_code_hash(
+        &self,
+        code_hash: NodeImageHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteCodeHashArgs::new(code_hash))?;
+        self.caller
+            .call_contract(
+                &self.contract_id,
+                FunctionCallArgs {
+                    method_name: VOTE_CODE_HASH.to_string(),
+                    args,
+                    gas: MAX_GAS,
+                    deposit: NearToken::from_yoctonear(0),
+                },
+            )
+            .await
+            .map_err(MpcContractHandleError::Call)
+    }
+
     pub async fn submit_participant_info(
         &self,
         proposed_participant_attestation: Attestation,
@@ -130,8 +150,8 @@ mod tests {
     use super::MpcContractHandle;
     use crate::types::{
         AccountId, Attestation, DomainId, Ed25519PublicKey, InitConfig, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, SignRequestArgs, Threshold,
-        ThresholdParameters,
+        NodeImageHash, ParticipantId, ParticipantInfo, Participants, Payload, SignRequestArgs,
+        Threshold, ThresholdParameters,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
     use std::sync::Mutex;
@@ -211,6 +231,10 @@ mod tests {
             .await
             .unwrap();
         handle
+            .vote_code_hash(NodeImageHash::from([7u8; 32]))
+            .await
+            .unwrap();
+        handle
             .submit_participant_info(
                 Attestation::Mock(MockAttestation::Valid),
                 Ed25519PublicKey::from([7u8; 32]),
@@ -221,7 +245,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 4);
+        assert_eq!(calls.len(), 5);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))

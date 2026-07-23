@@ -2,8 +2,8 @@
 
 use crate::types::{
     Attestation, CKDRequest, CKDResponse, Ed25519PublicKey, InitConfig, KeyEventId, Keyset,
-    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, ThresholdParameters,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
+    NodeImageHash, PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
+    ThresholdParameters, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,11 @@ pub struct SignArgs {
 pub struct InitArgs {
     pub parameters: ThresholdParameters,
     pub init_config: Option<InitConfig>,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteCodeHashArgs {
+    pub code_hash: NodeImageHash,
 }
 
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
