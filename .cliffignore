@@ -1,5 +1,5 @@
 # Commits to exclude from the changelog (read by git-cliff via cliff.toml,
-# invoked from scripts/prepare-release.sh and the manual flow in RELEASES.md).
+# invoked from scripts/ops/prepare-release.sh and the manual flow in RELEASES.md).
 # The block below is the 502 commits from the threshold-signatures repo that
 # were merged in 59037a57 ("Merge threshold-signatures repo"). Their full
 # pre-merge history would otherwise pollute the changelog.
