@@ -102,9 +102,12 @@ pub async fn random_ot_extension_sender(
 
     // Step 10
     if small_t.len() != SECURITY_PARAMETER {
-        return Err(ProtocolError::AssertionFailed(
-            "small t of incorrect length".to_owned(),
-        ));
+        return Err(ProtocolError::InvalidSmallTLength {
+            sid: hex::encode(params.sid),
+            expected: SECURITY_PARAMETER,
+            actual: small_t.len(),
+            participant: chan.to,
+        });
     }
 
     for (j, small_t_j) in small_t.iter().enumerate() {
@@ -118,7 +121,10 @@ pub async fn random_ot_extension_sender(
         let delta_j_x =
             DoubleBitVector::conditional_select(&DoubleBitVector::zero(), &small_x, delta_j);
         if !bool::from(small_q_j.ct_eq(&(small_t_j ^ delta_j_x))) {
-            return Err(ProtocolError::AssertionFailed("q check failed".to_owned()));
+            return Err(ProtocolError::QMatrixConsistencyCheckFailed {
+                sid: hex::encode(params.sid),
+                participant: chan.to,
+            });
         }
     }
 
