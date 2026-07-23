@@ -1779,4 +1779,69 @@ mod tests {
         // Refreshing an unknown TLS key is a harmless no-op.
         tee_state.refresh_launcher_usage(&bogus_ed25519_public_key(), &authenticated);
     }
+
+    #[test]
+    fn verify_and_store_mock__rejects_expired_launcher_hash() {
+        const TTL: Duration = Duration::from_secs(100);
+        let launcher_1 = LauncherImageHash::from([1u8; 32]);
+        let launcher_2 = LauncherImageHash::from([2u8; 32]);
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let compose_1 = crate::tee::proposal::get_docker_compose_hash(&launcher_1, &mpc_hash);
+        let compose_2 = crate::tee::proposal::get_docker_compose_hash(&launcher_2, &mpc_hash);
+
+        let mut tee_state = TeeState::default();
+
+        // launcher_1 added at t=1.
+        set_block_timestamp(1_000_000_000);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher_1, &[mpc_hash]);
+
+        // A newer launcher_2 added at t=200, so the newest-only read fallback does not
+        // mask launcher_1's expiry once launcher_1 goes stale.
+        set_block_timestamp(200 * 1_000_000_000);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher_2, &[mpc_hash]);
+
+        // At t=250 with TTL=100: launcher_1 (deadline 101) is expired, launcher_2
+        // (deadline 300) is live.
+        set_block_timestamp(250 * 1_000_000_000);
+
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+
+        // A submission referencing the expired launcher_1 is rejected end-to-end. Its own
+        // `expiry_timestamp_seconds` is far in the future so only the launcher expiry fires.
+        let expired_mock = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: Some(compose_1),
+            expiry_timestamp_seconds: Some(1_000_000),
+            expected_measurements: None,
+        };
+        assert_matches!(
+            tee_state.verify_and_store_mock(
+                node_id.clone(),
+                expired_mock,
+                Duration::from_secs(0),
+                TTL,
+            ),
+            Err(AttestationSubmissionError::InvalidAttestation(_))
+        );
+
+        // Positive control: the same submission referencing the live launcher_2 succeeds.
+        let live_mock = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: Some(compose_2),
+            expiry_timestamp_seconds: Some(1_000_000),
+            expected_measurements: None,
+        };
+        assert_matches!(
+            tee_state.verify_and_store_mock(node_id, live_mock, Duration::from_secs(0), TTL),
+            Ok(_)
+        );
+    }
 }
