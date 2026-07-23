@@ -19,7 +19,8 @@ use crate::types::{
 pub const MAX_GAS: NearGas = NearGas::from_gas(300_000_000_000_000);
 
 pub const SIGN_GAS: NearGas = NearGas::from_tgas(15);
-
+// AppPublicKeyPV does an on-chain bls12381_pairing_check (2 pairs) before yielding,
+// which costs significantly more than a plain CKD or sign request.
 pub const CKD_PV_GAS: NearGas = NearGas::from_tgas(100);
 
 /// Typed interface to the MPC signer contract at a fixed account, generic over
