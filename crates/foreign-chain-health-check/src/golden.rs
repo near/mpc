@@ -6,13 +6,6 @@ use anyhow::Context;
 
 use crate::network::Network;
 
-/// Hashes are hex, with or without a `0x` prefix.
-#[derive(Clone, Copy)]
-pub struct BlockHashVector {
-    pub tx: &'static str,
-    pub block_hash: &'static str,
-}
-
 #[derive(Clone, Copy)]
 pub struct AptosVector {
     pub tx: &'static str,
@@ -33,9 +26,9 @@ pub struct SuiVector {
 
 /// Like [`SuiVector`], a chain-identity reference (not a pinned transaction): a constant the
 /// provider must report for its network, interpreted per chain — an EVM numeric `eth_chainId`
-/// (e.g. `8453`) or a Starknet short-string felt (e.g. `0x534e5f4d41494e` = `SN_MAIN`; decode
-/// the hex as ASCII to verify). See [`check_evm`](crate::checks::check_evm) and
-/// [`check_starknet`](crate::checks::check_starknet).
+/// (e.g. `8453`), a Starknet short-string felt (e.g. `0x534e5f4d41494e` = `SN_MAIN`; decode
+/// the hex as ASCII to verify), or a Bitcoin genesis block hash. See the `check_*` functions
+/// in [`crate::checks`].
 #[derive(Clone, Copy)]
 pub struct IdentityVector {
     pub identity: &'static str,
@@ -48,7 +41,7 @@ pub struct GoldenSet {
     pub polygon: Option<IdentityVector>,
     pub hyper_evm: Option<IdentityVector>,
     pub abstract_chain: Option<IdentityVector>,
-    pub bitcoin: Option<BlockHashVector>,
+    pub bitcoin: Option<IdentityVector>,
     pub starknet: Option<IdentityVector>,
     pub aptos: Option<AptosVector>,
     pub sui: Option<SuiVector>,
@@ -70,9 +63,9 @@ const MAINNET: GoldenSet = GoldenSet {
     polygon: Some(IdentityVector { identity: "137" }),
     hyper_evm: Some(IdentityVector { identity: "999" }),
     abstract_chain: Some(IdentityVector { identity: "2741" }),
-    bitcoin: Some(BlockHashVector {
-        tx: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
-        block_hash: "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab",
+    // Bitcoin genesis block hash (getblockhash 0), never pruned. Well-known constant.
+    bitcoin: Some(IdentityVector {
+        identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
     }),
     starknet: Some(IdentityVector {
         identity: "0x534e5f4d41494e",
@@ -94,9 +87,9 @@ const TESTNET: GoldenSet = GoldenSet {
     polygon: None,
     hyper_evm: None,
     abstract_chain: Some(IdentityVector { identity: "11124" }),
-    bitcoin: Some(BlockHashVector {
-        tx: "5acaa0890f8c1f1b2ac114c25b38d376f23beda1b59e9bcba33256d6e11d7e8e",
-        block_hash: "000000000000021f43445ab447b3fc85e93eca26b56a4f23ef6c017682038ca2",
+    // Bitcoin testnet3 genesis block hash. Verify if the node targets a different testnet.
+    bitcoin: Some(IdentityVector {
+        identity: "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943",
     }),
     starknet: Some(IdentityVector {
         identity: "0x534e5f5345504f4c4941",
@@ -191,8 +184,7 @@ mod tests {
         for network in [Network::Mainnet, Network::Testnet] {
             let set = golden_set(network);
             if let Some(v) = set.bitcoin {
-                hex32(v.tx).unwrap();
-                hex32(v.block_hash).unwrap();
+                hex32(v.identity).unwrap();
             }
             for v in [
                 set.base,

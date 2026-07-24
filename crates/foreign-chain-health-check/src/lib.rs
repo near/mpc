@@ -29,7 +29,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 pub use network::Network;
 pub use results::{ProviderResult, Status};
 
-use crate::golden::{AptosVector, BlockHashVector, IdentityVector, SuiVector};
+use crate::golden::{AptosVector, IdentityVector, SuiVector};
 
 /// Config-seeded identity references keyed by chain label, overriding the built-in golden
 /// set. Each value is the identity a provider must report for that chain (for Starknet, the
@@ -109,7 +109,8 @@ pub async fn check_all_providers(
         mark_not_configured("abstract", &mut out);
     }
     if let Some(cfg) = &fc.bitcoin {
-        run_bitcoin(cfg, golden.bitcoin, network, &mut out).await;
+        let expected = resolve_identity(overrides, "bitcoin", golden.bitcoin);
+        run_bitcoin(cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("bitcoin", &mut out);
     }
@@ -213,24 +214,19 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
 
 async fn run_bitcoin(
     cfg: &ForeignChainConfig,
-    vector: Option<BlockHashVector>,
+    expected_genesis: Option<&str>,
     network: Network,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
+    let Some(expected) = expected_genesis else {
         mark_skipped("bitcoin", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed =
-        golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, bh)), Ok(client)) => {
-                run_check(timeout, checks::check_bitcoin(client, *tx, *bh)).await
-            }
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => run_check(timeout, checks::check_bitcoin(client, expected)).await,
         };
         out.push(ProviderResult {
             chain: "bitcoin",
