@@ -117,7 +117,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,
     // TODO(#3965): remove this field, it's not read anywhere.
-    pub bytes_used: u128,
+    bytes_used: u128,
 }
 
 #[derive(Clone, Debug, PartialEq)]
