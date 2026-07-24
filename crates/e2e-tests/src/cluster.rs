@@ -1065,9 +1065,13 @@ impl MpcCluster {
             code: Some(new_wasm.to_vec()),
             config: None,
         };
+        let proposer_account = self
+            .nodes
+            .get(PROPOSER_NODE_INDEX)
+            .expect("need at least one node")
+            .account_id();
         let outcome = self
-            .contract
-            .contract_handle(self.operator_client_for(PROPOSER_NODE_INDEX)?)?
+            .contract_handle(proposer_account)
             .propose_update(propose_args)
             .await
             .context("failed to call propose_update")?;
@@ -1080,10 +1084,9 @@ impl MpcCluster {
             .json()
             .context("propose_update did not return a JSON update id")?;
 
-        for (i, _) in self.nodes.iter().enumerate() {
+        for (i, node) in self.nodes.iter().enumerate() {
             let vote_outcome = self
-                .contract
-                .contract_handle(self.operator_client_for(i)?)?
+                .contract_handle(node.account_id())
                 .vote_update(proposal_id)
                 .await
                 .with_context(|| format!("node {i} failed to call vote_update"))?;
