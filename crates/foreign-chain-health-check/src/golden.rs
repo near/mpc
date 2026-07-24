@@ -31,6 +31,16 @@ pub struct SuiVector {
     pub chain_id: &'static str,
 }
 
+/// Like [`SuiVector`], a chain-identity reference (not a pinned transaction): a constant the
+/// provider must report for its network, interpreted per chain. For Starknet it is the
+/// `starknet_chainId` short-string felt, e.g. `0x534e5f4d41494e` (`SN_MAIN`) /
+/// `0x534e5f5345504f4c4941` (`SN_SEPOLIA`) — decode the hex as ASCII to verify. See
+/// [`check_starknet`](crate::checks::check_starknet).
+#[derive(Clone, Copy)]
+pub struct IdentityVector {
+    pub identity: &'static str,
+}
+
 pub struct GoldenSet {
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
@@ -39,7 +49,7 @@ pub struct GoldenSet {
     pub hyper_evm: Option<BlockHashVector>,
     pub abstract_chain: Option<BlockHashVector>,
     pub bitcoin: Option<BlockHashVector>,
-    pub starknet: Option<BlockHashVector>,
+    pub starknet: Option<IdentityVector>,
     pub aptos: Option<AptosVector>,
     pub sui: Option<SuiVector>,
 }
@@ -80,9 +90,8 @@ const MAINNET: GoldenSet = GoldenSet {
         tx: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
         block_hash: "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab",
     }),
-    starknet: Some(BlockHashVector {
-        tx: "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
-        block_hash: "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5",
+    starknet: Some(IdentityVector {
+        identity: "0x534e5f4d41494e",
     }),
     aptos: Some(AptosVector {
         tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
@@ -108,9 +117,8 @@ const TESTNET: GoldenSet = GoldenSet {
         tx: "5acaa0890f8c1f1b2ac114c25b38d376f23beda1b59e9bcba33256d6e11d7e8e",
         block_hash: "000000000000021f43445ab447b3fc85e93eca26b56a4f23ef6c017682038ca2",
     }),
-    starknet: Some(BlockHashVector {
-        tx: "0x115b24c74eade5ee4c01e63cce5aa462fc2d59d040f5b088a31ad44c9aa58dc",
-        block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
+    starknet: Some(IdentityVector {
+        identity: "0x534e5f5345504f4c4941",
     }),
     aptos: Some(AptosVector {
         tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
@@ -206,8 +214,7 @@ mod tests {
                 hex32(v.block_hash).unwrap();
             }
             if let Some(v) = set.starknet {
-                felt32(v.tx).unwrap();
-                felt32(v.block_hash).unwrap();
+                felt32(v.identity).unwrap();
             }
             if let Some(v) = set.aptos {
                 hex32(v.tx).unwrap();

@@ -1,6 +1,7 @@
 //! Foreign-chain RPC config tester: probe every configured provider with a fixed
 //! golden request so operators can verify their config without running the node.
-//! Sui is probed differently — see the README.
+//! Sui and Starknet are probed by chain identity plus a dynamically discovered
+//! transaction instead — see the README.
 
 mod config;
 mod report;
@@ -11,11 +12,11 @@ use std::process::ExitCode;
 
 use anyhow::Context;
 use clap::Parser;
-use foreign_chain_health_check::{Network, check_all_providers};
+use foreign_chain_health_check::{Network, ReferenceOverrides, check_all_providers};
 
 /// Verify a node's foreign-chain RPC provider configuration.
 ///
-/// Probes every configured provider with a fixed golden request.
+/// Probes every configured provider against a known reference value.
 #[derive(Parser)]
 #[command(about, long_about = None)]
 struct Args {
@@ -23,7 +24,7 @@ struct Args {
     #[arg(long)]
     config: PathBuf,
 
-    /// Network the reference transactions belong to. Auto-detected from
+    /// Network the reference values belong to. Auto-detected from
     /// the config (`chain_id` / `mpc_contract_id`) when omitted.
     #[arg(long, value_enum)]
     network: Option<Network>,
@@ -35,6 +36,7 @@ async fn main() -> anyhow::Result<ExitCode> {
     let contents = fs::read_to_string(&args.config)
         .with_context(|| format!("failed to read {}", args.config.display()))?;
     let foreign_chains = config::parse_foreign_chains(&contents, &args.config)?;
+    let identities = config::detect_identity_overrides(&contents, &args.config)?;
     let network = match args.network {
         Some(network) => network,
         None => config::detect_network(&contents, &args.config)?.ok_or_else(|| {
@@ -45,7 +47,8 @@ async fn main() -> anyhow::Result<ExitCode> {
         })?,
     };
 
-    let results = check_all_providers(&foreign_chains, network).await;
+    let overrides = ReferenceOverrides::from_identities(identities);
+    let results = check_all_providers(&foreign_chains, network, &overrides).await;
     print!("{}", report::render(&results));
 
     Ok(if report::any_failed(&results) {
