@@ -283,6 +283,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
 /// cannot attach a deposit) succeeds with zero deposit (storage is contract-funded).
 #[tokio::test]
 async fn submit_participant_info__should_accept_zero_deposit_via_function_call_key() -> Result<()> {
+    // Given
     let SandboxTestSetup {
         worker,
         contract,
@@ -315,7 +316,10 @@ async fn submit_participant_info__should_accept_zero_deposit_via_function_call_k
         .into_result()?;
     let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
 
+    // When
     let outcome = submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
+
+    // Then
     assert!(
         outcome.is_success(),
         "zero-deposit fc submission must succeed: {outcome:?}"
