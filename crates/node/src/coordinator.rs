@@ -2,7 +2,8 @@ use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
-    foreign_tx_reconstruction_threshold, spawn_supporters_by_foreign_chain,
+    SupportersByForeignChain, foreign_tx_reconstruction_threshold,
+    spawn_supporters_by_foreign_chain,
 };
 use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
@@ -370,7 +371,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_supporters_receiver: watch::Receiver<Option<ForeignChainSupporters>>,
+        foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -696,13 +697,21 @@ where
                 // `running_mpc_config.participants` is the running set retained
                 // to resharing survivors (active ∩ prospective), so a chain only
                 // counts as available when a quorum of nodes that can sign now
-                // and remain after the reshare supports it.
+                // and remain after the reshare supports it. With no ForeignTx
+                // domain nothing can be available, so the resolver isn't
+                // spawned and the provider sees a constant empty map.
                 let (supporters_by_foreign_chain, _supporters_resolver_task) =
-                    spawn_supporters_by_foreign_chain(
-                        foreign_chain_supporters_receiver,
-                        running_mpc_config.participants.clone(),
-                        foreign_tx_reconstruction_threshold(&running_state.domains),
-                    );
+                    match foreign_tx_reconstruction_threshold(&running_state.domains) {
+                        Some(threshold) => {
+                            let (receiver, task) = spawn_supporters_by_foreign_chain(
+                                foreign_chain_supporters_receiver,
+                                running_mpc_config.participants.clone(),
+                                threshold,
+                            );
+                            (receiver, Some(task))
+                        }
+                        None => (watch::channel(SupportersByForeignChain::new()).1, None),
+                    };
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),

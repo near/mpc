@@ -72,6 +72,8 @@ pub fn spawn_real_indexer(
 ) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
+    let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
+        oneshot::channel();
     let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
@@ -79,7 +81,6 @@ pub fn spawn_real_indexer(
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
-    let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) = watch::channel(None);
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -212,10 +213,16 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
-            tokio::spawn(monitor_foreign_chain_supporters(
-                foreign_chain_supporters_sender,
-                indexer_state.clone(),
-            ));
+            let foreign_chain_supporters_receiver =
+                monitor_foreign_chain_supporters(indexer_state.clone()).await;
+            if foreign_chain_supporters_sender_oneshot
+                .send(foreign_chain_supporters_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain supporters receiver back to main driver."
+                )
+            };
 
             let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
                 watch::channel(std::collections::BTreeMap::new());
@@ -320,6 +327,10 @@ pub fn spawn_real_indexer(
     let my_migration_info_receiver = migration_info_receiver_oneshot
         .blocking_recv()
         .expect("Migraration info receiver must be returned by indexer.");
+
+    let foreign_chain_supporters_receiver = foreign_chain_supporters_receiver_oneshot
+        .blocking_recv()
+        .expect("foreign chain supporters receiver must be returned by indexer");
 
     let attestation_reader = attestation_reader_receiver
         .blocking_recv()

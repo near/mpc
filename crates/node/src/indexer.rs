@@ -584,10 +584,9 @@ pub struct IndexerAPI<TransactionSender> {
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
     /// Watcher that tracks the contract's available foreign chains and their
-    /// registered supporters (by TLS key). Holds `None` until the first
-    /// successful read after the indexer syncs.
-    pub foreign_chain_supporters_receiver:
-        watch::Receiver<Option<foreign_chain::ForeignChainSupporters>>,
+    /// registered supporters (by TLS key). Seeded with the first successful read
+    /// before the indexer hands it back, so it always holds a real value.
+    pub foreign_chain_supporters_receiver: watch::Receiver<foreign_chain::ForeignChainSupporters>,
 
     pub(crate) attestation_reader: std::sync::Arc<dyn ReadAttestationExpiry>,
 }

@@ -545,7 +545,7 @@ struct FakeIndexerCore {
     /// Broadcasts the contract state to each node.
     migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
     /// Mirrors the real indexer's foreign-chain supporters watch channel.
-    foreign_chain_supporters_sender: watch::Sender<Option<ForeignChainSupporters>>,
+    foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -599,10 +599,10 @@ impl FakeIndexerCore {
                             state.foreign_chains_configs(),
                         );
                         foreign_chain_supporters_sender.send_if_modified(|previous| {
-                            if previous.as_ref() == Some(&supporters) {
+                            if *previous == supporters {
                                 false
                             } else {
-                                *previous = Some(supporters);
+                                *previous = supporters;
                                 true
                             }
                         });
@@ -881,7 +881,7 @@ pub struct FakeIndexerManager {
 
     /// Cloned into each node's `IndexerAPI`; tracks the fake contract's
     /// foreign-chain supporters.
-    foreign_chain_supporters_receiver: watch::Receiver<Option<ForeignChainSupporters>>,
+    foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -1071,7 +1071,7 @@ impl FakeIndexerManager {
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
         let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
-            watch::channel(None);
+            watch::channel(ForeignChainSupporters::new());
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
@@ -1134,9 +1134,7 @@ impl FakeIndexerManager {
     }
 
     /// The supporters channel every node's `IndexerAPI` receives.
-    pub fn subscribe_foreign_chain_supporters(
-        &self,
-    ) -> watch::Receiver<Option<ForeignChainSupporters>> {
+    pub fn subscribe_foreign_chain_supporters(&self) -> watch::Receiver<ForeignChainSupporters> {
         self.foreign_chain_supporters_receiver.clone()
     }
 
