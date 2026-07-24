@@ -1,3 +1,4 @@
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -217,7 +218,13 @@ pub async fn wait_for_node_indexer_height_above(
     )
     .await
     .with_context(|| {
-        format!("node {idx} indexer did not advance past height {min_height} within {timeout:?}")
+        let stderr_tail =
+            read_stderr_tail(&cluster.nodes[idx].home_dir().join("stderr.log"), 16_384);
+        format!(
+            "node {idx} indexer did not advance past height {min_height} within {timeout:?}\n\
+             --- last 16KB of node {idx} stderr.log (#3366 diagnostics) ---\n{stderr_tail}\n\
+             --- end stderr.log ---"
+        )
     })?;
     let elapsed = start.elapsed();
     tracing::info!(
@@ -229,6 +236,26 @@ pub async fn wait_for_node_indexer_height_above(
         "indexer advanced past pre-kill height"
     );
     Ok(())
+}
+
+/// Reads up to `max_bytes` from the end of `path` as UTF-8 (lossy). Best-effort:
+/// returns a synthetic placeholder string if the file can't be opened. Used to
+/// surface a node's stderr.log into the test's panic message when a kill+restart
+/// wait helper times out, so CI logs can attribute crashes to the right node.
+fn read_stderr_tail(path: &Path, max_bytes: usize) -> String {
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return format!("(could not open {})", path.display());
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let skip = len.saturating_sub(max_bytes as u64);
+    if f.seek(SeekFrom::Start(skip)).is_err() {
+        return format!("(seek failed on {})", path.display());
+    }
+    let mut buf = Vec::with_capacity(max_bytes);
+    if f.read_to_end(&mut buf).is_err() {
+        return format!("(read failed on {})", path.display());
+    }
+    String::from_utf8_lossy(&buf).into_owned()
 }
 
 /// Read node `idx`'s current indexer block height. Returns `Ok(None)` if

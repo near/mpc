@@ -47,8 +47,9 @@ impl TransactionSender for MockTransactionSender {
 
     async fn send_and_wait(
         &self,
-        _transaction: ChainSendTransactionRequest,
+        transaction: ChainSendTransactionRequest,
     ) -> Result<TransactionStatus, TransactionProcessorError> {
-        unimplemented!()
+        self.send(transaction).await?;
+        Ok(TransactionStatus::Executed)
     }
 }
