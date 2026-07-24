@@ -5,12 +5,12 @@ use crate::sandbox::{
         generate_participant_and_submit_attestation,
     },
     utils::{
-        consts::{ALL_PROTOCOLS, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
+        consts::{ALL_PROTOCOLS, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
         interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
-        transactions::execute_async_transactions,
+        transactions::{SandboxCaller, execute_async_handle_calls},
     },
 };
 use assert_matches::assert_matches;
@@ -25,7 +25,7 @@ use mpc_contract::primitives::{
     },
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
-use near_mpc_contract_interface::{method_names, types as dtos};
+use near_mpc_contract_interface::{client::MpcContractHandle, method_names, types as dtos};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rstest::rstest;
 use serde_json::json;
@@ -201,12 +201,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         assert_eq!(&expected_domain, found);
 
         // send threshold votes to abort key generation
-        execute_async_transactions(
+        execute_async_handle_calls(
             &mpc_signer_accounts[0..threshold],
             &contract,
-            method_names::VOTE_CANCEL_KEYGEN,
-            &json!({"next_domain_id": next_domain_id+1}),
-            GAS_FOR_VOTE_CANCEL_KEYGEN,
+            |handle| async move { handle.vote_cancel_keygen(next_domain_id + 1).await },
         )
         .await
         .unwrap();
@@ -432,9 +430,8 @@ async fn test_cancel_resharing_vote_is_idempotent(
     // Try to submit threshold votes with just one account (should not work due to idempotency)
     let account_1 = &persistent_participants[0];
     for _ in 0..initial_threshold {
-        let result = account_1
-            .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-            .transact()
+        let result = MpcContractHandle::new(SandboxCaller(account_1), contract.id().clone())
+            .vote_cancel_resharing()
             .await?;
         assert!(result.is_success(), "{result:#?}");
     }
@@ -505,10 +502,12 @@ async fn test_cancel_resharing_requires_threshold_votes(
     );
 
     // Add one more vote to reach threshold
-    let result = persistent_participants[initial_threshold - 1]
-        .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-        .transact()
-        .await?;
+    let result = MpcContractHandle::new(
+        SandboxCaller(&persistent_participants[initial_threshold - 1]),
+        contract.id().clone(),
+    )
+    .vote_cancel_resharing()
+    .await?;
     assert!(result.is_success(), "{result:#?}");
 
     // Verify transition back to running state
@@ -535,11 +534,13 @@ async fn test_cancel_resharing_only_previous_participants_can_vote(
 
     for new_participant_account in new_participant_accounts {
         assert!(
-            new_participant_account
-                .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-                .transact()
-                .await?
-                .is_failure(),
+            MpcContractHandle::new(
+                SandboxCaller(&new_participant_account),
+                contract.id().clone()
+            )
+            .vote_cancel_resharing()
+            .await?
+            .is_failure(),
             "A new participant should not be able to vote for cancellation"
         );
     }
@@ -640,16 +641,15 @@ async fn test_cancelled_epoch_cannot_be_reused(
     // Check that starting a new resharing with cancelled epoch id fails
     for account in &persistent_participants {
         assert!(
-            account
-                .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-                .args_json(json!({
-                    "prospective_epoch_id": cancelled_epoch_id.0,
-                    "proposal": ProposedGovernanceThresholdParameters::new(
+            MpcContractHandle::new(SandboxCaller(account), contract.id().clone())
+                .vote_new_parameters(
+                    dtos::EpochId(cancelled_epoch_id.0),
+                    ProposedGovernanceThresholdParameters::new(
                         threshold_parameters.clone(),
                         BTreeMap::new(),
-                    ),
-                }))
-                .transact()
+                    )
+                    .into(),
+                )
                 .await?
                 .is_failure(),
             "Voting for resharing with cancelled epoch id should be rejected"
@@ -814,17 +814,15 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
 
     // Vote to transition to resharing state
     for account in &mpc_signer_accounts {
-        let call_result = account
-            .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-            .max_gas()
-            .args_json(json!({
-                "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),
-                "proposal": ProposedGovernanceThresholdParameters::new(
+        let call_result = MpcContractHandle::new(SandboxCaller(account), contract.id().clone())
+            .vote_new_parameters(
+                dtos::EpochId(epoch_id.0 + 1),
+                ProposedGovernanceThresholdParameters::new(
                     threshold_parameters.clone(),
                     BTreeMap::new(),
-                ),
-            }))
-            .transact()
+                )
+                .into(),
+            )
             .await
             .unwrap()
             .into_result()
