@@ -211,10 +211,6 @@ impl TeeState {
     /// entry was newly inserted or updated an existing one. Rejects a submission whose
     /// TLS key is already registered to a different account with
     /// [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`].
-    ///
-    /// Flushes the insert before returning, so a caller's subsequent
-    /// [`env::storage_usage`] reflects the stored bytes and can be used to charge
-    /// the storage delta.
     fn store_verified_attestation(
         &mut self,
         node_id: NodeId,
@@ -239,9 +235,6 @@ impl TeeState {
                 verified_attestation,
             },
         );
-
-        // Flush the deferred write now so the caller's storage_usage read charges for it.
-        self.stored_attestations.flush();
 
         Ok(match previous {
             Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
@@ -850,27 +843,6 @@ mod tests {
             tee_state.stored_attestations.len(),
             1,
             "Internal storage count should increase by exactly one"
-        );
-    }
-
-    #[test]
-    fn verify_and_store_mock__should_flush_so_storage_usage_grows() {
-        // given
-        testing_env!(VMContextBuilder::new().build());
-        let mut tee_state = TeeState::default();
-        let node_id = node_id_for(&"alice.near".parse().unwrap());
-        let storage_before = env::storage_usage();
-
-        // when
-        tee_state
-            .verify_and_store_mock(node_id, MockAttestation::Valid, Duration::from_secs(0))
-            .unwrap();
-
-        // then: without the internal flush the deferred write reads as a zero delta.
-        let storage_after = env::storage_usage();
-        assert!(
-            storage_after > storage_before,
-            "env::storage_usage() should grow after the store ({storage_before} -> {storage_after})"
         );
     }
 

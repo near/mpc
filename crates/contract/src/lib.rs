@@ -8075,7 +8075,7 @@ mod tests {
 
     const MAX_HASH: [u8; 32] = [0xff; 32];
 
-    // A stored entry a caller must fund stays bounded; a schema change that bloats it fails here.
+    // The contract-funded entry stays bounded; a schema change that bloats it fails here.
     const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(100);
 
     #[rstest]
