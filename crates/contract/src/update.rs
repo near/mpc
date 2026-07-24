@@ -142,7 +142,7 @@ impl Default for ProposedUpdates {
 
 impl ProposedUpdates {
     pub fn required_deposit(update: &Update) -> NearToken {
-        required_deposit(bytes_used(update))
+        env::storage_byte_cost().saturating_mul(bytes_used(update))
     }
 
     /// Propose an update given the new contract code and/or config.
@@ -274,10 +274,6 @@ fn bytes_used(update: &Update) -> u128 {
     }
 
     bytes_used
-}
-
-fn required_deposit(bytes_used: u128) -> NearToken {
-    env::storage_byte_cost().saturating_mul(bytes_used)
 }
 
 #[cfg(test)]

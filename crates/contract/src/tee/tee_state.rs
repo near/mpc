@@ -1,4 +1,5 @@
 use crate::{
+    MAX_ATTESTATION_ENTRY_STORAGE_COST,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
     tee::measurements::{
@@ -19,7 +20,7 @@ use mpc_attestation::{
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
-use near_sdk::{env, near, store::IterableMap};
+use near_sdk::{NearToken, env, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
 
@@ -45,6 +46,33 @@ pub enum AttestationSubmissionError {
         "TLS public key is already registered to a different account; only the owning account may update it"
     )]
     TlsKeyOwnedByOtherAccount,
+    #[error("stored attestation entry costs {cost} which exceeds the maximum {max}")]
+    EntryStorageCostExceeded { cost: NearToken, max: NearToken },
+}
+
+/// Rejects an attestation entry whose storage cost exceeds [`MAX_ATTESTATION_ENTRY_STORAGE_COST`],
+/// estimated from the borsh-serialized key and value before inserting. Pre-insert because the dstack
+/// callback commits its receipt on error, so an insert-then-measure check would keep an oversized
+/// entry.
+fn check_attestation_entry_storage_cost(
+    tls_pk: &Ed25519PublicKey,
+    entry: &NodeAttestation,
+) -> Result<(), AttestationSubmissionError> {
+    let bytes = borsh::to_vec(tls_pk)
+        .expect("borsh serialization of tls key must succeed")
+        .len()
+        + borsh::to_vec(entry)
+            .expect("borsh serialization of attestation entry must succeed")
+            .len();
+    let cost = env::storage_byte_cost()
+        .saturating_mul(u128::try_from(bytes).expect("usize always fits in u128"));
+    if cost > MAX_ATTESTATION_ENTRY_STORAGE_COST {
+        return Err(AttestationSubmissionError::EntryStorageCostExceeded {
+            cost,
+            max: MAX_ATTESTATION_ENTRY_STORAGE_COST,
+        });
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -228,13 +256,13 @@ impl TeeState {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
 
-        let previous = self.stored_attestations.insert(
-            tls_pk,
-            NodeAttestation {
-                node_id,
-                verified_attestation,
-            },
-        );
+        let entry = NodeAttestation {
+            node_id,
+            verified_attestation,
+        };
+        check_attestation_entry_storage_cost(&tls_pk, &entry)?;
+
+        let previous = self.stored_attestations.insert(tls_pk, entry);
 
         Ok(match previous {
             Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
@@ -844,6 +872,43 @@ mod tests {
             1,
             "Internal storage count should increase by exactly one"
         );
+    }
+
+    fn mock_attestation_entry() -> (Ed25519PublicKey, NodeAttestation) {
+        let tls_pk = bogus_ed25519_public_key();
+        let node_id = create_node_id(&"alice.near".parse().unwrap(), &tls_pk);
+        let entry = NodeAttestation {
+            node_id,
+            verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+        };
+        (tls_pk, entry)
+    }
+
+    #[test]
+    fn check_attestation_entry_storage_cost__should_accept_entry_within_cap() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let (tls_pk, entry) = mock_attestation_entry();
+
+        // When
+        let result = check_attestation_entry_storage_cost(&tls_pk, &entry);
+
+        // Then
+        assert_matches!(result, Ok(()));
+    }
+
+    #[test]
+    fn entry_cost__should_exceed_cap_once_byte_count_is_large_enough() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let byte_cost = env::storage_byte_cost().as_yoctonear();
+        let bytes_over_cap = (MAX_ATTESTATION_ENTRY_STORAGE_COST.as_yoctonear() / byte_cost) + 1;
+
+        // When
+        let cost = env::storage_byte_cost().saturating_mul(bytes_over_cap);
+
+        // Then
+        assert!(cost > MAX_ATTESTATION_ENTRY_STORAGE_COST);
     }
 
     #[test]
