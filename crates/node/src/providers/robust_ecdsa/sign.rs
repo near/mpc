@@ -2,7 +2,7 @@ use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::primitives::UniqueId;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::robust_ecdsa::{
     EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
     RobustEcdsaTaskId, compute_thresholds,
@@ -137,6 +137,10 @@ pub struct SignComputation {
     pub entropy: [u8; 32],
 }
 
+impl NamedProtocol for SignComputation {
+    const NAME: &'static str = "sign robust-ecdsa";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComputation {
     async fn compute(
@@ -185,7 +189,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             msg_hash,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature = run_protocol("sign robust-ecdsa", channel, protocol).await?;
+        let signature = Self::run(channel, protocol).await?;
         Ok((signature, VerifyingKey::new(derived_public_key.into())))
     }
 

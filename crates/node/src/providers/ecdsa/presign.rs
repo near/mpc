@@ -3,7 +3,7 @@ use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::UniqueId;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::ecdsa::triple::participants_from_triples;
 use crate::providers::ecdsa::{
     EcdsaKeyshare, EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage,
@@ -205,6 +205,10 @@ pub struct PresignComputation {
     keygen_out: KeygenOutput,
 }
 
+impl NamedProtocol for PresignComputation {
+    const NAME: &'static str = "presign cait-sith";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<PresignOutput> {
@@ -226,7 +230,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             },
         )?;
         let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
-        let presignature = run_protocol("presign cait-sith", channel, protocol).await?;
+        let presignature = Self::run(channel, protocol).await?;
         Ok(presignature)
     }
 
