@@ -228,6 +228,8 @@ impl FakeMpcContractState {
             ProtocolContractState::Resharing(state) => &state.previous_running_state.parameters,
             _ => return,
         };
+        // TODO(#3973): revisit threshold calculation for several ForeignTx
+        // domains with different thresholds.
         let Some(threshold) = self.state.domain_registry().ok().and_then(|registry| {
             registry
                 .domains()

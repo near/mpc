@@ -79,6 +79,8 @@ async fn await_updated_supporters(
 
 /// Mirrors the contract's availability rule: the max reconstruction threshold
 /// across ForeignTx domains, `None` when no such domain exists.
+// TODO(#3973): revisit threshold calculation for several ForeignTx
+// domains with different thresholds.
 pub(crate) fn foreign_tx_reconstruction_threshold(domains: &[dtos::DomainConfig]) -> Option<u64> {
     domains
         .iter()
