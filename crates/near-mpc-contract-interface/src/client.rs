@@ -116,8 +116,12 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         args: ProposeUpdateArgs,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let payload_bytes = args.payload_bytes().map_err(|err| match err {
+            PayloadBytesError::Serialize(err) => MpcContractHandleError::Serialize(err),
+            PayloadBytesError::Overflow => MpcContractHandleError::Deposit(DepositOverflowError),
+        })?;
         let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
-            args.payload_bytes()?,
+            payload_bytes,
             STORAGE_BYTE_COST_YOCTONEAR,
         )?);
         let args = borsh::to_vec(&args)?;
@@ -199,8 +203,6 @@ pub enum MpcContractHandleError<E> {
     Serialize(#[from] serde_json::Error),
     #[error("failed to borsh-encode call arguments: {0}")]
     Encode(#[from] std::io::Error),
-    #[error("failed to size the call payload: {0}")]
-    Payload(#[from] PayloadBytesError),
     #[error("failed to compute the required deposit: {0}")]
     Deposit(#[from] DepositOverflowError),
     #[error("contract call failed: {0}")]
