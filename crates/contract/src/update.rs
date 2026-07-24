@@ -114,6 +114,8 @@ impl TryFrom<ProposeUpdateArgs> for Update {
 )]
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,
+    // TODO(#3965): write-only; kept because entries are persisted borsh state.
+    pub(super) bytes_used: u128,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -150,8 +152,10 @@ impl ProposedUpdates {
 
     /// Propose an update given the new contract code and/or config.
     pub fn propose(&mut self, update: Update) -> UpdateId {
+        let bytes_used = bytes_used(&update);
+
         let id = self.id.generate();
-        self.entries.insert(id, UpdateEntry { update });
+        self.entries.insert(id, UpdateEntry { update, bytes_used });
 
         id
     }
@@ -258,12 +262,31 @@ impl ProposedUpdates {
     }
 }
 
+fn bytes_used(update: &Update) -> u128 {
+    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+
+    // Assume a high max of 128 participant votes per update entry.
+    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+
+    match update {
+        Update::Contract(code) => {
+            bytes_used += code.len() as u128;
+        }
+        Update::Config(config) => {
+            let bytes = serde_json::to_vec(&config).unwrap();
+            bytes_used += bytes.len() as u128;
+        }
+    }
+
+    bytes_used
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         dto_mapping::IntoInterfaceType,
         primitives::test_utils::{gen_account_id, gen_participants},
-        update::{ProposedUpdates, Update, UpdateEntry, UpdateId},
+        update::{ProposedUpdates, Update, UpdateEntry, UpdateId, bytes_used},
     };
     use near_account_id::AccountId;
     use near_mpc_contract_interface::deposits::PROPOSE_UPDATE_ENTRY_OVERHEAD_BYTES;
@@ -302,6 +325,7 @@ mod tests {
     fn test_proposed_updates_propose_update() {
         let mut proposed_updates = ProposedUpdates::default();
         let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
         let expected_update_id = 0.into();
         // assert return value (update id) matches
         assert_eq!(proposed_updates.propose(update.clone()), expected_update_id);
@@ -313,6 +337,7 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update.clone(),
+                    bytes_used,
                 },
             )]),
         };
@@ -348,6 +373,7 @@ mod tests {
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
         let update_1 = Update::Contract([1; 1000].into());
+        let bytes_used = bytes_used(&update_0);
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
@@ -364,12 +390,14 @@ mod tests {
                     0,
                     UpdateEntry {
                         update: update_0.clone(),
+                        bytes_used,
                     },
                 ),
                 (
                     1,
                     UpdateEntry {
                         update: update_1.clone(),
+                        bytes_used,
                     },
                 ),
             ]),
@@ -384,6 +412,7 @@ mod tests {
     fn test_proposed_updates_remove_vote() {
         let mut proposed_updates = ProposedUpdates::default();
         let update_0 = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update_0);
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
         let account_id = gen_account_id();
@@ -398,6 +427,7 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update_0.clone(),
+                    bytes_used,
                 },
             )]),
         };
@@ -419,6 +449,7 @@ mod tests {
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
         let update_1 = Update::Contract([1; 1000].into());
+        let bytes_used = bytes_used(&update_0);
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
@@ -435,12 +466,14 @@ mod tests {
                     0,
                     UpdateEntry {
                         update: update_0.clone(),
+                        bytes_used,
                     },
                 ),
                 (
                     1,
                     UpdateEntry {
                         update: update_1.clone(),
+                        bytes_used,
                     },
                 ),
             ]),
@@ -464,6 +497,7 @@ mod tests {
     fn test_proposed_updates_invalid_vote_removes_previous_vote() {
         let mut proposed_updates = ProposedUpdates::default();
         let update_0 = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update_0);
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
         let account_id = gen_account_id();
@@ -478,6 +512,7 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update_0.clone(),
+                    bytes_used,
                 },
             )]),
         };
@@ -531,18 +566,21 @@ mod tests {
                     0,
                     UpdateEntry {
                         update: update_0.clone(),
+                        bytes_used: bytes_used(&update_0),
                     },
                 ),
                 (
                     1,
                     UpdateEntry {
                         update: update_1.clone(),
+                        bytes_used: bytes_used(&update_1),
                     },
                 ),
                 (
                     2,
                     UpdateEntry {
                         update: update_2.clone(),
+                        bytes_used: bytes_used(&update_2),
                     },
                 ),
             ]),
@@ -632,6 +670,7 @@ mod tests {
     fn test_proposed_updates_remove_votes() {
         let mut proposed_updates = ProposedUpdates::default();
         let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
         let update_id = proposed_updates.propose(update.clone());
 
         let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
@@ -648,6 +687,7 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update.clone(),
+                    bytes_used,
                 },
             )]),
         };
@@ -660,6 +700,7 @@ mod tests {
     fn test_proposed_updates_remove_non_participant_votes() {
         let mut proposed_updates = ProposedUpdates::default();
         let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
         let update_id = proposed_updates.propose(update.clone());
 
         let participants = gen_participants(2);
@@ -683,6 +724,7 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update.clone(),
+                    bytes_used,
                 },
             )]),
         };
@@ -697,6 +739,7 @@ mod tests {
         assert!(proposed_updates.voters().is_empty());
 
         let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
         let update_id = proposed_updates.propose(update.clone());
         let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
 
@@ -717,6 +760,7 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update.clone(),
+                    bytes_used,
                 },
             )]),
         };
@@ -734,12 +778,14 @@ mod tests {
                 0,
                 UpdateEntry {
                     update: update.clone(),
+                    bytes_used,
                 },
             )]),
         };
         let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(result, expected_after_removal);
     }
+
     /// Catches only entry-size growth: fails if a schema or collection-layout
     /// change makes the stored proposal cost more than the shared overhead
     /// constant covers at today's storage price.
