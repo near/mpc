@@ -6,7 +6,7 @@ use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ProtocolContractState, ReconstructionThreshold,
 };
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Tests single-domain key generation and multiple rounds of resharing
 /// with participant set changes, verifying liveness after each round.
@@ -21,7 +21,7 @@ async fn test_key_resharing() {
         c.presignatures_to_buffer = 2;
     })
     .await;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
 
     // Verify initial state: 2 participants, threshold 2.
     assert_eq!(running.parameters.participants.participants.len(), 2);
@@ -122,7 +122,7 @@ async fn test_multi_domain() {
         c.presignatures_to_buffer = 2;
     })
     .await;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     assert_eq!(running.domains.next_domain_id, 3);
     common::send_sign_request(&cluster, &running, &mut rng, cluster.default_user_account())
         .await

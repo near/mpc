@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use e2e_tests::MpcNodeState;
 use near_mpc_contract_interface::types::DomainPurpose;
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 async fn fetch_body(client: &reqwest::Client, node: usize, url: &str) -> anyhow::Result<String> {
     client
@@ -101,7 +101,7 @@ async fn test_web_endpoints() {
 
     // Send one request per domain.
     assert!(!running.domains.domains.is_empty(), "no domains found");
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     for domain in &running.domains.domains {
         let outcome = match domain.purpose {
             DomainPurpose::Sign => {

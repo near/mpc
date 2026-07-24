@@ -5,7 +5,7 @@ use crate::common::{
 };
 
 use near_mpc_contract_interface::types::{Curve, DomainPurpose, Protocol, SignatureResponse};
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 #[tokio::test]
 #[expect(non_snake_case)]
@@ -17,7 +17,7 @@ async fn mpc_cluster__should_sign_with_scheme_matching_domain() {
         !running.domains.domains.is_empty(),
         "expected at least one domain, got none"
     );
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     for domain in &running.domains.domains {
         tracing::info!(domain_id = ?domain.id, purpose = ?domain.purpose, curve = ?Curve::from(domain.protocol), "sending request");
         match domain.purpose {
@@ -94,7 +94,7 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
 
     let domain = must_get_domain(&running, Protocol::DamgardEtAl);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
 
     // when
     let outcome = cluster
