@@ -17,7 +17,7 @@ use threshold_signatures::{
 use crate::metrics;
 use crate::{
     network::{NetworkTaskChannel, computation::MpcLeaderCentricComputation},
-    protocol::run_protocol,
+    protocol::NamedProtocol,
     providers::ckd::{CKDProvider, CKDTaskId},
     types::CKDId,
 };
@@ -127,6 +127,18 @@ pub struct CKDComputation {
     pub app_id: dtos::CkdAppId,
 }
 
+/// CKD against an app public key.
+struct Ckd;
+impl NamedProtocol for Ckd {
+    const NAME: &'static str = "ckd";
+}
+
+/// CKD against a public verification key (pk1/pk2).
+struct CkdPv;
+impl NamedProtocol for CkdPv {
+    const NAME: &'static str = "ckd_pv";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputation {
     async fn compute(
@@ -156,7 +168,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
                     ElementG1::try_from(&pk)?,
                     OsRng,
                 )?;
-                run_protocol("ckd", channel, protocol).await?
+                Ckd::run(channel, protocol).await?
             }
             dtos::CKDAppPublicKey::AppPublicKeyPV(pv) => {
                 let pk1 = ElementG1::try_from(&pv.pk1)?;
@@ -170,7 +182,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
                     PublicVerificationKey::new(pk1, pk2),
                     OsRng,
                 )?;
-                run_protocol("ckd_pv", channel, protocol).await?
+                CkdPv::run(channel, protocol).await?
             }
         };
 

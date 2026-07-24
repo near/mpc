@@ -3,9 +3,23 @@ use crate::tracking;
 use crate::{network::NetworkTaskChannel, tracking::TaskHandle};
 use futures::TryFutureExt;
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::sync::{Arc, atomic::AtomicUsize};
 use threshold_signatures::protocol::{Action, Protocol};
 use tokio::sync::mpsc;
+
+/// Associates a compile-time name with a threshold protocol run.
+pub trait NamedProtocol {
+    const NAME: &'static str;
+
+    /// Runs `protocol` on `channel`, tagging tracking progress with [`Self::NAME`].
+    fn run<T>(
+        channel: &mut NetworkTaskChannel,
+        protocol: impl Protocol<Output = T>,
+    ) -> impl Future<Output = anyhow::Result<T>> {
+        run_protocol(Self::NAME, channel, protocol)
+    }
+}
 
 /// Runs any cait-sith protocol, returning the result. Exports tracking progress
 /// describing how many messages are sent and received to each participant.

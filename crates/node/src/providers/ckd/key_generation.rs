@@ -1,6 +1,6 @@
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::ckd::CKDProvider;
 use rand::rngs::OsRng;
 use threshold_signatures::ReconstructionThreshold;
@@ -30,6 +30,10 @@ pub struct KeyGenerationComputation {
     reconstruction_threshold: ReconstructionThreshold,
 }
 
+impl NamedProtocol for KeyGenerationComputation {
+    const NAME: &'static str = "CKD key generation";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
@@ -46,7 +50,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             self.reconstruction_threshold,
             OsRng,
         )?;
-        run_protocol("CKD key generation", channel, protocol).await
+        Self::run(channel, protocol).await
     }
 
     fn leader_waits_for_success(&self) -> bool {
