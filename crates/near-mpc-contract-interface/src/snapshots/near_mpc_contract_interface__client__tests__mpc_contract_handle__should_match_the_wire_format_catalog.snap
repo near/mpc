@@ -71,7 +71,7 @@ args:     {}
 contract: mpc.near
 method:   update_participant_url
 gas:      300.0 Tgas
-deposit:  0 NEAR
+deposit:  1 yoctoNEAR
 args:     {"url":"http://localhost:7"}
 
 contract: mpc.near
