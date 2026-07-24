@@ -1,6 +1,6 @@
 //! Per-provider checks. Golden-transaction chains run a fixed request and verify the
-//! extracted value; identity-based chains (Sui, Starknet, the EVM chains) verify the chain
-//! identity and inspect a dynamically discovered recent transaction instead.
+//! extracted value; identity-based chains (Sui, Starknet, Bitcoin, the EVM chains) verify
+//! the chain identity and inspect a dynamically discovered recent transaction instead.
 
 use std::time::Duration;
 
@@ -13,11 +13,10 @@ use foreign_chain_inspector::{
         inspector::{AptosExtractor, AptosFinality, AptosInspector},
     },
     bitcoin::{
-        BitcoinExtractedValue, BitcoinTransactionHash,
+        BitcoinTransactionHash,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
     evm::inspector::{EvmChain, EvmExtractor, EvmInspector},
-    http_client::HttpClient,
     starknet::{
         StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
@@ -87,13 +86,6 @@ fn accept_probe_outcome<T>(
         | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => Ok(()),
         Err(e) => Err(e).context(context),
     }
-}
-
-fn verify_block_hash(expected: [u8; 32], got: [u8; 32]) -> anyhow::Result<()> {
-    if got != expected {
-        return Err(Mismatch::BlockHash { expected, got }.into());
-    }
-    Ok(())
 }
 
 /// How far behind the reported head an identity probe takes its transaction, so slightly
@@ -184,25 +176,70 @@ where
     )
 }
 
-pub async fn check_bitcoin(
-    client: HttpClient,
-    tx: [u8; 32],
-    expected_block_hash: [u8; 32],
-) -> anyhow::Result<()> {
+/// Like [`check_sui`], Bitcoin is probed by chain identity plus a dynamically discovered
+/// transaction rather than a pinned golden. The genesis block hash (`getblockhash 0`, never
+/// pruned) identifies the network; the real inspector then runs over a transaction from a
+/// block [`HEAD_PROBE_OFFSET`] below the tip, proving the provider serves canonical,
+/// confirmed transactions.
+pub async fn check_bitcoin<C>(client: C, expected_genesis: &str) -> anyhow::Result<()>
+where
+    C: ClientT + Send + Sync,
+{
     let inspector = BitcoinInspector::new(client);
-    let values = inspector
+
+    let expected = golden::hex32(expected_genesis).context("invalid expected genesis hash")?;
+    let genesis = inspector
+        .block_hash(0)
+        .await
+        .context("failed to fetch the genesis block hash")?;
+    if *genesis != expected {
+        return Err(Mismatch::BlockHash {
+            expected,
+            got: *genesis,
+        }
+        .into());
+    }
+
+    // Tip height via getbestblockhash + getblock rather than getblockcount: some provider
+    // edges serve getblockcount as a JSON-RPC 1.0-style response (`"error": null`) that the
+    // 2.0 transport rejects.
+    let tip = inspector
+        .best_block_hash()
+        .await
+        .context("failed to fetch the best block hash")?;
+    let height = inspector
+        .block(tip)
+        .await
+        .context("failed to fetch the best block")?
+        .height;
+    let probe = height.checked_sub(HEAD_PROBE_OFFSET).with_context(|| {
+        format!("chain height {height} is below the probe offset {HEAD_PROBE_OFFSET}")
+    })?;
+    let hash = inspector
+        .block_hash(probe)
+        .await
+        .context("failed to fetch a recent block hash")?;
+    let block = inspector
+        .block(hash)
+        .await
+        .context("failed to fetch a recent block")?;
+    // The first entry is the block's coinbase, so every well-formed block carries one.
+    let tx = block
+        .tx
+        .first()
+        .context("recent block carries no transactions")?;
+    let tx = BitcoinTransactionHash::from(**tx);
+
+    // A canonical, confirmed transaction extracts cleanly; Bitcoin has no failed-tx concept.
+    inspector
         .extract(
-            BitcoinTransactionHash::from(tx),
+            tx,
             BlockConfirmations::from(1),
             vec![BitcoinExtractor::BlockHash],
         )
-        .await?;
-    match values.into_iter().next().context("RPC returned no value")? {
-        BitcoinExtractedValue::BlockHash(hash) => {
-            let got: [u8; 32] = hash.into();
-            verify_block_hash(expected_block_hash, got)
-        }
-    }
+        .await
+        .context("failed to inspect a transaction from a recent block")?;
+    Ok(())
 }
 
 /// Like [`check_sui`], Starknet is probed by chain identity plus a dynamically discovered
@@ -393,6 +430,10 @@ mod tests {
     use crate::network::Network;
     use assert_matches::assert_matches;
     use foreign_chain_inspector::base::inspector::Base;
+    use foreign_chain_rpc_interfaces::bitcoin::{
+        GetBlockHeaderVerboseResponse, GetBlockResponse, GetRawTransactionVerboseResponse,
+        TransportBitcoinBlockHash, TransportBitcoinTransactionHash,
+    };
     use foreign_chain_rpc_interfaces::evm::{
         GetBlockByNumberResponse as EvmBlock, GetBlockByNumberWithTxsResponse as EvmBlockWithTxs,
         GetTransactionReceiptResponse as EvmReceipt, U64,
@@ -744,6 +785,68 @@ mod tests {
         // Then
         let error = format!("{:#}", result.unwrap_err());
         assert!(error.contains("no transactions"), "{error}");
+    }
+
+    const BTC_MAINNET_GENESIS: &str =
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+    #[tokio::test]
+    async fn check_bitcoin__should_pass_when_genesis_matches_and_a_recent_tx_verifies() {
+        // Given a provider whose genesis hash matches and whose recent block carries a
+        // transaction the inspector can verify (confirmed, canonical).
+        let genesis = TransportBitcoinBlockHash::from(golden::hex32(BTC_MAINNET_GENESIS).unwrap());
+        let block_hash = TransportBitcoinBlockHash::from([0x33; 32]);
+        let tip = TransportBitcoinBlockHash::from([0x44; 32]);
+        let recent = TransportBitcoinBlockHash::from([0x11; 32]);
+        let txid = TransportBitcoinTransactionHash::from([0x22; 32]);
+        let raw_tx = GetRawTransactionVerboseResponse {
+            blockhash: block_hash,
+            confirmations: 10,
+        };
+        let header = GetBlockHeaderVerboseResponse {
+            hash: block_hash,
+            height: 799_990,
+        };
+        let tip_block = GetBlockResponse {
+            height: 800_000,
+            tx: vec![TransportBitcoinTransactionHash::from([0x55; 32])],
+        };
+        let probe_block = GetBlockResponse {
+            height: 799_990,
+            tx: vec![txid],
+        };
+        let client = SequentialMockClient::new(vec![
+            json(genesis),
+            json(tip),
+            json(&tip_block),
+            json(recent),
+            json(&probe_block),
+            json(&raw_tx),
+            json(&header),
+            json(block_hash),
+        ]);
+
+        // When
+        let result = check_bitcoin(client, BTC_MAINNET_GENESIS).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_bitcoin__should_fail_when_the_genesis_hash_differs() {
+        // Given a provider serving a different chain's genesis hash.
+        let wrong = TransportBitcoinBlockHash::from([0xee; 32]);
+        let client = SequentialMockClient::new(vec![json(wrong)]);
+
+        // When
+        let result = check_bitcoin(client, BTC_MAINNET_GENESIS).await;
+
+        // Then
+        assert_matches!(
+            result.unwrap_err().downcast_ref::<Mismatch>(),
+            Some(Mismatch::BlockHash { .. })
+        );
     }
 
     fn golden_aptos_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {

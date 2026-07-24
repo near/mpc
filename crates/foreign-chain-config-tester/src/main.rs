@@ -1,7 +1,7 @@
 //! Foreign-chain RPC config tester: probe every configured provider with a fixed
 //! golden request so operators can verify their config without running the node.
-//! Sui, Starknet, and the EVM chains are probed by chain identity plus a
-//! dynamically discovered transaction instead — see the README.
+//! Sui, Starknet, Bitcoin, and the EVM chains are probed by chain identity plus
+//! a dynamically discovered transaction instead — see the README.
 
 mod config;
 mod report;

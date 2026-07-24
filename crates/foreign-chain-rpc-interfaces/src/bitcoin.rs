@@ -96,3 +96,42 @@ impl Serialize for GetBlockHashArgs {
 impl ToRpcParams for &GetBlockHashArgs {
     to_rpc_params_impl!();
 }
+
+/// `getbestblockhash` takes no parameters; it returns the hash of the chain tip.
+/// <https://developer.bitcoin.org/reference/rpc/getbestblockhash.html>
+pub struct GetBestBlockHashArgs;
+
+impl ToRpcParams for &GetBestBlockHashArgs {
+    fn to_rpc_params(self) -> Result<Option<Box<serde_json::value::RawValue>>, serde_json::Error> {
+        Ok(None)
+    }
+}
+
+/// Request args for `getblock` at verbosity 1, whose response lists the block's transaction ids.
+/// <https://developer.bitcoin.org/reference/rpc/getblock.html>
+pub struct GetBlockArgs {
+    pub blockhash: TransportBitcoinBlockHash,
+    pub verbosity: u8,
+}
+
+impl Serialize for GetBlockArgs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let request_parameters = (&self.blockhash, &self.verbosity);
+        request_parameters.serialize(serializer)
+    }
+}
+
+impl ToRpcParams for &GetBlockArgs {
+    to_rpc_params_impl!();
+}
+
+/// Partial `getblock` response (verbosity 1). The health probe reads the height of the chain
+/// tip and a transaction id from a recent block to exercise the inspector against.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GetBlockResponse {
+    pub height: u64,
+    pub tx: Vec<TransportBitcoinTransactionHash>,
+}
