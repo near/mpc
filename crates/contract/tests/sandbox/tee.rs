@@ -3,12 +3,12 @@
 use crate::sandbox::{
     common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
     utils::{
-        consts::{ALL_PROTOCOLS, SUBMIT_PARTICIPANT_INFO_DEPOSIT},
+        consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            total_gas_fee, vote_add_launcher_hash, vote_for_hash,
+            vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -20,8 +20,8 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
-use near_workspaces::Contract;
-use near_workspaces::types::NearToken;
+use near_workspaces::types::{KeyType, NearToken, SecretKey};
+use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
@@ -276,6 +276,54 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
     .await?
     .is_success();
     assert!(success);
+    Ok(())
+}
+
+/// Regression test for #3925: a participant re-attesting through a function-call access key (which
+/// cannot attach a deposit) succeeds with zero deposit (storage is contract-funded).
+#[tokio::test]
+async fn submit_participant_info__should_accept_zero_deposit_via_function_call_key() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    let account = &mpc_signer_accounts[0];
+    let participants = assert_running_return_participants(&contract).await?;
+    let tls_key = participants
+        .participants
+        .iter()
+        .find(|(id, _, _)| id == account.id())
+        .map(|(_, _, info)| info.tls_public_key.clone())
+        .expect("participant must exist");
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+
+    let fc_sk = SecretKey::from_random(KeyType::ED25519);
+    account
+        .batch(account.id())
+        .add_key(
+            fc_sk.public_key(),
+            AccessKey::function_call_access(contract.id(), &[], None),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
+
+    // When
+    let outcome = submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
+
+    // Then
+    assert!(
+        outcome.is_success(),
+        "zero-deposit fc submission must succeed: {outcome:?}"
+    );
     Ok(())
 }
 
@@ -980,10 +1028,10 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// A submission attaching less than the flat storage fee is rejected before the
-/// entry is stored.
+/// A new attestation entry is stored with no attached deposit; the contract's own balance funds
+/// the storage.
 #[tokio::test]
-async fn submit_participant_info__should_reject_new_attestation_below_flat_fee() -> Result<()> {
+async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> Result<()> {
     // Given
     let SandboxTestSetup {
         worker, contract, ..
@@ -993,60 +1041,6 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
         .await;
     let outsider = worker.dev_create_account().await?;
     let fresh_tls_key = bogus_ed25519_public_key();
-    let storage_before = worker.view_account(contract.id()).await?.storage_usage;
-    let below_fee = SUBMIT_PARTICIPANT_INFO_DEPOSIT.saturating_sub(NearToken::from_yoctonear(1));
-
-    // When
-    let result = outsider
-        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
-        .args_json((
-            Attestation::Mock(MockAttestation::Valid),
-            fresh_tls_key.clone(),
-        ))
-        .deposit(below_fee)
-        .max_gas()
-        .transact()
-        .await?;
-
-    // Then
-    assert!(
-        !result.is_success(),
-        "submission below the flat fee must fail: {result:?}"
-    );
-    let error_msg = format!("{:?}", result.into_result());
-    assert!(
-        error_msg.contains("Attached deposit is lower than required"),
-        "expected an insufficient-deposit error, got: {error_msg}"
-    );
-    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
-    assert!(
-        stored.is_none(),
-        "no attestation should be stored when the deposit is rejected"
-    );
-    let storage_after = worker.view_account(contract.id()).await?.storage_usage;
-    assert_eq!(
-        storage_after, storage_before,
-        "contract storage must not grow when the submission is rejected"
-    );
-    Ok(())
-}
-
-/// A submission attaching exactly the flat fee is stored, and the caller is
-/// charged the whole fee with no excess refunded (the fee far exceeds the true
-/// storage cost by design).
-#[tokio::test]
-async fn submit_participant_info__should_store_new_attestation_and_charge_the_flat_fee()
--> Result<()> {
-    // Given
-    let SandboxTestSetup {
-        worker, contract, ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-    let outsider = worker.dev_create_account().await?;
-    let fresh_tls_key = bogus_ed25519_public_key();
-    let balance_before = outsider.view_account().await?.balance;
 
     // When
     let result = submit_participant_info(
@@ -1060,16 +1054,9 @@ async fn submit_participant_info__should_store_new_attestation_and_charge_the_fl
     // Then
     assert!(
         result.is_success(),
-        "submission attaching the flat fee should succeed: {result:?}"
+        "zero-deposit submission must succeed: {result:?}"
     );
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
-    assert!(
-        stored.is_some(),
-        "the attestation entry should be stored on-chain"
-    );
-    let balance_after = outsider.view_account().await?.balance;
-    let net_spent = balance_before.saturating_sub(balance_after);
-    let non_gas_spent = net_spent.saturating_sub(total_gas_fee(&result));
-    assert_eq!(non_gas_spent, SUBMIT_PARTICIPANT_INFO_DEPOSIT);
+    assert!(stored.is_some(), "the entry should be stored on-chain");
     Ok(())
 }

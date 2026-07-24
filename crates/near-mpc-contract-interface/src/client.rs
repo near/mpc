@@ -9,7 +9,7 @@ use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken
 use crate::call_args::{
     RequestAppPrivateKeyArgs, SignArgs, SubmitParticipantInfoArgs, VerifyForeignTransactionArgs,
 };
-use crate::deposits::{SIGN_DEPOSIT_YOCTONEAR, SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR};
+use crate::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use crate::method_names::{
     REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
 };
@@ -123,7 +123,8 @@ impl<C: CallContract> MpcContractHandle<C> {
                     method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
                     args,
                     gas: MAX_GAS,
-                    deposit: NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR),
+                    // Zero: the node's function-call key cannot attach a deposit; the contract only charges new entries.
+                    deposit: NearToken::from_yoctonear(0),
                 },
             )
             .await

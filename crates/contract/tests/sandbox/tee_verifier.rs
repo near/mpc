@@ -67,7 +67,7 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
 
 /// Asserts a Dstack submission failed cleanly: a receipt failed carrying
 /// `expected_error` (`fail_attestation_submission` panics in its own receipt), no
-/// attestation was stored, and the deposit was refunded.
+/// attestation was stored, and the caller spent only gas.
 async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
     contract: &Contract,
@@ -93,11 +93,12 @@ async fn assert_submission_failed_cleanly(
         .await
         .unwrap();
     assert!(stored.is_none(), "nothing should be stored on failure");
-    assert_deposit_refunded(submitter, balance_before, result).await;
+    assert_only_gas_spent(submitter, balance_before, result).await;
 }
 
-/// Asserts the deposit was fully refunded: with nothing stored, the caller spends only gas.
-async fn assert_deposit_refunded(
+/// Asserts the caller spent only gas: no deposit is attached, so a failed submission costs nothing
+/// beyond gas.
+async fn assert_only_gas_spent(
     account: &Account,
     balance_before: NearToken,
     result: &ExecutionFinalResult,
@@ -165,7 +166,7 @@ async fn tee_verifier_account_id__should_return_none_until_a_verifier_is_voted_i
 }
 
 #[tokio::test]
-async fn submit_participant_info__should_refund_and_store_nothing_on_verifier_rejection() {
+async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
     // Given
     let SandboxTestSetup {
         worker,

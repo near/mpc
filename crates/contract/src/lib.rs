@@ -117,12 +117,6 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// node key cannot invoke these methods.
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
-/// Flat fee a node attaches to [`MpcContract::submit_participant_info`] for its
-/// stored attestation entry. The entry is bounded, so the fee is fixed and
-/// nothing is refunded; its margin over the true cost absorbs storage-price and
-/// layout changes. A unit test asserts it covers the worst-case entry.
-const MINIMUM_ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(100);
-
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
@@ -784,9 +778,8 @@ impl MpcContract {
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole
-    /// fee is kept on success and refunded if the attestation is not accepted.
-    #[payable]
+    /// Storage is funded by the contract's own balance, so a node submits with no deposit via its
+    /// function-call access key, for its first attestation and re-attestations alike.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -821,15 +814,6 @@ impl MpcContract {
             tls_public_key,
             account_public_key,
         };
-
-        let attached = env::attached_deposit();
-        if attached < MINIMUM_ATTESTATION_STORAGE_DEPOSIT {
-            return Err(InvalidParameters::InsufficientDeposit {
-                attached: attached.as_yoctonear(),
-                required: MINIMUM_ATTESTATION_STORAGE_DEPOSIT.as_yoctonear(),
-            }
-            .into());
-        }
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
@@ -871,7 +855,6 @@ impl MpcContract {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
-                    .with_attached_deposit(env::attached_deposit())
                     .resolve_verification(VerificationContext {
                         node_id,
                         attestation,
@@ -2311,11 +2294,10 @@ impl MpcContract {
         }
     }
 
-    /// Verify-quote callback: on a verifier verdict it runs the post-DCAP
-    /// checks and stores the attestation, refunding the flat fee if the
-    /// attestation is not accepted.
+    /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the
+    /// attestation (storage funded by the contract's balance). On any failure it fails the
+    /// submitter's transaction.
     #[private]
-    #[payable]
     pub fn resolve_verification(
         &mut self,
         #[serializer(borsh)] context: VerificationContext,
@@ -2347,9 +2329,8 @@ impl MpcContract {
         match attestation_result {
             Ok(()) => PromiseOrValue::Value(()),
             Err(err) => {
-                refund_to(&account_id, env::attached_deposit());
-                // Fail the submitter's transaction from a separate receipt so
-                // the refund above commits (a panic here would roll it back)
+                // Fail the submitter's transaction from a separate receipt so any prior state
+                // commits (a panic here would roll it back)
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
                     borsh::to_vec(&err.to_string())
@@ -2363,9 +2344,7 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. The deposit was already
-    /// checked against the flat fee in [`Self::submit_participant_info`], so this
-    /// only verifies and stores.
+    /// [`VerificationResult::Verified`] response. Storage is funded by the contract's balance.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -2384,7 +2363,6 @@ impl MpcContract {
             log!("post-DCAP check failed for {account_id}: {err}");
             return Err(err.into());
         }
-
         Ok(())
     }
 
@@ -4191,7 +4169,6 @@ mod tests {
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
             .predecessor_account_id(account_id.clone())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
 
@@ -4620,7 +4597,6 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
 
@@ -4635,7 +4611,6 @@ mod tests {
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
             .predecessor_account_id(contract_account_id)
-            .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
             .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
             .build();
         testing_env!(context);
@@ -4717,7 +4692,6 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
             .predecessor_account_id(outsider_id.clone())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
 
@@ -4779,7 +4753,6 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(outsider_id.clone())
                 .predecessor_account_id(outsider_id.clone())
-                .attached_deposit(NearToken::from_near(1))
                 .build()
         );
 
@@ -8095,43 +8068,51 @@ mod tests {
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
     }
 
-    // Catches only entry-size growth: fails if a schema change makes the stored entry
-    // cost more than the fee at today's storage_byte_cost. It cannot see a future
-    // storage_byte_cost increase on a live contract; the fee's margin covers that.
-    #[test]
-    fn minimum_attestation_storage_deposit__should_cover_worst_case_entry() {
-        // Given: the largest entry a submission can store. NEAR caps an account id
-        // at 64 bytes; every other field is fixed-size, so this is the worst case.
+    const MAX_HASH: [u8; 32] = [0xff; 32];
+
+    // The contract-funded entry stays bounded; a schema change that bloats it fails here.
+    const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(100);
+
+    #[rstest]
+    #[case::dstack(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+        mpc_image_hash: MAX_HASH.into(),
+        launcher_compose_hash: MAX_HASH.into(),
+        expiry_timestamp_seconds: u64::MAX,
+        measurements: default_measurements()[0],
+    }))]
+    #[case::mock(VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
+        mpc_docker_image_hash: Some(MAX_HASH.into()),
+        launcher_docker_compose_hash: Some(MAX_HASH.into()),
+        expiry_timestamp_seconds: Some(u64::MAX),
+        expected_measurements: Some(default_measurements()[0]),
+    }))]
+    fn submit_participant_info__should_bound_worst_case_entry_cost(
+        #[case] verified_attestation: VerifiedAttestation,
+    ) {
         testing_env!(VMContextBuilder::new().build());
+        // NEAR caps an account id at 64 bytes; every other NodeId field is fixed-size.
         let node_id = create_node_id(
             &"a".repeat(64).parse().unwrap(),
             &bogus_ed25519_public_key(),
         );
-        let worst_case = NodeAttestation {
-            node_id: node_id.clone(),
-            verified_attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                mpc_image_hash: [0xff; 32].into(),
-                launcher_compose_hash: [0xff; 32].into(),
-                expiry_timestamp_seconds: u64::MAX,
-                measurements: default_measurements()[0],
-            }),
-        };
 
-        // When: the entry is inserted and flushed, so storage_usage reflects it.
         let mut tee_state = TeeState::default();
-        let storage_before = env::storage_usage();
-        tee_state
-            .stored_attestations
-            .insert(node_id.tls_public_key.clone(), worst_case);
+        let before = env::storage_usage();
+        tee_state.stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id,
+                verified_attestation,
+            },
+        );
         tee_state.stored_attestations.flush();
-        let bytes_grown = env::storage_usage() - storage_before;
-        let worst_case_cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
+        let bytes_grown = env::storage_usage() - before;
+        let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
 
-        // Then: the flat fee covers the worst-case cost with headroom to spare.
         assert!(
-            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= worst_case_cost,
-            "flat fee {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
-             ({bytes_grown} bytes, {worst_case_cost}) at today's storage price"
+            cost <= WORST_CASE_ENTRY_COST_CEILING,
+            "worst-case entry cost ({bytes_grown} bytes, {cost}) must stay under \
+             {WORST_CASE_ENTRY_COST_CEILING} at today's storage price"
         );
     }
 }
