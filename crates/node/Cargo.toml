@@ -116,6 +116,7 @@ average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
+httpmock = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }

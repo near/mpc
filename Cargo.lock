@@ -5974,6 +5974,7 @@ dependencies = [
  "hex",
  "http",
  "http-body-util",
+ "httpmock",
  "humantime",
  "hyper",
  "hyper-util",

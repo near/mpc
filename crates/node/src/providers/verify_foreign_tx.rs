@@ -1,5 +1,6 @@
 mod sign;
 
+use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::EcdsaSignatureProvider;
@@ -24,6 +25,7 @@ use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
 
 /// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
 ///
@@ -143,30 +145,13 @@ impl ForeignChainInspectors<HttpClient> {
     }
 }
 
-pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
+pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
-    foreign_chain_policy_reader: ForeignChainPolicyReader,
+    /// `None` until the indexer delivers its first supporters snapshot.
+    supporters_by_foreign_chain: watch::Receiver<Option<SupportersByForeignChain>>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-}
-
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader> {
-    pub fn new(
-        config: Arc<ConfigFile>,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
-        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
-        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-    ) -> anyhow::Result<Self> {
-        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
-        Ok(Self {
-            config,
-            inspectors,
-            foreign_chain_policy_reader,
-            verify_foreign_tx_request_store,
-            ecdsa_signature_provider,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
@@ -183,10 +168,23 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: crate::indexer::ReadSupportedForeignChain,
-{
+impl VerifyForeignTxProvider {
+    pub fn new(
+        config: Arc<ConfigFile>,
+        supporters_by_foreign_chain: watch::Receiver<Option<SupportersByForeignChain>>,
+        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+    ) -> anyhow::Result<Self> {
+        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
+        Ok(Self {
+            config,
+            inspectors,
+            supporters_by_foreign_chain,
+            verify_foreign_tx_request_store,
+            ecdsa_signature_provider,
+        })
+    }
+
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::VerifyForeignTxTaskId(task) => match task {

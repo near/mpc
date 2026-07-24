@@ -1,12 +1,16 @@
 use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
+use crate::foreign_chain_policy::{
+    foreign_tx_reconstruction_threshold, spawn_supporters_by_foreign_chain,
+};
+use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::ChainSendTransactionRequest;
-use crate::indexer::{IndexerAPI, ReadSupportedForeignChain, tx_sender};
+use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
 };
@@ -55,7 +59,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
+pub struct Coordinator<TransactionSender> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -65,7 +69,7 @@ pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI<TransactionSender, ForeignChainPolicyReader>,
+    pub indexer: IndexerAPI<TransactionSender>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -101,11 +105,9 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl<TransactionSender, ForeignChainPolicyReader>
-    Coordinator<TransactionSender, ForeignChainPolicyReader>
+impl<TransactionSender> Coordinator<TransactionSender>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
-    ForeignChainPolicyReader: ReadSupportedForeignChain + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
@@ -173,7 +175,7 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
-                                self.indexer.foreign_chain_policy_reader.clone(),
+                                self.indexer.foreign_chain_supporters_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -368,7 +370,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
+        foreign_chain_supporters_receiver: watch::Receiver<Option<ForeignChainSupporters>>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -691,9 +693,20 @@ where
                     ckd_keyshares,
                 ));
 
+                // `running_mpc_config.participants` is the running set retained
+                // to resharing survivors (active ∩ prospective), so a chain only
+                // counts as available when a quorum of nodes that can sign now
+                // and remain after the reshare supports it.
+                let (supporters_by_foreign_chain, _supporters_resolver_task) =
+                    spawn_supporters_by_foreign_chain(
+                        foreign_chain_supporters_receiver,
+                        running_mpc_config.participants.clone(),
+                        foreign_tx_reconstruction_threshold(&running_state.domains),
+                    );
+
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
-                    foreign_chain_policy_reader.clone(),
+                    supporters_by_foreign_chain,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);

@@ -13,7 +13,7 @@ use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::indexer::ReadSupportedForeignChain;
+use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
@@ -48,15 +48,21 @@ fn build_signature_request(
     })
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: ReadSupportedForeignChain,
-{
+impl VerifyForeignTxProvider {
     pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
+
+        // Also checked in `execute_foreign_chain_request`; checked early here
+        // because `take_owned` below irreversibly consumes a presignature. An
+        // availability flip between the two checks still costs one presignature.
+        ensure_chain_is_available(
+            &self.supporters_by_foreign_chain.borrow(),
+            &foreign_tx_request.request,
+        )
+        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
 
         let keyshare = self
             .ecdsa_signature_provider
@@ -120,7 +126,10 @@ where
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        chain_is_supported(&self.foreign_chain_policy_reader, request).await?;
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request)
+            .inspect_err(|_| {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+            })?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
@@ -373,32 +382,31 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ForeignChainSupportError {
-    #[error("failed to fetch supported chains on the contract")]
-    FailedToReadContract(#[source] anyhow::Error),
+enum ChainAvailabilityError {
+    #[error("the foreign-chain supporters snapshot has not been received from the contract yet")]
+    SupportersSnapshotNotReady,
     #[error(
-        "requested chain {requested:?} is not present in the list of supported foreign chains on the MPC contract"
+        "requested chain {requested:?} is not in the list of available foreign chains on the MPC contract"
     )]
-    ChainNotSupported { requested: dtos::ForeignChain },
+    ChainNotAvailable { requested: dtos::ForeignChain },
 }
 
-async fn chain_is_supported(
-    policy_reader: &impl ReadSupportedForeignChain,
+/// A chain counts as available when the supporters map has an entry for it:
+/// the chain is available on the contract and a signing quorum of current
+/// participants supports it. A missing snapshot (`None`) rejects every chain,
+/// but distinguishably from a genuinely unavailable one.
+fn ensure_chain_is_available(
+    supporters_by_foreign_chain: &Option<SupportersByForeignChain>,
     request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ForeignChainSupportError> {
-    let on_chain_foreign_chains_support = policy_reader
-        .get_supported_chains()
-        .await
-        .map_err(ForeignChainSupportError::FailedToReadContract)?;
-
-    let requested_chain = request.chain();
-
-    if on_chain_foreign_chains_support.contains(&requested_chain) {
+) -> Result<(), ChainAvailabilityError> {
+    let Some(supporters_by_foreign_chain) = supporters_by_foreign_chain else {
+        return Err(ChainAvailabilityError::SupportersSnapshotNotReady);
+    };
+    let requested = request.chain();
+    if supporters_by_foreign_chain.contains_key(&requested) {
         Ok(())
     } else {
-        Err(ForeignChainSupportError::ChainNotSupported {
-            requested: requested_chain,
-        })
+        Err(ChainAvailabilityError::ChainNotAvailable { requested })
     }
 }
 
@@ -406,9 +414,16 @@ async fn chain_is_supported(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::indexer::MockReadSupportedForeignChain;
+    use crate::primitives::ParticipantId;
     use assert_matches::assert_matches;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, HashSet};
+
+    fn bitcoin_supporters() -> Option<SupportersByForeignChain> {
+        Some(BTreeMap::from([(
+            dtos::ForeignChain::Bitcoin,
+            HashSet::from([ParticipantId::from_raw(1)]),
+        )]))
+    }
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -418,41 +433,46 @@ mod tests {
         })
     }
 
-    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
-        BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
+    #[test]
+    fn ensure_chain_is_available__should_succeed_when_chain_has_supporters() {
+        // Given
+        let supporters = bitcoin_supporters();
+
+        // When, then
+        assert_matches!(
+            ensure_chain_is_available(&supporters, &bitcoin_request()),
+            Ok(_)
+        );
     }
 
-    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadSupportedForeignChain {
-        let mut reader = MockReadSupportedForeignChain::new();
-        reader
-            .expect_get_supported_chains()
-            .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
-        reader
-    }
-
-    #[tokio::test]
-    async fn chain_is_supported__should_succeed_when_chain_is_present_in_policy() {
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-
-        assert_matches!(chain_is_supported(&reader, &bitcoin_request()).await, Ok(_));
-    }
-
-    #[tokio::test]
-    async fn chain_is_supported__should_fail_when_chain_is_not_present_in_policy() {
-        // On-chain policy has Bitcoin, but request is for Ethereum
-        let reader = mock_policy_reader(bitcoin_chain_policy());
+    #[test]
+    fn ensure_chain_is_available__should_fail_when_chain_has_no_supporters() {
+        // Given: the supporters map covers Bitcoin, but the request is for Ethereum.
+        let supporters = bitcoin_supporters();
         let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
             tx_id: dtos::EvmTxId([0; 32]),
             extractors: vec![],
             finality: dtos::EvmFinality::Finalized,
         });
 
-        let result = chain_is_supported(&reader, &ethereum_request).await;
+        // When, then
         assert_matches!(
-            result,
-            Err(ForeignChainSupportError::ChainNotSupported {
+            ensure_chain_is_available(&supporters, &ethereum_request),
+            Err(ChainAvailabilityError::ChainNotAvailable {
                 requested: dtos::ForeignChain::Ethereum
             })
+        );
+    }
+
+    #[test]
+    fn ensure_chain_is_available__should_fail_when_snapshot_not_received_yet() {
+        // Given: no supporters snapshot from the indexer yet.
+        let supporters = None;
+
+        // When, then
+        assert_matches!(
+            ensure_chain_is_available(&supporters, &bitcoin_request()),
+            Err(ChainAvailabilityError::SupportersSnapshotNotReady)
         );
     }
 }

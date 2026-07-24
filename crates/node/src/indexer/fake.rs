@@ -1,6 +1,5 @@
 use super::IndexerAPI;
 use super::ReadAttestationExpiry;
-use super::ReadSupportedForeignChain;
 use super::foreign_chain::{ForeignChainSupporters, supporters_by_available_chain};
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::migrations::ContractMigrationInfo;
@@ -60,11 +59,6 @@ pub struct FakeMpcContractState {
     pub migration_service: NodeMigrations,
 }
 
-#[derive(Clone)]
-pub struct FakeReadSupportedForeignChain {
-    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
-}
-
 struct FakeAttestationExpiryReader;
 
 impl ReadAttestationExpiry for FakeAttestationExpiryReader {
@@ -74,17 +68,6 @@ impl ReadAttestationExpiry for FakeAttestationExpiryReader {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
     {
         Box::pin(async { Ok(None) })
-    }
-}
-
-impl ReadSupportedForeignChain for FakeReadSupportedForeignChain {
-    async fn get_supported_chains(&self) -> anyhow::Result<dtos::SupportedForeignChains> {
-        Ok(self
-            .contract
-            .lock()
-            .await
-            .supported_foreign_chains()
-            .clone())
     }
 }
 
@@ -568,7 +551,7 @@ struct FakeIndexerCore {
     /// Broadcasts the contract state to each node.
     migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
     /// Mirrors the real indexer's foreign-chain supporters watch channel.
-    foreign_chain_supporters_sender: watch::Sender<ForeignChainSupporters>,
+    foreign_chain_supporters_sender: watch::Sender<Option<ForeignChainSupporters>>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -622,11 +605,11 @@ impl FakeIndexerCore {
                             state.foreign_chains_configs(),
                         );
                         foreign_chain_supporters_sender.send_if_modified(|previous| {
-                            if *previous != supporters {
-                                *previous = supporters;
-                                true
-                            } else {
+                            if previous.as_ref() == Some(&supporters) {
                                 false
+                            } else {
+                                *previous = Some(supporters);
+                                true
                             }
                         });
                     }
@@ -904,7 +887,7 @@ pub struct FakeIndexerManager {
 
     /// Cloned into each node's `IndexerAPI`; tracks the fake contract's
     /// foreign-chain supporters.
-    foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
+    foreign_chain_supporters_receiver: watch::Receiver<Option<ForeignChainSupporters>>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -1094,7 +1077,7 @@ impl FakeIndexerManager {
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
         let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
-            watch::channel(Default::default());
+            watch::channel(None);
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
@@ -1156,6 +1139,13 @@ impl FakeIndexerManager {
             .unwrap()
     }
 
+    /// The supporters channel every node's `IndexerAPI` receives.
+    pub fn subscribe_foreign_chain_supporters(
+        &self,
+    ) -> watch::Receiver<Option<ForeignChainSupporters>> {
+        self.foreign_chain_supporters_receiver.clone()
+    }
+
     /// Sends a signature request to the fake blockchain.
     pub fn request_signature(&self, request: SignatureRequestFromChain) {
         self.signature_request_sender.send(request).unwrap();
@@ -1179,7 +1169,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
+        IndexerAPI<MockTransactionSender>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -1201,9 +1191,6 @@ impl FakeIndexerManager {
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
-        let foreign_chain_policy_reader = FakeReadSupportedForeignChain {
-            contract: self.contract.clone(),
-        };
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
@@ -1214,7 +1201,6 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
-            foreign_chain_policy_reader,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),
         };
