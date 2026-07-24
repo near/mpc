@@ -123,7 +123,7 @@ impl NearBlockchain {
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
-client. It exposes `call` (from the contract account, used only for `init`),
+client. It exposes `call` (from the contract account),
 `contract_handle` (a typed `MpcContractHandle` calling as a given
 `NearKitCaller`), `view`, and `state()` (parsed `ProtocolContractState`).
 
