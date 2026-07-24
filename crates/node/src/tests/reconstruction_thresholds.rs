@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 /// Shared budget for both assertions: the negative window must exceed the worst-case positive
 /// latency, else [`assert_cannot_sign`] could pass merely because a capable domain was slow.
-/// [`warm_up`] keeps that latency low, so 10s is safe.
+/// [`warm_up`] keeps that latency low.
 const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
@@ -40,8 +40,8 @@ async fn request_and_await_response(
     }
 }
 
-/// Primes each domain's presignatures for the current online set with an untimed sign, whose
-/// cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
+/// Primes each domain's presignatures for the current online set with a generously-budgeted sign,
+/// whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
 /// pre-generated presignatures; Frost and CKD sign directly, so pass only the block's signable
 /// CaitSith/DamgardEtAl domains after every online-set change.
 async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
