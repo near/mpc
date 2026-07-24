@@ -792,17 +792,24 @@ impl MpcCluster {
         Ok(())
     }
 
-    pub fn user_client(&self, account_id: &AccountId) -> anyhow::Result<NearKitCaller> {
+    pub fn client_for(&self, account_id: &AccountId) -> anyhow::Result<NearKitCaller> {
         let key = self
             .user_accounts
             .get(account_id)
-            .with_context(|| format!("unknown user account: {account_id}"))?;
+            .or_else(|| {
+                self.nodes
+                    .iter()
+                    .zip(self.node_keys.iter())
+                    .find(|(node, _)| node.account_id() == account_id)
+                    .map(|(_, key)| key)
+            })
+            .with_context(|| format!("unknown account: {account_id}"))?;
         self.blockchain.client_for(account_id.as_ref(), key)
     }
 
     pub fn contract_handle(&self, account_id: &AccountId) -> MpcContractHandle<NearKitCaller> {
         self.contract
-            .handle_for(self.user_client(account_id).unwrap())
+            .handle_for(self.client_for(account_id).unwrap())
     }
 
     pub fn default_user_account(&self) -> &AccountId {
