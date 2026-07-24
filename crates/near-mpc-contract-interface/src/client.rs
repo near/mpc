@@ -255,9 +255,9 @@ mod tests {
         // 1. If the args are json, we print them as a string.
         // 2. if the args are not json, then they are some borsh serialization.
         //    In this case, we print the hex-encoding.
-        let args = match serde_json::from_slice::<serde_json::Value>(&call.args) {
-            Ok(_) => String::from_utf8(call.args.clone()).expect("JSON args are UTF-8"),
-            Err(_) => format!("0x{}", hex::encode(&call.args)),
+        let args = match std::str::from_utf8(&call.args) {
+            Ok(text) if serde_json::from_str::<serde_json::Value>(text).is_ok() => text.to_string(),
+            _ => format!("0x{}", hex::encode(&call.args)),
         };
         format!(
             "contract: {contract_id}\nmethod:   {}\ngas:      {}\ndeposit:  {}\nargs:     {args}",
