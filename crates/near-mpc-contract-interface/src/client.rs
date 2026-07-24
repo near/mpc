@@ -192,10 +192,11 @@ impl<C: CallContract> MpcContractHandle<C> {
         url: String,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&UpdateParticipantUrlArgs::new(url))?;
-        self.call(FunctionCallArgs::no_deposit(
+        self.call(FunctionCallArgs::new(
             UPDATE_PARTICIPANT_URL,
             args,
             MAX_GAS,
+            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
         ))
         .await
     }
