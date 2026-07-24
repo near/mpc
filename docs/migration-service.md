@@ -66,7 +66,10 @@ node, but only of the secret shares. The MPC node generates a few secrets that w
     3. The MPC node returns the AES-256 encrypted keyshares. The MPC node uses the node-operator provided symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX` for encryption.
     4. The `backup-cli` saves the encrypted keyshares to local storage
 
-> **Note**: For soft launch, the operator must manually trigger the backup using the `backup-cli` tool. There is no automatic periodic backup.
+> **Note**: The manual `backup-cli get-keyshares` invocation above is a one-shot backup.
+> For unattended operation, run `backup-cli run` instead (see
+> [Automatic backups](#automatic-backups-backup-cli-run) below), which performs the same
+> exchange automatically on every new epoch.
 
 ```mermaid
 ---
@@ -111,6 +114,27 @@ flowchart TD
     MPC@{ shape: proc}
 ```
 
+##### Automatic backups (`backup-cli run`)
+
+`backup-cli run` is a long-running variant of the soft-launch backup that removes the
+need to trigger backups by hand. It polls the MPC contract's `state` view method over a
+NEAR JSON-RPC endpoint and, whenever the epoch advances (a resharing or key generation
+concludes and the contract returns to `Running`), performs the same fetch-and-store
+exchange as `get-keyshares`. It skips `Resharing`/`Initializing` states and only backs up
+a concluded `Running` keyset. The last-backed-up epoch is derived from the locally stored
+keyshares, so a restart does not re-fetch an already-backed-up epoch.
+
+Prerequisites: `backup-cli generate-keys` and a `register_backup_service` registration
+(via `backup-cli register`) must already be done. The backup encryption key should be
+supplied through the environment (`BACKUP_ENCRYPTION_KEY_HEX`) rather than on the command
+line. The contract account and RPC endpoint are passed via `--mpc-contract-account-id` and
+`--rpc-url` (poll cadence via `--poll-interval-seconds`, default 60).
+
+This mode still runs outside a TEE and persists to disk; it does not submit attestations
+or drive recovery/migration. Verification is observed on the MPC node: each successful
+fetch sets the node's `mpc_last_backup_served_epoch` and
+`mpc_last_backup_served_timestamp_seconds` metrics (see
+[node-operator-metrics.md](design/node-operator-metrics.md)).
 
 ##### Hard Launch
 
@@ -416,8 +440,11 @@ Both soft launch and hard launch implementations share common core components, w
 
 > The soft launch implementation is intentionally simple:
 > - **No TEE**: Runs on operator's standard infrastructure without hardware attestation
-> - **No blockchain interaction**: Does not query or submit transactions to the contract
-> - **No automatic monitoring**: Operator manually triggers backup/restore operations via CLI commands
+> - **No transaction submission**: Does not submit transactions to the contract. The
+>   one-shot commands do not query the chain either; `backup-cli run` reads contract state
+>   via a third-party JSON-RPC endpoint but never signs or submits.
+> - **Monitoring is opt-in**: The one-shot commands are triggered manually; `backup-cli run`
+>   polls contract state and backs up automatically on each new epoch.
 > - **Disk-based storage**: Encrypted keyshares persisted to local filesystem
 > - **Operator provides all context**: Node URL, public keys, and encryption keys passed as CLI arguments
 

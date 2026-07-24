@@ -21,6 +21,14 @@ Chain-gateway pipeline counters, in
 | [`mpc_block_updates_dropped_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | block updates that won't be received by the node (containing signature requests, responses, etc.) | should be zero or flat. If it increases, the consumer is starved or the MPC node is not working correctly |
 | [`mpc_num_fail_on_timeout_indexed`](../../crates/node/src/metrics.rs) | number of calls to `fail_on_timeout` in the MPC contract. Counts the number of failed requests (aggregate over all request types). May contain false positives if `mpc_finalized_blocks_indexed_total` diverges from `mpc_blocks_indexed_total`, as it may count transactions on non-finalized forks. | should be near zero in healthy operation. Sustained non-zero rate means the node (or the cluster) is missing the response deadline or the blockchain has a lot of forks. |
 
+Backup verification, in [`metrics.rs`](../../crates/node/src/metrics.rs). Set when the node
+serves keyshares to its registered backup service (e.g. the `backup-cli run` service):
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_last_backup_served_epoch`](../../crates/node/src/metrics.rs) | epoch id of the last keyset served to the backup service | should equal the current running epoch once a backup has completed for it. Lagging behind means the latest epoch has not been backed up. |
+| [`mpc_last_backup_served_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last keyshare set served to the backup service | should be recent. A large gap since the last resharing means backups are not running. Confirms the node served the keyshares, not that the backup service persisted them. |
+
 ## Recommended alerts
 
 ```promql
@@ -37,4 +45,8 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 # Signature timeouts (warn): the node failed to produce a signature within the
 # deadline. Downstream symptom; cross-check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Backups stale (warn): no keyshares served to the backup service recently. Only
+# meaningful once an automatic backup service is running against this node.
+time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
 ```

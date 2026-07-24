@@ -279,6 +279,24 @@ pub static MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS: LazyLock<prometheus::IntG
         .unwrap()
     });
 
+pub static MPC_LAST_BACKUP_SERVED_EPOCH: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
+    prometheus::register_int_gauge!(
+        "mpc_last_backup_served_epoch",
+        "Epoch id of the most recent keyset successfully served to the registered backup service"
+    )
+    .unwrap()
+});
+
+pub static MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_last_backup_served_timestamp_seconds",
+            "Unix time at which keyshares were most recently served to the registered backup \
+             service"
+        )
+        .unwrap()
+    });
+
 pub static MPC_OWN_IMAGE_HASH_ALLOWED: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_own_image_hash_allowed",

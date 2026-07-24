@@ -1211,6 +1211,7 @@ dependencies = [
  "ed25519-dalek",
  "mpc-node",
  "near-account-id",
+ "near-kit",
  "near-mpc-contract-interface",
  "rand 0.8.6",
  "rand_core 0.6.4",
@@ -1220,6 +1221,9 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
