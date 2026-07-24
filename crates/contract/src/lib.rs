@@ -4169,7 +4169,6 @@ mod tests {
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
             .predecessor_account_id(account_id.clone())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
 
@@ -4598,7 +4597,6 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
 
@@ -4613,7 +4611,6 @@ mod tests {
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
             .predecessor_account_id(contract_account_id)
-            .attached_deposit(NearToken::from_near(1))
             .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
             .build();
         testing_env!(context);
@@ -4695,7 +4692,6 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
             .predecessor_account_id(outsider_id.clone())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
 
@@ -4757,7 +4753,6 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(outsider_id.clone())
                 .predecessor_account_id(outsider_id.clone())
-                .attached_deposit(NearToken::from_near(1))
                 .build()
         );
 
