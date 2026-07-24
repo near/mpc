@@ -53,6 +53,7 @@ pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThres
         GovernanceThreshold::new(reconstruction_threshold.inner()),
     )
     .unwrap();
+    // TODO(XXXX): Switch to canonical after upgrade 3.14.0
     let parameters_dto: near_mpc_contract_interface::types::GovernanceThresholdParameters =
         parameters.into();
     let participants: ParticipantsConfig = convert_participant_infos(parameters_dto, None).unwrap();

@@ -13,10 +13,10 @@ use near_mpc_contract_interface::{
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
         ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, GovernanceThreshold, GovernanceThresholdParameters, MockAttestation,
+        ForeignChain, GovernanceThreshold, GovernanceThresholdParametersCompat, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs,
+        ProposedGovernanceThresholdParametersCompat, Protocol, ProtocolContractState,
+        ProviderConfig, ProviderId, ReconstructionThreshold, SignRequestArgs,
     },
 };
 use rand::SeedableRng;
@@ -147,7 +147,7 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `GovernanceThresholdParameters` shape.
+    /// Current `GovernanceThresholdParametersCompat` shape.
     #[default]
     Current,
 }
@@ -157,7 +157,8 @@ impl ContractInitFormat {
     /// in the wire format that the targeted contract expects.
     fn init_parameters_json(
         self,
-        params: &GovernanceThresholdParameters,
+        // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+        params: &GovernanceThresholdParametersCompat,
     ) -> serde_json::Result<serde_json::Value> {
         match self {
             Self::Current => serde_json::to_value(params),
@@ -578,8 +579,8 @@ impl MpcCluster {
 
         let participants =
             build_participants_from_nodes(new_participants, &self.nodes, current_participants);
-        let proposal = ProposedGovernanceThresholdParameters {
-            parameters: GovernanceThresholdParameters {
+        let proposal = ProposedGovernanceThresholdParametersCompat {
+            parameters: GovernanceThresholdParametersCompat {
                 threshold: GovernanceThreshold(new_threshold as u64),
                 participants,
             },
@@ -1309,7 +1310,7 @@ async fn init_contract(
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
-    let params = GovernanceThresholdParameters {
+    let params = GovernanceThresholdParametersCompat {
         threshold: GovernanceThreshold(threshold as u64),
         participants,
     };

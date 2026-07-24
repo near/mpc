@@ -8,7 +8,7 @@ use mpc_contract::primitives::thresholds::{
     GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
+use near_mpc_contract_interface::types::{self as dtos, ProtocolContractStateCompat};
 use near_workspaces::{Account, Contract};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ pub async fn conclude_resharing(
     all_participants: &[Account],
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
-    let ProtocolContractState::Resharing(resharing_state) = get_state(contract).await else {
+    let ProtocolContractStateCompat::Resharing(resharing_state) = get_state(contract).await else {
         anyhow::bail!("expected resharing state");
     };
     if resharing_state.resharing_key.epoch_id != prospective_epoch_id {
@@ -36,7 +36,7 @@ pub async fn conclude_resharing(
             attempt_id: AttemptId(0),
         };
         let state = get_state(contract).await;
-        if !matches!(state, ProtocolContractState::Resharing(_)) {
+        if !matches!(state, ProtocolContractStateCompat::Resharing(_)) {
             anyhow::bail!("expected resharing state");
         }
         start_reshare_instance(contract, all_participants, key_event_id).await?;
@@ -99,14 +99,14 @@ pub async fn start_reshare_instance(
 ) -> anyhow::Result<()> {
     let state = get_state(contract).await;
     let active = match &state {
-        ProtocolContractState::Initializing(s) => {
+        ProtocolContractStateCompat::Initializing(s) => {
             &s.generating_key.parameters.participants.participants
         }
-        ProtocolContractState::Running(s) => &s.parameters.participants.participants,
-        ProtocolContractState::Resharing(s) => {
+        ProtocolContractStateCompat::Running(s) => &s.parameters.participants.participants,
+        ProtocolContractStateCompat::Resharing(s) => {
             &s.resharing_key.parameters.participants.participants
         }
-        ProtocolContractState::NotInitialized => {
+        ProtocolContractStateCompat::NotInitialized => {
             panic!("protocol state must be initialized")
         }
     };

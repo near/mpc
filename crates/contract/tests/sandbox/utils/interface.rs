@@ -27,8 +27,9 @@ impl IntoContractType<Participants> for &dtos::Participants {
     }
 }
 
+// TODO(XXXX): Switch to canonical after upgrade 3.14.0
 impl IntoContractType<mpc_contract::primitives::thresholds::GovernanceThresholdParameters>
-    for &dtos::GovernanceThresholdParameters
+    for &dtos::GovernanceThresholdParametersCompat
 {
     fn into_contract_type(
         self,

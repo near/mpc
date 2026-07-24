@@ -7,7 +7,8 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
+        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants,
+        ProtocolContractStateCompat,
     },
 };
 use near_workspaces::{
@@ -22,7 +23,7 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
         .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
 }
 
-pub async fn get_state(contract: &Contract) -> ProtocolContractState {
+pub async fn get_state(contract: &Contract) -> ProtocolContractStateCompat {
     contract
         .view(method_names::STATE)
         .await
@@ -33,7 +34,7 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
 
 pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
     let state = get_state(contract).await;
-    let ProtocolContractState::Running(running) = state else {
+    let ProtocolContractStateCompat::Running(running) = state else {
         panic!("Expected running state")
     };
 
@@ -116,8 +117,9 @@ pub async fn assert_running_return_participants(
     contract: &Contract,
 ) -> anyhow::Result<Participants> {
     // Verify contract is back to running state with new threshold
-    let final_state: ProtocolContractState = contract.view(method_names::STATE).await?.json()?;
-    let ProtocolContractState::Running(running_state) = final_state else {
+    let final_state: ProtocolContractStateCompat =
+        contract.view(method_names::STATE).await?.json()?;
+    let ProtocolContractStateCompat::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state after resharing, but got: {:?}",
             final_state
@@ -127,8 +129,8 @@ pub async fn assert_running_return_participants(
 }
 
 pub async fn assert_running_return_threshold(contract: &Contract) -> GovernanceThreshold {
-    let final_state: ProtocolContractState = get_state(contract).await;
-    let ProtocolContractState::Running(running_state) = final_state else {
+    let final_state: ProtocolContractStateCompat = get_state(contract).await;
+    let ProtocolContractStateCompat::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state: {:?}",
             final_state

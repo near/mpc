@@ -337,7 +337,13 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, dtos::ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, STATE).await
+        // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+        // The contract's `state()` view still emits the pre-3903 field names, so
+        // deserialize the compat shape and convert to the canonical DTO used
+        // throughout the node.
+        let (height, state): (u64, dtos::ProtocolContractStateCompat) =
+            self.get_mpc_state(mpc_contract_id, STATE).await?;
+        Ok((height, state.into()))
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(

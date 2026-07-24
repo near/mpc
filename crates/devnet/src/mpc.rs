@@ -24,10 +24,10 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::call_args::VoteUpdateArgs;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, EpochId, GovernanceThreshold, GovernanceThresholdParameters,
+    DomainConfig, DomainPurpose, EpochId, GovernanceThreshold, GovernanceThresholdParametersCompat,
     NodeImageHash, ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, protocol_state_to_string,
+    ProposedGovernanceThresholdParametersCompat, Protocol, ProtocolContractState,
+    ProtocolContractStateCompat, ReconstructionThreshold, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -380,7 +380,7 @@ impl MpcInitContractCmd {
             participant_entries.push((account_id.clone(), next_id, info));
             next_id = next_id.next();
         }
-        let parameters = GovernanceThresholdParameters {
+        let parameters = GovernanceThresholdParametersCompat {
             participants: Participants {
                 next_id,
                 participants: participant_entries,
@@ -411,7 +411,8 @@ impl MpcInitContractCmd {
 
 #[derive(Serialize)]
 struct InitV2Args {
-    parameters: GovernanceThresholdParameters,
+    // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+    parameters: GovernanceThresholdParametersCompat,
     init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
@@ -750,7 +751,7 @@ impl MpcVoteNewParametersCmd {
         let threshold = if let Some(threshold) = self.set_threshold {
             GovernanceThreshold::new(threshold)
         } else {
-            parameters.threshold
+            parameters.governance_threshold
         };
         let per_domain_thresholds: std::collections::BTreeMap<_, _> = self
             .per_domain_thresholds
@@ -762,8 +763,8 @@ impl MpcVoteNewParametersCmd {
                 )
             })
             .collect();
-        let proposal = ProposedGovernanceThresholdParameters {
-            parameters: GovernanceThresholdParameters {
+        let proposal = ProposedGovernanceThresholdParametersCompat {
+            parameters: GovernanceThresholdParametersCompat {
                 participants,
                 threshold,
             },
@@ -838,7 +839,7 @@ impl MpcVoteApprovedHashCmd {
             }
         };
 
-        let threshold: u64 = running_state.parameters.threshold.value();
+        let threshold: u64 = running_state.parameters.governance_threshold.value();
         let accounts = get_voter_account_ids(mpc_setup, &self.voters);
         let mut voting_futures = vec![];
 
@@ -896,10 +897,15 @@ pub async fn read_contract_state(
     match result {
         Ok(result) => match result.kind {
             QueryResponseKind::CallResult(result) => {
-                serde_json::from_slice(&result.result).expect(&format!(
-                    "Failed to deserialize contract state: {}",
-                    String::from_utf8_lossy(&result.result)
-                ))
+                // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+                // `state()` still emits the pre-3903 field names; deserialize the
+                // compat shape and convert to the canonical DTO.
+                let state: ProtocolContractStateCompat = serde_json::from_slice(&result.result)
+                    .expect(&format!(
+                        "Failed to deserialize contract state: {}",
+                        String::from_utf8_lossy(&result.result)
+                    ));
+                state.into()
             }
             _ => panic!("Unexpected response: {:?}", result),
         },
@@ -917,7 +923,8 @@ pub async fn read_contract_state(
 #[derive(Serialize)]
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
-    proposal: ProposedGovernanceThresholdParameters,
+    // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+    proposal: ProposedGovernanceThresholdParametersCompat,
 }
 
 #[derive(Serialize)]

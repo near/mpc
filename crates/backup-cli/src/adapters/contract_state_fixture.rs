@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::{
+    Keyset, ProtocolContractState, ProtocolContractStateCompat,
+};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -49,7 +51,12 @@ impl ContractStateReader for ContractStateFixture {
             .await
             .map_err(Error::Read)?;
 
-        serde_json::from_slice(&buffer).map_err(Error::JsonDeserialization)
+        // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+        // `state()` still emits the pre-3903 field names; deserialize the compat
+        // shape and convert to the canonical DTO.
+        let state: ProtocolContractStateCompat =
+            serde_json::from_slice(&buffer).map_err(Error::JsonDeserialization)?;
+        Ok(state.into())
     }
 }
 
@@ -95,7 +102,10 @@ mod tests {
         let ProtocolContractState::Running(state) = &contract_state else {
             panic!("expected Running state, got {contract_state:?}");
         };
-        assert_eq!(state.parameters.threshold, GovernanceThreshold::new(7));
+        assert_eq!(
+            state.parameters.governance_threshold,
+            GovernanceThreshold::new(7)
+        );
         assert_eq!(state.domains.domains.len(), 2);
     }
 }

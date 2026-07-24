@@ -141,15 +141,47 @@ pub use near_mpc_crypto_types::{KeyForDomain, Keyset};
 )]
 pub struct GovernanceThresholdParameters {
     pub participants: Participants,
+    pub governance_threshold: GovernanceThreshold,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct GovernanceThresholdParametersCompat {
+    pub participants: Participants,
     pub threshold: GovernanceThreshold,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<GovernanceThresholdParametersCompat> for GovernanceThresholdParameters {
+    fn from(value: GovernanceThresholdParametersCompat) -> Self {
+        Self {
+            participants: value.participants,
+            governance_threshold: value.threshold,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<GovernanceThresholdParameters> for GovernanceThresholdParametersCompat {
+    fn from(value: GovernanceThresholdParameters) -> Self {
+        Self {
+            participants: value.participants,
+            threshold: value.governance_threshold,
+        }
+    }
 }
 
 /// A proposed set of threshold parameters submitted to `vote_new_parameters`:
 /// the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold`
-/// updates for the resharing it would trigger. An empty `per_domain_thresholds`
-/// keeps the current ones; a populated map must reference only existing domains
-/// (contract-validated), is applied to the `DomainRegistry` on resharing, and
-/// never persists onto the stored [`GovernanceThresholdParameters`].
+/// updates for the resharing it would trigger. An empty
+/// `per_domain_reconstruction_thresholds` keeps the current ones; a populated map
+/// must reference only existing domains (contract-validated), is applied to the
+/// `DomainRegistry` on resharing, and never persists onto the stored
+/// [`GovernanceThresholdParameters`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -158,7 +190,39 @@ pub struct GovernanceThresholdParameters {
 pub struct ProposedGovernanceThresholdParameters {
     pub parameters: GovernanceThresholdParameters,
     #[serde(default)]
+    pub per_domain_reconstruction_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ProposedGovernanceThresholdParametersCompat {
+    pub parameters: GovernanceThresholdParametersCompat,
+    #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<ProposedGovernanceThresholdParametersCompat> for ProposedGovernanceThresholdParameters {
+    fn from(value: ProposedGovernanceThresholdParametersCompat) -> Self {
+        Self {
+            parameters: value.parameters.into(),
+            per_domain_reconstruction_thresholds: value.per_domain_thresholds,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<ProposedGovernanceThresholdParameters> for ProposedGovernanceThresholdParametersCompat {
+    fn from(value: ProposedGovernanceThresholdParameters) -> Self {
+        Self {
+            parameters: value.parameters.into(),
+            per_domain_thresholds: value.per_domain_reconstruction_thresholds,
+        }
+    }
 }
 
 // =============================================================================
@@ -174,6 +238,43 @@ pub struct ProposedGovernanceThresholdParameters {
 pub struct GovernanceThresholdParametersVotes {
     pub proposal_by_account:
         BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct GovernanceThresholdParametersVotesCompat {
+    pub proposal_by_account:
+        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParametersCompat>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<GovernanceThresholdParametersVotesCompat> for GovernanceThresholdParametersVotes {
+    fn from(value: GovernanceThresholdParametersVotesCompat) -> Self {
+        Self {
+            proposal_by_account: value
+                .proposal_by_account
+                .into_iter()
+                .map(|(account, proposal)| (account, proposal.into()))
+                .collect(),
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<GovernanceThresholdParametersVotes> for GovernanceThresholdParametersVotesCompat {
+    fn from(value: GovernanceThresholdParametersVotes) -> Self {
+        Self {
+            proposal_by_account: value
+                .proposal_by_account
+                .into_iter()
+                .map(|(account, proposal)| (account, proposal.into()))
+                .collect(),
+        }
+    }
 }
 
 /// Votes for adding new domains.
@@ -218,6 +319,46 @@ pub struct KeyEvent {
     pub next_attempt_id: AttemptId,
 }
 
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct KeyEventCompat {
+    pub epoch_id: EpochId,
+    pub domain: DomainConfig,
+    pub parameters: GovernanceThresholdParametersCompat,
+    pub instance: Option<KeyEventInstance>,
+    pub next_attempt_id: AttemptId,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<KeyEventCompat> for KeyEvent {
+    fn from(value: KeyEventCompat) -> Self {
+        Self {
+            epoch_id: value.epoch_id,
+            domain: value.domain,
+            parameters: value.parameters.into(),
+            instance: value.instance,
+            next_attempt_id: value.next_attempt_id,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<KeyEvent> for KeyEventCompat {
+    fn from(value: KeyEvent) -> Self {
+        Self {
+            epoch_id: value.epoch_id,
+            domain: value.domain,
+            parameters: value.parameters.into(),
+            instance: value.instance,
+            next_attempt_id: value.next_attempt_id,
+        }
+    }
+}
+
 // =============================================================================
 // Contract State Types
 // =============================================================================
@@ -236,6 +377,46 @@ pub struct InitializingContractState {
     pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
 }
 
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct InitializingContractStateCompat {
+    pub domains: DomainRegistry,
+    pub epoch_id: EpochId,
+    pub generated_keys: Vec<KeyForDomain>,
+    pub generating_key: KeyEventCompat,
+    pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<InitializingContractStateCompat> for InitializingContractState {
+    fn from(value: InitializingContractStateCompat) -> Self {
+        Self {
+            domains: value.domains,
+            epoch_id: value.epoch_id,
+            generated_keys: value.generated_keys,
+            generating_key: value.generating_key.into(),
+            cancel_votes: value.cancel_votes,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<InitializingContractState> for InitializingContractStateCompat {
+    fn from(value: InitializingContractState) -> Self {
+        Self {
+            domains: value.domains,
+            epoch_id: value.epoch_id,
+            generated_keys: value.generated_keys,
+            generating_key: value.generating_key.into(),
+            cancel_votes: value.cancel_votes,
+        }
+    }
+}
+
 /// State when the contract is ready for signature operations.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
@@ -249,6 +430,49 @@ pub struct RunningContractState {
     pub parameters_votes: GovernanceThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct RunningContractStateCompat {
+    pub domains: DomainRegistry,
+    pub keyset: Keyset,
+    pub parameters: GovernanceThresholdParametersCompat,
+    pub parameters_votes: GovernanceThresholdParametersVotesCompat,
+    pub add_domains_votes: AddDomainsVotes,
+    pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<RunningContractStateCompat> for RunningContractState {
+    fn from(value: RunningContractStateCompat) -> Self {
+        Self {
+            domains: value.domains,
+            keyset: value.keyset,
+            parameters: value.parameters.into(),
+            parameters_votes: value.parameters_votes.into(),
+            add_domains_votes: value.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: value.previously_cancelled_resharing_epoch_id,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<RunningContractState> for RunningContractStateCompat {
+    fn from(value: RunningContractState) -> Self {
+        Self {
+            domains: value.domains,
+            keyset: value.keyset,
+            parameters: value.parameters.into(),
+            parameters_votes: value.parameters_votes.into(),
+            add_domains_votes: value.add_domains_votes,
+            previously_cancelled_resharing_epoch_id: value.previously_cancelled_resharing_epoch_id,
+        }
+    }
 }
 
 /// State when the contract is resharing keys to new participants.
@@ -265,7 +489,48 @@ pub struct ResharingContractState {
     /// Per-domain `ReconstructionThreshold` updates carried from the accepted
     /// proposal. Applied to the `DomainRegistry` when resharing completes.
     #[serde(default)]
+    pub per_domain_reconstruction_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ResharingContractStateCompat {
+    pub previous_running_state: RunningContractStateCompat,
+    pub reshared_keys: Vec<KeyForDomain>,
+    pub resharing_key: KeyEventCompat,
+    pub cancellation_requests: HashSet<AuthenticatedAccountId>,
+    #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<ResharingContractStateCompat> for ResharingContractState {
+    fn from(value: ResharingContractStateCompat) -> Self {
+        Self {
+            previous_running_state: value.previous_running_state.into(),
+            reshared_keys: value.reshared_keys,
+            resharing_key: value.resharing_key.into(),
+            cancellation_requests: value.cancellation_requests,
+            per_domain_reconstruction_thresholds: value.per_domain_thresholds,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<ResharingContractState> for ResharingContractStateCompat {
+    fn from(value: ResharingContractState) -> Self {
+        Self {
+            previous_running_state: value.previous_running_state.into(),
+            reshared_keys: value.reshared_keys,
+            resharing_key: value.resharing_key.into(),
+            cancellation_requests: value.cancellation_requests,
+            per_domain_thresholds: value.per_domain_reconstruction_thresholds,
+        }
+    }
 }
 
 /// The main protocol contract state enum.
@@ -281,6 +546,43 @@ pub enum ProtocolContractState {
     Resharing(ResharingContractState),
 }
 
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum ProtocolContractStateCompat {
+    NotInitialized,
+    Initializing(InitializingContractStateCompat),
+    Running(RunningContractStateCompat),
+    Resharing(ResharingContractStateCompat),
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<ProtocolContractStateCompat> for ProtocolContractState {
+    fn from(value: ProtocolContractStateCompat) -> Self {
+        match value {
+            ProtocolContractStateCompat::NotInitialized => Self::NotInitialized,
+            ProtocolContractStateCompat::Initializing(state) => Self::Initializing(state.into()),
+            ProtocolContractStateCompat::Running(state) => Self::Running(state.into()),
+            ProtocolContractStateCompat::Resharing(state) => Self::Resharing(state.into()),
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl From<ProtocolContractState> for ProtocolContractStateCompat {
+    fn from(value: ProtocolContractState) -> Self {
+        match value {
+            ProtocolContractState::NotInitialized => Self::NotInitialized,
+            ProtocolContractState::Initializing(state) => Self::Initializing(state.into()),
+            ProtocolContractState::Running(state) => Self::Running(state.into()),
+            ProtocolContractState::Resharing(state) => Self::Resharing(state.into()),
+        }
+    }
+}
+
 fn params_to_string(output: &mut String, parameters: &GovernanceThresholdParameters) {
     output.push_str("    Participants:\n");
     for (account_id, id, info) in &parameters.participants.participants {
@@ -288,7 +590,7 @@ fn params_to_string(output: &mut String, parameters: &GovernanceThresholdParamet
     }
     output.push_str(&format!(
         "    GovernanceThreshold: {}\n",
-        parameters.threshold.value()
+        parameters.governance_threshold.value()
     ));
 }
 
@@ -461,8 +763,8 @@ mod tests {
     fn proposed_threshold_parameters__handles_current_proposal_payload() {
         // Given
         let participants = sample_participants();
-        let proposal = serde_json::to_value(ProposedGovernanceThresholdParameters {
-            parameters: GovernanceThresholdParameters {
+        let proposal = serde_json::to_value(ProposedGovernanceThresholdParametersCompat {
+            parameters: GovernanceThresholdParametersCompat {
                 participants,
                 threshold: GovernanceThreshold::new(1),
             },
@@ -471,7 +773,7 @@ mod tests {
         .unwrap();
 
         // When
-        let parsed: ProposedGovernanceThresholdParameters =
+        let parsed: ProposedGovernanceThresholdParametersCompat =
             serde_json::from_value(proposal).unwrap();
 
         // Then
@@ -493,7 +795,7 @@ mod tests {
         .unwrap();
 
         // When
-        let parsed: ProposedGovernanceThresholdParameters =
+        let parsed: ProposedGovernanceThresholdParametersCompat =
             serde_json::from_value(proposal).unwrap();
 
         // Then

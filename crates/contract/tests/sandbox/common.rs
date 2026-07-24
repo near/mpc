@@ -7,7 +7,7 @@ use crate::sandbox::utils::{
     sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
 use digest::Digest;
-use dtos::ProtocolContractState;
+use dtos::ProtocolContractStateCompat;
 use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
@@ -376,7 +376,7 @@ pub async fn propose_and_vote_contract_binary(
         .await
         .expect("state request succeeds");
 
-    let _state: ProtocolContractState = state_request_execution
+    let _state: ProtocolContractStateCompat = state_request_execution
         .json()
         .expect("state is deserializable.");
 
@@ -515,10 +515,10 @@ pub async fn call_contract_key_generation<const N: usize>(
     let mut domain_keys = vec![];
 
     let existing_domains = {
-        let state: ProtocolContractState = get_state(contract).await;
+        let state: ProtocolContractStateCompat = get_state(contract).await;
         match state {
-            ProtocolContractState::Running(state) => state.domains.domains.len(),
-            _ => panic!("ProtocolContractState must be Running"),
+            ProtocolContractStateCompat::Running(state) => state.domains.domains.len(),
+            _ => panic!("ProtocolContractStateCompat must be Running"),
         }
     };
 
@@ -526,9 +526,9 @@ pub async fn call_contract_key_generation<const N: usize>(
         .await
         .unwrap();
 
-    let state: ProtocolContractState = get_state(contract).await;
+    let state: ProtocolContractStateCompat = get_state(contract).await;
     match state {
-        ProtocolContractState::Initializing(state) => {
+        ProtocolContractStateCompat::Initializing(state) => {
             assert_eq!(
                 state.domains.domains.len(),
                 existing_domains + domains_to_add.len()
@@ -559,9 +559,9 @@ pub async fn call_contract_key_generation<const N: usize>(
             .unwrap();
     }
 
-    let state: ProtocolContractState = get_state(contract).await;
+    let state: ProtocolContractStateCompat = get_state(contract).await;
     match state {
-        ProtocolContractState::Running(state) => {
+        ProtocolContractStateCompat::Running(state) => {
             assert_eq!(state.keyset.epoch_id.0, expected_epoch_id);
             assert_eq!(
                 state.domains.domains.len(),

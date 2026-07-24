@@ -17,7 +17,7 @@ use crate::sandbox::{
 };
 use mpc_contract::update::UpdateId;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractState};
+use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractStateCompat};
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 
@@ -149,7 +149,7 @@ async fn test_propose_update_config() {
         .unwrap()
         .json()
         .unwrap();
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
     let first_proposal = &proposals[0];
@@ -242,7 +242,7 @@ async fn test_invalid_contract_deploy() {
         .unwrap();
 
     dbg!(&execution);
-    let state: ProtocolContractState = execution.json().unwrap();
+    let state: ProtocolContractStateCompat = execution.json().unwrap();
     dbg!(state);
 }
 
@@ -302,7 +302,7 @@ async fn test_propose_update_contract_many() {
     }
 
     // Let's check that we can call into the state and see all the proposals.
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     dbg!(state);
 }
 

@@ -789,7 +789,7 @@ expression: abi
             {
               "name": "parameters",
               "type_schema": {
-                "$ref": "#/definitions/GovernanceThresholdParameters"
+                "$ref": "#/definitions/GovernanceThresholdParametersCompat"
               }
             },
             {
@@ -844,7 +844,7 @@ expression: abi
             {
               "name": "parameters",
               "type_schema": {
-                "$ref": "#/definitions/GovernanceThresholdParameters"
+                "$ref": "#/definitions/GovernanceThresholdParametersCompat"
               }
             },
             {
@@ -2336,7 +2336,7 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/ProtocolContractState"
+            "$ref": "#/definitions/ProtocolContractStateCompat"
           }
         }
       },
@@ -2650,7 +2650,7 @@ expression: abi
             {
               "name": "proposal",
               "type_schema": {
-                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
+                "$ref": "#/definitions/ProposedGovernanceThresholdParametersCompat"
               }
             }
           ]
@@ -3886,7 +3886,7 @@ expression: abi
           }
         },
         "EpochId": {
-          "description": "An EpochId uniquely identifies a GovernanceThresholdParameters (but not vice-versa). Every time we change the GovernanceThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
+          "description": "An EpochId uniquely identifies a GovernanceThresholdParametersCompat (but not vice-versa). Every time we change the GovernanceThresholdParametersCompat (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -4214,8 +4214,8 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
-        "GovernanceThresholdParameters": {
-          "description": "GovernanceThreshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedGovernanceThresholdParameters`].",
+        "GovernanceThresholdParametersCompat": {
+          "description": "GovernanceThreshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedGovernanceThresholdParametersCompat`].",
           "type": "object",
           "required": [
             "participants",
@@ -4230,7 +4230,7 @@ expression: abi
             }
           }
         },
-        "GovernanceThresholdParametersVotes": {
+        "GovernanceThresholdParametersVotesCompat": {
           "description": "Votes for threshold parameter changes.",
           "type": "object",
           "required": [
@@ -4240,7 +4240,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
+                "$ref": "#/definitions/ProposedGovernanceThresholdParametersCompat"
               }
             }
           }
@@ -4420,7 +4420,7 @@ expression: abi
             }
           }
         },
-        "InitializingContractState": {
+        "InitializingContractStateCompat": {
           "description": "State when the contract is generating keys for new domains.",
           "type": "object",
           "required": [
@@ -4451,7 +4451,7 @@ expression: abi
               }
             },
             "generating_key": {
-              "$ref": "#/definitions/KeyEvent"
+              "$ref": "#/definitions/KeyEventCompat"
             }
           }
         },
@@ -4480,7 +4480,7 @@ expression: abi
             }
           }
         },
-        "KeyEvent": {
+        "KeyEventCompat": {
           "description": "Key generation or resharing event state.",
           "type": "object",
           "required": [
@@ -4510,12 +4510,12 @@ expression: abi
               "$ref": "#/definitions/AttemptId"
             },
             "parameters": {
-              "$ref": "#/definitions/GovernanceThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParametersCompat"
             }
           }
         },
         "KeyEventId": {
-          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the GovernanceThresholdParameters that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
+          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the GovernanceThresholdParametersCompat that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
           "type": "object",
           "required": [
             "attempt_id",
@@ -4947,7 +4947,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`GovernanceThresholdParametersCompat`](crate::types::state::GovernanceThresholdParametersCompat)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
           "type": "object",
           "required": [
             "next_id",
@@ -5091,15 +5091,15 @@ expression: abi
             }
           }
         },
-        "ProposedGovernanceThresholdParameters": {
-          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`GovernanceThresholdParameters`].",
+        "ProposedGovernanceThresholdParametersCompat": {
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParametersCompat`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`GovernanceThresholdParametersCompat`].",
           "type": "object",
           "required": [
             "parameters"
           ],
           "properties": {
             "parameters": {
-              "$ref": "#/definitions/GovernanceThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParametersCompat"
             },
             "per_domain_thresholds": {
               "default": {},
@@ -5145,7 +5145,7 @@ expression: abi
             "DamgardEtAl"
           ]
         },
-        "ProtocolContractState": {
+        "ProtocolContractStateCompat": {
           "description": "The main protocol contract state enum.",
           "oneOf": [
             {
@@ -5161,7 +5161,7 @@ expression: abi
               ],
               "properties": {
                 "Initializing": {
-                  "$ref": "#/definitions/InitializingContractState"
+                  "$ref": "#/definitions/InitializingContractStateCompat"
                 }
               },
               "additionalProperties": false
@@ -5173,7 +5173,7 @@ expression: abi
               ],
               "properties": {
                 "Running": {
-                  "$ref": "#/definitions/RunningContractState"
+                  "$ref": "#/definitions/RunningContractStateCompat"
                 }
               },
               "additionalProperties": false
@@ -5185,7 +5185,7 @@ expression: abi
               ],
               "properties": {
                 "Resharing": {
-                  "$ref": "#/definitions/ResharingContractState"
+                  "$ref": "#/definitions/ResharingContractStateCompat"
                 }
               },
               "additionalProperties": false
@@ -5393,7 +5393,7 @@ expression: abi
             }
           ]
         },
-        "ResharingContractState": {
+        "ResharingContractStateCompat": {
           "description": "State when the contract is resharing keys to new participants.",
           "type": "object",
           "required": [
@@ -5421,7 +5421,7 @@ expression: abi
               }
             },
             "previous_running_state": {
-              "$ref": "#/definitions/RunningContractState"
+              "$ref": "#/definitions/RunningContractStateCompat"
             },
             "reshared_keys": {
               "type": "array",
@@ -5430,7 +5430,7 @@ expression: abi
               }
             },
             "resharing_key": {
-              "$ref": "#/definitions/KeyEvent"
+              "$ref": "#/definitions/KeyEventCompat"
             }
           }
         },
@@ -5463,7 +5463,7 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "RunningContractState": {
+        "RunningContractStateCompat": {
           "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
@@ -5484,10 +5484,10 @@ expression: abi
               "$ref": "#/definitions/Keyset2"
             },
             "parameters": {
-              "$ref": "#/definitions/GovernanceThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParametersCompat"
             },
             "parameters_votes": {
-              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
+              "$ref": "#/definitions/GovernanceThresholdParametersVotesCompat"
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [

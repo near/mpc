@@ -29,10 +29,13 @@ pub mod types {
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
         DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
-        GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
-        InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-        ReconstructionThreshold, ResharingContractState, RunningContractState,
+        GovernanceThresholdParameters, GovernanceThresholdParametersCompat,
+        GovernanceThresholdParametersVotes, GovernanceThresholdParametersVotesCompat,
+        InitializingContractState, InitializingContractStateCompat, KeyEvent, KeyEventCompat,
+        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProposedGovernanceThresholdParameters,
+        ProposedGovernanceThresholdParametersCompat, Protocol, ProtocolContractState,
+        ProtocolContractStateCompat, ReconstructionThreshold, ResharingContractState,
+        ResharingContractStateCompat, RunningContractState, RunningContractStateCompat,
         protocol_state_to_string,
     };
     pub use tee::{AllowedMpcDockerImageHash, NodeId};

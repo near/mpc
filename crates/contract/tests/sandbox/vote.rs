@@ -15,8 +15,8 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use dtos::{
-    AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, Protocol, ProtocolContractState,
-    RunningContractState,
+    AttemptId, Curve, DomainConfig, DomainPurpose, KeyEventId, Protocol,
+    ProtocolContractStateCompat, RunningContractStateCompat,
 };
 use mpc_contract::primitives::{
     test_utils::infer_purpose_from_protocol,
@@ -42,7 +42,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         .build()
         .await;
     let init_state = get_state(&contract).await;
-    let ProtocolContractState::Running(ref init_running) = init_state else {
+    let ProtocolContractStateCompat::Running(ref init_running) = init_state else {
         panic!("expected running state");
     };
     let epoch_id = init_running.keyset.epoch_id;
@@ -63,7 +63,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     .await
     .unwrap();
     let state = get_state(&contract).await;
-    let ProtocolContractState::Initializing(ref init) = state else {
+    let ProtocolContractStateCompat::Initializing(ref init) = state else {
         panic!("expected initializing state");
     };
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
@@ -104,7 +104,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 
     // ensure the protocol resumed running state and the public key was added
     let state = get_state(&contract).await;
-    let ProtocolContractState::Running(ref running) = state else {
+    let ProtocolContractStateCompat::Running(ref running) = state else {
         panic!("expected running state");
     };
     let found_key: near_sdk::PublicKey = running
@@ -148,7 +148,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         .build()
         .await;
     let init_state = get_state(&contract).await;
-    let ProtocolContractState::Running(ref init_running) = init_state else {
+    let ProtocolContractStateCompat::Running(ref init_running) = init_state else {
         panic!("expected running state");
     };
     let epoch_id: u64 = init_running.keyset.epoch_id.0;
@@ -178,7 +178,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         .unwrap();
 
         let state = get_state(&contract).await;
-        let ProtocolContractState::Initializing(ref init) = state else {
+        let ProtocolContractStateCompat::Initializing(ref init) = state else {
             panic!("expected initializing state");
         };
         assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
@@ -213,7 +213,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // ensure we return to running state and that no key was registered
         let state = get_state(&contract).await;
-        let ProtocolContractState::Running(ref running) = state else {
+        let ProtocolContractStateCompat::Running(ref running) = state else {
             panic!("expected running state");
         };
         assert!(
@@ -266,9 +266,9 @@ async fn test_resharing() -> anyhow::Result<()> {
         .await
         .unwrap();
 
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     match state {
-        ProtocolContractState::Running(state) => {
+        ProtocolContractStateCompat::Running(state) => {
             assert_eq!(
                 state.parameters.participants.participants.len(),
                 PARTICIPANT_LEN + 1
@@ -310,9 +310,9 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     .await
     .unwrap();
 
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     match state {
-        ProtocolContractState::Resharing(state) => {
+        ProtocolContractStateCompat::Resharing(state) => {
             let state_params: GovernanceThresholdParameters =
                 (&state.resharing_key.parameters).into_contract_type();
             assert_eq!(state_params, proposal);
@@ -329,7 +329,7 @@ struct ResharingTestContext {
     persistent_participants: Vec<Account>,
     new_participant_accounts: Vec<Account>,
     threshold_parameters: GovernanceThresholdParameters,
-    initial_running_state: RunningContractState,
+    initial_running_state: RunningContractStateCompat,
 }
 
 /// Test helper: Initialize environment and transition to resharing state
@@ -348,8 +348,8 @@ async fn setup_resharing_state(
         .build()
         .await;
 
-    let state: ProtocolContractState = get_state(&contract).await;
-    let ProtocolContractState::Running(initial_running_state) = state else {
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
+    let ProtocolContractStateCompat::Running(initial_running_state) = state else {
         panic!("State is not running: {:#?}", state)
     };
 
@@ -390,7 +390,7 @@ async fn setup_resharing_state(
 
     // Verify we're in resharing state
     match get_state(&contract).await {
-        ProtocolContractState::Resharing(state) => {
+        ProtocolContractStateCompat::Resharing(state) => {
             // Compare proposal parameters via JSON roundtrip (internal vs DTO types)
             let proposal_json = serde_json::to_value(&proposal).unwrap();
             let state_params_json = serde_json::to_value(&state.resharing_key.parameters).unwrap();
@@ -442,7 +442,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
     // Verify still in resharing state - multiple votes from same account don't count
     let state = get_state(&contract).await;
     assert!(
-        matches!(state, ProtocolContractState::Resharing(_)),
+        matches!(state, ProtocolContractStateCompat::Resharing(_)),
         "Contract should still be in resharing state. A threshold number of unique votes have not been cast."
     );
 
@@ -453,8 +453,8 @@ async fn test_cancel_resharing_vote_is_idempotent(
         .unwrap();
 
     // Check that state transitions back to running
-    let new_state: ProtocolContractState = get_state(&contract).await;
-    let ProtocolContractState::Running(mut found) = new_state else {
+    let new_state: ProtocolContractStateCompat = get_state(&contract).await;
+    let ProtocolContractStateCompat::Running(mut found) = new_state else {
         panic!("expected running state");
     };
 
@@ -498,9 +498,9 @@ async fn test_cancel_resharing_requires_threshold_votes(
     .unwrap();
 
     // Verify still in resharing state (not cancelled yet)
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     assert!(
-        matches!(state, ProtocolContractState::Resharing(_)),
+        matches!(state, ProtocolContractStateCompat::Resharing(_)),
         "Should still be in resharing state with insufficient votes"
     );
 
@@ -512,9 +512,9 @@ async fn test_cancel_resharing_requires_threshold_votes(
     assert!(result.is_success(), "{result:#?}");
 
     // Verify transition back to running state
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     assert!(
-        matches!(state, ProtocolContractState::Running(_)),
+        matches!(state, ProtocolContractStateCompat::Running(_)),
         "Should transition to running state after threshold votes"
     );
 
@@ -570,7 +570,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
     // Check that state transitions back to running
     let new_state = get_state(&contract).await;
 
-    let ProtocolContractState::Running(mut new_running_state) = new_state else {
+    let ProtocolContractStateCompat::Running(mut new_running_state) = new_state else {
         panic!(
             "State must transition back to running after voting for cancellation {:#?}",
             new_state
@@ -630,7 +630,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
 
     // Verify state tracks cancelled epoch
     let state = get_state(&contract).await;
-    if let ProtocolContractState::Running(running_state) = state {
+    if let ProtocolContractStateCompat::Running(running_state) = state {
         assert_eq!(
             running_state.previously_cancelled_resharing_epoch_id,
             Some(cancelled_epoch_id)
@@ -670,7 +670,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     // Verify successful transition to resharing with correct epoch
     let state = get_state(&contract).await;
     match state {
-        ProtocolContractState::Resharing(resharing_contract_state) => {
+        ProtocolContractStateCompat::Resharing(resharing_contract_state) => {
             assert_eq!(
                 serde_json::to_value(&resharing_contract_state.resharing_key.parameters).unwrap(),
                 serde_json::to_value(&threshold_parameters).unwrap()
@@ -715,8 +715,8 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     let prospective_epoch_id = dtos::EpochId(cancelled_epoch_id.0 + 1);
 
     // Verify cancellation tracked
-    let state: ProtocolContractState = get_state(&contract).await;
-    if let ProtocolContractState::Running(running_state) = state {
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
+    if let ProtocolContractStateCompat::Running(running_state) = state {
         assert_eq!(
             running_state.previously_cancelled_resharing_epoch_id,
             Some(cancelled_epoch_id),
@@ -736,9 +736,9 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     .unwrap();
 
     // Verify in resharing state
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     match state {
-        ProtocolContractState::Resharing(resharing_state) => {
+        ProtocolContractStateCompat::Resharing(resharing_state) => {
             assert_eq!(resharing_state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
@@ -752,9 +752,9 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         .unwrap();
 
     // Step 5: Verify final state
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
     match state {
-        ProtocolContractState::Running(running_state) => {
+        ProtocolContractStateCompat::Running(running_state) => {
             assert_eq!(
                 running_state.keyset.epoch_id, prospective_epoch_id,
                 "Should be running with new epoch ID"
@@ -788,7 +788,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         .await;
 
     let state = get_state(&contract).await;
-    let ProtocolContractState::Running(ref running_state) = state else {
+    let ProtocolContractStateCompat::Running(ref running_state) = state else {
         panic!("expected running state");
     };
     let threshold = running_state.parameters.threshold;
@@ -842,11 +842,11 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         );
     }
 
-    let state: ProtocolContractState = get_state(&contract).await;
+    let state: ProtocolContractStateCompat = get_state(&contract).await;
 
     assert_matches!(
         state,
-        ProtocolContractState::Running(_),
+        ProtocolContractStateCompat::Running(_),
         "Protocol state should not transition when new participant has invalid TEE status."
     );
 }

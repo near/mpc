@@ -247,8 +247,8 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
         .max_gas()
         .transact()
         .await?;
-    let value: dtos::ProtocolContractState = state.json()?;
-    let dtos::ProtocolContractState::Running(running) = value else {
+    let value: dtos::ProtocolContractStateCompat = state.json()?;
+    let dtos::ProtocolContractStateCompat::Running(running) = value else {
         panic!("Expected running state")
     };
     Ok(running.parameters.participants.participants.len())
@@ -811,7 +811,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // Verify contract transitioned to Resharing state
     let state_after_verify = get_state(&contract).await;
     let prospective_epoch_id = match &state_after_verify {
-        dtos::ProtocolContractState::Resharing(resharing_state) => {
+        dtos::ProtocolContractStateCompat::Resharing(resharing_state) => {
             resharing_state.resharing_key.epoch_id
         }
         _ => panic!("expected Resharing state, got {:?}", state_after_verify),
@@ -942,7 +942,7 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     // Then: no participant is kicked out — the contract stays Running with all participants.
     let state_after_verify = get_state(&contract).await;
-    let dtos::ProtocolContractState::Running(running_after) = &state_after_verify else {
+    let dtos::ProtocolContractStateCompat::Running(running_after) = &state_after_verify else {
         panic!("expected Running state (no resharing), got {state_after_verify:?}");
     };
     assert_eq!(

@@ -214,7 +214,10 @@ impl IntoContractType<Participants> for dtos::Participants {
     }
 }
 
-impl TryIntoContractType<GovernanceThresholdParameters> for dtos::GovernanceThresholdParameters {
+// TODO(XXXX): Switch to canonical after upgrade 3.14.0
+impl TryIntoContractType<GovernanceThresholdParameters>
+    for dtos::GovernanceThresholdParametersCompat
+{
     type Error = Error;
 
     fn try_into_contract_type(self) -> Result<GovernanceThresholdParameters, Self::Error> {
@@ -223,8 +226,9 @@ impl TryIntoContractType<GovernanceThresholdParameters> for dtos::GovernanceThre
     }
 }
 
+// TODO(XXXX): Switch to canonical after upgrade 3.14.0
 impl TryIntoContractType<ProposedGovernanceThresholdParameters>
-    for dtos::ProposedGovernanceThresholdParameters
+    for dtos::ProposedGovernanceThresholdParametersCompat
 {
     type Error = Error;
 
@@ -598,6 +602,22 @@ mod test_conversions {
         }
     }
 
+    // TODO(XXXX): Delete this code after upgrade 3.14.0
+    impl From<GovernanceThresholdParameters> for dtos::GovernanceThresholdParametersCompat {
+        fn from(params: GovernanceThresholdParameters) -> Self {
+            (&params).into_dto_type()
+        }
+    }
+
+    // TODO(XXXX): Delete this code after upgrade 3.14.0
+    impl From<ProposedGovernanceThresholdParameters>
+        for dtos::ProposedGovernanceThresholdParametersCompat
+    {
+        fn from(params: ProposedGovernanceThresholdParameters) -> Self {
+            (&params).into_dto_type()
+        }
+    }
+
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
@@ -692,7 +712,7 @@ impl IntoInterfaceType<dtos::GovernanceThresholdParameters> for &GovernanceThres
     fn into_dto_type(self) -> dtos::GovernanceThresholdParameters {
         dtos::GovernanceThresholdParameters {
             participants: self.participants().into_dto_type(),
-            threshold: self.threshold(),
+            governance_threshold: self.threshold(),
         }
     }
 }
@@ -703,7 +723,7 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
     fn into_dto_type(self) -> dtos::ProposedGovernanceThresholdParameters {
         dtos::ProposedGovernanceThresholdParameters {
             parameters: self.parameters().into_dto_type(),
-            per_domain_thresholds: self.per_domain_thresholds().clone(),
+            per_domain_reconstruction_thresholds: self.per_domain_thresholds().clone(),
         }
     }
 }
@@ -720,6 +740,46 @@ impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
             .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
             .collect();
         dtos::GovernanceThresholdParametersVotes {
+            proposal_by_account,
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl IntoInterfaceType<dtos::GovernanceThresholdParametersCompat>
+    for &GovernanceThresholdParameters
+{
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersCompat {
+        dtos::GovernanceThresholdParametersCompat {
+            participants: self.participants().into_dto_type(),
+            threshold: self.threshold(),
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParametersCompat>
+    for &ProposedGovernanceThresholdParameters
+{
+    fn into_dto_type(self) -> dtos::ProposedGovernanceThresholdParametersCompat {
+        dtos::ProposedGovernanceThresholdParametersCompat {
+            parameters: self.parameters().into_dto_type(),
+            per_domain_thresholds: self.per_domain_thresholds().clone(),
+        }
+    }
+}
+
+// TODO(XXXX): Delete this code after upgrade 3.14.0
+impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotesCompat>
+    for &GovernanceThresholdParametersVotes
+{
+    fn into_dto_type(self) -> dtos::GovernanceThresholdParametersVotesCompat {
+        let proposal_by_account = self
+            .proposal_by_account
+            .iter()
+            .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
+            .collect();
+        dtos::GovernanceThresholdParametersVotesCompat {
             proposal_by_account,
         }
     }
@@ -834,7 +894,7 @@ impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState
                 .iter()
                 .map(|a| a.into_dto_type())
                 .collect(),
-            per_domain_thresholds: self.per_domain_thresholds.clone(),
+            per_domain_reconstruction_thresholds: self.per_domain_thresholds.clone(),
         }
     }
 }
@@ -928,7 +988,7 @@ mod tests {
 
     /// Ensures that the JSON produced by serializing the internal
     /// [`GovernanceThresholdParameters`] type can be deserialized into the DTO
-    /// [`dtos::GovernanceThresholdParameters`] type and vice versa, producing identical
+    /// [`dtos::GovernanceThresholdParametersCompat`] type and vice versa, producing identical
     /// JSON in both directions.
     #[test]
     fn threshold_parameters_serde_is_compatible_with_dto() {
@@ -939,7 +999,7 @@ mod tests {
         .unwrap();
         let json = serde_json::to_value(&internal).unwrap();
 
-        let dto: dtos::GovernanceThresholdParameters =
+        let dto: dtos::GovernanceThresholdParametersCompat =
             serde_json::from_value(json.clone()).unwrap();
 
         let dto_json = serde_json::to_value(&dto).unwrap();
@@ -961,7 +1021,8 @@ mod tests {
         let internal_json = serde_json::to_value(&internal).unwrap();
 
         let dto: dtos::GovernanceThresholdParameters = (&internal).into_dto_type();
-        let dto_json = serde_json::to_value(&dto).unwrap();
+        let dto_compat: dtos::GovernanceThresholdParametersCompat = dto.into();
+        let dto_json = serde_json::to_value(&dto_compat).unwrap();
 
         assert_eq!(internal_json, dto_json);
     }
@@ -971,7 +1032,7 @@ mod tests {
     #[test]
     fn try_into_contract_type__should_reject_threshold_below_relative_requirement() {
         // Given a DTO with 5 participants and a threshold of 2 (below the 60% bound of 3).
-        let dto = dtos::GovernanceThresholdParameters {
+        let dto = dtos::GovernanceThresholdParametersCompat {
             participants: (&gen_participants(5)).into_dto_type(),
             threshold: GovernanceThreshold::new(2),
         };

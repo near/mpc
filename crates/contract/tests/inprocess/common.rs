@@ -9,7 +9,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, InitConfig, Protocol, ProtocolContractState,
+    DomainConfig, DomainId, DomainPurpose, InitConfig, Protocol, ProtocolContractStateCompat,
     ReconstructionThreshold,
 };
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
@@ -84,5 +84,8 @@ pub fn transition_to_initializing(
             }])
             .unwrap();
     }
-    assert_matches!(contract.state(), ProtocolContractState::Initializing(_));
+    assert_matches!(
+        contract.state(),
+        ProtocolContractStateCompat::Initializing(_)
+    );
 }

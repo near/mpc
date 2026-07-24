@@ -163,8 +163,8 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     let threshold = assert_running_return_threshold(&contract).await;
 
     let next_domain_id = {
-        let state: dtos::ProtocolContractState = get_state(&contract).await;
-        let dtos::ProtocolContractState::Running(running) = &state else {
+        let state: dtos::ProtocolContractStateCompat = get_state(&contract).await;
+        let dtos::ProtocolContractStateCompat::Running(running) = &state else {
             panic!("Expected running state");
         };
         running.domains.next_domain_id
@@ -184,8 +184,8 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     )
     .await?;
 
-    let state: dtos::ProtocolContractState = get_state(&contract).await;
-    let dtos::ProtocolContractState::Running(running) = &state else {
+    let state: dtos::ProtocolContractStateCompat = get_state(&contract).await;
+    let dtos::ProtocolContractStateCompat::Running(running) = &state else {
         panic!("Expected running state");
     };
     assert_eq!(running.add_domains_votes.proposal_by_account.len(), 2);
@@ -226,8 +226,8 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     .await?;
 
     // Then
-    let final_state: dtos::ProtocolContractState = get_state(&contract).await;
-    let dtos::ProtocolContractState::Running(final_running) = &final_state else {
+    let final_state: dtos::ProtocolContractStateCompat = get_state(&contract).await;
+    let dtos::ProtocolContractStateCompat::Running(final_running) = &final_state else {
         panic!("Expected running state after resharing");
     };
 

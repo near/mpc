@@ -17,7 +17,7 @@ use mpc_contract::{
 };
 use near_mpc_contract_interface::{
     deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
-    types::{Attestation, InitConfig, MockAttestation, ProtocolContractState},
+    types::{Attestation, InitConfig, MockAttestation, ProtocolContractStateCompat},
 };
 use std::collections::BTreeMap;
 
@@ -139,7 +139,10 @@ impl TestSetupBuilder {
                         .unwrap();
                 }
 
-                assert_matches!(setup.contract.state(), ProtocolContractState::Running(_));
+                assert_matches!(
+                    setup.contract.state(),
+                    ProtocolContractStateCompat::Running(_)
+                );
             }
         };
 
@@ -363,7 +366,7 @@ fn clean_tee_status__should_not_touch_attestations() {
 
     assert_matches!(
         setup.contract.state(),
-        ProtocolContractState::Running(r)
+        ProtocolContractStateCompat::Running(r)
             if r.parameters.participants.participants.len() == PARTICIPANT_COUNT
     );
 
@@ -379,7 +382,7 @@ fn clean_tee_status__should_not_touch_attestations() {
     // State should remain Running with same participant count
     assert_matches!(
         setup.contract.state(),
-        ProtocolContractState::Running(r)
+        ProtocolContractStateCompat::Running(r)
             if r.parameters.participants.participants.len() == PARTICIPANT_COUNT
     );
 }

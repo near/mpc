@@ -36,14 +36,14 @@ pub async fn start_keygen_instance(
 ) -> anyhow::Result<()> {
     let state = get_state(contract).await;
     let active = match &state {
-        dtos::ProtocolContractState::Initializing(s) => {
+        dtos::ProtocolContractStateCompat::Initializing(s) => {
             &s.generating_key.parameters.participants.participants
         }
-        dtos::ProtocolContractState::Running(s) => &s.parameters.participants.participants,
-        dtos::ProtocolContractState::Resharing(s) => {
+        dtos::ProtocolContractStateCompat::Running(s) => &s.parameters.participants.participants,
+        dtos::ProtocolContractStateCompat::Resharing(s) => {
             &s.resharing_key.parameters.participants.participants
         }
-        dtos::ProtocolContractState::NotInitialized => {
+        dtos::ProtocolContractStateCompat::NotInitialized => {
             panic!("protocol state must be initialized")
         }
     };

@@ -914,7 +914,8 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: dtos::ProposedGovernanceThresholdParameters,
+        // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+        proposal: dtos::ProposedGovernanceThresholdParametersCompat,
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         let proposal: ProposedGovernanceThresholdParameters = proposal.try_into_contract_type()?;
@@ -1956,7 +1957,8 @@ impl MpcContract {
     #[handle_result]
     #[init]
     pub fn init(
-        parameters: dtos::GovernanceThresholdParameters,
+        // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+        parameters: dtos::GovernanceThresholdParametersCompat,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
@@ -2012,7 +2014,8 @@ impl MpcContract {
         domains: Vec<DomainConfig>,
         next_domain_id: u64,
         keyset: Keyset,
-        parameters: dtos::GovernanceThresholdParameters,
+        // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+        parameters: dtos::GovernanceThresholdParametersCompat,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
@@ -2113,8 +2116,11 @@ impl MpcContract {
         }
     }
 
-    pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
-        (&self.protocol_state).into_dto_type()
+    // TODO(XXXX): Switch to canonical after upgrade 3.14.0
+    pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractStateCompat {
+        let state: near_mpc_contract_interface::types::ProtocolContractState =
+            (&self.protocol_state).into_dto_type();
+        state.into()
     }
 
     pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {

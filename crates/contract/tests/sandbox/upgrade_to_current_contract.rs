@@ -20,7 +20,7 @@ use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::ProtocolContractStateCompat;
 use near_mpc_contract_interface::types::{
     CKDResponse, DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
@@ -179,11 +179,11 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_pre_upgrade: ProtocolContractStateCompat = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
-    let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_post_upgrade: ProtocolContractStateCompat = get_state(&contract).await;
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
@@ -230,7 +230,7 @@ async fn upgrade_preserves_state_and_requests(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_pre_upgrade: ProtocolContractStateCompat = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -238,7 +238,7 @@ async fn upgrade_preserves_state_and_requests(
         .await
         .expect("❌ migration() failed");
 
-    let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_post_upgrade: ProtocolContractStateCompat = get_state(&contract).await;
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
@@ -354,7 +354,7 @@ async fn upgrade_allows_new_request_types(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_pre_upgrade: ProtocolContractStateCompat = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -362,7 +362,7 @@ async fn upgrade_allows_new_request_types(
         .await
         .expect("❌ migration() failed");
 
-    let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
+    let state_post_upgrade: ProtocolContractStateCompat = get_state(&contract).await;
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,

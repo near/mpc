@@ -219,7 +219,7 @@ impl ContractState {
                     &state.resharing_key,
                     height,
                     state.reshared_keys.clone(),
-                    &state.per_domain_thresholds,
+                    &state.per_domain_reconstruction_thresholds,
                 )
                 .context("failed to convert resharing key event")?;
 
@@ -388,6 +388,7 @@ fn parse_participant_address(
     Ok((address.to_string(), port))
 }
 
+// TODO(XXXX): Switch to canonical after upgrade 3.14.0
 pub fn convert_participant_infos(
     threshold_parameters: GovernanceThresholdParameters,
     port_override: Option<u16>,
@@ -428,7 +429,7 @@ pub fn convert_participant_infos(
     }
     Ok(ParticipantsConfig {
         participants: converted,
-        threshold: threshold_parameters.threshold.0,
+        threshold: threshold_parameters.governance_threshold.0,
     })
 }
 
@@ -623,7 +624,7 @@ mod tests {
         assert!(account_ids.is_sorted());
         let params = GovernanceThresholdParameters {
             participants: chain_infos.clone(),
-            threshold: GovernanceThreshold(3),
+            governance_threshold: GovernanceThreshold(3),
         };
 
         let converted = convert_participant_infos(params, None).unwrap();
@@ -649,7 +650,7 @@ mod tests {
 
         let params = GovernanceThresholdParameters {
             participants: chain_infos,
-            threshold: GovernanceThreshold(3),
+            governance_threshold: GovernanceThreshold(3),
         };
         let converted = convert_participant_infos(params.clone(), None)
             .unwrap()
@@ -679,7 +680,7 @@ mod tests {
                 next_id: ParticipantId(entries.len() as u32),
                 participants: entries,
             },
-            threshold: GovernanceThreshold(3),
+            governance_threshold: GovernanceThreshold(3),
         };
 
         // When
@@ -708,7 +709,7 @@ mod tests {
                 next_id: ParticipantId(entries.len() as u32),
                 participants: entries,
             },
-            threshold: GovernanceThreshold(3),
+            governance_threshold: GovernanceThreshold(3),
         };
 
         // When
