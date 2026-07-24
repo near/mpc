@@ -32,9 +32,9 @@ pub struct SuiVector {
 }
 
 /// Like [`SuiVector`], a chain-identity reference (not a pinned transaction): a constant the
-/// provider must report for its network, interpreted per chain. For Starknet it is the
-/// `starknet_chainId` short-string felt, e.g. `0x534e5f4d41494e` (`SN_MAIN`) /
-/// `0x534e5f5345504f4c4941` (`SN_SEPOLIA`) — decode the hex as ASCII to verify. See
+/// provider must report for its network, interpreted per chain — an EVM numeric `eth_chainId`
+/// (e.g. `8453`) or a Starknet short-string felt (e.g. `0x534e5f4d41494e` = `SN_MAIN`; decode
+/// the hex as ASCII to verify). See [`check_evm`](crate::checks::check_evm) and
 /// [`check_starknet`](crate::checks::check_starknet).
 #[derive(Clone, Copy)]
 pub struct IdentityVector {
@@ -42,12 +42,12 @@ pub struct IdentityVector {
 }
 
 pub struct GoldenSet {
-    pub base: Option<BlockHashVector>,
-    pub bnb: Option<BlockHashVector>,
-    pub arbitrum: Option<BlockHashVector>,
-    pub polygon: Option<BlockHashVector>,
-    pub hyper_evm: Option<BlockHashVector>,
-    pub abstract_chain: Option<BlockHashVector>,
+    pub base: Option<IdentityVector>,
+    pub bnb: Option<IdentityVector>,
+    pub arbitrum: Option<IdentityVector>,
+    pub polygon: Option<IdentityVector>,
+    pub hyper_evm: Option<IdentityVector>,
+    pub abstract_chain: Option<IdentityVector>,
     pub bitcoin: Option<BlockHashVector>,
     pub starknet: Option<IdentityVector>,
     pub aptos: Option<AptosVector>,
@@ -62,30 +62,14 @@ pub fn golden_set(network: Network) -> GoldenSet {
 }
 
 const MAINNET: GoldenSet = GoldenSet {
-    base: Some(BlockHashVector {
-        tx: "a11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1",
-        block_hash: "b8488c9272c547c45e63ea76cc2d1c927c8f888e2721f790b14db996b6cc6aca",
-    }),
-    bnb: Some(BlockHashVector {
-        tx: "90514fff1563dc9876bc9a02a7b1d4dd2ce44b8d11ea0490aa8d427166eba349",
-        block_hash: "4f125b8e2716df5cbc72719212d5189dae0e49b6b7a44523165cb01888914999",
-    }),
-    arbitrum: Some(BlockHashVector {
-        tx: "8f1f497285dcf54624cba2c3dd46d13e25fc83466033c139e77e4dce12a1e484",
-        block_hash: "da0e369bfb9688ca4591604104e4f2953329542bfb3bc0d0c94686b5ad798c1c",
-    }),
-    polygon: Some(BlockHashVector {
-        tx: "7b231f0f5bf36782a48db9b1d89e4613bd00618f03c3c0fba922aa59288e4d38",
-        block_hash: "56d98f80b91c9cf9dcda71c63c01ea441d46ba31149c902adfbee97e55ff82a6",
-    }),
-    hyper_evm: Some(BlockHashVector {
-        tx: "4d94e2c9c33c533f125bd28a788e80ee24c108356e8fa8a7878f642cf94dcf4a",
-        block_hash: "657b2ee81add87e3f654840425baca06a06d5876f6d2d873197e70f00f6762e6",
-    }),
-    abstract_chain: Some(BlockHashVector {
-        tx: "4572b72d765f07712cf571993fd805888ede9cd05107f65338defee02f7ea755",
-        block_hash: "3bb255d468a552a75fc3f4916623b207ceb2d3074dfa14442ac03f0f73423708",
-    }),
+    // EVM chain ids (decimal), verified against each chain's public RPC via `eth_chainId`
+    // (2026-07-24), including `hyper_evm` and `abstract`.
+    base: Some(IdentityVector { identity: "8453" }),
+    bnb: Some(IdentityVector { identity: "56" }),
+    arbitrum: Some(IdentityVector { identity: "42161" }),
+    polygon: Some(IdentityVector { identity: "137" }),
+    hyper_evm: Some(IdentityVector { identity: "999" }),
+    abstract_chain: Some(IdentityVector { identity: "2741" }),
     bitcoin: Some(BlockHashVector {
         tx: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
         block_hash: "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab",
@@ -109,10 +93,7 @@ const TESTNET: GoldenSet = GoldenSet {
     arbitrum: None,
     polygon: None,
     hyper_evm: None,
-    abstract_chain: Some(BlockHashVector {
-        tx: "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
-        block_hash: "4c93dd4a8f347e6480b0a44f8c2b7eecdfb31d711e8d542fd60112ea5d98fb02",
-    }),
+    abstract_chain: Some(IdentityVector { identity: "11124" }),
     bitcoin: Some(BlockHashVector {
         tx: "5acaa0890f8c1f1b2ac114c25b38d376f23beda1b59e9bcba33256d6e11d7e8e",
         block_hash: "000000000000021f43445ab447b3fc85e93eca26b56a4f23ef6c017682038ca2",
@@ -137,6 +118,17 @@ pub fn hex32(hex: &str) -> anyhow::Result<[u8; 32]> {
     bytes
         .try_into()
         .map_err(|b: Vec<u8>| anyhow::anyhow!("expected 32 bytes, got {}: {hex}", b.len()))
+}
+
+/// Parse an EVM chain id, accepting decimal (`8453`) or `0x`-hex (`0x2105`).
+pub fn chain_id_u64(s: &str) -> anyhow::Result<u64> {
+    let s = s.trim();
+    match s.strip_prefix("0x") {
+        Some(hex) => {
+            u64::from_str_radix(hex, 16).with_context(|| format!("invalid hex chain id: {s}"))
+        }
+        None => s.parse().with_context(|| format!("invalid chain id: {s}")),
+    }
 }
 
 /// Decode a Starknet felt (`0x`-prefixed, possibly fewer than 64 hex digits) into
@@ -198,6 +190,10 @@ mod tests {
         // Given / When / Then
         for network in [Network::Mainnet, Network::Testnet] {
             let set = golden_set(network);
+            if let Some(v) = set.bitcoin {
+                hex32(v.tx).unwrap();
+                hex32(v.block_hash).unwrap();
+            }
             for v in [
                 set.base,
                 set.bnb,
@@ -205,13 +201,11 @@ mod tests {
                 set.polygon,
                 set.hyper_evm,
                 set.abstract_chain,
-                set.bitcoin,
             ]
             .into_iter()
             .flatten()
             {
-                hex32(v.tx).unwrap();
-                hex32(v.block_hash).unwrap();
+                chain_id_u64(v.identity).unwrap();
             }
             if let Some(v) = set.starknet {
                 felt32(v.identity).unwrap();

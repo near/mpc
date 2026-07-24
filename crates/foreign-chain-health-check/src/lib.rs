@@ -73,32 +73,38 @@ pub async fn check_all_providers(
     let mut out = Vec::new();
 
     if let Some(cfg) = &fc.base {
-        run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
+        let expected = resolve_identity(overrides, "base", golden.base);
+        run_evm::<Base>("base", cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("base", &mut out);
     }
     if let Some(cfg) = &fc.bnb {
-        run_evm::<Bnb>("bnb", cfg, golden.bnb, network, &mut out).await;
+        let expected = resolve_identity(overrides, "bnb", golden.bnb);
+        run_evm::<Bnb>("bnb", cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("bnb", &mut out);
     }
     if let Some(cfg) = &fc.arbitrum {
-        run_evm::<Arbitrum>("arbitrum", cfg, golden.arbitrum, network, &mut out).await;
+        let expected = resolve_identity(overrides, "arbitrum", golden.arbitrum);
+        run_evm::<Arbitrum>("arbitrum", cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("arbitrum", &mut out);
     }
     if let Some(cfg) = &fc.polygon {
-        run_evm::<Polygon>("polygon", cfg, golden.polygon, network, &mut out).await;
+        let expected = resolve_identity(overrides, "polygon", golden.polygon);
+        run_evm::<Polygon>("polygon", cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("polygon", &mut out);
     }
     if let Some(cfg) = &fc.hyper_evm {
-        run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm, network, &mut out).await;
+        let expected = resolve_identity(overrides, "hyper_evm", golden.hyper_evm);
+        run_evm::<HyperEvm>("hyper_evm", cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("hyper_evm", &mut out);
     }
     if let Some(cfg) = &fc.abstract_chain {
-        run_evm::<Abstract>("abstract", cfg, golden.abstract_chain, network, &mut out).await;
+        let expected = resolve_identity(overrides, "abstract", golden.abstract_chain);
+        run_evm::<Abstract>("abstract", cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("abstract", &mut out);
     }
@@ -183,24 +189,19 @@ async fn run_check(timeout: Duration, fut: impl Future<Output = anyhow::Result<(
 async fn run_evm<Chain: EvmChain + Send + Sync>(
     chain: &'static str,
     cfg: &ForeignChainConfig,
-    vector: Option<BlockHashVector>,
+    expected_chain_id: Option<&str>,
     network: Network,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
+    let Some(expected) = expected_chain_id else {
         mark_skipped(chain, cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed =
-        golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, bh)), Ok(client)) => {
-                run_check(timeout, checks::check_evm::<Chain>(client, *tx, *bh)).await
-            }
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => run_check(timeout, checks::check_evm::<Chain, _>(client, expected)).await,
         };
         out.push(ProviderResult {
             chain,
