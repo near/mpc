@@ -382,31 +382,25 @@ impl VerifyForeignTxProvider {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ChainAvailabilityError {
-    #[error("the foreign-chain supporters snapshot has not been received from the contract yet")]
-    SupportersSnapshotNotReady,
-    #[error(
-        "requested chain {requested:?} is not in the list of available foreign chains on the MPC contract"
-    )]
-    ChainNotAvailable { requested: dtos::ForeignChain },
+#[error(
+    "requested chain {requested:?} is not in the list of available foreign chains on the MPC contract"
+)]
+struct ChainNotAvailableError {
+    requested: dtos::ForeignChain,
 }
 
 /// A chain counts as available when the supporters map has an entry for it:
 /// the chain is available on the contract and a signing quorum of current
-/// participants supports it. A missing snapshot (`None`) rejects every chain,
-/// but distinguishably from a genuinely unavailable one.
+/// participants supports it.
 fn ensure_chain_is_available(
-    supporters_by_foreign_chain: &Option<SupportersByForeignChain>,
+    supporters_by_foreign_chain: &SupportersByForeignChain,
     request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ChainAvailabilityError> {
-    let Some(supporters_by_foreign_chain) = supporters_by_foreign_chain else {
-        return Err(ChainAvailabilityError::SupportersSnapshotNotReady);
-    };
+) -> Result<(), ChainNotAvailableError> {
     let requested = request.chain();
     if supporters_by_foreign_chain.contains_key(&requested) {
         Ok(())
     } else {
-        Err(ChainAvailabilityError::ChainNotAvailable { requested })
+        Err(ChainNotAvailableError { requested })
     }
 }
 
@@ -418,11 +412,11 @@ mod tests {
     use assert_matches::assert_matches;
     use std::collections::{BTreeMap, HashSet};
 
-    fn bitcoin_supporters() -> Option<SupportersByForeignChain> {
-        Some(BTreeMap::from([(
+    fn bitcoin_supporters() -> SupportersByForeignChain {
+        BTreeMap::from([(
             dtos::ForeignChain::Bitcoin,
             HashSet::from([ParticipantId::from_raw(1)]),
-        )]))
+        )])
     }
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
@@ -458,21 +452,9 @@ mod tests {
         // When, then
         assert_matches!(
             ensure_chain_is_available(&supporters, &ethereum_request),
-            Err(ChainAvailabilityError::ChainNotAvailable {
+            Err(ChainNotAvailableError {
                 requested: dtos::ForeignChain::Ethereum
             })
-        );
-    }
-
-    #[test]
-    fn ensure_chain_is_available__should_fail_when_snapshot_not_received_yet() {
-        // Given: no supporters snapshot from the indexer yet.
-        let supporters = None;
-
-        // When, then
-        assert_matches!(
-            ensure_chain_is_available(&supporters, &bitcoin_request()),
-            Err(ChainAvailabilityError::SupportersSnapshotNotReady)
         );
     }
 }

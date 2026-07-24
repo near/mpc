@@ -370,7 +370,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
-        foreign_chain_supporters_receiver: watch::Receiver<Option<ForeignChainSupporters>>,
+        foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,

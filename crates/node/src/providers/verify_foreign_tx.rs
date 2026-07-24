@@ -148,8 +148,7 @@ impl ForeignChainInspectors<HttpClient> {
 pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
-    /// `None` until the indexer delivers its first supporters snapshot.
-    supporters_by_foreign_chain: watch::Receiver<Option<SupportersByForeignChain>>,
+    supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -171,7 +170,7 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
-        supporters_by_foreign_chain: watch::Receiver<Option<SupportersByForeignChain>>,
+        supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {

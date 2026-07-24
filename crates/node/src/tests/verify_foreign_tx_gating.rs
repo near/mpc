@@ -167,21 +167,16 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         assert!(contract.available_foreign_chains().is_empty());
     }
     // Wait for the fake core to publish the post-change snapshot on the shared
-    // upstream channel; the per-node resolver fan-out from it is in-process,
-    // covered by the extra second.
+    // upstream channel; the per-node resolver fan-out from it is in-process and
+    // subsumed by the response wait below.
     let mut supporters = setup.indexer.subscribe_foreign_chain_supporters();
     tokio::time::timeout(SUPPORTERS_PUBLISH_WAIT, async {
-        while !supporters
-            .borrow_and_update()
-            .as_ref()
-            .is_some_and(|map| map.is_empty())
-        {
+        while !supporters.borrow_and_update().is_empty() {
             supporters.changed().await.unwrap();
         }
     })
     .await
     .expect("timed out waiting for the empty supporters snapshot to publish");
-    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Then: nodes reject the request against their supporters snapshot,
     // even though inspection itself would succeed. The distinct tx id keeps
