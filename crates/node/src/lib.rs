@@ -33,6 +33,7 @@ mod home_paths;
 mod indexer;
 mod key_events;
 pub mod keyshare;
+pub(crate) mod log_dedup;
 pub mod metrics;
 pub mod migration_service;
 mod mpc_client;
