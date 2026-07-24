@@ -15,6 +15,7 @@ use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -24,6 +25,7 @@ use crate::{
 use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES};
 use near_mpc_contract_interface::types::{Payload, Tweak};
+use std::collections::HashSet;
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -54,21 +56,44 @@ impl VerifyForeignTxProvider {
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
+        let requested_chain = foreign_tx_request.request.chain();
 
         // Also checked in `execute_foreign_chain_request`; checked early here
-        // because `take_owned` below irreversibly consumes a presignature. An
-        // availability flip between the two checks still costs one presignature.
-        ensure_chain_is_available(
-            &self.supporters_by_foreign_chain.borrow(),
-            &foreign_tx_request.request,
-        )
-        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
+        // so an unavailable chain is rejected up front.
+        let chain_supporters: HashSet<ParticipantId> = {
+            let snapshot = self.supporters_by_foreign_chain.borrow();
+            ensure_chain_is_available(&snapshot, &foreign_tx_request.request).inspect_err(
+                |_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc(),
+            )?;
+            snapshot
+                .as_ref()
+                .and_then(|supporters| supporters.get(&requested_chain))
+                .cloned()
+                .unwrap_or_default()
+        };
 
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
-        let participants = presignature.participants.clone();
+        let eligible_participants: Vec<ParticipantId> = self
+            .ecdsa_signature_provider
+            .all_alive_participant_ids()
+            .into_iter()
+            .filter(|participant_id| chain_supporters.contains(participant_id))
+            .collect();
+        ensure_enough_alive_supporters(
+            requested_chain,
+            eligible_participants.len(),
+            keyshare.reconstruction_threshold.inner(),
+        )
+        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
+
+        let (presignature_id, presignature) = keyshare
+            .presignature_store
+            .take_owned_matching(eligible_participants)
+            .await;
+        let participants: Vec<ParticipantId> = presignature.participants.clone();
+
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
                 id,
@@ -389,6 +414,29 @@ enum ChainAvailabilityError {
         "requested chain {requested:?} is not in the list of available foreign chains on the MPC contract"
     )]
     ChainNotAvailable { requested: dtos::ForeignChain },
+    #[error(
+        "requested chain {requested:?} has {alive} alive supporting participants, {required} required"
+    )]
+    NotEnoughAliveSupporters {
+        requested: dtos::ForeignChain,
+        alive: usize,
+        required: u64,
+    },
+}
+
+fn ensure_enough_alive_supporters(
+    requested: dtos::ForeignChain,
+    alive: usize,
+    required: u64,
+) -> Result<(), ChainAvailabilityError> {
+    if (alive as u64) < required {
+        return Err(ChainAvailabilityError::NotEnoughAliveSupporters {
+            requested,
+            alive,
+            required,
+        });
+    }
+    Ok(())
 }
 
 /// A chain counts as available when the supporters map has an entry for it:
@@ -414,9 +462,8 @@ fn ensure_chain_is_available(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::primitives::ParticipantId;
     use assert_matches::assert_matches;
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::BTreeMap;
 
     fn bitcoin_supporters() -> Option<SupportersByForeignChain> {
         Some(BTreeMap::from([(
@@ -473,6 +520,26 @@ mod tests {
         assert_matches!(
             ensure_chain_is_available(&supporters, &bitcoin_request()),
             Err(ChainAvailabilityError::SupportersSnapshotNotReady)
+        );
+    }
+
+    #[test]
+    fn ensure_enough_alive_supporters__should_fail_below_reconstruction_threshold() {
+        assert_matches!(
+            ensure_enough_alive_supporters(dtos::ForeignChain::Bitcoin, 2, 3),
+            Err(ChainAvailabilityError::NotEnoughAliveSupporters {
+                requested: dtos::ForeignChain::Bitcoin,
+                alive: 2,
+                required: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn ensure_enough_alive_supporters__should_succeed_at_reconstruction_threshold() {
+        assert_matches!(
+            ensure_enough_alive_supporters(dtos::ForeignChain::Bitcoin, 3, 3),
+            Ok(())
         );
     }
 }
