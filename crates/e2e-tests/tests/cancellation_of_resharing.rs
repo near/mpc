@@ -2,7 +2,7 @@ use crate::common;
 
 use e2e_tests::CLUSTER_WAIT_TIMEOUT;
 use near_mpc_contract_interface::types::ProtocolContractState;
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Tests resharing cancellation and retry.
 ///
@@ -20,7 +20,7 @@ async fn test_cancellation_of_resharing() {
             c.presignatures_to_buffer = 2;
         })
         .await;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
 
     // Begin resharing to 5 nodes [0..5], threshold 3.
     tracing::info!("beginning resharing to nodes 0-4, threshold 3");

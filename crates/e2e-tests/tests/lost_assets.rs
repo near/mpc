@@ -2,7 +2,7 @@ use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
 use near_mpc_contract_interface::types::DomainPurpose;
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 const PRESIGNATURES_TO_BUFFER: usize = 8;
 
@@ -13,7 +13,7 @@ const PRESIGNATURES_TO_BUFFER: usize = 8;
 #[tokio::test]
 async fn dead_node_presignatures_purged_and_signing_recovers() {
     // given
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     let (mut cluster, running) = common::must_setup_cluster(common::LOST_ASSETS_PORT_SEED, |c| {
         c.presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
     })
