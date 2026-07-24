@@ -1,34 +1,17 @@
-//! Per-network reference transactions and the value an inspector must extract
-//! from each. A mainnet transaction does not exist on testnet (and vice versa),
-//! so the vectors are network-specific; `None` means the chain is skipped.
+//! Per-network reference identities (chain ids, genesis hashes) a provider must
+//! report. Mainnet and testnet identities differ, so the vectors are
+//! network-specific; `None` means the chain is skipped.
 
 use anyhow::Context;
 
 use crate::network::Network;
 
-#[derive(Clone, Copy)]
-pub struct AptosVector {
-    pub tx: &'static str,
-    pub event_type_tag: &'static str,
-    pub event_sequence_number: u64,
-}
-
-/// Unlike other chains, Sui is verified by chain identity rather than a pinned
-/// reference transaction — see [`check_sui`](crate::checks::check_sui).
-#[derive(Clone, Copy)]
-pub struct SuiVector {
-    /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
-    /// returns it (`sui.rpc.v2`: "the digest of the genesis checkpoint"). Its 4-byte
-    /// prefix is the well-known Sui chain identifier — mainnet `0x35834a8a`, testnet
-    /// `0x4c78adac` — which is the value to grep against Sui docs to verify these.
-    pub chain_id: &'static str,
-}
-
-/// Like [`SuiVector`], a chain-identity reference (not a pinned transaction): a constant the
-/// provider must report for its network, interpreted per chain — an EVM numeric `eth_chainId`
-/// (e.g. `8453`), a Starknet short-string felt (e.g. `0x534e5f4d41494e` = `SN_MAIN`; decode
-/// the hex as ASCII to verify), or a Bitcoin genesis block hash. See the `check_*` functions
-/// in [`crate::checks`].
+/// A chain-identity reference: a constant the provider must report for its network,
+/// interpreted per chain — an EVM numeric `eth_chainId` (e.g. `8453`), a Starknet
+/// short-string felt (e.g. `0x534e5f4d41494e` = `SN_MAIN`; decode the hex as ASCII to
+/// verify), an Aptos numeric ledger chain id (1 = mainnet, 2 = testnet), a Bitcoin genesis
+/// block hash, or the base58 Sui genesis checkpoint digest. See the `check_*` functions in
+/// [`crate::checks`].
 #[derive(Clone, Copy)]
 pub struct IdentityVector {
     pub identity: &'static str,
@@ -43,8 +26,8 @@ pub struct GoldenSet {
     pub abstract_chain: Option<IdentityVector>,
     pub bitcoin: Option<IdentityVector>,
     pub starknet: Option<IdentityVector>,
-    pub aptos: Option<AptosVector>,
-    pub sui: Option<SuiVector>,
+    pub aptos: Option<IdentityVector>,
+    pub sui: Option<IdentityVector>,
 }
 
 pub fn golden_set(network: Network) -> GoldenSet {
@@ -70,13 +53,13 @@ const MAINNET: GoldenSet = GoldenSet {
     starknet: Some(IdentityVector {
         identity: "0x534e5f4d41494e",
     }),
-    aptos: Some(AptosVector {
-        tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
-        event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 822_198_006,
-    }),
-    sui: Some(SuiVector {
-        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+    // Aptos ledger chain id: 1 = mainnet.
+    aptos: Some(IdentityVector { identity: "1" }),
+    // Sui genesis checkpoint digest, exactly as `get_service_info` returns it. Its 4-byte
+    // prefix is the well-known Sui chain identifier (mainnet 0x35834a8a, testnet 0x4c78adac),
+    // the value to grep against Sui docs to verify these.
+    sui: Some(IdentityVector {
+        identity: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
     }),
 };
 
@@ -94,13 +77,10 @@ const TESTNET: GoldenSet = GoldenSet {
     starknet: Some(IdentityVector {
         identity: "0x534e5f5345504f4c4941",
     }),
-    aptos: Some(AptosVector {
-        tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
-        event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 302_761_912,
-    }),
-    sui: Some(SuiVector {
-        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
+    // Aptos ledger chain id: 2 = testnet.
+    aptos: Some(IdentityVector { identity: "2" }),
+    sui: Some(IdentityVector {
+        identity: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
     }),
 };
 
@@ -203,10 +183,10 @@ mod tests {
                 felt32(v.identity).unwrap();
             }
             if let Some(v) = set.aptos {
-                hex32(v.tx).unwrap();
+                chain_id_u64(v.identity).unwrap();
             }
             if let Some(v) = set.sui {
-                base58_32(v.chain_id).unwrap();
+                base58_32(v.identity).unwrap();
             }
         }
     }

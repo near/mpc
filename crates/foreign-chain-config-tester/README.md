@@ -5,16 +5,16 @@ config, so a misconfiguration (unreachable URL, wrong/expired API key, or a
 provider pointed at the wrong network) is caught before the node hits it in
 production.
 
-For each configured provider it runs a fixed request against a known reference
-transaction — the same inspector and auth handling the node uses — and compares
-the result against a known-good value. Sui, Starknet, Bitcoin, and the EVM chains
-are the exceptions: they verify the provider's chain identity (a constant that is
-never pruned) and then inspect a recently produced transaction — Sui from its
-latest checkpoint, Starknet from its latest L1-accepted block (requires provider
-JSON-RPC v0.9+), Bitcoin from a recent block (identity: the genesis block hash),
-the EVM chains from the latest finalized block — so the check never depends on
-months-old archived history. Every provider is checked independently: one bad
-provider does not stop the others from being reported.
+For each configured provider it verifies the provider's chain identity (a
+constant that is never pruned) and then runs the node's real inspector over a
+recently produced transaction, so the check exercises the production path
+without depending on months-old archived history. Identity is a chain id where
+the RPC exposes one — EVM `eth_chainId`, Starknet `starknet_chainId` (requires
+provider JSON-RPC v0.9+), Aptos ledger `chain_id`, the Sui genesis digest — and
+the genesis block hash for Bitcoin; the recent transaction comes from the latest
+finalized / L1-accepted / checkpointed block per chain. Every provider is
+checked independently: one bad provider does not stop the others from being
+reported.
 
 Expected identities can be seeded from config under
 `foreign_chain_health_check.identities` (chain label -> identity), overriding
@@ -25,6 +25,7 @@ foreign_chain_health_check:
   identities:
     starknet: "0x534e5f4d41494e" # SN_MAIN (felt)
     base: "8453"                 # EVM numeric chain id
+    aptos: "1"                   # Aptos ledger chain id
 ```
 
 ## Usage
@@ -42,7 +43,7 @@ cargo run -p foreign-chain-config-tester -- --config /path/to/user-config.toml
 
 ### Network
 
-Reference transactions are network-specific. The network is auto-detected from
+Reference values are network-specific. The network is auto-detected from
 the config (`chain_id`, falling back to `mpc_contract_id`). Override it — or set
 it for configs that carry no such field — with `--network`:
 

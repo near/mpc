@@ -40,6 +40,14 @@ pub struct EventGuid {
     pub account_address: String,
 }
 
+/// Response from `GET /v1` (the ledger-info index). `chain_id` identifies the network
+/// (1 = mainnet, 2 = testnet); `ledger_version` is the current committed version (stringified).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct LedgerInfoResponse {
+    pub chain_id: u8,
+    pub ledger_version: String,
+}
+
 /// Error from the Aptos REST API client.
 #[derive(Debug, thiserror::Error)]
 pub enum AptosRpcError {
@@ -85,6 +93,37 @@ impl ReqwestAptosClient {
             .expect("Aptos rpc_url is validated as a URL by node-config before reaching here");
         Self { base, client }
     }
+
+    /// The ledger-info index (`GET /v1`): the chain id (network identity) and current version.
+    /// Inherent (not on [`AptosRpcClient`]) because only the health probe needs it.
+    pub async fn get_ledger_info(&self) -> Result<LedgerInfoResponse, AptosRpcError> {
+        get_json(&self.client, self.base.clone()).await
+    }
+
+    /// A transaction by ledger version (`GET /v1/transactions/by_version/{version}`). The health
+    /// probe reads a recent, unpruned transaction to exercise the extraction pipeline.
+    pub async fn get_transaction_by_version(
+        &self,
+        version: u64,
+    ) -> Result<TransactionResponse, AptosRpcError> {
+        get_json(&self.client, build_version_url(&self.base, version)).await
+    }
+}
+
+async fn get_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    url: Url,
+) -> Result<T, AptosRpcError> {
+    let response = client.get(url).send().await?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AptosRpcError::ApiError {
+            status: status.as_u16(),
+            body,
+        });
+    }
+    Ok(response.json().await?)
 }
 
 /// Appends `transactions/by_hash/{hash}` to `base`, preserving its path and query string (so a
@@ -98,6 +137,16 @@ fn build_request_url(base: &Url, tx_hash_hex: &str) -> Url {
     url
 }
 
+/// Like [`build_request_url`], but for `transactions/by_version/{version}`.
+fn build_version_url(base: &Url, version: u64) -> Url {
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .expect("an http(s) base URL always supports path segments")
+        .pop_if_empty()
+        .extend(["transactions", "by_version", &version.to_string()]);
+    url
+}
+
 impl AptosRpcClient for ReqwestAptosClient {
     fn get_transaction_by_hash(
         &self,
@@ -105,19 +154,7 @@ impl AptosRpcClient for ReqwestAptosClient {
     ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send {
         let url = build_request_url(&self.base, tx_hash_hex);
         let client = self.client.clone();
-        async move {
-            let response = client.get(url).send().await?;
-            let status = response.status();
-            if !status.is_success() {
-                let body = response.text().await.unwrap_or_default();
-                return Err(AptosRpcError::ApiError {
-                    status: status.as_u16(),
-                    body,
-                });
-            }
-            let parsed = response.json::<TransactionResponse>().await?;
-            Ok(parsed)
-        }
+        async move { get_json(&client, url).await }
     }
 }
 
