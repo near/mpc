@@ -58,6 +58,7 @@ pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 pub const CLEAN_FOREIGN_CHAIN_DATA: &str = "clean_foreign_chain_data";
 pub const REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES: &str =
     "remove_non_participant_tee_verifier_votes";
+pub const CLEAN_EXPIRED_LAUNCHER_HASHES: &str = "clean_expired_launcher_hashes";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =

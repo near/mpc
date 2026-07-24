@@ -501,6 +501,12 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.resolve_verification_tera_gas {
             config.resolve_verification_tera_gas = v;
         }
+        if let Some(v) = config_ext.launcher_hash_unused_ttl_seconds {
+            config.launcher_hash_unused_ttl_seconds = v;
+        }
+        if let Some(v) = config_ext.clean_expired_launcher_hashes_tera_gas {
+            config.clean_expired_launcher_hashes_tera_gas = v;
+        }
 
         config
     }
@@ -533,6 +539,8 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
                 .remove_non_participant_tee_verifier_votes_tera_gas,
             verifier_tera_gas: value.verifier_tera_gas,
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+            clean_expired_launcher_hashes_tera_gas: value.clean_expired_launcher_hashes_tera_gas,
         }
     }
 }
@@ -564,6 +572,8 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
                 .remove_non_participant_tee_verifier_votes_tera_gas,
             verifier_tera_gas: value.verifier_tera_gas,
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+            clean_expired_launcher_hashes_tera_gas: value.clean_expired_launcher_hashes_tera_gas,
         }
     }
 }

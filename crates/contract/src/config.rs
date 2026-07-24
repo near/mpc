@@ -41,6 +41,10 @@ const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
 /// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
+/// Default TTL after which a launcher image hash unused by any participant is evicted.
+const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
+/// Prepaid gas for a `clean_expired_launcher_hashes` call.
+const DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS: u64 = 5;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -81,6 +85,10 @@ pub(crate) struct Config {
     pub(crate) verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub(crate) resolve_verification_tera_gas: u64,
+    /// TTL after which a launcher image hash unused by any participant is evicted.
+    pub(crate) launcher_hash_unused_ttl_seconds: u64,
+    /// Prepaid gas for a `clean_expired_launcher_hashes` call.
+    pub(crate) clean_expired_launcher_hashes_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -110,6 +118,23 @@ impl Default for Config {
                 DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS,
             verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
             resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
+            launcher_hash_unused_ttl_seconds: DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS,
+            clean_expired_launcher_hashes_tera_gas: DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS,
         }
+    }
+}
+
+impl Config {
+    /// Invariant: a launcher hash backing a still-valid attestation must never expire,
+    /// so its unused-TTL must be at least the attestation validity window.
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if self.launcher_hash_unused_ttl_seconds
+            < mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS
+        {
+            return Err(
+                "launcher_hash_unused_ttl_seconds must be >= DEFAULT_EXPIRATION_DURATION_SECONDS",
+            );
+        }
+        Ok(())
     }
 }
