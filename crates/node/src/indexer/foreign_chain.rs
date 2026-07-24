@@ -12,35 +12,46 @@ const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
 
-/// Updates the contract's available chains mapped to their registered
-/// supporters in watch channel.
-/// The channel holds `None` until the first successful read; afterwards the
-/// previously published value stays in effect until viewing new state from
-/// contract succeeds.
+/// Returns once the first supporters snapshot is read, then keeps it updated in
+/// the background. Mirrors `monitor_contract_state`: the receiver always holds a
+/// real value, and a failed refresh keeps the previous one.
 pub async fn monitor_foreign_chain_supporters(
-    sender: watch::Sender<Option<ForeignChainSupporters>>,
     indexer_state: Arc<IndexerState>,
-) {
+) -> watch::Receiver<ForeignChainSupporters> {
     indexer_state.client.wait_for_full_sync().await;
 
-    loop {
+    let initial = loop {
         match read_supporters(&indexer_state).await {
-            Ok(supporters) => {
-                sender.send_if_modified(|previous| {
-                    if previous.as_ref() == Some(&supporters) {
-                        false
-                    } else {
-                        *previous = Some(supporters);
-                        true
-                    }
-                });
-            }
+            Ok(supporters) => break supporters,
             Err(e) => {
-                tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e)
+                tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e);
+                tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
             }
         }
-        tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
-    }
+    };
+
+    let (sender, receiver) = watch::channel(initial);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
+            match read_supporters(&indexer_state).await {
+                Ok(supporters) => {
+                    sender.send_if_modified(|previous| {
+                        if *previous == supporters {
+                            false
+                        } else {
+                            *previous = supporters;
+                            true
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e)
+                }
+            }
+        }
+    });
+    receiver
 }
 
 /// The two view calls are not atomic: a change finalized between them yields
