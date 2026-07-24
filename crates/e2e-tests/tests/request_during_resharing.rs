@@ -4,7 +4,7 @@ use crate::common::{
 };
 use near_mpc_contract_interface::types::{Protocol, ProtocolContractState};
 
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Tests that signature and CKD requests are processed using the previous
 /// running state's threshold while resharing is in progress.
@@ -44,7 +44,7 @@ async fn test_request_during_resharing() {
     // then
     let ckd_domain = must_get_domain(&contract_state, Protocol::ConfidentialKeyDerivation);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     for i in 0..3 {
         tracing::info!(i, "sending sign requests during resharing");
         sign_all_domains(&cluster, &contract_state, &mut rng).await;
