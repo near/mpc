@@ -6,7 +6,7 @@ use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{Curve, CurveArithmetic, ops::Reduce, point::AffineCoordinates},
 };
-use near_indexer_primitives::types::{Balance, Gas};
+use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
@@ -125,11 +125,6 @@ impl ChainSendTransactionRequest {
             | Self::ConcludeNodeMigration(_)
             | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
         }
-    }
-
-    pub fn deposit_required(&self) -> Balance {
-        // The node signs with a function-call access key, which cannot attach a deposit.
-        Balance::from_near(0)
     }
 }
 

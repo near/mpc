@@ -279,8 +279,6 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
     Ok(())
 }
 
-/// Regression test for #3925: a participant re-attesting through a function-call access key (which
-/// cannot attach a deposit) succeeds with zero deposit (storage is contract-funded).
 #[tokio::test]
 async fn submit_participant_info__should_accept_zero_deposit_via_function_call_key() -> Result<()> {
     // Given
