@@ -53,12 +53,6 @@ pub(crate) enum ParticipantInsertion {
     UpdatedExistingParticipant,
 }
 
-impl ParticipantInsertion {
-    pub(crate) fn is_new(&self) -> bool {
-        matches!(self, Self::NewlyInsertedParticipant)
-    }
-}
-
 #[derive(Debug)]
 pub enum TeeValidationResult {
     /// All participants are valid

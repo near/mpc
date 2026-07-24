@@ -156,26 +156,6 @@ fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
-/// Charges `account_id` the storage growth since `initial_storage` and refunds the excess. A
-/// participant re-attesting an unchanged entry grows nothing and pays nothing, so the node's
-/// function-call access key can re-attest; a new entry costs the measured delta, funded by the
-/// caller (an operator's full-access key for a first submission).
-fn charge_storage(account_id: &AccountId, initial_storage: u64) -> Result<(), Error> {
-    // saturating_sub: a shrink charges nothing rather than underflowing.
-    let bytes_grown = env::storage_usage().saturating_sub(initial_storage);
-    let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
-    let attached = env::attached_deposit();
-    if attached < cost {
-        return Err(InvalidParameters::InsufficientDeposit {
-            attached: attached.as_yoctonear(),
-            required: cost.as_yoctonear(),
-        }
-        .into());
-    }
-    refund_to(account_id, attached.saturating_sub(cost));
-    Ok(())
-}
-
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -798,13 +778,8 @@ impl MpcContract {
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// Storage is charged to the caller only when a new entry is stored or the caller is not a
-    /// current participant. A participant re-attesting an existing entry grows nothing and is charged
-    /// nothing, so the node's function-call access key can re-attest with no deposit. A new entry
-    /// costs the measured storage delta, which the caller must cover (an operator's full-access key
-    /// funds a first submission); the excess is refunded, as is the full deposit on a rejected
-    /// attestation.
-    #[payable]
+    /// Storage is funded by the contract's own balance, so a node submits with no deposit via its
+    /// function-call access key, for its first attestation and re-attestations alike.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -840,30 +815,19 @@ impl MpcContract {
             account_public_key,
         };
 
-        // Non-participants pay per entry so an outsider cannot drain the contract; participants
-        // re-attest for free.
-        let caller_is_not_participant = !self
-            .protocol_state
-            .is_existing_or_prospective_participant(&account_id)
-            .unwrap_or(false);
-
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                let initial_storage = env::storage_usage();
-                let insertion = self.tee_state.verify_and_store_mock(
+                self.tee_state.verify_and_store_mock(
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
-                if insertion.is_new() || caller_is_not_participant {
-                    charge_storage(&account_id, initial_storage)?;
-                }
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation, caller_is_not_participant)?,
+                self.submit_dstack_attestation(node_id, attestation)?,
             )),
         }
     }
@@ -875,7 +839,6 @@ impl MpcContract {
         &mut self,
         node_id: NodeId,
         attestation: DstackAttestation,
-        caller_is_not_participant: bool,
     ) -> Result<Promise, Error> {
         let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
             return Err(TeeError::VerifierNotConfigured.into());
@@ -892,11 +855,9 @@ impl MpcContract {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
-                    .with_attached_deposit(env::attached_deposit())
                     .resolve_verification(VerificationContext {
                         node_id,
                         attestation,
-                        caller_is_not_participant,
                     }),
             ))
     }
@@ -2333,12 +2294,10 @@ impl MpcContract {
         }
     }
 
-    /// Verify-quote callback: on a verifier verdict it runs the post-DCAP
-    /// checks and stores the attestation, keeping the storage delta and
-    /// refunding the excess. Refunds the full deposit if the attestation is not
-    /// accepted.
+    /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the
+    /// attestation (storage funded by the contract's balance). On any failure it fails the
+    /// submitter's transaction.
     #[private]
-    #[payable]
     pub fn resolve_verification(
         &mut self,
         #[serializer(borsh)] context: VerificationContext,
@@ -2370,9 +2329,8 @@ impl MpcContract {
         match attestation_result {
             Ok(()) => PromiseOrValue::Value(()),
             Err(err) => {
-                refund_to(&account_id, env::attached_deposit());
-                // Fail the submitter's transaction from a separate receipt so
-                // the refund above commits (a panic here would roll it back)
+                // Fail the submitter's transaction from a separate receipt so any prior state
+                // commits (a panic here would roll it back)
                 let promise = Promise::new(env::current_account_id()).function_call(
                     method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
                     borsh::to_vec(&err.to_string())
@@ -2386,8 +2344,7 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response, then charges the storage delta unless a
-    /// participant re-attested an existing entry.
+    /// [`VerificationResult::Verified`] response. Storage is funded by the contract's balance.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
@@ -2397,22 +2354,14 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let initial_storage = env::storage_usage();
-        let insertion = match self.tee_state.verify_and_store_dstack(
+        if let Err(err) = self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            Ok(insertion) => insertion,
-            Err(err) => {
-                log!("post-DCAP check failed for {account_id}: {err}");
-                return Err(err.into());
-            }
-        };
-
-        if insertion.is_new() || context.caller_is_not_participant {
-            charge_storage(account_id, initial_storage)?;
+            log!("post-DCAP check failed for {account_id}: {err}");
+            return Err(err.into());
         }
         Ok(())
     }
@@ -4687,9 +4636,6 @@ mod tests {
             VerificationContext {
                 node_id,
                 attestation,
-                // Fixed, not parametrized: this flag only affects charging, which the mock VM
-                // can't observe, so true and false would store identical state here.
-                caller_is_not_participant: true,
             },
         )
     }

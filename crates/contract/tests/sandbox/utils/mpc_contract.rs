@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use super::consts::SUBMIT_PARTICIPANT_INFO_DEPOSIT;
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
@@ -59,56 +58,14 @@ pub async fn submit_participant_info(
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // Sandbox onboards not-yet-participants, which the contract charges; attach the deposit an
-    // operator's full-access key would (excess refunded). The production client attaches none.
-    submit_participant_info_with_deposit(
-        account,
-        contract,
-        attestation,
-        tls_key,
-        SUBMIT_PARTICIPANT_INFO_DEPOSIT,
-    )
-    .await
-}
-
-pub async fn submit_participant_info_with_deposit(
-    account: &Account,
-    contract: &Contract,
-    attestation: &Attestation,
-    tls_key: &Ed25519PublicKey,
-    deposit: NearToken,
-) -> anyhow::Result<ExecutionFinalResult> {
+    // No deposit: attestation storage is contract-funded, mirroring the production node.
     account
         .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
         .args_json((attestation.clone(), tls_key.clone()))
-        .deposit(deposit)
         .max_gas()
         .transact()
         .await
         .map_err(Into::into)
-}
-
-/// Submits an attestation and returns the non-gas amount the caller was left
-/// out of pocket, i.e. the kept storage deposit after subtracting gas fees.
-pub async fn submit_participant_info_and_measure_kept_deposit(
-    account: &Account,
-    contract: &Contract,
-    attestation: &Attestation,
-    tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<NearToken> {
-    let balance_before = account.view_account().await?.balance;
-    let result = submit_participant_info(account, contract, attestation, tls_key).await?;
-    assert!(result.is_success(), "submission should succeed: {result:?}");
-    let balance_after = account.view_account().await?.balance;
-    let net_spent = balance_before
-        .checked_sub(balance_after)
-        .unwrap_or_else(|| {
-            panic!("caller balance must not increase: {balance_before} -> {balance_after}")
-        });
-    let gas = total_gas_fee(&result);
-    Ok(net_spent
-        .checked_sub(gas)
-        .unwrap_or_else(|| panic!("net spend {net_spent} must cover gas {gas}")))
 }
 
 pub async fn vote_tee_verifier_change(

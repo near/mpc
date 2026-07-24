@@ -3,7 +3,7 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidParameters, InvalidState, TeeError},
+    errors::{Error, InvalidState, TeeError},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
@@ -15,24 +15,20 @@ use mpc_contract::{
     },
     tee::tee_state::{AttestationSubmissionError, NodeId},
 };
-use near_mpc_contract_interface::{
-    deposits::SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR,
-    types::{Attestation, InitConfig, MockAttestation, ProtocolContractState},
+use near_mpc_contract_interface::types::{
+    Attestation, InitConfig, MockAttestation, ProtocolContractState,
 };
 use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
 use test_utils::attestation::mock_dto_dstack_attestation;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
-
-const ATTESTATION_STORAGE_DEPOSIT: NearToken =
-    NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR);
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;
@@ -163,16 +159,7 @@ impl TestSetup {
         node_id: &NodeId,
         attestation: Attestation,
     ) -> Result<(), mpc_contract::errors::Error> {
-        // `submit_participant_info` requires the flat storage fee, unlike the
-        // deposit-free calls `common::participant_context` is built for.
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(node_id.account_id.clone())
-                .predecessor_account_id(node_id.account_id.clone())
-                .block_timestamp(near_sdk::env::block_timestamp())
-                .attached_deposit(ATTESTATION_STORAGE_DEPOSIT)
-                .build()
-        );
+        testing_env!(common::participant_context(&node_id.account_id));
         self.contract
             .submit_participant_info(attestation, node_id.tls_public_key.clone())
             .map(|_| ())
@@ -278,21 +265,14 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     assert_eq!(stored_before, stored_after);
 }
 
-/// A non-participant storing a new entry must cover its storage cost, so an outsider cannot
-/// store an attestation without paying for it.
+/// A newcomer stores its first attestation with no deposit (contract-funded storage), so the
+/// node's function-call access key can self-onboard.
 #[test]
-fn submit_participant_info__should_reject_when_non_participant_deposit_is_below_storage_cost() {
+fn submit_participant_info__should_store_new_entry_with_zero_deposit() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let newcomer = node_id_for(&"newcomer.near".parse().unwrap());
-    let attached_deposit = NearToken::from_yoctonear(1);
-    testing_env!(
-        VMContextBuilder::new()
-            .signer_account_id(newcomer.account_id.clone())
-            .predecessor_account_id(newcomer.account_id.clone())
-            .attached_deposit(attached_deposit)
-            .build()
-    );
+    testing_env!(common::participant_context(&newcomer.account_id));
 
     // When
     let result = setup
@@ -304,17 +284,20 @@ fn submit_participant_info__should_reject_when_non_participant_deposit_is_below_
         .map(|_| ());
 
     // Then
-    assert_matches!(
-        &result,
-        Err(Error::InvalidParameters(InvalidParameters::InsufficientDeposit { attached, required }))
-            if *attached == attached_deposit.as_yoctonear() && required > attached
+    assert_matches!(&result, Ok(()));
+    assert!(
+        setup
+            .contract
+            .get_attestation(newcomer.tls_public_key)
+            .unwrap()
+            .is_some()
     );
 }
 
-/// A current participant re-attesting an existing entry is charged nothing and need not attach
-/// any deposit, so the node's function-call access key can re-attest.
+/// A current participant re-attesting an existing entry succeeds with no attached deposit, so the
+/// node's function-call access key can re-attest.
 #[test]
-fn submit_participant_info__should_charge_nothing_when_participant_reattests_with_zero_deposit() {
+fn submit_participant_info__should_reattest_with_zero_deposit() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let node = setup.get_participant_node_ids()[0].clone();

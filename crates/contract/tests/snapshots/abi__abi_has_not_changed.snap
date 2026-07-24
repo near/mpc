@@ -1317,10 +1317,9 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks and stores the attestation, keeping the storage delta and\n refunding the excess. Refunds the full deposit if the attestation is not\n accepted.",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the\n attestation (storage funded by the contract's balance). On any failure it fails the\n submitter's transaction.",
         "kind": "call",
         "modifiers": [
-          "payable",
           "private"
         ],
         "params": {
@@ -1576,10 +1575,6 @@ expression: abi
                       [
                         "attestation",
                         "DstackAttestation"
-                      ],
-                      [
-                        "caller_is_not_participant",
-                        "bool"
                       ]
                     ]
                   },
@@ -1602,9 +1597,6 @@ expression: abi
                       },
                       "elements": "u8"
                     }
-                  },
-                  "bool": {
-                    "Primitive": 1
                   },
                   "u32": {
                     "Primitive": 4
@@ -2349,11 +2341,8 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n Storage is charged to the caller only when a new entry is stored or the caller is not a\n current participant. A participant re-attesting an existing entry grows nothing and is charged\n nothing, so the node's function-call access key can re-attest with no deposit. A new entry\n costs the measured storage delta, which the caller must cover (an operator's full-access key\n funds a first submission); the excess is refunded, as is the full deposit on a rejected\n attestation.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n Storage is funded by the contract's own balance, so a node submits with no deposit via its\n function-call access key, for its first attestation and re-attestations alike.",
         "kind": "call",
-        "modifiers": [
-          "payable"
-        ],
         "params": {
           "serialization_type": "json",
           "args": [

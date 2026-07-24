@@ -49,10 +49,6 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
 }
 
 const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
-// Covers a new attestation entry's storage cost; the contract refunds the excess. The contract test
-// submit_participant_info__should_bound_worst_case_entry_cost asserts the worst-case entry stays
-// under this amount.
-const ATTESTATION_STORAGE_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_millinear(100);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -563,8 +559,6 @@ impl MpcCluster {
         new_participants: &[usize],
         new_threshold: usize,
     ) -> anyhow::Result<()> {
-        self.fund_new_participant_attestations(new_participants)
-            .await?;
         self.wait_for_participant_attestations(new_participants)
             .await?;
 
@@ -615,42 +609,6 @@ impl MpcCluster {
         )
         .await
         .map(|_| ())
-    }
-
-    /// Submit each new participant's first attestation with a deposit covering the new entry's
-    /// storage cost, which the node's own function-call key cannot attach on-chain. Signed with the
-    /// node's near_signer_key so the stored account_public_key matches the key it later signs
-    /// key-event votes with. Idempotent: the node's later self-submit of the same entry is free.
-    async fn fund_new_participant_attestations(
-        &self,
-        node_indices: &[usize],
-    ) -> anyhow::Result<()> {
-        for &idx in node_indices {
-            let node = &self.nodes[idx];
-            let client = self
-                .blockchain
-                .client_for(node.account_id().as_ref(), node.near_signer_key())?;
-            let pubkey = node.p2p_public_key();
-            let outcome = self
-                .contract
-                .call_from_deposit(
-                    &client,
-                    method_names::SUBMIT_PARTICIPANT_INFO,
-                    json!({
-                        "proposed_participant_attestation": Attestation::Mock(MockAttestation::Valid),
-                        "tls_public_key": pubkey,
-                    }),
-                    ATTESTATION_STORAGE_DEPOSIT,
-                )
-                .await
-                .with_context(|| format!("failed to fund attestation for node {idx}"))?;
-            anyhow::ensure!(
-                outcome.is_success(),
-                "funding attestation for node {idx} reverted: {:?}",
-                outcome.failure_message()
-            );
-        }
-        Ok(())
     }
 
     /// Poll until all proposed participants have TEE attestations on-chain.
@@ -1221,13 +1179,6 @@ impl MpcNodeState {
         match self {
             MpcNodeState::Running(n) => n.setup().p2p_url(),
             MpcNodeState::Stopped(s) => s.p2p_url(),
-        }
-    }
-
-    pub fn near_signer_key(&self) -> &SigningKey {
-        match self {
-            MpcNodeState::Running(n) => n.setup().near_signer_key(),
-            MpcNodeState::Stopped(s) => s.near_signer_key(),
         }
     }
 
