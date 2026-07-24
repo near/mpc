@@ -24,7 +24,7 @@ dependencies = [
 
 [tasks.check-all]
 description = "Run all checks"
-dependencies = ["check-all-fast", "nextest"]
+dependencies = ["check-all-fast", "nextest", "doctests"]
 
 [tasks.check-extra]
 description = "Run extra checks"
@@ -77,6 +77,21 @@ args = [
   "--all-features",
   "--all-targets",
   "--locked",
+]
+
+# `cargo nextest` does not run doctests, so they need a separate `cargo test --doc`
+# invocation to be exercised at all. `--profile test-release` matches the nextest
+# task so the two share build artifacts.
+[tasks.doctests]
+command = "cargo"
+args = [
+  "test",
+  "--doc",
+  "--workspace",
+  "--all-features",
+  "--locked",
+  "--profile",
+  "test-release",
 ]
 
 [tasks.zizmor]
