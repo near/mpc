@@ -1,3 +1,10 @@
+use crate::tee::{
+    AllowedImageHashesFile, monitor_allowed_image_hashes,
+    remote_attestation::{
+        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
+    },
+};
+use crate::tracing::spawn_periodic_prune;
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
@@ -45,17 +52,10 @@ use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{
-        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
-    },
-};
-
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
-    init_logging(&config.log);
+    let (_log_guard, log_path) = init_logging(&config.log);
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
@@ -93,7 +93,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         .build()?;
 
     let _tokio_enter_guard = root_runtime.enter();
-
+    spawn_periodic_prune(&root_runtime.handle(), &config.log);
     // Install the SIGTERM handler as the first thing after the runtime is
     // built, BEFORE any expensive startup (indexer bootstrap, contract
     // state fetch, attestation generation). A SIGTERM arriving during
@@ -118,6 +118,8 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
+    // TODO: Make log server address and port configurable
+    profiler::web_server::start_log_server("127.0.0.1:35000".parse().unwrap(), log_path).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     // TODO(#2102): Decide if the MPC responder account is actually needed

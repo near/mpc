@@ -253,6 +253,7 @@ toml = "1.1.2"
 tonic = { version = "0.14.2", default-features = false }
 tower = "0.5.3"
 tracing = "0.1.44"
+tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", features = [
     "env-filter",
     "fmt",
