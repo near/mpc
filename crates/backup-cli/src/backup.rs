@@ -2,8 +2,9 @@ use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as contract_types;
 use rand_core::OsRng;
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, time::Duration};
 use tokio::fs::File;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     adapters::{self, contract_state_fixture::get_keyset_from_contract_state},
@@ -74,7 +75,9 @@ pub async fn run_command(args: cli::Args) {
 
             let mpc_contract =
                 adapters::contract_state_fixture::ContractStateFixture::new(home_dir);
-            get_keyshares(&mpc_p2p_client, &key_shares_storage, &mpc_contract).await;
+            get_keyshares(&mpc_p2p_client, &key_shares_storage, &mpc_contract)
+                .await
+                .expect("failed to get and store keyshares");
         }
         cli::Command::PutKeyshares(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
@@ -109,6 +112,65 @@ pub async fn run_command(args: cli::Args) {
 
             put_keyshares(&mpc_p2p_client, &key_shares_storage).await;
         }
+        cli::Command::Run(subcommand_args) => {
+            let home_dir = PathBuf::from(args.home_dir);
+            run_service_command(home_dir, subcommand_args).await;
+        }
+    }
+}
+
+async fn run_service_command(home_dir: PathBuf, args: cli::RunArgs) {
+    let secrets_storage =
+        adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_read(home_dir.as_path())
+            .await
+            .expect("failed to create secrets storage");
+    let secrets = ports::SecretsRepository::load_secrets(&secrets_storage)
+        .await
+        .expect("failed to load secrets");
+
+    let mpc_node_p2p_key = verifying_key_from_str(&args.mpc_node_p2p_key);
+    let backup_encryption_key =
+        mpc_node::config::hex_to_binary_key(&args.backup_encryption_key_hex)
+            .expect("require valid hex key");
+    let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
+        args.mpc_node_address,
+        mpc_node_p2p_key,
+        secrets.p2p_private_key,
+        backup_encryption_key,
+    );
+
+    let key_shares_storage = adapters::keyshare_storage::KeyshareStorageAdapter::new(
+        home_dir.clone(),
+        secrets.local_storage_aes_key,
+    )
+    .await
+    .expect("failed to create keyshare storage");
+
+    let mpc_contract = adapters::contract_state_rpc::RpcContractStateReader::new(
+        &args.rpc_url,
+        args.rpc_api_key,
+        args.mpc_contract_account_id,
+    )
+    .expect("failed to create contract state reader");
+
+    let shutdown = CancellationToken::new();
+    let shutdown_on_signal = shutdown.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            shutdown_on_signal.cancel();
+        }
+    });
+
+    if let Err(err) = crate::service::run_service(
+        &mpc_p2p_client,
+        &key_shares_storage,
+        &mpc_contract,
+        Duration::from_secs(args.poll_interval_seconds),
+        shutdown,
+    )
+    .await
+    {
+        tracing::error!(?err, "automatic backup service exited with error");
     }
 }
 
@@ -155,21 +217,29 @@ pub async fn get_keyshares(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
     mpc_contract: &impl ports::ContractStateReader,
-) {
+) -> anyhow::Result<()> {
     let contract_state = mpc_contract
         .get_contract_state()
         .await
-        .expect("could not get contract state");
-    let keyset =
-        get_keyset_from_contract_state(&contract_state).expect("failed to compute current keyset");
-    let keyshare = mpc_p2p_client
-        .get_keyshares(&keyset)
+        .map_err(|err| anyhow::anyhow!("could not get contract state: {err:?}"))?;
+    let keyset = get_keyset_from_contract_state(&contract_state)?;
+    fetch_and_store(mpc_p2p_client, keyshares_storage, &keyset).await
+}
+
+pub async fn fetch_and_store(
+    mpc_p2p_client: &impl ports::P2PClient,
+    keyshares_storage: &impl ports::KeyShareRepository,
+    keyset: &contract_types::Keyset,
+) -> anyhow::Result<()> {
+    let keyshares = mpc_p2p_client
+        .get_keyshares(keyset)
         .await
-        .expect("fail to get key shares");
+        .map_err(|err| anyhow::anyhow!("failed to get keyshares: {err:?}"))?;
     keyshares_storage
-        .store_keyshares(&keyshare)
+        .store_keyshares(&keyshares)
         .await
-        .expect("fail to store key shares");
+        .map_err(|err| anyhow::anyhow!("failed to store keyshares: {err:?}"))?;
+    Ok(())
 }
 
 pub async fn put_keyshares(

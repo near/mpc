@@ -115,6 +115,61 @@ mod tests {
     }
 
     #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn migration_web_server__should_record_last_backup_metric_on_successful_get() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        // Given
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_BACKUP_METRIC_TEST).await;
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            &test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+        let epoch_id = 5;
+
+        // When
+        // An empty keyset yields no keyshares, which must not advance the metric.
+        let empty = make_keyshare_get_request(
+            &mut send_request,
+            &KeysetBuilder::new(epoch_id).keyset(),
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
+
+        // Then
+        assert!(empty.is_empty());
+        assert_eq!(crate::metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(), 0);
+
+        // When
+        let keyset_builder = KeysetBuilder::new_populated(epoch_id, 8, &mut rng);
+        let keyset_dto: near_mpc_contract_interface::types::Keyset = keyset_builder.keyset();
+        test_setup
+            .keyshare_storage
+            .write()
+            .await
+            .import_backup(keyset_builder.keyshares().to_vec(), &keyset_dto)
+            .await
+            .unwrap();
+        make_keyshare_get_request(
+            &mut send_request,
+            &keyset_dto,
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
+
+        // Then
+        assert_eq!(
+            crate::metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(),
+            i64::try_from(epoch_id).unwrap()
+        );
+        assert!(crate::metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get() > 0);
+    }
+
+    #[tokio::test]
     async fn test_web_success_set_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let mut test_setup = setup(port_seed::MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES).await;

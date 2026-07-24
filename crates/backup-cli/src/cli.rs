@@ -71,6 +71,9 @@ pub enum Command {
     GetKeyshares(GetKeysharesArgs),
     /// Put keyshares to an MPC node from local storage.
     PutKeyshares(PutKeysharesArgs),
+    /// Run the automatic backup service: poll the contract and back up keyshares on
+    /// every new epoch.
+    Run(RunArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -117,6 +120,32 @@ pub struct PutKeysharesArgs {
     /// hex encryption key
     #[arg(long, env)]
     pub backup_encryption_key_hex: String,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct RunArgs {
+    /// NEAR JSON-RPC endpoint used to poll the contract state.
+    #[arg(long, env)]
+    pub rpc_url: String,
+    /// Optional bearer token for the RPC endpoint.
+    #[arg(long, env)]
+    pub rpc_api_key: Option<String>,
+    /// MPC contract account ID whose state is polled.
+    #[arg(long, env)]
+    pub mpc_contract_account_id: AccountId,
+    /// host address of the MPC node to retrieve keyshares from (`host:port`).
+    #[arg(long, env)]
+    pub mpc_node_address: NodeAddress,
+    /// P2P public key of the MPC node for authentication.
+    #[arg(long, env)]
+    pub mpc_node_p2p_key: String,
+    /// hex encryption key. Prefer setting this via the environment
+    /// (`BACKUP_ENCRYPTION_KEY_HEX`) rather than on the command line.
+    #[arg(long, env)]
+    pub backup_encryption_key_hex: String,
+    /// How often to poll the contract state, in seconds.
+    #[arg(long, env, default_value_t = 60)]
+    pub poll_interval_seconds: u64,
 }
 
 #[cfg(test)]

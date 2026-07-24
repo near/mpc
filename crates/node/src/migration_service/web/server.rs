@@ -118,6 +118,18 @@ async fn spawn_expected_peer_info_monitoring(
     receiver
 }
 
+fn record_backup_served(keyset: &Keyset) {
+    let epoch = i64::try_from(keyset.epoch_id.get()).unwrap_or(i64::MAX);
+    crate::metrics::MPC_LAST_BACKUP_SERVED_EPOCH.set(epoch);
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    crate::metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS
+        .set(i64::try_from(now).unwrap_or(i64::MAX));
+}
+
 async fn handle_request(
     req: hyper::Request<Incoming>,
     state: Arc<WebServerState>,
@@ -149,6 +161,10 @@ async fn handle_request(
                                     .unwrap());
                             }
                         };
+                        // Empty means we don't hold this keyset, so it isn't a real backup.
+                        if !keyshares.is_empty() {
+                            record_backup_served(&keyset);
+                        }
                         let resp = serialize_and_encrypt_keyshares(
                             &keyshares,
                             &state.backup_encryption_key,
