@@ -117,11 +117,6 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// node key cannot invoke these methods.
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
-/// Minimum a node must attach to [`MpcContract::submit_participant_info`],
-/// sized to cover the worst-case stored entry. Only the actual storage delta is
-/// kept; the excess is refunded.
-pub const MINIMUM_ATTESTATION_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(100);
-
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
@@ -161,28 +156,23 @@ fn refund_to(account_id: &AccountId, amount: NearToken) {
     }
 }
 
-/// Requires at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`], then keeps the storage delta since
-/// `initial_storage` and refunds the excess.
+/// Charges `account_id` the storage growth since `initial_storage` and refunds the excess. A
+/// participant re-attesting an unchanged entry grows nothing and pays nothing, so the node's
+/// function-call access key can re-attest; a new entry costs the measured delta, funded by the
+/// caller (an operator's full-access key for a first submission).
 fn charge_storage(account_id: &AccountId, initial_storage: u64) -> Result<(), Error> {
-    let attached = env::attached_deposit();
-    if attached < MINIMUM_ATTESTATION_STORAGE_DEPOSIT {
-        return Err(InvalidParameters::InsufficientDeposit {
-            attached: attached.as_yoctonear(),
-            required: MINIMUM_ATTESTATION_STORAGE_DEPOSIT.as_yoctonear(),
-        }
-        .into());
-    }
-
     // saturating_sub: a shrink charges nothing rather than underflowing.
     let bytes_grown = env::storage_usage().saturating_sub(initial_storage);
     let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
-    match attached.checked_sub(cost) {
-        Some(refund) => refund_to(account_id, refund),
-        // Unreachable given the MINIMUM_ATTESTATION_STORAGE_DEPOSIT floor, which
-        // minimum_attestation_storage_deposit__should_cover_worst_case_entry pins to the
-        // worst-case entry cost.
-        None => log!("attestation storage cost {cost} exceeded deposit for {account_id}"),
+    let attached = env::attached_deposit();
+    if attached < cost {
+        return Err(InvalidParameters::InsufficientDeposit {
+            attached: attached.as_yoctonear(),
+            required: cost.as_yoctonear(),
+        }
+        .into());
     }
+    refund_to(account_id, attached.saturating_sub(cost));
     Ok(())
 }
 
@@ -809,11 +799,11 @@ impl MpcContract {
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
     /// Storage is charged to the caller only when a new entry is stored or the caller is not a
-    /// current participant. A participant re-attesting an existing entry is charged nothing and
-    /// need not attach any deposit, so the node's function-call access key can re-attest. When a
-    /// charge applies, the caller must attach at least [`MINIMUM_ATTESTATION_STORAGE_DEPOSIT`]
-    /// (enough to cover the worst-case stored entry); only the actual storage delta is kept and
-    /// the excess is refunded. The full deposit is refunded if the attestation is not accepted.
+    /// current participant. A participant re-attesting an existing entry grows nothing and is charged
+    /// nothing, so the node's function-call access key can re-attest with no deposit. A new entry
+    /// costs the measured storage delta, which the caller must cover (an operator's full-access key
+    /// funds a first submission); the excess is refunded, as is the full deposit on a rejected
+    /// attestation.
     #[payable]
     #[handle_result]
     pub fn submit_participant_info(
@@ -4674,7 +4664,7 @@ mod tests {
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
             .predecessor_account_id(contract_account_id)
-            .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+            .attached_deposit(NearToken::from_near(1))
             .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
             .build();
         testing_env!(context);
@@ -8139,9 +8129,9 @@ mod tests {
 
     const MAX_HASH: [u8; 32] = [0xff; 32];
 
-    // Catches entry-size growth: fails if a schema change makes the largest storable entry
-    // cost more than the deposit at today's storage_byte_cost. It cannot see a future
-    // storage_byte_cost increase on a live contract; the deposit's margin covers that.
+    // A stored entry a caller must fund stays bounded; a schema change that bloats it fails here.
+    const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(100);
+
     #[rstest]
     #[case::dstack(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
         mpc_image_hash: MAX_HASH.into(),
@@ -8155,7 +8145,7 @@ mod tests {
         expiry_timestamp_seconds: Some(u64::MAX),
         expected_measurements: Some(default_measurements()[0]),
     }))]
-    fn minimum_attestation_storage_deposit__should_cover_worst_case_entry(
+    fn submit_participant_info__should_bound_worst_case_entry_cost(
         #[case] verified_attestation: VerifiedAttestation,
     ) {
         testing_env!(VMContextBuilder::new().build());
@@ -8179,9 +8169,9 @@ mod tests {
         let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
 
         assert!(
-            MINIMUM_ATTESTATION_STORAGE_DEPOSIT >= cost,
-            "minimum deposit {MINIMUM_ATTESTATION_STORAGE_DEPOSIT} must cover the worst-case entry \
-             ({bytes_grown} bytes, {cost}) at today's storage price"
+            cost <= WORST_CASE_ENTRY_COST_CEILING,
+            "worst-case entry cost ({bytes_grown} bytes, {cost}) must stay under \
+             {WORST_CASE_ENTRY_COST_CEILING} at today's storage price"
         );
     }
 }

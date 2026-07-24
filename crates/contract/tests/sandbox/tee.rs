@@ -1050,10 +1050,10 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// A submission attaching less than the flat storage fee is rejected before the
+/// A new-entry submission attaching less than the measured storage cost is rejected before the
 /// entry is stored.
 #[tokio::test]
-async fn submit_participant_info__should_reject_new_attestation_below_flat_fee() -> Result<()> {
+async fn submit_participant_info__should_reject_new_attestation_below_storage_cost() -> Result<()> {
     // Given
     let SandboxTestSetup {
         worker, contract, ..
@@ -1064,7 +1064,8 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
     let outsider = worker.dev_create_account().await?;
     let fresh_tls_key = bogus_ed25519_public_key();
     let storage_before = worker.view_account(contract.id()).await?.storage_usage;
-    let below_fee = SUBMIT_PARTICIPANT_INFO_DEPOSIT.saturating_sub(NearToken::from_yoctonear(1));
+    // 1 yoctoNEAR is below any nonzero entry cost.
+    let below_cost = NearToken::from_yoctonear(1);
 
     // When
     let result = outsider
@@ -1073,7 +1074,7 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
             Attestation::Mock(MockAttestation::Valid),
             fresh_tls_key.clone(),
         ))
-        .deposit(below_fee)
+        .deposit(below_cost)
         .max_gas()
         .transact()
         .await?;
@@ -1081,7 +1082,7 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
     // Then
     assert!(
         !result.is_success(),
-        "submission below the flat fee must fail: {result:?}"
+        "submission below the storage cost must fail: {result:?}"
     );
     let error_msg = format!("{:?}", result.into_result());
     assert!(
