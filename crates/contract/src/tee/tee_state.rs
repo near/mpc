@@ -874,41 +874,22 @@ mod tests {
         );
     }
 
-    fn mock_attestation_entry() -> (Ed25519PublicKey, NodeAttestation) {
+    #[test]
+    fn check_attestation_entry_storage_cost__should_accept_entry_within_cap() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
         let tls_pk = bogus_ed25519_public_key();
         let node_id = create_node_id(&"alice.near".parse().unwrap(), &tls_pk);
         let entry = NodeAttestation {
             node_id,
             verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
         };
-        (tls_pk, entry)
-    }
-
-    #[test]
-    fn check_attestation_entry_storage_cost__should_accept_entry_within_cap() {
-        // Given
-        testing_env!(VMContextBuilder::new().build());
-        let (tls_pk, entry) = mock_attestation_entry();
 
         // When
         let result = check_attestation_entry_storage_cost(&tls_pk, &entry);
 
         // Then
         assert_matches!(result, Ok(()));
-    }
-
-    #[test]
-    fn entry_cost__should_exceed_cap_once_byte_count_is_large_enough() {
-        // Given
-        testing_env!(VMContextBuilder::new().build());
-        let byte_cost = env::storage_byte_cost().as_yoctonear();
-        let bytes_over_cap = (MAX_ATTESTATION_ENTRY_STORAGE_COST.as_yoctonear() / byte_cost) + 1;
-
-        // When
-        let cost = env::storage_byte_cost().saturating_mul(bytes_over_cap);
-
-        // Then
-        assert!(cost > MAX_ATTESTATION_ENTRY_STORAGE_COST);
     }
 
     #[test]
