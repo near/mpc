@@ -1207,15 +1207,12 @@ name = "backup-cli"
 version = "3.13.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "clap",
  "ed25519-dalek",
  "mpc-node",
  "near-account-id",
- "near-jsonrpc-client 0.21.1",
- "near-jsonrpc-primitives 0.36.0",
+ "near-kit",
  "near-mpc-contract-interface",
- "near-primitives 0.36.0",
  "rand 0.8.6",
  "rand_core 0.6.4",
  "rstest",

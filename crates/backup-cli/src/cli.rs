@@ -124,12 +124,13 @@ pub struct PutKeysharesArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct RunArgs {
-    /// NEAR JSON-RPC endpoint used to poll the contract state.
+    /// NEAR JSON-RPC endpoint used to poll the contract state. A provider api key, if
+    /// any, is passed as part of this URL.
     #[arg(long, env)]
     pub rpc_url: String,
-    /// Optional bearer token for the RPC endpoint.
-    #[arg(long, env)]
-    pub rpc_api_key: Option<String>,
+    /// NEAR chain id (e.g. mainnet, testnet).
+    #[arg(long, env, default_value = "mainnet")]
+    pub near_chain_id: String,
     /// MPC contract account ID whose state is polled.
     #[arg(long, env)]
     pub mpc_contract_account_id: AccountId,

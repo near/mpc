@@ -148,10 +148,9 @@ async fn run_service_command(home_dir: PathBuf, args: cli::RunArgs) {
 
     let mpc_contract = adapters::contract_state_rpc::RpcContractStateReader::new(
         &args.rpc_url,
-        args.rpc_api_key,
+        &args.near_chain_id,
         args.mpc_contract_account_id,
-    )
-    .expect("failed to create contract state reader");
+    );
 
     let shutdown = CancellationToken::new();
     let shutdown_on_signal = shutdown.clone();
