@@ -1,9 +1,9 @@
 use crate::sandbox::{
-    common::SandboxTestSetup,
-    upgrade_from_current_contract::current_contract_proposal,
-    utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+    common::SandboxTestSetup, upgrade_from_current_contract::current_contract_proposal,
+    utils::transactions::SandboxCaller,
 };
 use mpc_contract::update::UpdateId;
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names;
 
 #[tokio::test]
@@ -44,14 +44,13 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .build()
         .await;
 
-    let execution = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(current_contract_proposal())
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
+    let execution = MpcContractHandle::new(
+        SandboxCaller(&mpc_signer_accounts[0]),
+        contract.id().clone(),
+    )
+    .propose_update(current_contract_proposal())
+    .await
+    .unwrap();
 
     assert!(execution.is_success());
     let proposal_id: UpdateId = execution.json().unwrap();
@@ -60,11 +59,8 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     let mut saw_failure = false;
 
     for voter in mpc_signer_accounts {
-        let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({ "id": proposal_id }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
+        let execution = MpcContractHandle::new(SandboxCaller(&voter), contract.id().clone())
+            .vote_update(*proposal_id)
             .await
             .unwrap();
 

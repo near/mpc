@@ -8,12 +8,13 @@ use crate::sandbox::common::{
     register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
     starknet_request, sui_extracted_values, sui_request, ton_request,
 };
+use crate::sandbox::utils::transactions::{AsyncSandboxCaller, SandboxCaller};
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use near_workspaces::types::NearToken;
 use rstest::rstest;
 use serde_json::json;
 
@@ -54,15 +55,8 @@ async fn verify_foreign_transaction__should_succeed(
         request: rpc_request.clone(),
     };
 
-    let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+    let status = MpcContractHandle::new(AsyncSandboxCaller(&user), setup.contract.id().clone())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
 
@@ -131,26 +125,13 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
     };
 
     // When
-    let status_alice = alice
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await
-        .unwrap();
-    let status_bob = bob
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+    let status_alice =
+        MpcContractHandle::new(AsyncSandboxCaller(&alice), setup.contract.id().clone())
+            .verify_foreign_transaction(request_args.clone())
+            .await
+            .unwrap();
+    let status_bob = MpcContractHandle::new(AsyncSandboxCaller(&bob), setup.contract.id().clone())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
@@ -224,15 +205,8 @@ async fn verify_foreign_transaction__should_reject_without_policy(
         request: rpc_request,
     };
 
-    let result = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
+    let result = MpcContractHandle::new(SandboxCaller(&user), setup.contract.id().clone())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap()
         .into_result();
@@ -276,15 +250,8 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         request: rpc_request,
     };
 
-    let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+    let status = MpcContractHandle::new(AsyncSandboxCaller(&user), setup.contract.id().clone())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
 
