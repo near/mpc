@@ -7,13 +7,13 @@ production.
 
 For each configured provider it runs a fixed request against a known reference
 transaction — the same inspector and auth handling the node uses — and compares
-the result against a known-good value. Sui and Starknet are the exceptions: they
-verify the provider's chain identity (a genesis-derived constant that is never
+the result against a known-good value. Sui, Starknet, and the EVM chains are the
+exceptions: they verify the provider's chain identity (a constant that is never
 pruned) and then inspect a recently produced transaction — Sui from its latest
 checkpoint, Starknet from its latest L1-accepted block (requires provider
-JSON-RPC v0.9+) — so the check never depends on months-old archived history.
-Every provider is checked independently: one bad provider does not stop the
-others from being reported.
+JSON-RPC v0.9+), the EVM chains from the latest finalized block — so the check
+never depends on months-old archived history. Every provider is checked
+independently: one bad provider does not stop the others from being reported.
 
 Expected identities can be seeded from config under
 `foreign_chain_health_check.identities` (chain label -> identity), overriding
@@ -23,6 +23,7 @@ the built-in reference — useful for a local or custom network:
 foreign_chain_health_check:
   identities:
     starknet: "0x534e5f4d41494e" # SN_MAIN (felt)
+    base: "8453"                 # EVM numeric chain id
 ```
 
 ## Usage
