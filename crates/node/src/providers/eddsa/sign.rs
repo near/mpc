@@ -1,7 +1,7 @@
 use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -138,6 +138,10 @@ pub struct SignComputation {
     pub tweak: Tweak,
 }
 
+impl NamedProtocol for SignComputation {
+    const NAME: &'static str = "sign eddsa";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComputation {
     async fn compute(
@@ -169,7 +173,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
         )?;
 
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature: Option<Signature> = run_protocol("sign eddsa", channel, protocol).await?;
+        let signature: Option<Signature> = Self::run(channel, protocol).await?;
 
         Ok(signature.map(|signature| (signature, derived_keygen_output.public_key)))
     }
