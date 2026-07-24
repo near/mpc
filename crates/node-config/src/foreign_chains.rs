@@ -56,6 +56,56 @@ pub struct ForeignChainProviderConfig {
     pub auth: auth::AuthConfig,
 }
 
+/// Golden reference values the foreign-chain health check probes providers
+/// against: per chain, a known transaction and the value a provider must
+/// return for it. `None` skips the chain.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HealthCheckGoldenConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bitcoin: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "abstract")]
+    pub abstract_chain: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starknet: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bnb: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arbitrum: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyper_evm: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub polygon: Option<BlockHashGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aptos: Option<AptosGolden>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sui: Option<SuiGolden>,
+}
+
+/// Hashes are hex, with or without a `0x` prefix.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BlockHashGolden {
+    pub tx: String,
+    pub block_hash: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AptosGolden {
+    pub tx: String,
+    pub event_type_tag: String,
+    pub event_sequence_number: u64,
+}
+
+/// Sui is verified by chain identity rather than a pinned reference transaction.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SuiGolden {
+    /// Base58 of the 32-byte genesis checkpoint digest, exactly as
+    /// `get_service_info` returns it.
+    pub chain_id: String,
+}
+
 #[derive(
     Clone,
     Debug,

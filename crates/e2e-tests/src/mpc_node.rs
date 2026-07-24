@@ -150,6 +150,7 @@ impl MpcNode {
     }
 }
 
+pub const STDOUT_LOG: &str = "stdout.log";
 pub const STDERR_LOG: &str = "stderr.log";
 
 /// Guard that kills the child process on drop.
@@ -199,6 +200,7 @@ pub struct MpcNodeSetup {
 
     // Foreign chains configuration
     foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+    health_check_golden: Option<mpc_node_config::HealthCheckGoldenConfig>,
 
     // Config file path (written on creation)
     config_path: PathBuf,
@@ -240,6 +242,7 @@ impl MpcNodeSetup {
             triples_to_buffer: args.triples_to_buffer,
             presignatures_to_buffer: args.presignatures_to_buffer,
             foreign_chains_config: args.foreign_chains_config,
+            health_check_golden: args.health_check_golden,
             config_path,
         };
 
@@ -266,6 +269,44 @@ impl MpcNodeSetup {
     /// The node's home directory (logs, config, data).
     pub fn home_dir(&self) -> &std::path::Path {
         &self.home_dir
+    }
+
+    /// Contents of the node's captured stdout (tracing output) so far.
+    pub fn stdout_log(&self) -> anyhow::Result<String> {
+        let path = self.home_dir.join(STDOUT_LOG);
+        std::fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))
+    }
+
+    /// Poll the node's stdout log until `needle` appears, up to `timeout`.
+    /// Reads the file rather than the process, so it also finds lines written
+    /// by a node that has since exited.
+    pub async fn wait_for_log_substring(
+        &self,
+        needle: &str,
+        timeout: std::time::Duration,
+    ) -> anyhow::Result<()> {
+        let start = std::time::Instant::now();
+        loop {
+            if self.stdout_log().unwrap_or_default().contains(needle) {
+                return Ok(());
+            }
+            if start.elapsed() >= timeout {
+                let tail = |name: &str| -> String {
+                    let contents = std::fs::read_to_string(self.home_dir.join(name))
+                        .unwrap_or_else(|e| format!("<unreadable: {e}>"));
+                    let lines: Vec<&str> = contents.lines().rev().take(20).collect();
+                    lines.into_iter().rev().collect::<Vec<_>>().join("\n")
+                };
+                anyhow::bail!(
+                    "timed out waiting for {needle:?} in node {} stdout log\n\
+                     --- stdout tail ---\n{}\n--- stderr tail ---\n{}",
+                    self.node_index,
+                    tail(STDOUT_LOG),
+                    tail(STDERR_LOG),
+                );
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
     }
 
     /// The node's backup encryption key as a hex string.
@@ -365,9 +406,9 @@ impl MpcNodeSetup {
             "starting mpc-node"
         );
 
-        let stdout_file = std::fs::File::create(self.home_dir.join("stdout.log"))
+        let stdout_file = std::fs::File::create(self.home_dir.join(STDOUT_LOG))
             .context("failed to create stdout log")?;
-        let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
+        let stderr_file = std::fs::File::create(self.home_dir.join(STDERR_LOG))
             .context("failed to create stderr log")?;
 
         let child = Command::new(&self.binary_path)
@@ -488,6 +529,7 @@ impl MpcNodeSetup {
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
+                foreign_chain_health_check_golden: self.health_check_golden.clone(),
             },
             pccs_endpoints: mpc_node_config::default_pccs_endpoints(),
         };
@@ -522,6 +564,9 @@ pub struct MpcNodeSetupArgs {
     pub near_boot_nodes: String,
     /// Foreign chains configuration for this node.
     pub foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+    /// Golden values for the startup foreign-chain health check, which only
+    /// runs on this (local) chain when they are supplied.
+    pub health_check_golden: Option<mpc_node_config::HealthCheckGoldenConfig>,
 }
 
 /// Ports allocated for a single MPC node.

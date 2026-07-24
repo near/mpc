@@ -209,6 +209,16 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
+    let network = foreign_chain_health_check::resolve_network_from_config(
+        config.near_init.as_ref(),
+        node_config.indexer.mpc_contract_id.as_str(),
+    );
+    root_runtime.spawn(crate::foreign_chain_health::run_startup_health_check(
+        node_config.foreign_chains.clone(),
+        network,
+        node_config.foreign_chain_health_check_golden.clone(),
+    ));
+
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
     // Dedicated cancellation token for the indexer thread. Cancelled after

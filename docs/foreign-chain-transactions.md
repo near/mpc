@@ -647,6 +647,17 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+On startup the node probes every configured provider with a fixed golden request and logs a
+per-provider result, so config typos and un-enabled API keys surface immediately instead of on
+the first real verification request. All providers are probed concurrently, and a summary line
+reports how many passed; a check that probed nothing at all (empty or mistyped `foreign_chains`
+section) is flagged with a warning. The probe runs detached and never blocks startup. On
+mainnet and testnet the golden reference values are built into the binary. On local chains
+(localnet/sandbox/custom) the probe runs only when the node config supplies its own golden
+values via `foreign_chain_health_check_golden` (same per-chain shape as the built-in set) and
+is skipped otherwise; on mainnet/testnet that field is ignored — the built-in set is always
+used, so a config entry can never weaken the check on a real network.
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious

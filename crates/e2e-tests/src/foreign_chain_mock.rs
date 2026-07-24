@@ -136,7 +136,19 @@ pub fn setup_bitcoin_mock(server: &MockServer, auth: MockAuthExpectation) -> usi
     mock_id
 }
 
+/// Mock EVM JSON-RPC server using the default block hash [`MOCK_BLOCK_HASH`].
 pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
+    setup_evm_mock_with_block_hash(server, auth, MOCK_BLOCK_HASH)
+}
+
+/// Mock EVM JSON-RPC server serving `block_hash` (un-prefixed 64-char hex) as the
+/// transaction's block hash, matched against a probe's golden to force pass/fail.
+pub fn setup_evm_mock_with_block_hash(
+    server: &MockServer,
+    auth: MockAuthExpectation,
+    block_hash: &str,
+) -> usize {
+    let block_hash = block_hash.to_string();
     let mock_id = server.mock(|when, then| {
         auth.apply(when.method(POST));
         then.respond_with(move |req: &HttpMockRequest| {
@@ -155,12 +167,12 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
                     if block_id.starts_with("0x") {
                         serde_json::json!({
                             "number": block_id,
-                            "hash": format!("0x{MOCK_BLOCK_HASH}"),
+                            "hash": format!("0x{block_hash}"),
                         })
                     } else {
                         serde_json::json!({
                             "number": "0x16740f3",
-                            "hash": format!("0x{MOCK_BLOCK_HASH}"),
+                            "hash": format!("0x{block_hash}"),
                         })
                     }
                 }
@@ -171,7 +183,7 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
                     let transaction_hash = body["params"][0].as_str().expect("tx hash param");
                     serde_json::json!({
                         "transactionHash": transaction_hash,
-                        "blockHash": format!("0x{MOCK_BLOCK_HASH}"),
+                        "blockHash": format!("0x{block_hash}"),
                         "blockNumber": "0xa",
                         "status": "0x1",
                         "logs": [{
@@ -182,7 +194,7 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
                                 "0x0000000000000000000000000000000000000000000000000000000000008001",
                             ],
                             "data": "0x000000000000000000000000000000000000000000000000000006e4b5898a00",
-                            "blockHash": format!("0x{MOCK_BLOCK_HASH}"),
+                            "blockHash": format!("0x{block_hash}"),
                             "blockNumber": "0xa",
                             "l1BatchNumber": "0x4f3c",
                             "transactionHash": transaction_hash,

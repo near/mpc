@@ -228,6 +228,7 @@ impl IntegrationTestSetup {
                 signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
+                foreign_chain_health_check_golden: None,
                 triple: TripleConfig {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,

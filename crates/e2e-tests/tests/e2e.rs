@@ -14,6 +14,7 @@ mod parallel_sign_calls;
 mod request_during_resharing;
 mod request_lifecycle;
 mod sigterm_handler;
+mod startup_foreign_chain_health;
 mod submit_participant_info;
 mod timeout_metric;
 mod update_participant_url;
