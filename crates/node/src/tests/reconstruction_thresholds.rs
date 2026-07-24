@@ -8,8 +8,8 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::port_seed;
 use crate::tests::common::{ckd_domain, sign_domain};
 use crate::tests::{
-    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-    IntegrationTestSetup, request_ckd_and_await_response, request_signature_and_await_response,
+    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup,
+    request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_primitives::domain::Curve;
@@ -17,32 +17,42 @@ use near_mpc_contract_interface::types::{DomainConfig, Protocol, ReconstructionT
 use near_time::Clock;
 use std::collections::BTreeMap;
 
+/// Shared budget for both assertions: the negative window must exceed the worst-case positive
+/// latency, else [`assert_cannot_sign`] could pass merely because a capable domain was slow.
+/// [`warm_up`] keeps that latency low.
+const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
+const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Sign or CKD request per `domain`'s protocol; both are gated by its reconstruction threshold.
 async fn request_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
     domain: &DomainConfig,
+    budget: std::time::Duration,
 ) -> Option<std::time::Duration> {
     match Curve::from(domain.protocol) {
         Curve::Secp256k1 | Curve::Edwards25519 => {
-            request_signature_and_await_response(
-                indexer,
-                user,
-                domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-            )
-            .await
+            request_signature_and_await_response(indexer, user, domain, budget).await
         }
-        Curve::Bls12381 => {
-            request_ckd_and_await_response(indexer, user, domain, DEFAULT_MAX_SIGNATURE_WAIT_TIME)
-                .await
-        }
+        Curve::Bls12381 => request_ckd_and_await_response(indexer, user, domain, budget).await,
+    }
+}
+
+/// Primes each domain's presignatures for the current online set with a generously-budgeted sign,
+/// whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
+/// pre-generated presignatures; Frost and CKD sign directly, so pass only the block's signable
+/// CaitSith/DamgardEtAl domains after every online-set change.
+async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
+    for domain in domains {
+        let _ = request_and_await_response(indexer, "warmup", domain, WARMUP_WAIT_BUDGET).await;
     }
 }
 
 async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
-        request_and_await_response(indexer, user, domain)
+        request_and_await_response(indexer, user, domain, REQUEST_WAIT_BUDGET)
             .await
             .is_some(),
         "domain {:?} (t={}) should be able to sign with the currently-online nodes",
@@ -53,7 +63,7 @@ async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &
 
 async fn assert_cannot_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
-        request_and_await_response(indexer, user, domain)
+        request_and_await_response(indexer, user, domain, REQUEST_WAIT_BUDGET)
             .await
             .is_none(),
         "domain {:?} (t={}) must NOT be able to sign: too few nodes are online for its threshold",
@@ -125,6 +135,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         .expect("must not exceed timeout");
 
     // When all 5 are online: every domain signs.
+    warm_up(&mut setup.indexer, &[&low, &high, &robust]).await;
     assert_can_sign(&mut setup.indexer, "user_all_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_all_high", &high).await;
     assert_can_sign(&mut setup.indexer, "user_all_robust", &robust).await;
@@ -134,6 +145,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
 
     // One node down (4 online): only robust (needs 5) stops.
     let disabled_a = setup.indexer.disable(4.into()).await;
+    warm_up(&mut setup.indexer, &[&low, &high]).await;
     assert_can_sign(&mut setup.indexer, "user_4_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_4_high", &high).await;
     assert_cannot_sign(&mut setup.indexer, "user_4_robust", &robust).await;
@@ -142,6 +154,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
 
     // Two nodes down (3 online): high, ckd_high and frost (t=4) stop too.
     let disabled_b = setup.indexer.disable(3.into()).await;
+    warm_up(&mut setup.indexer, &[&low]).await;
     assert_can_sign(&mut setup.indexer, "user_3_low", &low).await;
     assert_cannot_sign(&mut setup.indexer, "user_3_high", &high).await;
     assert_can_sign(&mut setup.indexer, "user_3_ckd_low", &ckd_low).await;
@@ -151,6 +164,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
     // Then restoring both nodes restores signing for every domain.
     disabled_b.reenable_and_wait_till_running().await;
     disabled_a.reenable_and_wait_till_running().await;
+    warm_up(&mut setup.indexer, &[&high, &robust]).await;
     assert_can_sign(&mut setup.indexer, "user_restored_high", &high).await;
     assert_can_sign(&mut setup.indexer, "user_restored_robust", &robust).await;
     assert_can_sign(&mut setup.indexer, "user_restored_ckd_high", &ckd_high).await;
@@ -222,6 +236,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         .expect("must not exceed timeout");
 
     // Sanity: all four initial nodes online, every domain signs (high/ckd t=4 need all 4).
+    warm_up(&mut setup.indexer, &[&low, &high, &robust]).await;
     assert_can_sign(&mut setup.indexer, "user_pre_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_pre_mid", &mid).await;
     assert_can_sign(&mut setup.indexer, "user_pre_high", &high).await;
@@ -255,6 +270,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         .expect("Timeout waiting for resharing to complete");
 
     // Then all domains still sign with the full reshared set.
+    warm_up(&mut setup.indexer, &[&low, &high_lowered, &robust]).await;
     assert_can_sign(&mut setup.indexer, "user_post_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_post_mid", &mid).await;
     assert_can_sign(&mut setup.indexer, "user_post_high", &high_lowered).await;
@@ -268,6 +284,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
     let _disabled_a = setup.indexer.disable(4.into()).await;
     let _disabled_b = setup.indexer.disable(3.into()).await;
     let _disabled_c = setup.indexer.disable(2.into()).await;
+    warm_up(&mut setup.indexer, &[&low, &high_lowered]).await;
     assert_can_sign(&mut setup.indexer, "user_drop_low", &low).await;
     assert_can_sign(&mut setup.indexer, "user_drop_high", &high_lowered).await;
     assert_cannot_sign(&mut setup.indexer, "user_drop_ckd", &ckd).await;
