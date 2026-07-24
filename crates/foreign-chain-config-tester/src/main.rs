@@ -1,7 +1,6 @@
-//! Foreign-chain RPC config tester: probe every configured provider with a fixed
-//! golden request so operators can verify their config without running the node.
-//! Sui, Starknet, Bitcoin, and the EVM chains are probed by chain identity plus
-//! a dynamically discovered transaction instead — see the README.
+//! Foreign-chain RPC config tester: probe every configured provider so operators can
+//! verify their config without running the node. Each provider is checked by chain
+//! identity plus a dynamically discovered transaction — see the README.
 
 mod config;
 mod report;
@@ -16,7 +15,7 @@ use foreign_chain_health_check::{Network, ReferenceOverrides, check_all_provider
 
 /// Verify a node's foreign-chain RPC provider configuration.
 ///
-/// Probes every configured provider against a known reference value.
+/// Probes every configured provider by chain identity and a recent transaction.
 #[derive(Parser)]
 #[command(about, long_about = None)]
 struct Args {

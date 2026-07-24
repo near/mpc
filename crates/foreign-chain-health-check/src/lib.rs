@@ -1,6 +1,6 @@
-//! Foreign-chain RPC provider health checks: probe every configured provider and report a
-//! per-provider result. Most chains run a fixed golden request; identity-based chains (Sui,
-//! Starknet) verify the chain identity and a recent transaction instead — see `checks`.
+//! Foreign-chain RPC provider health checks: verify each configured provider's chain
+//! identity, run the real inspector over a recently produced transaction, and report a
+//! per-provider result.
 
 mod checks;
 mod golden;
@@ -29,12 +29,12 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 pub use network::Network;
 pub use results::{ProviderResult, Status};
 
-use crate::golden::{AptosVector, IdentityVector, SuiVector};
+use crate::golden::IdentityVector;
 
 /// Config-seeded identity references keyed by chain label, overriding the built-in golden
-/// set. Each value is the identity a provider must report for that chain (for Starknet, the
-/// felt chain id). Useful for probing a local or custom network the built-in set doesn't
-/// know about.
+/// set. Each value is the identity a provider must report for that chain (an EVM or Aptos
+/// numeric chain id, a Starknet felt, a Bitcoin genesis hash, a Sui genesis digest). Useful
+/// for probing a local or custom network the built-in set doesn't know about.
 #[derive(Default)]
 pub struct ReferenceOverrides {
     identities: BTreeMap<String, String>,
@@ -121,12 +121,14 @@ pub async fn check_all_providers(
         mark_not_configured("starknet", &mut out);
     }
     if let Some(cfg) = &fc.aptos {
-        run_aptos(cfg, golden.aptos, network, &mut out).await;
+        let expected = resolve_identity(overrides, "aptos", golden.aptos);
+        run_aptos(cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("aptos", &mut out);
     }
     if let Some(cfg) = &fc.sui {
-        run_sui(cfg, golden.sui, network, &mut out).await;
+        let expected = resolve_identity(overrides, "sui", golden.sui);
+        run_sui(cfg, expected, network, &mut out).await;
     } else {
         mark_not_configured("sui", &mut out);
     }
@@ -264,33 +266,20 @@ async fn run_starknet(
 
 async fn run_aptos(
     cfg: &ForeignChainConfig,
-    vector: Option<AptosVector>,
+    expected_chain_id: Option<&str>,
     network: Network,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
+    let Some(expected) = expected_chain_id else {
         mark_skipped("aptos", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed_tx = golden::hex32(vector.tx);
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed_tx, prepare_aptos(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok(tx), Ok((url, header))) => {
-                run_check(
-                    timeout,
-                    checks::check_aptos(
-                        url,
-                        header,
-                        timeout,
-                        *tx,
-                        vector.event_type_tag,
-                        vector.event_sequence_number,
-                    ),
-                )
-                .await
+        let status = match prepare_aptos(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok((url, header)) => {
+                run_check(timeout, checks::check_aptos(url, header, timeout, expected)).await
             }
         };
         out.push(ProviderResult {
@@ -307,11 +296,11 @@ async fn run_aptos(
 /// [`checks::check_sui`] for the mechanism.
 async fn run_sui(
     cfg: &ForeignChainConfig,
-    vector: Option<SuiVector>,
+    expected_chain_id: Option<&str>,
     network: Network,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
+    let Some(expected) = expected_chain_id else {
         mark_skipped("sui", cfg, &no_reference_reason(network), out);
         return;
     };
@@ -319,7 +308,7 @@ async fn run_sui(
     for (name, provider) in cfg.providers.iter() {
         let status = match prepare_sui(provider, timeout) {
             Err(e) => Status::Failed(format!("{e:#}")),
-            Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
+            Ok(client) => run_check(timeout, checks::check_sui(client, expected)).await,
         };
         out.push(ProviderResult {
             chain: "sui",
@@ -501,32 +490,38 @@ mod tests {
 
     #[tokio::test]
     async fn check_all_providers__should_report_pass_fail_and_skip_in_one_run() {
-        // Given — one Aptos provider serves the golden event (pass), another a
-        // wrong event (fail), and a separate chain is unsupported (skip).
+        // Given — one Aptos provider on the expected network with a verifiable recent tx
+        // (pass), another on the wrong network (fail), and a separate unsupported chain (skip).
         let healthy = MockServer::start_async().await;
         let broken = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
-        let tx = aptos.tx;
+        let tx = "aa".repeat(32);
+        healthy
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": 1, "ledger_version": "1000" }));
+            })
+            .await;
+        healthy
+            .mock_async(|when, then| {
+                when.method(GET).path("/transactions/by_version/900");
+                then.status(200)
+                    .json_body(aptos_event_body(&tx, "0x1::block::NewBlockEvent", 0));
+            })
+            .await;
         healthy
             .mock_async(|when, then| {
                 when.method(GET)
                     .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(aptos_event_body(
-                    tx,
-                    aptos.event_type_tag,
-                    aptos.event_sequence_number,
-                ));
+                then.status(200)
+                    .json_body(aptos_event_body(&tx, "0x1::block::NewBlockEvent", 0));
             })
             .await;
         broken
             .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(aptos_event_body(
-                    tx,
-                    "0xdead::wrong::Event",
-                    aptos.event_sequence_number,
-                ));
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": 2, "ledger_version": "1000" }));
             })
             .await;
 
