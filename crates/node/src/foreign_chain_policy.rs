@@ -15,7 +15,8 @@ use crate::tracking::{self, AutoAbortTask};
 pub(crate) type SupportersByForeignChain = BTreeMap<dtos::ForeignChain, HashSet<ParticipantId>>;
 
 /// Resolves the indexer's TLS-key supporters channel against the current
-/// participant set.
+/// participant set. Must be called from a tracked task; dropping the returned
+/// [`AutoAbortTask`] stops the resolver.
 pub(crate) fn spawn_supporters_by_foreign_chain(
     mut upstream: watch::Receiver<ForeignChainSupporters>,
     participants_config: ParticipantsConfig,
@@ -78,9 +79,9 @@ async fn await_updated_supporters(
 }
 
 /// Mirrors the contract's availability rule: the max reconstruction threshold
-/// across ForeignTx domains, `None` when no such domain exists.
-// TODO(#3973): revisit threshold calculation for several ForeignTx
-// domains with different thresholds.
+/// across ForeignTx domains.
+/// TODO(#3973): revisit threshold calculation for several ForeignTx
+/// domains with different thresholds.
 pub(crate) fn foreign_tx_reconstruction_threshold(domains: &[dtos::DomainConfig]) -> Option<u64> {
     domains
         .iter()

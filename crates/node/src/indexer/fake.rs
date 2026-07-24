@@ -1072,9 +1072,13 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
+        let contract_state = FakeMpcContractState::new();
         let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
-            watch::channel(ForeignChainSupporters::new());
-        let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
+            watch::channel(supporters_by_available_chain(
+                contract_state.available_foreign_chains(),
+                contract_state.foreign_chains_configs(),
+            ));
+        let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
             clock: clock.clone(),

@@ -166,9 +166,11 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         contract.register_foreign_chains_config("test3".parse().unwrap(), BTreeSet::new().into());
         assert!(contract.available_foreign_chains().is_empty());
     }
-    // Wait for the fake core to publish the post-change snapshot on the shared
-    // upstream channel; the per-node resolver fan-out from it is in-process and
-    // subsumed by the response wait below.
+    // Wait for the fake core to publish the post-change value on the shared
+    // upstream channel. No extra grace for the per-node resolver fan-out: it
+    // is a watch notification, while the request below travels through the fake
+    // chain (at least one block), so nodes observe the change before the
+    // request can reach them.
     let mut supporters = setup.indexer.subscribe_foreign_chain_supporters();
     tokio::time::timeout(SUPPORTERS_PUBLISH_WAIT, async {
         while !supporters.borrow_and_update().is_empty() {

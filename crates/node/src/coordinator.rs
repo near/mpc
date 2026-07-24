@@ -710,7 +710,13 @@ where
                             );
                             (receiver, Some(task))
                         }
-                        None => (watch::channel(SupportersByForeignChain::new()).1, None),
+                        None => {
+                            // No resolver to feed it: the sender is dropped on
+                            // purpose and the provider sees a constant empty map.
+                            let (_sender, receiver) =
+                                watch::channel(SupportersByForeignChain::new());
+                            (receiver, None)
+                        }
                     };
 
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
