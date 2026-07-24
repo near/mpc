@@ -50,31 +50,6 @@ pub enum AttestationSubmissionError {
     EntryStorageCostExceeded { cost: NearToken, max: NearToken },
 }
 
-/// Rejects an attestation entry whose storage cost exceeds [`MAX_ATTESTATION_ENTRY_STORAGE_COST`],
-/// estimated from the borsh-serialized key and value before inserting. Pre-insert because the dstack
-/// callback commits its receipt on error, so an insert-then-measure check would keep an oversized
-/// entry.
-fn check_attestation_entry_storage_cost(
-    tls_pk: &Ed25519PublicKey,
-    entry: &NodeAttestation,
-) -> Result<(), AttestationSubmissionError> {
-    let bytes = borsh::to_vec(tls_pk)
-        .expect("borsh serialization of tls key must succeed")
-        .len()
-        + borsh::to_vec(entry)
-            .expect("borsh serialization of attestation entry must succeed")
-            .len();
-    let cost = env::storage_byte_cost()
-        .saturating_mul(u128::try_from(bytes).expect("usize always fits in u128"));
-    if cost > MAX_ATTESTATION_ENTRY_STORAGE_COST {
-        return Err(AttestationSubmissionError::EntryStorageCostExceeded {
-            cost,
-            max: MAX_ATTESTATION_ENTRY_STORAGE_COST,
-        });
-    }
-    Ok(())
-}
-
 #[derive(Debug)]
 pub(crate) enum ParticipantInsertion {
     NewlyInsertedParticipant,
@@ -260,9 +235,28 @@ impl TeeState {
             node_id,
             verified_attestation,
         };
-        check_attestation_entry_storage_cost(&tls_pk, &entry)?;
 
-        let previous = self.stored_attestations.insert(tls_pk, entry);
+        let before = env::storage_usage();
+        let previous = self.stored_attestations.insert(tls_pk.clone(), entry);
+        self.stored_attestations.flush();
+        let cost =
+            env::storage_byte_cost().saturating_mul(u128::from(env::storage_usage() - before));
+
+        if cost > MAX_ATTESTATION_ENTRY_STORAGE_COST {
+            match previous {
+                Some(prev) => {
+                    self.stored_attestations.insert(tls_pk, prev);
+                }
+                None => {
+                    self.stored_attestations.remove(&tls_pk);
+                }
+            }
+            self.stored_attestations.flush();
+            return Err(AttestationSubmissionError::EntryStorageCostExceeded {
+                cost,
+                max: MAX_ATTESTATION_ENTRY_STORAGE_COST,
+            });
+        }
 
         Ok(match previous {
             Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
@@ -875,21 +869,27 @@ mod tests {
     }
 
     #[test]
-    fn check_attestation_entry_storage_cost__should_accept_entry_within_cap() {
+    fn store_verified_attestation__should_accept_entry_within_cap() {
         // Given
         testing_env!(VMContextBuilder::new().build());
-        let tls_pk = bogus_ed25519_public_key();
-        let node_id = create_node_id(&"alice.near".parse().unwrap(), &tls_pk);
-        let entry = NodeAttestation {
-            node_id,
-            verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
-        };
+        let mut tee_state = TeeState::default();
+        let node_id = node_id_for(&"alice.near".parse().unwrap());
+        let verified_attestation = VerifiedAttestation::Mock(MockAttestation::Valid);
 
         // When
-        let result = check_attestation_entry_storage_cost(&tls_pk, &entry);
+        let result = tee_state.store_verified_attestation(node_id.clone(), verified_attestation);
 
         // Then
-        assert_matches!(result, Ok(()));
+        assert_matches!(result, Ok(ParticipantInsertion::NewlyInsertedParticipant));
+        let stored = tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_eq!(stored.node_id, node_id);
+        assert_matches!(
+            stored.verified_attestation,
+            VerifiedAttestation::Mock(MockAttestation::Valid)
+        );
     }
 
     #[test]
