@@ -432,6 +432,17 @@ expression: abi
         }
       },
       {
+        "name": "cancel_node_migration",
+        "doc": " Cancels a previously started node migration for the calling account.\n\n Removes the caller's pending `DestinationNodeInfo` record. This is useful if the new node\n is not functioning correctly or the wrong information was provided when calling\n [`Self::start_node_migration`].\n\n This function is callable regardless of whether the protocol is in a `Running` state or\n whether the signer is a current participant.\n\n # Errors\n - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_foreign_chain_data",
         "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
