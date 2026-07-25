@@ -24,8 +24,11 @@ use tokio::sync::mpsc::Receiver;
 const EPOCH_SYNC_DATA_RESET_MARKER_FILE_NAME: &str = ".EPOCH_SYNC_DATA_RESET";
 
 struct SharedHandles {
+    /// For querying blockchain state.
     view_client: RwLock<NearViewClientActorHandle>,
+    /// For querying blockchain sync status.
     client: RwLock<NearClientActorHandle>,
+    /// For sending transactions to the blockchain.
     rpc_handler: RwLock<NearRpcActorHandle>,
 }
 
