@@ -1333,10 +1333,19 @@ impl MpcContract {
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
         let proposer = self.voter_or_panic();
+        let payload_bytes =
+            args.payload_bytes()
+                .map_err(|err| InvalidParameters::MalformedPayload {
+                    reason: err.to_string(),
+                })?;
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
-        let required = ProposedUpdates::required_deposit(&update);
+        let required = ProposedUpdates::required_deposit(payload_bytes).map_err(|err| {
+            InvalidParameters::MalformedPayload {
+                reason: err.to_string(),
+            }
+        })?;
         if attached < required {
             return Err(InvalidParameters::InsufficientDeposit {
                 attached: attached.as_yoctonear(),
@@ -2850,6 +2859,7 @@ mod tests {
     use crate::state::resharing::ResharingContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
+        gen_running_state_with_params,
     };
     use crate::tee::measurements::{
         KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
@@ -5809,6 +5819,53 @@ mod tests {
         );
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn propose_update__should_charge_a_deposit_covering_the_worst_case_storage_cost() {
+        // Given
+        let running_state = gen_running_state_with_params(1, 129, 129);
+        let voters: Vec<AccountId> = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let code = vec![0xff; 4096];
+        let required_deposit = ProposedUpdates::required_deposit(
+            u128::try_from(code.len()).expect("usize always fits in u128"),
+        )
+        .expect("the deposit for a 4 KiB payload fits in u128");
+
+        // When
+        let mut environment = Environment::new(None, Some(voters[0].clone()), None);
+        environment.set_deposit(required_deposit);
+        let storage_before = env::storage_usage();
+        let id = contract
+            .propose_update(ProposeUpdateArgs {
+                code: Some(code),
+                config: None,
+            })
+            .unwrap();
+        for voter in &voters[1..] {
+            Environment::new(None, Some(voter.clone()), None);
+            assert!(!contract.vote_update(id).unwrap());
+        }
+        // near-sdk `store` collections write their cached changes to storage
+        // in `Drop`; dropping the contract persists the entry and the votes.
+        drop(contract);
+        let bytes_grown = u128::from(env::storage_usage() - storage_before);
+        let storage_cost = env::storage_byte_cost().saturating_mul(bytes_grown);
+
+        // Then
+        assert!(
+            required_deposit >= storage_cost,
+            "deposit {required_deposit} does not cover {storage_cost} of storage"
+        );
     }
 
     /// Callers authorized to drive `remove_non_participant_update_votes`.

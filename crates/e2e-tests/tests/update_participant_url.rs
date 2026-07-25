@@ -4,7 +4,7 @@ use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcCluster;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::ProtocolContractState;
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// End-to-end acceptance for #3677: a `update_participant_url` call on a real cluster is accepted,
 /// the new URL is reflected in state, and the network keeps signing without a resharing.
@@ -14,7 +14,7 @@ async fn update_participant_url__should_keep_signing_after_url_update() {
     // Given
     let (cluster, running) =
         common::must_setup_cluster(common::UPDATE_PARTICIPANT_URL_PORT_SEED, |_| {}).await;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     let user = cluster.default_user_account().clone();
     common::send_sign_request(&cluster, &running, &mut rng, &user)
         .await

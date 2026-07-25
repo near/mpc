@@ -2,7 +2,7 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::primitives::ParticipantId;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::ckd::CKDProvider;
 use rand::rngs::OsRng;
 use threshold_signatures::ReconstructionThreshold;
@@ -56,6 +56,10 @@ pub struct KeyResharingComputation {
     public_key: VerifyingKey,
 }
 
+impl NamedProtocol for KeyResharingComputation {
+    const NAME: &'static str = "CKD key resharing";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<KeygenOutput> {
@@ -83,7 +87,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
             me.into(),
             OsRng,
         )?;
-        run_protocol("CKD key resharing", channel, protocol).await
+        Self::run(channel, protocol).await
     }
 
     fn leader_waits_for_success(&self) -> bool {

@@ -3,7 +3,7 @@ use crate::common;
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, DEFAULT_PRESIGNATURES_TO_BUFFER, metrics};
 use mpc_node_config::MAX_INDEXER_HEIGHT_DIFF;
 use near_mpc_contract_interface::types::DomainPurpose;
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Verify that when a node falls behind in block ingestion past the
 /// `MAX_INDEXER_HEIGHT_DIFF` threshold, the other nodes clean up all
@@ -13,7 +13,7 @@ use rand::SeedableRng;
 #[expect(non_snake_case)]
 async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signing() {
     // given
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     let (cluster, running) =
         common::must_setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {}).await;
 
