@@ -8178,11 +8178,12 @@ mod tests {
             .clone();
 
         testing_env!(
-        VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .attached_deposit(NearToken::from_yoctonear(1))
-            .build());
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .attached_deposit(NearToken::from_yoctonear(1))
+                .build()
+        );
         let destination_node_info = gen_random_destination_info();
         contract
             .start_node_migration(destination_node_info.clone())
