@@ -870,18 +870,15 @@ fn peer_address_from_state(
 }
 
 /// Whether a participant-set change forces a job restart rather than being absorbed live. A peer
-/// address/port change is hot-swapped ([`peer_address_from_state`]); only a change to threshold,
-/// identity, or our *own* listening port (which re-binds the listener) needs a restart.
+/// address/port change is hot-swapped ([`peer_address_from_state`]); only a change to identity or
+/// our *own* listening port (which re-binds the listener) needs a restart. The governance
+/// `threshold` does not: per-domain reconstruction thresholds drive the running protocol, so a
+/// threshold-only change is absorbed live.
 fn participants_change_requires_restart(
     old: &ParticipantsConfig,
     new: &ParticipantsConfig,
     my_near_account_id: &AccountId,
 ) -> bool {
-    // TODO(#3838): a governance-threshold-only change should not require a restart
-    if old.threshold != new.threshold {
-        return true;
-    }
-
     // Destructured exhaustively so a new field forces a restart-vs-hot-swap decision here.
     let identities = |cfg: &ParticipantsConfig| {
         let mut ids: Vec<_> = cfg
@@ -1167,14 +1164,14 @@ mod tests {
     }
 
     #[test]
-    fn participants_change_requires_restart__should_be_true_for_threshold_change() {
+    fn participants_change_requires_restart__should_be_false_for_governance_threshold_change() {
         // Given
         let old = base_config();
         let mut new = base_config();
         new.threshold = 1;
 
         // When / Then
-        assert!(participants_change_requires_restart(&old, &new, &me()));
+        assert!(!participants_change_requires_restart(&old, &new, &me()));
     }
 
     #[test]

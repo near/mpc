@@ -2,7 +2,7 @@ use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
 use near_mpc_contract_interface::types::DomainPurpose;
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// When a sign request can't be answered (because too many participants are
 /// down), the contract calls `fail_on_timeout` and each alive node's indexer
@@ -13,7 +13,7 @@ use rand::SeedableRng;
 #[expect(non_snake_case)]
 async fn timeout_metric__should_increment_when_signature_times_out() {
     // given — 2-of-2 cluster (one node down ⇒ signing impossible)
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     let (mut cluster, running) =
         common::must_setup_cluster(common::TIMEOUT_METRIC_PORT_SEED, |c| {
             c.num_nodes = 2;

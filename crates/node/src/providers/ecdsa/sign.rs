@@ -2,7 +2,7 @@ use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::primitives::UniqueId;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
@@ -158,6 +158,10 @@ pub struct SignComputation {
     pub entropy: [u8; 32],
 }
 
+impl NamedProtocol for SignComputation {
+    const NAME: &'static str = "sign cait-sith";
+}
+
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComputation {
     async fn compute(
@@ -207,7 +211,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             msg_hash,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature = run_protocol("sign cait-sith", channel, protocol).await?;
+        let signature = Self::run(channel, protocol).await?;
         Ok((signature, VerifyingKey::new(derived_public_key.into())))
     }
 

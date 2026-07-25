@@ -7,7 +7,7 @@ use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::HasParticipants;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::tracking::AutoAbortTaskCollection;
@@ -282,6 +282,10 @@ pub struct ManyTripleGenerationComputation<const N: usize> {
     pub reconstruction_threshold: TSReconstructionThreshold,
 }
 
+impl<const N: usize> NamedProtocol for ManyTripleGenerationComputation<N> {
+    const NAME: &'static str = "many triple gen";
+}
+
 #[async_trait::async_trait]
 impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
     for ManyTripleGenerationComputation<N>
@@ -307,7 +311,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
                 OsRng,
             )?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
-        let triples = run_protocol("many triple gen", channel, protocol).await?;
+        let triples = Self::run(channel, protocol).await?;
         metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
         assert_eq!(
             N,

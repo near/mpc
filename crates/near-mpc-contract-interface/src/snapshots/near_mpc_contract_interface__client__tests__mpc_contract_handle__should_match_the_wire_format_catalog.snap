@@ -27,6 +27,18 @@ deposit:  1 yoctoNEAR
 args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"payload_version":1}}
 
 contract: mpc.near
+method:   propose_update
+gas:      300.0 Tgas
+deposit:  0.32772 NEAR
+args:     0x01040000000707070700
+
+contract: mpc.near
+method:   vote_update
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"id":7}
+
+contract: mpc.near
 method:   submit_participant_info
 gas:      300.0 Tgas
 deposit:  0.1 NEAR
