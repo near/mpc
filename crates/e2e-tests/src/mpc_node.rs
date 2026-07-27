@@ -199,6 +199,8 @@ pub struct MpcNodeSetup {
 
     // Foreign chains configuration
     foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+    // Expected identities for the startup foreign-chain health check.
+    health_check_identities: mpc_node_config::ExpectedIdentities,
 
     // Config file path (written on creation)
     config_path: PathBuf,
@@ -240,6 +242,7 @@ impl MpcNodeSetup {
             triples_to_buffer: args.triples_to_buffer,
             presignatures_to_buffer: args.presignatures_to_buffer,
             foreign_chains_config: args.foreign_chains_config,
+            health_check_identities: args.health_check_identities,
             config_path,
         };
 
@@ -488,6 +491,9 @@ impl MpcNodeSetup {
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
+                foreign_chain_health_check: mpc_node_config::ForeignChainHealthCheckConfig {
+                    identities: self.health_check_identities.clone(),
+                },
             },
             pccs_endpoints: mpc_node_config::default_pccs_endpoints(),
         };
@@ -522,6 +528,8 @@ pub struct MpcNodeSetupArgs {
     pub near_boot_nodes: String,
     /// Foreign chains configuration for this node.
     pub foreign_chains_config: mpc_node_config::ForeignChainsConfig,
+    /// Expected chain identities for this node's startup foreign-chain health check.
+    pub health_check_identities: mpc_node_config::ExpectedIdentities,
 }
 
 /// Ports allocated for a single MPC node.

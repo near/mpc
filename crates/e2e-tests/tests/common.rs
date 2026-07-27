@@ -40,6 +40,7 @@ pub const SIGTERM_HANDLER_PORT_SEED: u16 = 22;
 pub const DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED: u16 = 23;
 pub const UPDATE_PARTICIPANT_URL_PORT_SEED: u16 = 24;
 pub const AVAILABLE_FOREIGN_CHAINS_PORT_SEED: u16 = 25;
+pub const STARTUP_FOREIGN_CHAIN_HEALTH_PORT_SEED: u16 = 26;
 
 /// Start a cluster, wait for Running state and presignatures to buffer.
 ///

@@ -24,25 +24,8 @@ use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
+pub use mpc_node_config::ExpectedIdentities;
 pub use results::{ProviderResult, Status};
-
-/// Expected chain identities from `foreign_chain_health_check.identities`, one field per
-/// identity-probed chain.
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct ExpectedIdentities {
-    pub base: Option<String>,
-    pub bnb: Option<String>,
-    pub arbitrum: Option<String>,
-    pub polygon: Option<String>,
-    pub hyper_evm: Option<String>,
-    #[serde(rename = "abstract")]
-    pub abstract_chain: Option<String>,
-    pub bitcoin: Option<String>,
-    pub starknet: Option<String>,
-    pub aptos: Option<String>,
-    pub sui: Option<String>,
-}
 
 /// Probe every configured provider against its configured expected identity, one
 /// [`ProviderResult`] per provider, each checked independently.

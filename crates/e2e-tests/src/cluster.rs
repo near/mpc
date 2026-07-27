@@ -110,6 +110,9 @@ pub struct ForeignChainsClusterConfig {
     /// Per-node configs. If empty, all nodes get the default (empty) config;
     /// if non-empty, must have exactly `num_nodes` entries.
     pub node_configs: Vec<mpc_node_config::ForeignChainsConfig>,
+    /// Per-node expected identities for the startup foreign-chain health check.
+    /// Nodes without an entry get the default (empty) identities.
+    pub node_health_check_identities: Vec<mpc_node_config::ExpectedIdentities>,
     pub whitelist: BTreeMap<ForeignChain, ChainEntry>,
 }
 
@@ -1392,6 +1395,12 @@ fn start_mpc_nodes(
         } else {
             config.foreign_chains.node_configs[i].clone()
         };
+        let health_check_identities = config
+            .foreign_chains
+            .node_health_check_identities
+            .get(i)
+            .cloned()
+            .unwrap_or_default();
 
         let setup = MpcNodeSetup::new(MpcNodeSetupArgs {
             node_index: i,
@@ -1408,6 +1417,7 @@ fn start_mpc_nodes(
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config,
+            health_check_identities,
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }
@@ -1435,6 +1445,7 @@ fn start_mpc_nodes(
             near_genesis_path: genesis_path.clone(),
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config: Default::default(),
+            health_check_identities: Default::default(),
         })?;
         nodes.push(MpcNodeState::Running(setup.start()?));
     }

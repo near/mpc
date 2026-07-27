@@ -42,6 +42,42 @@ pub struct ForeignChainsConfig {
     pub sui: Option<ForeignChainConfig>,
 }
 
+/// Startup foreign-chain health-check config: the expected chain identity the node probes
+/// each configured provider against.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForeignChainHealthCheckConfig {
+    #[serde(default)]
+    pub identities: ExpectedIdentities,
+}
+
+/// Expected chain identities from `foreign_chain_health_check.identities`, one field per
+/// identity-probed chain. A configured chain with no identity fails its health check;
+/// there are no built-in defaults, so any network (including local) is checkable.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ExpectedIdentities {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bnb: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arbitrum: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub polygon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hyper_evm: Option<String>,
+    #[serde(rename = "abstract", skip_serializing_if = "Option::is_none")]
+    pub abstract_chain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitcoin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub starknet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aptos: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sui: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,

@@ -215,6 +215,85 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
     mock_id
 }
 
+/// Number of JSON-RPC calls a healthy EVM identity probe makes: `eth_chainId`, the finalized
+/// head, the probe block, the receipt, the finality-head re-check, and the canonical block.
+pub const EVM_IDENTITY_PROBE_CALLS: usize = 6;
+
+/// Mock EVM JSON-RPC server for the startup identity health check. Serves `chain_id_hex` for
+/// `eth_chainId`, a finalized head at 0x64 (100), and the probe block at head − 10 = 0x5a (90)
+/// carrying one transaction whose receipt is canonical and succeeded. A provider whose
+/// `chain_id_hex` decodes to the configured identity passes; a different one is rejected right
+/// after the `eth_chainId` call, so its hit count stays at 1.
+pub fn setup_evm_identity_mock(
+    server: &MockServer,
+    auth: MockAuthExpectation,
+    chain_id_hex: &str,
+) -> usize {
+    // Head 0x64 (100); the probe block is head − HEAD_PROBE_OFFSET(10) = 0x5a (90), which is also
+    // the transaction's (and canonical) block, so one block response serves every height lookup.
+    const FINALIZED_HEAD: &str = "0x64";
+    const PROBE_BLOCK: &str = "0x5a";
+    let chain_id_hex = chain_id_hex.to_string();
+    let mock_id = server
+        .mock(|when, then| {
+            auth.apply(when.method(POST));
+            then.respond_with(move |req: &HttpMockRequest| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(req.body().as_ref()).expect("valid json-rpc request");
+                let id = body["id"].clone();
+                let method = body["method"].as_str().expect("method field");
+
+                let result = match method {
+                    "eth_chainId" => serde_json::Value::String(chain_id_hex.clone()),
+                    "eth_getBlockByNumber" => {
+                        let block_id = body["params"][0].as_str().expect("block id param");
+                        if block_id.starts_with("0x") {
+                            // A specific height: the probe/canonical block, carrying the tx.
+                            serde_json::json!({
+                                "number": block_id,
+                                "hash": format!("0x{MOCK_BLOCK_HASH}"),
+                                "transactions": [format!("0x{MOCK_TX_ID}")],
+                            })
+                        } else {
+                            // A finality tag ("finalized"): the head.
+                            serde_json::json!({
+                                "number": FINALIZED_HEAD,
+                                "hash": format!("0x{MOCK_BLOCK_HASH}"),
+                                "transactions": [],
+                            })
+                        }
+                    }
+                    "eth_getTransactionReceipt" => {
+                        let transaction_hash = body["params"][0].as_str().expect("tx hash param");
+                        serde_json::json!({
+                            "transactionHash": transaction_hash,
+                            "blockHash": format!("0x{MOCK_BLOCK_HASH}"),
+                            "blockNumber": PROBE_BLOCK,
+                            "status": "0x1",
+                            // No logs: the probe treats an out-of-bounds log index as healthy.
+                            "logs": [],
+                        })
+                    }
+                    other => return jsonrpc_error(id, other),
+                };
+
+                let response_body = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": id,
+                });
+                HttpMockResponse::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(serde_json::to_string(&response_body).unwrap())
+                    .build()
+            });
+        })
+        .id;
+    register_unauthorized_catch_all(server, &auth);
+    mock_id
+}
+
 pub fn setup_starknet_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
     let mock_id = server
         .mock(|when, then| {

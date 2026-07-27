@@ -647,6 +647,15 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+On startup the node probes every configured provider — verifying its chain identity and then
+inspecting a recently produced transaction, the same inspector and auth the real verification
+path uses — and logs a per-provider result plus an `x/y providers healthy` summary, so config
+typos and un-enabled API keys surface immediately instead of on the first real verification
+request. All providers are probed concurrently and the probe runs detached, never blocking
+startup. Expected identities come from `foreign_chain_health_check.identities` in config (there
+are no built-in values, so any network — including local — is checkable); a configured chain
+with no identity fails its check.
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious
