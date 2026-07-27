@@ -418,6 +418,7 @@ mod tests {
 
     fn test_chain(provider_name: &str, rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
+            expected_chain_id: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(

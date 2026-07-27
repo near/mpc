@@ -12,7 +12,7 @@ use std::{io, sync::Arc};
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    BlockConfirmations, FanOut, ForeignChainInspectionError, ForeignChainInspector,
+    BlockConfirmations, ChainIdentity, FanOut, ForeignChainInspectionError, ForeignChainInspector,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 
@@ -479,6 +479,64 @@ mod all_transient {
             result,
             Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { .. })
         );
+    }
+}
+
+mod chain_identities {
+    use super::*;
+
+    /// Hand-rolled rather than mockall-generated: `FanOut::chain_identities` clones the
+    /// inspector into a spawned task, and a shared closure survives the clone without
+    /// re-wiring expectations.
+    #[derive(Clone)]
+    struct FixedIdentityInspector(
+        Arc<dyn Fn() -> Result<String, ForeignChainInspectionError> + Send + Sync>,
+    );
+
+    impl FixedIdentityInspector {
+        fn ok(identity: &str) -> Self {
+            let identity = identity.to_string();
+            Self(Arc::new(move || Ok(identity.clone())))
+        }
+
+        fn unreachable() -> Self {
+            Self(Arc::new(|| {
+                Err(ForeignChainInspectionError::RpcRequestFailed(
+                    "timeout".to_string(),
+                ))
+            }))
+        }
+    }
+
+    impl ChainIdentity for FixedIdentityInspector {
+        async fn chain_identity(&self) -> Result<String, ForeignChainInspectionError> {
+            (self.0)()
+        }
+    }
+
+    #[tokio::test]
+    async fn chain_identities__should_return_one_result_per_inspector_in_input_order() {
+        // Given
+        let fan_out = FanOut::new(
+            NonEmptyVec::try_from(vec![
+                FixedIdentityInspector::ok("0x534e5f4d41494e"),
+                FixedIdentityInspector::unreachable(),
+                FixedIdentityInspector::ok("0x534e5f5345504f4c4941"),
+            ])
+            .expect("test must provide at least one inspector"),
+        );
+
+        // When
+        let identities = fan_out.chain_identities().await;
+
+        // Then
+        assert_eq!(identities.len(), 3);
+        assert_matches!(&identities[0], Ok(id) if id == "0x534e5f4d41494e");
+        assert_matches!(
+            &identities[1],
+            Err(ForeignChainInspectionError::RpcRequestFailed(_))
+        );
+        assert_matches!(&identities[2], Ok(id) if id == "0x534e5f5345504f4c4941");
     }
 }
 

@@ -647,6 +647,13 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+A chain section may also set `expected_chain_id` — the network identity every provider of that
+chain is expected to report, in the chain's canonical text form (e.g. `"0x534e5f4d41494e"`,
+`SN_MAIN`, for Starknet mainnet). When set, the node queries each provider's identity at startup
+and logs an error for any provider serving a different network (a common misconfiguration:
+right chain, wrong network, which would otherwise surface only as failed verifications). The
+check is log-only and skipped when the field is absent. Currently implemented for Starknet.
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious

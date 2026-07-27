@@ -62,6 +62,51 @@ impl ToRpcParams for &GetTransactionReceiptArgs {
     to_rpc_params_impl!();
 }
 
+/// Request args for `starknet_chainId` (the method takes no parameters).
+pub struct ChainIdArgs;
+
+impl Serialize for ChainIdArgs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // `starknet_chainId` expects an empty parameter array: []
+        let request_parameters: [(); 0] = [];
+        request_parameters.serialize(serializer)
+    }
+}
+
+impl ToRpcParams for &ChainIdArgs {
+    to_rpc_params_impl!();
+}
+
+/// RPC response for `starknet_chainId`: the felt identifying the network, in its canonical
+/// text form — lowercase, `0x`-prefixed, no leading zeros (e.g. `0x534e5f4d41494e` for
+/// `SN_MAIN`). Deserialization normalizes the provider's felt formatting, so equal chain
+/// ids always compare equal as strings.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ChainIdResponse(
+    #[serde(deserialize_with = "deserialize_canonical_felt_text")] pub String,
+);
+
+fn deserialize_canonical_felt_text<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let felt = deserialize_starknet_felt(deserializer)?;
+    Ok(canonical_felt_text(felt))
+}
+
+fn canonical_felt_text(felt: H256) -> String {
+    let hex = format!("{felt:x}");
+    let digits = hex.trim_start_matches('0');
+    if digits.is_empty() {
+        "0x0".to_string()
+    } else {
+        format!("0x{digits}")
+    }
+}
+
 /// Block identifier accepted by Starknet block-lookup RPCs. The inspector's canonical-chain
 /// check uses `Number`; add more variants only when a caller actually needs them.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -136,8 +181,9 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
-        GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
+        BlockId, ChainIdArgs, ChainIdResponse, GetBlockWithTxHashesArgs,
+        GetBlockWithTxHashesResponse, GetTransactionReceiptResponse, StarknetExecutionStatus,
+        StarknetFinalityStatus, parse_felt,
     };
 
     const TEST_BLOCK_NUMBER: u64 = 842_750;
@@ -194,6 +240,66 @@ mod tests {
                     .unwrap(),
             ]
         );
+    }
+
+    #[test]
+    fn serialize_chain_id_args__should_produce_empty_array() {
+        // Given
+        let args = ChainIdArgs;
+
+        // When
+        let serialized = serde_json::to_value(&args).unwrap();
+
+        // Then
+        assert_eq!(serialized, serde_json::json!([]));
+    }
+
+    #[test]
+    fn deserialize_chain_id_response__should_keep_canonical_felt_unchanged() {
+        // Given
+        let json = serde_json::json!("0x534e5f4d41494e");
+
+        // When
+        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.0, "0x534e5f4d41494e");
+    }
+
+    #[test]
+    fn deserialize_chain_id_response__should_normalize_padded_uppercase_felt() {
+        // Given
+        let json = serde_json::json!("0x00534E5F4D41494E");
+
+        // When
+        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.0, "0x534e5f4d41494e");
+    }
+
+    #[test]
+    fn deserialize_chain_id_response__should_normalize_zero_felt() {
+        // Given
+        let json = serde_json::json!("0x0000");
+
+        // When
+        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.0, "0x0");
+    }
+
+    #[test]
+    fn deserialize_chain_id_response__should_reject_non_felt_string() {
+        // Given
+        let json = serde_json::json!("SN_MAIN");
+
+        // When
+        let result: Result<ChainIdResponse, _> = serde_json::from_value(json);
+
+        // Then
+        result.expect_err("a non-hex chain id must fail deserialization");
     }
 
     #[test]

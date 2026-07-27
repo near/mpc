@@ -43,7 +43,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
 }
 
 impl ForeignChainInspectors<HttpClient> {
-    fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
+    pub(crate) fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         fn build_fanout<I>(
             chain_config: Option<&ForeignChainConfig>,
             new_inspector: impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I>,

@@ -7,7 +7,8 @@ use crate::common::{
 };
 
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication, build_http_client,
+    ChainIdentity, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
+    build_http_client,
     starknet::{
         StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
@@ -312,6 +313,40 @@ async fn extract__should_return_correct_log_for_specific_index() {
         })],
         extracted_values,
     );
+}
+
+#[tokio::test]
+async fn chain_identity__should_return_canonical_chain_id() {
+    // given: SN_MAIN's chain id, padded and uppercased the way a provider is free to send it.
+    let mock_client = mock_client_from_fixed_response("0x00534E5F4D41494E");
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let identity = inspector
+        .chain_identity()
+        .await
+        .expect("chain_identity should succeed");
+
+    // then
+    assert_eq!(identity, "0x534e5f4d41494e");
+}
+
+#[tokio::test]
+async fn chain_identity__should_propagate_rpc_client_errors() {
+    // given
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Transport(Box::new(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        ))))
+    });
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector.chain_identity().await;
+
+    // then
+    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
 }
 
 fn test_receipt() -> GetTransactionReceiptResponse {

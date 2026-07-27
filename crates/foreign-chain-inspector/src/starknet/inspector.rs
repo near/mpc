@@ -1,14 +1,16 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use crate::{ChainIdentity, ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::starknet::{
-    BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse, GetTransactionReceiptArgs,
-    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+    BlockId, ChainIdArgs, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+    GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
+    StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
+const CHAIN_ID_METHOD: &str = "starknet_chainId";
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -69,6 +71,16 @@ where
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(extracted_values)
+    }
+}
+
+impl<Client> ChainIdentity for StarknetInspector<Client>
+where
+    Client: ClientT + Send + Sync,
+{
+    async fn chain_identity(&self) -> Result<String, ForeignChainInspectionError> {
+        let response: ChainIdResponse = self.client.request(CHAIN_ID_METHOD, &ChainIdArgs).await?;
+        Ok(response.0)
     }
 }
 

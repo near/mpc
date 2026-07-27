@@ -44,6 +44,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
 
     let foreign_chains = ForeignChainsConfig {
         solana: Some(ForeignChainConfig {
+            expected_chain_id: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers,

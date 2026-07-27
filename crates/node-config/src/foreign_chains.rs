@@ -46,6 +46,12 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
+    /// The network identity every provider of this chain is expected to report, in the
+    /// chain's canonical text form (e.g. `0x534e5f4d41494e` — `SN_MAIN` — for Starknet
+    /// mainnet). When set, the node checks each provider against it at startup and logs
+    /// any divergence; when absent, the check is skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_chain_id: Option<String>,
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
 }
 
@@ -512,6 +518,70 @@ foreign_chains:
             .validate()
             .expect("config with starknet section should be valid");
         assert!(config.foreign_chains.starknet.is_some());
+    }
+
+    #[test]
+    fn config_parsing__should_accept_expected_chain_id() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    expected_chain_id: "0x534e5f4d41494e"
+    providers:
+      blast:
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with expected_chain_id should be valid");
+        let starknet = config
+            .foreign_chains
+            .starknet
+            .as_ref()
+            .expect("starknet config should be present");
+        assert_eq!(
+            starknet.expected_chain_id.as_deref(),
+            Some("0x534e5f4d41494e")
+        );
     }
 
     #[test]

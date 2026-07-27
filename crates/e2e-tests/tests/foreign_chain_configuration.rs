@@ -18,6 +18,7 @@ const SOLANA_RPC_URL: &str = "https://rpc.public.example.com";
 fn solana_foreign_chains_config() -> ForeignChainsConfig {
     ForeignChainsConfig {
         solana: Some(ForeignChainConfig {
+            expected_chain_id: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(

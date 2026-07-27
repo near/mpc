@@ -1294,6 +1294,7 @@ mod tests {
         // Given: a node config covering Solana.
         let foreign_chains = ForeignChainsConfig {
             solana: Some(ForeignChainConfig {
+                expected_chain_id: None,
                 timeout_sec: NonZeroU64::new(30).unwrap(),
                 max_retries: NonZeroU64::new(3).unwrap(),
                 providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(

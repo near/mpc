@@ -374,6 +374,7 @@ mod tests {
             .map(|(name, cfg)| (RpcProviderName::from(name.to_string()), cfg.clone()))
             .collect();
         ForeignChainConfig {
+            expected_chain_id: None,
             timeout_sec: std::num::NonZeroU64::new(30).unwrap(),
             max_retries: std::num::NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::try_from(map)

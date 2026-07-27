@@ -35,6 +35,19 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
 }
 
+/// The network a provider is serving, as the chain natively reports it.
+///
+/// The returned value is opaque config data: it is only ever compared verbatim against the
+/// operator's configured expectation, never computed with. Implementations must therefore
+/// return the chain's canonical text form (e.g. Starknet's chain-id felt as lowercase
+/// `0x`-prefixed hex without leading zeros), normalizing any formatting freedom the RPC
+/// leaves to providers.
+pub trait ChainIdentity {
+    fn chain_identity(
+        &self,
+    ) -> impl Future<Output = Result<String, ForeignChainInspectionError>> + Send;
+}
+
 /// Combines multiple inspectors that target the same chain into a single inspector.
 ///
 /// All inner inspectors are queried concurrently. The fan-out treats every
@@ -165,6 +178,29 @@ where
             "inspectors is a `NonEmptyVec`, so with no successes and no non-transient errors, \
              at least one transient error must have been recorded",
         ))
+    }
+}
+
+impl<Inspector> FanOut<Inspector>
+where
+    Inspector: ChainIdentity + Clone + Send + Sync + 'static,
+{
+    /// Queries every inner inspector's [`ChainIdentity`] concurrently.
+    ///
+    /// Unlike [`FanOut::extract`], results are not folded into a single verdict: callers
+    /// diagnosing a misconfigured provider need to know *which* one is wrong, so this
+    /// returns one entry per inner inspector, in the order the inspectors were passed to
+    /// [`FanOut::new`].
+    pub async fn chain_identities(&self) -> Vec<Result<String, ForeignChainInspectionError>> {
+        let mut join_set = tokio::task::JoinSet::new();
+        for (idx, inspector) in self.inspectors.iter().enumerate() {
+            let inspector = inspector.clone();
+            join_set.spawn(async move { (idx, inspector.chain_identity().await) });
+        }
+
+        let mut results = join_set.join_all().await;
+        results.sort_by_key(|(idx, _)| *idx);
+        results.into_iter().map(|(_, identity)| identity).collect()
     }
 }
 

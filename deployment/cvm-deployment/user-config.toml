@@ -145,6 +145,7 @@ rpc_url = "https://api.testnet.abs.xyz"
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_chain_id = "0x534e5f5345504f4c4941" # SN_SEPOLIA
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
