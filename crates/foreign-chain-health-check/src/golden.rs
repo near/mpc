@@ -1,19 +1,12 @@
 //! Per-network golden transactions for the chains still probed against a pinned
 //! reference, plus decoding helpers. A mainnet transaction does not exist on testnet
 //! (and vice versa), so the vectors are network-specific; `None` means the chain is
-//! skipped. Identity-probed chains (Sui, Starknet, the EVM chains) carry no built-in
-//! reference — their expected identities come from configuration.
+//! skipped. Identity-probed chains (Sui, Starknet, Bitcoin, the EVM chains) carry no
+//! built-in reference — their expected identities come from configuration.
 
 use anyhow::Context;
 
 use crate::network::Network;
-
-/// Hashes are hex, with or without a `0x` prefix.
-#[derive(Clone, Copy)]
-pub struct BlockHashVector {
-    pub tx: &'static str,
-    pub block_hash: &'static str,
-}
 
 #[derive(Clone, Copy)]
 pub struct AptosVector {
@@ -23,7 +16,6 @@ pub struct AptosVector {
 }
 
 pub struct GoldenSet {
-    pub bitcoin: Option<BlockHashVector>,
     pub aptos: Option<AptosVector>,
 }
 
@@ -35,10 +27,6 @@ pub fn golden_set(network: Network) -> GoldenSet {
 }
 
 const MAINNET: GoldenSet = GoldenSet {
-    bitcoin: Some(BlockHashVector {
-        tx: "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
-        block_hash: "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab",
-    }),
     aptos: Some(AptosVector {
         tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
         event_type_tag: "0x1::block::NewBlockEvent",
@@ -47,10 +35,6 @@ const MAINNET: GoldenSet = GoldenSet {
 };
 
 const TESTNET: GoldenSet = GoldenSet {
-    bitcoin: Some(BlockHashVector {
-        tx: "5acaa0890f8c1f1b2ac114c25b38d376f23beda1b59e9bcba33256d6e11d7e8e",
-        block_hash: "000000000000021f43445ab447b3fc85e93eca26b56a4f23ef6c017682038ca2",
-    }),
     aptos: Some(AptosVector {
         tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
         event_type_tag: "0x1::block::NewBlockEvent",
@@ -137,10 +121,6 @@ mod tests {
         // Given / When / Then
         for network in [Network::Mainnet, Network::Testnet] {
             let set = golden_set(network);
-            if let Some(v) = set.bitcoin {
-                hex32(v.tx).unwrap();
-                hex32(v.block_hash).unwrap();
-            }
             if let Some(v) = set.aptos {
                 hex32(v.tx).unwrap();
             }
