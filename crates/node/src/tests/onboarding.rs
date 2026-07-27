@@ -7,7 +7,7 @@ use crate::config::{AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::migration_service;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::DEFAULT_BLOCK_TIME;
 use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{
@@ -70,7 +70,7 @@ impl MigrationTestNodeInfo {
 #[test_log::test]
 async fn test_onboarding() {
     const NUM_PARTICIPANTS: usize = 2;
-    const THRESHOLD: usize = 2;
+    const GOVERNANCE_THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut account_ids: Vec<_> = (0..NUM_PARTICIPANTS)
@@ -81,9 +81,9 @@ async fn test_onboarding() {
         Clock::real(),
         temp_dir.path(),
         account_ids,
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::ONBOARDING_TEST,
+        port_seed::ONBOARDING_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

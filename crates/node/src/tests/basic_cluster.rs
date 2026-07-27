@@ -1,5 +1,5 @@
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, request_ckd_and_await_response, request_ckd_pv_and_await_response,
@@ -18,7 +18,7 @@ use near_time::Clock;
 #[test_log::test]
 async fn test_basic_cluster() {
     const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
@@ -27,9 +27,9 @@ async fn test_basic_cluster() {
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::BASIC_CLUSTER_TEST,
+        port_seed::BASIC_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

@@ -3,7 +3,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_bounded_collections::{EmptyBoundedVec, NonEmptyBTreeMap, NonEmptyBTreeSet};
+use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet, UpperBoundedVec};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
@@ -32,10 +32,10 @@ pub const TON_CELL_MAX_REFS: usize = 4;
 ///
 /// Holds a cell's data bits packed big-endian into bytes; the exact significant bit count
 /// is carried alongside it in [`TonCellBody`].
-pub type TonCellData = EmptyBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
+pub type TonCellData = UpperBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
-pub type TonCellRefs = EmptyBoundedVec<Hash256, TON_CELL_MAX_REFS>;
+pub type TonCellRefs = UpperBoundedVec<Hash256, TON_CELL_MAX_REFS>;
 
 #[derive(
     Debug,

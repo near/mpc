@@ -338,8 +338,8 @@ mod test {
         for ((p, triple0), triple1) in participants
             .iter()
             .take(3)
-            .zip(triple0_shares.into_iter())
-            .zip(triple1_shares.into_iter())
+            .zip(triple0_shares)
+            .zip(triple1_shares)
         {
             let keygen_out = make_keygen_output(&f, &pk, *p);
 
@@ -359,7 +359,7 @@ mod test {
 
         let result = run_protocol(protocols).unwrap();
 
-        assert!(result.len() == 3);
+        assert_eq!(result.len(), 3);
         assert_eq!(result[0].1.big_r, result[1].1.big_r);
         assert_eq!(result[1].1.big_r, result[2].1.big_r);
 

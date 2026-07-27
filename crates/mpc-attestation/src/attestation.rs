@@ -25,9 +25,12 @@ use crate::alloc::string::{String, ToString};
 /// re-verified via [`VerifiedAttestation::re_verify`]. Nodes resubmit hourly,
 /// well within this window, so valid attestations refresh in time.
 // TODO(#1639): extract timestamp from certificate itself
-pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24; // 1 day
+pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 
-#[expect(clippy::large_enum_variant)]
+// `large_enum_variant` fires only where `usize` is 64-bit; under the contract's
+// wasm32 build the variants are close enough in size that it doesn't, so gate the
+// expectation to non-wasm targets to keep it fulfilled in both configs.
+#[cfg_attr(not(target_arch = "wasm32"), expect(clippy::large_enum_variant))]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
@@ -81,14 +84,10 @@ impl AcceptedAttestation {
         }
     }
 
-    /// Assembles the acceptance for a verified `Mock` attestation, stamping the
-    /// expiry just like [`AcceptedAttestation::dstack`].
-    ///
-    /// Without an expiry, a [`MockAttestation::Valid`] entry passes re-verification
-    /// forever and can never be removed from contract storage (see #3293). We
-    /// therefore stamp accepted mocks with a
-    /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] window (see [`MockAttestation::with_expiry`])
-    /// so the standard re-verification / cleanup flow eventually evicts them.
+    /// Assembles the acceptance for a verified `Mock` attestation. Stamps a
+    /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry`]),
+    /// mirroring [`AcceptedAttestation::dstack`], so a `Valid` mock does not pass
+    /// re-verification forever and can be cleaned up.
     fn mock(mock_attestation: &MockAttestation, current_timestamp_seconds: u64) -> Self {
         let expiry_timestamp_seconds =
             current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;
@@ -104,7 +103,9 @@ impl AcceptedAttestation {
 }
 
 #[expect(clippy::large_enum_variant)]
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize, BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(borsh::BorshSchema)
@@ -388,10 +389,9 @@ impl Attestation {
         }
     }
 
-    /// Full local verification: runs DCAP (`dcap_qvl::verify::verify`) and then
-    /// the post-DCAP checks. Behind the `local-verify` feature, which pulls in
-    /// `dcap-qvl`. Used by off-chain callers and, today, by `mpc-contract`.
-    // TODO(#3264): contract drops this once DCAP moves to the verifier contract.
+    /// Full local verification: runs the DCAP quote verification and then the
+    /// post-DCAP checks. Behind the `local-verify` feature, which pulls in
+    /// `dcap-qvl`. Used by off-chain callers (node, tee-authority, attestation-cli).
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
         &self,

@@ -1,11 +1,10 @@
 //! This file contains the primitives we need to interact with the NEAR blockchain:
 //!     - IsSyncing --> checks whether the node is fully synced
-//!     - QueryViewFunction --> can call view methods on a contract
 //!     - FetchLatestFinalBlockInfo-> fetches height and hash of the latest final block
-//!     - SubmitSignedTransaction --> submits  asigned transaction to the blockchain
+//!     - SubmitSignedTransaction --> submits a signed transaction to the blockchain
+//!
+//! View calls go through `near_contract_transport::ViewContract`.
 use crate::types::LatestFinalBlockInfo;
-use crate::types::ObservedState;
-use near_account_id::AccountId;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::future::Future;
 use std::time::Duration;
@@ -38,16 +37,6 @@ pub(crate) trait IsSyncing: Send + Sync + 'static {
             }
         }
     }
-}
-
-pub(crate) trait QueryViewFunction: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
-    fn query_view_function(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> impl Future<Output = Result<ObservedState, Self::Error>> + Send;
 }
 
 pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {

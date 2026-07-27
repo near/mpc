@@ -23,6 +23,7 @@ near-jsonrpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "blstrs",
+    "call-args",
     "ed25519-dalek",
     "near",
 ] }

@@ -83,6 +83,24 @@ pub enum ProtocolError {
     #[error("encountered a zero scalar")]
     ZeroScalar,
 
+    #[error(
+        "sid: {sid}. small_t length {actual} did not match the security parameter {expected} for {participant:?}."
+    )]
+    InvalidSmallTLength {
+        sid: String,
+        expected: usize,
+        actual: usize,
+        participant: Participant,
+    },
+
+    #[error(
+        "sid: {sid}. Linear consistency check failed, the local q matrix does not match the received small_t for participant {participant:?}."
+    )]
+    QMatrixConsistencyCheckFailed {
+        sid: String,
+        participant: Participant,
+    },
+
     #[error("this should never happen, please report upstream")]
     Unreachable,
 

@@ -39,7 +39,7 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
 /// Validates the per-domain reconstruction threshold against the participant
 /// count. Universal bound `2 <= t <= n` plus, for `DamgardEtAl`, the
 /// honest-majority bound `2t - 1 <= n`.
-pub fn validate_domain_threshold(
+pub fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
     num_participants: u64,
 ) -> Result<(), Error> {
@@ -49,16 +49,17 @@ pub fn validate_domain_threshold(
     }
     if t > num_participants {
         return Err(DomainError::ReconstructionThresholdExceedsParticipants {
-            threshold: t,
+            reconstruction_threshold: t,
             participants: num_participants,
         }
         .into());
     }
     if domain.protocol == Protocol::DamgardEtAl {
-        let required = t
-            .checked_mul(2)
-            .and_then(|x| x.checked_sub(1))
-            .ok_or(DomainError::ReconstructionThresholdOverflow { threshold: t })?;
+        let required = t.checked_mul(2).and_then(|x| x.checked_sub(1)).ok_or(
+            DomainError::ReconstructionThresholdOverflow {
+                reconstruction_threshold: t,
+            },
+        )?;
         if required > num_participants {
             return Err(DomainError::InsufficientParticipantsForProtocol {
                 protocol: domain.protocol,
@@ -73,7 +74,7 @@ pub fn validate_domain_threshold(
 
 /// The largest `ReconstructionThreshold` across `domains`, or `None` if there are none
 /// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
-/// Feeds [`ThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::ThresholdParameters::validate_governance_against_reconstruction).
+/// Feeds [`GovernanceThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::GovernanceThresholdParameters::validate_governance_against_reconstruction).
 pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {
     domains
         .iter()

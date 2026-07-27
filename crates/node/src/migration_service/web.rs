@@ -22,11 +22,11 @@ mod tests {
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
     };
-    use crate::{migration_service::types::MigrationInfo, p2p::testing::PortSeed};
+    use crate::{migration_service::types::MigrationInfo, p2p::testing::port_seed};
 
     #[tokio::test]
     async fn test_web_success_hello_world() {
-        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST).await;
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_SUCCESS_TEST).await;
 
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
@@ -41,7 +41,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_failure() {
-        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_FAILURE_TEST).await;
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_FAILURE_TEST).await;
         let wrong_backup_service_info = MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
                 public_key: SigningKey::generate(&mut OsRng).to_bytes().into(),
@@ -70,7 +70,7 @@ mod tests {
     #[tokio::test]
     async fn test_web_success_get_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES).await;
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES).await;
 
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
@@ -117,7 +117,7 @@ mod tests {
     #[tokio::test]
     async fn test_web_success_set_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let mut test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES).await;
+        let mut test_setup = setup(port_seed::MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES).await;
 
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
@@ -152,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cancellation_if_migration_info_changes() {
-        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO).await;
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO).await;
 
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,

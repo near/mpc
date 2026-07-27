@@ -5,15 +5,17 @@ use crate::{
         key_state::AuthenticatedParticipantId,
         participants::{ParticipantInfo, Participants},
         thresholds::{
-            ProposedThresholdParameters, Threshold, ThresholdParameters,
-            governance_threshold_lower_relative_bound, governance_threshold_upper_relative_bound,
+            GovernanceThreshold, GovernanceThresholdParameters,
+            ProposedGovernanceThresholdParameters, governance_threshold_lower_relative_bound,
+            governance_threshold_upper_relative_bound,
         },
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, NodeId, Protocol,
+    ReconstructionThreshold,
 };
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
@@ -29,7 +31,7 @@ const ALL_PROTOCOLS: [Protocol; 4] = [
 pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
 /// Default per-domain reconstruction threshold used by test fixtures. `2` is
-/// the minimum valid value (`validate_domain_threshold` requires `t >= 2`).
+/// the minimum valid value (`validate_domain_reconstruction_threshold` requires `t >= 2`).
 /// Works for participant counts `>= 3`, which is what `gen_threshold_params`
 /// produces — needed because fixtures may include `DamgardEtAl` domains,
 /// whose `2t - 1 <= n` bound becomes `n >= 3` at `t = 2`.
@@ -147,17 +149,37 @@ pub fn gen_participants(n: usize) -> Participants {
     participants
 }
 
+pub fn create_node_id(account_id: &AccountId, tls_public_key: &Ed25519PublicKey) -> NodeId {
+    NodeId {
+        account_id: account_id.clone(),
+        tls_public_key: tls_public_key.clone(),
+        account_public_key: bogus_ed25519_public_key(),
+    }
+}
+
+pub fn node_id_for(account_id: &AccountId) -> NodeId {
+    create_node_id(account_id, &bogus_ed25519_public_key())
+}
+
+pub fn authenticate_as(
+    account_id: &AccountId,
+    participants: &Participants,
+) -> AuthenticatedParticipantId {
+    let mut ctx = VMContextBuilder::new();
+    ctx.signer_account_id(account_id.clone());
+    testing_env!(ctx.build());
+    AuthenticatedParticipantId::new(participants).unwrap()
+}
+
 /// Build `n` participants and pre-authenticate each, returning the set alongside
 /// each participant's [`AuthenticatedParticipantId`].
 pub fn gen_authenticated_participants(n: usize) -> (Participants, Vec<AuthenticatedParticipantId>) {
     let participants = gen_participants(n);
-    let mut auth_ids = Vec::with_capacity(n);
-    for (account_id, _, _) in participants.participants() {
-        let mut ctx = VMContextBuilder::new();
-        ctx.signer_account_id(account_id.clone());
-        testing_env!(ctx.build());
-        auth_ids.push(AuthenticatedParticipantId::new(&participants).unwrap());
-    }
+    let auth_ids = participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, _)| authenticate_as(account_id, &participants))
+        .collect();
     (participants, auth_ids)
 }
 
@@ -168,7 +190,7 @@ pub fn gen_seed() -> [u8; 32] {
     seed
 }
 
-pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
+pub fn gen_threshold_params(max_n: usize) -> GovernanceThresholdParameters {
     // Lower bound is 3 (not 2) so the produced parameters are compatible with
     // every protocol — `DamgardEtAl` requires `n >= 2t - 1`, which forces
     // `n >= 3` even at the minimum `t = 2`.
@@ -177,14 +199,15 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let k_min = governance_threshold_lower_relative_bound(n as u64) as usize;
     let k_max = governance_threshold_upper_relative_bound(n as u64) as usize;
     let k = rng.gen_range(k_min..k_max + 1);
-    ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+    GovernanceThresholdParameters::new(gen_participants(n), GovernanceThreshold::new(k as u64))
+        .unwrap()
 }
 
 /// Like [`gen_threshold_params`] but wrapped as a proposal with an empty
 /// (no-change) set of per-domain threshold updates — the shape
 /// `vote_new_parameters` accepts.
-pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedThresholdParameters {
-    ProposedThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
+pub fn gen_proposed_threshold_params(max_n: usize) -> ProposedGovernanceThresholdParameters {
+    ProposedGovernanceThresholdParameters::new(gen_threshold_params(max_n), BTreeMap::new())
 }
 
 /// Infer a default purpose from the protocol.

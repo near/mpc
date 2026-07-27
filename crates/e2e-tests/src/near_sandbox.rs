@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use near_sandbox::{Sandbox, SandboxConfig};
 
-use crate::port_allocator::E2ePortAllocator;
+use test_port_allocator::{E2eTestPorts, TestPorts};
 
 const GENESIS_FILE: &str = "genesis.json";
 const NODE_KEY_FILE: &str = "node_key.json";
@@ -21,7 +21,7 @@ pub struct NearSandbox {
 }
 
 impl NearSandbox {
-    pub async fn start(ports: &E2ePortAllocator, version: &str) -> anyhow::Result<Self> {
+    pub async fn start(ports: &TestPorts, version: &str) -> anyhow::Result<Self> {
         let rpc_port = ports.near_node_rpc_port();
         let network_port = ports.near_node_network_port();
 

@@ -10,7 +10,7 @@ use thiserror::Error;
 /// Vec bounded with minimal (L - lower bound) and maximal (U - upper bound) items quantity.
 ///
 /// By default the witness type is [`witnesses::NonEmpty`], which requires `L > 0`.
-/// For a possibly-empty bounded vector (where `L = 0`), use [`EmptyBoundedVec`] instead.
+/// For a possibly-empty bounded vector (where `L = 0`), use [`UpperBoundedVec`] instead.
 ///
 /// # Type Parameters
 ///
@@ -445,8 +445,8 @@ where
 /// A non-empty Vec with no effective upper-bound on its length
 pub type NonEmptyVec<T> = BoundedVec<T, 1, { usize::MAX }, witnesses::NonEmpty<1, { usize::MAX }>>;
 
-/// Possibly empty Vec with upper-bound on its length
-pub type EmptyBoundedVec<T, const U: usize> = BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>>;
+/// Vec with an upper bound on its length and no lower bound (may be empty).
+pub type UpperBoundedVec<T, const U: usize> = BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>>;
 
 /// Non-empty Vec with bounded length
 pub type NonEmptyBoundedVec<T, const L: usize, const U: usize> =
@@ -478,6 +478,24 @@ impl<T, const L: usize, const U: usize> From<[T; L]>
         BoundedVec {
             inner: arr.into(),
             witness: witnesses::non_empty(),
+        }
+    }
+}
+
+/// Infallible construction from any array whose length fits the upper bound;
+/// oversized arrays are rejected at compile time.
+impl<T, const N: usize, const U: usize> From<[T; N]>
+    for BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>>
+{
+    fn from(arr: [T; N]) -> Self {
+        const {
+            if N > U {
+                panic!("array length exceeds upper bound")
+            }
+        }
+        BoundedVec {
+            inner: arr.into(),
+            witness: witnesses::possibly_empty::<U>(),
         }
     }
 }
@@ -663,13 +681,13 @@ mod serde_impl {
         }
     }
 
-    impl<'de, T: Deserialize<'de>, const U: usize> Deserialize<'de> for EmptyBoundedVec<T, U> {
+    impl<'de, T: Deserialize<'de>, const U: usize> Deserialize<'de> for UpperBoundedVec<T, U> {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
             let inner = Vec::<T>::deserialize(deserializer)?;
-            EmptyBoundedVec::from_vec(inner).map_err(serde::de::Error::custom)
+            UpperBoundedVec::from_vec(inner).map_err(serde::de::Error::custom)
         }
     }
 
@@ -737,11 +755,12 @@ pub mod hex_serde {
         serializer.serialize_str(&hex::encode(value.as_slice()))
     }
 
-    pub fn deserialize<'de, D, const L: usize, const U: usize>(
+    pub fn deserialize<'de, D, const L: usize, const U: usize, W>(
         deserializer: D,
-    ) -> Result<BoundedVec<u8, L, U>, D::Error>
+    ) -> Result<BoundedVec<u8, L, U, W>, D::Error>
     where
         D: serde::Deserializer<'de>,
+        BoundedVec<u8, L, U, W>: TryFrom<Vec<u8>, Error = BoundedVecOutOfBounds>,
     {
         let hex_str = String::deserialize(deserializer)?;
         let bytes: Vec<u8> = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
@@ -848,7 +867,7 @@ mod tests {
         // Given
         let items = vec![1u8, 2];
         // When
-        let result = EmptyBoundedVec::<u8, 8>::from_vec(items);
+        let result = UpperBoundedVec::<u8, 8>::from_vec(items);
         // Then
         assert_matches!(result, Ok(_));
     }
@@ -858,7 +877,7 @@ mod tests {
         // Given
         let items: Vec<u8> = vec![];
         // When
-        let result = EmptyBoundedVec::<u8, 8>::from_vec(items);
+        let result = UpperBoundedVec::<u8, 8>::from_vec(items);
         // Then
         assert_eq!(
             result,
@@ -874,7 +893,7 @@ mod tests {
         // Given
         let items = vec![1u8, 2, 3];
         // When
-        let result = EmptyBoundedVec::<u8, 2>::from_vec(items);
+        let result = UpperBoundedVec::<u8, 2>::from_vec(items);
         // Then
         assert_eq!(
             result.unwrap_err(),
@@ -886,9 +905,21 @@ mod tests {
     }
 
     #[test]
+    #[expect(non_snake_case)]
+    fn from_array__should_build_upper_bounded_vec() {
+        // Given / When
+        let non_empty: UpperBoundedVec<u8, 8> = [1u8, 2, 3].into();
+        let empty: UpperBoundedVec<u8, 8> = [].into();
+
+        // Then
+        assert_eq!(non_empty.as_slice(), &[1, 2, 3]);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
     fn is_empty_returns_false_for_non_empty_vec() {
         // Given
-        let data: EmptyBoundedVec<_, 8> = vec![1u8, 2].try_into().unwrap();
+        let data: UpperBoundedVec<_, 8> = vec![1u8, 2].try_into().unwrap();
         // When / Then
         assert!(!data.is_empty());
     }
@@ -928,7 +959,7 @@ mod tests {
     #[test]
     fn empty_bounded_first_returns_some_when_non_empty() {
         // Given
-        let data: EmptyBoundedVec<_, 8> = vec![1u8, 2].try_into().unwrap();
+        let data: UpperBoundedVec<_, 8> = vec![1u8, 2].try_into().unwrap();
         // When / Then
         assert_eq!(data.first(), Some(&1u8));
     }
@@ -936,7 +967,7 @@ mod tests {
     #[test]
     fn empty_bounded_last_returns_some_when_non_empty() {
         // Given
-        let data: EmptyBoundedVec<_, 8> = vec![1u8, 2].try_into().unwrap();
+        let data: UpperBoundedVec<_, 8> = vec![1u8, 2].try_into().unwrap();
         // When / Then
         assert_eq!(data.last(), Some(&2u8));
     }
@@ -1119,15 +1150,17 @@ mod serde_tests {
         // Given
         let json = "[]";
         // When
-        let result = serde_json::from_str::<EmptyBoundedVec<u8, 3>>(json);
+        let result = serde_json::from_str::<UpperBoundedVec<u8, 3>>(json);
         // Then
         assert_matches!(result, Ok(_));
     }
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod hex_serde_tests {
     use assert_matches::assert_matches;
+    use rstest::rstest;
 
     use super::*;
 
@@ -1135,6 +1168,32 @@ mod hex_serde_tests {
     struct Wrapper {
         #[serde(with = "hex_serde")]
         data: BoundedVec<u8, 2, 4>,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    struct UpperBoundedHexData {
+        #[serde(with = "hex_serde")]
+        data: UpperBoundedVec<u8, 4>,
+    }
+
+    /// The generalized helper must round-trip the `PossiblyEmpty` witness,
+    /// including the empty payload (empty hex string).
+    #[rstest]
+    #[case("", vec![])]
+    #[case("abcd", vec![0xab, 0xcd])]
+    fn hex_serde__should_roundtrip_empty_bounded_vec(#[case] hex: &str, #[case] bytes: Vec<u8>) {
+        // Given
+        let original = UpperBoundedHexData {
+            data: bytes.try_into().unwrap(),
+        };
+
+        // When
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: UpperBoundedHexData = serde_json::from_str(&json).unwrap();
+
+        // Then
+        assert_eq!(json, format!(r#"{{"data":"{hex}"}}"#));
+        assert_eq!(deserialized, original);
     }
 
     #[test]
@@ -1185,10 +1244,10 @@ mod borsh_tests {
     #[test]
     fn borsh_roundtrip_preserves_empty_bounded_vec() {
         // Given
-        let original: EmptyBoundedVec<u8, 4> = vec![1u8, 2].try_into().unwrap();
+        let original: UpperBoundedVec<u8, 4> = vec![1u8, 2].try_into().unwrap();
         // When
         let bytes = borsh::to_vec(&original).unwrap();
-        let deserialized: EmptyBoundedVec<u8, 4> =
+        let deserialized: UpperBoundedVec<u8, 4> =
             BorshDeserialize::try_from_slice(&bytes).unwrap();
         // Then
         assert_eq!(deserialized, original);
@@ -1221,7 +1280,7 @@ mod borsh_tests {
         // Given
         let too_many_bytes = borsh::to_vec(&vec![1u8, 2, 3]).unwrap();
         // When
-        let result: Result<EmptyBoundedVec<u8, 2>, _> =
+        let result: Result<UpperBoundedVec<u8, 2>, _> =
             BorshDeserialize::try_from_slice(&too_many_bytes);
         // Then
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
@@ -1232,7 +1291,7 @@ mod borsh_tests {
         // Given
         let empty_bytes = borsh::to_vec(&Vec::<u8>::new()).unwrap();
         // When
-        let result: EmptyBoundedVec<u8, 4> =
+        let result: UpperBoundedVec<u8, 4> =
             BorshDeserialize::try_from_slice(&empty_bytes).unwrap();
         // Then
         assert!(result.is_empty());
@@ -1258,7 +1317,7 @@ mod borsh_schema_tests {
     #[test]
     fn schema_declaration_empty_bounded_starts_at_zero() {
         // Given / When
-        let decl = EmptyBoundedVec::<u8, 4>::declaration();
+        let decl = UpperBoundedVec::<u8, 4>::declaration();
         // Then
         assert_eq!(decl, "BoundedVec<u8, 0, 4>");
     }
@@ -1287,7 +1346,7 @@ mod borsh_schema_tests {
     #[test]
     fn schema_empty_bounded_range_starts_at_zero() {
         // Given
-        let schema = BorshSchemaContainer::for_type::<EmptyBoundedVec<u8, 4>>();
+        let schema = BorshSchemaContainer::for_type::<UpperBoundedVec<u8, 4>>();
         // When
         let def = schema.get_definition("BoundedVec<u8, 0, 4>").unwrap();
         // Then

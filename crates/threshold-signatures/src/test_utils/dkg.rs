@@ -1,17 +1,15 @@
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 
-#[cfg(test)]
-use frost_core::{Group, keys::SigningShare};
+use frost_core::{Field, Group, keys::SigningShare};
 
-#[cfg(test)]
 use crate::crypto::polynomials::Polynomial;
 use crate::participants::Participant;
 #[cfg(test)]
 use crate::test_utils::participants::generate_participants_with_random_ids;
 use crate::test_utils::{GenOutput, GenProtocol, run_protocol};
 use crate::thresholds::ReconstructionThreshold;
-use crate::{Ciphersuite, KeygenOutput, VerifyingKey, keygen, refresh, reshare};
+use crate::{Ciphersuite, KeygenOutput, Scalar, VerifyingKey, keygen, refresh, reshare};
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
 type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
@@ -34,6 +32,21 @@ pub fn run_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stati
     }
 
     run_protocol(protocols).unwrap()
+}
+
+/// Deals key shares for a *supplied* master secret, acting as a trusted dealer.
+pub fn deal_keygen_outputs<C: Ciphersuite>(
+    secret: Scalar<C>,
+    participants: &[Participant],
+    threshold: impl Into<ReconstructionThreshold>,
+    rng: &mut impl CryptoRngCore,
+) -> GenOutput<C> {
+    let degree = threshold.into().value() - 1;
+    let (f, pk) = generate_test_keys_with_secret(secret, degree, rng);
+    participants
+        .iter()
+        .map(|p| (*p, make_keygen_output(&f, &pk, *p)))
+        .collect()
 }
 
 /// Runs distributed refresh
@@ -129,13 +142,22 @@ pub fn assert_public_key_invariant<C: Ciphersuite>(
 /// Generates a random polynomial of given degree and derives the corresponding
 /// public verifying key. Returns both the polynomial (for per-participant share
 /// derivation) and the verifying key.
-#[cfg(test)]
 pub fn generate_test_keys<C: Ciphersuite>(
     degree: usize,
     rng: &mut impl CryptoRngCore,
 ) -> (Polynomial<C>, VerifyingKey<C>) {
-    let f = Polynomial::<C>::generate_polynomial(None, degree, rng).unwrap();
-    let secret = f.eval_at_zero().unwrap().0;
+    let secret = <C::Group as Group>::Field::random(rng);
+    generate_test_keys_with_secret(secret, degree, rng)
+}
+
+/// Like [`generate_test_keys`] but pins the polynomial's constant term to
+/// `secret`, so the reconstructed master secret is known in advance.
+pub fn generate_test_keys_with_secret<C: Ciphersuite>(
+    secret: Scalar<C>,
+    degree: usize,
+    rng: &mut impl CryptoRngCore,
+) -> (Polynomial<C>, VerifyingKey<C>) {
+    let f = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng).unwrap();
     (
         f,
         VerifyingKey::new(<C::Group as Group>::generator() * secret),
@@ -144,7 +166,6 @@ pub fn generate_test_keys<C: Ciphersuite>(
 
 /// Constructs a [`KeygenOutput`] for a single participant from a shared
 /// polynomial and public verifying key.
-#[cfg(test)]
 pub fn make_keygen_output<C: Ciphersuite>(
     f: &Polynomial<C>,
     pk: &VerifyingKey<C>,

@@ -14,11 +14,25 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
     .unwrap()
 });
 
+pub static MPC_NUM_BAD_PEER_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_bad_peer_presign_requests",
+            "Presignature requests from a peer whose participant-set size did not \
+             match the domain's reconstruction threshold",
+            &["domain_id"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
         prometheus::register_histogram!(
             "near_mpc_triples_generation_time_elapsed",
             "Time taken to generate a batch of triples",
+            // Batch generation takes tens of seconds, up to the configured
+            // timeout; the default buckets top out at 10s.
+            vec![5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 240.0],
         )
         .unwrap()
     });
@@ -170,31 +184,33 @@ pub static MPC_NUM_TIMEOUTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock
     .unwrap()
 });
 
-pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
+pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = LazyLock::new(
+    || {
         prometheus::register_int_counter_vec!(
             "mpc_num_signature_computations_led",
-            "Number of signature computations that this node led",
+            "Number of finished signature computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
-    });
+    },
+);
 
-pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
+pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> = LazyLock::new(
+    || {
         prometheus::register_int_counter_vec!(
             "mpc_num_ckd_computations_led",
-            "Number of ckd computations that this node led",
+            "Number of finished ckd computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
-    });
+    },
+);
 
 pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
             "mpc_num_verify_foreign_tx_computations_led",
-            "Number of verify foreign tx computations that this node led",
+            "Number of finished verify foreign tx computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
@@ -401,6 +417,8 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
 
 pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
 pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";
+pub const MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL: &str = "failed";
+pub const MPC_NUM_COMPUTATIONS_LED_DEADLINE_EXCEEDED_LABEL: &str = "deadline_exceeded";
 
 pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {

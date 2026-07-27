@@ -3,7 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use aes_gcm::{Aes256Gcm, KeyInit};
+use aes_gcm::aead::Generate;
+use aes_gcm::{Aes256Gcm, Key};
 use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::BackupServiceInfo;
 use rand::rngs::OsRng;
@@ -17,7 +18,7 @@ use crate::{
         types::MigrationInfo,
         web::{server::start_web_server, types::WebServerState},
     },
-    p2p::testing::PortSeed,
+    p2p::testing::TestPorts,
 };
 
 pub struct TestSetup {
@@ -31,12 +32,12 @@ pub struct TestSetup {
     pub _tmpdir: TempDir,
 }
 
-pub async fn setup(port_seed: PortSeed) -> TestSetup {
-    let backup_encryption_key = Aes256Gcm::generate_key(OsRng);
+pub async fn setup(ports: TestPorts) -> TestSetup {
+    let backup_encryption_key = Key::<Aes256Gcm>::generate();
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);
 
-    let port: u16 = port_seed.migration_web_port(0);
+    let port: u16 = ports.migration_web_ui_port(0);
     let target_address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {

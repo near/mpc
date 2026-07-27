@@ -567,6 +567,39 @@ expression: abi
         }
       },
       {
+        "name": "fail_attestation_submission",
+        "kind": "view",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "reason",
+              "type_schema": {
+                "declaration": "String",
+                "definitions": {
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
         "name": "fail_on_timeout",
         "kind": "view",
         "modifiers": [
@@ -756,7 +789,7 @@ expression: abi
             {
               "name": "parameters",
               "type_schema": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/GovernanceThresholdParameters"
               }
             },
             {
@@ -811,7 +844,7 @@ expression: abi
             {
               "name": "parameters",
               "type_schema": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/GovernanceThresholdParameters"
               }
             },
             {
@@ -992,6 +1025,10 @@ expression: abi
                         "u64"
                       ],
                       [
+                        "fail_attestation_submission_tera_gas",
+                        "u64"
+                      ],
+                      [
                         "clean_tee_status_tera_gas",
                         "u64"
                       ],
@@ -1013,6 +1050,14 @@ expression: abi
                       ],
                       [
                         "remove_non_participant_tee_verifier_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "verifier_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "resolve_verification_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1133,8 +1178,11 @@ expression: abi
       },
       {
         "name": "register_backup_service",
-        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n # Notes\n - A deposit requirement may be added in the future.",
+        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
         "params": {
           "serialization_type": "json",
           "args": [
@@ -1265,6 +1313,753 @@ expression: abi
               }
             }
           ]
+        }
+      },
+      {
+        "name": "resolve_verification",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks and stores the attestation, refunding the flat fee if the\n attestation is not accepted.",
+        "kind": "call",
+        "modifiers": [
+          "payable",
+          "private"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "context",
+              "type_schema": {
+                "declaration": "VerificationContext",
+                "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
+                  "AccountId": {
+                    "Struct": [
+                      "String"
+                    ]
+                  },
+                  "Collateral": {
+                    "Struct": [
+                      [
+                        "pck_crl_issuer_chain",
+                        "String"
+                      ],
+                      [
+                        "root_ca_crl",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "pck_crl",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "tcb_info_issuer_chain",
+                        "String"
+                      ],
+                      [
+                        "tcb_info",
+                        "String"
+                      ],
+                      [
+                        "tcb_info_signature",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "qe_identity_issuer_chain",
+                        "String"
+                      ],
+                      [
+                        "qe_identity",
+                        "String"
+                      ],
+                      [
+                        "qe_identity_signature",
+                        "Vec<u8>"
+                      ],
+                      [
+                        "pck_certificate_chain",
+                        "Option<String>"
+                      ]
+                    ]
+                  },
+                  "DstackAttestation": {
+                    "Struct": [
+                      [
+                        "quote",
+                        "QuoteBytes"
+                      ],
+                      [
+                        "collateral",
+                        "Collateral"
+                      ],
+                      [
+                        "tcb_info",
+                        "TcbInfo"
+                      ]
+                    ]
+                  },
+                  "Ed25519PublicKey": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "EventLog": {
+                    "Struct": [
+                      [
+                        "imr",
+                        "u32"
+                      ],
+                      [
+                        "event_type",
+                        "u32"
+                      ],
+                      [
+                        "digest",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "event",
+                        "String"
+                      ],
+                      [
+                        "event_payload",
+                        "String"
+                      ]
+                    ]
+                  },
+                  "HexBytes<32>": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "HexBytes<48>": {
+                    "Struct": [
+                      "[u8; 48]"
+                    ]
+                  },
+                  "NodeId": {
+                    "Struct": [
+                      [
+                        "account_id",
+                        "AccountId"
+                      ],
+                      [
+                        "tls_public_key",
+                        "Ed25519PublicKey"
+                      ],
+                      [
+                        "account_public_key",
+                        "Ed25519PublicKey"
+                      ]
+                    ]
+                  },
+                  "Option<HexBytes<32>>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "HexBytes<32>"
+                        ]
+                      ]
+                    }
+                  },
+                  "Option<String>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "String"
+                        ]
+                      ]
+                    }
+                  },
+                  "QuoteBytes": {
+                    "Struct": [
+                      "Vec<u8>"
+                    ]
+                  },
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "TcbInfo": {
+                    "Struct": [
+                      [
+                        "mrtd",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr0",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr1",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr2",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "rtmr3",
+                        "HexBytes<48>"
+                      ],
+                      [
+                        "os_image_hash",
+                        "Option<HexBytes<32>>"
+                      ],
+                      [
+                        "compose_hash",
+                        "HexBytes<32>"
+                      ],
+                      [
+                        "device_id",
+                        "HexBytes<32>"
+                      ],
+                      [
+                        "app_compose",
+                        "String"
+                      ],
+                      [
+                        "event_log",
+                        "Vec<EventLog>"
+                      ]
+                    ]
+                  },
+                  "Vec<EventLog>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "EventLog"
+                    }
+                  },
+                  "Vec<u8>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "VerificationContext": {
+                    "Struct": [
+                      [
+                        "node_id",
+                        "NodeId"
+                      ],
+                      [
+                        "attestation",
+                        "DstackAttestation"
+                      ]
+                    ]
+                  },
+                  "[u8; 32]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 32,
+                        "end": 32
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 48]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 48,
+                        "end": 48
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u32": {
+                    "Primitive": 4
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "borsh",
+            "type_schema": {
+              "declaration": "VerificationResult",
+              "definitions": {
+                "EnclaveReport": {
+                  "Struct": [
+                    [
+                      "cpu_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "misc_select",
+                      "u32"
+                    ],
+                    [
+                      "reserved1",
+                      "[u8; 28]"
+                    ],
+                    [
+                      "attributes",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_enclave",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "reserved2",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "mr_signer",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "reserved3",
+                      "[u8; 96]"
+                    ],
+                    [
+                      "isv_prod_id",
+                      "u16"
+                    ],
+                    [
+                      "isv_svn",
+                      "u16"
+                    ],
+                    [
+                      "reserved4",
+                      "[u8; 60]"
+                    ],
+                    [
+                      "report_data",
+                      "[u8; 64]"
+                    ]
+                  ]
+                },
+                "Report": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "SgxEnclave",
+                        "Report__SgxEnclave"
+                      ],
+                      [
+                        1,
+                        "TD10",
+                        "Report__TD10"
+                      ],
+                      [
+                        2,
+                        "TD15",
+                        "Report__TD15"
+                      ]
+                    ]
+                  }
+                },
+                "Report__SgxEnclave": {
+                  "Struct": [
+                    "EnclaveReport"
+                  ]
+                },
+                "Report__TD10": {
+                  "Struct": [
+                    "TDReport10"
+                  ]
+                },
+                "Report__TD15": {
+                  "Struct": [
+                    "TDReport15"
+                  ]
+                },
+                "String": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "TDReport10": {
+                  "Struct": [
+                    [
+                      "tee_tcb_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_seam",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_signer_seam",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "seam_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "td_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "xfam",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "mr_td",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_config_id",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_owner",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "mr_owner_config",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr0",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr1",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr2",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "rt_mr3",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "report_data",
+                      "[u8; 64]"
+                    ]
+                  ]
+                },
+                "TDReport15": {
+                  "Struct": [
+                    [
+                      "base",
+                      "TDReport10"
+                    ],
+                    [
+                      "tee_tcb_svn2",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "mr_service_td",
+                      "[u8; 48]"
+                    ]
+                  ]
+                },
+                "TcbStatus": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "UpToDate",
+                        "TcbStatus__UpToDate"
+                      ],
+                      [
+                        1,
+                        "OutOfDateConfigurationNeeded",
+                        "TcbStatus__OutOfDateConfigurationNeeded"
+                      ],
+                      [
+                        2,
+                        "OutOfDate",
+                        "TcbStatus__OutOfDate"
+                      ],
+                      [
+                        3,
+                        "ConfigurationAndSWHardeningNeeded",
+                        "TcbStatus__ConfigurationAndSWHardeningNeeded"
+                      ],
+                      [
+                        4,
+                        "ConfigurationNeeded",
+                        "TcbStatus__ConfigurationNeeded"
+                      ],
+                      [
+                        5,
+                        "SWHardeningNeeded",
+                        "TcbStatus__SWHardeningNeeded"
+                      ],
+                      [
+                        6,
+                        "Revoked",
+                        "TcbStatus__Revoked"
+                      ]
+                    ]
+                  }
+                },
+                "TcbStatusWithAdvisory": {
+                  "Struct": [
+                    [
+                      "status",
+                      "TcbStatus"
+                    ],
+                    [
+                      "advisory_ids",
+                      "Vec<String>"
+                    ]
+                  ]
+                },
+                "TcbStatus__ConfigurationAndSWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__ConfigurationNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__OutOfDate": {
+                  "Struct": null
+                },
+                "TcbStatus__OutOfDateConfigurationNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__Revoked": {
+                  "Struct": null
+                },
+                "TcbStatus__SWHardeningNeeded": {
+                  "Struct": null
+                },
+                "TcbStatus__UpToDate": {
+                  "Struct": null
+                },
+                "Vec<String>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "String"
+                  }
+                },
+                "Vec<u8>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "VerificationResult": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Verified",
+                        "VerificationResult__Verified"
+                      ],
+                      [
+                        1,
+                        "Rejected",
+                        "VerificationResult__Rejected"
+                      ]
+                    ]
+                  }
+                },
+                "VerificationResult__Rejected": {
+                  "Struct": [
+                    "VerifierError"
+                  ]
+                },
+                "VerificationResult__Verified": {
+                  "Struct": [
+                    "VerifiedReport"
+                  ]
+                },
+                "VerifiedReport": {
+                  "Struct": [
+                    [
+                      "status",
+                      "String"
+                    ],
+                    [
+                      "advisory_ids",
+                      "Vec<String>"
+                    ],
+                    [
+                      "report",
+                      "Report"
+                    ],
+                    [
+                      "ppid",
+                      "Vec<u8>"
+                    ],
+                    [
+                      "qe_status",
+                      "TcbStatusWithAdvisory"
+                    ],
+                    [
+                      "platform_status",
+                      "TcbStatusWithAdvisory"
+                    ]
+                  ]
+                },
+                "VerifierError": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "DcapVerification",
+                        "VerifierError__DcapVerification"
+                      ]
+                    ]
+                  }
+                },
+                "VerifierError__DcapVerification": {
+                  "Struct": [
+                    "String"
+                  ]
+                },
+                "[u8; 16]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 16,
+                      "end": 16
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 28]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 28,
+                      "end": 28
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 32]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 32,
+                      "end": 32
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 48]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 48,
+                      "end": 48
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 60]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 60,
+                      "end": 60
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 64]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 64,
+                      "end": 64
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 8]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 8,
+                      "end": 8
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 96]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 96,
+                      "end": 96
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "u16": {
+                  "Primitive": 2
+                },
+                "u32": {
+                  "Primitive": 4
+                },
+                "u8": {
+                  "Primitive": 1
+                }
+              }
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueNull"
+          }
         }
       },
       {
@@ -1490,8 +2285,11 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
         "params": {
           "serialization_type": "json",
           "args": [
@@ -1544,7 +2342,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole\n fee is kept on success and refunded if the attestation is not accepted.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1569,7 +2367,22 @@ expression: abi
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
+          }
+        }
+      },
+      {
+        "name": "tee_verifier_account_id",
+        "doc": " Returns the trusted TEE verifier contract account, or [`None`] until\n participants vote one in via [`Self::vote_tee_verifier_change`].",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1607,6 +2420,31 @@ expression: abi
               }
             }
           ]
+        }
+      },
+      {
+        "name": "update_participant_url",
+        "doc": " Updates the calling participant's registered URL, keeping the TLS key and participant ID.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "url",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
         }
       },
       {
@@ -1812,7 +2650,7 @@ expression: abi
             {
               "name": "proposal",
               "type_schema": {
-                "$ref": "#/definitions/ProposedThresholdParameters"
+                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
               }
             }
           ]
@@ -2750,14 +3588,17 @@ expression: abi
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
+            "fail_attestation_submission_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
             "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
+            "resolve_verification_tera_gas",
             "return_ck_and_clean_state_on_success_call_tera_gas",
             "return_signature_and_clean_state_on_success_call_tera_gas",
             "sign_call_gas_attachment_requirement_tera_gas",
-            "tee_upgrade_deadline_duration_seconds"
+            "tee_upgrade_deadline_duration_seconds",
+            "verifier_tera_gas"
           ],
           "properties": {
             "ckd_call_gas_attachment_requirement_tera_gas": {
@@ -2796,6 +3637,12 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "fail_attestation_submission_tera_gas": {
+              "description": "Prepaid gas for a `fail_attestation_submission` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "fail_on_timeout_tera_gas": {
               "description": "Prepaid gas for a `fail_on_timeout` call.",
               "type": "integer",
@@ -2820,6 +3667,12 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "resolve_verification_tera_gas": {
+              "description": "Prepaid gas for the `resolve_verification` callback.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "return_ck_and_clean_state_on_success_call_tera_gas": {
               "description": "Prepaid gas for a `return_ck_and_clean_state_on_success` call.",
               "type": "integer",
@@ -2840,6 +3693,12 @@ expression: abi
             },
             "tee_upgrade_deadline_duration_seconds": {
               "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "verifier_tera_gas": {
+              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3027,7 +3886,7 @@ expression: abi
           }
         },
         "EpochId": {
-          "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
+          "description": "An EpochId uniquely identifies a GovernanceThresholdParameters (but not vice-versa). Every time we change the GovernanceThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -3349,14 +4208,51 @@ expression: abi
             "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
+        "GovernanceThreshold": {
+          "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "GovernanceThresholdParameters": {
+          "description": "GovernanceThreshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedGovernanceThresholdParameters`].",
+          "type": "object",
+          "required": [
+            "participants",
+            "threshold"
+          ],
+          "properties": {
+            "participants": {
+              "$ref": "#/definitions/Participants"
+            },
+            "threshold": {
+              "$ref": "#/definitions/GovernanceThreshold"
+            }
+          }
+        },
+        "GovernanceThresholdParametersVotes": {
+          "description": "Votes for threshold parameter changes.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
+              }
+            }
+          }
+        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
-        "HexString_Min32_Max1232": {
+        "HexString_Min0_Max1232": {
           "type": "string",
           "maxLength": 2464,
-          "minLength": 64,
+          "minLength": 0,
           "pattern": "^[0-9a-fA-F]*$"
         },
         "HexString_Min32_Max32": {
@@ -3423,6 +4319,15 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "fail_attestation_submission_tera_gas": {
+              "description": "Prepaid gas for a `fail_attestation_submission` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "fail_on_timeout_tera_gas": {
               "description": "Prepaid gas for a `fail_on_timeout` call.",
               "type": [
@@ -3459,6 +4364,15 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "resolve_verification_tera_gas": {
+              "description": "Prepaid gas for the `resolve_verification` callback.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "return_ck_and_clean_state_on_success_call_tera_gas": {
               "description": "Prepaid gas for a `return_ck_and_clean_state_on_success` call.",
               "type": [
@@ -3488,6 +4402,15 @@ expression: abi
             },
             "tee_upgrade_deadline_duration_seconds": {
               "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "verifier_tera_gas": {
+              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
               "type": [
                 "integer",
                 "null"
@@ -3587,12 +4510,12 @@ expression: abi
               "$ref": "#/definitions/AttemptId"
             },
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParameters"
             }
           }
         },
         "KeyEventId": {
-          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the ThresholdParameters that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
+          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the GovernanceThresholdParameters that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
           "type": "object",
           "required": [
             "attempt_id",
@@ -4024,7 +4947,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
           "type": "object",
           "required": [
             "next_id",
@@ -4078,7 +5001,7 @@ expression: abi
               ],
               "properties": {
                 "Eddsa": {
-                  "$ref": "#/definitions/HexString_Min32_Max1232"
+                  "$ref": "#/definitions/HexString_Min0_Max1232"
                 }
               },
               "additionalProperties": false
@@ -4099,6 +5022,9 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
+        },
+        "PromiseOrValueNull": {
+          "type": "null"
         },
         "PromiseOrValueSignatureResponse": {
           "oneOf": [
@@ -4165,15 +5091,15 @@ expression: abi
             }
           }
         },
-        "ProposedThresholdParameters": {
-          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`ThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`ThresholdParameters`].",
+        "ProposedGovernanceThresholdParameters": {
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`GovernanceThresholdParameters`].",
           "type": "object",
           "required": [
             "parameters"
           ],
           "properties": {
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParameters"
             },
             "per_domain_thresholds": {
               "default": {},
@@ -4558,10 +5484,10 @@ expression: abi
               "$ref": "#/definitions/Keyset2"
             },
             "parameters": {
-              "$ref": "#/definitions/ThresholdParameters"
+              "$ref": "#/definitions/GovernanceThresholdParameters"
             },
             "parameters_votes": {
-              "$ref": "#/definitions/ThresholdParametersVotes"
+              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [
@@ -4971,43 +5897,6 @@ expression: abi
           "maxLength": 64,
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
-        },
-        "Threshold": {
-          "description": "Cryptographic threshold (`k`) for a distributed key: the minimum number of participants that must collaborate to produce a signature.",
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
-        "ThresholdParameters": {
-          "description": "Threshold parameters for distributed key operations: the current participant set and the governance threshold. This is the stored, always-current shape; per-domain reconstruction-threshold *proposals* live on [`ProposedThresholdParameters`].",
-          "type": "object",
-          "required": [
-            "participants",
-            "threshold"
-          ],
-          "properties": {
-            "participants": {
-              "$ref": "#/definitions/Participants"
-            },
-            "threshold": {
-              "$ref": "#/definitions/Threshold"
-            }
-          }
-        },
-        "ThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ProposedThresholdParameters"
-              }
-            }
-          }
         },
         "TonAddress": {
           "type": "object",

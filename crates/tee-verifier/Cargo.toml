@@ -3,13 +3,14 @@ name = "tee-verifier"
 version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
+repository = { workspace = true }
 
 [package.metadata.cargo-shear]
 ignored = ["borsh"]
 
 [package.metadata.near.reproducible_build]
-image = "sourcescan/cargo-near:0.21.1-rust-1.93.0"
-image_digest = "sha256:79b789c81ba19ec30794a6b1046b02dcaf5c055994b22cc7c9af67ab5096b095"
+image = "sourcescan/cargo-near:0.22.0-rust-1.97.1"
+image_digest = "sha256:7467038bdddc86484b73b416eeadce926ff59013e128e53dec5a19e1cb4b2234"
 passed_env = []
 container_build_command = [
     "cargo",

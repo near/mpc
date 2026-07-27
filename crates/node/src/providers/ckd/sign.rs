@@ -17,7 +17,7 @@ use threshold_signatures::{
 use crate::metrics;
 use crate::{
     network::{NetworkTaskChannel, computation::MpcLeaderCentricComputation},
-    protocol::run_protocol,
+    protocol::NamedProtocol,
     providers::ckd::{CKDProvider, CKDTaskId},
     types::CKDId,
 };
@@ -29,8 +29,10 @@ impl CKDProvider {
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionThreshold::from(threshold);
+        let keyshare = self.keyshare(ckd_request.domain_id)?;
+        let reconstruction_threshold: usize =
+            keyshare.reconstruction_threshold.inner().try_into()?;
+        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -42,7 +44,7 @@ impl CKDProvider {
         let participants = self
             .client
             .select_random_active_participants_including_me(
-                threshold.value(),
+                reconstruction_threshold.value(),
                 &running_participants,
             )
             .context("Could not choose active participants for a ckd")?;
@@ -51,10 +53,7 @@ impl CKDProvider {
             .client
             .new_channel_for_task(CKDTaskId::Ckd { id }, participants)?;
 
-        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id).cloned() else {
-            anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
-        };
-
+        let keygen_output = keyshare.keygen_output;
         let public_key = keygen_output.public_key;
         let participants = channel.participants().to_vec();
         let result = CKDComputation {
@@ -95,12 +94,10 @@ impl CKDProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_CKD_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id) else {
-            anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
-        };
+        let keyshare = self.keyshare(ckd_request.domain_id)?;
         let participants = channel.participants().to_vec();
         CKDComputation {
-            keygen_output: keygen_output.clone(),
+            keygen_output: keyshare.keygen_output,
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
         }
@@ -128,6 +125,18 @@ pub struct CKDComputation {
     pub keygen_output: KeygenOutput,
     pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
+}
+
+/// CKD against an app public key.
+struct Ckd;
+impl NamedProtocol for Ckd {
+    const NAME: &'static str = "ckd";
+}
+
+/// CKD against a public verification key (pk1/pk2).
+struct CkdPv;
+impl NamedProtocol for CkdPv {
+    const NAME: &'static str = "ckd_pv";
 }
 
 #[async_trait::async_trait]
@@ -159,7 +168,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
                     ElementG1::try_from(&pk)?,
                     OsRng,
                 )?;
-                run_protocol("ckd", channel, protocol).await?
+                Ckd::run(channel, protocol).await?
             }
             dtos::CKDAppPublicKey::AppPublicKeyPV(pv) => {
                 let pk1 = ElementG1::try_from(&pv.pk1)?;
@@ -173,7 +182,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
                     PublicVerificationKey::new(pk1, pk2),
                     OsRng,
                 )?;
-                run_protocol("ckd_pv", channel, protocol).await?
+                CkdPv::run(channel, protocol).await?
             }
         };
 

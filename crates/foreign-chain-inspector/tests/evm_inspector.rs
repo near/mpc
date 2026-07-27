@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 pub mod common;
 
 use crate::common::{FixedResponseRpcClient, SequentialResponseMockClientBuilder};
@@ -43,7 +45,7 @@ fn test_log() -> Log {
         transaction_index: U64([2]),
         transaction_hash: H256([3; 32]),
         block_hash: H256([4; 32]),
-        block_number: U64([5]),
+        block_number: U64::from(90),
         address: H160([6; 20]),
         data: "test_log".to_string(),
         topics: vec![H256([7; 32]), H256([8; 32])],
@@ -77,6 +79,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([3; 32]),
                     block_hash: H256::from([4; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -117,6 +120,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([3; 32]),
                     block_hash: H256::from([4; 32]),
                     block_number,
                     status: U64::one(),
@@ -160,6 +164,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([1; 32]),
                     block_hash: H256::from([2; 32]),
                     block_number: U64::from(60),
                     status: U64::one(),
@@ -197,6 +202,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([1; 32]),
                     block_hash: H256::from([2; 32]),
                     block_number: U64::from(90),
                     status: U64::zero(),
@@ -242,6 +248,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([11; 32]),
                     block_hash: H256::from([12; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -313,6 +320,7 @@ macro_rules! evm_inspector_tests {
                 };
 
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([9; 32]),
                     block_hash: H256::from([5; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -401,6 +409,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([1; 32]),
                     block_hash: H256::from([2; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -445,7 +454,7 @@ macro_rules! evm_inspector_tests {
                     transaction_index: U64([2]),
                     transaction_hash: H256([3; 32]),
                     block_hash: H256([4; 32]),
-                    block_number: U64([5]),
+                    block_number: U64::from(90),
                     address: H160([6; 20]),
                     data: "first_log".to_string(),
                     topics: vec![H256([7; 32])],
@@ -454,9 +463,9 @@ macro_rules! evm_inspector_tests {
                     removed: false,
                     log_index: U64::from(21),
                     transaction_index: U64([20]),
-                    transaction_hash: H256([30; 32]),
+                    transaction_hash: H256([3; 32]),
                     block_hash: H256([4; 32]),
-                    block_number: U64([5]),
+                    block_number: U64::from(90),
                     address: H160([60; 20]),
                     data: "second_log".to_string(),
                     topics: vec![H256([70; 32])],
@@ -468,6 +477,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([3; 32]),
                     block_hash: H256::from([4; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -512,6 +522,7 @@ macro_rules! evm_inspector_tests {
                     hash: H256::from([0xaa; 32]),
                 };
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([1; 32]),
                     block_hash: H256::from([0xbb; 32]),
                     block_number: U64::from(90),
                     status: U64::one(),
@@ -549,6 +560,139 @@ macro_rules! evm_inspector_tests {
                         && receipt_hash == foreign_chain_inspector::HexBytes(vec![0xbb; 32])
                         && canonical_hash == foreign_chain_inspector::HexBytes(vec![0xcc; 32])
                 );
+            }
+
+            #[tokio::test]
+            async fn extract__should_reject_receipt_whose_transaction_hash_differs_from_request()
+            {
+                // Given
+                let requested_tx_bytes: [u8; 32] = [1; 32];
+                let returned_tx_bytes: [u8; 32] = [0xdd; 32];
+                let tx_id = TxHash::from(requested_tx_bytes);
+
+                let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256(returned_tx_bytes),
+                    block_hash: H256::from([2; 32]),
+                    block_number: U64::from(90),
+                    status: U64::one(),
+                    logs: vec![test_log()],
+                };
+
+                // The receipt-hash check fires before the finality lookup, so only one
+                // RPC call is exercised.
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .build();
+                let inspector = Inspector::new(mock_client);
+
+                // When
+                let response = inspector
+                    .extract(
+                        tx_id,
+                        EthereumFinality::Finalized,
+                        vec![EvmExtractor::BlockHash],
+                    )
+                    .await;
+
+                // Then
+                assert_matches!(
+                    response,
+                    Err(ForeignChainInspectionError::InconsistentRpcResponse {
+                        requested_hash,
+                        returned_hash,
+                    }) if requested_hash
+                        == foreign_chain_inspector::HexBytes(requested_tx_bytes.to_vec())
+                        && returned_hash
+                            == foreign_chain_inspector::HexBytes(returned_tx_bytes.to_vec())
+                );
+            }
+
+            #[rstest]
+            #[case::transaction_hash(Log {
+                transaction_hash: H256([0xdd; 32]),
+                ..test_log()
+            })]
+            #[case::block_hash(Log {
+                block_hash: H256([0xdd; 32]),
+                ..test_log()
+            })]
+            #[case::block_number(Log {
+                block_number: U64::from(91),
+                ..test_log()
+            })]
+            #[tokio::test]
+            async fn extract__should_reject_log_not_bound_to_receipt(#[case] unbound_log: Log) {
+                // Given
+                let tx_id_bytes: [u8; 32] = [3; 32];
+                let tx_id = TxHash::from(tx_id_bytes);
+                let expected_log = unbound_log.clone();
+                let bound_log = test_log();
+
+                // When
+                let response = extract_log_from_receipt_with(tx_id, unbound_log).await;
+
+                // Then
+                assert_matches!(
+                    response,
+                    Err(ForeignChainInspectionError::LogNotBoundToReceipt {
+                        log_index,
+                        log_transaction_hash,
+                        log_block_hash,
+                        log_block_number,
+                        receipt_transaction_hash,
+                        receipt_block_hash,
+                        receipt_block_number,
+                    }) if log_index == expected_log.log_index.as_u64()
+                        && log_transaction_hash == expected_log.transaction_hash.into()
+                        && log_block_hash == expected_log.block_hash.into()
+                        && log_block_number == expected_log.block_number.as_u64()
+                        && receipt_transaction_hash
+                            == foreign_chain_inspector::HexBytes(tx_id_bytes.to_vec())
+                        && receipt_block_hash == bound_log.block_hash.into()
+                        && receipt_block_number == bound_log.block_number.as_u64()
+                );
+            }
+
+            /// Runs `extract` selecting `log` by its own `log_index` from a finalized,
+            /// canonical receipt for `tx_id` whose block fields match [`test_log`]'s.
+            async fn extract_log_from_receipt_with(
+                tx_id: TxHash,
+                log: Log,
+            ) -> Result<Vec<ExtractedValue>, ForeignChainInspectionError> {
+                let bound_log = test_log();
+                let target_log_index = log.log_index.as_u64();
+                let finality_block_response = GetBlockByNumberResponse {
+                    number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
+                };
+                let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256(tx_id.clone().into()),
+                    block_hash: bound_log.block_hash,
+                    block_number: bound_log.block_number,
+                    status: U64::one(),
+                    logs: vec![log],
+                };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: tx_response.block_number,
+                    hash: tx_response.block_hash,
+                };
+
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
+                let inspector = Inspector::new(mock_client);
+
+                inspector
+                    .extract(
+                        tx_id,
+                        EthereumFinality::Finalized,
+                        vec![EvmExtractor::Log {
+                            log_index: target_log_index,
+                        }],
+                    )
+                    .await
             }
         }
     };

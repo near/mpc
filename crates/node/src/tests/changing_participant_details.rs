@@ -1,6 +1,6 @@
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tests::{DEFAULT_BLOCK_TIME, make_key_storage_config};
 use crate::tests::{
@@ -23,7 +23,7 @@ use near_time::Clock;
 #[test_log::test]
 async fn test_changing_participant_set_test_keyshare_import() {
     const NUM_PARTICIPANTS: usize = 2;
-    const THRESHOLD: usize = 2;
+    const GOVERNANCE_THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut account_ids: Vec<_> = (0..NUM_PARTICIPANTS)
@@ -34,9 +34,9 @@ async fn test_changing_participant_set_test_keyshare_import() {
         Clock::real(),
         temp_dir.path(),
         account_ids,
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::RECOVERY_TEST,
+        port_seed::RECOVERY_TEST,
         DEFAULT_BLOCK_TIME,
     );
 

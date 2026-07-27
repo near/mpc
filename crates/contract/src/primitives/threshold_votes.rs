@@ -1,4 +1,4 @@
-use crate::primitives::thresholds::ProposedThresholdParameters;
+use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use crate::primitives::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
@@ -9,15 +9,16 @@ use std::collections::BTreeMap;
 // once this type is moved out of RunningContractState (which requires Clone + PartialEq + JSON).
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ThresholdParametersVotes {
-    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>,
+pub struct GovernanceThresholdParametersVotes {
+    pub(crate) proposal_by_account:
+        BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>,
 }
 
-impl ThresholdParametersVotes {
+impl GovernanceThresholdParametersVotes {
     /// return the number of votes for `proposal` cast by members of `participants`
     pub fn n_votes(
         &self,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
         participants: &Participants,
     ) -> u64 {
         u64::try_from(
@@ -40,7 +41,7 @@ impl ThresholdParametersVotes {
     /// vote).
     pub fn vote(
         &mut self,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
         participant: AuthenticatedAccountId,
     ) -> u64 {
         if self
@@ -62,7 +63,7 @@ impl ThresholdParametersVotes {
 
 #[cfg(test)]
 mod tests {
-    use super::ThresholdParametersVotes;
+    use super::GovernanceThresholdParametersVotes;
     use crate::primitives::{
         key_state::AuthenticatedAccountId,
         participants::Participants,
@@ -83,7 +84,7 @@ mod tests {
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
         let params = gen_proposed_threshold_params(30);
-        let mut votes = ThresholdParametersVotes::default();
+        let mut votes = GovernanceThresholdParametersVotes::default();
         assert_eq!(votes.vote(&params, participant.clone()), 1);
         assert_eq!(votes.n_votes(&params, &participants), 1);
         let params2 = gen_proposed_threshold_params(30);
@@ -136,7 +137,7 @@ mod tests {
         let proposal_b = base.with_per_domain_thresholds(updates_b);
 
         // When each voter casts a different proposal
-        let mut votes = ThresholdParametersVotes::default();
+        let mut votes = GovernanceThresholdParametersVotes::default();
         votes.vote(&proposal_a, auth_p0);
         votes.vote(&proposal_b, auth_p1);
 
@@ -166,7 +167,7 @@ mod tests {
         };
 
         let params = gen_proposed_threshold_params(30);
-        let mut votes = ThresholdParametersVotes::default();
+        let mut votes = GovernanceThresholdParametersVotes::default();
         votes.vote(&params, auth_p0);
         votes.vote(&params, auth_p1);
         assert_eq!(votes.n_votes(&params, &old_participants), 2);

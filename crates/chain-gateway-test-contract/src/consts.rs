@@ -1,4 +1,4 @@
-use mpc_call_args::NearGas;
+use near_contract_transport::NearGas;
 
 pub const DEFAULT_VALUE: &str = "hello from test";
 

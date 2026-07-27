@@ -6,7 +6,8 @@ use near_indexer_primitives::near_primitives::transaction::{
 };
 use std::sync::Mutex;
 
-use crate::types::{FunctionCallArgs, LatestFinalBlockInfo};
+use crate::types::LatestFinalBlockInfo;
+use near_contract_transport::FunctionCallArgs;
 
 pub struct TransactionSigner {
     signing_key: SigningKey,
@@ -87,8 +88,8 @@ impl TransactionSigner {
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::SigningKey;
-    use mpc_call_args::{FunctionCallArgs, NearGas, NearToken};
     use near_account_id::AccountId;
+    use near_contract_transport::{FunctionCallArgs, NearGas, NearToken};
     use near_indexer::near_primitives::{account::AccessKey, transaction::Transaction};
     use near_indexer_primitives::types::Gas;
     use rand::{SeedableRng, rngs::StdRng};
@@ -144,7 +145,7 @@ mod tests {
             method_name: "do_something".to_string(),
             args: b"test args".to_vec(),
             gas: TEST_GAS,
-            deposit: NearToken::from_yoctonear(0),
+            deposit: NearToken::from_near(0),
         }
     }
 

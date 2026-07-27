@@ -128,7 +128,7 @@ pub mod test {
         let a = HashOutput([1u8; 32]);
         let b = HashOutput([1u8; 32]);
         let result = a.ct_eq(&b);
-        assert!(result.unwrap_u8() == 1);
+        assert_eq!(result.unwrap_u8(), 1);
     }
 
     #[test]
@@ -136,7 +136,7 @@ pub mod test {
         let a = HashOutput([1u8; 32]);
         let b = HashOutput([2u8; 32]);
         let result = a.ct_eq(&b);
-        assert!(result.unwrap_u8() == 0);
+        assert_eq!(result.unwrap_u8(), 0);
     }
 
     /// Hashes a message string into an arbitrary scalar

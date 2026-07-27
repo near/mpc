@@ -10,7 +10,7 @@ use crate::types::{
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Gas;
+use near_indexer_primitives::types::{Balance, Gas};
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey, VerifiedAttestation};
 use near_time::Clock;
 use std::future::Future;
@@ -148,6 +148,7 @@ async fn submit_tx(
     method: String,
     params_ser: String,
     gas: Gas,
+    deposit: Balance,
 ) -> anyhow::Result<SubmittedTxMetadata> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
@@ -156,6 +157,7 @@ async fn submit_tx(
         method,
         params_ser.into(),
         gas,
+        deposit,
         block.header.hash,
         block.header.height,
     );
@@ -195,7 +197,7 @@ fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64
 /// block time plus
 /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`](mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS)),
 /// and only the owning account may rewrite it, so a changed expiry means our submit landed. This
-/// covers every Dstack entry, and mock entries stored by contracts that stamp expiries (#3293).
+/// covers every Dstack entry, and mock entries stored by contracts that stamp expiries.
 /// A mock stored by an older contract carries no expiry and is matched by identity instead.
 // TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
 fn submitted_attestation_landed(
@@ -211,7 +213,7 @@ fn submitted_attestation_landed(
             match stored.expiry_timestamp_seconds() {
                 Some(expiry) => attestation_expiry_changed(pre_submit_expiry, expiry),
                 // TODO(#3786): drop this identity fallback once every stored mock is
-                // guaranteed to carry an expiry (contracts predating #3293 and genesis
+                // guaranteed to carry an expiry (older contracts and genesis
                 // sentinels store `Mock::Valid` without one).
                 None => stored == submitted,
             }
@@ -321,7 +323,8 @@ async fn observe_tx_result(
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
         | ConcludeNodeMigration(_)
-        | RegisterForeignChainConfig(_) => Ok(TransactionStatus::Unknown),
+        | RegisterForeignChainConfig(_)
+        | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
@@ -347,6 +350,7 @@ async fn ensure_send_transaction(
         method.to_string(),
         params_ser.clone(),
         request.gas_required(),
+        request.deposit_required(),
     )
     .await;
 
@@ -496,7 +500,7 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn submitted_attestation_landed__should_confirm_mock_with_changed_expiry() {
-        // Given: a contract that stamps expiries on mocks (#3293) re-stamped our
+        // Given: a contract that stamps expiries on mocks re-stamped our
         // submitted `Mock::Valid` as an expiring `WithConstraints`, changing the expiry.
         let stored = VerifiedAttestation::Mock(mock_with_expiry(200));
         let submitted = Attestation::Mock(MockAttestation::Valid);

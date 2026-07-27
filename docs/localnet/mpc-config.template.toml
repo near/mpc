@@ -34,7 +34,7 @@ cores = 4
 [node.triple]
 concurrency = 2
 desired_triples_to_buffer = 128
-timeout_sec = 60
+timeout_sec = 120
 parallel_triple_generation_stagger_time_sec = 1
 
 [node.presignature]
@@ -93,4 +93,14 @@ max_retries = 3
 rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
 
 [node.foreign_chains.aptos.providers.public.auth]
+kind = "none"
+
+[node.foreign_chains.sui]
+timeout_sec = 30
+max_retries = 3
+
+[node.foreign_chains.sui.providers.public]
+rpc_url = "https://archive.mainnet.sui.io"
+
+[node.foreign_chains.sui.providers.public.auth]
 kind = "none"

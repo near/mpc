@@ -1,4 +1,6 @@
 use alloc::string::String;
+#[cfg(feature = "borsh-schema")]
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(any(test, feature = "dstack-conversions"))]
@@ -16,6 +18,7 @@ pub enum ParsingError {
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct TcbInfo {
     pub mrtd: HexBytes<48>,
     pub rtmr0: HexBytes<48>,
@@ -32,6 +35,7 @@ pub struct TcbInfo {
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct EventLog {
     pub imr: u32,
     pub event_type: u32,
@@ -59,6 +63,33 @@ pub struct EventLog {
 )]
 #[serde(transparent)]
 pub struct HexBytes<const N: usize>(#[serde_as(as = "Hex")] [u8; N]);
+
+/// Manual impl because the derive drops the const parameter from the
+/// declaration, so `HexBytes<48>` and `HexBytes<32>` in one schema collide
+/// ("Redefining type schema for HexBytes").
+#[cfg(feature = "borsh-schema")]
+impl<const N: usize> borsh::BorshSchema for HexBytes<N> {
+    fn declaration() -> borsh::schema::Declaration {
+        alloc::format!("HexBytes<{N}>")
+    }
+
+    fn add_definitions_recursively(
+        definitions: &mut alloc::collections::BTreeMap<
+            borsh::schema::Declaration,
+            borsh::schema::Definition,
+        >,
+    ) {
+        let fields = borsh::schema::Fields::UnnamedFields(alloc::vec![
+            <[u8; N] as borsh::BorshSchema>::declaration()
+        ]);
+        borsh::schema::add_definition(
+            Self::declaration(),
+            borsh::schema::Definition::Struct { fields },
+            definitions,
+        );
+        <[u8; N] as borsh::BorshSchema>::add_definitions_recursively(definitions);
+    }
+}
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -197,6 +228,17 @@ mod tests {
     use alloc::string::ToString;
     use rstest::rstest;
     use serde_json;
+
+    /// `TcbInfo` holds both `HexBytes<48>` and `HexBytes<32>`; schema
+    /// generation panics if their declarations collide.
+    #[cfg(feature = "borsh-schema")]
+    #[test]
+    fn TcbInfo__should_generate_borsh_schema() {
+        let container = borsh::schema_container_of::<TcbInfo>();
+
+        assert!(container.get_definition("HexBytes<48>").is_some());
+        assert!(container.get_definition("HexBytes<32>").is_some());
+    }
 
     #[test]
     fn TcbInfo__should_deserialize_from_real_test_data() {

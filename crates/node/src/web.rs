@@ -152,6 +152,8 @@ struct ForeignChainsProviderCounts {
     polygon: usize,
     #[serde(skip_serializing_if = "is_zero")]
     aptos: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    sui: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
@@ -168,6 +170,7 @@ impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
             hyper_evm: config.hyper_evm.map_or(0, |c| c.providers.len()),
             polygon: config.polygon.map_or(0, |c| c.providers.len()),
             aptos: config.aptos.map_or(0, |c| c.providers.len()),
+            sui: config.sui.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -406,6 +409,7 @@ mod tests {
     const HYPER_EVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
     const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
     const APTOS_RPC_URL: &str = "https://aptos-mainnet.nodereal.io/v1/";
+    const SUI_RPC_URL: &str = "https://fullnode.mainnet.sui.io/";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
@@ -451,7 +455,7 @@ mod tests {
                 concurrency: 1,
                 desired_triples_to_buffer: 10,
                 parallel_triple_generation_stagger_time_sec: 1,
-                timeout_sec: 60,
+                timeout_sec: 120,
             },
             presignature: PresignatureConfig {
                 concurrency: 1,
@@ -526,6 +530,7 @@ mod tests {
                     AuthConfig::None,
                 )),
                 aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
+                sui: Some(test_chain(PROVIDER_PUBLIC, SUI_RPC_URL, AuthConfig::None)),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -564,6 +569,7 @@ mod tests {
             "hyper_evm",
             "polygon",
             "aptos",
+            "sui",
         ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),
@@ -590,6 +596,7 @@ mod tests {
             HYPER_EVM_RPC_URL,
             POLYGON_RPC_URL,
             APTOS_RPC_URL,
+            SUI_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,

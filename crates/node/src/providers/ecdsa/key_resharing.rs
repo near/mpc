@@ -2,7 +2,7 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::primitives::ParticipantId;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
 use threshold_signatures::ReconstructionThreshold;
@@ -12,17 +12,17 @@ use threshold_signatures::participants::Participant;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
-        new_threshold: ReconstructionThreshold,
+        new_reconstruction_threshold: ReconstructionThreshold,
+        old_reconstruction_threshold: ReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<KeygenOutput> {
-        let old_threshold: usize = old_participants.threshold.try_into()?;
         let new_keyshare = KeyResharingComputation {
-            threshold: new_threshold,
+            reconstruction_threshold: new_reconstruction_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
-            old_threshold: ReconstructionThreshold::from(old_threshold),
+            old_reconstruction_threshold,
             my_share,
             public_key,
         }
@@ -48,11 +48,15 @@ impl EcdsaSignatureProvider {
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
 pub struct KeyResharingComputation {
-    threshold: ReconstructionThreshold,
+    reconstruction_threshold: ReconstructionThreshold,
     old_participants: Vec<ParticipantId>,
-    old_threshold: ReconstructionThreshold,
+    old_reconstruction_threshold: ReconstructionThreshold,
     my_share: Option<SigningShare>,
     public_key: VerifyingKey,
+}
+
+impl NamedProtocol for KeyResharingComputation {
+    const NAME: &'static str = "ecdsa key resharing";
 }
 
 #[async_trait::async_trait]
@@ -74,15 +78,15 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
 
         let protocol = threshold_signatures::reshare::<Secp256K1Sha256, _, _, _>(
             &old_participants,
-            self.old_threshold,
+            self.old_reconstruction_threshold,
             self.my_share,
             self.public_key,
             &new_participants,
-            self.threshold,
+            self.reconstruction_threshold,
             me.into(),
             OsRng,
         )?;
-        run_protocol("ecdsa key resharing", channel, protocol).await
+        Self::run(channel, protocol).await
     }
     fn leader_waits_for_success(&self) -> bool {
         false
@@ -150,9 +154,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        threshold: ReconstructionThreshold::from(THRESHOLD),
+                        reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
                         old_participants,
-                        old_threshold: ReconstructionThreshold::from(THRESHOLD),
+                        old_reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
                         my_share: keyshare,
                         public_key: pubkey,
                     }

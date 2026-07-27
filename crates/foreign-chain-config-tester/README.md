@@ -7,8 +7,11 @@ production.
 
 For each configured provider it runs a fixed request against a known reference
 transaction — the same inspector and auth handling the node uses — and compares
-the result against a known-good value. Every provider is checked independently:
-one bad provider does not stop the others from being reported.
+the result against a known-good value. Sui is the exception: its providers prune
+transactions after a few weeks, so the check instead verifies the provider's
+chain identity and inspects a transaction from its latest checkpoint. Every
+provider is checked independently: one bad provider does not stop the others
+from being reported.
 
 ## Usage
 
@@ -43,9 +46,10 @@ CHAIN     PROVIDER   RESULT
 abstract  public     ✓ ok
 bitcoin   public     ✓ ok
 starknet  public     ✗ failed
-aptos     public     – skipped (no testnet reference transaction for this chain)
+aptos     public     ✓ ok
+sui       public     ✓ ok
 
-3 passed, 1 failed, 1 skipped
+4 passed, 1 failed, 0 skipped
 
 Failures:
   starknet / public: inner network client failed to fetch: Transaction hash not found

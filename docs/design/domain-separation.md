@@ -4,7 +4,7 @@ The addition of Robust ECDSA (aka DamgardEtAl) invalidates three assumptions in 
 
 ✗ There is one protocol per curve (now: both CaitSith and DamgardEtAl operate over Secp256k1).
 
-✗ All domains share a single cryptographic threshold. The node already has a `translate_threshold()` hack to bridge this gap.
+✗ All domains share a single cryptographic threshold.
 
 ✗ Governance voting threshold and cryptographic reconstruction threshold are the same value. The threshold of how many participants must vote to change parameters is currently the same `Threshold` value as the cryptographic reconstruction threshold.
 
@@ -85,15 +85,13 @@ The node (`crates/node/`) imports types from **both** the internal contract crat
 ### 1.4 Threshold Flow Through the System
 
 ```
-Contract ThresholdParameters.threshold (Threshold(u64))
-  → Coordinator extracts: threshold: usize = mpc_config.participants.threshold.try_into()?
-  → Converts to: ReconstructionThreshold::from(threshold)
+Contract per-domain DistributedKeyConfig.reconstruction_threshold (ReconstructionThreshold(u64))
+  → Coordinator reads the per-domain ReconstructionThreshold from contract state
   → For CaitSith/FROST: passed directly to keygen/sign
-  → For DamgardEtAl: translate_threshold() → MaxMalicious::from((n_signers - 1) / 2)
+  → For DamgardEtAl: compute_thresholds() → (num_signers, max_malicious)
 ```
 
-The `translate_threshold()` function in `crates/node/src/providers/robust_ecdsa.rs` is an explicit workaround for the mismatch between the contract's single threshold and DamgardEtAl's `MaxMalicious` semantics. The code itself documents this as a hack:
-> "This function translates the current threshold from the contract to the threshold expected by the robust-ecdsa scheme, which is semantically different."
+For DamgardEtAl, the node derives `(num_signers, max_malicious)` from the per-domain `ReconstructionThreshold` via `compute_thresholds()` in `crates/node/src/providers/robust_ecdsa.rs` (used by `robust_ecdsa/presign.rs` and `robust_ecdsa/sign.rs`). No threshold translation from a global value is needed, since each domain carries its own `ReconstructionThreshold`.
 
 ### 1.5 Current Curve-Protocol Pairings
 
@@ -248,7 +246,7 @@ Each protocol has different constraints on `ReconstructionThreshold` relative to
 ```rust
 /// Validates that the reconstruction threshold is achievable
 /// given the number of participants.
-pub fn validate_threshold(config: &DistributedKeyConfig, num_participants: u64) -> Result<(), Error> {
+pub fn validate_domain_reconstruction_threshold(config: &DistributedKeyConfig, num_participants: u64) -> Result<(), Error> {
     let t = config.reconstruction_threshold.inner();
 
     // Universal constraints
@@ -291,7 +289,7 @@ pub fn validate_for_participant_count(
     num_participants: u64,
 ) -> Result<(), Error> {
     for key in keys.iter() {
-        validate_threshold(key, num_participants).map_err(|e| {
+        validate_domain_reconstruction_threshold(key, num_participants).map_err(|e| {
             Error::ThresholdIncompatibleWithNewParticipants { distributed_key_id: key.id, inner: e }
         })?;
     }
@@ -509,7 +507,7 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 **Precondition**: PR 4 landed. `DistributedKeyConfig.reconstruction_threshold` exists but is populated from the global threshold during migration.
 
 **Changes**:
-- Add `validate_threshold(config: &DistributedKeyConfig, num_participants)` with protocol-specific rules:
+- Add `validate_domain_reconstruction_threshold(config: &DistributedKeyConfig, num_participants)` with protocol-specific rules:
   - CaitSith/Frost/CKD: `t <= n` (same as current).
   - DamgardEtAl: `2t - 1 <= n`.
 - Add `min_active_participants(protocol, reconstruction_threshold)` helper (see §3.1).
@@ -522,7 +520,7 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 
 **Key behavioral change**: This is where `DistributedKeyConfig` gains real per-key threshold semantics. Before this PR, the `reconstruction_threshold` was always the global value.
 
-**Tests**: Unit tests for `validate_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
+**Tests**: Unit tests for `validate_domain_reconstruction_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
 
 ---
 
@@ -584,12 +582,13 @@ fn migrate(old: OldRunningContractState) -> RunningContractState {
   };
   ```
 - Coordinator reads per-key `DistributedKeyConfig` from contract state instead of using global threshold.
-- Replace `translate_threshold()` hack in `robust_ecdsa.rs` with the `min_active_participants()` helper:
+- Derive the robust-ECDSA signer set via `compute_thresholds()` in `robust_ecdsa.rs`, which computes `(num_signers, max_malicious)` directly from the domain's `ReconstructionThreshold`:
   ```rust
-  // Node computes required active signers from DistributedKeyConfig
-  let active_signers = min_active_participants(&dk.protocol, &dk.reconstruction_threshold);
+  // Node derives the robust-ECDSA signer set from the per-domain reconstruction threshold t:
+  //   num_signers = 2t - 1, max_malicious = t - 1
+  let (num_signers, max_malicious) = compute_thresholds(dk.reconstruction_threshold)?;
   ```
-  Note: `translate_threshold()` is still needed on the `state()` fallback path (it's effectively moved into the synthetic `DistributedKeyConfig` construction above). It can be fully removed once the old contract is guaranteed gone.
+  The per-domain `ReconstructionThreshold` comes from contract state (or the synthetic `DistributedKeyConfig` on the `state()` fallback path), so no threshold translation from a global value is needed.
 - Provider routing uses `Protocol` enum instead of pattern-matching on `SignatureScheme`/`Curve`:
   ```rust
   match dk.protocol {
@@ -815,7 +814,7 @@ mpc-contract/
   primitives/
     domain.rs       → DistributedKeyRegistry, AddDomainsVotes, validation logic
     key_state.rs    → KeyForDomain, Keyset (with NEAR-specific storage)
-    thresholds.rs   → Validation logic (validate_threshold, etc.)
+    thresholds.rs   → Validation logic (validate_domain_reconstruction_threshold, etc.)
   state/            → ProtocolContractState, RunningContractState, etc.
 ```
 
@@ -906,23 +905,18 @@ With per-key `protocol` and `reconstruction_threshold`, `vote_add_domains` must 
 
 During resharing, each domain's key must be reshared with its own `ReconstructionThreshold`. The `KeyEvent` for each domain already carries its config. The coordinator passes the per-domain threshold to the crypto protocol. Per-domain thresholds can only be changed via resharing — there is no independent vote function for threshold changes.
 
-`ReconstructionThreshold` has uniform semantics across all protocols: it always means "number of shares needed to reconstruct the secret" (`t`). Each protocol may impose different constraints on `t` (e.g., DamgardEtAl requires `t < n/2`), but the stored value has the same meaning everywhere. The node handles the protocol-specific translation:
-
+`ReconstructionThreshold` has uniform semantics across all protocols: it always means "number of shares needed to reconstruct the secret" (`t`). Each protocol may impose different constraints on `t` (e.g., DamgardEtAl requires `t < n/2`), but the stored value has the same meaning everywhere. The node reads the per-domain `ReconstructionThreshold` from contract state and applies the protocol-specific interpretation:
 
 ```rust
-// Current (hack):
-let threshold: usize = mpc_config.participants.threshold.try_into()?;
-let threshold = ReconstructionThreshold::from(threshold);
-
-// Proposed (clean):
 let dk = distributed_key_registry.get(distributed_key_id);
-let active_signers = min_active_participants(&dk.protocol, &dk.reconstruction_threshold);
-let threshold = match dk.protocol {
+let threshold = dk.reconstruction_threshold;
+match dk.protocol {
+    // DamgardEtAl: derive (num_signers, max_malicious) = (2t - 1, t - 1)
     Protocol::DamgardEtAl => {
-        let max_malicious = MaxMalicious::from(dk.reconstruction_threshold.inner() - 1);
-        // Use MaxMalicious directly, no translation needed
+        let (num_signers, max_malicious) = compute_thresholds(threshold)?;
     }
-    _ => ReconstructionThreshold::from(dk.reconstruction_threshold.inner()),
+    // CaitSith/FROST/CKD: t is passed directly to keygen/sign
+    _ => { /* use threshold directly */ }
 };
 ```
 
@@ -938,7 +932,7 @@ Resolved: the `GovernanceThreshold` is now constrained relative to the cryptogra
 - `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap is retained in the code but currently set to 100%
 (effectively disabled due to non-convergence of opinions on what would be a good upper bound).
 
-These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
+These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_governance_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
 ### 7.2 Backward-Compatible View Methods
 

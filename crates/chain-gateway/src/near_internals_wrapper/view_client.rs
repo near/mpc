@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
+use near_contract_transport::{BlockHeight, ObservedState, ViewArgs, ViewContract};
 
+use crate::types::LatestFinalBlockInfo;
 use crate::{
     errors::{NearViewClientError, NearViewClientQuery},
-    primitives::{FetchLatestFinalBlockInfo, QueryViewFunction},
-    types::ObservedState,
+    primitives::FetchLatestFinalBlockInfo,
 };
 
 /// Arc-wrapper around near-internal struct
@@ -29,23 +29,24 @@ impl NearViewClientActorHandle {
     }
 }
 
-impl QueryViewFunction for NearViewClientActorHandle {
+impl ViewContract for NearViewClientActorHandle {
     type Error = NearViewClientError;
+    type ObservedAt = BlockHeight;
     /// calls view method contract_id::method_name(args) and returns the result
-    async fn query_view_function(
+    async fn view_contract(
         &self,
         contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
+        view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
+        let method_name = view_args.method_name;
         let query = near_client::Query {
             block_reference: near_indexer_primitives::types::BlockReference::Finality(
                 near_indexer_primitives::types::Finality::Final,
             ),
             request: near_indexer_primitives::views::QueryRequest::CallFunction {
                 account_id: contract_id.clone(),
-                method_name: method_name.to_string(),
-                args: args.to_vec().into(),
+                method_name: method_name.clone(),
+                args: view_args.args.into(),
             },
         };
 

@@ -1,5 +1,5 @@
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::port_seed;
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     IntegrationTestSetup, request_signature_and_await_response,
@@ -21,7 +21,7 @@ use rand::Rng;
 #[test_log::test]
 async fn test_faulty_cluster() {
     const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let accounts = (0..NUM_PARTICIPANTS)
@@ -31,9 +31,9 @@ async fn test_faulty_cluster() {
         Clock::real(),
         temp_dir.path(),
         accounts.clone(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FAULTY_CLUSTER_TEST,
+        port_seed::FAULTY_CLUSTER_TEST,
         DEFAULT_BLOCK_TIME,
     );
 
@@ -169,7 +169,7 @@ async fn test_faulty_cluster() {
 #[test_log::test]
 async fn test_indexer_stuck() {
     const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    const GOVERNANCE_THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let accounts = (0..NUM_PARTICIPANTS)
@@ -179,9 +179,9 @@ async fn test_indexer_stuck() {
         Clock::real(),
         temp_dir.path(),
         accounts.clone(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::FAULTY_STUCK_INDEXER_TEST,
+        port_seed::FAULTY_STUCK_INDEXER_TEST,
         std::time::Duration::from_millis(100),
     );
 

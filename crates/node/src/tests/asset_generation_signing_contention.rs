@@ -53,7 +53,7 @@
 //! result. The `[#1175]` summary still sits near the top of the test output.
 
 use crate::indexer::participants::ContractState;
-use crate::p2p::testing::PortSeed;
+use crate::p2p::testing::{NodeTestPorts, port_seed};
 use crate::tests::{
     DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, IntegrationTestSetup,
     request_signature_and_await_response,
@@ -69,7 +69,8 @@ use near_time::Clock;
 use std::time::Duration;
 
 const NUM_PARTICIPANTS: usize = 4;
-const THRESHOLD: usize = 3;
+const GOVERNANCE_THRESHOLD: usize = 3;
+const RECONSTRUCTION_THRESHOLD: usize = 3;
 const TXN_DELAY_BLOCKS: u64 = 1;
 
 // The only knob that differs between the two scenarios is the desired triple
@@ -195,16 +196,16 @@ async fn measure_signing_latency(
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
-        PortSeed::ASSET_GENERATION_SIGNING_CONTENTION_TEST.with_case(case),
+        port_seed::ASSET_GENERATION_SIGNING_CONTENTION_TEST.with_case(case),
         DEFAULT_BLOCK_TIME,
     );
 
     let ecdsa_domain = DomainConfig {
         id: DomainId(0),
         protocol: Protocol::CaitSith,
-        reconstruction_threshold: ReconstructionThreshold::new(THRESHOLD as u64),
+        reconstruction_threshold: ReconstructionThreshold::new(RECONSTRUCTION_THRESHOLD as u64),
         purpose: DomainPurpose::Sign,
     };
 
@@ -226,7 +227,7 @@ async fn measure_signing_latency(
                 STEADY_TRIPLES_TO_BUFFER
             },
             parallel_triple_generation_stagger_time_sec: TRIPLE_STAGGER_SEC,
-            timeout_sec: 60,
+            timeout_sec: 120,
         };
         node.config.presignature = PresignatureConfig {
             concurrency: PRESIGNATURE_CONCURRENCY,

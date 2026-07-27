@@ -12,12 +12,14 @@ dependencies = [
   "cargo-shear",
   "cargo-deny-no-advisories",
   "zizmor",
+  "opengrep",
   "check-markdown-links",
   "sandbox-image-version",
   "check",
   "check-docs",
   "clippy",
   "clippy-all-features",
+  "contract-check",
 ]
 
 [tasks.check-all]
@@ -48,6 +50,11 @@ args = [
 command = "cargo"
 args = ["clippy", "--all-targets", "--locked", "--", "-D", "warnings"]
 
+[tasks.contract-check]
+description = "Lint contract crates under the real build config via `cargo near check`"
+command = "bash"
+args = ["scripts/check-contract-clippy.sh"]
+
 [tasks.fmt]
 command = "cargo"
 args = ["fmt", "--", "--check"]
@@ -75,6 +82,10 @@ args = [
 [tasks.zizmor]
 command = "zizmor"
 args = [".github/"]
+
+[tasks.opengrep]
+command = "bash"
+args = ["scripts/run-opengrep.sh"]
 
 [tasks.crate-names]
 command = "bash"
@@ -173,6 +184,20 @@ args = [
   "--profile=release-contract",
   "--manifest-path",
   "crates/contract/Cargo.toml",
+  "--locked",
+]
+
+[tasks.build-tee-verifier-optimized]
+description = "Build the tee-verifier WASM for localnet"
+command = "cargo"
+args = [
+  "near",
+  "build",
+  "non-reproducible-wasm",
+  "--no-abi",
+  "--profile=release-contract",
+  "--manifest-path",
+  "crates/tee-verifier/Cargo.toml",
   "--locked",
 ]
 

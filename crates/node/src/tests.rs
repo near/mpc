@@ -1,11 +1,10 @@
-use aes_gcm::{Aes256Gcm, KeyInit};
+use aes_gcm::{Aes256Gcm, Key};
 use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
-    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-    EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, ForeignChainRpcRequest, ForeignTxPayloadVersion,
-    VerifyForeignTransactionRequestArgs,
+    BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
@@ -24,7 +23,7 @@ use crate::indexer::handler::{
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
-use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
+use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
     SignatureConfig, SyncMode, TripleConfig,
@@ -35,12 +34,13 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
+use aes_gcm::aead::Generate;
 use assert_matches::assert_matches;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::Finality;
-use near_mpc_bounded_collections::BoundedVec;
+use near_mpc_bounded_collections::UpperBoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;
 use near_time::Clock;
@@ -61,7 +61,9 @@ mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
 mod protocol_yielding;
+mod reconstruction_thresholds;
 mod resharing;
+mod update_participant_url;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
@@ -188,13 +190,13 @@ impl IntegrationTestSetup {
         clock: Clock,
         temp_dir: &Path,
         participant_accounts: Vec<AccountId>,
-        threshold: usize,
+        governance_threshold: usize,
         txn_delay_blocks: u64,
-        port_seed: PortSeed,
+        ports: TestPorts,
         block_time: std::time::Duration,
     ) -> IntegrationTestSetup {
         let p2p_configs =
-            generate_test_p2p_configs(&participant_accounts, threshold, port_seed, None).unwrap();
+            generate_test_p2p_configs(&participant_accounts, governance_threshold, &ports).unwrap();
         let participants = p2p_configs[0].0.participants.clone();
         let mut indexer_manager =
             FakeIndexerManager::new(clock.clone(), txn_delay_blocks, block_time);
@@ -230,17 +232,17 @@ impl IntegrationTestSetup {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
-                    timeout_sec: 60,
+                    timeout_sec: 120,
                 },
                 number_of_responder_keys: 0,
-                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_port(i)),
+                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), ports.web_ui_port(i)),
                 migration_web_ui: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
-                    port_seed.migration_web_port(i),
+                    ports.migration_web_ui_port(i),
                 ),
                 pprof_bind_address: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
-                    port_seed.pprof_web_port(i),
+                    ports.pprof_port(i),
                 ),
             };
             let secrets = SecretsConfig {
@@ -250,7 +252,7 @@ impl IntegrationTestSetup {
                     near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
                 local_storage_aes_key: rand::random(),
-                backup_encryption_key: Aes256Gcm::generate_key(OsRng).into(),
+                backup_encryption_key: Key::<Aes256Gcm>::generate().into(),
             };
             let (indexer_api, task, currently_running_job_name) = indexer_manager.add_indexer_node(
                 i.into(),
@@ -294,17 +296,12 @@ pub async fn request_signature_and_await_response(
             Payload::Ecdsa(payload.into())
         }
         Protocol::Frost => {
-            let len = rand::thread_rng().gen_range(
-                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES..EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-            );
+            let len = rand::thread_rng().gen_range(0..=EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES);
             let mut payload = vec![0; len];
             rand::thread_rng().fill_bytes(payload.as_mut());
 
-            let bounded_payload: BoundedVec<
-                u8,
-                EDDSA_PAYLOAD_SIZE_LOWER_BOUND_BYTES,
-                EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-            > = payload.try_into().unwrap();
+            let bounded_payload: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
+                payload.try_into().unwrap();
 
             Payload::Eddsa(bounded_payload)
         }

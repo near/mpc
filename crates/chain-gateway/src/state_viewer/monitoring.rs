@@ -1,6 +1,7 @@
 use crate::errors::ChainGatewayError;
-use crate::types::ObservedState;
 use near_account_id::AccountId;
+use near_contract_transport::ObservedState;
+use near_contract_transport::ViewArgs;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -25,13 +26,12 @@ impl Drop for MonitoringTask {
 pub(crate) async fn make_monitoring_task<V>(
     viewer: V,
     contract_id: AccountId,
-    method_name: &str,
-    args: Vec<u8>,
+    view_args: ViewArgs,
 ) -> MonitoringTask
 where
     V: ViewRaw,
 {
-    let observed_state = viewer.view_raw(&contract_id, method_name, &args).await;
+    let observed_state = viewer.view_raw(&contract_id, view_args.clone()).await;
 
     let (sender, last_observed) = tokio::sync::watch::channel(observed_state.clone());
 
@@ -39,8 +39,7 @@ where
     let _task_handle = tokio::spawn(monitor(
         viewer,
         contract_id,
-        method_name.to_string(),
-        args,
+        view_args,
         sender,
         cancel_token.clone(),
     ));
@@ -57,8 +56,7 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(200);
 async fn monitor<V: ViewRaw>(
     viewer: V,
     contract_id: AccountId,
-    method_name: String,
-    args: Vec<u8>,
+    view_args: ViewArgs,
     sender: tokio::sync::watch::Sender<Result<ObservedState, ChainGatewayError>>,
     cancel: CancellationToken,
 ) {
@@ -70,20 +68,20 @@ async fn monitor<V: ViewRaw>(
             _ = cancel.cancelled() => {
                 tracing::info!(
                     contract_id = ?contract_id,
-                    method_name = ?method_name,
+                    method_name = ?view_args.method_name,
                     "contract monitoring task cancelled"
                 );
                 break;
             }
             _ = ticker.tick() => {
                 let val = viewer
-                    .view_raw(&contract_id, &method_name, &args)
+                    .view_raw(&contract_id, view_args.clone())
                     .await;
 
                 if sender.send_if_modified(|existing| modify(existing, val)) {
                     tracing::debug!(
                         contract_id = ?contract_id,
-                        method_name = ?method_name,
+                        method_name = ?view_args.method_name,
                         "updated value"
                     );
                 }
@@ -118,8 +116,8 @@ mod tests {
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{Call, MockChainState, MockError},
         state_viewer::monitoring::{POLL_INTERVAL, modify, monitor},
-        types::ObservedState,
     };
+    use near_contract_transport::{ObservedState, ViewArgs};
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
 
@@ -414,14 +412,13 @@ mod tests {
     ) -> (MockChainState, MonitoringTask) {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(mock_response)
+            .with_view_response(mock_response)
             .build();
 
         let task = make_monitoring_task(
             viewer.clone(),
             call.contract_id.clone(),
-            &call.method_name,
-            call.args,
+            ViewArgs::new(call.method_name, call.args),
         )
         .await;
 
@@ -438,7 +435,7 @@ mod tests {
     ) {
         let viewer = MockChainState::builder()
             .with_syncing_status(Ok(false))
-            .with_query_view_function_response(mock_response.clone())
+            .with_view_response(mock_response.clone())
             .build();
 
         // Initial channel value matches what view_raw would return (wrapping errors)
@@ -457,8 +454,7 @@ mod tests {
         let _handle = tokio::spawn(monitor(
             viewer.clone(),
             call.contract_id.clone(),
-            call.method_name,
-            call.args,
+            ViewArgs::new(call.method_name, call.args),
             sender,
             cancel.clone(),
         ));

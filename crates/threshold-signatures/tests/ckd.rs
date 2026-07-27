@@ -33,7 +33,7 @@ fn test_ckd() {
 
     let keys = run_keygen(&participants, threshold.into());
 
-    assert!(keys.len() == participants.len());
+    assert_eq!(keys.len(), participants.len());
 
     let public_key = keys.get(&participants[0]).unwrap().public_key;
     let coordinator = choose_coordinator_at_random(&participants);
@@ -112,7 +112,7 @@ fn test_ckd_pv() {
 
     let keys = run_keygen(&participants, threshold.into());
 
-    assert!(keys.len() == participants.len());
+    assert_eq!(keys.len(), participants.len());
 
     let public_key = keys.get(&participants[0]).unwrap().public_key;
     let coordinator = choose_coordinator_at_random(&participants);

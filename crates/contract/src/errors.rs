@@ -1,6 +1,7 @@
 use crate::crypto_shared::kdf::TweakNotOnCurve;
 use crate::primitives::domain::MIN_RECONSTRUCTION_THRESHOLD;
 use crate::primitives::key_state::{EpochId, Keyset};
+use crate::tee::tee_state::AttestationSubmissionError;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{DomainId, DomainPurpose, ForeignChain, Protocol};
@@ -28,6 +29,14 @@ pub enum TeeError {
         "Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later."
     )]
     TeeValidationFailed,
+    #[error(
+        "No TEE verifier is configured yet. Participants must vote one in via vote_tee_verifier_change before Dstack attestations can be submitted."
+    )]
+    VerifierNotConfigured,
+    #[error("The TEE verifier rejected the quote: {reason}")]
+    QuoteRejected { reason: String },
+    #[error("The TEE verifier did not answer the verify_quote call.")]
+    VerifierUnavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -175,13 +184,13 @@ pub enum InvalidState {
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum InvalidThreshold {
-    #[error("Threshold does not meet the minimum absolute requirement")]
+    #[error("GovernanceThreshold does not meet the minimum absolute requirement")]
     MinAbsRequirementFailed,
     #[error(
         "GovernanceThreshold is below the minimum required relative to the participant count: require at least {required}, found {found}"
     )]
     MinRelRequirementFailed { required: u64, found: u64 },
-    #[error("Threshold must not exceed number of participants: max {max}, found {found}")]
+    #[error("GovernanceThreshold must not exceed number of participants: max {max}, found {found}")]
     MaxRequirementFailed { max: u64, found: u64 },
     #[error(
         "GovernanceThreshold exceeds the maximum allowed relative to the participant count: max {max}, found {found}"
@@ -258,8 +267,13 @@ pub enum DomainError {
         MIN_RECONSTRUCTION_THRESHOLD
     )]
     ReconstructionThresholdTooLow,
-    #[error("Reconstruction threshold {threshold} exceeds participant count {participants}.")]
-    ReconstructionThresholdExceedsParticipants { threshold: u64, participants: u64 },
+    #[error(
+        "Reconstruction threshold {reconstruction_threshold} exceeds participant count {participants}."
+    )]
+    ReconstructionThresholdExceedsParticipants {
+        reconstruction_threshold: u64,
+        participants: u64,
+    },
     #[error(
         "Protocol {protocol:?} requires at least {required} participants, found {participants}."
     )]
@@ -269,9 +283,9 @@ pub enum DomainError {
         participants: u64,
     },
     #[error(
-        "Reconstruction threshold {threshold} overflowed when computing the DamgardEtAl bound."
+        "Reconstruction threshold {reconstruction_threshold} overflowed when computing the DamgardEtAl bound."
     )]
-    ReconstructionThresholdOverflow { threshold: u64 },
+    ReconstructionThresholdOverflow { reconstruction_threshold: u64 },
     #[error(
         "Resharing proposal references domain ID {domain_id}, which is not in the current registry."
     )]
@@ -318,6 +332,9 @@ pub enum Error {
     // Tee errors
     #[error(transparent)]
     NodeMigrationError(#[from] NodeMigrationError),
+    // Tee attestation submission errors
+    #[error(transparent)]
+    AttestationSubmission(#[from] AttestationSubmissionError),
 }
 
 impl near_sdk::FunctionError for Error {

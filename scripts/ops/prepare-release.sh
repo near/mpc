@@ -14,8 +14,8 @@
 #   4. Regenerate third-party licenses
 #   5. Commit the release changes
 #
-# Usage:  ./scripts/prepare-release.sh <VERSION>
-# Example: ./scripts/prepare-release.sh 3.6.0
+# Usage:  ./scripts/ops/prepare-release.sh <VERSION>
+# Example: ./scripts/ops/prepare-release.sh 3.6.0
 #
 
 set -euo pipefail
@@ -67,7 +67,8 @@ require_cmds git-cliff cargo-about cargo-insta
 if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     if command -v gh &>/dev/null && gh auth status &>/dev/null; then
         echo "==> GITHUB_TOKEN not set, obtaining from 'gh auth token'."
-        export GITHUB_TOKEN=$(gh auth token)
+        GITHUB_TOKEN=$(gh auth token)
+        export GITHUB_TOKEN
     else
         echo "WARNING: GITHUB_TOKEN is not set and 'gh' CLI is not authenticated."
         echo "         PR links in the changelog may be missing. Fix: export GITHUB_TOKEN=<token> or 'gh auth login'."
@@ -86,14 +87,20 @@ fi
 
 # --- Generate changelog ---
 
-# Use --prepend --unreleased so the new release section is added on top of
-# CHANGELOG.md, preserving any manually authored sections (e.g. for releases
-# whose tag does not live on main, like 3.9.1 on release/v3.9.1). When new
-# sections need to be hand-written, append the relevant duplicate cherry-pick
-# commits to .cliffignore so they don't reappear in the next auto-generated
-# release block.
+# Use --prepend so the new release section is added on top of CHANGELOG.md,
+# preserving any manually authored sections (e.g. for releases whose tag does not
+# live on main, like 3.9.1 on release/v3.9.1). When new sections need to be
+# hand-written, append the relevant duplicate cherry-pick commits to .cliffignore
+# so they don't reappear in the next auto-generated release block.
+#
+# git-cliff fetches PR/author metadata for the ref at the range head. The literal
+# `HEAD` resolves to the default branch (main), missing PRs merged only into a
+# release branch, so we pass an explicit range ending at a concrete SHA. The base
+# is the latest semver tag reachable from HEAD; --match skips stray non-semver tags.
 echo "==> Generating changelog..."
-git-cliff --prepend CHANGELOG.md --unreleased -t "$VERSION"
+BASE_TAG=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' HEAD) \
+    || die "Could not find a previous semver tag reachable from HEAD."
+git-cliff --prepend CHANGELOG.md -t "$VERSION" "${BASE_TAG}..$(git rev-parse HEAD)"
 
 # --- Bump workspace version in Cargo.toml ---
 

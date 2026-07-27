@@ -24,7 +24,7 @@ graph TD
     Cluster[MpcCluster] -->|owns| Sandbox[NearSandbox]
     Cluster -->|owns| Blockchain[NearBlockchain]
     Cluster -->|owns N| Node[MpcNode / MpcNodeSetup]
-    Cluster -->|owns| Ports[E2ePortAllocator]
+    Cluster -->|owns| Ports[TestPorts]
 
     Sandbox --- S1(neard process + genesis + boot node info)
     Blockchain --- B1(near-kit RPC client)
@@ -53,7 +53,7 @@ graph TD
 
 3. **Deterministic ports per test.** `cargo nextest` runs each test in its own
    process, so tests execute concurrently by default. Each test declares a
-   unique `port_seed`; `E2ePortAllocator` maps that seed to a non-overlapping
+   unique `port_seed`; `TestPorts::e2e_tests` maps that seed to a non-overlapping
    range of ports for the sandbox, the mpc-node web/P2P/pprof endpoints, and
    the per-node neard instances. Seeds are centralised as constants in
    `tests/common.rs` to avoid collisions.
@@ -85,14 +85,14 @@ graph TD
 ### 1. `NearSandbox` — neard process wrapper
 
 Starts a `near-sandbox` binary at a configurable version, on ports assigned by
-`E2ePortAllocator`. Exposes everything an `mpc-node` indexer needs to peer with
+`TestPorts`. Exposes everything an `mpc-node` indexer needs to peer with
 it: genesis path, boot-node string (`<pubkey>@127.0.0.1:<port>`), and chain ID.
 
 ```rust
 pub struct NearSandbox { /* wraps near_sandbox::Sandbox */ }
 
 impl NearSandbox {
-    pub async fn start(ports: &E2ePortAllocator, version: &str) -> anyhow::Result<Self>;
+    pub async fn start(ports: &TestPorts, version: &str) -> anyhow::Result<Self>;
     pub fn rpc_url(&self) -> String;
     pub fn genesis_path(&self) -> PathBuf;
     pub fn boot_nodes(&self) -> anyhow::Result<String>;
@@ -118,18 +118,18 @@ impl NearBlockchain {
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
     pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<ClientHandle>;
+        -> anyhow::Result<NearKitCaller>;
 }
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `call` (from the contract account), `call_from`/
-`call_from_with_deposit` (from an arbitrary `ClientHandle`), `view`, and
+`call_from_with_deposit` (from an arbitrary `NearKitCaller`), `view`, and
 `state()` (parsed `ProtocolContractState`).
 
-`ClientHandle` exists so tests can re-use a signer for a non-contract account
-(nodes voting, users submitting sign requests) without leaking `near_kit`
-types into the public API.
+`NearKitCaller` binds a signer to a non-contract account (nodes voting, users
+submitting sign requests) and implements the `CallContract` transport trait,
+so typed calls can go through `MpcContractHandle`.
 
 ### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 
@@ -156,7 +156,7 @@ indexer state may be corrupt).
 
 The entry point for tests. `MpcCluster::start(config)` does everything:
 
-1. Create `E2ePortAllocator` from `config.port_seed`.
+1. Create `TestPorts` via `TestPorts::e2e_tests(config.port_seed)`.
 2. Create a per-test temp directory.
 3. Start the `NearSandbox`.
 4. Build a `NearBlockchain` signed as the sandbox root.
@@ -188,7 +188,10 @@ The returned cluster exposes:
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
   `send_verify_foreign_transaction`.
 - **Foreign chains:** `view_foreign_chains_supported_by_contract`,
-  `view_foreign_chain_configurations`, `register_foreign_chain_config`.
+  `view_foreign_chain_configurations`, `view_available_foreign_chains`,
+  `view_foreign_chains_configs`, `view_allowed_foreign_chain_providers`,
+  `register_foreign_chain_config`, `whitelist_foreign_chains`,
+  `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
 `Drop` kills all running nodes; the temp directory is held via `test_dir` and
@@ -207,7 +210,14 @@ pub struct MpcClusterConfig {
     pub sandbox_version: String,
     pub home_base: Option<PathBuf>,
     pub initial_participant_indices: Vec<usize>,
-    pub node_foreign_chains_configs: Vec<ForeignChainsConfig>,
+    pub migration_targets: Vec<usize>,          // source node indices
+    pub init_format: ContractInitFormat,
+    pub foreign_chains: ForeignChainsClusterConfig,
+}
+
+pub struct ForeignChainsClusterConfig {
+    pub node_configs: Vec<ForeignChainsConfig>, // per-node; empty = default for all
+    pub whitelisted_chains: BTreeSet<ForeignChain>, // voted in during setup
 }
 
 impl MpcClusterConfig {
@@ -216,18 +226,25 @@ impl MpcClusterConfig {
 }
 ```
 
-### 5. `E2ePortAllocator` — deterministic port layout
+### 5. `TestPorts::e2e_tests` — deterministic port layout
 
-Each test declares a `port_seed: u16`. Ports are computed as:
+Each test declares a `port_seed: u16` (the allocator's `test_id`). Ports are
+computed as:
 
 ```
-BASE_PORT (20000) + test_id * PORTS_PER_TEST + offset
+e2e base (20000) + test_id * ports_per_test() + offset
 ```
 
-with `PORTS_PER_TEST = 2 + 10 * 8` (2 cluster ports + 8 per-node ports × 10
-maximum nodes). Cluster-level ports cover the sandbox RPC and network; per-node
-ports cover p2p, web UI, migration web UI, pprof, and the node's internal
-neard RPC/network.
+For the e2e scheme, `ports_per_test` is 82 (2 cluster ports + 8 per-node ports
+× 10 maximum nodes); the `mpc-node` scheme uses a different block size, so this
+number is specific to `TestPorts::e2e_tests`. Cluster-level ports cover the
+sandbox RPC and network; per-node ports cover p2p, web UI, migration web UI,
+pprof, and the node's internal neard RPC/network.
+
+The allocator is `test_port_allocator::TestPorts`, the same struct the
+`mpc-node` integration tests use — each constructor pins its scheme, and the
+e2e scheme's range (20000+) is kept disjoint from `TestPorts::mpc_node_tests`
+(10000+) and `reserve_port` (40000+).
 
 Centralising seeds in `tests/common.rs` (e.g. `CKD_VERIFICATION_PORT_SEED = 9`)
 keeps parallel tests from colliding. If a test crashes and leaves an orphan
@@ -241,7 +258,8 @@ keeps parallel tests from colliding. If a test crashes and leaves an orphan
 POST `/` handler that returns hardcoded JSON-RPC responses for the methods
 the MPC nodes call during `verify_foreign_transaction`. Tests own the
 `MockServer`s directly (rather than a wrapping struct) so they can wire the
-URLs into the per-node `ForeignChainsConfig` via `MpcClusterConfig`.
+URLs into the per-node `ForeignChainsConfig` via
+`MpcClusterConfig::foreign_chains`.
 
 ---
 

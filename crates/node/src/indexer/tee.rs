@@ -43,14 +43,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
                         break allowed_hashes;
                     }
                     Err(e) => {
-                        let error_msg = format!("{:?}", e);
-                        if error_msg.contains(
-                            "wasm execution failed with error: MethodResolveError(MethodNotFound)",
-                        ) {
-                            tracing::info!(target: "mpc", "method  not found in contract: {error_msg}");
-                        } else {
-                            tracing::error!(target: "mpc", "error reading tee state from chain: {error_msg}");
-                        }
+                        tracing::error!(target: "mpc", "error reading tee state from chain: {:?}", e);
 
                         let backoff_duration = backoff.next().unwrap_or(MAX_BACKOFF_DURATION);
                         tokio::time::sleep(backoff_duration).await;

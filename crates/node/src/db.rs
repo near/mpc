@@ -1,5 +1,5 @@
-use aes_gcm::aead::Aead;
-use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
+use aes_gcm::aead::{Aead, Generate, Nonce};
+use aes_gcm::{Aes128Gcm, AesGcm, KeyInit};
 use rocksdb::IteratorMode;
 use std::collections::BTreeSet;
 use std::fmt::Display;
@@ -67,7 +67,7 @@ impl Display for DBCol {
 
 /// Encrypts a single value with AES-GCM. This encryption is randomized.
 pub fn encrypt(cipher: &Aes128Gcm, plaintext: &[u8]) -> Vec<u8> {
-    let nonce = aes_gcm::Aes128Gcm::generate_nonce(&mut rand::thread_rng());
+    let nonce = Nonce::<Aes128Gcm>::generate();
     let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
     [nonce.as_ref(), ciphertext.as_slice()].concat()
 }
@@ -78,10 +78,11 @@ pub fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>>
     if ciphertext.len() < NONCE_LEN {
         return Err(anyhow::anyhow!("ciphertext is too short"));
     }
-    let nonce = &ciphertext[..NONCE_LEN];
+    let nonce = Nonce::<Aes128Gcm>::try_from(&ciphertext[..NONCE_LEN])
+        .map_err(|_| anyhow::anyhow!("invalid nonce length"))?;
     let ciphertext = &ciphertext[NONCE_LEN..];
     let data = cipher
-        .decrypt(nonce.into(), ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|_| anyhow::anyhow!("decryption failed"))?;
     Ok(data)
 }

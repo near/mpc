@@ -6,6 +6,7 @@ use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
 use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
 use serde::{self, Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -23,7 +24,7 @@ pub fn delete_stale_triples_and_presignatures(
     current_epoch_data: EpochData,
     my_participant_id: primitives::ParticipantId,
     ecdsa_domain_ds: Vec<DomainId>,
-    triple_thresholds: Vec<ReconstructionThreshold>,
+    triple_thresholds: BTreeSet<ReconstructionThreshold>,
 ) -> anyhow::Result<()> {
     let asset_cleanup: AssetCleanup = match get_epoch_data(db)? {
         None => AssetCleanup::Keep,
@@ -142,6 +143,7 @@ mod tests {
     use crate::providers::ecdsa::triple::TripleStorage;
     use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
+    use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
@@ -166,7 +168,8 @@ mod tests {
     #[test]
     fn test_delete_triples_and_presignatures() {
         // setup
-        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let (mut start_data, my_participant_id, reconstruction_threshold) =
+            test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let subset: Vec<_> = all_participants.iter().take(3).cloned().collect();
         let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
@@ -187,7 +190,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
         ctx.assert_owned(2);
@@ -205,7 +208,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
         ctx.assert_owned(1);
@@ -219,7 +222,7 @@ mod tests {
             end_data.clone(),
             my_participant_id,
             [DomainId(0), DomainId(1)].to_vec(),
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
 
@@ -235,7 +238,8 @@ mod tests {
     #[expect(non_snake_case)]
     fn delete_stale_triples_and_presignatures__should_clean_stale_triple_in_v2_column() {
         // Given a node has written a stale triple via TripleStorage.
-        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let (mut start_data, my_participant_id, reconstruction_threshold) =
+            test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
         let dir = tempfile::tempdir().unwrap();
@@ -248,12 +252,12 @@ mod tests {
                 let alive = alive_participants.clone();
                 Arc::new(move || alive.lock().unwrap().clone())
             },
-            threshold,
+            reconstruction_threshold,
         )
         .unwrap();
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&all_participants));
-        let v2_key = triple_v2_key(threshold, id);
+        let v2_key = triple_v2_key(reconstruction_threshold, id);
         // Sanity: the row really is in the TripleV2 column.
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
 
@@ -264,7 +268,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
@@ -283,7 +287,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
 
@@ -296,7 +300,8 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn delete_stale_triples_and_presignatures__should_keep_active_triple() {
-        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let (mut start_data, my_participant_id, reconstruction_threshold) =
+            test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         // Triple uses everyone EXCEPT the last participant (whose TLS we'll change
         // below), so the participant set stays fully within the persistent set.
@@ -316,12 +321,12 @@ mod tests {
                 let alive = alive_participants.clone();
                 Arc::new(move || alive.lock().unwrap().clone())
             },
-            threshold,
+            reconstruction_threshold,
         )
         .unwrap();
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&active_subset));
-        let v2_key = triple_v2_key(threshold, id);
+        let v2_key = triple_v2_key(reconstruction_threshold, id);
 
         // Seed epoch_data, then run cleanup with one participant's TLS rotated
         // (the one our triple does not depend on).
@@ -330,7 +335,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
         start_data
@@ -344,7 +349,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
 
@@ -357,7 +362,8 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn delete_stale_triples_and_presignatures__should_keep_peer_owned_triple() {
-        let (mut start_data, my_participant_id, threshold) = test_utils::gen_four_participants();
+        let (mut start_data, my_participant_id, reconstruction_threshold) =
+            test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let peer = *all_participants
             .iter()
@@ -374,21 +380,21 @@ mod tests {
                 let alive = alive_participants.clone();
                 Arc::new(move || alive.lock().unwrap().clone())
             },
-            threshold,
+            reconstruction_threshold,
         )
         .unwrap();
         // Even an outright-stale peer-owned triple stays put — the peer cleans
         // its own.
         let peer_id = UniqueId::new(peer, 100, 0);
         triple_store.add_unowned(peer_id, make_triple(&all_participants));
-        let v2_key = triple_v2_key(threshold, peer_id);
+        let v2_key = triple_v2_key(reconstruction_threshold, peer_id);
 
         delete_stale_triples_and_presignatures(
             &db,
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
         start_data
@@ -402,7 +408,7 @@ mod tests {
             start_data.clone(),
             my_participant_id,
             vec![DomainId(0)],
-            vec![threshold],
+            BTreeSet::from([reconstruction_threshold]),
         )
         .unwrap();
 

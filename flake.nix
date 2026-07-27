@@ -66,6 +66,7 @@
         mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
         };
+        opengrep = pkgs.callPackage ./nix/opengrep.nix { };
       });
 
       devShells = forAllSystems (
@@ -90,6 +91,7 @@
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
+          opengrep = pkgs.callPackage ./nix/opengrep.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;
 
@@ -220,7 +222,8 @@
               cargoTools ++
               nearTools ++
               miscTools ++
-              buildLibs;
+              buildLibs ++
+              [ opengrep ];
 
             env = envCommon // envDarwin;
 

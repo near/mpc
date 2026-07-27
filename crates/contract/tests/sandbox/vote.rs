@@ -20,7 +20,9 @@ use dtos::{
 };
 use mpc_contract::primitives::{
     test_utils::infer_purpose_from_protocol,
-    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+    thresholds::{
+        GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    },
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_mpc_contract_interface::{method_names, types as dtos};
@@ -150,8 +152,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         panic!("expected running state");
     };
     let epoch_id: u64 = init_running.keyset.epoch_id.0;
-    let mut next_domain_id: u64 = init_running.domains.next_domain_id;
-    for protocol in ALL_PROTOCOLS {
+    for (next_domain_id, protocol) in (init_running.domains.next_domain_id..).zip(ALL_PROTOCOLS) {
         let curve = Curve::from(*protocol);
         let threshold = init_running.parameters.threshold.0 as usize;
 
@@ -238,7 +239,6 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         // assert that the epoch id did not change
         assert_eq!(running.keyset.epoch_id.0, epoch_id);
         assert_eq!(running.domains.next_domain_id, next_domain_id + 1);
-        next_domain_id += 1;
     }
     Ok(())
 }
@@ -298,7 +298,8 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
             + 1,
     );
     let prospective_epoch_id = dtos::EpochId(prospective_epoch_id.0 + 1);
-    let proposal: ThresholdParameters = (&initial_running_state.parameters).into_contract_type();
+    let proposal: GovernanceThresholdParameters =
+        (&initial_running_state.parameters).into_contract_type();
     vote_new_parameters(
         &contract,
         prospective_epoch_id.0,
@@ -312,7 +313,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Resharing(state) => {
-            let state_params: ThresholdParameters =
+            let state_params: GovernanceThresholdParameters =
                 (&state.resharing_key.parameters).into_contract_type();
             assert_eq!(state_params, proposal);
             assert_eq!(state.resharing_key.epoch_id, prospective_epoch_id);
@@ -327,7 +328,7 @@ struct ResharingTestContext {
     contract: Contract,
     persistent_participants: Vec<Account>,
     new_participant_accounts: Vec<Account>,
-    threshold_parameters: ThresholdParameters,
+    threshold_parameters: GovernanceThresholdParameters,
     initial_running_state: RunningContractState,
 }
 
@@ -364,8 +365,11 @@ async fn setup_resharing_state(
     new_participants
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
-    let proposal =
-        ThresholdParameters::new(new_participants, Threshold::new(threshold.0 + 1)).unwrap();
+    let proposal = GovernanceThresholdParameters::new(
+        new_participants,
+        GovernanceThreshold::new(threshold.0 + 1),
+    )
+    .unwrap();
 
     let prospective_epoch_id = dtos::EpochId(
         initial_running_state
@@ -640,7 +644,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
                 .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
                 .args_json(json!({
                     "prospective_epoch_id": cancelled_epoch_id.0,
-                    "proposal": ProposedThresholdParameters::new(
+                    "proposal": ProposedGovernanceThresholdParameters::new(
                         threshold_parameters.clone(),
                         BTreeMap::new(),
                     ),
@@ -800,8 +804,11 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
 
-    let threshold_parameters =
-        ThresholdParameters::new(proposed_participants, Threshold::new(threshold.0 + 1)).unwrap();
+    let threshold_parameters = GovernanceThresholdParameters::new(
+        proposed_participants,
+        GovernanceThreshold::new(threshold.0 + 1),
+    )
+    .unwrap();
 
     mpc_signer_accounts.push(new_account.clone());
 
@@ -812,7 +819,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
             .max_gas()
             .args_json(json!({
                 "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),
-                "proposal": ProposedThresholdParameters::new(
+                "proposal": ProposedGovernanceThresholdParameters::new(
                     threshold_parameters.clone(),
                     BTreeMap::new(),
                 ),

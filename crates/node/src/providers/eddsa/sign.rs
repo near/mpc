@@ -1,7 +1,7 @@
 use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
-use crate::protocol::run_protocol;
+use crate::protocol::NamedProtocol;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -24,8 +24,10 @@ impl EddsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionThreshold::from(threshold);
+        let keyshare = self.keyshare(sign_request.domain)?;
+        let reconstruction_threshold: usize =
+            keyshare.reconstruction_threshold.inner().try_into()?;
+        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
         let running_participants: Vec<_> = self
             .mpc_config
             .participants
@@ -37,7 +39,7 @@ impl EddsaSignatureProvider {
         let participants = self
             .client
             .select_random_active_participants_including_me(
-                threshold.value(),
+                reconstruction_threshold.value(),
                 &running_participants,
             )
             .context("Can't choose active participants for a eddsa signature")?;
@@ -46,13 +48,9 @@ impl EddsaSignatureProvider {
             .client
             .new_channel_for_task(EddsaTaskId::Signature { id }, participants.clone())?;
 
-        let Some(keygen_output) = self.keyshares.get(&sign_request.domain).cloned() else {
-            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
-        };
-
         let result = SignComputation {
-            keygen_output,
-            threshold,
+            keygen_output: keyshare.keygen_output,
+            reconstruction_threshold,
             message: sign_request
                 .payload
                 .as_eddsa()
@@ -95,16 +93,15 @@ impl EddsaSignatureProvider {
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let threshold: usize = self.mpc_config.participants.threshold.try_into()?;
-        let threshold = ReconstructionThreshold::from(threshold);
+        let keyshare = self.keyshare(sign_request.domain)?;
+        let reconstruction_threshold: usize =
+            keyshare.reconstruction_threshold.inner().try_into()?;
+        let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
 
-        let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
-            anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
-        };
         let participants = channel.participants().to_vec();
         let _ = SignComputation {
-            keygen_output: keygen_output.clone(),
-            threshold,
+            keygen_output: keyshare.keygen_output,
+            reconstruction_threshold,
             message: sign_request
                 .payload
                 .as_eddsa()
@@ -136,9 +133,13 @@ impl EddsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_output: KeygenOutput,
-    pub threshold: ReconstructionThreshold,
+    pub reconstruction_threshold: ReconstructionThreshold,
     pub message: Vec<u8>,
     pub tweak: Tweak,
+}
+
+impl NamedProtocol for SignComputation {
+    const NAME: &'static str = "sign eddsa";
 }
 
 #[async_trait::async_trait]
@@ -163,7 +164,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
 
         let protocol = sign(
             cs_participants.as_slice(),
-            self.threshold,
+            self.reconstruction_threshold,
             channel.my_participant_id().into(),
             channel.sender().get_leader().into(),
             derived_keygen_output.clone(),
@@ -172,7 +173,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
         )?;
 
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature: Option<Signature> = run_protocol("sign eddsa", channel, protocol).await?;
+        let signature: Option<Signature> = Self::run(channel, protocol).await?;
 
         Ok(signature.map(|signature| (signature, derived_keygen_output.public_key)))
     }

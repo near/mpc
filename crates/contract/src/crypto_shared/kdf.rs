@@ -1,14 +1,10 @@
 use crate::crypto_shared::types::k256_types;
 use curve25519_dalek::constants::ED25519_BASEPOINT_POINT;
-#[cfg(target_arch = "wasm32")]
-use k256::EncodedPoint;
 use k256::{
     Secp256k1,
     elliptic_curve::{CurveArithmetic, PrimeField, point::AffineCoordinates},
 };
 use near_mpc_contract_interface::types::Tweak;
-#[cfg(target_arch = "wasm32")]
-use near_sdk::env;
 
 use near_mpc_contract_interface::types as dtos;
 

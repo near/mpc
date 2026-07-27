@@ -1,4 +1,5 @@
-use crate::{primitives::FetchLatestFinalBlockInfo, types::BlockHeight};
+use crate::primitives::FetchLatestFinalBlockInfo;
+use near_contract_transport::BlockHeight;
 
 #[derive(Debug, Clone)]
 pub struct IndexerStats {

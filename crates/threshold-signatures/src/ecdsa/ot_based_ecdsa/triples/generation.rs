@@ -887,7 +887,7 @@ mod test {
 
         let result = run_protocol(protocols).unwrap();
 
-        assert!(result.len() == participants.len());
+        assert_eq!(result.len(), participants.len());
         assert_eq!(result[0].1.1, result[1].1.1);
         assert_eq!(result[1].1.1, result[2].1.1);
 
@@ -973,7 +973,7 @@ mod test {
 
         let result = run_protocol(protocols).unwrap();
 
-        assert!(result.len() == participants.len());
+        assert_eq!(result.len(), participants.len());
         assert_eq!(result[0].1[0].1, result[1].1[0].1);
         assert_eq!(result[1].1[0].1, result[2].1[0].1);
 

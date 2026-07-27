@@ -562,7 +562,7 @@ mod test {
 
         let result = run_protocol(protocols).unwrap();
 
-        assert!(result.len() == 5);
+        assert_eq!(result.len(), 5);
         // testing that big_r is the same accross participants
         assert!(result.windows(2).all(|w| w[0].1.big_r == w[1].1.big_r));
 

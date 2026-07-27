@@ -5,11 +5,15 @@
 # Requirements: jq envsubst near neard mpc-node
 #
 # Usage:
-#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
+#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
 
 set -euo pipefail
 
 MPC_CONTRACT_PATH="./target/near/mpc_contract/mpc_contract.wasm"
+
+# TEE verifier contract, deployed to tee-verifier.test.near and voted in as the
+# trusted verifier. Build it with `cargo make build-tee-verifier-optimized`.
+TEE_VERIFIER_PATH="./target/near/tee_verifier/tee_verifier.wasm"
 
 # number of mpc-nodes in the network
 N=2
@@ -51,6 +55,10 @@ while [[ $# -gt 0 ]]; do
     MPC_CONTRACT_PATH="$2"
     shift 2
     ;;
+  --tee-verifier-path)
+    TEE_VERIFIER_PATH="$2"
+    shift 2
+    ;;
   --nodes)
     N="$2"
     shift 2
@@ -61,19 +69,26 @@ while [[ $# -gt 0 ]]; do
     ;;
   *)
     echo "Unknown parameter: $1"
-    echo "Usage: $0 [--mpc-contract-path <MPC_CONTRACT_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]"
+    echo "Usage: $0 [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]"
     exit 1
     ;;
   esac
 done
 
 main() {
-  require_cmds jq envsubst near neard mpc-node
+  require_cmds jq envsubst near neard mpc-node sha256sum
 
   if [[ ! -f "$MPC_CONTRACT_PATH" ]]; then
     echo "$MPC_CONTRACT_PATH does not exist." >&2
     echo "The contract can be built by executing:" >&2
     echo "cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "$TEE_VERIFIER_PATH" ]]; then
+    echo "$TEE_VERIFIER_PATH does not exist." >&2
+    echo "The TEE verifier can be built by executing:" >&2
+    echo "cargo make build-tee-verifier-optimized" >&2
     exit 1
   fi
 
@@ -213,15 +228,15 @@ EOF
   echo "$JSON_RESULT" >"${init_args}"
 
   echo "Initializing contract"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near init file-args ${init_args} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success_with_retries "near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now"
+  run_quiet_on_success "$(mpc_tx init "file-args ${init_args}" '0 NEAR' mpc-contract.test.near)"
+  run_quiet_on_success_with_retries "$(mpc_view state)"
 
   echo "Adding domains to contract"
 
   pids_adding_domains=()
   for ((i = 1; i <= N; i++)); do
     node_name="mpc-node-$i.test.near"
-    run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send" &
+    run_quiet_on_success "$(mpc_tx vote_add_domains 'file-args docs/localnet/args/add_domain.json' '0 NEAR' "${node_name}")" &
     pids_adding_domains+=($!)
   done
 
@@ -233,18 +248,46 @@ EOF
   echo "Waiting ${DOMAINS_WAIT} seconds for key generation to happen"
   sleep $DOMAINS_WAIT
 
-  is_contract_running_cmd="near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now 2>&1 | grep Running"
-  wait_for_success "${is_contract_running_cmd}"
+  wait_for_success "$(mpc_view state) 2>&1 | grep Running"
+
+  echo "Creating tee-verifier account"
+  run_quiet_on_success "near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+
+  echo "Deploying tee-verifier"
+  # The verifier is stateless, so it has no initializer to call on deploy.
+  run_quiet_on_success "near contract deploy tee-verifier.test.near use-file '$TEE_VERIFIER_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
+
+  # expected_code_hash commits every voter to the same audited WASM; the contract
+  # only compares voters' hashes against each other, not against the deployed bytes.
+  TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
+
+  echo "Voting in tee-verifier"
+  pids_verifier_votes=()
+  for ((i = 1; i <= N; i++)); do
+    node_name="mpc-node-$i.test.near"
+    vote_args="json-args '{\"candidate_account_id\":\"tee-verifier.test.near\",\"expected_code_hash\":\"$TEE_VERIFIER_HASH\"}'"
+    run_quiet_on_success "$(mpc_tx vote_tee_verifier_change "${vote_args}" '0 NEAR' "${node_name}")" &
+    pids_verifier_votes+=($!)
+  done
+
+  for pid in "${pids_verifier_votes[@]}"; do
+    wait "$pid"
+  done
+
+  # Confirm the vote crossed threshold: once the change is applied, the resolved
+  # verifier account is readable via tee_verifier_account_id.
+  wait_for_success "$(mpc_view tee_verifier_account_id) 2>&1 | grep -q 'tee-verifier.test.near'"
 
   signer_account="mpc-node-1.test.near"
 
   echo "Executing signature requests"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
+  for args_file in sign_ecdsa sign_eddsa; do
+    run_quiet_on_success "$(mpc_tx sign "file-args docs/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
+  done
+  run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
+  for chain in bitcoin abstract aptos sui; do
+    run_quiet_on_success "$(mpc_tx verify_foreign_transaction "file-args docs/localnet/args/verify_foreign_tx_${chain}.json" '100 yoctoNEAR' "${signer_account}")"
+  done
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
 }
@@ -324,6 +367,20 @@ run_bg() {
   echo "Started: $name PID: $pid" >&2
 
   echo "$pid"
+}
+
+# Emit a signed `as-transaction` call against the MPC contract. Args:
+#   method, args-spec (e.g. "file-args foo.json" or "json-args '{...}'"),
+#   attached deposit, signer account.
+mpc_tx() {
+  local method="$1" args="$2" deposit="$3" signer="$4"
+  echo "near contract call-function as-transaction mpc-contract.test.near ${method} ${args} prepaid-gas '300.0 Tgas' attached-deposit '${deposit}' sign-as ${signer} network-config mpc-localnet sign-with-keychain send"
+}
+
+# Emit a read-only `as-read-only` view call against the MPC contract taking no args.
+mpc_view() {
+  local method="$1"
+  echo "near contract call-function as-read-only mpc-contract.test.near ${method} json-args {} network-config mpc-localnet now"
 }
 
 wait_for_success() {
