@@ -1,6 +1,6 @@
-//! Per-provider checks. Golden-transaction chains run a fixed request and verify the
-//! extracted value; identity-based chains (Sui, Starknet, Bitcoin, the EVM chains) verify
-//! the chain identity and inspect a dynamically discovered recent transaction instead.
+//! Per-provider probes: verify the provider's chain identity against the configured
+//! expected value, then run the real inspector over a dynamically discovered recent
+//! transaction.
 
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use foreign_chain_inspector::ForeignChainInspectionError;
 use foreign_chain_inspector::{
     BlockConfirmations, EthereumFinality, ForeignChainInspector,
     aptos::{
-        AptosExtractedValue, AptosTransactionHash,
+        AptosTransactionHash,
         inspector::{AptosExtractor, AptosFinality, AptosInspector},
     },
     bitcoin::{
@@ -33,7 +33,7 @@ use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use http::{HeaderName, HeaderValue};
 use jsonrpsee::core::client::ClientT;
 
-use crate::golden;
+use crate::parse;
 
 /// Typed "wrong network / wrong value" failures, so tests can assert on the kind instead of
 /// matching error-message substrings. Wrapped into `anyhow::Error` on the way out, so the
@@ -42,8 +42,6 @@ use crate::golden;
 pub enum Mismatch {
     ChainId { expected: String, got: String },
     BlockHash { expected: [u8; 32], got: [u8; 32] },
-    EventTypeTag { expected: String, got: String },
-    EventSequenceNumber { expected: u64, got: u64 },
 }
 
 impl std::fmt::Display for Mismatch {
@@ -58,14 +56,6 @@ impl std::fmt::Display for Mismatch {
                 "block hash mismatch: expected 0x{}, got 0x{} — is this provider on the expected network?",
                 hex::encode(expected),
                 hex::encode(got),
-            ),
-            Self::EventTypeTag { expected, got } => write!(
-                f,
-                "event type tag mismatch: expected {expected}, got {got} — is this provider on the expected network?"
-            ),
-            Self::EventSequenceNumber { expected, got } => write!(
-                f,
-                "event sequence number mismatch: expected {expected}, got {got}"
             ),
         }
     }
@@ -105,7 +95,7 @@ where
 {
     let inspector = EvmInspector::<C, Chain>::new(client);
 
-    let expected = golden::chain_id_u64(expected_chain_id).context("invalid expected chain id")?;
+    let expected = parse::chain_id_u64(expected_chain_id).context("invalid expected chain id")?;
     let got = inspector
         .chain_id()
         .await
@@ -179,7 +169,7 @@ where
 {
     let inspector = BitcoinInspector::new(client);
 
-    let expected = golden::hex32(expected_genesis).context("invalid expected genesis hash")?;
+    let expected = parse::hex32(expected_genesis).context("invalid expected genesis hash")?;
     let genesis = inspector
         .block_hash(0)
         .await
@@ -250,7 +240,7 @@ where
         .chain_id()
         .await
         .context("failed to fetch chain id")?;
-    let expected = golden::felt32(expected_chain_id).context("invalid expected chain id")?;
+    let expected = parse::felt32(expected_chain_id).context("invalid expected chain id")?;
     if *chain_id.as_fixed_bytes() != expected {
         return Err(Mismatch::ChainId {
             expected: expected_chain_id.to_string(),
@@ -365,7 +355,7 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
         .first()
         .and_then(|tx| tx.digest.as_deref())
         .context("latest checkpoint carries no transaction digest")?;
-    let tx = golden::base58_32(digest)?;
+    let tx = parse::base58_32(digest)?;
 
     let inspector = SuiInspector::new(client);
     let outcome = inspector
@@ -381,49 +371,66 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     )
 }
 
+/// How far behind the ledger version the Aptos probe transaction is taken from.
+const APTOS_VERSION_PROBE_OFFSET: u64 = 100;
+
+/// Identifies the network via the ledger `chain_id` (`GET /v1`), then inspects a recent
+/// committed transaction.
 pub async fn check_aptos(
     url: String,
     auth_header: Option<(HeaderName, HeaderValue)>,
     timeout: Duration,
-    tx: [u8; 32],
-    expected_type_tag: &str,
-    expected_sequence_number: u64,
+    expected_chain_id: &str,
 ) -> anyhow::Result<()> {
-    let inspector = AptosInspector::new(ReqwestAptosClient::new(url, auth_header, timeout));
-    let values = inspector
+    let client = ReqwestAptosClient::new(url, auth_header, timeout);
+
+    let expected = parse::chain_id_u64(expected_chain_id).context("invalid expected chain id")?;
+    let info = client
+        .get_ledger_info()
+        .await
+        .context("failed to fetch ledger info")?;
+    if u64::from(info.chain_id) != expected {
+        return Err(Mismatch::ChainId {
+            expected: expected.to_string(),
+            got: info.chain_id.to_string(),
+        }
+        .into());
+    }
+
+    let ledger_version: u64 = info
+        .ledger_version
+        .parse()
+        .context("provider returned an unparseable ledger version")?;
+    let probe = ledger_version
+        .checked_sub(APTOS_VERSION_PROBE_OFFSET)
+        .with_context(|| {
+            format!(
+                "ledger version {ledger_version} is below the probe offset {APTOS_VERSION_PROBE_OFFSET}"
+            )
+        })?;
+    let tx = client
+        .get_transaction_by_version(probe)
+        .await
+        .context("failed to fetch a recent transaction")?;
+    let hash =
+        parse::hex32(&tx.hash).context("provider returned an unparseable transaction hash")?;
+
+    let inspector = AptosInspector::new(client);
+    let outcome = inspector
         .extract(
-            AptosTransactionHash::from(tx),
+            AptosTransactionHash::from(hash),
             AptosFinality::Committed,
             vec![AptosExtractor::Event { event_index: 0 }],
         )
-        .await?;
-    match values.into_iter().next().context("RPC returned no value")? {
-        AptosExtractedValue::Event(event) => {
-            if event.type_tag != expected_type_tag {
-                return Err(Mismatch::EventTypeTag {
-                    expected: expected_type_tag.to_string(),
-                    got: event.type_tag.clone(),
-                }
-                .into());
-            }
-            if event.sequence_number != expected_sequence_number {
-                return Err(Mismatch::EventSequenceNumber {
-                    expected: expected_sequence_number,
-                    got: event.sequence_number,
-                }
-                .into());
-            }
-            Ok(())
-        }
-    }
+        .await;
+    accept_probe_outcome(outcome, "failed to inspect a recent transaction")
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::golden;
-    use crate::network::Network;
+    use crate::parse;
     use assert_matches::assert_matches;
     use foreign_chain_inspector::base::inspector::Base;
     use foreign_chain_rpc_interfaces::bitcoin::{
@@ -835,7 +842,7 @@ mod tests {
     async fn check_bitcoin__should_pass_when_genesis_matches_and_a_recent_tx_verifies() {
         // Given a provider whose genesis hash matches and whose recent block carries a
         // transaction the inspector can verify (confirmed, canonical).
-        let genesis = TransportBitcoinBlockHash::from(golden::hex32(BTC_MAINNET_GENESIS).unwrap());
+        let genesis = TransportBitcoinBlockHash::from(parse::hex32(BTC_MAINNET_GENESIS).unwrap());
         let block_hash = TransportBitcoinBlockHash::from([0x33; 32]);
         let tip = TransportBitcoinBlockHash::from([0x44; 32]);
         let recent = TransportBitcoinBlockHash::from([0x11; 32]);
@@ -905,37 +912,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_aptos__should_pass_when_provider_returns_golden_event() {
-        // Given
+    async fn check_aptos__should_pass_when_chain_id_matches_and_a_recent_tx_verifies() {
+        // Given a provider on the expected network (chain id 1) whose recent transaction the
+        // inspector can verify (committed, with an event).
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
-        let tx = aptos.tx;
-        let mock = server
+        let tx = "aa".repeat(32);
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": 1, "ledger_version": "1000" }));
+            })
+            .await;
+        // Ledger version 1000 minus the probe offset (100).
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/transactions/by_version/900");
+                then.status(200)
+                    .json_body(golden_aptos_body(&tx, "0x1::block::NewBlockEvent", 0));
+            })
+            .await;
+        server
             .mock_async(|when, then| {
                 when.method(GET)
                     .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(golden_aptos_body(
-                    tx,
-                    aptos.event_type_tag,
-                    aptos.event_sequence_number,
-                ));
+                then.status(200)
+                    .json_body(golden_aptos_body(&tx, "0x1::block::NewBlockEvent", 0));
             })
             .await;
 
         // When
-        let result = check_aptos(
-            server.base_url(),
-            None,
-            Duration::from_secs(5),
-            golden::hex32(tx).unwrap(),
-            aptos.event_type_tag,
-            aptos.event_sequence_number,
-        )
-        .await;
+        let result = check_aptos(server.base_url(), None, Duration::from_secs(5), "1").await;
 
         // Then
         result.unwrap();
-        mock.assert_async().await;
     }
 
     use foreign_chain_rpc_interfaces::sui::proto::{
@@ -1025,38 +1035,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_aptos__should_fail_when_event_type_tag_differs() {
-        // Given
+    async fn check_aptos__should_fail_when_chain_id_differs() {
+        // Given a provider reporting a different network's ledger chain id.
         let server = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
-        let tx = aptos.tx;
         server
             .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(golden_aptos_body(
-                    tx,
-                    "0xdead::wrong::Event",
-                    aptos.event_sequence_number,
-                ));
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": 2, "ledger_version": "1000" }));
             })
             .await;
 
-        // When
-        let result = check_aptos(
-            server.base_url(),
-            None,
-            Duration::from_secs(5),
-            golden::hex32(tx).unwrap(),
-            aptos.event_type_tag,
-            aptos.event_sequence_number,
-        )
-        .await;
+        // When — expecting mainnet (1) but the provider is on testnet (2).
+        let result = check_aptos(server.base_url(), None, Duration::from_secs(5), "1").await;
 
         // Then
         assert_matches!(
             result.unwrap_err().downcast_ref::<Mismatch>(),
-            Some(Mismatch::EventTypeTag { .. })
+            Some(Mismatch::ChainId { .. })
         );
     }
 }

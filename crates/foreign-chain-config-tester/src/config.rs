@@ -7,12 +7,9 @@
 use std::path::Path;
 
 use anyhow::{Context, bail};
-use mpc_node_config::{ChainId, ForeignChainsConfig};
-use serde::Deserialize;
-use serde::de::IntoDeserializer;
-use serde::de::value::{Error as ValueError, StrDeserializer};
+use mpc_node_config::ForeignChainsConfig;
 
-use foreign_chain_health_check::{ExpectedIdentities, Network};
+use foreign_chain_health_check::ExpectedIdentities;
 
 /// Paths where `foreign_chains` may live, most-nested first so a wrapped config
 /// matches before a barer one.
@@ -20,17 +17,6 @@ const FOREIGN_CHAINS_PATHS: &[&[&str]] = &[
     &["mpc_node_config", "node", "foreign_chains"],
     &["node", "foreign_chains"],
     &["foreign_chains"],
-];
-
-const CHAIN_ID_PATHS: &[&[&str]] = &[
-    &["mpc_node_config", "near_init", "chain_id"],
-    &["near_init", "chain_id"],
-];
-
-const CONTRACT_ID_PATHS: &[&[&str]] = &[
-    &["mpc_node_config", "node", "indexer", "mpc_contract_id"],
-    &["node", "indexer", "mpc_contract_id"],
-    &["indexer", "mpc_contract_id"],
 ];
 
 /// Where the per-chain expected identities live: an `identities` map (chain label ->
@@ -45,23 +31,6 @@ const EXPECTED_IDENTITY_PATHS: &[&[&str]] = &[
     &["node", "foreign_chain_health_check", "identities"],
     &["foreign_chain_health_check", "identities"],
 ];
-
-fn classify_network(chain_id: Option<&str>, contract_id: Option<&str>) -> Option<Network> {
-    let parsed = chain_id.and_then(|id| {
-        let de: StrDeserializer<'_, ValueError> = id.into_deserializer();
-        ChainId::deserialize(de).ok()
-    });
-    match parsed {
-        Some(ChainId::Mainnet) => return Some(Network::Mainnet),
-        Some(ChainId::Testnet) => return Some(Network::Testnet),
-        _ => {}
-    }
-    match contract_id {
-        Some(id) if id.ends_with(".testnet") => Some(Network::Testnet),
-        Some(id) if id.ends_with(".near") || id == "v1.signer" => Some(Network::Mainnet),
-        _ => None,
-    }
-}
 
 enum Format {
     Yaml,
@@ -119,14 +88,6 @@ pub fn parse_foreign_chains(contents: &str, path: &Path) -> anyhow::Result<Forei
     find_and_parse(contents, path, FOREIGN_CHAINS_PATHS, "foreign_chains")
 }
 
-fn toml_str<'a>(root: &'a toml::Value, path: &[&str]) -> Option<&'a str> {
-    path.iter().try_fold(root, |v, k| v.get(*k))?.as_str()
-}
-
-fn yaml_str<'a>(root: &'a serde_yaml::Value, path: &[&str]) -> Option<&'a str> {
-    path.iter().try_fold(root, |v, k| v.get(k))?.as_str()
-}
-
 /// Per-chain expected identities from config. Absent chains stay `None` (their check then
 /// fails until configured); an unknown chain key or non-string value is a hard error.
 pub fn detect_expected_identities(
@@ -139,27 +100,6 @@ pub fn detect_expected_identities(
         EXPECTED_IDENTITY_PATHS,
         "foreign_chain_health_check.identities",
     )
-}
-
-/// `None` when the config carries no conclusive network signal.
-pub fn detect_network(contents: &str, path: &Path) -> anyhow::Result<Option<Network>> {
-    Ok(match format_from_path(path)? {
-        Format::Yaml => {
-            let root: serde_yaml::Value =
-                serde_yaml::from_str(contents).context("parse YAML config")?;
-            classify_network(
-                CHAIN_ID_PATHS.iter().find_map(|p| yaml_str(&root, p)),
-                CONTRACT_ID_PATHS.iter().find_map(|p| yaml_str(&root, p)),
-            )
-        }
-        Format::Toml => {
-            let root: toml::Value = toml::from_str(contents).context("parse TOML config")?;
-            classify_network(
-                CHAIN_ID_PATHS.iter().find_map(|p| toml_str(&root, p)),
-                CONTRACT_ID_PATHS.iter().find_map(|p| toml_str(&root, p)),
-            )
-        }
-    })
 }
 
 #[cfg(test)]
@@ -260,52 +200,6 @@ foreign_chains:
         // Then
         let error = result.unwrap_err().to_string();
         assert!(error.contains("unsupported config extension"), "{error}");
-    }
-
-    #[test]
-    fn detect_network__should_read_chain_id_from_dstack_toml() {
-        // Given
-        let toml = "[mpc_node_config.near_init]\nchain_id = \"testnet\"\n";
-
-        // When
-        let network = detect_network(toml, Path::new("user-config.toml")).unwrap();
-
-        // Then
-        assert_eq!(network, Some(Network::Testnet));
-    }
-
-    #[test]
-    fn detect_network__should_fall_back_to_contract_id() {
-        // Given
-        let yaml = "indexer:\n  mpc_contract_id: v1.signer-prod.testnet\n";
-
-        // When
-        let network = detect_network(yaml, Path::new("config.yaml")).unwrap();
-
-        // Then
-        assert_eq!(network, Some(Network::Testnet));
-    }
-
-    #[test]
-    fn detect_network__should_classify_mainnet_contract_id() {
-        // Given
-        let yaml = "indexer:\n  mpc_contract_id: v1.signer\n";
-
-        // When
-        let network = detect_network(yaml, Path::new("config.yaml")).unwrap();
-
-        // Then
-        assert_eq!(network, Some(Network::Mainnet));
-    }
-
-    #[test]
-    fn detect_network__should_return_none_without_signal() {
-        // Given
-        // When
-        let network = detect_network("home_dir = \"/data\"\n", Path::new("config.toml")).unwrap();
-
-        // Then
-        assert_eq!(network, None);
     }
 
     #[test]

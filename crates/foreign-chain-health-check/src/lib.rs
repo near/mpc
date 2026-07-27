@@ -1,11 +1,9 @@
-//! Foreign-chain RPC provider health checks: probe every configured provider and report a
-//! per-provider result. Identity-based chains (Sui, Starknet, Bitcoin, the EVM chains)
-//! verify the configured chain identity and a recent transaction; the rest run a fixed
-//! golden request — see `checks`.
+//! Foreign-chain RPC provider health checks: verify each configured provider's chain
+//! identity against the configured expected value, run the real inspector over a recently
+//! produced transaction, and report a per-provider result.
 
 mod checks;
-mod golden;
-mod network;
+mod parse;
 mod results;
 
 use std::future::Future;
@@ -26,10 +24,7 @@ use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
-pub use network::Network;
 pub use results::{ProviderResult, Status};
-
-use crate::golden::AptosVector;
 
 /// Expected chain identities from `foreign_chain_health_check.identities`, one field per
 /// identity-probed chain.
@@ -45,21 +40,18 @@ pub struct ExpectedIdentities {
     pub abstract_chain: Option<String>,
     pub bitcoin: Option<String>,
     pub starknet: Option<String>,
+    pub aptos: Option<String>,
     pub sui: Option<String>,
 }
 
-/// Probe every configured provider against its reference (a configured identity, or for the
-/// chains still using pinned golden transactions, `network`'s golden vector), one
+/// Probe every configured provider against its configured expected identity, one
 /// [`ProviderResult`] per provider, each checked independently.
-/// Golden chains with no reference for `network`, or configured but unsupported chains, are
-/// [`Status::Skipped`]; a chain absent from the config still yields a single placeholder
-/// `Skipped` result so its absence stays visible.
+/// Configured but unsupported chains are [`Status::Skipped`]; a chain absent from the
+/// config still yields a single placeholder `Skipped` result so its absence stays visible.
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
-    network: Network,
     identities: &ExpectedIdentities,
 ) -> Vec<ProviderResult> {
-    let golden = golden::golden_set(network);
     let mut out = Vec::new();
 
     if let Some(cfg) = &fc.base {
@@ -109,7 +101,7 @@ pub async fn check_all_providers(
         mark_not_configured("starknet", &mut out);
     }
     if let Some(cfg) = &fc.aptos {
-        run_aptos(cfg, golden.aptos, network, &mut out).await;
+        run_aptos(cfg, identities.aptos.as_deref(), &mut out).await;
     } else {
         mark_not_configured("aptos", &mut out);
     }
@@ -132,10 +124,6 @@ pub async fn check_all_providers(
     }
 
     out
-}
-
-fn no_reference_reason(network: Network) -> String {
-    format!("no {} reference for this chain", network.label())
 }
 
 fn timeout_of(cfg: &ForeignChainConfig) -> Duration {
@@ -249,33 +237,19 @@ async fn run_starknet(
 
 async fn run_aptos(
     cfg: &ForeignChainConfig,
-    vector: Option<AptosVector>,
-    network: Network,
+    expected_chain_id: Option<&str>,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
-        mark_skipped("aptos", cfg, &no_reference_reason(network), out);
+    let Some(expected) = expected_chain_id else {
+        mark_missing_identity("aptos", cfg, out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed_tx = golden::hex32(vector.tx);
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed_tx, prepare_aptos(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok(tx), Ok((url, header))) => {
-                run_check(
-                    timeout,
-                    checks::check_aptos(
-                        url,
-                        header,
-                        timeout,
-                        *tx,
-                        vector.event_type_tag,
-                        vector.event_sequence_number,
-                    ),
-                )
-                .await
+        let status = match prepare_aptos(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok((url, header)) => {
+                run_check(timeout, checks::check_aptos(url, header, timeout, expected)).await
             }
         };
         out.push(ProviderResult {
@@ -286,10 +260,6 @@ async fn run_aptos(
     }
 }
 
-/// Sui differs from the other probes: its providers prune historical
-/// transactions, so there is no long-lived golden transaction to check
-/// against. The probe verifies the provider's chain identity instead — see
-/// [`checks::check_sui`] for the mechanism.
 async fn run_sui(
     cfg: &ForeignChainConfig,
     expected_chain_id: Option<&str>,
@@ -402,8 +372,7 @@ mod tests {
         };
 
         // When
-        let results =
-            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
+        let results = check_all_providers(&fc, &ExpectedIdentities::default()).await;
 
         // Then the provider fails with a pointer to the config key, without being probed
         let starknet = results
@@ -426,8 +395,7 @@ mod tests {
         };
 
         // When
-        let results =
-            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
+        let results = check_all_providers(&fc, &ExpectedIdentities::default()).await;
 
         // Then it is reported skipped as unsupported, not probed
         let ethereum = results
@@ -446,8 +414,7 @@ mod tests {
         let fc = ForeignChainsConfig::default();
 
         // When
-        let results =
-            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
+        let results = check_all_providers(&fc, &ExpectedIdentities::default()).await;
 
         // Then every known chain still appears, each with a "not configured" placeholder
         let expected = [
@@ -497,7 +464,7 @@ mod tests {
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet, &identities).await;
+        let results = check_all_providers(&fc, &identities).await;
 
         // Then
         assert_eq!(results[0].chain, "base");
@@ -530,32 +497,38 @@ mod tests {
 
     #[tokio::test]
     async fn check_all_providers__should_report_pass_fail_and_skip_in_one_run() {
-        // Given — one Aptos provider serves the golden event (pass), another a
-        // wrong event (fail), and a separate chain is unsupported (skip).
+        // Given — one Aptos provider on the expected network with a verifiable recent tx
+        // (pass), another on the wrong network (fail), and a separate unsupported chain (skip).
         let healthy = MockServer::start_async().await;
         let broken = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
-        let tx = aptos.tx;
+        let tx = "aa".repeat(32);
+        healthy
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": 1, "ledger_version": "1000" }));
+            })
+            .await;
+        healthy
+            .mock_async(|when, then| {
+                when.method(GET).path("/transactions/by_version/900");
+                then.status(200)
+                    .json_body(aptos_event_body(&tx, "0x1::block::NewBlockEvent", 0));
+            })
+            .await;
         healthy
             .mock_async(|when, then| {
                 when.method(GET)
                     .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(aptos_event_body(
-                    tx,
-                    aptos.event_type_tag,
-                    aptos.event_sequence_number,
-                ));
+                then.status(200)
+                    .json_body(aptos_event_body(&tx, "0x1::block::NewBlockEvent", 0));
             })
             .await;
         broken
             .mock_async(|when, then| {
-                when.method(GET)
-                    .path(format!("/transactions/by_hash/0x{tx}"));
-                then.status(200).json_body(aptos_event_body(
-                    tx,
-                    "0xdead::wrong::Event",
-                    aptos.event_sequence_number,
-                ));
+                when.method(GET).path("/");
+                then.status(200)
+                    .json_body(serde_json::json!({ "chain_id": 2, "ledger_version": "1000" }));
             })
             .await;
 
@@ -577,9 +550,13 @@ mod tests {
             ..Default::default()
         };
 
+        let identities = ExpectedIdentities {
+            aptos: Some("1".to_string()),
+            ..Default::default()
+        };
+
         // When
-        let results =
-            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
+        let results = check_all_providers(&fc, &identities).await;
 
         // Then — the broken provider does not suppress the healthy one; pass,
         // fail, and skip all coexist in a single run.

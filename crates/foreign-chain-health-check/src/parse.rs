@@ -1,46 +1,6 @@
-//! Per-network golden transactions for the chains still probed against a pinned
-//! reference, plus decoding helpers. A mainnet transaction does not exist on testnet
-//! (and vice versa), so the vectors are network-specific; `None` means the chain is
-//! skipped. Identity-probed chains (Sui, Starknet, Bitcoin, the EVM chains) carry no
-//! built-in reference — their expected identities come from configuration.
+//! Decoders for the configured expected-identity strings, one per identity format.
 
 use anyhow::Context;
-
-use crate::network::Network;
-
-#[derive(Clone, Copy)]
-pub struct AptosVector {
-    pub tx: &'static str,
-    pub event_type_tag: &'static str,
-    pub event_sequence_number: u64,
-}
-
-pub struct GoldenSet {
-    pub aptos: Option<AptosVector>,
-}
-
-pub fn golden_set(network: Network) -> GoldenSet {
-    match network {
-        Network::Mainnet => MAINNET,
-        Network::Testnet => TESTNET,
-    }
-}
-
-const MAINNET: GoldenSet = GoldenSet {
-    aptos: Some(AptosVector {
-        tx: "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c",
-        event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 822_198_006,
-    }),
-};
-
-const TESTNET: GoldenSet = GoldenSet {
-    aptos: Some(AptosVector {
-        tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
-        event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 302_761_912,
-    }),
-};
 
 /// Decode a 32-byte hash from hex, tolerating an optional `0x` prefix.
 pub fn hex32(hex: &str) -> anyhow::Result<[u8; 32]> {
@@ -51,7 +11,7 @@ pub fn hex32(hex: &str) -> anyhow::Result<[u8; 32]> {
         .map_err(|b: Vec<u8>| anyhow::anyhow!("expected 32 bytes, got {}: {hex}", b.len()))
 }
 
-/// Parse an EVM chain id, accepting decimal (`8453`) or `0x`-hex (`0x2105`).
+/// Parse a numeric chain id, accepting decimal (`8453`) or `0x`-hex (`0x2105`).
 pub fn chain_id_u64(s: &str) -> anyhow::Result<u64> {
     let s = s.trim();
     match s.strip_prefix("0x") {
@@ -114,17 +74,6 @@ mod tests {
         // Then
         assert_eq!(bytes[31], 1);
         assert_eq!(bytes[..31], [0u8; 31]);
-    }
-
-    #[test]
-    fn golden_sets__should_all_parse() {
-        // Given / When / Then
-        for network in [Network::Mainnet, Network::Testnet] {
-            let set = golden_set(network);
-            if let Some(v) = set.aptos {
-                hex32(v.tx).unwrap();
-            }
-        }
     }
 
     #[test]
