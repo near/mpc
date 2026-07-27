@@ -4,13 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[features]
-clap = ["dep:clap"]
-
 [dependencies]
 anyhow = { workspace = true }
 bs58 = { workspace = true }
-clap = { workspace = true, optional = true }
 foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-auth = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
