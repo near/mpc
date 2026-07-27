@@ -7,7 +7,8 @@ use crate::common::{
 };
 
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication, build_http_client,
+    ChainIdentityProbe, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
+    build_http_client,
     starknet::{
         StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
@@ -506,4 +507,37 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
         })],
         extracted_values,
     );
+}
+
+#[rstest]
+#[case::sn_main("0x534e5f4d41494e", "0x534e5f4d41494e")]
+#[case::sn_sepolia("0x534e5f5345504f4c4941", "0x534e5f5345504f4c4941")]
+#[case::padded_and_uppercased("0x00534E5F4D41494E", "0x534e5f4d41494e")]
+#[tokio::test]
+async fn chain_identity__should_report_the_chain_id_felt_normalized(
+    #[case] rpc_response: &str,
+    #[case] expected: &str,
+) {
+    // given
+    let mock_client = mock_client_from_fixed_response(rpc_response);
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let identity = inspector.chain_identity().await.unwrap();
+
+    // then
+    assert_eq!(identity.as_str(), expected);
+}
+
+#[tokio::test]
+async fn chain_identity__should_fail_when_the_provider_returns_something_that_is_not_a_felt() {
+    // given
+    let mock_client = mock_client_from_fixed_response("SN_MAIN");
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let result = inspector.chain_identity().await;
+
+    // then
+    assert_matches!(result, Err(ForeignChainInspectionError::ClientError(_)));
 }

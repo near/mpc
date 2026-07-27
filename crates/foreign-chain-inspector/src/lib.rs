@@ -7,6 +7,7 @@ use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use near_mpc_bounded_collections::NonEmptyVec;
 use thiserror::Error;
 
+pub use chain_identity::{ChainIdentity, ChainIdentityFuture, ChainIdentityProbe};
 pub use jsonrpsee::http_client;
 
 pub mod abstract_chain;
@@ -15,6 +16,7 @@ pub mod arbitrum;
 pub mod base;
 pub mod bitcoin;
 pub mod bnb;
+pub mod chain_identity;
 pub mod contract_interface_conversions;
 pub mod evm;
 pub mod hyperevm;

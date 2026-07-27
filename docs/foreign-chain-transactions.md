@@ -647,6 +647,42 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+#### Startup identity check
+
+A provider pointed at the wrong network of the right chain family is not rejected by anything
+above — it answers transaction lookups with "not found", which counts as a substantive verdict
+in the fan-out and therefore disagrees with the healthy providers. One such provider breaks
+verification for the whole chain.
+
+To catch that at boot rather than at the first verification request, a chain may declare the
+network its providers must be serving:
+
+```yaml
+foreign_chains:
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    expected_chain_identity: "0x534e5f4d41494e"   # SN_MAIN
+    providers: ...
+```
+
+The node asks every provider of that chain which network it serves and logs each answer once, at
+startup. Optional per chain; absent means the chain is skipped. The value is compared verbatim
+(whitespace aside) against what the chain natively reports:
+
+| Chain | Source | Form | Mainnet |
+|---|---|---|---|
+| base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` | decimal | `8453` (Base) |
+| bitcoin | `getblockhash 0` | genesis block hash | `000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f` |
+| starknet | `starknet_chainId` | felt, lowercase, no leading zeros | `0x534e5f4d41494e` |
+| aptos | `GET /v1/` | decimal chain id | `1` |
+| sui | `GetServiceInfo` | base58 genesis digest | `4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S` |
+
+The check is log-only in both directions: a mismatch is reported at `error` but does not stop the
+node, and an unreachable provider is reported at `warn` so a transient RPC outage cannot turn
+startup into a crash loop. Chains with no inspector in this binary (`solana`, `ethereum`) are
+reported as skipped.
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious

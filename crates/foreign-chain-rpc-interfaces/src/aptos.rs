@@ -1,6 +1,7 @@
 use reqwest::Url;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::future::Future;
 use std::time::Duration;
 
@@ -40,6 +41,15 @@ pub struct EventGuid {
     pub account_address: String,
 }
 
+/// Response from `GET /v1/` (the ledger index).
+///
+/// Only `chain_id` is kept: it is the field that identifies the network (`1` = mainnet,
+/// `2` = testnet), and the rest of the index is ledger state that changes every block.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct LedgerInfoResponse {
+    pub chain_id: u8,
+}
+
 /// Error from the Aptos REST API client.
 #[derive(Debug, thiserror::Error)]
 pub enum AptosRpcError {
@@ -55,6 +65,10 @@ pub trait AptosRpcClient: Send + Sync {
         &self,
         tx_hash_hex: &str,
     ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send;
+
+    fn get_ledger_info(
+        &self,
+    ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send;
 }
 
 #[derive(Clone)]
@@ -98,26 +112,39 @@ fn build_request_url(base: &Url, tx_hash_hex: &str) -> Url {
     url
 }
 
+/// Any non-2xx status becomes [`AptosRpcError::ApiError`], so the caller can classify it by
+/// status code rather than by error text.
+async fn get_json<T: DeserializeOwned>(
+    client: reqwest::Client,
+    url: Url,
+) -> Result<T, AptosRpcError> {
+    let response = client.get(url).send().await?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(AptosRpcError::ApiError {
+            status: status.as_u16(),
+            body,
+        });
+    }
+    Ok(response.json::<T>().await?)
+}
+
 impl AptosRpcClient for ReqwestAptosClient {
     fn get_transaction_by_hash(
         &self,
         tx_hash_hex: &str,
     ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send {
-        let url = build_request_url(&self.base, tx_hash_hex);
-        let client = self.client.clone();
-        async move {
-            let response = client.get(url).send().await?;
-            let status = response.status();
-            if !status.is_success() {
-                let body = response.text().await.unwrap_or_default();
-                return Err(AptosRpcError::ApiError {
-                    status: status.as_u16(),
-                    body,
-                });
-            }
-            let parsed = response.json::<TransactionResponse>().await?;
-            Ok(parsed)
-        }
+        get_json(
+            self.client.clone(),
+            build_request_url(&self.base, tx_hash_hex),
+        )
+    }
+
+    fn get_ledger_info(
+        &self,
+    ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
+        get_json(self.client.clone(), self.base.clone())
     }
 }
 
@@ -281,6 +308,26 @@ mod tests {
         assert_eq!(tx.transaction_type, "pending_transaction");
         assert_eq!(tx.success, None);
         assert!(tx.events.is_empty());
+    }
+
+    #[test]
+    fn deserialize_ledger_info__should_ignore_the_volatile_ledger_state() {
+        // Given — the index response, whose other fields move every block.
+        let json = serde_json::json!({
+            "chain_id": 1,
+            "epoch": "9553",
+            "ledger_version": "2000000000",
+            "oldest_ledger_version": "0",
+            "ledger_timestamp": "1753000000000000",
+            "node_role": "full_node",
+            "git_hash": "abc1234"
+        });
+
+        // When
+        let info: LedgerInfoResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(info.chain_id, 1);
     }
 
     #[test]

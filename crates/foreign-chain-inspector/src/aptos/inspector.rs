@@ -1,5 +1,8 @@
 use crate::aptos::{AptosExtractedValue, AptosTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    ChainIdentity, ChainIdentityFuture, ChainIdentityProbe, ForeignChainInspectionError,
+    ForeignChainInspector, HexBytes,
+};
 use foreign_chain_rpc_interfaces::aptos::{
     AptosRpcClient, AptosRpcError, TransactionResponse, normalize_event_data,
 };
@@ -49,29 +52,13 @@ where
             .client
             .get_transaction_by_hash(&tx_hash_hex)
             .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                match e {
-                    // 404 = definitively absent → a non-transient verdict.
-                    AptosRpcError::ApiError { status: 404, .. } => {
-                        ForeignChainInspectionError::TransactionNotFound
-                    }
-                    // Rate limits and server errors are provider hiccups → transient, so the
-                    // affected provider is dropped from the quorum instead of blocking it.
-                    AptosRpcError::ApiError {
-                        status: 408 | 429, ..
-                    } => ForeignChainInspectionError::RpcRequestFailed(msg),
-                    AptosRpcError::ApiError { status, .. } if status >= 500 => {
-                        ForeignChainInspectionError::RpcRequestFailed(msg)
-                    }
-                    // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
-                    // retrying cannot change them, so they count as substantive verdicts.
-                    AptosRpcError::ApiError { .. } => {
-                        ForeignChainInspectionError::RpcRequestRejected(msg)
-                    }
-                    // Transport failures, including timeouts.
-                    AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(msg),
+            .map_err(|e| match e {
+                // 404 on the transaction endpoint = definitively absent → a non-transient
+                // verdict, rather than the generic "the provider rejected us".
+                AptosRpcError::ApiError { status: 404, .. } => {
+                    ForeignChainInspectionError::TransactionNotFound
                 }
+                other => classify_rest_error(other),
             })?;
 
         ensure_hash_matches(&tx_id, &tx.hash)?;
@@ -100,6 +87,45 @@ where
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(extracted_values)
+    }
+}
+
+/// Reports the ledger's `chain_id` in decimal — `1` on mainnet, `2` on testnet.
+impl<Client> ChainIdentityProbe for AptosInspector<Client>
+where
+    Client: AptosRpcClient,
+{
+    fn chain_identity(&self) -> ChainIdentityFuture<'_> {
+        Box::pin(async move {
+            let ledger_info = self
+                .client
+                .get_ledger_info()
+                .await
+                .map_err(classify_rest_error)?;
+            Ok(ChainIdentity::from(ledger_info.chain_id.to_string()))
+        })
+    }
+}
+
+/// Maps a REST failure onto the inspector error taxonomy. 404 is deliberately left to the
+/// caller: it means "no such transaction" on the transaction endpoint but "wrong base URL" on
+/// the ledger index.
+fn classify_rest_error(error: AptosRpcError) -> ForeignChainInspectionError {
+    let message = error.to_string();
+    match error {
+        // Rate limits and server errors are provider hiccups → transient, so the affected
+        // provider is dropped from the quorum instead of blocking it.
+        AptosRpcError::ApiError {
+            status: 408 | 429, ..
+        } => ForeignChainInspectionError::RpcRequestFailed(message),
+        AptosRpcError::ApiError { status, .. } if status >= 500 => {
+            ForeignChainInspectionError::RpcRequestFailed(message)
+        }
+        // Remaining 4xx (400/401/403/410, …) are deterministic rejections — retrying cannot
+        // change them, so they count as substantive verdicts.
+        AptosRpcError::ApiError { .. } => ForeignChainInspectionError::RpcRequestRejected(message),
+        // Transport failures, including timeouts.
+        AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
     }
 }
 
@@ -236,26 +262,46 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
-        AptosEventResponse, AptosRpcError, EventGuid, TransactionResponse,
+        AptosEventResponse, AptosRpcError, EventGuid, LedgerInfoResponse, TransactionResponse,
     };
     use rstest::rstest;
 
+    const MAINNET_CHAIN_ID: u8 = 1;
+
+    /// Both endpoints are configured up front; `Err` carries only the HTTP status because
+    /// [`AptosRpcError`] is not [`Clone`] and the status is all the classification uses.
     struct MockAptosClient {
-        response: Result<TransactionResponse, AptosRpcError>,
+        transaction: Result<TransactionResponse, u16>,
+        chain_id: Result<u8, u16>,
     }
 
     impl MockAptosClient {
         fn success(tx: TransactionResponse) -> Self {
-            Self { response: Ok(tx) }
+            Self {
+                transaction: Ok(tx),
+                chain_id: Ok(MAINNET_CHAIN_ID),
+            }
         }
 
         fn api_error(status: u16) -> Self {
             Self {
-                response: Err(AptosRpcError::ApiError {
-                    status,
-                    body: format!("http {status}"),
-                }),
+                transaction: Err(status),
+                chain_id: Err(status),
             }
+        }
+
+        fn serving_chain_id(chain_id: u8) -> Self {
+            Self {
+                transaction: Err(404),
+                chain_id: Ok(chain_id),
+            }
+        }
+    }
+
+    fn api_error(status: u16) -> AptosRpcError {
+        AptosRpcError::ApiError {
+            status,
+            body: format!("http {status}"),
         }
     }
 
@@ -264,18 +310,17 @@ mod tests {
             &self,
             _tx_hash_hex: &str,
         ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send {
-            let r = match &self.response {
-                Ok(tx) => Ok(tx.clone()),
-                Err(AptosRpcError::ApiError { status, body }) => Err(AptosRpcError::ApiError {
-                    status: *status,
-                    body: body.clone(),
-                }),
-                Err(other) => Err(AptosRpcError::ApiError {
-                    status: 500,
-                    body: other.to_string(),
-                }),
-            };
-            std::future::ready(r)
+            std::future::ready(self.transaction.clone().map_err(api_error))
+        }
+
+        fn get_ledger_info(
+            &self,
+        ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
+            std::future::ready(
+                self.chain_id
+                    .map(|chain_id| LedgerInfoResponse { chain_id })
+                    .map_err(api_error),
+            )
         }
     }
 
@@ -507,6 +552,33 @@ mod tests {
                 assert_eq!(event.type_tag, "0x1::block::NewBlockEvent");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn chain_identity__should_report_the_ledger_chain_id_in_decimal() {
+        // Given — a provider on Aptos testnet.
+        let inspector = AptosInspector::new(MockAptosClient::serving_chain_id(2));
+
+        // When
+        let identity = inspector.chain_identity().await.unwrap();
+
+        // Then
+        assert_eq!(identity.as_str(), "2");
+    }
+
+    #[tokio::test]
+    async fn chain_identity__should_reject_a_deterministic_rejection_from_the_ledger_index() {
+        // Given — 404 on the index means the base URL is wrong, not that a tx is missing.
+        let inspector = AptosInspector::new(MockAptosClient::api_error(404));
+
+        // When
+        let result = inspector.chain_identity().await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
     }
 
     #[test]

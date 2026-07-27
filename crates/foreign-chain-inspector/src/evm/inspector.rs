@@ -3,8 +3,12 @@ use std::hash::Hash;
 
 use jsonrpsee::core::client::ClientT;
 
-use crate::{EthereumFinality, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    ChainIdentity, ChainIdentityFuture, ChainIdentityProbe, EthereumFinality,
+    ForeignChainInspectionError, ForeignChainInspector,
+};
 
+use foreign_chain_rpc_interfaces::NoParams;
 use foreign_chain_rpc_interfaces::evm::{
     BlockNumberOrTag, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
     GetTransactionReceiptARgs, GetTransactionReceiptResponse, H256, Log,
@@ -13,6 +17,7 @@ use foreign_chain_rpc_interfaces::evm::{
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
 const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
+const CHAIN_ID_METHOD: &str = "eth_chainId";
 
 /// Marker trait for EVM-compatible chain type parameters.
 ///
@@ -91,6 +96,21 @@ where
             .iter()
             .map(|extractor| extractor.extract_value(&transaction_receipt))
             .collect()
+    }
+}
+
+/// Reports `eth_chainId` in decimal (`8453` for Base, `137` for Polygon) — the form chain
+/// registries and block explorers use, even though the RPC itself answers in hex.
+impl<Client, Chain> ChainIdentityProbe for EvmInspector<Client, Chain>
+where
+    Client: ClientT + Send + Sync,
+    Chain: EvmChain + Send + Sync,
+{
+    fn chain_identity(&self) -> ChainIdentityFuture<'_> {
+        Box::pin(async move {
+            let chain_id: U64 = self.client.request(CHAIN_ID_METHOD, &NoParams).await?;
+            Ok(ChainIdentity::from(chain_id.as_u64().to_string()))
+        })
     }
 }
 

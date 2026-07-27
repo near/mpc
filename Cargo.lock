@@ -3806,6 +3806,7 @@ dependencies = [
  "jsonrpsee",
  "mpc-primitives",
  "reqwest 0.13.4",
+ "rstest",
  "serde",
  "serde_json",
  "sui-rpc",

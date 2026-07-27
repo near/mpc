@@ -28,6 +28,7 @@ pub mod cli;
 pub mod config;
 mod coordinator;
 mod db;
+mod foreign_chain_identity_verifier;
 mod foreign_chain_whitelist_verifier;
 mod home_paths;
 mod indexer;

@@ -57,6 +57,7 @@ struct MockServerUrls {
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
     ForeignChainsConfig {
         bitcoin: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -73,6 +74,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         abstract_chain: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -84,6 +86,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         bnb: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -100,6 +103,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         starknet: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -111,6 +115,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         base: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -128,6 +133,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         arbitrum: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -139,6 +145,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         hyper_evm: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -150,6 +157,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
             ),
         }),
         polygon: Some(ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers: common::build_providers_from_urls(&urls.polygon, "polygon"),

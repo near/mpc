@@ -32,6 +32,7 @@ foreign_chains:
   bitcoin:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"  # mainnet genesis block hash
     providers:
       public:
         rpc_url: "https://bitcoin-rpc.publicnode.com"
@@ -40,6 +41,7 @@ foreign_chains:
   abstract:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "11124"  # Abstract testnet; mainnet is 2741
     providers:
       public:
         rpc_url: "https://api.testnet.abs.xyz"
@@ -48,6 +50,7 @@ foreign_chains:
   starknet:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "0x534e5f4d41494e"  # SN_MAIN; Sepolia is 0x534e5f5345504f4c4941
     providers:
       public:
         rpc_url: "https://starknet-rpc.publicnode.com"
@@ -56,6 +59,7 @@ foreign_chains:
   aptos:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "1"  # mainnet; testnet is 2
     providers:
       public:
         rpc_url: "https://fullnode.mainnet.aptoslabs.com/v1"
@@ -64,6 +68,7 @@ foreign_chains:
   sui:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"  # mainnet genesis checkpoint digest
     providers:
       public:
         rpc_url: "https://archive.mainnet.sui.io"

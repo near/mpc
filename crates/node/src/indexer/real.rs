@@ -239,6 +239,9 @@ pub fn spawn_real_indexer(
                 foreign_chain_whitelist_receiver,
                 foreign_chains.clone(),
             ));
+            tokio::spawn(crate::foreign_chain_identity_verifier::run(
+                foreign_chains.clone(),
+            ));
 
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(

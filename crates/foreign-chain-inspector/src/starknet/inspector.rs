@@ -1,14 +1,20 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    ChainIdentity, ChainIdentityFuture, ChainIdentityProbe, ForeignChainInspectionError,
+    ForeignChainInspector,
+};
+use foreign_chain_rpc_interfaces::NoParams;
 use foreign_chain_rpc_interfaces::starknet::{
-    BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse, GetTransactionReceiptArgs,
-    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+    BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+    GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
+    StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
+const CHAIN_ID_METHOD: &str = "starknet_chainId";
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -69,6 +75,21 @@ where
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(extracted_values)
+    }
+}
+
+/// Reports `starknet_chainId` as a normalized felt: `0x`-prefixed lowercase hex without
+/// leading zeros. The felt spells the network's ASCII name — mainnet's `SN_MAIN` is
+/// `0x534e5f4d41494e`, Sepolia's `SN_SEPOLIA` is `0x534e5f5345504f4c4941`.
+impl<Client> ChainIdentityProbe for StarknetInspector<Client>
+where
+    Client: ClientT + Send + Sync,
+{
+    fn chain_identity(&self) -> ChainIdentityFuture<'_> {
+        Box::pin(async move {
+            let chain_id: ChainIdResponse = self.client.request(CHAIN_ID_METHOD, &NoParams).await?;
+            Ok(ChainIdentity::from(String::from(chain_id)))
+        })
     }
 }
 

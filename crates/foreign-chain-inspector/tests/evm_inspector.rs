@@ -2,7 +2,9 @@
 
 pub mod common;
 
-use crate::common::{FixedResponseRpcClient, SequentialResponseMockClientBuilder};
+use crate::common::{
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
+};
 
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
@@ -716,3 +718,44 @@ evm_inspector_tests!(
     foreign_chain_inspector::polygon::inspector::Polygon,
     polygon
 );
+
+/// The [`ChainIdentityProbe`] impl is generic over the chain marker, so one instantiation
+/// covers all six EVM chains.
+mod chain_identity {
+    use super::*;
+    use foreign_chain_inspector::{ChainIdentityProbe, base::inspector::Base};
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::base_mainnet("0x2105", "8453")]
+    #[case::base_sepolia("0x14a34", "84532")]
+    #[case::single_digit("0x1", "1")]
+    #[tokio::test]
+    async fn chain_identity__should_report_eth_chain_id_in_decimal(
+        #[case] rpc_response: &str,
+        #[case] expected: &str,
+    ) {
+        // Given
+        let mock_client = mock_client_from_fixed_response(rpc_response);
+        let inspector = EvmInspector::<_, Base>::new(mock_client);
+
+        // When
+        let identity = inspector.chain_identity().await.unwrap();
+
+        // Then
+        assert_eq!(identity.as_str(), expected);
+    }
+
+    #[tokio::test]
+    async fn chain_identity__should_fail_when_the_provider_returns_a_non_numeric_chain_id() {
+        // Given
+        let mock_client = mock_client_from_fixed_response("mainnet");
+        let inspector = EvmInspector::<_, Base>::new(mock_client);
+
+        // When
+        let result = inspector.chain_identity().await;
+
+        // Then
+        assert_matches!(result, Err(ForeignChainInspectionError::ClientError(_)));
+    }
+}

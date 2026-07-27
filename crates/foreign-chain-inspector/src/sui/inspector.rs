@@ -1,5 +1,8 @@
 use crate::sui::{SuiExtractedValue, SuiTransactionDigest};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    ChainIdentity, ChainIdentityFuture, ChainIdentityProbe, ForeignChainInspectionError,
+    ForeignChainInspector, HexBytes,
+};
 use foreign_chain_rpc_interfaces::sui::proto::ExecutedTransaction;
 use foreign_chain_rpc_interfaces::sui::{Code, Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
@@ -97,6 +100,31 @@ where
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(extracted_values)
+    }
+}
+
+/// Reports the base58 genesis checkpoint digest that `GetServiceInfo` returns as its chain id.
+/// Its 4-byte prefix is the chain identifier Sui's docs publish — `0x35834a8a` on mainnet.
+impl<Client> ChainIdentityProbe for SuiInspector<Client>
+where
+    Client: SuiRpcClient,
+{
+    fn chain_identity(&self) -> ChainIdentityFuture<'_> {
+        Box::pin(async move {
+            let service_info = self
+                .client
+                .get_service_info()
+                .await
+                .map_err(classify_status)?;
+            service_info
+                .chain_id
+                .map(ChainIdentity::from)
+                .ok_or_else(|| {
+                    ForeignChainInspectionError::MalformedRpcResponse(
+                        "service info is missing the chain id".to_string(),
+                    )
+                })
+        })
     }
 }
 

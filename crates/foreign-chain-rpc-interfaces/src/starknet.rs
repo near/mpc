@@ -99,6 +99,39 @@ impl ToRpcParams for &GetBlockWithTxHashesArgs {
     to_rpc_params_impl!();
 }
 
+/// Response of `starknet_chainId`: the felt encoding the network's ASCII short-string name
+/// (`SN_MAIN` → `0x534e5f4d41494e`, `SN_SEPOLIA` → `0x534e5f5345504f4c4941`).
+///
+/// The value is normalized on deserialization to [`render_felt`]'s form, so providers that pad
+/// or upper-case the felt still yield the same string.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
+pub struct ChainIdResponse(String);
+
+impl TryFrom<String> for ChainIdResponse {
+    type Error = String;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        parse_felt(&raw).map(|felt| Self(render_felt(felt)))
+    }
+}
+
+impl From<ChainIdResponse> for String {
+    fn from(response: ChainIdResponse) -> Self {
+        response.0
+    }
+}
+
+/// Canonical text form of a felt: `0x`-prefixed lowercase hex without leading zeros.
+fn render_felt(felt: H256) -> String {
+    let significant_digits = format!("{felt:x}").trim_start_matches('0').to_string();
+    if significant_digits.is_empty() {
+        "0x0".to_string()
+    } else {
+        format!("0x{significant_digits}")
+    }
+}
+
 /// Starknet felt values use `0x`-prefixed hex like Ethereum, but may omit leading
 /// zeros (e.g. `"0x5"` instead of `"0x0000…0005"`). This function zero-pads
 /// short representations so they can be parsed as an [`H256`].
@@ -136,9 +169,10 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+        BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
         GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
     };
+    use rstest::rstest;
 
     const TEST_BLOCK_NUMBER: u64 = 842_750;
     const TEST_RECEIPT_BLOCK_NUMBER: u64 = 6_195_041;
@@ -213,6 +247,29 @@ mod tests {
             serialized,
             serde_json::json!([{ "block_number": TEST_BLOCK_NUMBER }])
         );
+    }
+
+    #[rstest]
+    #[case::mainnet("0x534e5f4d41494e", "0x534e5f4d41494e")]
+    #[case::sepolia("0x534e5f5345504f4c4941", "0x534e5f5345504f4c4941")]
+    #[case::uppercase_is_lowered("0x534E5F4D41494E", "0x534e5f4d41494e")]
+    #[case::leading_zeros_are_stripped("0x000534e5f4d41494e", "0x534e5f4d41494e")]
+    #[case::zero("0x0", "0x0")]
+    fn deserialize_chain_id__should_normalize_the_felt(#[case] raw: &str, #[case] expected: &str) {
+        // Given / When
+        let chain_id: ChainIdResponse = serde_json::from_value(serde_json::json!(raw)).unwrap();
+
+        // Then
+        assert_eq!(String::from(chain_id), expected);
+    }
+
+    #[test]
+    fn deserialize_chain_id__should_reject_a_value_that_is_not_a_felt() {
+        // Given — 65 hex digits, one more than a felt can hold.
+        let too_long = serde_json::json!(format!("0x{}", "a".repeat(65)));
+
+        // When / Then
+        serde_json::from_value::<ChainIdResponse>(too_long).unwrap_err();
     }
 
     #[test]

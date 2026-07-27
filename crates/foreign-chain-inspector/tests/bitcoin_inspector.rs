@@ -7,7 +7,8 @@ use crate::common::{
 };
 
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
+    BlockConfirmations, ChainIdentityProbe, ForeignChainInspectionError, ForeignChainInspector,
+    RpcAuthentication,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
         inspector::{BitcoinExtractor, BitcoinInspector},
@@ -371,4 +372,21 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
     assert_eq!(expected_extractions, extracted_values);
+}
+
+/// <https://mempool.space/block/000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f>
+const MAINNET_GENESIS_BLOCK_HASH: &str =
+    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+#[tokio::test]
+async fn chain_identity__should_report_the_genesis_block_hash() {
+    // given
+    let mock_client = mock_client_from_fixed_response(MAINNET_GENESIS_BLOCK_HASH);
+    let inspector = BitcoinInspector::new(mock_client);
+
+    // when
+    let identity = inspector.chain_identity().await.unwrap();
+
+    // then
+    assert_eq!(identity.as_str(), MAINNET_GENESIS_BLOCK_HASH);
 }

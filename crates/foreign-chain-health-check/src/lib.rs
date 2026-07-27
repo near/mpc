@@ -357,6 +357,7 @@ mod tests {
 
     fn config_with_provider(auth: AuthConfig) -> ForeignChainConfig {
         ForeignChainConfig {
+            expected_chain_identity: None,
             timeout_sec: NonZeroU64::new(5).unwrap(),
             max_retries: NonZeroU64::new(1).unwrap(),
             providers: NonEmptyBTreeMap::new(
@@ -515,6 +516,7 @@ mod tests {
         );
         let fc = ForeignChainsConfig {
             aptos: Some(ForeignChainConfig {
+                expected_chain_identity: None,
                 timeout_sec: NonZeroU64::new(5).unwrap(),
                 max_retries: NonZeroU64::new(1).unwrap(),
                 providers,

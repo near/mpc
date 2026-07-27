@@ -47,6 +47,17 @@ pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
+    /// The network every provider of this chain must be serving, in the form the chain natively
+    /// reports it: an EVM `eth_chainId` in decimal (`8453`), Bitcoin's genesis block hash,
+    /// Starknet's chain-id felt (`0x534e5f4d41494e`), Aptos' ledger chain id (`1`), Sui's
+    /// base58 genesis digest.
+    ///
+    /// Opt-in: when absent, the node's startup identity check skips this chain. A provider
+    /// pointed at the wrong network of the right chain family answers transaction lookups with
+    /// "not found", which is enough to break verification for every other provider too, so
+    /// setting this is strongly recommended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_chain_identity: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -178,6 +189,7 @@ impl ForeignChainsConfig {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::ForeignChainConfig;
     use crate::ConfigFile;
 
     #[test]
@@ -496,6 +508,7 @@ foreign_chains:
   starknet:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "0x534e5f4d41494e"
     providers:
       blast:
         rpc_url: "https://starknet-mainnet.blastapi.io/"
@@ -511,7 +524,35 @@ foreign_chains:
         config
             .validate()
             .expect("config with starknet section should be valid");
-        assert!(config.foreign_chains.starknet.is_some());
+        let starknet = config
+            .foreign_chains
+            .starknet
+            .expect("starknet section should be present");
+        assert_eq!(
+            starknet.expected_chain_identity.as_deref(),
+            Some("0x534e5f4d41494e")
+        );
+    }
+
+    #[test]
+    fn config_parsing__should_leave_expected_chain_identity_unset_when_absent() {
+        // Given — a chain section written before the identity check existed.
+        let yaml = r#"
+timeout_sec: 30
+max_retries: 3
+providers:
+  blast:
+    rpc_url: "https://starknet-mainnet.blastapi.io/"
+    auth:
+      kind: none
+"#;
+
+        // When
+        let chain: ForeignChainConfig =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+
+        // Then
+        assert_eq!(chain.expected_chain_identity, None);
     }
 
     #[test]

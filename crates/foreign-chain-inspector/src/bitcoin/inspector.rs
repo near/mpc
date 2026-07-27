@@ -1,7 +1,10 @@
 use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
-use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    BlockConfirmations, ChainIdentity, ChainIdentityFuture, ChainIdentityProbe,
+    ForeignChainInspectionError, ForeignChainInspector,
+};
 use foreign_chain_rpc_interfaces::bitcoin::{
     GetBlockHashArgs, GetBlockHeaderArgs, GetBlockHeaderVerboseResponse, GetRawTransactionArgs,
     GetRawTransactionVerboseResponse, TransportBitcoinBlockHash, TransportBitcoinTransactionHash,
@@ -15,6 +18,10 @@ const VERBOSE_RESPONSE: bool = true;
 const GET_BLOCK_HEADER_METHOD: &str = "getblockheader";
 /// https://developer.bitcoin.org/reference/rpc/getblockhash.html
 const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
+
+/// Bitcoin has no chain id; the genesis block hash is what distinguishes mainnet from testnet,
+/// signet and regtest.
+const GENESIS_BLOCK_HEIGHT: u64 = 0;
 
 #[derive(Clone)]
 pub struct BitcoinInspector<Client> {
@@ -67,6 +74,24 @@ where
             .collect();
 
         Ok(extracted_values)
+    }
+}
+
+/// Reports the genesis block hash in the same hex form `getblockhash` and block explorers use
+/// — mainnet is `000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f`.
+impl<Client> ChainIdentityProbe for BitcoinInspector<Client>
+where
+    Client: ClientT + Send + Sync,
+{
+    fn chain_identity(&self) -> ChainIdentityFuture<'_> {
+        Box::pin(async move {
+            let args = GetBlockHashArgs {
+                height: GENESIS_BLOCK_HEIGHT,
+            };
+            let genesis_block_hash: TransportBitcoinBlockHash =
+                self.client.request(GET_BLOCK_HASH_METHOD, &args).await?;
+            Ok(ChainIdentity::from(genesis_block_hash.to_string()))
+        })
     }
 }
 

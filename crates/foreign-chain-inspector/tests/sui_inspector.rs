@@ -2,7 +2,7 @@
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector,
+    ChainIdentityProbe, ForeignChainInspectionError, ForeignChainInspector,
     sui::{
         SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
@@ -17,21 +17,31 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
-/// A client that always returns a hard-coded `GetTransaction` response.
+/// A client that always returns hard-coded `GetTransaction` and `GetServiceInfo` responses.
 struct MockSuiClient {
     response: Result<GetTransactionResponse, Status>,
+    service_info: Result<GetServiceInfoResponse, Status>,
 }
 
 impl MockSuiClient {
     fn transaction(tx: ExecutedTransaction) -> Self {
         Self {
             response: Ok(GetTransactionResponse::default().with_transaction(tx)),
+            service_info: Ok(GetServiceInfoResponse::default()),
         }
     }
 
     fn status(status: Status) -> Self {
         Self {
-            response: Err(status),
+            response: Err(status.clone()),
+            service_info: Err(status),
+        }
+    }
+
+    fn service_info(service_info: GetServiceInfoResponse) -> Self {
+        Self {
+            response: Err(Status::not_found("transaction not used by this test")),
+            service_info: Ok(service_info),
         }
     }
 }
@@ -42,7 +52,7 @@ impl SuiRpcClient for MockSuiClient {
     }
 
     async fn get_service_info(&self) -> Result<GetServiceInfoResponse, Status> {
-        unimplemented!("get_service_info() not used by the inspector")
+        self.service_info.clone()
     }
 
     async fn get_checkpoint(&self, _sequence_number: u64) -> Result<GetCheckpointResponse, Status> {
@@ -239,6 +249,7 @@ async fn extract__should_reject_response_missing_transaction_as_malformed() {
     // Given — a `GetTransactionResponse` whose transaction section is absent entirely.
     let inspector = SuiInspector::new(MockSuiClient {
         response: Ok(GetTransactionResponse::default()),
+        service_info: Ok(GetServiceInfoResponse::default()),
     });
 
     // When
@@ -453,4 +464,38 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
     // Then
     let expected: Vec<SuiExtractedValue> = vec![];
     assert_eq!(expected, extracted_values);
+}
+
+/// Sui's chain id is the base58 genesis checkpoint digest.
+const MAINNET_CHAIN_ID: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
+
+#[tokio::test]
+async fn chain_identity__should_report_the_service_info_chain_id() {
+    // Given
+    let inspector = SuiInspector::new(MockSuiClient::service_info(
+        GetServiceInfoResponse::default().with_chain_id(MAINNET_CHAIN_ID),
+    ));
+
+    // When
+    let identity = inspector.chain_identity().await.unwrap();
+
+    // Then
+    assert_eq!(identity.as_str(), MAINNET_CHAIN_ID);
+}
+
+#[tokio::test]
+async fn chain_identity__should_reject_service_info_without_a_chain_id() {
+    // Given
+    let inspector = SuiInspector::new(MockSuiClient::service_info(
+        GetServiceInfoResponse::default(),
+    ));
+
+    // When
+    let result = inspector.chain_identity().await;
+
+    // Then
+    assert_matches!(
+        result,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
 }
