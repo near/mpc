@@ -6,13 +6,14 @@ use jsonrpsee::core::client::ClientT;
 use crate::{EthereumFinality, ForeignChainInspectionError, ForeignChainInspector};
 
 use foreign_chain_rpc_interfaces::evm::{
-    BlockNumberOrTag, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
-    GetTransactionReceiptARgs, GetTransactionReceiptResponse, H256, Log,
-    ReturnFullTransactionObjects, U64,
+    BlockNumberOrTag, ChainIdArgs, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
+    GetBlockByNumberWithTxsResponse, GetTransactionReceiptARgs, GetTransactionReceiptResponse,
+    H256, Log, ReturnFullTransactionObjects, U64,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
 const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
+const CHAIN_ID_METHOD: &str = "eth_chainId";
 
 /// Marker trait for EVM-compatible chain type parameters.
 ///
@@ -104,6 +105,26 @@ where
             client,
             _chain: std::marker::PhantomData,
         }
+    }
+
+    /// The provider's chain id (`eth_chainId`). Identifies which network a provider serves
+    /// without depending on historical data.
+    pub async fn chain_id(&self) -> Result<u64, ForeignChainInspectionError> {
+        let id: U64 = self.client.request(CHAIN_ID_METHOD, &ChainIdArgs).await?;
+        Ok(id.as_u64())
+    }
+
+    /// Fetches a block (and its transaction hashes) by number or finality tag. The health
+    /// probe reads a recent, unpruned transaction from it to exercise the extraction pipeline.
+    pub async fn block_with_txs(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> Result<GetBlockByNumberWithTxsResponse, ForeignChainInspectionError> {
+        let args = GetBlockByNumberArgs::new(block, ReturnFullTransactionObjects::from(false));
+        Ok(self
+            .client
+            .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
+            .await?)
     }
 
     /// Checks that the receipt's block has reached the requested finality level — i.e. that the

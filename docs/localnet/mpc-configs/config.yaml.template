@@ -71,5 +71,6 @@ foreign_chains:
           kind: none
 foreign_chain_health_check:
   identities:
+    abstract: "11124"
     starknet: "0x534e5f4d41494e"
     sui: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"
