@@ -1,6 +1,7 @@
 //! Foreign-chain RPC provider health checks: probe every configured provider and report a
-//! per-provider result. Most chains run a fixed golden request; identity-based chains (Sui,
-//! Starknet) verify the chain identity and a recent transaction instead — see `checks`.
+//! per-provider result. Identity-based chains (Sui, Starknet, Bitcoin, the EVM chains)
+//! verify the configured chain identity and a recent transaction; the rest run a fixed
+//! golden request — see `checks`.
 
 mod checks;
 mod golden;
@@ -28,7 +29,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 pub use network::Network;
 pub use results::{ProviderResult, Status};
 
-use crate::golden::{AptosVector, BlockHashVector};
+use crate::golden::AptosVector;
 
 /// Expected chain identities from `foreign_chain_health_check.identities`, one field per
 /// identity-probed chain.
@@ -42,6 +43,7 @@ pub struct ExpectedIdentities {
     pub hyper_evm: Option<String>,
     #[serde(rename = "abstract")]
     pub abstract_chain: Option<String>,
+    pub bitcoin: Option<String>,
     pub starknet: Option<String>,
     pub sui: Option<String>,
 }
@@ -97,7 +99,7 @@ pub async fn check_all_providers(
         mark_not_configured("abstract", &mut out);
     }
     if let Some(cfg) = &fc.bitcoin {
-        run_bitcoin(cfg, golden.bitcoin, network, &mut out).await;
+        run_bitcoin(cfg, identities.bitcoin.as_deref(), &mut out).await;
     } else {
         mark_not_configured("bitcoin", &mut out);
     }
@@ -199,24 +201,18 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
 
 async fn run_bitcoin(
     cfg: &ForeignChainConfig,
-    vector: Option<BlockHashVector>,
-    network: Network,
+    expected_genesis: Option<&str>,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
-        mark_skipped("bitcoin", cfg, &no_reference_reason(network), out);
+    let Some(expected) = expected_genesis else {
+        mark_missing_identity("bitcoin", cfg, out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed =
-        golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, bh)), Ok(client)) => {
-                run_check(timeout, checks::check_bitcoin(client, *tx, *bh)).await
-            }
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => run_check(timeout, checks::check_bitcoin(client, expected)).await,
         };
         out.push(ProviderResult {
             chain: "bitcoin",

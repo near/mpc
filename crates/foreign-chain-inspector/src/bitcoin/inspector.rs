@@ -3,7 +3,8 @@ use jsonrpsee::core::client::ClientT;
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
 use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::bitcoin::{
-    GetBlockHashArgs, GetBlockHeaderArgs, GetBlockHeaderVerboseResponse, GetRawTransactionArgs,
+    GetBestBlockHashArgs, GetBlockArgs, GetBlockHashArgs, GetBlockHeaderArgs,
+    GetBlockHeaderVerboseResponse, GetBlockResponse, GetRawTransactionArgs,
     GetRawTransactionVerboseResponse, TransportBitcoinBlockHash, TransportBitcoinTransactionHash,
 };
 
@@ -15,6 +16,12 @@ const VERBOSE_RESPONSE: bool = true;
 const GET_BLOCK_HEADER_METHOD: &str = "getblockheader";
 /// https://developer.bitcoin.org/reference/rpc/getblockhash.html
 const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
+/// https://developer.bitcoin.org/reference/rpc/getbestblockhash.html
+const GET_BEST_BLOCK_HASH_METHOD: &str = "getbestblockhash";
+/// https://developer.bitcoin.org/reference/rpc/getblock.html
+const GET_BLOCK_METHOD: &str = "getblock";
+/// `getblock` verbosity that returns transaction ids (not full objects).
+const GET_BLOCK_VERBOSITY_TX_IDS: u8 = 1;
 
 #[derive(Clone)]
 pub struct BitcoinInspector<Client> {
@@ -76,6 +83,39 @@ where
 {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    /// The canonical block hash at `height` (`getblockhash`). `height` 0 is the genesis block,
+    /// whose hash is a permanent, never-pruned identifier of which network a provider serves.
+    pub async fn block_hash(
+        &self,
+        height: u64,
+    ) -> Result<TransportBitcoinBlockHash, ForeignChainInspectionError> {
+        let args = GetBlockHashArgs { height };
+        Ok(self.client.request(GET_BLOCK_HASH_METHOD, &args).await?)
+    }
+
+    /// The hash of the chain tip (`getbestblockhash`).
+    pub async fn best_block_hash(
+        &self,
+    ) -> Result<TransportBitcoinBlockHash, ForeignChainInspectionError> {
+        Ok(self
+            .client
+            .request(GET_BEST_BLOCK_HASH_METHOD, &GetBestBlockHashArgs)
+            .await?)
+    }
+
+    /// A block's transaction ids (`getblock`, verbosity 1). The health probe reads a recent,
+    /// unpruned transaction from it to exercise the extraction pipeline.
+    pub async fn block(
+        &self,
+        blockhash: TransportBitcoinBlockHash,
+    ) -> Result<GetBlockResponse, ForeignChainInspectionError> {
+        let args = GetBlockArgs {
+            blockhash,
+            verbosity: GET_BLOCK_VERBOSITY_TX_IDS,
+        };
+        Ok(self.client.request(GET_BLOCK_METHOD, &args).await?)
     }
 
     /// Checks that the receipt's block is on the canonical chain by resolving its height via
