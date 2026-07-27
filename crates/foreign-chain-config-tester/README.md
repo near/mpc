@@ -7,13 +7,13 @@ production.
 
 For each configured provider it runs a fixed request against a known reference
 transaction — the same inspector and auth handling the node uses — and compares
-the result against a known-good value. Sui and Starknet are the exceptions: they
-verify the provider's chain identity (a genesis-derived constant that is never
+the result against a known-good value. Sui, Starknet, and the EVM chains are the
+exceptions: they verify the provider's chain identity (a constant that is never
 pruned) and then inspect a recently produced transaction — Sui from its latest
 checkpoint, Starknet from its latest L1-accepted block (requires provider JSON-RPC
-v0.9+) — so the check never depends on
-months-old archived history. Every provider is checked independently: one bad
-provider does not stop the others from being reported.
+v0.9+), the EVM chains from the latest finalized block — so the check never
+depends on months-old archived history. Every provider is checked independently:
+one bad provider does not stop the others from being reported.
 
 The expected identity of each identity-probed chain comes from configuration —
 there are no built-in values, so the check works for any network, including
@@ -23,6 +23,7 @@ local or custom ones. A configured chain without an identity fails its check:
 foreign_chain_health_check:
   identities:
     starknet: "0x534e5f4d41494e"                              # felt; decode hex as ASCII
+    base: "8453"                                              # EVM numeric chain id
     sui: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"       # base58 genesis checkpoint digest
 ```
 
@@ -31,6 +32,12 @@ Well-known values:
 | Chain    | Identity                | Mainnet                                        | Testnet                                        |
 |----------|-------------------------|------------------------------------------------|------------------------------------------------|
 | starknet | `starknet_chainId` felt | `0x534e5f4d41494e` (`SN_MAIN`)                 | `0x534e5f5345504f4c4941` (`SN_SEPOLIA`)        |
+| base     | `eth_chainId`           | `8453`                                         |                                                |
+| bnb      | `eth_chainId`           | `56`                                           |                                                |
+| arbitrum | `eth_chainId`           | `42161`                                        |                                                |
+| polygon  | `eth_chainId`           | `137`                                          |                                                |
+| hyper_evm| `eth_chainId`           | `999`                                          |                                                |
+| abstract | `eth_chainId`           | `2741`                                         | `11124`                                        |
 | sui      | genesis digest (base58) | `4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S` | `69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD` |
 
 ## Usage

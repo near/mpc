@@ -159,5 +159,6 @@ rpc_url = "https://fullnode.testnet.sui.io:443"
 # Expected identity per chain for the provider health check — see
 # crates/foreign-chain-config-tester/README.md for the well-known values.
 [mpc_node_config.node.foreign_chain_health_check.identities]
+abstract = "11124" # mainnet: "2741"
 starknet = "0x534e5f5345504f4c4941" # mainnet: "0x534e5f4d41494e"
 sui = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD" # mainnet: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"

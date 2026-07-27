@@ -35,6 +35,13 @@ use crate::golden::{AptosVector, BlockHashVector};
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ExpectedIdentities {
+    pub base: Option<String>,
+    pub bnb: Option<String>,
+    pub arbitrum: Option<String>,
+    pub polygon: Option<String>,
+    pub hyper_evm: Option<String>,
+    #[serde(rename = "abstract")]
+    pub abstract_chain: Option<String>,
     pub starknet: Option<String>,
     pub sui: Option<String>,
 }
@@ -54,32 +61,38 @@ pub async fn check_all_providers(
     let mut out = Vec::new();
 
     if let Some(cfg) = &fc.base {
-        run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
+        run_evm::<Base>("base", cfg, identities.base.as_deref(), &mut out).await;
     } else {
         mark_not_configured("base", &mut out);
     }
     if let Some(cfg) = &fc.bnb {
-        run_evm::<Bnb>("bnb", cfg, golden.bnb, network, &mut out).await;
+        run_evm::<Bnb>("bnb", cfg, identities.bnb.as_deref(), &mut out).await;
     } else {
         mark_not_configured("bnb", &mut out);
     }
     if let Some(cfg) = &fc.arbitrum {
-        run_evm::<Arbitrum>("arbitrum", cfg, golden.arbitrum, network, &mut out).await;
+        run_evm::<Arbitrum>("arbitrum", cfg, identities.arbitrum.as_deref(), &mut out).await;
     } else {
         mark_not_configured("arbitrum", &mut out);
     }
     if let Some(cfg) = &fc.polygon {
-        run_evm::<Polygon>("polygon", cfg, golden.polygon, network, &mut out).await;
+        run_evm::<Polygon>("polygon", cfg, identities.polygon.as_deref(), &mut out).await;
     } else {
         mark_not_configured("polygon", &mut out);
     }
     if let Some(cfg) = &fc.hyper_evm {
-        run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm, network, &mut out).await;
+        run_evm::<HyperEvm>("hyper_evm", cfg, identities.hyper_evm.as_deref(), &mut out).await;
     } else {
         mark_not_configured("hyper_evm", &mut out);
     }
     if let Some(cfg) = &fc.abstract_chain {
-        run_evm::<Abstract>("abstract", cfg, golden.abstract_chain, network, &mut out).await;
+        run_evm::<Abstract>(
+            "abstract",
+            cfg,
+            identities.abstract_chain.as_deref(),
+            &mut out,
+        )
+        .await;
     } else {
         mark_not_configured("abstract", &mut out);
     }
@@ -163,24 +176,18 @@ async fn run_check(timeout: Duration, fut: impl Future<Output = anyhow::Result<(
 async fn run_evm<Chain: EvmChain + Send + Sync>(
     chain: &'static str,
     cfg: &ForeignChainConfig,
-    vector: Option<BlockHashVector>,
-    network: Network,
+    expected_chain_id: Option<&str>,
     out: &mut Vec<ProviderResult>,
 ) {
-    let Some(vector) = vector else {
-        mark_skipped(chain, cfg, &no_reference_reason(network), out);
+    let Some(expected) = expected_chain_id else {
+        mark_missing_identity(chain, cfg, out);
         return;
     };
     let timeout = timeout_of(cfg);
-    let parsed =
-        golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
-            (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
-            (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
-            (Ok((tx, bh)), Ok(client)) => {
-                run_check(timeout, checks::check_evm::<Chain>(client, *tx, *bh)).await
-            }
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => run_check(timeout, checks::check_evm::<Chain, _>(client, expected)).await,
         };
         out.push(ProviderResult {
             chain,
@@ -488,10 +495,13 @@ mod tests {
             base: Some(config_with_provider(auth)),
             ..Default::default()
         };
+        let identities = ExpectedIdentities {
+            base: Some("8453".to_string()),
+            ..Default::default()
+        };
 
         // When
-        let results =
-            check_all_providers(&fc, Network::Mainnet, &ExpectedIdentities::default()).await;
+        let results = check_all_providers(&fc, Network::Mainnet, &identities).await;
 
         // Then
         assert_eq!(results[0].chain, "base");

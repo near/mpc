@@ -1,6 +1,6 @@
 //! Per-provider checks. Golden-transaction chains run a fixed request and verify the
-//! extracted value; identity-based chains (Sui, Starknet) verify the chain identity and
-//! inspect a dynamically discovered recent transaction instead.
+//! extracted value; identity-based chains (Sui, Starknet, the EVM chains) verify the chain
+//! identity and inspect a dynamically discovered recent transaction instead.
 
 use std::time::Duration;
 
@@ -16,7 +16,7 @@ use foreign_chain_inspector::{
         BitcoinExtractedValue, BitcoinTransactionHash,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
-    evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
+    evm::inspector::{EvmChain, EvmExtractor, EvmInspector},
     http_client::HttpClient,
     starknet::{
         StarknetTransactionHash,
@@ -28,6 +28,7 @@ use foreign_chain_inspector::{
     },
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::evm::{BlockNumberOrTag, FinalityTag, U64};
 use foreign_chain_rpc_interfaces::starknet::{BlockId, BlockTag};
 use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use http::{HeaderName, HeaderValue};
@@ -80,29 +81,102 @@ fn verify_block_hash(expected: [u8; 32], got: [u8; 32]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn check_evm<Chain>(
-    client: HttpClient,
-    tx: [u8; 32],
-    expected_block_hash: [u8; 32],
-) -> anyhow::Result<()>
+/// How far below a chain's reported head a probe takes its block, so slightly lagging backends
+/// behind one provider URL still agree the block is final.
+const HEAD_PROBE_OFFSET: u64 = 10;
+
+/// How many earlier blocks a probe scans when a block carries no transactions (quiet networks
+/// still produce blocks on a timer, so empty blocks are normal).
+const EMPTY_BLOCK_WALKBACK_LIMIT: u64 = 10;
+
+/// Treats a probe transaction as healthy when it verifies, or when it fails in a way that
+/// reflects the transaction itself (reverted, or no log at the index) rather than the provider —
+/// both still prove the provider serves canonical, final data. Any other error is a real failure.
+fn accept_probe_outcome<T>(
+    outcome: Result<Vec<T>, ForeignChainInspectionError>,
+    failure_context: &'static str,
+) -> anyhow::Result<()> {
+    match outcome {
+        Ok(_)
+        | Err(ForeignChainInspectionError::TransactionFailed)
+        | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => Ok(()),
+        Err(e) => Err(e).context(failure_context),
+    }
+}
+
+/// Verifies the network via `eth_chainId`, then runs the inspector at `Finalized` over a
+/// transaction from a recent finalized block — walking back past empty ones.
+pub async fn check_evm<Chain, C>(client: C, expected_chain_id: &str) -> anyhow::Result<()>
 where
     Chain: EvmChain + Send + Sync,
+    C: ClientT + Send + Sync,
 {
-    let inspector = EvmInspector::<HttpClient, Chain>::new(client);
-    let values = inspector
-        .extract(
-            Chain::TransactionHash::from(tx),
-            EthereumFinality::Finalized,
-            vec![EvmExtractor::BlockHash],
-        )
-        .await?;
-    match values.into_iter().next().context("RPC returned no value")? {
-        EvmExtractedValue::BlockHash(hash) => {
-            let got: [u8; 32] = hash.into();
-            verify_block_hash(expected_block_hash, got)
+    let inspector = EvmInspector::<C, Chain>::new(client);
+
+    let expected = golden::chain_id_u64(expected_chain_id).context("invalid expected chain id")?;
+    let got = inspector
+        .chain_id()
+        .await
+        .context("failed to fetch chain id")?;
+    if got != expected {
+        return Err(Mismatch::ChainId {
+            expected: expected.to_string(),
+            got: got.to_string(),
         }
-        EvmExtractedValue::Log(_) => bail!("expected a block hash, got a log"),
+        .into());
     }
+
+    let head = inspector
+        .block_with_txs(BlockNumberOrTag::Tag(FinalityTag::Finalized))
+        .await
+        .context("failed to fetch the finalized block")?;
+    let probe_number = head
+        .number
+        .as_u64()
+        .checked_sub(HEAD_PROBE_OFFSET)
+        .with_context(|| {
+            format!(
+                "finalized height {} is below the probe offset {HEAD_PROBE_OFFSET}",
+                head.number
+            )
+        })?;
+    let mut block = inspector
+        .block_with_txs(BlockNumberOrTag::Number(U64::from(probe_number)))
+        .await
+        .context("failed to fetch the probe block")?;
+    let mut walked_back = 0;
+    let tx = loop {
+        if let Some(tx) = block.transactions.first() {
+            break Chain::TransactionHash::from(*tx.as_fixed_bytes());
+        }
+        walked_back += 1;
+        if walked_back > EMPTY_BLOCK_WALKBACK_LIMIT {
+            bail!(
+                "no transactions in the probe block or the {EMPTY_BLOCK_WALKBACK_LIMIT} blocks before it"
+            );
+        }
+        let earlier = block
+            .number
+            .as_u64()
+            .checked_sub(1)
+            .context("walked back past the genesis block without finding a transaction")?;
+        block = inspector
+            .block_with_txs(BlockNumberOrTag::Number(U64::from(earlier)))
+            .await
+            .context("failed to fetch an earlier finalized block")?;
+    };
+
+    let outcome = inspector
+        .extract(
+            tx,
+            EthereumFinality::Finalized,
+            vec![EvmExtractor::Log { log_index: 0 }],
+        )
+        .await;
+    accept_probe_outcome(
+        outcome,
+        "failed to inspect a transaction from the finalized block",
+    )
 }
 
 pub async fn check_bitcoin(
@@ -125,9 +199,6 @@ pub async fn check_bitcoin(
         }
     }
 }
-
-/// Where probing starts: this many blocks below the L1-accepted head.
-const HEAD_PROBE_OFFSET: u64 = 10;
 
 /// Cap on the exponential walk-back (the step doubles each try) before giving up.
 const MAX_WALKBACK_BLOCKS: u64 = 1024;
@@ -263,22 +334,17 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     let tx = golden::base58_32(digest)?;
 
     let inspector = SuiInspector::new(client);
-    // Probe the first event to exercise the full extraction pipeline when the tx emits
-    // events; a tx with no events (`LogIndexOutOfBounds`) or a failed one still proves the
-    // provider serves canonical checkpointed data.
-    match inspector
+    let outcome = inspector
         .extract(
             SuiTransactionDigest::from(tx),
             SuiFinality::Checkpointed,
             vec![SuiExtractor::Event { event_index: 0 }],
         )
-        .await
-    {
-        Ok(_)
-        | Err(ForeignChainInspectionError::TransactionFailed)
-        | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => Ok(()),
-        Err(e) => Err(e).context("failed to inspect a transaction from the latest checkpoint"),
-    }
+        .await;
+    accept_probe_outcome(
+        outcome,
+        "failed to inspect a transaction from the latest checkpoint",
+    )
 }
 
 pub async fn check_aptos(
@@ -325,6 +391,11 @@ mod tests {
     use crate::golden;
     use crate::network::Network;
     use assert_matches::assert_matches;
+    use foreign_chain_inspector::base::inspector::Base;
+    use foreign_chain_rpc_interfaces::evm::{
+        GetBlockByNumberResponse as EvmBlock, GetBlockByNumberWithTxsResponse as EvmBlockWithTxs,
+        GetTransactionReceiptResponse as EvmReceipt, U64,
+    };
     use foreign_chain_rpc_interfaces::starknet::{
         GetBlockWithTxHashesResponse, GetTransactionReceiptResponse, H256, StarknetEvent,
         StarknetExecutionStatus, StarknetFinalityStatus,
@@ -570,6 +641,153 @@ mod tests {
         // Then
         let error = format!("{:#}", result.unwrap_err());
         assert!(error.contains("no L1-final transaction"), "{error}");
+    }
+
+    const BASE_MAINNET_CHAIN_ID: &str = "8453";
+
+    #[tokio::test]
+    async fn check_evm__should_pass_when_chain_id_matches_and_a_recent_tx_verifies() {
+        // Given a provider on the expected network whose probe block (10 below the finalized
+        // head) carries a transaction the inspector can verify (finalized, canonical, succeeded;
+        // no logs -> the accept list treats an out-of-bounds log index as healthy).
+        let tx = H256::from([3; 32]);
+        let block_hash = H256::from([11; 32]);
+        let receipt = EvmReceipt {
+            transaction_hash: tx,
+            block_hash,
+            block_number: U64::from(50),
+            status: U64::from(1),
+            logs: vec![],
+        };
+        let head = EvmBlockWithTxs {
+            number: U64::from(100),
+            hash: H256::from([9; 32]),
+            transactions: vec![],
+        };
+        let probe = EvmBlockWithTxs {
+            number: U64::from(90),
+            hash: H256::from([8; 32]),
+            transactions: vec![tx],
+        };
+        let finality_head = EvmBlock {
+            number: U64::from(100),
+            hash: H256::from([9; 32]),
+        };
+        let canonical = EvmBlock {
+            number: U64::from(50),
+            hash: block_hash,
+        };
+        let client = SequentialMockClient::new(vec![
+            json(U64::from(8453)),
+            json(&head),
+            json(&probe),
+            json(&receipt),
+            json(&finality_head),
+            json(&canonical),
+        ]);
+
+        // When
+        let result = check_evm::<Base, _>(client, BASE_MAINNET_CHAIN_ID).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_evm__should_fail_when_chain_id_differs() {
+        // Given a provider reporting a different network's chain id.
+        let client = SequentialMockClient::new(vec![json(U64::from(1))]);
+
+        // When
+        let result = check_evm::<Base, _>(client, BASE_MAINNET_CHAIN_ID).await;
+
+        // Then
+        assert_matches!(
+            result.unwrap_err().downcast_ref::<Mismatch>(),
+            Some(Mismatch::ChainId { .. })
+        );
+    }
+
+    #[tokio::test]
+    async fn check_evm__should_walk_back_when_the_probe_block_is_empty() {
+        // Given the right network, an empty probe block, and a verifiable transaction in the
+        // block before it.
+        let tx = H256::from([3; 32]);
+        let block_hash = H256::from([11; 32]);
+        let receipt = EvmReceipt {
+            transaction_hash: tx,
+            block_hash,
+            block_number: U64::from(50),
+            status: U64::from(1),
+            logs: vec![],
+        };
+        let head = EvmBlockWithTxs {
+            number: U64::from(100),
+            hash: H256::from([9; 32]),
+            transactions: vec![],
+        };
+        let empty_probe = EvmBlockWithTxs {
+            number: U64::from(90),
+            hash: H256::from([8; 32]),
+            transactions: vec![],
+        };
+        let earlier = EvmBlockWithTxs {
+            number: U64::from(89),
+            hash: H256::from([7; 32]),
+            transactions: vec![tx],
+        };
+        let finality_head = EvmBlock {
+            number: U64::from(100),
+            hash: H256::from([9; 32]),
+        };
+        let canonical = EvmBlock {
+            number: U64::from(50),
+            hash: block_hash,
+        };
+        let client = SequentialMockClient::new(vec![
+            json(U64::from(8453)),
+            json(&head),
+            json(&empty_probe),
+            json(&earlier),
+            json(&receipt),
+            json(&finality_head),
+            json(&canonical),
+        ]);
+
+        // When
+        let result = check_evm::<Base, _>(client, BASE_MAINNET_CHAIN_ID).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_evm__should_fail_when_no_recent_block_carries_transactions() {
+        // Given the right network but only empty blocks within the walk-back limit.
+        let head = EvmBlockWithTxs {
+            number: U64::from(100),
+            hash: H256::from([9; 32]),
+            transactions: vec![],
+        };
+        let empty_blocks = (0..=EMPTY_BLOCK_WALKBACK_LIMIT).map(|i| {
+            json(EvmBlockWithTxs {
+                number: U64::from(90 - i),
+                hash: H256::from([8; 32]),
+                transactions: vec![],
+            })
+        });
+        let responses = [json(U64::from(8453)), json(&head)]
+            .into_iter()
+            .chain(empty_blocks)
+            .collect();
+        let client = SequentialMockClient::new(responses);
+
+        // When
+        let result = check_evm::<Base, _>(client, BASE_MAINNET_CHAIN_ID).await;
+
+        // Then
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("no transactions"), "{error}");
     }
 
     fn golden_aptos_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {

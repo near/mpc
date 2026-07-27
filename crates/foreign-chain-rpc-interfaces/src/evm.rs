@@ -34,6 +34,18 @@ pub struct GetBlockByNumberResponse {
     pub hash: H256,
 }
 
+/// Like [`GetBlockByNumberResponse`] but also captures the block's transaction hashes
+/// (`eth_getBlockByNumber` with `full = false` returns `transactions` as an array of hashes).
+/// Used by the health probe to discover a recent transaction to exercise the inspector against;
+/// kept separate so the finality/canonical checks keep deserializing the leaner response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetBlockByNumberWithTxsResponse {
+    pub number: U64,
+    pub hash: H256,
+    #[serde(default)]
+    pub transactions: Vec<H256>,
+}
+
 /// Partial RPC arguments for `eth_getBlockByNumber`.
 /// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_getBlockByNumber>
 #[derive(
@@ -106,4 +118,13 @@ impl ToRpcParams for &GetTransactionReceiptARgs {
 
 impl ToRpcParams for &GetBlockByNumberArgs {
     to_rpc_params_impl!();
+}
+
+/// `eth_chainId` takes no parameters.
+pub struct ChainIdArgs;
+
+impl ToRpcParams for &ChainIdArgs {
+    fn to_rpc_params(self) -> Result<Option<Box<serde_json::value::RawValue>>, serde_json::Error> {
+        Ok(None)
+    }
 }
