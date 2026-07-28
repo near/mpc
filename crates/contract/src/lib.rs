@@ -8070,27 +8070,38 @@ mod tests {
 
     const MAX_HASH: [u8; 32] = [0xff; 32];
 
-    // The contract-funded entry stays bounded; a schema change that bloats it fails here.
-    const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(100);
+    /// Charged storage of the largest attestation entry the contract can store, in bytes:
+    /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
+    /// [`VerifiedAttestation`] variant, including the `IterableMap` record overhead.
+    const WORST_CASE_ENTRY_BYTES: u64 = 604;
 
-    #[rstest]
-    #[case::dstack(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-        mpc_image_hash: MAX_HASH.into(),
-        launcher_compose_hash: MAX_HASH.into(),
-        expiry_timestamp_seconds: u64::MAX,
-        measurements: default_measurements()[0],
-    }))]
-    #[case::mock(VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
-        mpc_docker_image_hash: Some(MAX_HASH.into()),
-        launcher_docker_compose_hash: Some(MAX_HASH.into()),
-        expiry_timestamp_seconds: Some(u64::MAX),
-        expected_measurements: Some(default_measurements()[0]),
-    }))]
-    fn submit_participant_info__should_bound_worst_case_entry_cost(
-        #[case] verified_attestation: VerifiedAttestation,
-    ) {
+    /// Ceiling on one entry's storage cost at today's price, with headroom over
+    /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
+    const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(10);
+
+    fn worst_case_dstack_attestation() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: MAX_HASH.into(),
+            launcher_compose_hash: MAX_HASH.into(),
+            expiry_timestamp_seconds: u64::MAX,
+            measurements: default_measurements()[0],
+        })
+    }
+
+    fn worst_case_mock_attestation() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some(MAX_HASH.into()),
+            launcher_docker_compose_hash: Some(MAX_HASH.into()),
+            expiry_timestamp_seconds: Some(u64::MAX),
+            expected_measurements: Some(default_measurements()[0]),
+        })
+    }
+
+    /// Storage the contract pays for one stored attestation entry, measured the way the runtime
+    /// charges it. NEAR caps an account id at 64 bytes; every other `NodeId` field is fixed-size,
+    /// so this is the worst case for the given attestation variant.
+    fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
-        // NEAR caps an account id at 64 bytes; every other NodeId field is fixed-size.
         let node_id = create_node_id(
             &"a".repeat(64).parse().unwrap(),
             &bogus_ed25519_public_key(),
@@ -8106,9 +8117,51 @@ mod tests {
             },
         );
         tee_state.stored_attestations.flush();
-        let bytes_grown = env::storage_usage() - before;
+
+        env::storage_usage() - before
+    }
+
+    /// Pins the exact stored size of every attestation variant.
+    ///
+    /// Do not update these numbers just to make a failing case pass. The contract funds every
+    /// entry from its own balance, so a size change alters what the contract pays per node, and
+    /// everything derived from it must be revisited in the same change — today
+    /// [`WORST_CASE_ENTRY_BYTES`] and [`WORST_CASE_ENTRY_COST_CEILING`].
+    ///
+    /// TODO(#3972): the flat onboarding deposit will be derived from these sizes too.
+    #[rstest]
+    #[case::dstack(599, worst_case_dstack_attestation())]
+    #[case::mock(604, worst_case_mock_attestation())]
+    fn submit_participant_info__should_store_exactly_the_pinned_entry_size(
+        #[case] expected_bytes: u64,
+        #[case] verified_attestation: VerifiedAttestation,
+    ) {
+        // Given / When
+        let bytes_stored = measure_stored_entry_bytes(verified_attestation);
+
+        // Then
+        assert_eq!(
+            bytes_stored, expected_bytes,
+            "stored entry size changed; see this test's doc comment before updating the number"
+        );
+        assert!(
+            bytes_stored <= WORST_CASE_ENTRY_BYTES,
+            "entry ({bytes_stored} bytes) exceeds the pinned worst case \
+             ({WORST_CASE_ENTRY_BYTES} bytes)"
+        );
+    }
+
+    #[rstest]
+    #[case::dstack(worst_case_dstack_attestation())]
+    #[case::mock(worst_case_mock_attestation())]
+    fn submit_participant_info__should_bound_worst_case_entry_cost(
+        #[case] verified_attestation: VerifiedAttestation,
+    ) {
+        // Given / When
+        let bytes_grown = measure_stored_entry_bytes(verified_attestation);
         let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
 
+        // Then
         assert!(
             cost <= WORST_CASE_ENTRY_COST_CEILING,
             "worst-case entry cost ({bytes_grown} bytes, {cost}) must stay under \
