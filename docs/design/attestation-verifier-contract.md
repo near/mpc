@@ -1,5 +1,7 @@
 # Attestation Verifier Contract Breakout
 
+**Status:** Partially superseded — TODO(#3825): rewrite the `mpc-contract`-side sections below. That side shipped as a no-yield promise chain, so every mention of yield-resume, `pending_attestations` / `PendingAttestation`, `data_id`, the "already pending" guard, `on_attestation_verified`, and the attached deposit and its refunds describes a design that was not built. The verifier-contract split, governance, crate layout, and the verifier's own API are accurate.
+
 This document outlines the design for moving on-chain TDX quote verification out of `mpc-contract`'s WASM into a standalone verifier contract.
 
 It supersedes [#3160](https://github.com/near/mpc/pull/3160), which sketched a three-contract architecture (shared verifier + per-team policy contract + TEE-agnostic application contract) for Defuse, Proximity, and other teams. That direction was deferred: a shared policy contract presumes shared lifecycle conventions (the [launcher pattern][launcher-pattern] `mpc-contract` uses), and aligning the other teams on those conventions is a separate, longer [conversation][slack-launcher-discussion] that has not yet converged.
@@ -105,7 +107,7 @@ The only caller of `submit_participant_info` in production is `mpc-node`'s `peri
 
 #### Handling failures
 
-The first thing `submit_participant_info` does is insert a `PendingAttestation` entry, and that entry has to come back out once verification finishes — successfully or not. If a failure leaves the entry behind, the submitter's account is wedged: every future `submit_participant_info` call panics on the "already pending" guard, and the deposit stays locked because the refund is part of the cleanup the contract never got around to.
+The first thing `submit_participant_info` does is insert a `PendingAttestation` entry, and that entry has to come back out once verification finishes — successfully or not. If a failure leaves the entry behind, the submitter's account is wedged: every future `submit_participant_info` call panics on the "already pending" guard.
 
 That makes *where* the cleanup runs the central question, because NEAR offers two natural homes for "do something when the verifier responds" and they have very different failure modes.
 
@@ -139,7 +141,7 @@ Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
 - **The submitter's `Attestation::Dstack` payload** — the RTMR3 event log, app-compose, and report-data the post-DCAP checks consume.
 - **The submitter's TLS public key** — the callback hashes it with the submitter's account public key and compares to the quote's `report_data` field, proving the enclave produced the quote for this specific submitter.
-- **The attached deposit** — covers storage staking on success, refunded to the signer of the original `submit_participant_info` transaction on failure. `env::attached_deposit()` is not visible from the callback receipt, so the value is stashed at submit time and the recipient `AccountId` is the same one used to key the entry (set by `Self::assert_caller_is_signer()`).
+- No deposit is stashed: attestation storage is funded by the contract's own balance, so `submit_participant_info` attaches nothing and there is no deposit to forward to the callback or refund.
 - **`data_id: CryptoHash`** — the yield handle returned by [`env::promise_yield_create`][promise-yield-create]. The intermediate `.then` callback (`resolve_verification`) reads this back to call [`env::promise_yield_resume`][promise-yield-resume] with a `FinalOutcome` after the post-DCAP checks have run.
 
 Entries are removed by `resolve_verification` on every branch where the verifier returned an answer — `Verified` (post-DCAP success or failure) and `Rejected`; only when the verifier gave no verdict (`Err(PromiseError::Failed)` — unreachable or crashed) does it return early and leave the entry in place. `on_attestation_verified` then removes the entry on its `Err(PromiseError::Failed)` branch, which covers that unreachable case and the no-response timeout.
