@@ -1,6 +1,6 @@
 # Attestation Verifier Contract Breakout
 
-**Status:** Partially superseded — TODO(#3825). The `mpc-contract` side shipped as a no-yield promise chain, so every mention below of yield-resume, `pending_attestations` / `PendingAttestation`, `data_id`, the "already pending" guard, `on_attestation_verified`, and the attached deposit and its refunds describes a design that was not built. The verifier-contract split, governance, crate layout, and the verifier's own API are accurate.
+**Status:** Partially superseded — TODO(#3825): rewrite the `mpc-contract`-side sections below. That side shipped as a no-yield promise chain, so every mention of yield-resume, `pending_attestations` / `PendingAttestation`, `data_id`, the "already pending" guard, `on_attestation_verified`, and the attached deposit and its refunds describes a design that was not built. The verifier-contract split, governance, crate layout, and the verifier's own API are accurate.
 
 This document outlines the design for moving on-chain TDX quote verification out of `mpc-contract`'s WASM into a standalone verifier contract.
 
