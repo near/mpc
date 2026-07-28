@@ -39,9 +39,8 @@ pass()  { echo -e "\033[1;32m[PASS]\033[0m $*"; }
 fatal() { err "$*"; exit 1; }
 
 # ---- Host profile → IP layout --------------------------------------------
-# Sets IP_PREFIX and IP_START_OCTET. Bob's numbers match
-# deploy-tee-cluster.sh's canonical values (5.196.36.<113+i>); the older
-# test scripts used to disagree on bob, which is why this lives here now.
+# Sets IP_PREFIX / IP_START_OCTET per host. Canonical CVM IP layout, shared so
+# single-node.sh and the mpc-private tools/tee-cluster scripts stay in sync.
 HOST_PROFILE="${HOST_PROFILE:-alice}"
 case "$HOST_PROFILE" in
   alice) IP_PREFIX="51.68.219."; IP_START_OCTET=1   ;;
