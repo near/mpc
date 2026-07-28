@@ -478,8 +478,9 @@ impl TeeState {
     /// forever and can therefore never be evicted by
     /// [`TeeState::clean_invalid_attestations`]. [`MockAttestation::with_expiry`]
     /// rewrites them as expiring [`MockAttestation::WithConstraints`] mocks so the
-    /// normal cleanup flow can remove stale entries once the window elapses, while
-    /// leaving entries that already carry an explicit expiry unchanged.
+    /// normal cleanup flow can remove stale entries once the window elapses. An
+    /// entry whose expiry is longer than (or missing) the default window is capped
+    /// at it; a shorter existing expiry is left as-is.
     ///
     // TODO(#3978): transitional — remove this and its migration call site once the
     // pre-expiry state migration is retired.
