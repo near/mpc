@@ -1317,10 +1317,9 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP\n checks and stores the attestation, refunding the flat fee if the\n attestation is not accepted.",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the\n attestation (storage funded by the contract's balance). On any failure it fails the\n submitter's transaction.",
         "kind": "call",
         "modifiers": [
-          "payable",
           "private"
         ],
         "params": {
@@ -2342,11 +2341,8 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n The caller must attach a flat 0.1 NEAR fee for the stored entry; the whole\n fee is kept on success and refunded if the attestation is not accepted.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n Storage is funded by the contract's own balance, so a node submits with no deposit via its\n function-call access key, for its first attestation and re-attestations alike.",
         "kind": "call",
-        "modifiers": [
-          "payable"
-        ],
         "params": {
           "serialization_type": "json",
           "args": [
