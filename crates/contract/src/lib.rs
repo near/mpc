@@ -117,10 +117,6 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// node key cannot invoke these methods.
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
-/// Caps the contract-funded storage cost of a single stored attestation entry, guarding against a
-/// future schema/attestation-size change bloating an entry. Does not bound total attestation storage.
-pub(crate) const MAX_ATTESTATION_ENTRY_STORAGE_COST: NearToken = NearToken::from_millinear(100);
-
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
@@ -8074,6 +8070,9 @@ mod tests {
 
     const MAX_HASH: [u8; 32] = [0xff; 32];
 
+    // The contract-funded entry stays bounded; a schema change that bloats it fails here.
+    const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(100);
+
     #[rstest]
     #[case::dstack(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
         mpc_image_hash: MAX_HASH.into(),
@@ -8111,9 +8110,9 @@ mod tests {
         let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
 
         assert!(
-            cost <= MAX_ATTESTATION_ENTRY_STORAGE_COST,
+            cost <= WORST_CASE_ENTRY_COST_CEILING,
             "worst-case entry cost ({bytes_grown} bytes, {cost}) must stay under \
-             {MAX_ATTESTATION_ENTRY_STORAGE_COST} at today's storage price"
+             {WORST_CASE_ENTRY_COST_CEILING} at today's storage price"
         );
     }
 }

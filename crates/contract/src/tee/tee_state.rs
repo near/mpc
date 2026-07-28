@@ -1,5 +1,4 @@
 use crate::{
-    MAX_ATTESTATION_ENTRY_STORAGE_COST,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
     tee::measurements::{
@@ -20,7 +19,7 @@ use mpc_attestation::{
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
-use near_sdk::{NearToken, env, near, store::IterableMap};
+use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
 
@@ -46,8 +45,6 @@ pub enum AttestationSubmissionError {
         "TLS public key is already registered to a different account; only the owning account may update it"
     )]
     TlsKeyOwnedByOtherAccount,
-    #[error("stored attestation entry costs {cost} which exceeds the maximum {max}")]
-    EntryStorageCostExceeded { cost: NearToken, max: NearToken },
 }
 
 #[derive(Debug)]
@@ -231,32 +228,13 @@ impl TeeState {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount);
         }
 
-        let entry = NodeAttestation {
-            node_id,
-            verified_attestation,
-        };
-
-        let before = env::storage_usage();
-        let previous = self.stored_attestations.insert(tls_pk.clone(), entry);
-        self.stored_attestations.flush();
-        let cost =
-            env::storage_byte_cost().saturating_mul(u128::from(env::storage_usage() - before));
-
-        if cost > MAX_ATTESTATION_ENTRY_STORAGE_COST {
-            match previous {
-                Some(prev) => {
-                    self.stored_attestations.insert(tls_pk, prev);
-                }
-                None => {
-                    self.stored_attestations.remove(&tls_pk);
-                }
-            }
-            self.stored_attestations.flush();
-            return Err(AttestationSubmissionError::EntryStorageCostExceeded {
-                cost,
-                max: MAX_ATTESTATION_ENTRY_STORAGE_COST,
-            });
-        }
+        let previous = self.stored_attestations.insert(
+            tls_pk,
+            NodeAttestation {
+                node_id,
+                verified_attestation,
+            },
+        );
 
         Ok(match previous {
             Some(_) => ParticipantInsertion::UpdatedExistingParticipant,
@@ -865,30 +843,6 @@ mod tests {
             tee_state.stored_attestations.len(),
             1,
             "Internal storage count should increase by exactly one"
-        );
-    }
-
-    #[test]
-    fn store_verified_attestation__should_accept_entry_within_cap() {
-        // Given
-        testing_env!(VMContextBuilder::new().build());
-        let mut tee_state = TeeState::default();
-        let node_id = node_id_for(&"alice.near".parse().unwrap());
-        let verified_attestation = VerifiedAttestation::Mock(MockAttestation::Valid);
-
-        // When
-        let result = tee_state.store_verified_attestation(node_id.clone(), verified_attestation);
-
-        // Then
-        assert_matches!(result, Ok(ParticipantInsertion::NewlyInsertedParticipant));
-        let stored = tee_state
-            .stored_attestations
-            .get(&node_id.tls_public_key)
-            .expect("attestation must be stored");
-        assert_eq!(stored.node_id, node_id);
-        assert_matches!(
-            stored.verified_attestation,
-            VerifiedAttestation::Mock(MockAttestation::Valid)
         );
     }
 
