@@ -1,5 +1,7 @@
 # Attestation Verifier Contract Breakout
 
+**Status:** Partially superseded — TODO(#3825). The `mpc-contract` side shipped as a no-yield promise chain, so every mention below of yield-resume, `pending_attestations` / `PendingAttestation`, `data_id`, the "already pending" guard, `on_attestation_verified`, and the attached deposit and its refunds describes a design that was not built. The verifier-contract split, governance, crate layout, and the verifier's own API are accurate.
+
 This document outlines the design for moving on-chain TDX quote verification out of `mpc-contract`'s WASM into a standalone verifier contract.
 
 It supersedes [#3160](https://github.com/near/mpc/pull/3160), which sketched a three-contract architecture (shared verifier + per-team policy contract + TEE-agnostic application contract) for Defuse, Proximity, and other teams. That direction was deferred: a shared policy contract presumes shared lifecycle conventions (the [launcher pattern][launcher-pattern] `mpc-contract` uses), and aligning the other teams on those conventions is a separate, longer [conversation][slack-launcher-discussion] that has not yet converged.
@@ -104,11 +106,6 @@ sequenceDiagram
 The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at 12 h). That polling-based success criterion is what makes the sync→async change transparent. Under yield-resume the returned `Promise` also resolves with the actual outcome — success, a verifier-rejection error, or a post-DCAP-failure error (each as soon as the verifier answers), or a timeout error after ~200 blocks if it never does — so any future caller that wants to await the result synchronously can, without changing the contract.
 
 #### Handling failures
-
-> **TODO(#3825):** This subsection and [§Contract state changes](#contract-state-changes) below still
-> describe the superseded yield-resume design. The shipped flow is a no-yield promise chain, and
-> `PendingAttestation`, `pending_attestations`, `data_id`, the "already pending" guard, and
-> `on_attestation_verified` do not exist in the code.
 
 The first thing `submit_participant_info` does is insert a `PendingAttestation` entry, and that entry has to come back out once verification finishes — successfully or not. If a failure leaves the entry behind, the submitter's account is wedged: every future `submit_participant_info` call panics on the "already pending" guard.
 
