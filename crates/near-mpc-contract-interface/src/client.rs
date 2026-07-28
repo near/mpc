@@ -12,7 +12,7 @@ use crate::call_args::{
 };
 use crate::deposits::{
     DepositOverflowError, SIGN_DEPOSIT_YOCTONEAR, STORAGE_BYTE_COST_YOCTONEAR,
-    SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR, propose_update_required_deposit_yoctonear,
+    propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
     PROPOSE_UPDATE, REQUEST_APP_PRIVATE_KEY, SIGN, SUBMIT_PARTICIPANT_INFO,
@@ -174,7 +174,9 @@ impl<C: CallContract> MpcContractHandle<C> {
                     method_name: SUBMIT_PARTICIPANT_INFO.to_string(),
                     args,
                     gas: MAX_GAS,
-                    deposit: NearToken::from_millinear(SUBMIT_PARTICIPANT_INFO_DEPOSIT_MILLINEAR),
+                    // The node's function-call key cannot attach a deposit; attestation storage is
+                    // funded by the contract's own balance.
+                    deposit: NearToken::from_yoctonear(0),
                 },
             )
             .await
