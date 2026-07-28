@@ -162,12 +162,11 @@ near contract call-function as-transaction "$SIGNER_CONTRACT" vote_tee_verifier_
 
 ## 7. Confirm the change applied
 
-There is no view that returns the resolved `tee_verifier_account_id`, so confirm two
-other ways. Pending votes clear to `{}` once the threshold is reached:
+Read the resolved verifier; once the threshold is reached it returns `$VERIFIER_ACCOUNT`
+(and `null` until then):
 
 ```shell
-near contract call-function as-read-only "$SIGNER_CONTRACT" tee_verifier_votes json-args {} network-config "$NETWORK" now
+near contract call-function as-read-only "$SIGNER_CONTRACT" tee_verifier_account_id json-args {} network-config "$NETWORK" now
 ```
 
-The threshold-crossing transaction also logs `vote_tee_verifier_change: new verifier =
-$VERIFIER_ACCOUNT`. The contract stays `Running` throughout.
+The contract stays `Running` throughout.

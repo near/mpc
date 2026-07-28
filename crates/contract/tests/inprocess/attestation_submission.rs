@@ -8,7 +8,10 @@ use mpc_contract::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{create_node_id, gen_participants, node_id_for},
-        thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+        thresholds::{
+            GovernanceThreshold, GovernanceThresholdParameters,
+            ProposedGovernanceThresholdParameters,
+        },
     },
     tee::tee_state::{AttestationSubmissionError, NodeId},
 };
@@ -97,8 +100,9 @@ impl TestSetupBuilder {
 
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
-        let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
-            .expect("failed to create threshold parameters");
+        let parameters =
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(threshold))
+                .expect("failed to create threshold parameters");
         let contract = common::init_contract(&parameters, self.init_config);
 
         let mut setup = TestSetup {
@@ -125,8 +129,10 @@ impl TestSetupBuilder {
 
                 for node_id in threshold_nodes {
                     testing_env!(common::participant_context(&node_id.account_id));
-                    let proposal =
-                        ProposedThresholdParameters::new(parameters.clone(), BTreeMap::new());
+                    let proposal = ProposedGovernanceThresholdParameters::new(
+                        parameters.clone(),
+                        BTreeMap::new(),
+                    );
                     setup
                         .contract
                         .vote_new_parameters(EpochId::new(6), proposal.into())

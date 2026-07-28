@@ -943,11 +943,11 @@ impl MeshNetworkTransportSender for TlsMeshSender {
 
     async fn wait_for_ready(
         &self,
-        threshold: usize,
+        required_ready_count: usize,
         peers_to_consider: &[ParticipantId],
     ) -> anyhow::Result<()> {
         self.connectivities
-            .wait_for_ready(threshold, peers_to_consider)
+            .wait_for_ready(required_ready_count, peers_to_consider)
             .await;
         Ok(())
     }
@@ -1014,7 +1014,7 @@ pub mod testing {
 
     pub fn generate_test_p2p_configs(
         participant_accounts: &[AccountId],
-        threshold: usize,
+        governance_threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
         ports: &TestPorts,
@@ -1041,7 +1041,7 @@ pub mod testing {
         let mut configs = Vec::new();
         for (i, singing_key) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
-                threshold: threshold as u64,
+                threshold: governance_threshold as u64,
                 participants: participants.clone(),
             };
 

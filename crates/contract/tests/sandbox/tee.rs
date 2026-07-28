@@ -8,8 +8,7 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            submit_participant_info_with_deposit, total_gas_fee, vote_add_launcher_hash,
-            vote_for_hash,
+            total_gas_fee, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -998,14 +997,16 @@ async fn submit_participant_info__should_reject_new_attestation_below_flat_fee()
     let below_fee = SUBMIT_PARTICIPANT_INFO_DEPOSIT.saturating_sub(NearToken::from_yoctonear(1));
 
     // When
-    let result = submit_participant_info_with_deposit(
-        &outsider,
-        &contract,
-        &Attestation::Mock(MockAttestation::Valid),
-        &fresh_tls_key,
-        below_fee,
-    )
-    .await?;
+    let result = outsider
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((
+            Attestation::Mock(MockAttestation::Valid),
+            fresh_tls_key.clone(),
+        ))
+        .deposit(below_fee)
+        .max_gas()
+        .transact()
+        .await?;
 
     // Then
     assert!(

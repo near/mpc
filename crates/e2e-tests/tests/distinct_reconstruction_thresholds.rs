@@ -8,7 +8,7 @@ use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use rand::SeedableRng;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Each domain signs under its own reconstruction threshold, not the governance
 /// threshold. With 6 nodes and 1 killed, Cait-Sith (needs all 6) can no longer sign
@@ -17,7 +17,7 @@ use rand::SeedableRng;
 #[expect(non_snake_case)]
 async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_when_nodes_are_down() {
     // Given
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     let (mut cluster, contract_state) =
         must_setup_cluster(DISTINCT_RECONSTRUCTION_THRESHOLDS_PORT_SEED, |c| {
             c.num_nodes = 6;

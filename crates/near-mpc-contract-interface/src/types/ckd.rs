@@ -1,10 +1,11 @@
+use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 
 use crate::types::DomainId;
 
 pub use near_mpc_crypto_types::{CKDAppPublicKey, CKDAppPublicKeyPV, CkdAppId};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Constructor)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)

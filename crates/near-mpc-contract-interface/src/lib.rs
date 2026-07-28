@@ -28,15 +28,16 @@ pub mod types {
     pub use sign::*;
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
-        DomainConfig, DomainPurpose, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
-        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProposedThresholdParameters, Protocol,
-        ProtocolContractState, ReconstructionThreshold, ResharingContractState,
-        RunningContractState, Threshold, ThresholdParameters, ThresholdParametersVotes,
+        DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
+        GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
+        InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+        ReconstructionThreshold, ResharingContractState, RunningContractState,
         protocol_state_to_string,
     };
     pub use tee::{AllowedMpcDockerImageHash, NodeId};
 
-    pub use updates::{ProposeUpdateArgs, ProposedUpdates, UpdateHash};
+    pub use updates::{PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash};
 
     // Re-export hash types used in attestation DTO fields
     pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};

@@ -11,7 +11,9 @@ use crate::primitives::{
     domain::DomainRegistry,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
-    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+    thresholds::{
+        GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    },
 };
 use initializing::InitializingContractState;
 use near_account_id::AccountId;
@@ -49,7 +51,7 @@ impl ProtocolContractState {
             _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
         }
     }
-    pub fn threshold(&self) -> Result<Threshold, Error> {
+    pub fn threshold(&self) -> Result<GovernanceThreshold, Error> {
         match self {
             ProtocolContractState::Initializing(state) => {
                 Ok(state.generating_key.proposed_parameters().threshold())
@@ -126,7 +128,7 @@ impl ProtocolContractState {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposed_parameters: &ProposedThresholdParameters,
+        proposed_parameters: &ProposedGovernanceThresholdParameters,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
             ProtocolContractState::Running(state) => {
@@ -178,7 +180,7 @@ impl ProtocolContractState {
 
     pub(super) fn threshold_parameters(
         &self,
-    ) -> Result<&ThresholdParameters, ContractNotInitialized> {
+    ) -> Result<&GovernanceThresholdParameters, ContractNotInitialized> {
         match self {
             ProtocolContractState::NotInitialized => Err(ContractNotInitialized),
             ProtocolContractState::Initializing(initializing_contract_state) => {
@@ -196,7 +198,7 @@ impl ProtocolContractState {
     }
 
     /// Active threshold parameters, panicking on [`ContractNotInitialized`].
-    pub(super) fn threshold_parameters_or_panic(&self) -> &ThresholdParameters {
+    pub(super) fn threshold_parameters_or_panic(&self) -> &GovernanceThresholdParameters {
         self.threshold_parameters()
             .unwrap_or_else(|ContractNotInitialized| env::panic_str("contract is not initialized"))
     }

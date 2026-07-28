@@ -246,7 +246,7 @@ Each protocol has different constraints on `ReconstructionThreshold` relative to
 ```rust
 /// Validates that the reconstruction threshold is achievable
 /// given the number of participants.
-pub fn validate_threshold(config: &DistributedKeyConfig, num_participants: u64) -> Result<(), Error> {
+pub fn validate_domain_reconstruction_threshold(config: &DistributedKeyConfig, num_participants: u64) -> Result<(), Error> {
     let t = config.reconstruction_threshold.inner();
 
     // Universal constraints
@@ -289,7 +289,7 @@ pub fn validate_for_participant_count(
     num_participants: u64,
 ) -> Result<(), Error> {
     for key in keys.iter() {
-        validate_threshold(key, num_participants).map_err(|e| {
+        validate_domain_reconstruction_threshold(key, num_participants).map_err(|e| {
             Error::ThresholdIncompatibleWithNewParticipants { distributed_key_id: key.id, inner: e }
         })?;
     }
@@ -507,7 +507,7 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 **Precondition**: PR 4 landed. `DistributedKeyConfig.reconstruction_threshold` exists but is populated from the global threshold during migration.
 
 **Changes**:
-- Add `validate_threshold(config: &DistributedKeyConfig, num_participants)` with protocol-specific rules:
+- Add `validate_domain_reconstruction_threshold(config: &DistributedKeyConfig, num_participants)` with protocol-specific rules:
   - CaitSith/Frost/CKD: `t <= n` (same as current).
   - DamgardEtAl: `2t - 1 <= n`.
 - Add `min_active_participants(protocol, reconstruction_threshold)` helper (see §3.1).
@@ -520,7 +520,7 @@ Note: Migration needs a `From<Curve> for Protocol` (the reverse direction) to in
 
 **Key behavioral change**: This is where `DistributedKeyConfig` gains real per-key threshold semantics. Before this PR, the `reconstruction_threshold` was always the global value.
 
-**Tests**: Unit tests for `validate_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
+**Tests**: Unit tests for `validate_domain_reconstruction_threshold` edge cases: DamgardEtAl with `2t-1 == n` (boundary), `2t-1 > n` (reject), `t < 2` (reject). Resharing validation tests: propose new participant set that violates one domain's threshold. Verify `vote_add_domains` rejects invalid thresholds.
 
 ---
 
@@ -814,7 +814,7 @@ mpc-contract/
   primitives/
     domain.rs       → DistributedKeyRegistry, AddDomainsVotes, validation logic
     key_state.rs    → KeyForDomain, Keyset (with NEAR-specific storage)
-    thresholds.rs   → Validation logic (validate_threshold, etc.)
+    thresholds.rs   → Validation logic (validate_domain_reconstruction_threshold, etc.)
   state/            → ProtocolContractState, RunningContractState, etc.
 ```
 
@@ -932,7 +932,7 @@ Resolved: the `GovernanceThreshold` is now constrained relative to the cryptogra
 - `ceil(0.6*n) <= GovernanceThreshold <= n` — the existing 60% lower bound. A relative upper cap is retained in the code but currently set to 100%
 (effectively disabled due to non-convergence of opinions on what would be a good upper bound).
 
-These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
+These are enforced at every mutation point (governance threshold updates, reconstruction threshold updates, participant add, participant kick) and re-validated once on migration, where a violation hard-blocks the upgrade (panic) — state that breaks the relation must be corrected via `vote_new_parameters` before upgrading. See `ThresholdParameters::validate_governance_threshold` and `validate_governance_against_reconstruction` in `crates/contract/src/primitives/thresholds.rs`.
 
 ### 7.2 Backward-Compatible View Methods
 

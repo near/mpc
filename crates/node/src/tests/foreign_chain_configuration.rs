@@ -19,7 +19,8 @@ use std::time::Duration;
 async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__should_use_local_config()
  {
     // Given
-    const THRESHOLD: usize = 2;
+    const GOVERNANCE_THRESHOLD: usize = 2;
+    const RECONSTRUCTION_THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
 
     let temp_dir = tempfile::tempdir().unwrap();
@@ -27,7 +28,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         Clock::real(),
         temp_dir.path(),
         vec!["test0".parse().unwrap(), "test1".parse().unwrap()],
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::FOREIGN_CHAIN_POLICY_TEST,
         DEFAULT_BLOCK_TIME,
@@ -75,7 +76,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         contract.add_domains(vec![DomainConfig {
             id: DomainId(0),
             protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(THRESHOLD as u64),
+            reconstruction_threshold: ReconstructionThreshold::new(RECONSTRUCTION_THRESHOLD as u64),
             purpose: DomainPurpose::ForeignTx,
         }]);
     }

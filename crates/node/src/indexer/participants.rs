@@ -6,7 +6,9 @@ use ed25519_dalek::VerifyingKey;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::{KeyEvent, ProtocolContractState, ThresholdParameters};
+use near_mpc_contract_interface::types::{
+    GovernanceThresholdParameters, KeyEvent, ProtocolContractState,
+};
 use near_mpc_crypto_types::{KeyForDomain as ContractKeyForDomain, Keyset as ContractKeyset};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -387,7 +389,7 @@ fn parse_participant_address(
 }
 
 pub fn convert_participant_infos(
-    threshold_parameters: ThresholdParameters,
+    threshold_parameters: GovernanceThresholdParameters,
     port_override: Option<u16>,
 ) -> anyhow::Result<ParticipantsConfig> {
     let mut converted = Vec::new();
@@ -552,8 +554,8 @@ mod tests {
     use near_indexer_primitives::types::AccountId;
     use near_mpc_contract_interface::types::AccountId as DtoAccountId;
     use near_mpc_contract_interface::types::{
-        ParticipantId, ParticipantInfo, Participants, ProtocolContractState,
-        ReconstructionThreshold, Threshold, ThresholdParameters,
+        GovernanceThreshold, GovernanceThresholdParameters, ParticipantId, ParticipantInfo,
+        Participants, ProtocolContractState, ReconstructionThreshold,
     };
     use std::collections::{BTreeMap, HashMap};
 
@@ -619,9 +621,9 @@ mod tests {
             account_id_to_pk.insert(account_id.clone(), info.tls_public_key.clone());
         }
         assert!(account_ids.is_sorted());
-        let params = ThresholdParameters {
+        let params = GovernanceThresholdParameters {
             participants: chain_infos.clone(),
-            threshold: Threshold(3),
+            threshold: GovernanceThreshold(3),
         };
 
         let converted = convert_participant_infos(params, None).unwrap();
@@ -645,9 +647,9 @@ mod tests {
     fn test_port_override() {
         let chain_infos = create_chain_participant_infos();
 
-        let params = ThresholdParameters {
+        let params = GovernanceThresholdParameters {
             participants: chain_infos,
-            threshold: Threshold(3),
+            threshold: GovernanceThreshold(3),
         };
         let converted = convert_participant_infos(params.clone(), None)
             .unwrap()
@@ -672,12 +674,12 @@ mod tests {
         let original_count = entries.len();
         entries[0].2.url = "http://:3000".to_string();
         let account = entries[0].0.clone();
-        let params = ThresholdParameters {
+        let params = GovernanceThresholdParameters {
             participants: Participants {
                 next_id: ParticipantId(entries.len() as u32),
                 participants: entries,
             },
-            threshold: Threshold(3),
+            threshold: GovernanceThreshold(3),
         };
 
         // When
@@ -701,12 +703,12 @@ mod tests {
         let mut entries = create_chain_participant_infos().participants;
         entries[0].2.url = "http://:3000".to_string();
         let account = entries[0].0.clone();
-        let params = ThresholdParameters {
+        let params = GovernanceThresholdParameters {
             participants: Participants {
                 next_id: ParticipantId(entries.len() as u32),
                 participants: entries,
             },
-            threshold: Threshold(3),
+            threshold: GovernanceThreshold(3),
         };
 
         // When

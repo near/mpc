@@ -2,8 +2,8 @@ use crate::common;
 
 use e2e_tests::{CLUSTER_WAIT_TIMEOUT, DEFAULT_PRESIGNATURES_TO_BUFFER, metrics};
 use mpc_node_config::MAX_INDEXER_HEIGHT_DIFF;
-use near_mpc_contract_interface::types::{Curve, DomainPurpose};
-use rand::SeedableRng;
+use near_mpc_contract_interface::types::DomainPurpose;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Verify that when a node falls behind in block ingestion past the
 /// `MAX_INDEXER_HEIGHT_DIFF` threshold, the other nodes clean up all
@@ -13,7 +13,7 @@ use rand::SeedableRng;
 #[expect(non_snake_case)]
 async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signing() {
     // given
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = StdRng::seed_from_u64(0);
     let (cluster, running) =
         common::must_setup_cluster(common::CLEANUP_LAGGING_NODE_PORT_SEED, |_| {}).await;
 
@@ -72,11 +72,7 @@ async fn cleanup_lagging_node__should_purge_offline_presignatures_and_keep_signi
         .find(|d| matches!(d.purpose, DomainPurpose::Sign))
         .expect("cluster must have at least one signable domain");
     for _ in 0..2 * DEFAULT_PRESIGNATURES_TO_BUFFER {
-        let payload = match Curve::from(domain.protocol) {
-            Curve::Secp256k1 => common::generate_ecdsa_payload(&mut rng),
-            Curve::Edwards25519 => common::generate_eddsa_payload(&mut rng),
-            _ => break,
-        };
+        let payload = common::must_get_payload_for_domain(domain, &mut rng);
         let outcome = cluster
             .send_sign_request(domain.id, payload, cluster.default_user_account())
             .await

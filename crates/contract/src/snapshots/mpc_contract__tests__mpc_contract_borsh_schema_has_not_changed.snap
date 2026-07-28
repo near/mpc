@@ -15,10 +15,10 @@ BorshSchemaContainer {
                 "ParticipantInfo",
             ],
         },
-        "(AuthenticatedAccountId, ProposedThresholdParameters)": Tuple {
+        "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)": Tuple {
             elements: [
                 "AuthenticatedAccountId",
-                "ProposedThresholdParameters",
+                "ProposedGovernanceThresholdParameters",
             ],
         },
         "(AuthenticatedParticipantId, DockerImageHash)": Tuple {
@@ -127,10 +127,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>": Sequence {
+        "BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
-            elements: "(AuthenticatedAccountId, ProposedThresholdParameters)",
+            elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
         },
         "BTreeMap<AuthenticatedParticipantId, DockerImageHash>": Sequence {
             length_width: 4,
@@ -380,6 +380,37 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "GovernanceThreshold": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "GovernanceThresholdParameters": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "participants",
+                        "Participants",
+                    ),
+                    (
+                        "threshold",
+                        "GovernanceThreshold",
+                    ),
+                ],
+            ),
+        },
+        "GovernanceThresholdParametersVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "proposal_by_account",
+                        "BTreeMap<AuthenticatedAccountId, ProposedGovernanceThresholdParameters>",
+                    ),
+                ],
+            ),
+        },
         "HashSet<AuthenticatedAccountId>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -448,7 +479,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "parameters",
-                        "ThresholdParameters",
+                        "GovernanceThresholdParameters",
                     ),
                     (
                         "instance",
@@ -850,12 +881,12 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "ProposedThresholdParameters": Struct {
+        "ProposedGovernanceThresholdParameters": Struct {
             fields: NamedFields(
                 [
                     (
                         "parameters",
-                        "ThresholdParameters",
+                        "GovernanceThresholdParameters",
                     ),
                     (
                         "per_domain_thresholds",
@@ -1099,11 +1130,11 @@ BorshSchemaContainer {
                     ),
                     (
                         "parameters",
-                        "ThresholdParameters",
+                        "GovernanceThresholdParameters",
                     ),
                     (
                         "parameters_votes",
-                        "ThresholdParametersVotes",
+                        "GovernanceThresholdParametersVotes",
                     ),
                     (
                         "add_domains_votes",
@@ -1195,37 +1226,6 @@ BorshSchemaContainer {
                     (
                         "pending",
                         "Votes<AuthenticatedParticipantId>",
-                    ),
-                ],
-            ),
-        },
-        "Threshold": Struct {
-            fields: UnnamedFields(
-                [
-                    "u64",
-                ],
-            ),
-        },
-        "ThresholdParameters": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "participants",
-                        "Participants",
-                    ),
-                    (
-                        "threshold",
-                        "Threshold",
-                    ),
-                ],
-            ),
-        },
-        "ThresholdParametersVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedAccountId, ProposedThresholdParameters>",
                     ),
                 ],
             ),

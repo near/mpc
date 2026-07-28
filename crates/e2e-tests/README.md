@@ -118,18 +118,18 @@ impl NearBlockchain {
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
     pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<ClientHandle>;
+        -> anyhow::Result<NearKitCaller>;
 }
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `call` (from the contract account), `call_from`/
-`call_from_with_deposit` (from an arbitrary `ClientHandle`), `view`, and
+`call_from_with_deposit` (from an arbitrary `NearKitCaller`), `view`, and
 `state()` (parsed `ProtocolContractState`).
 
-`ClientHandle` exists so tests can re-use a signer for a non-contract account
-(nodes voting, users submitting sign requests) without leaking `near_kit`
-types into the public API.
+`NearKitCaller` binds a signer to a non-contract account (nodes voting, users
+submitting sign requests) and implements the `CallContract` transport trait,
+so typed calls can go through `MpcContractHandle`.
 
 ### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 
