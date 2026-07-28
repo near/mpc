@@ -80,6 +80,30 @@ impl LocalNodeBuilder {
         };
         let ports_config = PortsConfig::from_os();
         node.with_ports_config(ports_config.clone())
+            .lift_block_rate_limits()
+    }
+
+    /// nearcore's default caps on block-paced messages are sized for mainnet block
+    /// times, leaving this sped-up localnet almost no headroom. Once the observer
+    /// needs blocks faster than the cap allows, its sync from the validator stalls
+    /// outright rather than merely slowing, and event-driven tests time out.
+    fn lift_block_rate_limits(self) -> Self {
+        const UNLIMITED: u32 = 1_000_000;
+        let unlimited = serde_json::json!({
+            "maximum_size": UNLIMITED,
+            "refill_rate": UNLIMITED,
+            "initial_size": UNLIMITED,
+        });
+        let mut config = self.config();
+        config["network"]["experimental"]["network_config_overrides"]["received_messages_rate_limits"] = serde_json::json!({
+            "rate_limits": {
+                "Block": unlimited,
+                "OptimisticBlock": unlimited,
+                "BlockRequest": unlimited,
+            }
+        });
+        self.write_config(&config);
+        self
     }
 
     fn with_ports_config(mut self, ports: PortsConfig) -> Self {

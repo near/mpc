@@ -188,7 +188,9 @@ env MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near NEAR_BOOT_NODES="$NODE_PUB
 ### Run the MPC binary
 
 On first start, each node will automatically initialize and configure its NEAR
-data directory using the `[near_init]` settings in the TOML config.
+data directory using the `[near_init]` settings in the TOML config. This only
+happens while the NEAR `config.json` is absent, so delete the node home when
+reusing one from an earlier run, otherwise it keeps its old NEAR config.
 
 In two separate shells run the MPC binary for Frodo and Sam:
 
