@@ -77,8 +77,9 @@ pub enum VerifiedAttestation {
 
 impl VerifiedAttestation {
     /// The stored expiry timestamp, if the attestation carries one. `Dstack`
-    /// entries always do; a `Mock` entry does only when it was stamped with an
-    /// expiry — contracts predating #3293 store `Mock::Valid` without one.
+    /// entries always do; a `Mock` entry does only when it was stamped with one.
+    /// A `Mock` with no expiry (`None`) can come from an older contract or from a
+    /// genesis sentinel, so callers must not read `None` as "old contract".
     pub fn expiry_timestamp_seconds(&self) -> Option<u64> {
         match self {
             VerifiedAttestation::Dstack(attestation) => Some(attestation.expiry_timestamp_seconds),

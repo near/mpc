@@ -86,8 +86,8 @@ impl AcceptedAttestation {
 
     /// Assembles the acceptance for a verified `Mock` attestation. Stamps a
     /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry`]),
-    /// mirroring [`AcceptedAttestation::dstack`], so a `Valid` mock does not pass
-    /// re-verification forever and can be cleaned up.
+    /// mirroring [`AcceptedAttestation::dstack`], so a [`MockAttestation::Valid`] mock
+    /// does not pass re-verification forever and can be cleaned up.
     fn mock(mock_attestation: &MockAttestation, current_timestamp_seconds: u64) -> Self {
         let expiry_timestamp_seconds =
             current_timestamp_seconds + DEFAULT_EXPIRATION_DURATION_SECONDS;

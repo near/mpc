@@ -445,7 +445,8 @@ impl ReadSupportedForeignChain for RealForeignChainPolicyReader {
 
 pub(crate) trait ReadAttestationExpiry: Send + Sync {
     /// The attestation expiry currently stored for `tls_public_key`, or `None` if none is stored or
-    /// the stored attestation carries no expiry (a mock stored by a contract predating #3293).
+    /// the stored attestation carries no expiry (an unstamped mock — e.g. from an older contract or
+    /// a genesis sentinel).
     fn read_stored_attestation_expiry<'a>(
         &'a self,
         tls_public_key: &'a dtos::Ed25519PublicKey,

@@ -473,10 +473,11 @@ impl TeeState {
         removed
     }
 
-    /// One-time migration helper: stamps an expiry on stored mock attestations
-    /// that lack one. Legacy [`MockAttestation::Valid`] entries pass re-verification
-    /// forever and can therefore never be evicted by
-    /// [`TeeState::clean_invalid_attestations`]. [`MockAttestation::with_expiry`]
+    /// One-time migration helper: stamps an expiry on every stored mock attestation
+    /// that lacks or exceeds one — both user-submitted mocks and the genesis
+    /// sentinels written by [`TeeState::with_mocked_participant_attestations`].
+    /// Legacy [`MockAttestation::Valid`] entries pass re-verification forever and
+    /// can therefore never be evicted by [`TeeState::clean_invalid_attestations`]. [`MockAttestation::with_expiry`]
     /// rewrites them as expiring [`MockAttestation::WithConstraints`] mocks so the
     /// normal cleanup flow can remove stale entries once the window elapses. An
     /// entry whose expiry is longer than (or missing) the default window is capped
@@ -852,17 +853,17 @@ mod tests {
             },
         );
 
-        // Sanity: without migration the entry survives cleanup indefinitely.
+        // Sanity: past the default window but without migration, the un-stamped
+        // entry survives cleanup indefinitely.
         set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         assert_eq!(
             tee_state.clean_invalid_attestations(Duration::from_secs(0), 100),
             0
         );
 
-        // When: the migration helper stamps an expiry (as of the migration block time)
-        // and the clock later advances past that stamped window.
+        // When: the migration stamps an expiry as of block time 0 (window ends at
+        // DEFAULT), which the clock (already at DEFAULT + 1) is past.
         tee_state.stamp_expiry_on_legacy_mocks(0);
-        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the stale legacy mock entry is removed.
