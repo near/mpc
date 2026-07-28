@@ -4872,6 +4872,7 @@ mod tests {
         let result = contract
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
         assert_eq!(
             contract
@@ -4922,6 +4923,7 @@ mod tests {
         let result = contract
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
         assert_eq!(
             contract
