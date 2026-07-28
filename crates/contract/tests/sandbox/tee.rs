@@ -1058,3 +1058,48 @@ async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> 
     assert!(stored.is_some(), "the entry should be stored on-chain");
     Ok(())
 }
+
+/// `submit_participant_info` is not payable: an attached deposit is rejected outright rather than
+/// accepted and refunded, so a caller following stale guidance fails loudly instead of silently
+/// no-opping. Pins the behaviour the removed `#[payable]` marker used to allow.
+#[tokio::test]
+async fn submit_participant_info__should_reject_an_attached_deposit() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+
+    // When
+    let result = outsider
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((
+            Attestation::Mock(MockAttestation::Valid),
+            fresh_tls_key.clone(),
+        ))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Then
+    assert!(
+        !result.is_success(),
+        "a submission attaching a deposit must fail: {result:?}"
+    );
+    let error_msg = format!("{:?}", result.into_result());
+    assert!(
+        error_msg.contains("doesn't accept deposit"),
+        "expected a non-payable rejection, got: {error_msg}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_none(),
+        "nothing should be stored when the submission is rejected"
+    );
+    Ok(())
+}
