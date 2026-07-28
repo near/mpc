@@ -69,7 +69,7 @@ jobs:
       - name: Validate title type matches changes
         env:
           GH_TOKEN: ${{ github.token }}
-        uses: anthropics/claude-code-action@6062f3709600659be5e47fcddf2cf76993c235c2 #v1.0.76
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           prompt: ${{ env.TITLE_CHECK_PROMPT }}
