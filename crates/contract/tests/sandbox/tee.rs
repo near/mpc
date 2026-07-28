@@ -542,6 +542,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 #[tokio::test]
 async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestation() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -561,17 +562,21 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         "Sanity check failed. Participant tls keys can not be equal for this test."
     );
 
+    // Expiries within the default window, so the contract's expiry cap keeps them
+    // as-is (a stored mock's expiry is `min(submitted, now + default window)`) and
+    // the two attestations stay distinct.
+    let now_seconds = worker.view_block().await.unwrap().timestamp() / 1_000_000_000;
     let participant_1_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX),
+        expiry_timestamp_seconds: Some(now_seconds + 1_000),
         expected_measurements: None,
     });
 
     let participant_2_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX - 1),
+        expiry_timestamp_seconds: Some(now_seconds + 2_000),
         expected_measurements: None,
     });
 
@@ -613,6 +618,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
 #[tokio::test]
 async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -624,17 +630,21 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let participant_account = &mpc_signer_accounts[0];
     let tls_key = bogus_ed25519_public_key();
 
+    // Expiries within the default window, so the contract's expiry cap keeps them
+    // as-is (a stored mock's expiry is `min(submitted, now + default window)`) and
+    // the two attestations stay distinct.
+    let now_seconds = worker.view_block().await.unwrap().timestamp() / 1_000_000_000;
     let first_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX),
+        expiry_timestamp_seconds: Some(now_seconds + 1_000),
         expected_measurements: None,
     });
 
     let second_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX - 1),
+        expiry_timestamp_seconds: Some(now_seconds + 2_000),
         expected_measurements: None,
     });
 
