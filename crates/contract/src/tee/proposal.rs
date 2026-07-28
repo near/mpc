@@ -312,13 +312,8 @@ impl AllowedLauncherImage {
         match self.last_used.checked_add(ttl) {
             Some(deadline) => deadline < now,
             // Overflow ⇒ deadline unrepresentably far off, so treat as not expired rather than
-            // panic: a bogus timestamp must never evict a hash. Unreachable in practice.
-            None => {
-                log!(
-                    "is_expired: last_used + ttl overflowed; treating launcher hash as not expired"
-                );
-                false
-            }
+            // panic: a bogus timestamp (or an enormous TTL) must never evict a hash.
+            None => false,
         }
     }
 }
@@ -371,7 +366,9 @@ impl AllowedLauncherImages {
         AllowedLauncherImageInsertion::Added
     }
 
-    /// Index of the most-recently-used entry, if any.
+    /// Index of the most-recently-used entry, if any. On ties (e.g. right after a migration
+    /// stamps every entry with the same `last_used`) this returns the last such entry —
+    /// deterministic, but the specific choice among equal entries is arbitrary.
     fn newest_index(&self) -> Option<usize> {
         self.entries
             .iter()
@@ -412,6 +409,17 @@ impl AllowedLauncherImages {
         } else {
             false
         }
+    }
+
+    /// Whether a `cleanup_expired` call would evict anything: there is more than one entry
+    /// and at least one is expired. Used to skip spawning the detached sweep when there is
+    /// nothing to do (`cleanup_expired` never removes the last entry).
+    pub fn has_expired(&self, ttl: Duration) -> bool {
+        if self.entries.len() <= 1 {
+            return false;
+        }
+        let now = Timestamp::now();
+        self.entries.iter().any(|e| e.is_expired(ttl, now))
     }
 
     /// Removes expired entries, always keeping at least one (the most recently used).
@@ -475,6 +483,15 @@ impl AllowedLauncherImages {
             .into_iter()
             .map(|i| self.entries[i].launcher_hash)
             .collect()
+    }
+
+    /// Test-only: `last_used` (in seconds) of the entry for `launcher_hash`, if present.
+    #[cfg(test)]
+    pub(crate) fn last_used_secs(&self, launcher_hash: &LauncherImageHash) -> Option<u64> {
+        self.entries
+            .iter()
+            .find(|e| &e.launcher_hash == launcher_hash)
+            .map(|e| e.last_used.as_secs())
     }
 }
 
@@ -913,7 +930,6 @@ mod tests {
         );
 
         // Both expired now: cleanup still keeps exactly one (the newest by `last_used`).
-        set_block_secs(1_000_000);
         // Re-add an older entry to have two expired entries.
         let mut allowed2 = AllowedLauncherImages::default();
         set_block_secs(1);
@@ -928,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn re_add_refresh_resets_added_and_keeps_alive() {
+    fn re_add_refresh_resets_last_used_and_keeps_alive() {
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();

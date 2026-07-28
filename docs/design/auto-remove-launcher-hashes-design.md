@@ -32,7 +32,7 @@ An entry is **expired** when `last_used + TTL < now`.
 TTL is a new config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
 Config validation enforces `launcher_hash_unused_ttl_seconds >=
 mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS` (the
-attestation validity window, currently 1 day) — see Safety invariants. Note
+attestation validity window, currently 7 days) — see Safety invariants. Note
 this is the *attestation validity* constant, not
 `DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS` (the MPC docker-image grace
 period, 7 days).
@@ -73,12 +73,13 @@ refreshes its `last_used` (threshold vote, not unanimity).
 
 - A hash backing a **valid participant attestation is never expired**: a
   current participant resubmits hourly, so its valid attestation (at most
-  `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 1 day, old) refreshed the
+  `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 7 days, old) refreshed the
   entry's `last_used` that recently, and `last_used + TTL >= now` holds whenever
   `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS` — regardless of the constant's
   exact value. Enforced by config validation
   (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
-  the 14-day default leaves ample margin.
+  the 14-day default is `>= DEFAULT_EXPIRATION_DURATION_SECONDS` (the
+  attestation window, currently 7 days), leaving ample margin.
 - The list is **never empty / never fully rejected** (sweep keeps newest,
   read fallback returns newest).
 
@@ -117,7 +118,7 @@ sequenceDiagram
 | **Normal rotation** | Vote in `B`, migrate nodes. 14 days after the last node leaves `A`, it is auto-evicted. No removal vote. |
 | **Rollback** | `B` broken; revert to `A` within 14 days — still valid, refreshes resume. `B` ages out. |
 | **Slow rollout** (vote → migration > 14d) | `B` expires unused; re-vote it (threshold) to reset the clock. Rule of thumb: vote within 14 days of migrating. |
-| **Node offline > 14d on an old launcher** | Its hash may age out (its attestation already lapsed at the 1-day validity window). Recover by upgrading or re-voting the hash. |
+| **Node offline > 14d on an old launcher** | Its hash may age out (its attestation already lapsed at the attestation validity window). Recover by upgrading or re-voting the hash. |
 | **Network outage > 14d** | All entries expire; newest still honored via fallback, others re-votable. |
 | **Compromised launcher** | Unanimous `vote_remove_launcher_hash`, as today. |
 

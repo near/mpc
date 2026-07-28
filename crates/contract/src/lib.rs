@@ -1757,16 +1757,24 @@ impl MpcContract {
         };
         let current_params = running_state.parameters.clone();
 
+        let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
+
         // Physical eviction runs in a detached self-call so it can never fail this
-        // transaction.
-        Promise::new(env::current_account_id())
-            .function_call(
-                method_names::CLEAN_EXPIRED_LAUNCHER_HASHES.to_string(),
-                vec![],
-                NearToken::from_yoctonear(0),
-                Gas::from_tgas(self.config.clean_expired_launcher_hashes_tera_gas),
-            )
-            .detach();
+        // transaction. Skip it when nothing is expired to avoid a wasted receipt on the
+        // common (timer-driven) path.
+        if self
+            .tee_state
+            .has_expired_launcher_images(launcher_unused_ttl)
+        {
+            Promise::new(env::current_account_id())
+                .function_call(
+                    method_names::CLEAN_EXPIRED_LAUNCHER_HASHES.to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(self.config.clean_expired_launcher_hashes_tera_gas),
+                )
+                .detach();
+        }
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -1774,7 +1782,7 @@ impl MpcContract {
         match self.tee_state.reverify_and_cleanup_participants(
             current_params.participants(),
             tee_upgrade_deadline_duration,
-            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
+            launcher_unused_ttl,
         ) {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
@@ -1896,15 +1904,13 @@ impl MpcContract {
     /// Spawned as a detached promise from `verify_tee`; safe to fail (read-time
     /// filtering already enforces expiry).
     #[private]
-    #[handle_result]
-    pub fn clean_expired_launcher_hashes(&mut self) -> Result<(), Error> {
+    pub fn clean_expired_launcher_hashes(&mut self) {
         log!(
             "clean_expired_launcher_hashes: signer={}",
             env::signer_account_id()
         );
         let ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
         self.tee_state.clean_expired_launcher_images(ttl);
-        Ok(())
     }
 
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
@@ -4814,6 +4820,116 @@ mod tests {
             .get(&node_id.tls_public_key)
             .expect("attestation must be stored");
         assert_eq!(stored.node_id, node_id);
+    }
+
+    #[test]
+    fn resolve_verification__should_refresh_launcher_for_participant() {
+        // T0 (earlier): launcher last_used is set. T1 (attestation validity): resolve runs.
+        const T0_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
+        let t1_seconds = VALID_ATTESTATION_TIMESTAMP;
+
+        let (mut contract, context) = dstack_verification_setup();
+
+        let participant: AccountId = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()[0]
+            .0
+            .clone();
+
+        // Push the launcher's last_used back to T0 so a refresh to T1 is observable.
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .build()
+        );
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher_image_hash(), &[image_digest()]);
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(T0_SECONDS)
+        );
+
+        // Resolve at T1 with the signer set to a current participant. Predecessor stays the
+        // contract account for the `#[private]` callback.
+        let contract_account_id = env::current_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_account_id.clone())
+                .predecessor_account_id(contract_account_id)
+                .signer_account_id(participant)
+                .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+                .block_timestamp(t1_seconds * 1_000_000_000)
+                .build()
+        );
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(t1_seconds)
+        );
+    }
+
+    #[test]
+    fn resolve_verification__should_not_refresh_for_non_participant() {
+        const T0_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
+        let t1_seconds = VALID_ATTESTATION_TIMESTAMP;
+
+        let (mut contract, context) = dstack_verification_setup();
+
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .build()
+        );
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher_image_hash(), &[image_digest()]);
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(T0_SECONDS)
+        );
+
+        // Resolve at T1 but with a non-participant signer: the submission still stores, but
+        // the launcher's last_used must not be extended.
+        let non_participant: AccountId = "non-participant.near".parse().unwrap();
+        let contract_account_id = env::current_account_id();
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(contract_account_id.clone())
+                .predecessor_account_id(contract_account_id)
+                .signer_account_id(non_participant)
+                .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+                .block_timestamp(t1_seconds * 1_000_000_000)
+                .build()
+        );
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher_image_hash()),
+            Some(T0_SECONDS)
+        );
     }
 
     #[test]

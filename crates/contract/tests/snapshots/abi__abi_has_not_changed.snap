@@ -413,13 +413,7 @@ expression: abi
         "kind": "call",
         "modifiers": [
           "private"
-        ],
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
+        ]
       },
       {
         "name": "clean_foreign_chain_data",
