@@ -105,6 +105,11 @@ The only caller of `submit_participant_info` in production is `mpc-node`'s `peri
 
 #### Handling failures
 
+> **TODO(#3825):** This subsection and [§Contract state changes](#contract-state-changes) below still
+> describe the superseded yield-resume design. The shipped flow is a no-yield promise chain, and
+> `PendingAttestation`, `pending_attestations`, `data_id`, the "already pending" guard, and
+> `on_attestation_verified` do not exist in the code.
+
 The first thing `submit_participant_info` does is insert a `PendingAttestation` entry, and that entry has to come back out once verification finishes — successfully or not. If a failure leaves the entry behind, the submitter's account is wedged: every future `submit_participant_info` call panics on the "already pending" guard.
 
 That makes *where* the cleanup runs the central question, because NEAR offers two natural homes for "do something when the verifier responds" and they have very different failure modes.
