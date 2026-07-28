@@ -4935,6 +4935,75 @@ mod tests {
     }
 
     #[test]
+    fn submit_participant_info__should_not_refresh_launcher_for_non_participant() {
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+
+        let launcher = LauncherImageHash::from([7u8; 32]);
+        let mpc_hash = crate::tee::proposal::NodeImageHash::from([8u8; 32]);
+        let compose = crate::tee::proposal::get_docker_compose_hash(&launcher, &mpc_hash);
+
+        const T0_SECONDS: u64 = 1_000_000;
+        let t1_seconds = T0_SECONDS + 1_000;
+
+        // Add the launcher at T0.
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .build()
+        );
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .add_or_refresh(launcher, &[mpc_hash]);
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher),
+            Some(T0_SECONDS)
+        );
+
+        // A non-participant submits a `WithConstraints` mock referencing the live launcher
+        // at T1 > T0. The submission stores, but the participant-gated refresh must not run.
+        let non_participant: AccountId = "non-participant.near".parse().unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(non_participant.clone())
+                .predecessor_account_id(non_participant)
+                .attached_deposit(MINIMUM_ATTESTATION_STORAGE_DEPOSIT)
+                .block_timestamp(t1_seconds * 1_000_000_000)
+                .build()
+        );
+        let tls_key = Ed25519PublicKey([9u8; 32]);
+        let mock = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: Some(compose),
+            expiry_timestamp_seconds: Some(t1_seconds + 1_000_000),
+            expected_measurements: None,
+        };
+        let _ = contract
+            .submit_participant_info(Attestation::Mock(mock), tls_key.clone())
+            .unwrap();
+
+        // Stored (so it reached the gate)...
+        assert!(
+            contract
+                .tee_state
+                .stored_attestations
+                .get(&tls_key)
+                .is_some()
+        );
+        // ...but `last_used` was not extended.
+        assert_eq!(
+            contract
+                .tee_state
+                .allowed_launcher_images
+                .last_used_secs(&launcher),
+            Some(T0_SECONDS)
+        );
+    }
+
+    #[test]
     fn resolve_verification__should_return_fail_promise_and_store_nothing_on_verifier_unavailable()
     {
         // Given
