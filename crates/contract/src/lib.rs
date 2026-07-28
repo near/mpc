@@ -8178,7 +8178,7 @@ mod tests {
         env::storage_usage() - before
     }
 
-    /// Pins the exact stored size of every attestation variant.
+    /// Pins the exact stored size of the largest variant of each attestation kind.
     ///
     /// Do not update these numbers just to make a failing case pass. The contract funds every
     /// entry from its own balance, so a size change alters what the contract pays per node, and
@@ -8189,7 +8189,7 @@ mod tests {
     #[rstest]
     #[case::dstack(599, worst_case_dstack_attestation())]
     #[case::mock(604, worst_case_mock_attestation())]
-    fn submit_participant_info__should_store_exactly_the_pinned_entry_size(
+    fn stored_attestation_entry__should_have_the_pinned_size(
         #[case] expected_bytes: u64,
         #[case] verified_attestation: VerifiedAttestation,
     ) {
@@ -8211,7 +8211,7 @@ mod tests {
     #[rstest]
     #[case::dstack(worst_case_dstack_attestation())]
     #[case::mock(worst_case_mock_attestation())]
-    fn submit_participant_info__should_bound_worst_case_entry_cost(
+    fn stored_attestation_entry__should_stay_under_the_cost_ceiling(
         #[case] verified_attestation: VerifiedAttestation,
     ) {
         // Given / When
