@@ -147,8 +147,8 @@ fn require_tier3_public_addr(near_init: &NearInitConfig) -> anyhow::Result<()> {
 }
 
 /// Applies post-init patches to the NEAR node `config.json`. Overlaps with, but
-/// no longer matches, `update_near_node_config()` in `start.sh`: that path builds
-/// `StartConfig` with `near_init: None` and so never reaches this function.
+/// no longer matches, `update_near_node_config()` in `start.sh`: that script runs
+/// `CliCommand::Start`, which sets `near_init: None`, so this never runs there.
 fn patch_near_config(
     config_path: &Path,
     near_init: &NearInitConfig,
@@ -541,11 +541,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn apply_near_config_patches__should_not_lift_block_rate_limits_for_non_localnet() {
+    #[rstest]
+    #[case(ChainId::Mainnet)]
+    #[case(ChainId::Testnet)]
+    fn apply_near_config_patches__should_not_lift_block_rate_limits_for_non_localnet(
+        #[case] chain_id: ChainId,
+    ) {
         // Given
         let mut config = empty_config_json();
-        let init = near_init(ChainId::Mainnet);
+        let init = near_init(chain_id);
 
         // When
         apply_near_config_patches(&mut config, &init, "v1.signer").unwrap();
