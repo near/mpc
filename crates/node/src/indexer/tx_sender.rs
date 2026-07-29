@@ -192,13 +192,11 @@ fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64
 
 /// Whether the attestation we submitted is now the one stored on chain.
 ///
-/// An entry that carries an expiry keeps no stored per-submission identity, so it is confirmed via
-/// [`attestation_expiry_changed`]: an accepted submit re-stamps the entry's expiry (to the submit
-/// block time plus
+/// An accepted submit re-stamps the entry's expiry (to the submit block time plus
 /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`](mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS)),
-/// and only the owning account may rewrite it, so a changed expiry means our submit landed. This
-/// covers every Dstack entry, and mock entries stored by contracts that stamp expiries.
-/// A mock stored by an older contract carries no expiry and is matched by identity instead.
+/// and only the owning account may rewrite it, so observing a **changed stored expiry** is enough
+/// to conclude our submit landed — for every Dstack entry and for mocks stored with an expiry. A
+/// legacy mock with no stored expiry falls back to an equality check (see the `TODO(#3786)` below).
 // TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
 fn submitted_attestation_landed(
     pre_submit_expiry: Option<u64>,

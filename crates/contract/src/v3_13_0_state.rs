@@ -8,7 +8,10 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
+use mpc_attestation::attestation::{self, VerifiedAttestation};
+use near_mpc_contract_interface::types::{
+    Ed25519PublicKey, Metrics, VerifyForeignTransactionRequest,
+};
 use near_sdk::{
     AccountId, env,
     store::{Lazy, LookupMap},
@@ -103,6 +106,47 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
 }
 
+/// Stamps an expiry on every stored mock attestation that lacks or exceeds one —
+/// both user-submitted mocks and the genesis sentinels written by
+/// [`TeeState::with_mocked_participant_attestations`]. Legacy
+/// [`mpc_attestation::attestation::MockAttestation::Valid`] entries pass
+/// re-verification forever and can therefore never be evicted by
+/// [`TeeState::clean_invalid_attestations`];
+/// [`mpc_attestation::attestation::MockAttestation::with_expiry`] rewrites them as
+/// expiring mocks so the normal cleanup flow can remove stale entries once the
+/// window elapses. An entry whose expiry is longer than (or missing) the default
+/// window is capped at it; a shorter existing expiry is left as-is.
+///
+/// This is a one-time upgrade step; it is removed together with this module when
+/// the pre-expiry migration is retired.
+fn stamp_expiry_on_legacy_mocks(tee_state: &mut TeeState, current_timestamp_seconds: u64) {
+    let expiry_timestamp_seconds =
+        current_timestamp_seconds + attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
+
+    // Collect keys before mutating to avoid iterator invalidation.
+    let mock_tls_keys: Vec<Ed25519PublicKey> = tee_state
+        .stored_attestations
+        .iter()
+        .filter(|(_, node_attestation)| {
+            matches!(
+                node_attestation.verified_attestation,
+                VerifiedAttestation::Mock(_)
+            )
+        })
+        .map(|(tls_pk, _)| tls_pk.clone())
+        .collect();
+
+    for tls_pk in mock_tls_keys {
+        let Some(node_attestation) = tee_state.stored_attestations.get_mut(&tls_pk) else {
+            continue;
+        };
+        if let VerifiedAttestation::Mock(mock) = &node_attestation.verified_attestation {
+            let stamped = mock.clone().with_expiry(expiry_timestamp_seconds);
+            node_attestation.verified_attestation = VerifiedAttestation::Mock(stamped);
+        }
+    }
+}
+
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
         if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
@@ -113,7 +157,7 @@ impl From<MpcContract> for crate::MpcContract {
         // cleaned up. Stamp an expiry on them so the standard cleanup flow can
         // evict stale mock entries after the upgrade.
         let mut tee_state = old.tee_state;
-        tee_state.stamp_expiry_on_legacy_mocks(TeeState::current_time_seconds());
+        stamp_expiry_on_legacy_mocks(&mut tee_state, TeeState::current_time_seconds());
 
         crate::MpcContract {
             protocol_state: old.protocol_state,
@@ -131,5 +175,61 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{TeeState, VerifiedAttestation, attestation, stamp_expiry_on_legacy_mocks};
+    use crate::primitives::test_utils::bogus_ed25519_public_key;
+    use crate::tee::tee_state::{NodeAttestation, NodeId};
+    use crate::tee::test_utils::set_block_timestamp;
+    use mpc_attestation::attestation::MockAttestation;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+    use std::time::Duration;
+
+    #[test]
+    fn stamp_expiry_on_legacy_mocks__should_make_valid_mock_cleanable() {
+        // Given: a legacy `MockAttestation::Valid` entry stored with no expiry, as
+        // written by older contract versions. Such entries pass re-verification
+        // forever and cannot be cleaned up.
+        testing_env!(VMContextBuilder::new().block_timestamp(0).build());
+
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "legacy.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state.stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id: node_id.clone(),
+                verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+            },
+        );
+
+        // Sanity: past the default window but without migration, the un-stamped
+        // entry survives cleanup indefinitely.
+        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        assert_eq!(
+            tee_state.clean_invalid_attestations(Duration::from_secs(0), 100),
+            0
+        );
+
+        // When: the migration stamps an expiry as of block time 0 (window ends at
+        // DEFAULT), which the clock (already at DEFAULT + 1) is past.
+        stamp_expiry_on_legacy_mocks(&mut tee_state, 0);
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
+
+        // Then: the stale legacy mock entry is removed.
+        assert_eq!(removed, 1);
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
+        );
     }
 }
