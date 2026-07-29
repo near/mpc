@@ -117,8 +117,8 @@ pub struct MpcContract {
 /// window elapses. An entry whose expiry is longer than (or missing) the default
 /// window is capped at it; a shorter existing expiry is left as-is.
 ///
-/// This is a one-time upgrade step; it is removed together with this module when
-/// the pre-expiry migration is retired.
+// TODO(#3978): transitional one-time upgrade step — removed together with this
+// module when the pre-expiry migration is retired.
 fn stamp_expiry_on_legacy_mocks(tee_state: &mut TeeState, current_timestamp_seconds: u64) {
     let expiry_timestamp_seconds =
         current_timestamp_seconds + attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;

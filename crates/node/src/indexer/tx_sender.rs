@@ -196,7 +196,7 @@ fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64
 /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`](mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS)),
 /// and only the owning account may rewrite it, so observing a **changed stored expiry** is enough
 /// to conclude our submit landed — for every Dstack entry and for mocks stored with an expiry. A
-/// legacy mock with no stored expiry falls back to an equality check (see the `TODO(#3786)` below).
+/// legacy mock with no stored expiry falls back to an equality check instead.
 // TODO(#1639): match a certificate-derived identity instead of this expiry heuristic.
 fn submitted_attestation_landed(
     pre_submit_expiry: Option<u64>,
