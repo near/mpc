@@ -138,7 +138,7 @@ impl EcdsaSignatureProvider {
             }
 
             // If the store is full, try to discard some presignatures which cannot be used right now
-            if my_presignatures_count == config.desired_presignatures_to_buffer {
+            if my_presignatures_count >= config.desired_presignatures_to_buffer {
                 presignature_store.maybe_discard_owned(1).await;
             }
 
