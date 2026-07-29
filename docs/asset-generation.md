@@ -111,7 +111,7 @@ The queue discards assets to prevent the store from filling up with
 unusable entries:
 
 - **Offline assets** are the only ones subject to discarding. They are
-  evicted from the back of the queue when the store reaches its target
+  evicted from the back of the queue once the store has reached its target
   buffer size.
 - **Online assets are never discarded.** If an asset is online, it is
   moved to the front of the queue, even during a discard pass.
@@ -185,16 +185,18 @@ an asset comes back online.
 
 ### maybe_discard_owned() flow
 
-Called when the store is full (`num_owned == desired_to_buffer`). It
-processes a fixed number of elements:
+Called by the generation loops when the store is full
+(`num_owned >= desired_to_buffer`). It processes a fixed number of elements:
 
 1. Pops from the back of the cold queue. If an asset doesn't satisfy
    the condition, it is permanently removed (deleted from DB too).
 2. If the cold queue is exhausted, drains available hot-queue items and
-   classifies them.
+   classifies them. An item that doesn't satisfy the condition is dropped from
+   the queue, but its database row stays until the epoch-transition cleanup.
 
-This prevents the store from filling up with unusable assets when
-participants go offline.
+This prevents the store from filling up with unusable assets when participants
+go offline. It is also the only path that moves a hot-queue asset into the
+ready region, so `num_owned_ready()` only converges while it runs.
 
 **Note on orphaned unowned assets:** When an owned asset is discarded, only the
 local copy is deleted. There is no mechanism to notify borrower nodes to delete
@@ -294,6 +296,10 @@ set.
 | `mpc_owned_num_presignatures_online` | Owned online presignatures. |
 | `mpc_owned_num_presignatures_with_offline_participant` | Owned offline presignatures. |
 
+The online and offline gauges only count classified assets; assets still in
+the "unknown" state count towards neither. For an asset sitting in the hot
+queue, only `maybe_discard_owned()` classifies it as online.
+
 ## Configuration
 
 Defined in `crates/node/src/config.rs` and set in `config.yaml`.
@@ -361,7 +367,7 @@ loop {
         sleep(parallel_triple_generation_stagger_time_sec)
         continue
 
-    if store is full (num_owned == desired):
+    if store is full (num_owned >= desired):
         maybe_discard_owned(32)   // clean out unusable assets
 
     sleep 100ms
@@ -396,7 +402,7 @@ loop {
             store as owned presignature
         continue
 
-    if store is full (num_owned == desired):
+    if store is full (num_owned >= desired):
         maybe_discard_owned(1)
 
     sleep 100ms
