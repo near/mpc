@@ -112,7 +112,7 @@ pub struct MpcContract {
 /// [`mpc_attestation::attestation::MockAttestation::Valid`] entries pass
 /// re-verification forever and can therefore never be evicted by
 /// [`TeeState::clean_invalid_attestations`];
-/// [`mpc_attestation::attestation::MockAttestation::with_expiry`] rewrites them as
+/// [`mpc_attestation::attestation::MockAttestation::with_expiry_capped_at`] rewrites them as
 /// expiring mocks so the normal cleanup flow can remove stale entries once the
 /// window elapses. An entry whose expiry is longer than (or missing) the default
 /// window is capped at it; a shorter existing expiry is left as-is.
@@ -141,7 +141,7 @@ fn stamp_expiry_on_legacy_mocks(tee_state: &mut TeeState, current_timestamp_seco
             continue;
         };
         if let VerifiedAttestation::Mock(mock) = &node_attestation.verified_attestation {
-            let stamped = mock.clone().with_expiry(expiry_timestamp_seconds);
+            let stamped = mock.clone().with_expiry_capped_at(expiry_timestamp_seconds);
             node_attestation.verified_attestation = VerifiedAttestation::Mock(stamped);
         }
     }

@@ -85,7 +85,7 @@ impl AcceptedAttestation {
     }
 
     /// Assembles the acceptance for a verified `Mock` attestation. Stamps a
-    /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry`]),
+    /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry_capped_at`]),
     /// mirroring [`AcceptedAttestation::dstack`], so a [`MockAttestation::Valid`] mock
     /// does not pass re-verification forever and can be cleaned up.
     fn mock(mock_attestation: &MockAttestation, current_timestamp_seconds: u64) -> Self {
@@ -95,7 +95,7 @@ impl AcceptedAttestation {
             attestation: VerifiedAttestation::Mock(
                 mock_attestation
                     .clone()
-                    .with_expiry(expiry_timestamp_seconds),
+                    .with_expiry_capped_at(expiry_timestamp_seconds),
             ),
             advisory_ids: Vec::new(),
         }
@@ -157,7 +157,7 @@ impl MockAttestation {
     // Full alignment — override the value, or split the submitted vs stored mock
     // types (`ValidatedMockAttestation`) — is tracked in #4005; revisit alongside
     // #1639 (certificate-derived expiry).
-    pub fn with_expiry(self, expiry_timestamp_seconds: u64) -> Self {
+    pub fn with_expiry_capped_at(self, expiry_timestamp_seconds: u64) -> Self {
         match self {
             MockAttestation::Valid => MockAttestation::WithConstraints {
                 mpc_docker_image_hash: None,
@@ -548,9 +548,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn with_expiry__should_convert_valid_to_expiring_constraints() {
+    fn with_expiry_capped_at__should_convert_valid_to_expiring_constraints() {
         // Given / When
-        let stamped = MockAttestation::Valid.with_expiry(42);
+        let stamped = MockAttestation::Valid.with_expiry_capped_at(42);
 
         // Then
         assert_matches::assert_matches!(
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn with_expiry__should_fill_missing_expiry_and_keep_other_constraints() {
+    fn with_expiry_capped_at__should_fill_missing_expiry_and_keep_other_constraints() {
         // Given: a constrained mock with an image-hash constraint but no expiry.
         let image_hash = NodeImageHash::from([7; 32]);
         let mock = MockAttestation::WithConstraints {
@@ -576,7 +576,7 @@ mod tests {
         };
 
         // When
-        let stamped = mock.with_expiry(42);
+        let stamped = mock.with_expiry_capped_at(42);
 
         // Then: the expiry is filled in and the other constraints are preserved.
         assert_matches::assert_matches!(
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn with_expiry__should_cap_existing_expiry_at_the_provided_value() {
+    fn with_expiry_capped_at__should_cap_existing_expiry_at_the_provided_value() {
         // Given: a mock whose expiry is longer than the contract cap.
         let mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
@@ -600,7 +600,7 @@ mod tests {
         };
 
         // When
-        let stamped = mock.with_expiry(42);
+        let stamped = mock.with_expiry_capped_at(42);
 
         // Then: it is capped at the contract-provided value (a caller cannot extend it).
         assert_matches::assert_matches!(
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn with_expiry__should_keep_a_shorter_existing_expiry() {
+    fn with_expiry_capped_at__should_keep_a_shorter_existing_expiry() {
         // Given: a mock whose expiry is already shorter than the cap.
         let mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
@@ -623,7 +623,7 @@ mod tests {
         };
 
         // When
-        let stamped = mock.with_expiry(42);
+        let stamped = mock.with_expiry_capped_at(42);
 
         // Then: the shorter expiry is left as-is (capping only lowers, never raises).
         assert_matches::assert_matches!(
@@ -636,9 +636,9 @@ mod tests {
     }
 
     #[test]
-    fn with_expiry__should_leave_invalid_unchanged() {
+    fn with_expiry_capped_at__should_leave_invalid_unchanged() {
         // Given / When
-        let stamped = MockAttestation::Invalid.with_expiry(42);
+        let stamped = MockAttestation::Invalid.with_expiry_capped_at(42);
 
         // Then
         assert_matches::assert_matches!(stamped, MockAttestation::Invalid);
