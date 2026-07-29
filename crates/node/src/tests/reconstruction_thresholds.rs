@@ -98,12 +98,12 @@ async fn assert_availability(
         match expected {
             Availability::Works => assert!(
                 response.is_some(),
-                "domain {:?} (t={t}) should be available to the currently-online nodes",
+                "domain {:?} (t={t}) should be available at stage {stage}",
                 domain.id,
             ),
             Availability::Stops => assert!(
                 response.is_none(),
-                "domain {:?} (t={t}) must NOT be available: too few nodes are online for it",
+                "domain {:?} (t={t}) must NOT be available at stage {stage}: too few nodes are online",
                 domain.id,
             ),
         }
@@ -242,7 +242,7 @@ impl ResharedDomain {
 /// sharings allowed, the DamgardEtAl one at its new `2t - 1 = 3` signers, and the kept siblings
 /// still need their own `t`.
 ///
-/// Lowering is what makes the updates provable: a resharing that kept the old `t` would leave a
+/// Lowering is what makes the updates provable: a resharing that ignored the update would leave a
 /// sharing needing more shares than the new `t` selects, which every protocol here rejects when
 /// verifying its own output.
 #[tokio::test]
@@ -310,12 +310,12 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         .expect("must not exceed timeout");
 
     // Sanity: all five initial nodes online, every domain works at its pre-reshare `t`.
-    let presignature_domains = [
+    let presignature_domains_before = [
         &caitsith_kept.before,
         &caitsith_updated.before,
         &robust_updated.before,
     ];
-    warm_up(&mut setup.indexer, &presignature_domains).await;
+    warm_up(&mut setup.indexer, &presignature_domains_before).await;
     assert_availability(
         &mut setup.indexer,
         "pre",
@@ -359,12 +359,12 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         .expect("Timeout waiting for resharing to complete");
 
     // Then all domains still work with the full reshared set.
-    let presignature_domains = [
+    let presignature_domains_after = [
         &caitsith_kept.after,
         &caitsith_updated.after,
         &robust_updated.after,
     ];
-    warm_up(&mut setup.indexer, &presignature_domains).await;
+    warm_up(&mut setup.indexer, &presignature_domains_after).await;
     assert_availability(
         &mut setup.indexer,
         "post",
@@ -384,12 +384,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
     let _disabled_a = setup.indexer.disable(5.into()).await;
     let _disabled_b = setup.indexer.disable(4.into()).await;
     let _disabled_c = setup.indexer.disable(3.into()).await;
-    let presignature_domains = [
-        &caitsith_kept.after,
-        &caitsith_updated.after,
-        &robust_updated.after,
-    ];
-    warm_up(&mut setup.indexer, &presignature_domains).await;
+    warm_up(&mut setup.indexer, &presignature_domains_after).await;
     assert_availability(
         &mut setup.indexer,
         "three_online",
