@@ -97,18 +97,37 @@ pub enum ForeignTxPayloadVersion {
 
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub derivation_path: String, // Key derivation path
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    // Optional opt-in binding of the response to this request, see below.
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
-    pub tweak: Tweak,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    pub expected_payload_hash: Option<Hash256>,
 }
 ```
+
+#### Binding the response to the request (`expected_payload_hash`)
+
+A response's signature is verified against the network's root key, so without further
+checks any previously signed `(payload_hash, signature)` pair would satisfy
+`respond_verify_foreign_tx` and could resolve a pending request with a stale or
+unrelated observation (a replay DoS; callers detect the mismatch client-side, so funds
+are not at risk).
+
+Callers that can predict the signed payload — i.e. that know which extracted values they
+expect — can compute `msg_hash` (see [Sign Payload Serialization](#sign-payload-serialization))
+and submit it as `expected_payload_hash`. The contract then rejects any response whose
+`payload_hash` differs, and nodes refuse to sign a payload whose hash differs from the
+expectation. A request with an expectation that does not match on-chain reality therefore
+times out rather than receiving a mismatching response. The `near-mpc-sdk` request builder
+populates this field automatically from the caller's expected values.
+
+Omitting the field preserves the old unbound behavior.
 
 ### Chain Query DTOs
 
@@ -564,7 +583,8 @@ This ensures different nodes query different providers for the same request whil
 
 ## Failure and Timeout Behavior
 
-* Nodes **do not participate** if RPC queries fail or extraction fails.
+* Nodes **do not participate** if RPC queries fail, extraction fails, or the computed
+  payload hash does not match the request's `expected_payload_hash`.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
 * *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (RPC sub-quorum, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#3477](https://github.com/near/mpc/issues/3477).
 

@@ -26,7 +26,7 @@ pub enum StorageKey {
     SupportedForeignChainsByNode,
     PendingSignatureRequestsV4,
     PendingCKDRequestsV3,
-    PendingVerifyForeignTxRequestsV2,
+    _DeprecatedPendingVerifyForeignTxRequestsV2,
     AllowedForeignChainProvidersV1,
     ForeignChainProviderVotesByVoterV1,
     ForeignChainProviderVotesByProposalV1,
@@ -35,4 +35,7 @@ pub enum StorageKey {
     TeeVerifierVotesByVoter,
     TeeVerifierVotesByProposal,
     AttestationGrants,
+    /// V3: `VerifyForeignTransactionRequest` gained `expected_payload_hash`, changing the
+    /// borsh key encoding, so entries pending at upgrade time are abandoned under V2.
+    PendingVerifyForeignTxRequestsV3,
 }

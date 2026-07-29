@@ -320,6 +320,7 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -338,6 +339,7 @@ async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -356,6 +358,7 @@ async fn verify_bnb(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -374,6 +377,7 @@ async fn verify_base(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -392,6 +396,7 @@ async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -410,6 +415,7 @@ async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -428,6 +434,7 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -473,6 +480,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -530,6 +538,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -557,6 +566,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         }),
         domain_id: DomainId(999),
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster

@@ -315,6 +315,7 @@ mod tests {
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,
+                expected_payload_hash: Some(crate::types::Hash256([7u8; 32])),
             })
             .await
             .unwrap();

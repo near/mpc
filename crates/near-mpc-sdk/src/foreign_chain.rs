@@ -130,10 +130,23 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request: request.clone(),
         };
 
+        // Bind the request to the expected payload on chain, so a replayed response for a
+        // different payload cannot resolve it. Must stay consistent with
+        // [`DEFAULT_PAYLOAD_VERSION`] and [`ForeignChainSignatureVerifier::verify_signature`].
+        // Hash computation only fails on a borsh serialization error, which cannot happen for
+        // these types; falling back to an unbound request keeps this method infallible.
+        let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: verifier.request.clone(),
+            values: verifier.expected_extracted_values.clone(),
+        })
+        .compute_msg_hash()
+        .ok();
+
         let request_args = VerifyForeignTransactionRequestArgs {
             request,
             domain_id: self.domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash,
         };
 
         (verifier, request_args)

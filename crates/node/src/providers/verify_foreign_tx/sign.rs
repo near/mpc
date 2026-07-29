@@ -32,8 +32,18 @@ fn build_signature_request(
     request: &VerifyForeignTxRequest,
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
-    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] =
-        foreign_tx_payload.compute_msg_hash()?.into();
+    let msg_hash = foreign_tx_payload.compute_msg_hash()?;
+    // Refuse to sign a payload the requester does not expect: the contract rejects such a
+    // response anyway, and co-signing it would let its signature circulate as a replay
+    // candidate against other requests.
+    if let Some(expected_payload_hash) = &request.expected_payload_hash
+        && expected_payload_hash != &msg_hash
+    {
+        bail!(
+            "computed payload hash {msg_hash:?} does not match the request's expected payload hash {expected_payload_hash:?}"
+        );
+    }
+    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] = msg_hash.into();
     let payload_bytes: BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES> =
         payload_hash.into();
 
@@ -416,6 +426,68 @@ mod tests {
             confirmations: dtos::BlockConfirmations(6),
             extractors: vec![dtos::BitcoinExtractor::BlockHash],
         })
+    }
+
+    fn bitcoin_payload() -> dtos::ForeignTxSignPayload {
+        dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
+            request: bitcoin_request(),
+            values: vec![dtos::ExtractedValue::BitcoinExtractedValue(
+                dtos::BitcoinExtractedValue::BlockHash(dtos::Hash256([42u8; 32])),
+            )],
+        })
+    }
+
+    fn verify_foreign_tx_request(
+        expected_payload_hash: Option<dtos::Hash256>,
+    ) -> VerifyForeignTxRequest {
+        VerifyForeignTxRequest {
+            id: near_indexer_primitives::CryptoHash([1u8; 32]),
+            receipt_id: near_indexer_primitives::CryptoHash([2u8; 32]),
+            request: bitcoin_request(),
+            payload_version: dtos::ForeignTxPayloadVersion::V1,
+            expected_payload_hash,
+            entropy: [0u8; 32],
+            timestamp_nanosec: 0,
+            domain_id: mpc_primitives::domain::DomainId(0),
+        }
+    }
+
+    #[test]
+    fn build_signature_request__should_reject_payload_not_matching_expected_hash() {
+        // Given
+        let request = verify_foreign_tx_request(Some(dtos::Hash256([1u8; 32])));
+        let payload = bitcoin_payload();
+
+        // When
+        let result = build_signature_request(&request, &payload);
+
+        // Then
+        result.unwrap_err();
+    }
+
+    #[test]
+    fn build_signature_request__should_accept_payload_matching_expected_hash() {
+        // Given
+        let payload = bitcoin_payload();
+        let request = verify_foreign_tx_request(Some(payload.compute_msg_hash().unwrap()));
+
+        // When
+        let result = build_signature_request(&request, &payload);
+
+        // Then
+        result.unwrap();
+    }
+
+    #[test]
+    fn build_signature_request__should_accept_any_payload_without_expected_hash() {
+        // Given
+        let request = verify_foreign_tx_request(None);
+
+        // When
+        let result = build_signature_request(&request, &bitcoin_payload());
+
+        // Then
+        result.unwrap();
     }
 
     fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {

@@ -139,7 +139,10 @@ mod test {
     };
 
     use crate::foreign_chain::ForeignChainSignatureVerifier;
-    use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainRequestBuilder};
+    use crate::foreign_chain::{
+        DEFAULT_PAYLOAD_VERSION, ForeignChainRequestBuilder, ForeignTxSignPayload,
+        ForeignTxSignPayloadV1,
+    };
     use near_mpc_contract_interface::types::ExtractedValue;
 
     use super::*;
@@ -275,14 +278,27 @@ mod test {
             .build();
 
         // then
+        let expected_request = ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+            tx_id,
+            finality: EvmFinality::Finalized,
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
+        });
+        let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: expected_request.clone(),
+            values: vec![
+                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(
+                    expected_hash.into(),
+                )),
+                ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(log)),
+            ],
+        })
+        .compute_msg_hash()
+        .unwrap();
         let expected = VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
-                tx_id,
-                finality: EvmFinality::Finalized,
-                extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
-            }),
+            request: expected_request,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
         assert_eq!(request_args, expected);

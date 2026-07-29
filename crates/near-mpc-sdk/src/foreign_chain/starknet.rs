@@ -117,7 +117,10 @@ mod test {
     use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
 
-    use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
+    use crate::foreign_chain::{
+        DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier, ForeignTxSignPayload,
+        ForeignTxSignPayloadV1,
+    };
 
     use super::*;
 
@@ -182,15 +185,24 @@ mod test {
             .build();
 
         // then
+        let expected_request = ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+            tx_id,
+            finality: StarknetFinality::AcceptedOnL1,
+            extractors: vec![StarknetExtractor::BlockHash],
+        });
+        let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: expected_request.clone(),
+            values: vec![ExtractedValue::StarknetExtractedValue(
+                StarknetExtractedValue::BlockHash(StarknetFelt(expected_hash)),
+            )],
+        })
+        .compute_msg_hash()
+        .unwrap();
         let expected = VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
-                tx_id,
-                finality: StarknetFinality::AcceptedOnL1,
-                extractors: vec![StarknetExtractor::BlockHash],
-            }),
-
+            request: expected_request,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
         assert_eq!(request_args, expected);

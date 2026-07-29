@@ -64,6 +64,8 @@ pub enum RespondError {
     DomainNotFound,
     #[error("The provided tweak is not on the curve of the public key.")]
     TweakNotOnCurve,
+    #[error("The response payload hash does not match the hash expected by the request.")]
+    UnexpectedPayloadHash,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

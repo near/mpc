@@ -120,7 +120,12 @@ impl From<MpcContract> for crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
-            pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
+            // `VerifyForeignTransactionRequest` gained `expected_payload_hash`, changing the
+            // borsh key encoding, so entries pending at upgrade time are abandoned; their
+            // yields time out on chain as if never responded to.
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                crate::storage_keys::StorageKey::PendingVerifyForeignTxRequestsV3,
+            ),
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config.into(),

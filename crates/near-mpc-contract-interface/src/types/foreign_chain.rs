@@ -103,6 +103,11 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    /// When set, the contract only accepts a response whose signed payload hash equals
+    /// this value, binding the response to this request. Nodes refuse to sign a payload
+    /// whose hash differs, so a mismatching expectation makes the request time out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 #[derive(
@@ -126,6 +131,9 @@ pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    /// See [`VerifyForeignTransactionRequestArgs::expected_payload_hash`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 #[derive(
