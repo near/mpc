@@ -188,7 +188,7 @@ near-crypto-public = { version = "0.36.0", package = "near-crypto" }
 near-gas = "0.3.4"
 near-jsonrpc-client = "0.21.1"
 near-jsonrpc-primitives = "0.36.0"
-near-kit = { version = "0.11.0", default-features = false }
+near-kit = { version = "0.12.1", default-features = false }
 near-primitives = "0.36.0"
 near-sandbox = "0.3.11"
 near-sdk = { version = "5.28.0", features = [
@@ -235,7 +235,7 @@ socket2 = "0.6.3"
 subtle = "2.6.1"
 sui-rpc = "0.3.1"
 sui-sdk-types = "0.3.1"
-syn = "2.0"
+syn = "3.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
@@ -271,16 +271,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.1" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88

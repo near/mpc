@@ -66,7 +66,6 @@ impl StartConfigExt for StartConfig {
         tracing::info!(chain_id = %near_init.chain_id, "initializing NEAR node");
         run_near_init(near_init, &self.home_dir)?;
 
-        // Patch the NEAR node config the same way start.sh does.
         patch_near_config(&near_config_path, near_init, &self.node)?;
 
         Ok(())
@@ -147,8 +146,9 @@ fn require_tier3_public_addr(near_init: &NearInitConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Applies post-init patches to the NEAR node `config.json`, matching the
-/// behaviour of `update_near_node_config()` in `start.sh`.
+/// Applies post-init patches to the NEAR node `config.json`. Overlaps with, but
+/// no longer matches, `update_near_node_config()` in `start.sh`: that script runs
+/// `CliCommand::Start`, which sets `near_init: None`, so this never runs there.
 fn patch_near_config(
     config_path: &Path,
     near_init: &NearInitConfig,
@@ -292,6 +292,34 @@ fn set_tier3_public_addr(
     Ok(true)
 }
 
+/// nearcore's default caps on block-paced messages are sized for mainnet block
+/// times, so a sped-up localnet outruns them: a follower drops broadcast blocks
+/// and its catch-up crawls at the cap.
+fn lift_localnet_block_rate_limits(config: &mut serde_json::Value) -> anyhow::Result<()> {
+    const UNLIMITED: u32 = 1_000_000;
+    let unlimited = serde_json::json!({
+        "maximum_size": UNLIMITED,
+        "refill_rate": UNLIMITED,
+        "initial_size": UNLIMITED,
+    });
+
+    object_at(
+        config,
+        &["network", "experimental", "network_config_overrides"],
+    )?
+    .insert(
+        "received_messages_rate_limits".to_owned(),
+        serde_json::json!({
+            "rate_limits": {
+                "Block": unlimited,
+                "OptimisticBlock": unlimited,
+                "BlockRequest": unlimited,
+            }
+        }),
+    );
+    Ok(())
+}
+
 /// Reads and parses the NEAR node `config.json` under `home_dir`, for serving
 /// via the `/debug/nearcore_config` endpoint.
 ///
@@ -320,6 +348,7 @@ fn apply_near_config_patches(
             "state_sync_enabled".to_owned(),
             serde_json::Value::Bool(false),
         );
+        lift_localnet_block_rate_limits(config)?;
     } else {
         // Decentralized (peer-to-peer) state sync; replaces any inherited ExternalStorage block.
         set_decentralized_state_sync(config)?;
@@ -353,6 +382,7 @@ fn apply_near_config_patches(
 mod tests {
     use super::*;
     use mpc_node_config::ChainId;
+    use rstest::rstest;
 
     fn near_init(chain_id: ChainId) -> NearInitConfig {
         NearInitConfig {
@@ -473,6 +503,79 @@ mod tests {
             // Localnet branch must not touch sync — sentinel survives.
             assert_eq!(config["state_sync"]["sync"], serde_json::json!("SENTINEL"));
         }
+    }
+
+    #[rstest]
+    #[case(ChainId::Localnet)]
+    #[case(ChainId::Sandbox)]
+    fn apply_near_config_patches__should_lift_block_rate_limits_for_localnet(
+        #[case] chain_id: ChainId,
+    ) {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(chain_id);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "mpc-contract.test.near").unwrap();
+
+        // Then
+        let limits = &config["network"]["experimental"]["network_config_overrides"]["received_messages_rate_limits"]
+            ["rate_limits"];
+        for key in ["Block", "BlockRequest", "OptimisticBlock"] {
+            let refill = limits[key]["refill_rate"]
+                .as_f64()
+                .unwrap_or_else(|| panic!("{key} must carry a numeric refill_rate"));
+            assert!(
+                refill > 10.0,
+                "{key} refill_rate {refill} must exceed nearcore's 10/s default"
+            );
+            // Catch-up exhausts the burst, so a shrunk maximum_size regresses the
+            // fix even with a large refill_rate.
+            let burst = limits[key]["maximum_size"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("{key} must carry a numeric maximum_size"));
+            assert!(
+                burst > 10,
+                "{key} maximum_size {burst} must exceed nearcore's default burst"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(ChainId::Mainnet)]
+    #[case(ChainId::Testnet)]
+    fn apply_near_config_patches__should_not_lift_block_rate_limits_for_non_localnet(
+        #[case] chain_id: ChainId,
+    ) {
+        // Given
+        let mut config = empty_config_json();
+        let init = near_init(chain_id);
+
+        // When
+        apply_near_config_patches(&mut config, &init, "v1.signer").unwrap();
+
+        // Then
+        assert!(
+            config["network"]["experimental"]["network_config_overrides"]
+                .get("received_messages_rate_limits")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn lift_localnet_block_rate_limits__should_preserve_sibling_overrides() {
+        // Given
+        let mut config = empty_config_json();
+        config["network"]["experimental"]["network_config_overrides"] =
+            serde_json::json!({ "max_send_peers": 7 });
+
+        // When
+        lift_localnet_block_rate_limits(&mut config).unwrap();
+
+        // Then
+        let overrides = &config["network"]["experimental"]["network_config_overrides"];
+        assert_eq!(overrides["max_send_peers"], serde_json::json!(7));
+        assert!(overrides["received_messages_rate_limits"]["rate_limits"]["Block"].is_object());
     }
 
     #[test]
