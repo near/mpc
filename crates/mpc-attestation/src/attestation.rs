@@ -152,11 +152,11 @@ impl MockAttestation {
     /// it eventually expires and becomes eligible for cleanup.
     /// [`MockAttestation::Invalid`] is returned unchanged — it never reaches acceptance.
     ///
-    // TODO(#1639): Dstack fully owns the expiry (the submission carries none, so
+    // TODO(#4005): Dstack fully owns the expiry (the submission carries none, so
     // the contract sets it outright); here a mock's submitted expiry is only capped.
     // Full alignment — override the value, or split the submitted vs stored mock
-    // types (`ValidatedMockAttestation`) — is deferred; revisit alongside #1639
-    // (certificate-derived expiry).
+    // types (`ValidatedMockAttestation`) — is tracked in #4005; revisit alongside
+    // #1639 (certificate-derived expiry).
     pub fn with_expiry(self, expiry_timestamp_seconds: u64) -> Self {
         match self {
             MockAttestation::Valid => MockAttestation::WithConstraints {
