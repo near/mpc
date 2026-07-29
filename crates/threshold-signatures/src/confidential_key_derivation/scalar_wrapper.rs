@@ -1,3 +1,12 @@
+//! [`Zeroize`] wrapper for the `blstrs` scalars holding CKD secrets.
+//!
+//! `blstrs::Scalar` is `Copy` and does not implement [`Zeroize`], so secrets are
+//! wrapped here and held in `Zeroizing` to get a volatile overwrite on drop.
+//! Zeroization stays *best-effort*: `Copy` semantics mean every read of the value
+//! produces a fresh copy (function arguments, register spills, temporaries inside
+//! `blstrs`' arithmetic) that the wrapper cannot reach. Only the wrapped location
+//! is guaranteed to be cleared.
+
 use core::ptr;
 use digest::consts::U48;
 use digest::generic_array::GenericArray;
@@ -73,13 +82,16 @@ impl FromOkm for ScalarWrapper {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
-    use crate::{
-        confidential_key_derivation::scalar_wrapper::ScalarWrapper, test_utils::MockCryptoRng,
-    };
+    use crate::confidential_key_derivation::SigningShare;
+    use crate::confidential_key_derivation::scalar_wrapper::ScalarWrapper;
+    use crate::test_utils::MockCryptoRng;
+    use elliptic_curve::Field;
     use rand::Rng as _;
     use rand_core::{RngCore, SeedableRng};
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     #[test]
     // This test only makes sense if `overflow-checks` are enabled
@@ -121,5 +133,33 @@ mod tests {
         let b = rng.gen_range(124..10000);
         a += b;
         assert!(a > 0);
+    }
+
+    #[test]
+    fn scalar_wrapper__should_be_zero_after_zeroize() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let mut wrapper = ScalarWrapper(blstrs::Scalar::random(&mut rng));
+        assert_ne!(wrapper.0, blstrs::Scalar::ZERO);
+
+        // When
+        wrapper.zeroize();
+
+        // Then
+        assert_eq!(wrapper.0, blstrs::Scalar::ZERO);
+    }
+
+    #[test]
+    fn signing_share__should_be_zero_after_zeroize() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let mut share = SigningShare::new(blstrs::Scalar::random(&mut rng));
+        assert_ne!(share.to_scalar(), blstrs::Scalar::ZERO);
+
+        // When
+        share.zeroize();
+
+        // Then
+        assert_eq!(share.to_scalar(), blstrs::Scalar::ZERO);
     }
 }
