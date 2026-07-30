@@ -76,7 +76,7 @@ The counter also decouples granted capacity from the NEAR price. Grants are deno
 | Method | Kind | Purpose |
 |---|---|---|
 | `prepay_attestation_storage(account_id: AccountId)` | `#[payable]` | Grants `floor(attached_deposit / fee)` entries to `account_id`. Rejects below one fee. Any remainder is kept. Permissionless — anyone may prepay for any account. |
-| `available_attestation_grants(account_id: AccountId) -> u32` | view | Grants **available** — bought, minus those currently backing an entry. This is what an operator checks to confirm a prepayment landed and the node can attest. Lifetime total is not tracked; see below. |
+| `available_attestation_grants(account_id: AccountId) -> u32` | view | Grants **available** — bought, minus those currently backing an entry. An operator checks it between prepaying and the node's first submission. Lifetime total is not tracked; see below. |
 | `attestation_storage_fee() -> NearToken` | view | Current per-entry fee, so tooling and the runbook do not hardcode it. |
 
 ### New state
@@ -88,6 +88,8 @@ available  =  bought  -  entries currently held
 ```
 
 Prepaying increments it, storing an entry decrements it, reclaiming an entry increments it back. The contract keeps it non-negative by rejecting a new entry at zero, which is how it enforces the invariant above — so `bought` and `entries held` never need storing separately, and nothing in the design reads them.
+
+A consequence for operators: because the row is deleted at zero, a return of `0` is ambiguous on its own — it means either "never prepaid" or "prepaid, and the grant is now backing an entry". Disambiguate with `get_tee_accounts`: zero grants *and* no entry for your node means you still need to prepay; zero grants *with* an entry present is the normal steady state.
 
 ```rust
 // contract state
@@ -105,9 +107,11 @@ All figures below are **charged storage** — the bytes the runtime actually bil
 
 | Component | Charged bytes | At today's storage price |
 |---|---|---|
-| Attestation entry, worst case (`WORST_CASE_ENTRY_BYTES`) | 604 | 0.00604 NEAR |
+| Attestation entry, worst case | 604 | 0.00604 NEAR |
 | Grants-map row — account id, counter, record overhead | ~130 | ~0.0013 NEAR |
 | **Subtotal** | **~734** | **~0.0073 NEAR** |
+
+The 604 comes from `stored_attestation_entry__should_have_the_pinned_size`, which pins it in a `#[cfg(test)]` module — it is a test-enforced figure, not a production constant, and because the fee is a `Config` value rather than derived at call time, nothing in the contract reads it. The test is what stops a schema change from silently invalidating the fee.
 
 The 604 is the larger of the two attestation variants: a worst-case `Mock` entry charges 604 bytes and a `Dstack` one 599, so the fee must be sized off the mock branch for as long as `Attestation::Mock` is accepted. (Their borsh *values* are 450 and 445 bytes; the difference is key and record overhead, which is why the charged figure is the one that matters here.)
 
@@ -126,7 +130,9 @@ Two consequences for entries that predate the upgrade, both intentional and need
 - **They keep working with no grant.** An existing node re-attesting under its existing TLS key hits rule 1, so it consumes nothing and no operator has to prepay to stay attested.
 - **They yield a grant when swept.** Rule 3 does not distinguish a legacy entry from a paid one, so as pre-upgrade entries expire their owners receive one grant each. That is a deliberate grandfather: it is a small, bounded gift to the operators already running nodes — 14 entries on mainnet and 31 on testnet at the time of writing. The exposure is exactly "entries present at deploy time become permanent capacity", so the entry count should be sanity-checked at deploy rather than assumed; see [Rollout](#rollout).
 
-The early precondition check also rejects a TLS key already registered to a *different* account, so a submission that would fail `TlsKeyOwnedByOtherAccount` does not burn verification gas first.
+Rule 1 turns on **ownership, not key presence**. The early precondition check must compare the stored entry's `account_id` against the submitter, not merely test whether the TLS key exists: a submission targeting someone else's key would otherwise be classified as "existing entry, no grant needed", pass the early check, run verification, and only then fail on `TlsKeyOwnedByOtherAccount`. Comparing the owner both classifies correctly and fails before any verification gas is spent.
+
+Rule 3 has a gas cost worth sizing before implementation. It adds a grants-map write for every entry the sweep removes, and that write is a row *insert* — not an update — whenever the owner's row was previously deleted at zero. `clean_invalid_attestations` is gas-bounded and its budget was set for removals alone, so both `clean_invalid_attestations_tera_gas` and the `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` default need re-validating against the heavier per-entry cost, with a gas-budget guard test of the kind [#3936](https://github.com/near/mpc/pull/3936) adds for `clean_expired_launcher_hashes`.
 
 When a counter reaches zero its row is deleted rather than stored as `0`, so the map does not accumulate rows for accounts that hold nothing. Grants are *not* dropped when a node leaves the participant set: kicks are frequently temporary — an expired attestation, a node mid-upgrade — and confiscating prepaid capacity would force an operator to pay again merely to rejoin.
 
@@ -249,3 +255,5 @@ Entries predating the upgrade remain contract-funded and are reclaimable under [
 - **Unit** — `clean_invalid_attestations` returns one grant per entry it removes, to the account that owned it; the counter's row is deleted when it reaches zero; a kicked node keeps its remaining grants.
 - **Unit** — the recycled grant is spendable: reclaim an entry, then store a new one without prepaying again.
 - **Bound** — entries held by an account never exceed grants bought, across insert, reclaim and re-prepay sequences.
+- **Gas** — a `clean_invalid_attestations` budget guard covering the worst case for rule 3: every scanned entry removed, and every owner's grants row absent so each write is an insert.
+- **Unit** — a submission for a TLS key owned by another account is rejected by the early check, before verification, and consumes no grant.
