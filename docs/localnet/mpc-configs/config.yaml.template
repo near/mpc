@@ -44,10 +44,10 @@ foreign_chains:
   abstract:
     timeout_sec: 30
     max_retries: 3
-    expected_chain_identity: "11124" # Abstract testnet; mainnet: "2741"
+    expected_chain_identity: "2741" # Abstract mainnet; testnet: "11124"
     providers:
       public:
-        rpc_url: "https://api.testnet.abs.xyz"
+        rpc_url: "https://api.mainnet.abs.xyz"
         auth:
           kind: none
   starknet:

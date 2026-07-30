@@ -669,8 +669,8 @@ distinguishes testnet3 from testnet4, signet and regtest
 (`"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`) where a network *name* would
 not. Aptos's one-byte id space separates mainnet from testnet, but two devnets can collide.
 
-The identity is set per chain rather than once per deployment, so a config can mix networks: the
-localnet template pairs mainnet Bitcoin with testnet Abstract. The value is always a quoted string,
+The identity is set per chain rather than once per deployment, so a config can mix networks, and each
+value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the identities that look numeric.
 
 Nothing reads the field yet. The startup probe that asks each provider for the network it serves and
