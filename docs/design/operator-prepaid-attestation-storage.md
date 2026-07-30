@@ -4,7 +4,7 @@
 
 This document designs the funding model tracked in [#3972](https://github.com/near/mpc/issues/3972): moving the storage cost of a stored attestation entry off the contract's balance and onto whoever onboards the node — by adding a single operational step in which the operator prepays for that storage — while keeping the node's deposit-less function-call access key able to self-attest.
 
-One prepayment buys one **grant**: permission for a node account to store one attestation entry. An operator running two nodes prepays twice — for example to keep a backup node attested, or for the second node during a migration. Nothing is refunded, and the contract never records how much anyone paid — only how many unused grants they have left.
+One prepayment buys one **grant**: permission for a node account to store one attestation entry. **A grant comes back when the entry it paid for is reclaimed**, so a grant is a slot the operator keeps rather than a one-time charge — prepay for the capacity you run and you never have to think about it again. An operator running two nodes prepays twice, for example to keep a backup node attested or for the second node during a migration. No NEAR is ever refunded, and the contract records only how many unused grants an account has left.
 
 ## Background
 
@@ -38,6 +38,7 @@ Together these force the shape of the answer: **paying and submitting must be se
 
 - A new attestation entry is paid for by whoever onboards the node, not by the contract.
 - The node keeps self-submitting its first attestation and every re-attestation with its function-call key.
+- An operator prepays once for the capacity they run and does not revisit it as nodes are torn down, re-provisioned, rotated or migrated.
 - No new unbounded growth vector, and no per-operator balance to reconcile.
 
 ## Non-goals
@@ -59,7 +60,10 @@ A grant is therefore **capacity to hold one entry**, not a one-time ticket. The 
 entries an account currently holds  ≤  grants that account has bought
 ```
 
-So an operator who tears down a node and lets its entry expire gets the slot back and can bring up the next node without paying again. That matters for anyone testing several nodes in sequence, and it keeps the contract from charging twice for storage it already reclaimed.
+Recycling the grant on reclamation is what makes that work, and it earns its keep twice over:
+
+- **Fairness** — the fee bought storage. Once the contract has that storage back, charging again for the next entry would be charging twice for the same thing.
+- **Operator experience** — an operator prepays for the capacity they actually run (three grants for three nodes, say) and is then done with it. Nodes can be torn down, re-provisioned, rotated and migrated indefinitely without another prepayment, as long as no more than three entries are held at once. Without recycling, every re-provisioned node is a fresh purchase and a fresh thing to remember.
 
 **No NEAR is ever returned.** Recycling gives back capacity, never money: a deposit is consumed permanently the moment it is made, and the only thing that ever comes back is the right to store another entry. There is no withdrawal path and none is planned.
 
@@ -187,7 +191,7 @@ Operators running a migration or testing several nodes repeat step 4 once per no
 | Grant counter vs. balance | Per-account grant counter | Full storage-credit accounting — a `LookupMap<AccountId, NearToken>` debited per entry, NEP-145 shaped. See [Alternatives not pursued](#alternatives-not-pursued). | No arithmetic, no per-operator amounts stored, and a fee change cannot strand an existing grant. Simpler for operators to reason about: one prepayment, one node. |
 | Multi-node and migration | One prepayment per node | (a) A free extra entry gated on a declared migration destination in `ongoing_migrations`. (b) A hard cap of N nodes per participant. | (a) needed a participant-status check and assumed one node per account, and still broke for operators testing several nodes. (b) hardcodes a magic number. Repeating the prepayment needs neither. |
 | Refunds | None — no NEAR ever returns | Redeem unconsumed grants for NEAR. Raised by @netrome. | Amounts are ~0.02 NEAR; not worth a withdrawal path. Recycling covers the legitimate need (capacity back after a reclaimed entry) without moving money. |
-| Grant semantics | Capacity — a reclaimed entry returns its grant | A consumable ticket, spent permanently on insert. | Without recycling an operator testing several nodes in sequence pays per node even though the contract reclaimed each slot. One increment at the single removal site, and no money moves. Raised by @gilcu3. |
+| Grant semantics | Capacity — a reclaimed entry returns its grant | A consumable ticket, spent permanently on insert. | Fairness: the contract got the storage back, so charging again would charge twice for it. And operator experience: prepay for the capacity you run and never revisit it, instead of buying a grant per re-provisioned node. Costs one increment at the single removal site, and no money moves. Raised by @gilcu3. |
 | Grants-map hygiene | Delete the row at zero; keep grants when a node is kicked | (a) Keep zero rows. (b) Confiscate leftover grants on removal from the participant set, per @gilcu3's suggestion. | (a) accumulates rows for accounts holding nothing. (b) punishes temporary kicks — expired attestation, mid-upgrade — forcing an operator to pay again to rejoin, to save ~130 bytes. |
 | Fee sizing | Governance-votable `Config` field | (a) Computed at call time from `env::storage_byte_cost() * WORST_CASE_ENTRY_BYTES`, needing no `Config` field or migration. (b) Hardcoded constant. | Participants can re-price after a storage-price change without a release. Cost: a `Config` field is a state-schema change requiring migration handling. |
 | When the grant is consumed | At insert, in the same receipt | Up front in `submit_participant_info`, consuming on failed attempts too. | Nothing is stored on failure, so there is nothing to fund or recover. Avoids any charge that must survive a failing callback, keeping #3991 unblocked. |
