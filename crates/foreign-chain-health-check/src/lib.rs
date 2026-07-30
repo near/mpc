@@ -1,10 +1,13 @@
-//! Foreign-chain RPC provider health checks: probe every configured provider
-//! with a fixed golden request and report a per-provider result. Sui is the
-//! exception — see `run_sui`.
+//! Foreign-chain RPC provider health checks, in two independent routes:
+//!
+//! * [`check_all_providers`] replays a fixed golden transaction per chain.
+//! * [`probe::probe_all_providers`] asks each provider for the network it serves and compares that
+//!   against the operator's configured expectation.
 
 mod checks;
 mod golden;
 mod network;
+pub mod probe;
 mod results;
 
 use std::future::Future;

@@ -22,6 +22,7 @@ use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
+use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -52,12 +53,13 @@ impl ForeignChainInspectors<HttpClient> {
                 return Ok(None);
             };
             let timeout = Duration::from_secs(c.timeout_sec.get());
-            let inspectors = c.providers.try_map_to_vec(|_, p| {
+            let inspectors = c.providers.try_map_to_vec(|name, p| {
                 // `Path`/`Query` auth is substituted into `url`; `Header` auth is returned
                 // as `RpcAuthentication::CustomHeader` for the client to install.
                 let mut url = p.rpc_url.clone();
                 let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                new_inspector(url, rpc_auth, timeout)
+                let inspector = new_inspector(url, rpc_auth, timeout)?;
+                anyhow::Ok((ProviderId(name.as_str().to_owned()), inspector))
             })?;
             Ok(Some(FanOut::new(inspectors)))
         }

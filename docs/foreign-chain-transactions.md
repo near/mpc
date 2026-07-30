@@ -529,6 +529,14 @@ At startup, each resolved provider gets its self-identifying RPC called and the 
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
+Not every chain has an identity probe. The table lists the ones that do, with the RPC each probes. A chain absent from it ignores `expected_chain_identity`.
+
+| chain | probe | value (mainnet) | value (testnet) |
+|---|---|---|---|
+| starknet | `starknet_chainId` | `0x534e5f4d41494e` (`SN_MAIN`) | `0x534e5f5345504f4c4941` (`SN_SEPOLIA`) |
+
+Starknet's identity is the chain-id felt in lowercase `0x` hex without leading zeros. Providers are free to pad and upper-case it, so the value is normalized before comparison.
+
 #### Why drop-and-log on local-config mismatch, not hard-crash
 
 If an operator's `foreign_chains.yaml` references a `provider_id` not on the whitelist for that chain (e.g. just removed by a vote), the node logs a warning and excludes that provider from registration; the chain is still served by surviving providers. A chain falls off the registration set only when zero providers survive. Hard-crashing would let a single hostile vote-removal participant take a node offline by removing a provider that node depends on.
@@ -682,6 +690,9 @@ setting `expected_network_fingerprint` for them has no effect.
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
+
+A chain configured without one is not skipped: the probe reports every provider of that chain as
+`MissingExpectedIdentity`, because a silent skip reads as healthy on a dashboard.
 
 ## Risks
 

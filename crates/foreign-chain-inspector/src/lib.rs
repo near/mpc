@@ -1,10 +1,13 @@
 use std::hash::Hash;
+use std::num::NonZeroU64;
+use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
 use ethereum_types::H256;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use near_mpc_bounded_collections::NonEmptyVec;
+use near_mpc_contract_interface::types::ProviderId;
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -35,6 +38,21 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
 }
 
+/// The network a provider serves, as the chain itself reports it: a chain id or a genesis hash, in
+/// one canonical text form per chain.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
+pub struct ChainIdentity(String);
+
+/// Reports the [`ChainIdentity`] of the provider an inspector talks to.
+///
+/// Compared verbatim, so impls must normalize to the canonical form their doc states. Fetches a
+/// chain-wide constant providers never prune.
+pub trait ChainIdentityInspector {
+    fn chain_identity(
+        &self,
+    ) -> impl Future<Output = Result<ChainIdentity, ForeignChainInspectionError>> + Send;
+}
+
 /// Combines multiple inspectors that target the same chain into a single inspector.
 ///
 /// All inner inspectors are queried concurrently. The fan-out treats every
@@ -58,7 +76,7 @@ pub trait ForeignChainInspector {
 /// inner fields differ.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
-    inspectors: NonEmptyVec<Inspector>,
+    inspectors: NonEmptyVec<(ProviderId, Inspector)>,
 }
 
 impl<Inspector> ForeignChainInspector for FanOut<Inspector>
@@ -81,25 +99,30 @@ where
         extractors: Vec<Self::Extractor>,
     ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
-        for (idx, inspector) in self.inspectors.iter().enumerate() {
+        for (provider, inspector) in self.inspectors.iter() {
             let tx_id = tx_id.clone();
             let finality = finality.clone();
             let extractors = extractors.clone();
             let inspector = inspector.clone();
-            join_set
-                .spawn(async move { (idx, inspector.extract(tx_id, finality, extractors).await) });
+            let provider = provider.clone();
+            join_set.spawn(async move {
+                (
+                    provider,
+                    inspector.extract(tx_id, finality, extractors).await,
+                )
+            });
         }
 
-        let mut successes: Vec<(usize, Vec<Self::ExtractedValue>)> = Vec::new();
-        let mut non_transient_errors: Vec<(usize, ForeignChainInspectionError)> = Vec::new();
+        let mut successes: Vec<(ProviderId, Vec<Self::ExtractedValue>)> = Vec::new();
+        let mut non_transient_errors: Vec<(ProviderId, ForeignChainInspectionError)> = Vec::new();
         let mut first_transient_error: Option<ForeignChainInspectionError> = None;
 
-        for (idx, result) in join_set.join_all().await {
+        for (provider, result) in join_set.join_all().await {
             match result {
-                Ok(values) => successes.push((idx, values)),
+                Ok(values) => successes.push((provider, values)),
                 Err(err) if err.is_transient() => {
                     tracing::warn!(
-                        inspector_index = idx,
+                        %provider,
                         error = %err,
                         "fan-out inspector failed (transient)",
                     );
@@ -107,11 +130,11 @@ where
                 }
                 Err(err) => {
                     tracing::error!(
-                        inspector_index = idx,
+                        %provider,
                         error = %err,
                         "fan-out inspector failed (non-transient)",
                     );
-                    non_transient_errors.push((idx, err));
+                    non_transient_errors.push((provider, err));
                 }
             }
         }
@@ -168,6 +191,46 @@ where
     }
 }
 
+impl<Inspector> FanOut<Inspector>
+where
+    Inspector: ChainIdentityInspector + Clone + Send + Sync + 'static,
+{
+    /// Ask every provider for the network it serves, concurrently, one result each.
+    /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
+    /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try, and only
+    /// a transient failure is retried.
+    pub async fn chain_identities(
+        &self,
+        timeout: Duration,
+        attempts: NonZeroU64,
+    ) -> Vec<(
+        ProviderId,
+        Result<ChainIdentity, ForeignChainInspectionError>,
+    )> {
+        let mut join_set = tokio::task::JoinSet::new();
+        for (provider, inspector) in self.inspectors.iter() {
+            let inspector = inspector.clone();
+            let provider = provider.clone();
+            join_set.spawn(async move {
+                let ask = || async {
+                    tokio::time::timeout(timeout, inspector.chain_identity())
+                        .await
+                        .unwrap_or(Err(ForeignChainInspectionError::Timeout))
+                };
+                let mut outcome = ask().await;
+                for _ in 1..attempts.get() {
+                    if !matches!(&outcome, Err(err) if err.is_transient()) {
+                        break;
+                    }
+                    outcome = ask().await;
+                }
+                (provider, outcome)
+            });
+        }
+        join_set.join_all().await
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RpcAuthentication {
     /// The key is in the URL (e.g., Alchemy, QuickNode).
@@ -218,6 +281,8 @@ pub enum ForeignChainInspectionError {
     /// Transient provider failure (transport error, timeout, rate limit, 5xx).
     #[error("RPC request failed: {0}")]
     RpcRequestFailed(String),
+    #[error("RPC request did not complete within the configured timeout")]
+    Timeout,
     /// The provider rejected the request with a deterministic client error (4xx other than
     /// 408/429); retrying cannot change the outcome.
     #[error("RPC rejected the request: {0}")]
@@ -281,10 +346,45 @@ impl ForeignChainInspectionError {
             self,
             Self::ClientError(_)
                 | Self::RpcRequestFailed(_)
+                | Self::Timeout
                 | Self::NotFinalized
                 | Self::NotEnoughBlockConfirmations { .. }
         )
     }
+
+    /// How the provider failed, or [`None`] when the provider did not: the remaining variants
+    /// report the transaction's own state, which is an answer rather than a fault.
+    pub fn provider_failure(&self) -> Option<ProviderFailure> {
+        match self {
+            Self::ClientError(_) | Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
+            Self::Timeout => Some(ProviderFailure::TimedOut),
+            Self::RpcRequestRejected(_) => Some(ProviderFailure::Rejected),
+            Self::MalformedRpcResponse(_)
+            | Self::InconsistentRpcResponse { .. }
+            | Self::LogNotBoundToReceipt { .. }
+            | Self::EventLogFailedBorshSerialization(_)
+            | Self::InspectorResponseMismatch => Some(ProviderFailure::Malformed),
+            Self::NotFinalized
+            | Self::NotEnoughBlockConfirmations { .. }
+            | Self::NonCanonicalBlock { .. }
+            | Self::TransactionFailed
+            | Self::TransactionNotFound
+            | Self::LogIndexOutOfBounds => None,
+        }
+    }
+}
+
+/// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
+/// on it. Says nothing about retryability: see [`ForeignChainInspectionError::is_transient`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProviderFailure {
+    /// No answer arrived: transport failure, 5xx, or rate limiting.
+    Unreachable,
+    /// The provider answered and refused. Retrying cannot change it.
+    Rejected,
+    /// The provider answered with something the caller could not use.
+    Malformed,
+    TimedOut,
 }
 
 /// Builds an HTTP client with the specified authentication method.
