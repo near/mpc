@@ -45,12 +45,16 @@ pub struct ChainIdentity(String);
 
 /// Reports the [`ChainIdentity`] of the provider an inspector talks to.
 ///
-/// Compared verbatim, so impls must normalize to the canonical form their doc states. Fetches a
-/// chain-wide constant providers never prune.
+/// Identities are compared verbatim, so both the reported and the expected one go through the
+/// impl's canonical form. Fetches a chain-wide constant providers never prune.
 pub trait ChainIdentityInspector {
     fn chain_identity(
         &self,
     ) -> impl Future<Output = Result<ChainIdentity, ForeignChainInspectionError>> + Send;
+
+    /// Puts an operator-supplied identity into the form [`Self::chain_identity`] returns, so that a
+    /// spec-legal spelling of the right network does not read as the wrong network.
+    fn canonical_identity(expected: &str) -> ChainIdentity;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
@@ -191,14 +195,18 @@ where
     }
 }
 
+/// Pause between two tries at the same provider, so that a rate-limiting provider is not hit again
+/// immediately.
+pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
+
 impl<Inspector> FanOut<Inspector>
 where
     Inspector: ChainIdentityInspector + Clone + Send + Sync + 'static,
 {
     /// Ask every provider for the network it serves, concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
-    /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try, and only
-    /// a transient failure is retried.
+    /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try plus
+    /// [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
     pub async fn chain_identities(
         &self,
         timeout: Duration,
@@ -222,6 +230,7 @@ where
                     if !matches!(&outcome, Err(err) if err.is_transient()) {
                         break;
                     }
+                    tokio::time::sleep(RETRY_BACKOFF).await;
                     outcome = ask().await;
                 }
                 (provider, outcome)
@@ -352,6 +361,47 @@ impl ForeignChainInspectionError {
         )
     }
 
+    /// Classifies a client error by what the provider did, unlike the [`From`] impl, which keeps it
+    /// whole as the [`Self::ClientError`] that [`Self::is_transient`] tolerates wholesale. A 401, a
+    /// JSON-RPC error object and an unparseable body are otherwise indistinguishable, which suits
+    /// [`FanOut::extract`] but not a caller that reports why a provider is unusable, or decides
+    /// whether retrying it can help.
+    ///
+    /// The messages name the HTTP status or the JSON-RPC code, never the URL: `Path`/`Query` auth
+    /// splices the operator's API key into it.
+    pub fn classify_rpc_client_error(error: jsonrpsee::core::client::error::Error) -> Self {
+        use jsonrpsee::core::client::error::Error as ClientError;
+        use jsonrpsee::core::http_helpers::HttpError;
+        use jsonrpsee::http_client::transport::Error as TransportError;
+
+        match error {
+            ClientError::Call(object) => {
+                Self::RpcRequestRejected(format!("JSON-RPC error code {}", object.code()))
+            }
+            ClientError::ParseError(error) => Self::MalformedRpcResponse(error.to_string()),
+            ClientError::RequestTimeout => Self::Timeout,
+            ClientError::Transport(error) => match error.downcast_ref::<TransportError>() {
+                Some(TransportError::Rejected { status_code }) => {
+                    let status = format!("HTTP status {status_code}");
+                    if is_retryable_status(*status_code) {
+                        Self::RpcRequestFailed(status)
+                    } else {
+                        Self::RpcRequestRejected(status)
+                    }
+                }
+                // Not a response the caller can use, as opposed to no response at all.
+                Some(TransportError::Http(HttpError::Malformed | HttpError::TooLarge)) => {
+                    Self::MalformedRpcResponse("response was not valid JSON-RPC".to_string())
+                }
+                Some(TransportError::Url(_)) => {
+                    Self::RpcRequestRejected("invalid RPC URL".to_string())
+                }
+                _ => Self::RpcRequestFailed("transport failure".to_string()),
+            },
+            other => Self::RpcRequestFailed(other.to_string()),
+        }
+    }
+
     /// How the provider failed, or [`None`] when the provider did not: the remaining variants
     /// report the transaction's own state, which is an answer rather than a fault.
     pub fn provider_failure(&self) -> Option<ProviderFailure> {
@@ -372,6 +422,16 @@ impl ForeignChainInspectionError {
             | Self::LogIndexOutOfBounds => None,
         }
     }
+}
+
+/// Request timeout, too many requests, and anything the server blames on itself. Every other
+/// status is the provider's verdict on the request, which the same request cannot change.
+fn is_retryable_status(status_code: u16) -> bool {
+    const REQUEST_TIMEOUT: u16 = 408;
+    const TOO_MANY_REQUESTS: u16 = 429;
+    const SERVER_ERROR: u16 = 500;
+
+    matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
 }
 
 /// Groups the ways a provider itself can fail, for callers that report an outcome rather than act

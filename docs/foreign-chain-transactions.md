@@ -535,7 +535,7 @@ Not every chain has an identity probe. The table lists the ones that do, with th
 |---|---|---|---|
 | starknet | `starknet_chainId` | `0x534e5f4d41494e` (`SN_MAIN`) | `0x534e5f5345504f4c4941` (`SN_SEPOLIA`) |
 
-Starknet's identity is the chain-id felt in lowercase `0x` hex without leading zeros. Providers are free to pad and upper-case it, so the value is normalized before comparison.
+Starknet's identity is the chain-id felt in lowercase `0x` hex without leading zeros. Both providers and operators are free to pad and upper-case it, so the reported and the configured value are normalized before they are compared.
 
 #### Why drop-and-log on local-config mismatch, not hard-crash
 

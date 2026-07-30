@@ -32,8 +32,16 @@ where
     Client: ClientT + Send + Sync,
 {
     async fn chain_identity(&self) -> Result<ChainIdentity, ForeignChainInspectionError> {
-        let chain_id: ChainIdResponse = self.client.request(CHAIN_ID_METHOD, NO_PARAMS).await?;
+        let chain_id: ChainIdResponse = self
+            .client
+            .request(CHAIN_ID_METHOD, NO_PARAMS)
+            .await
+            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
         Ok(chain_id.canonical_text().into())
+    }
+
+    fn canonical_identity(expected: &str) -> ChainIdentity {
+        ChainIdResponse(expected.to_owned()).canonical_text().into()
     }
 }
 

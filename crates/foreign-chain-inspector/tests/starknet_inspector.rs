@@ -608,7 +608,31 @@ async fn chain_identities__should_stop_after_the_configured_number_of_attempts()
     assert_eq!(calls.load(Ordering::SeqCst), 3);
     assert_matches!(
         results[0].1,
-        Err(ForeignChainInspectionError::ClientError(_))
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
+    );
+}
+
+#[tokio::test]
+async fn chain_identities__should_not_retry_a_provider_that_refused_the_request() {
+    // Given a provider refusing with a JSON-RPC error object, as one does for a bad API key
+    let (fan_out, calls) = single_provider_fan_out(|_| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -32600,
+            "Must be authenticated!",
+            None::<()>,
+        )))
+    });
+
+    // When
+    let results = fan_out
+        .chain_identities(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+        .await;
+
+    // Then the refusal is reported as one, and the remaining attempts are not spent on it
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_matches!(
+        results[0].1,
+        Err(ForeignChainInspectionError::RpcRequestRejected(_))
     );
 }
 
@@ -627,5 +651,8 @@ async fn chain_identity__should_propagate_rpc_client_errors() {
     let response = inspector.chain_identity().await;
 
     // Then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
+    );
 }
