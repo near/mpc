@@ -117,11 +117,9 @@ Migration and multi-node operators need no special rule: an operator who wants a
 
 ### Check early, consume late
 
-`submit_participant_info` evaluates the rules read-only before any verification and rejects a new-entry submission with no grant straight away. Both inputs are cheap to read there — the submitted TLS key and the existing entry's owner — and verification is the expensive part, so an ungranted call never reaches the `Mock` checks or a `verify_quote` round trip.
+`submit_participant_info` checks for an available grant before doing any verification, so an ungranted call never reaches the `Mock` checks or a `verify_quote` round trip. The grant is consumed at insert, so a submission that fails verification consumes nothing — nothing was stored, so nothing is owed.
 
-The grant is consumed at insert, in the same receipt as the write. Both steps exist because a `Dstack` callback lands a block or more later, which makes the early check only a fast-fail guard: two concurrent submissions from one account could both pass it and only the first could then consume the last grant.
-
-Failed attempts consume nothing, which is correct rather than lenient — nothing is stored on failure, so the contract funds nothing. It also keeps [#3991](https://github.com/near/mpc/issues/3991) unblocked, since no charge or refund ever has to survive a failing callback.
+The early check is a fast-fail guard, not the enforcement: a `Dstack` callback lands a block or more later, so two concurrent submissions could both pass it and only the first consume the last grant. Consuming at insert also keeps [#3991](https://github.com/near/mpc/issues/3991) unblocked, since no charge has to survive a failing callback.
 
 ### Flow
 
