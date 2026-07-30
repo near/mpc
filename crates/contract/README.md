@@ -359,7 +359,7 @@ The MPC nodes will eventually run inside a Trusted Execution Environments (TEE).
 
 Participants that run their node inside a TEE will have to submit the following TEE related data to the contract:
 
-```rust
+```rust,ignore
 pub struct DstackAttestation {
     /// TEE Remote Attestation Quote that proves the participant's identity.
     pub quote: Quote,
