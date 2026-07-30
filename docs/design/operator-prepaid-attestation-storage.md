@@ -1,7 +1,5 @@
 # Operator-Prepaid Attestation Storage
 
-**Status:** Draft — for team review
-
 Funding model for [#3972](https://github.com/near/mpc/issues/3972): the storage cost of an attestation entry moves off the contract's balance and onto whoever onboards the node, at the cost of one new operator step.
 
 One prepayment buys one **grant** — permission for a node account to hold one attestation entry. The grant returns when that entry is reclaimed, so it is a slot the operator keeps rather than a per-attestation charge. No NEAR is ever refunded. Fee: **0.02 NEAR**.
@@ -36,12 +34,12 @@ The counter is **available** grants, not lifetime total, so `0` means either "ne
 | Method | Kind | Purpose |
 |---|---|---|
 | `prepay_attestation_storage(account_id)` | `#[payable]` | Grants `floor(attached / fee)`. Rejects below one fee, keeps any remainder. Permissionless — anyone may prepay for any account. |
-
-Keeping the remainder deviates from the contract's usual `require_deposit` + `refund_to` pattern, deliberately: a grant is a discrete unit, so the leftover is at most one fee short of the next grant, and adding a transfer path to return sub-0.02 NEAR dust is not worth it. "No NEAR is ever returned" means exactly that — no withdrawal method, and no refund of an overpayment.
 | `available_attestation_grants(account_id) -> u32` | view | Grants available. |
 | `attestation_storage_fee() -> NearToken` | view | Current fee. |
 
 Views are contract-only; operators read them with the NEAR CLI.
+
+Keeping the remainder deviates from the contract's usual `require_deposit` + `refund_to` pattern, deliberately: a grant is a discrete unit, so the leftover is at most one fee short of the next grant, and adding a transfer path to return sub-0.02 NEAR dust is not worth it. "No NEAR is ever returned" means exactly that — no withdrawal method, and no refund of an overpayment.
 
 ### Charging rules
 
@@ -49,7 +47,7 @@ Evaluated read-only at the top of `submit_participant_info` — before any verif
 
 1. **Entry exists and this account owns it** — re-attestation. Updates in place, consumes nothing. Keys on *ownership*, not key presence: a presence-only test would classify someone else's key as "no grant needed".
 2. **New entry** — consume one grant; reject if the account has none.
-3. **Entry reclaimed** by `clean_invalid_attestations` — return one grant to its owner. There is exactly one removal site, so the counter cannot drift.
+3. **Entry reclaimed** by `clean_invalid_attestations` — return one grant to its owner. There is exactly one removal site, so the counter cannot drift. This adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside a gas-bounded sweep, so `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` need re-validating against the heavier per-entry cost.
 
 Consuming at insert means a failed attestation consumes nothing — nothing was stored, so nothing is owed — and keeps [#3991](https://github.com/near/mpc/issues/3991) unblocked, since no charge has to survive a failing callback.
 
@@ -120,7 +118,7 @@ Note the guide's [Submitting Participant Info](../running-an-mpc-node-in-tdx-ext
 | Multi-node / migration | Prepay per node | Free extra entry gated on `ongoing_migrations`; or a hard cap of N | Both needed a participant check or a magic number; repeating the prepayment needs neither. |
 | Grant semantics | Capacity — reclaiming returns it | Consumable ticket | The contract got the storage back, so charging again charges twice. Also lets an operator re-provision on the grants they hold. |
 | Refunds | None | Redeem unconsumed grants | ~0.02 NEAR; recycling covers the real need without moving money. |
-| Fee source | Votable `Config` field | Derived from `storage_byte_cost` at call time; or a constant | Re-priceable without a release. Costs a state-schema change. |
+| Fee source | Votable `Config` field | Derived from `storage_byte_cost` at call time; or a constant | Re-priceable without a release. Costs a state migration — the fee field and the grants map both change `MpcContract`'s borsh layout — plus `ConfigExt` DTO plumbing and regenerated borsh-schema and ABI snapshots. |
 | Consumption point | At insert | Up front, charging failures too | Nothing is stored on failure, so nothing is owed; keeps #3991 unblocked. |
 | Map hygiene | Delete row at zero; keep grants when a node is kicked | Keep zero rows; or confiscate on removal from the set | Kicks are often temporary, so confiscating would force paying again to rejoin. |
 
@@ -142,21 +140,5 @@ Every new entry consumes a paid grant, so the contract funds no new attestation 
 
 Two accepted residuals:
 
-- **Abandoned pre-upgrade entries yield a grant when swept**, since rule 3 cannot distinguish them from paid ones. Note who this does *not* benefit: an operator running a live node re-attests under rule 1, so its entry never fails re-verification, is never swept, and yields nothing — live operators get no grant and need none. The grants go to whoever *abandoned* an entry. Today that is a negligible set (14 entries on mainnet and 31 on testnet, nearly all live), but the exposure is precisely "abandoned entries present at deploy become permanent capacity", so the count must be checked at deploy rather than assumed. A count in the thousands would mean the still-open drain was exploited before the release, and those entries should be purged rather than granted.
+- **Abandoned pre-upgrade entries yield a grant when swept**, since rule 3 cannot distinguish them from paid ones. Note who this does *not* benefit: an operator running a live node re-attests under rule 1, so its entry never fails re-verification, is never swept, and yields nothing — live operators get no grant and need none. The grants go to whoever *abandoned* an entry. Not everything is sweepable either: `TeeState::with_mocked_participant_attestations` stores bare, non-expiring `Mock::Valid` sentinels at init, which never fail re-verification, so they are never swept and never yield a grant. Today the abandoned set is negligible (14 entries on mainnet and 31 on testnet, nearly all live), but the exposure is precisely "abandoned entries present at deploy become permanent capacity", so the count must be checked at deploy rather than assumed. A count in the thousands would mean the still-open drain was exploited before the release, and those entries should be purged rather than granted.
 - **The contract carries the price risk on sold grants**, bounded by the number outstanding. It stores counts, not purchase prices, so it cannot retro-price them; a future update can address this if the gap becomes material.
-
-## Implementation notes
-
-1. [#3785](https://github.com/near/mpc/pull/3785) has landed (`stamp_expiry_on_legacy_mocks`, `v3_13_0_state.rs:122`), so abandoned mock entries are already sweepable — no dependency to wait on. Reclaimability is not universal though: `TeeState::with_mocked_participant_attestations` still stores bare, non-expiring `Mock::Valid` sentinels at init, which never fail re-verification and so are never swept. Those stay contract-funded and never yield a grant.
-2. **A state migration is required.** The grants map and the `Config` fee field both change `MpcContract`'s borsh layout: frozen snapshot module plus a `migrate()` arm the way `crates/contract/src/v3_13_0_state.rs` does it. Making the fee votable also needs the `ConfigExt` DTO plumbing in `crates/contract/src/dto_mapping.rs`, and both the borsh-schema and ABI snapshots regenerated.
-3. **Re-validate the sweep gas budget.** Rule 3 adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside gas-bounded `clean_invalid_attestations`. Re-check `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN`, with a guard test of the kind [#3936](https://github.com/near/mpc/pull/3936) adds.
-4. Check the stored-entry count at deploy, per [Security](#security).
-5. Coordinate the runbook change with the release: operators onboarding after the upgrade must prepay or their node's submissions fail in a loop.
-
-## Testing
-
-- Re-attestation consumes nothing; a new entry consumes exactly one; no grant rejects; a TLS key owned by another account is rejected by the early check, before verification.
-- A failed attestation consumes nothing and stores nothing, on both the sync and async paths.
-- A reclaimed entry returns one grant to its owner, the row is deleted at zero, a kicked node keeps its grants, and the recycled grant is spendable.
-- Sandbox, with a real function-call key: ungranted submission rejected, a second account prepays, the node's own zero-deposit submission succeeds; two prepayments allow two entries.
-- Gas guard for the `clean_invalid_attestations` worst case: every scanned entry removed, every owner's row absent so each write is an insert.
