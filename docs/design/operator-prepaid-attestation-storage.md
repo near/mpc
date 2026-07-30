@@ -19,7 +19,7 @@ Payment and submission must be **separate transactions**, because neither party 
 
 ### Grants
 
-`available_attestation_grants: LookupMap<AccountId, u32>` — a count, never an amount. Prepay `+1`, new entry `−1`, reclaimed entry `+1`, row deleted at zero. The invariant, enforced by refusing to go below zero:
+`available_attestation_grants: LookupMap<AccountId, u32>` — a count (not an amount). Prepay `+1`, new entry `−1`, reclaimed entry `+1`, row deleted at zero. The invariant, enforced by refusing to go below zero:
 
 ```text
 entries an account holds  ≤  grants it has bought
@@ -33,13 +33,11 @@ The counter is **available** grants, not lifetime total, so `0` means either "ne
 
 | Method | Kind | Purpose |
 |---|---|---|
-| `prepay_attestation_storage(account_id)` | `#[payable]` | Grants `floor(attached / fee)`. Rejects below one fee, keeps any remainder. Permissionless — anyone may prepay for any account. |
+| `prepay_attestation_storage(account_id, grants)` | `#[payable]` | Adds `grants` to `account_id`. Requires an attached deposit of exactly `fee × grants` and rejects anything else, so there is no remainder to keep or refund. Permissionless — anyone may prepay for any account. |
 | `available_attestation_grants(account_id) -> u32` | view | Grants available. |
 | `attestation_storage_fee() -> NearToken` | view | Current fee. |
 
-Views are contract-only; operators read them with the NEAR CLI.
-
-Keeping the remainder deviates from the contract's usual `require_deposit` + `refund_to` pattern, deliberately: a grant is a discrete unit, so the leftover is at most one fee short of the next grant, and adding a transfer path to return sub-0.02 NEAR dust is not worth it. "No NEAR is ever returned" means exactly that — no withdrawal method, and no refund of an overpayment.
+An operator reads `attestation_storage_fee()` first and attaches the exact multiple. "No NEAR is ever returned" therefore means simply: no withdrawal method.
 
 ### Charging rules
 
@@ -63,7 +61,7 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 | Grants-map row | ~130 | ~0.0013 NEAR |
 | **Floor** | **~734** | **~0.0073 NEAR** |
 
-The remainder is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing since the operator never gets it back; under-sizing silently reopens the drain. The 604 is pinned by `stored_attestation_entry__should_have_the_pinned_size` — a test, not a production constant. The fee itself is a governance-votable `Config` field, so it can be re-priced without a release.
+The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. The fee itself is a governance-votable `Config` field, so it can be re-priced without a release.
 
 ### Flow
 
@@ -82,7 +80,7 @@ sequenceDiagram
         participant BC as mpc-contract
     end
 
-    OP ->> BC: prepay_attestation_storage(node_account) + fee
+    OP ->> BC: prepay_attestation_storage(node_account, 1) + fee
     BC ->> BC: grants[node_account] += 1
 
     NODE ->> BC: submit_participant_info(attestation, tls_pubkey)
@@ -101,14 +99,12 @@ One new step in the [operator guide](../running-an-mpc-node-in-tdx-external-guid
 ```bash
 near contract call-function as-transaction \
   v1.signer prepay_attestation_storage \
-  json-args '{"account_id":"<your-node-account>"}' \
-  prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' \
+  json-args '{"account_id":"<your-node-account>","grants":2}' \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.04 NEAR' \
   sign-as <your-operator-account> network-config mainnet sign-with-keychain send
 ```
 
-Repeat once per node slot. Existing attested nodes need no action — they re-attest under rule 1.
-
-Note the guide's [Submitting Participant Info](../running-an-mpc-node-in-tdx-external-guide.md#submitting-participant-info) still claims the call "will incur a cost (TBD, XXX NEAR)" and cites the closed #903. That is stale on `main` today, independent of this design.
+Ask for as many grants as the operator runs nodes, plus the spare — the example buys two. Existing attested nodes need no action; they re-attest under rule 1.
 
 ## Decisions
 
@@ -140,5 +136,5 @@ Every new entry consumes a paid grant, so the contract funds no new attestation 
 
 Two accepted residuals:
 
-- **Abandoned pre-upgrade entries yield a grant when swept**, since rule 3 cannot distinguish them from paid ones. Note who this does *not* benefit: an operator running a live node re-attests under rule 1, so its entry never fails re-verification, is never swept, and yields nothing — live operators get no grant and need none. The grants go to whoever *abandoned* an entry. Not everything is sweepable either: `TeeState::with_mocked_participant_attestations` stores bare, non-expiring `Mock::Valid` sentinels at init, which never fail re-verification, so they are never swept and never yield a grant. Today the abandoned set is negligible (14 entries on mainnet and 31 on testnet, nearly all live), but the exposure is precisely "abandoned entries present at deploy become permanent capacity", so the count must be checked at deploy rather than assumed. A count in the thousands would mean the still-open drain was exploited before the release, and those entries should be purged rather than granted.
+- **Pre-upgrade entries yield a grant when swept**, since rule 3 cannot distinguish them from paid ones. Accepted: there are 14 such entries on mainnet and 31 on testnet, so the free capacity is negligible (and init-time mock sentinels never expire, so they are never swept and never yield one). Check the count at deploy though — a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than granted.
 - **The contract carries the price risk on sold grants**, bounded by the number outstanding. It stores counts, not purchase prices, so it cannot retro-price them; a future update can address this if the gap becomes material.
