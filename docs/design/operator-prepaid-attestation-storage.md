@@ -96,13 +96,11 @@ Without the prepayment the submission fails immediately and the node retries in 
 
 ## Existing nodes
 
-Nodes that are already attested need no grant, and their operators need to do nothing.
+Already-attested nodes need no grant and their operators need to do nothing. Their entry is already stored, and re-attesting under the same key updates it in place for free (rule 1) — so an existing entry is a grant already spent: it holds a slot, and none was ever bought for it.
 
-Their entry is already stored, and re-attesting under the same TLS key updates it in place without consuming anything (rule 1). An existing entry is therefore a grant that has already been spent: it holds a slot, and no grant was ever bought for it.
+Nothing in the contract treats these entries specially: no migration step, no per-entry marker, no second map. That is the point — for existing nodes this change needs no code at all.
 
-Nothing in the contract treats these entries specially — no migration step, no per-entry "was this paid for?" marker, no second map. That is the point: for existing nodes this change needs no code at all.
-
-One consequence, accepted deliberately: if such an entry is later swept, rule 3 hands its owner a grant they never bought. There are 14 of these entries on mainnet and 31 on testnet, so the capacity given away is negligible. Check the count before deploying all the same — a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than left to become grants.
+Accepted deliberately: if such an entry is later swept, rule 3 hands its owner a grant they never bought. Negligible at 14 entries on mainnet and 31 on testnet, but check the count before deploying — thousands would mean the drain was exploited first, and those entries should be purged rather than left to become grants.
 
 ## Operator UX
 
