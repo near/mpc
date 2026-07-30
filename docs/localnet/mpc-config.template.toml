@@ -58,6 +58,10 @@ timeout_sec = 60
 [node.foreign_chains.bitcoin]
 timeout_sec = 30
 max_retries = 3
+# Genesis block hash, as block explorers render it. Distinguishes mainnet from
+# testnet3 ("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943")
+# and regtest ("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206").
+expected_chain_identity = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
 
 [node.foreign_chains.bitcoin.providers.public]
 rpc_url = "https://bitcoin-rpc.publicnode.com"
@@ -68,6 +72,7 @@ kind = "none"
 [node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
+expected_chain_identity = "11124"  # Abstract testnet; mainnet: "2741"
 
 [node.foreign_chains.abstract.providers.public]
 rpc_url = "https://api.testnet.abs.xyz"
@@ -89,6 +94,7 @@ kind = "none"
 [node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
+expected_chain_identity = "1"  # mainnet; testnet: "2"
 
 [node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
@@ -99,6 +105,8 @@ kind = "none"
 [node.foreign_chains.sui]
 timeout_sec = 30
 max_retries = 3
+# Genesis checkpoint digest. Testnet: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD".
+expected_chain_identity = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"
 
 [node.foreign_chains.sui.providers.public]
 rpc_url = "https://archive.mainnet.sui.io"

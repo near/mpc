@@ -648,10 +648,30 @@ to be supplied (e.g., bearer tokens, custom headers, query params, or URL path t
 providers require no auth at all.
 
 A chain section may also set `expected_chain_identity`: the network identity every provider of that
-chain must report, in that chain's canonical text form (`"0x534e5f4d41494e"` for Starknet mainnet,
-`"0x534e5f5345504f4c4941"` for Sepolia). The identity is set per chain rather than once per
-deployment, so a config can mix networks: the localnet template pairs mainnet Bitcoin with testnet
-Abstract. The value is always a quoted string, including the identities that look numeric.
+chain must report, in that chain's canonical text form. It is a chain id only for some chains; for
+Bitcoin it is the genesis block hash and for Sui the genesis-checkpoint digest, hence the name.
+
+| chain | identity | mainnet | testnet |
+|---|---|---|---|
+| base | EIP-155 chain id, decimal | `"8453"` | |
+| bnb | EIP-155 chain id, decimal | `"56"` | |
+| arbitrum | EIP-155 chain id, decimal | `"42161"` | |
+| polygon | EIP-155 chain id, decimal | `"137"` | |
+| hyper_evm | EIP-155 chain id, decimal | `"999"` | |
+| abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
+| starknet | chain-id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` |
+| bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` |
+| aptos | ledger chain id, decimal | `"1"` | `"2"` |
+| sui | genesis-checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
+
+Bitcoin's genesis hash is written the way block explorers render it, leading zeros at the front, and
+distinguishes testnet3 from testnet4, signet and regtest
+(`"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`) where a network *name* would
+not. Aptos's one-byte id space separates mainnet from testnet, but two devnets can collide.
+
+The identity is set per chain rather than once per deployment, so a config can mix networks: the
+localnet template pairs mainnet Bitcoin with testnet Abstract. The value is always a quoted string,
+including the identities that look numeric.
 
 Nothing reads the field yet. The startup probe that asks each provider for the network it serves and
 compares it against this value lands separately, under
