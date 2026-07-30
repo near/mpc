@@ -1,4 +1,9 @@
-use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use std::{
+    convert::Infallible,
+    net::SocketAddr,
+    sync::Arc,
+    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
+};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -12,6 +17,7 @@ use tokio::{
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 
+use crate::metrics;
 use crate::migration_service::{
     types::MigrationInfo,
     web::{authentication::authenticate_peer, serialization::serialize_and_encrypt_keyshares},
@@ -118,6 +124,39 @@ async fn spawn_expected_peer_info_monitoring(
     receiver
 }
 
+fn json_response(body: String) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(Bytes::from(body)));
+    response.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/json"),
+    );
+    response
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RecordBackupServedError {
+    #[error("epoch id {0} does not fit in an i64 gauge")]
+    EpochOutOfRange(u64),
+    #[error("unix timestamp {0} does not fit in an i64 gauge")]
+    TimestampOutOfRange(u64),
+    #[error("system clock is before the unix epoch")]
+    ClockBeforeUnixEpoch(#[from] SystemTimeError),
+}
+
+fn record_backup_served(keyset: &Keyset) -> Result<(), RecordBackupServedError> {
+    let epoch_id = keyset.epoch_id.get();
+    let epoch =
+        i64::try_from(epoch_id).map_err(|_| RecordBackupServedError::EpochOutOfRange(epoch_id))?;
+
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let timestamp =
+        i64::try_from(now).map_err(|_| RecordBackupServedError::TimestampOutOfRange(now))?;
+
+    metrics::MPC_LAST_BACKUP_SERVED_EPOCH.set(epoch);
+    metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.set(timestamp);
+    Ok(())
+}
+
 async fn handle_request(
     req: hyper::Request<Incoming>,
     state: Arc<WebServerState>,
@@ -149,20 +188,28 @@ async fn handle_request(
                                     .unwrap());
                             }
                         };
-                        let resp = serialize_and_encrypt_keyshares(
+                        match serialize_and_encrypt_keyshares(
                             &keyshares,
                             &state.backup_encryption_key,
-                        )
-                        .unwrap_or_else(|err| {
-                            tracing::error!(?err, "serialization or encryption error");
-                            "internal error serializing or encrypting keyshares".to_string()
-                        });
-                        let mut response = Response::new(Full::new(Bytes::from(resp)));
-                        response.headers_mut().insert(
-                            hyper::header::CONTENT_TYPE,
-                            hyper::header::HeaderValue::from_static("application/json"),
-                        );
-                        Ok(response)
+                        ) {
+                            Ok(encrypted_keyshares) => {
+                                let response = json_response(encrypted_keyshares);
+                                // A domain-less keyset yields no keyshares: nothing was backed up.
+                                if !keyshares.is_empty()
+                                    && let Err(err) = record_backup_served(&keyset)
+                                {
+                                    tracing::error!(?err, "failed to record served backup");
+                                }
+                                Ok(response)
+                            }
+                            Err(err) => {
+                                tracing::error!(?err, "serialization or encryption error");
+                                Ok(json_response(
+                                    "internal error serializing or encrypting keyshares"
+                                        .to_string(),
+                                ))
+                            }
+                        }
                     }
                     Err(err) => {
                         tracing::error!(?err, "received invalid keyset");
@@ -228,13 +275,21 @@ async fn handle_request(
 
 #[cfg(test)]
 mod tests {
+    use crate::metrics;
     use crate::migration_service::{
-        types::MigrationInfo, web::server::spawn_expected_peer_info_monitoring,
+        types::MigrationInfo,
+        web::server::{
+            RecordBackupServedError, record_backup_served, spawn_expected_peer_info_monitoring,
+        },
     };
     use near_mpc_contract_interface::types::Ed25519PublicKey;
 
+    use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
+    use mpc_primitives::EpochId;
     use near_mpc_contract_interface::types::BackupServiceInfo;
+    use near_mpc_crypto_types::Keyset;
+    use serial_test::serial;
     use tokio::sync::watch;
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
@@ -274,5 +329,29 @@ mod tests {
         // Ensure the info is cancelled if the sender is dropped
         drop(migration_info_sender);
         updated.cancelled.cancelled().await;
+    }
+
+    #[serial(backup_metrics)]
+    #[test]
+    #[expect(non_snake_case)]
+    fn record_backup_served__should_fail_and_leave_gauges_untouched_for_an_unrepresentable_epoch() {
+        // Given
+        let keyset = Keyset::new(EpochId::new(u64::MAX), Vec::new());
+        let epoch_before = metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get();
+        let timestamp_before = metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get();
+
+        // When
+        let res = record_backup_served(&keyset);
+
+        // Then
+        assert_matches!(
+            res,
+            Err(RecordBackupServedError::EpochOutOfRange(epoch)) if epoch == u64::MAX
+        );
+        assert_eq!(metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(), epoch_before);
+        assert_eq!(
+            metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get(),
+            timestamp_before
+        );
     }
 }
