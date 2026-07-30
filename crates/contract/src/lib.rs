@@ -834,14 +834,16 @@ impl MpcContract {
                     node_id,
                     mock,
                     tee_upgrade_deadline_duration,
-                    launcher_unused_ttl,
                 )?;
 
                 // A `WithConstraints` mock may reference a launcher hash; refresh-on-use keeps
                 // it alive, matching the dstack path. No-op for mocks without a launcher.
                 if let Some(participant) = &authenticated_participant {
-                    self.tee_state
-                        .refresh_launcher_usage(&tls_public_key_for_refresh, participant);
+                    self.tee_state.refresh_launcher_usage(
+                        &tls_public_key_for_refresh,
+                        participant,
+                        launcher_unused_ttl,
+                    );
                 }
 
                 Ok(PromiseOrValue::Value(()))
@@ -933,7 +935,6 @@ impl MpcContract {
         let validation_result = self.tee_state.reverify_and_cleanup_participants(
             proposal.participants(),
             tee_upgrade_deadline_duration,
-            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
         );
 
         let proposed_participants = proposal.participants();
@@ -1494,11 +1495,14 @@ impl MpcContract {
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
         if votes >= self.threshold()?.value() {
-            let outcome = self
-                .tee_state
-                .add_launcher_image(launcher_hash, tee_upgrade_deadline_duration);
+            let outcome = self.tee_state.add_launcher_image(
+                launcher_hash,
+                tee_upgrade_deadline_duration,
+                launcher_unused_ttl,
+            );
             log!("launcher hash {:?}: {:?}", outcome, launcher_hash);
         }
 
@@ -1740,15 +1744,10 @@ impl MpcContract {
         };
         let current_params = running_state.parameters.clone();
 
-        let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
-
         // Physical eviction runs in a detached self-call so it can never fail this
         // transaction. Skip it when nothing is expired to avoid a wasted receipt on the
         // common (timer-driven) path.
-        if self
-            .tee_state
-            .has_expired_launcher_images(launcher_unused_ttl)
-        {
+        if self.tee_state.has_expired_launcher_images() {
             Promise::new(env::current_account_id())
                 .function_call(
                     method_names::CLEAN_EXPIRED_LAUNCHER_HASHES.to_string(),
@@ -1765,7 +1764,6 @@ impl MpcContract {
         match self.tee_state.reverify_and_cleanup_participants(
             current_params.participants(),
             tee_upgrade_deadline_duration,
-            launcher_unused_ttl,
         ) {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
@@ -1892,8 +1890,7 @@ impl MpcContract {
             "clean_expired_launcher_hashes: signer={}",
             env::signer_account_id()
         );
-        let ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
-        self.tee_state.clean_expired_launcher_images(ttl);
+        self.tee_state.clean_expired_launcher_images();
     }
 
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
@@ -1913,11 +1910,9 @@ impl MpcContract {
         }
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        Ok(self.tee_state.clean_invalid_attestations(
-            tee_upgrade_deadline_duration,
-            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
-            max_scan as usize,
-        ))
+        Ok(self
+            .tee_state
+            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize))
     }
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations
@@ -2024,12 +2019,15 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = init_config.map(Into::into).unwrap_or_default();
-        config
-            .validate()
-            .map_err(|reason| InvalidParameters::MalformedPayload {
-                reason: reason.to_string(),
-            })?;
+        let config: Config = match init_config {
+            Some(c) => {
+                c.try_into()
+                    .map_err(|reason: &str| InvalidParameters::MalformedPayload {
+                        reason: reason.to_string(),
+                    })?
+            }
+            None => Config::default(),
+        };
 
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -2113,12 +2111,15 @@ impl MpcContract {
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
-        let config: Config = init_config.map(Into::into).unwrap_or_default();
-        config
-            .validate()
-            .map_err(|reason| InvalidParameters::MalformedPayload {
-                reason: reason.to_string(),
-            })?;
+        let config: Config = match init_config {
+            Some(c) => {
+                c.try_into()
+                    .map_err(|reason: &str| InvalidParameters::MalformedPayload {
+                        reason: reason.to_string(),
+                    })?
+            }
+            None => Config::default(),
+        };
 
         Ok(MpcContract {
             config,
@@ -2198,17 +2199,11 @@ impl MpcContract {
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
-        self.tee_state
-            .get_allowed_launcher_compose_hashes(Duration::from_secs(
-                self.config.launcher_hash_unused_ttl_seconds,
-            ))
+        self.tee_state.get_allowed_launcher_compose_hashes()
     }
 
     pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash> {
-        self.tee_state
-            .get_allowed_launcher_hashes(Duration::from_secs(
-                self.config.launcher_hash_unused_ttl_seconds,
-            ))
+        self.tee_state.get_allowed_launcher_hashes()
     }
 
     /// Returns the current launcher hash votes, showing each participant's vote.
@@ -2455,7 +2450,6 @@ impl MpcContract {
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
-            launcher_unused_ttl,
         ) {
             log!("post-DCAP check failed for {account_id}: {err}");
             return Err(err.into());
@@ -2464,8 +2458,11 @@ impl MpcContract {
         // Refresh-on-use: a current participant's successful submission keeps the launcher
         // hash its attestation references from expiring.
         if let Some(participant) = &authenticated_participant {
-            self.tee_state
-                .refresh_launcher_usage(&tls_public_key_for_refresh, participant);
+            self.tee_state.refresh_launcher_usage(
+                &tls_public_key_for_refresh,
+                participant,
+                launcher_unused_ttl,
+            );
         }
 
         Ok(())
@@ -2551,10 +2548,7 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        let new_config: Config = config.into();
-        if let Err(e) = new_config.validate() {
-            env::panic_str(e);
-        }
+        let new_config: Config = Config::try_from(config).unwrap_or_else(|e| env::panic_str(e));
         self.config = new_config;
     }
 
@@ -2843,7 +2837,6 @@ impl MpcContract {
             self.tee_state.reverify_participants(
                 &node_id,
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
-                Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
             ),
             TeeQuoteStatus::Valid
         )) {
@@ -4800,11 +4793,14 @@ mod tests {
 
     #[test]
     fn resolve_verification__should_refresh_launcher_for_participant() {
-        // T0 (earlier): launcher last_used is set. T1 (attestation validity): resolve runs.
-        const T0_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
-        let t1_seconds = VALID_ATTESTATION_TIMESTAMP;
+        // Given a launcher whose expiry was stamped earlier (STAMPED_AT_SECONDS), to be
+        // resolved later (RESOLVE_AT_SECONDS) by a current participant.
+        const STAMPED_AT_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
+        let resolve_at_seconds = VALID_ATTESTATION_TIMESTAMP;
 
         let (mut contract, context) = dstack_verification_setup();
+        let ttl_secs = contract.config.launcher_hash_unused_ttl_seconds;
+        let ttl = Duration::from_secs(ttl_secs);
 
         let participant: AccountId = contract
             .protocol_state
@@ -4815,75 +4811,85 @@ mod tests {
             .0
             .clone();
 
-        // Push the launcher's last_used back to T0 so a refresh to T1 is observable.
+        // Stamp the launcher earlier with the config TTL so its expiry is
+        // STAMPED_AT_SECONDS + ttl; a refresh on resolve (restamps to
+        // RESOLVE_AT_SECONDS + ttl) is then observable.
         testing_env!(
             VMContextBuilder::new()
-                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .block_timestamp(STAMPED_AT_SECONDS * 1_000_000_000)
                 .build()
         );
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(launcher_image_hash(), &[image_digest()]);
+        contract.tee_state.allowed_launcher_images.add_or_refresh(
+            launcher_image_hash(),
+            &[image_digest()],
+            ttl,
+        );
         assert_eq!(
             contract
                 .tee_state
                 .allowed_launcher_images
-                .last_used_secs(&launcher_image_hash()),
-            Some(T0_SECONDS)
+                .expires_at_secs(&launcher_image_hash()),
+            Some(STAMPED_AT_SECONDS + ttl_secs)
         );
 
-        // Resolve at T1 with the signer set to a current participant. Predecessor stays the
-        // contract account for the `#[private]` callback.
+        // When resolve runs later with the signer set to a current participant. Predecessor
+        // stays the contract account for the `#[private]` callback.
         let contract_account_id = env::current_account_id();
         testing_env!(
             VMContextBuilder::new()
                 .current_account_id(contract_account_id.clone())
                 .predecessor_account_id(contract_account_id)
                 .signer_account_id(participant)
-                .block_timestamp(t1_seconds * 1_000_000_000)
+                .block_timestamp(resolve_at_seconds * 1_000_000_000)
                 .build()
         );
         let result = contract
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
+        // Then the launcher is refreshed by the participant: expiry restamped to
+        // RESOLVE_AT_SECONDS + ttl.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
         assert_eq!(
             contract
                 .tee_state
                 .allowed_launcher_images
-                .last_used_secs(&launcher_image_hash()),
-            Some(t1_seconds)
+                .expires_at_secs(&launcher_image_hash()),
+            Some(resolve_at_seconds + ttl_secs)
         );
     }
 
     #[test]
     fn resolve_verification__should_not_refresh_for_non_participant() {
-        const T0_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
-        let t1_seconds = VALID_ATTESTATION_TIMESTAMP;
+        // Given a launcher whose expiry was stamped earlier (STAMPED_AT_SECONDS), to be
+        // resolved later (RESOLVE_AT_SECONDS) by a non-participant.
+        const STAMPED_AT_SECONDS: u64 = VALID_ATTESTATION_TIMESTAMP - 1_000;
+        let resolve_at_seconds = VALID_ATTESTATION_TIMESTAMP;
 
         let (mut contract, context) = dstack_verification_setup();
+        let ttl_secs = contract.config.launcher_hash_unused_ttl_seconds;
+        let ttl = Duration::from_secs(ttl_secs);
 
         testing_env!(
             VMContextBuilder::new()
-                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .block_timestamp(STAMPED_AT_SECONDS * 1_000_000_000)
                 .build()
         );
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(launcher_image_hash(), &[image_digest()]);
+        contract.tee_state.allowed_launcher_images.add_or_refresh(
+            launcher_image_hash(),
+            &[image_digest()],
+            ttl,
+        );
         assert_eq!(
             contract
                 .tee_state
                 .allowed_launcher_images
-                .last_used_secs(&launcher_image_hash()),
-            Some(T0_SECONDS)
+                .expires_at_secs(&launcher_image_hash()),
+            Some(STAMPED_AT_SECONDS + ttl_secs)
         );
 
-        // Resolve at T1 but with a non-participant signer: the submission still stores, but
-        // the launcher's last_used must not be extended.
+        // When resolve runs later with a non-participant signer: the submission still stores,
+        // but the launcher's expiry must not be extended.
         let non_participant: AccountId = "non-participant.near".parse().unwrap();
         let contract_account_id = env::current_account_id();
         testing_env!(
@@ -4891,74 +4897,79 @@ mod tests {
                 .current_account_id(contract_account_id.clone())
                 .predecessor_account_id(contract_account_id)
                 .signer_account_id(non_participant)
-                .block_timestamp(t1_seconds * 1_000_000_000)
+                .block_timestamp(resolve_at_seconds * 1_000_000_000)
                 .build()
         );
         let result = contract
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
+        // Then the launcher is not refreshed: expiry unchanged from the setup stamp.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
         assert_eq!(
             contract
                 .tee_state
                 .allowed_launcher_images
-                .last_used_secs(&launcher_image_hash()),
-            Some(T0_SECONDS)
+                .expires_at_secs(&launcher_image_hash()),
+            Some(STAMPED_AT_SECONDS + ttl_secs)
         );
     }
 
     #[test]
     fn submit_participant_info__should_not_refresh_launcher_for_non_participant() {
+        // Given a launcher stamped earlier (STAMPED_AT_SECONDS) with the config TTL, so its
+        // expiry is STAMPED_AT_SECONDS + ttl.
         let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let ttl_secs = contract.config.launcher_hash_unused_ttl_seconds;
+        let ttl = Duration::from_secs(ttl_secs);
 
         let launcher = LauncherImageHash::from([7u8; 32]);
         let mpc_hash = crate::tee::proposal::NodeImageHash::from([8u8; 32]);
         let compose = crate::tee::proposal::get_docker_compose_hash(&launcher, &mpc_hash);
 
-        const T0_SECONDS: u64 = 1_000_000;
-        let t1_seconds = T0_SECONDS + 1_000;
+        const STAMPED_AT_SECONDS: u64 = 1_000_000;
+        let submit_at_seconds = STAMPED_AT_SECONDS + 1_000;
 
-        // Add the launcher at T0.
         testing_env!(
             VMContextBuilder::new()
-                .block_timestamp(T0_SECONDS * 1_000_000_000)
+                .block_timestamp(STAMPED_AT_SECONDS * 1_000_000_000)
                 .build()
         );
         contract
             .tee_state
             .allowed_launcher_images
-            .add_or_refresh(launcher, &[mpc_hash]);
+            .add_or_refresh(launcher, &[mpc_hash], ttl);
         assert_eq!(
             contract
                 .tee_state
                 .allowed_launcher_images
-                .last_used_secs(&launcher),
-            Some(T0_SECONDS)
+                .expires_at_secs(&launcher),
+            Some(STAMPED_AT_SECONDS + ttl_secs)
         );
 
-        // A non-participant submits a `WithConstraints` mock referencing the live launcher
-        // at T1 > T0. The submission stores, but the participant-gated refresh must not run.
+        // When a non-participant submits a `WithConstraints` mock referencing the live
+        // launcher later (submit_at_seconds > STAMPED_AT_SECONDS). The submission stores, but
+        // the participant-gated refresh must not run.
         let non_participant: AccountId = "non-participant.near".parse().unwrap();
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(non_participant.clone())
                 .predecessor_account_id(non_participant)
-                .block_timestamp(t1_seconds * 1_000_000_000)
+                .block_timestamp(submit_at_seconds * 1_000_000_000)
                 .build()
         );
         let tls_key = Ed25519PublicKey([9u8; 32]);
         let mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: Some(compose),
-            expiry_timestamp_seconds: Some(t1_seconds + 1_000_000),
+            expiry_timestamp_seconds: Some(submit_at_seconds + 1_000_000),
             expected_measurements: None,
         };
         let _ = contract
             .submit_participant_info(Attestation::Mock(mock), tls_key.clone())
             .unwrap();
 
-        // Stored (so it reached the gate)...
+        // Then the attestation is stored (so it reached the gate)...
         assert!(
             contract
                 .tee_state
@@ -4966,13 +4977,13 @@ mod tests {
                 .get(&tls_key)
                 .is_some()
         );
-        // ...but `last_used` was not extended.
+        // ...but the launcher's expiry was not extended.
         assert_eq!(
             contract
                 .tee_state
                 .allowed_launcher_images
-                .last_used_secs(&launcher),
-            Some(T0_SECONDS)
+                .expires_at_secs(&launcher),
+            Some(STAMPED_AT_SECONDS + ttl_secs)
         );
     }
 
@@ -5661,7 +5672,6 @@ mod tests {
                 },
                 valid_participant_attestation,
                 tee_upgrade_duration,
-                Duration::MAX,
             );
             assert_matches::assert_matches!(
                 insertion_result,
@@ -6361,12 +6371,7 @@ mod tests {
         };
         contract
             .tee_state
-            .verify_and_store_mock(
-                node_id,
-                expiring_attestation,
-                TEE_UPGRADE_DURATION,
-                Duration::MAX,
-            )
+            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
@@ -6482,12 +6487,7 @@ mod tests {
         };
         contract
             .tee_state
-            .verify_and_store_mock(
-                node_id,
-                expiring_attestation,
-                TEE_UPGRADE_DURATION,
-                Duration::MAX,
-            )
+            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -7937,7 +7937,6 @@ mod tests {
                 },
                 MpcMockAttestation::Valid,
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
-                Duration::MAX,
             )
             .expect("attestation insertion should succeed");
 

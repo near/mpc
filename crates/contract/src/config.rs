@@ -42,7 +42,7 @@ const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
 /// Default TTL after which a launcher image hash unused by any participant is evicted.
-const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
+pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
 /// Prepaid gas for a `clean_expired_launcher_hashes` call.
 const DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS: u64 = 5;
 

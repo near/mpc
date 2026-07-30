@@ -6,12 +6,6 @@
 //! In theory, you could copy-paste every struct from the specific commit you're migrating from.
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
-//!
-//! Relative to `3.13.0`, this release adds two `Config` fields
-//! (`launcher_hash_unused_ttl_seconds`, `clean_expired_launcher_hashes_tera_gas`) and a
-//! `last_used` timestamp to each `AllowedLauncherImage`. Those are the only borsh-layout
-//! changes, so only `Config` and `TeeState` are shadowed here; every other field reuses the
-//! real (byte-identical) type.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::{self, VerifiedAttestation};
@@ -92,7 +86,7 @@ impl From<OldConfig> for Config {
     }
 }
 
-/// `3.13.0` layout of `AllowedLauncherImage`: the current type appends a `last_used`
+/// `3.13.0` layout of `AllowedLauncherImage`: the current type appends an `expires_at`
 /// timestamp, so the real type can no longer decode old bytes.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldAllowedLauncherImage {
@@ -124,13 +118,20 @@ struct OldTeeState {
 
 impl From<OldTeeState> for crate::tee::tee_state::TeeState {
     fn from(old: OldTeeState) -> Self {
-        // `new` stamps `last_used` to the migration block time (constant within this call).
+        // `new` stamps `expires_at = migration_block_time + default_TTL` (constant within
+        // this call), so migrated entries stay live for the default unused-TTL window.
+        let ttl =
+            std::time::Duration::from_secs(crate::config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS);
         let entries = old
             .allowed_launcher_images
             .entries
             .into_iter()
             .map(|e| {
-                crate::tee::proposal::AllowedLauncherImage::new(e.launcher_hash, e.compose_hashes)
+                crate::tee::proposal::AllowedLauncherImage::new(
+                    e.launcher_hash,
+                    e.compose_hashes,
+                    ttl,
+                )
             })
             .collect();
         crate::tee::tee_state::TeeState {
@@ -147,9 +148,6 @@ impl From<OldTeeState> for crate::tee::tee_state::TeeState {
     }
 }
 
-/// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
-/// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.13.0` contract still deserializes during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -215,7 +213,7 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         }
 
-        // First convert the shadowed `3.13.0` `TeeState` (stamping `last_used` on launcher
+        // First convert the shadowed `3.13.0` `TeeState` (stamping `expires_at` on launcher
         // entries), then stamp an expiry on legacy `MockAttestation::Valid` entries — which
         // never expire and could otherwise never be cleaned up.
         let mut tee_state: crate::tee::tee_state::TeeState = old.tee_state.into();
@@ -258,10 +256,10 @@ mod tests {
     use std::time::Duration;
 
     /// The `3.13.0` launcher layout (no timestamp) must deserialize under the shadow and
-    /// migrate: launcher hash + compose hashes preserved, and `last_used` set to the
-    /// migration time (NOT the borsh/epoch default, which would immediately expire every
-    /// migrated hash). Two entries + a short TTL defeat the newest-only read fallback, so
-    /// both surviving proves the timestamp was stamped to "now".
+    /// migrate: launcher hash + compose hashes preserved, and `expires_at` set to
+    /// `migration_time + default_TTL` (NOT the borsh/epoch default, which would immediately
+    /// expire every migrated hash). Both entries surviving at the migration block time
+    /// proves the expiry was stamped forward rather than to epoch 0.
     #[test]
     fn migrating_launcher_images_preserves_hashes_and_stamps_timestamps() {
         const MIGRATION_TIME_SECS: u64 = 1_000_000;
@@ -304,21 +302,20 @@ mod tests {
         let migrated: crate::tee::tee_state::TeeState = decoded.into();
 
         // Launcher hashes and compose hashes are carried over.
-        let big_ttl = std::time::Duration::from_secs(1_000_000_000);
         assert_eq!(
-            migrated.get_allowed_launcher_hashes(big_ttl),
+            migrated.get_allowed_launcher_hashes(),
             vec![launcher_1, launcher_2]
         );
         assert_eq!(
-            migrated.get_allowed_launcher_compose_hashes(big_ttl),
+            migrated.get_allowed_launcher_compose_hashes(),
             vec![compose_1, compose_2]
         );
 
-        // Timestamps were stamped to the migration time: under a short TTL at that same
-        // (large) block time, both entries are still live. Had they defaulted to epoch 0,
-        // both would be expired and the fallback would surface only one.
-        let short_ttl = std::time::Duration::from_secs(100);
-        assert_eq!(migrated.get_allowed_launcher_hashes(short_ttl).len(), 2);
+        // `expires_at` was stamped to `migration_time + default_TTL`: at the migration block
+        // time both entries are still live (both surface, not just the newest-only fallback).
+        // Had they defaulted to epoch 0, both would be expired and the fallback would surface
+        // only one.
+        assert_eq!(migrated.get_allowed_launcher_hashes().len(), 2);
     }
 
     #[test]
@@ -346,22 +343,14 @@ mod tests {
         // entry survives cleanup indefinitely.
         set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         assert_eq!(
-            tee_state.clean_invalid_attestations(
-                Duration::from_secs(0),
-                Duration::from_secs(0),
-                100
-            ),
+            tee_state.clean_invalid_attestations(Duration::from_secs(0), 100),
             0
         );
 
         // When: the migration stamps an expiry as of block time 0 (window ends at
         // DEFAULT), which the clock (already at DEFAULT + 1) is past.
         stamp_expiry_on_legacy_mocks(&mut tee_state, 0);
-        let removed = tee_state.clean_invalid_attestations(
-            Duration::from_secs(0),
-            Duration::from_secs(0),
-            100,
-        );
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the stale legacy mock entry is removed.
         assert_eq!(removed, 1);

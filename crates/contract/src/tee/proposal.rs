@@ -291,31 +291,33 @@ impl StoredDockerImageHashes {
 pub struct AllowedLauncherImage {
     pub(crate) launcher_hash: LauncherImageHash,
     pub(crate) compose_hashes: Vec<LauncherDockerComposeHash>,
-    /// Last time this launcher was "used": stamped when it is voted in / re-voted, and
-    /// refreshed on each attestation by a current participant. Drives expiry.
-    pub(crate) last_used: Timestamp,
+    /// When this launcher expires: computed as `now + ttl` when it is voted in / re-voted,
+    /// and refreshed on each attestation by a current participant. Drives expiry.
+    pub(crate) expires_at: Timestamp,
 }
 
 impl AllowedLauncherImage {
     pub(crate) fn new(
         launcher_hash: LauncherImageHash,
         compose_hashes: Vec<LauncherDockerComposeHash>,
+        ttl: Duration,
     ) -> Self {
         Self {
             launcher_hash,
             compose_hashes,
-            last_used: Timestamp::now(),
+            expires_at: expiry_from_now(ttl),
         }
     }
 
-    fn is_expired(&self, ttl: Duration, now: Timestamp) -> bool {
-        match self.last_used.checked_add(ttl) {
-            Some(deadline) => deadline < now,
-            // Overflow ⇒ deadline unrepresentably far off, so treat as not expired rather than
-            // panic: a bogus timestamp (or an enormous TTL) must never evict a hash.
-            None => false,
-        }
+    fn is_expired(&self, now: Timestamp) -> bool {
+        self.expires_at < now
     }
+}
+
+/// Expiry timestamp `now + ttl`, saturating at [`Timestamp::MAX`] on overflow so a bogus
+/// timestamp (or an enormous TTL) yields an entry that never expires rather than panicking.
+fn expiry_from_now(ttl: Duration) -> Timestamp {
+    Timestamp::now().checked_add(ttl).unwrap_or(Timestamp::MAX)
 }
 
 /// Collection of allowed launcher images. Managed via voting (add requires threshold,
@@ -333,25 +335,26 @@ pub(crate) struct AllowedLauncherImages {
 #[derive(Debug, PartialEq, Eq)]
 pub enum AllowedLauncherImageInsertion {
     Added,
-    /// The launcher was already present; its `last_used` was refreshed (re-vote).
+    /// The launcher was already present; its `expires_at` was refreshed (re-vote).
     Refreshed,
 }
 
 impl AllowedLauncherImages {
     /// Adds a launcher image hash, computing compose hashes for the given set of currently
     /// allowed MPC image hashes. If the launcher hash already exists, refreshes its
-    /// `last_used` timestamp (re-vote) instead of adding a duplicate.
+    /// `expires_at` timestamp (re-vote) instead of adding a duplicate.
     pub fn add_or_refresh(
         &mut self,
         launcher_hash: LauncherImageHash,
         current_mpc_image_hashes: &[NodeImageHash],
+        ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
         if let Some(existing) = self
             .entries
             .iter_mut()
             .find(|e| e.launcher_hash == launcher_hash)
         {
-            existing.last_used = Timestamp::now();
+            existing.expires_at = expiry_from_now(ttl);
             return AllowedLauncherImageInsertion::Refreshed;
         }
 
@@ -360,32 +363,35 @@ impl AllowedLauncherImages {
             .map(|mpc_hash| get_docker_compose_hash(&launcher_hash, mpc_hash))
             .collect();
 
-        self.entries
-            .push(AllowedLauncherImage::new(launcher_hash, compose_hashes));
+        self.entries.push(AllowedLauncherImage::new(
+            launcher_hash,
+            compose_hashes,
+            ttl,
+        ));
 
         AllowedLauncherImageInsertion::Added
     }
 
-    /// Index of the most-recently-used entry, if any. On ties (e.g. right after a migration
-    /// stamps every entry with the same `last_used`) this returns the last such entry —
-    /// deterministic, but the specific choice among equal entries is arbitrary.
+    /// Index of the entry with the latest expiry, if any. On ties (e.g. right after a
+    /// migration stamps every entry with the same `expires_at`) this returns the last such
+    /// entry — deterministic, but the specific choice among equal entries is arbitrary.
     fn newest_index(&self) -> Option<usize> {
         self.entries
             .iter()
             .enumerate()
-            .max_by_key(|(_, e)| e.last_used)
+            .max_by_key(|(_, e)| e.expires_at)
             .map(|(i, _)| i)
     }
 
-    /// Returns indices of non-expired entries. If all are expired, keeps the most
-    /// recently used one as a fallback so reads never go fully empty.
-    fn non_expired_or_newest_indices(&self, ttl: Duration) -> Vec<usize> {
+    /// Returns indices of non-expired entries. If all are expired, keeps the one with the
+    /// latest expiry as a fallback so reads never go fully empty.
+    fn non_expired_or_newest_indices(&self) -> Vec<usize> {
         let now = Timestamp::now();
         let live: Vec<usize> = self
             .entries
             .iter()
             .enumerate()
-            .filter(|(_, e)| !e.is_expired(ttl, now))
+            .filter(|(_, e)| !e.is_expired(now))
             .map(|(i, _)| i)
             .collect();
 
@@ -396,15 +402,15 @@ impl AllowedLauncherImages {
         self.newest_index().map(|i| vec![i]).unwrap_or_default()
     }
 
-    /// Refreshes the `last_used` timestamp of the entry whose `compose_hashes`
-    /// contains `compose_hash`. Returns `true` if a matching entry was found.
-    pub fn refresh_last_used(&mut self, compose_hash: &LauncherDockerComposeHash) -> bool {
+    /// Refreshes the `expires_at` timestamp (to `now + ttl`) of the entry whose
+    /// `compose_hashes` contains `compose_hash`. Returns `true` if a matching entry was found.
+    pub fn refresh(&mut self, compose_hash: &LauncherDockerComposeHash, ttl: Duration) -> bool {
         if let Some(entry) = self
             .entries
             .iter_mut()
             .find(|e| e.compose_hashes.contains(compose_hash))
         {
-            entry.last_used = Timestamp::now();
+            entry.expires_at = expiry_from_now(ttl);
             true
         } else {
             false
@@ -414,22 +420,22 @@ impl AllowedLauncherImages {
     /// Whether a `cleanup_expired` call would evict anything: there is more than one entry
     /// and at least one is expired. Used to skip spawning the detached sweep when there is
     /// nothing to do (`cleanup_expired` never removes the last entry).
-    pub fn has_expired(&self, ttl: Duration) -> bool {
+    pub fn has_expired(&self) -> bool {
         if self.entries.len() <= 1 {
             return false;
         }
         let now = Timestamp::now();
-        self.entries.iter().any(|e| e.is_expired(ttl, now))
+        self.entries.iter().any(|e| e.is_expired(now))
     }
 
-    /// Removes expired entries, always keeping at least one (the most recently used).
-    pub fn cleanup_expired(&mut self, ttl: Duration) {
+    /// Removes expired entries, always keeping at least one (the one with the latest expiry).
+    pub fn cleanup_expired(&mut self) {
         if self.entries.len() <= 1 {
             return;
         }
         let now = Timestamp::now();
-        if self.entries.iter().any(|e| !e.is_expired(ttl, now)) {
-            self.entries.retain(|e| !e.is_expired(ttl, now));
+        if self.entries.iter().any(|e| !e.is_expired(now)) {
+            self.entries.retain(|e| !e.is_expired(now));
         } else if let Some(newest) = self.newest_index() {
             // All expired: keep only the most-recently-used entry.
             self.entries.swap(0, newest);
@@ -470,28 +476,28 @@ impl AllowedLauncherImages {
     }
 
     /// Flattened compose hashes across the live entries (see [`Self::non_expired_or_newest_indices`]).
-    pub fn all_compose_hashes(&self, ttl: Duration) -> Vec<LauncherDockerComposeHash> {
-        self.non_expired_or_newest_indices(ttl)
+    pub fn all_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+        self.non_expired_or_newest_indices()
             .into_iter()
             .flat_map(|i| self.entries[i].compose_hashes.iter().cloned())
             .collect()
     }
 
     /// Launcher hashes of the live entries (see [`Self::non_expired_or_newest_indices`]).
-    pub fn launcher_hashes(&self, ttl: Duration) -> Vec<LauncherImageHash> {
-        self.non_expired_or_newest_indices(ttl)
+    pub fn launcher_hashes(&self) -> Vec<LauncherImageHash> {
+        self.non_expired_or_newest_indices()
             .into_iter()
             .map(|i| self.entries[i].launcher_hash)
             .collect()
     }
 
-    /// Test-only: `last_used` (in seconds) of the entry for `launcher_hash`, if present.
+    /// Test-only: `expires_at` (in seconds) of the entry for `launcher_hash`, if present.
     #[cfg(test)]
-    pub(crate) fn last_used_secs(&self, launcher_hash: &LauncherImageHash) -> Option<u64> {
+    pub(crate) fn expires_at_secs(&self, launcher_hash: &LauncherImageHash) -> Option<u64> {
         self.entries
             .iter()
             .find(|e| &e.launcher_hash == launcher_hash)
-            .map(|e| e.last_used.as_secs())
+            .map(|e| e.expires_at.as_secs())
     }
 }
 
@@ -760,39 +766,36 @@ mod tests {
 
         // Add first launcher
         assert_eq!(
-            allowed.add_or_refresh(launcher_1, &mpc_hashes),
+            allowed.add_or_refresh(launcher_1, &mpc_hashes, BIG_TTL),
             AllowedLauncherImageInsertion::Added
         );
-        assert_eq!(allowed.launcher_hashes(BIG_TTL), vec![launcher_1]);
+        assert_eq!(allowed.launcher_hashes(), vec![launcher_1]);
         // One compose hash per MPC image.
-        assert_eq!(allowed.all_compose_hashes(BIG_TTL), compose(launcher_1));
+        assert_eq!(allowed.all_compose_hashes(), compose(launcher_1));
 
         // Re-adding the same launcher refreshes it (no new entry)
         assert_eq!(
-            allowed.add_or_refresh(launcher_1, &mpc_hashes),
+            allowed.add_or_refresh(launcher_1, &mpc_hashes, BIG_TTL),
             AllowedLauncherImageInsertion::Refreshed
         );
-        assert_eq!(allowed.launcher_hashes(BIG_TTL), vec![launcher_1]);
-        assert_eq!(allowed.all_compose_hashes(BIG_TTL), compose(launcher_1));
+        assert_eq!(allowed.launcher_hashes(), vec![launcher_1]);
+        assert_eq!(allowed.all_compose_hashes(), compose(launcher_1));
 
         // Add second launcher
         assert_eq!(
-            allowed.add_or_refresh(launcher_2, &mpc_hashes),
+            allowed.add_or_refresh(launcher_2, &mpc_hashes, BIG_TTL),
             AllowedLauncherImageInsertion::Added
         );
+        assert_eq!(allowed.launcher_hashes(), vec![launcher_1, launcher_2]);
         assert_eq!(
-            allowed.launcher_hashes(BIG_TTL),
-            vec![launcher_1, launcher_2]
-        );
-        assert_eq!(
-            allowed.all_compose_hashes(BIG_TTL),
+            allowed.all_compose_hashes(),
             [compose(launcher_1), compose(launcher_2)].concat()
         );
 
         // Remove first launcher
         assert!(allowed.remove(&launcher_1));
-        assert_eq!(allowed.launcher_hashes(BIG_TTL), vec![launcher_2]);
-        assert_eq!(allowed.all_compose_hashes(BIG_TTL), compose(launcher_2));
+        assert_eq!(allowed.launcher_hashes(), vec![launcher_2]);
+        assert_eq!(allowed.all_compose_hashes(), compose(launcher_2));
 
         // Removing non-existent launcher returns false
         assert!(!allowed.remove(&launcher_1));
@@ -805,71 +808,44 @@ mod tests {
         let launcher = dummy_launcher_hash(1);
         let mpc_hash_1 = dummy_code_hash(10);
 
-        allowed.add_or_refresh(launcher, &[mpc_hash_1]);
-        assert_eq!(allowed.all_compose_hashes(BIG_TTL).len(), 1);
+        allowed.add_or_refresh(launcher, &[mpc_hash_1], BIG_TTL);
+        assert_eq!(allowed.all_compose_hashes().len(), 1);
 
         // Add a new MPC image — should add one compose hash per launcher
         let mpc_hash_2 = dummy_code_hash(20);
         allowed.add_mpc_image_compose_hashes(&mpc_hash_2);
-        assert_eq!(allowed.all_compose_hashes(BIG_TTL).len(), 2);
+        assert_eq!(allowed.all_compose_hashes().len(), 2);
 
         // Adding the same MPC image again should not duplicate
         allowed.add_mpc_image_compose_hashes(&mpc_hash_2);
-        assert_eq!(allowed.all_compose_hashes(BIG_TTL).len(), 2);
+        assert_eq!(allowed.all_compose_hashes().len(), 2);
     }
 
     #[test]
-    fn refresh_last_used_keeps_entry_alive_past_ttl() {
+    fn refresh_keeps_entry_alive_past_ttl() {
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let launcher = dummy_launcher_hash(1);
         let mpc_hash = dummy_code_hash(10);
-        allowed.add_or_refresh(launcher, &[mpc_hash]);
+        // Added at t=1 with ttl=100 ⇒ expires_at=101.
+        allowed.add_or_refresh(launcher, &[mpc_hash], ttl);
         let compose = get_docker_compose_hash(&launcher, &mpc_hash);
 
-        // Just before original deadline, refresh on use.
+        // Just before original deadline, refresh on use ⇒ expires_at=190.
         set_block_secs(90);
-        assert!(allowed.refresh_last_used(&compose));
+        assert!(allowed.refresh(&compose, ttl));
 
-        // Past the original deadline (1 + 100), but within the refreshed window.
+        // Past the original deadline (101), but within the refreshed window (190).
         set_block_secs(150);
-        assert_eq!(allowed.launcher_hashes(ttl).len(), 1);
-        assert_eq!(allowed.all_compose_hashes(ttl).len(), 1);
+        assert_eq!(allowed.launcher_hashes().len(), 1);
+        assert_eq!(allowed.all_compose_hashes().len(), 1);
 
         // Refreshing an unknown compose hash returns false.
-        assert!(
-            !allowed
-                .refresh_last_used(&get_docker_compose_hash(&dummy_launcher_hash(9), &mpc_hash))
-        );
-    }
-
-    /// Read-time filtering only *hides* expired entries; it never deletes (only
-    /// `cleanup_expired` does). So enlarging the TTL brings back an entry a smaller TTL hid.
-    #[test]
-    fn enlarging_ttl_unhides_previously_expired_entry() {
-        set_block_secs(1);
-        let mut allowed = AllowedLauncherImages::default();
-        let mpc_hashes = vec![dummy_code_hash(10)];
-        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes);
-        // A second, newer entry so the fallback doesn't mask the first's expiry.
-        set_block_secs(50);
-        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
-
-        // At t=200 with a 100s TTL, launcher_1 (last_used=1) is hidden.
-        set_block_secs(200);
-        let small_ttl = Duration::from_secs(100);
-        assert_eq!(
-            allowed.launcher_hashes(small_ttl),
-            vec![dummy_launcher_hash(2)]
-        );
-
-        // A larger TTL at the same instant un-hides it — the entry was never deleted.
-        let large_ttl = Duration::from_secs(1_000);
-        assert_eq!(
-            allowed.launcher_hashes(large_ttl),
-            vec![dummy_launcher_hash(1), dummy_launcher_hash(2)]
-        );
+        assert!(!allowed.refresh(
+            &get_docker_compose_hash(&dummy_launcher_hash(9), &mpc_hash),
+            ttl
+        ));
     }
 
     #[test]
@@ -878,18 +854,19 @@ mod tests {
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
-        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes);
+        // launcher_1 added at t=1 ⇒ expires_at=101.
+        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
 
-        // Add a second, newer launcher later.
+        // Add a second, newer launcher later ⇒ expires_at=300.
         set_block_secs(200);
-        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
+        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
 
-        // At t=250, launcher_1 (last_used=1) is expired but launcher_2 (last_used=200) is live.
+        // At t=250, launcher_1 (expires_at=101) is expired but launcher_2 (expires_at=300) is live.
         set_block_secs(250);
-        let hashes = allowed.launcher_hashes(ttl);
+        let hashes = allowed.launcher_hashes();
         assert_eq!(hashes.len(), 1);
         assert!(hashes.contains(&dummy_launcher_hash(2)));
-        assert_eq!(allowed.all_compose_hashes(ttl).len(), 1);
+        assert_eq!(allowed.all_compose_hashes().len(), 1);
     }
 
     #[test]
@@ -898,13 +875,14 @@ mod tests {
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
-        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes);
+        // launcher_1: expires_at=101; launcher_2: expires_at=150.
+        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
         set_block_secs(50);
-        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
+        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
 
-        // Far in the future: both expired, fallback keeps the newest by `last_used`.
+        // Far in the future: both expired, fallback keeps the one with the latest expiry.
         set_block_secs(10_000);
-        let hashes = allowed.launcher_hashes(ttl);
+        let hashes = allowed.launcher_hashes();
         assert_eq!(hashes.len(), 1);
         assert!(hashes.contains(&dummy_launcher_hash(2)));
     }
@@ -915,53 +893,51 @@ mod tests {
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
-        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes);
+        // launcher_1: expires_at=101; launcher_2: expires_at=300.
+        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
         set_block_secs(200);
-        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
+        allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
 
         // launcher_1 expired, launcher_2 live: only the live one remains.
         set_block_secs(250);
-        allowed.cleanup_expired(ttl);
-        assert_eq!(allowed.launcher_hashes(BIG_TTL).len(), 1);
-        assert!(
-            allowed
-                .launcher_hashes(BIG_TTL)
-                .contains(&dummy_launcher_hash(2))
-        );
+        allowed.cleanup_expired();
+        assert_eq!(allowed.launcher_hashes().len(), 1);
+        assert!(allowed.launcher_hashes().contains(&dummy_launcher_hash(2)));
 
-        // Both expired now: cleanup still keeps exactly one (the newest by `last_used`).
+        // Both expired now: cleanup still keeps exactly one (the one with the latest expiry).
         // Re-add an older entry to have two expired entries.
         let mut allowed2 = AllowedLauncherImages::default();
         set_block_secs(1);
-        allowed2.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes);
+        allowed2.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
         set_block_secs(50);
-        allowed2.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes);
+        allowed2.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
         set_block_secs(1_000_000);
-        allowed2.cleanup_expired(ttl);
-        let remaining = allowed2.launcher_hashes(BIG_TTL);
+        allowed2.cleanup_expired();
+        let remaining = allowed2.launcher_hashes();
         assert_eq!(remaining.len(), 1);
         assert!(remaining.contains(&dummy_launcher_hash(2)));
     }
 
     #[test]
-    fn re_add_refresh_resets_last_used_and_keeps_alive() {
+    fn re_add_refresh_resets_expires_at_and_keeps_alive() {
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let launcher = dummy_launcher_hash(1);
         let mpc_hashes = vec![dummy_code_hash(10)];
-        allowed.add_or_refresh(launcher, &mpc_hashes);
+        // Added at t=1 with ttl=100 ⇒ expires_at=101.
+        allowed.add_or_refresh(launcher, &mpc_hashes, ttl);
 
-        // Just before expiry, re-vote (re-add): refreshes and resets `last_used`.
+        // Just before expiry, re-vote (re-add): refreshes and resets `expires_at` to 190.
         set_block_secs(90);
         assert_eq!(
-            allowed.add_or_refresh(launcher, &mpc_hashes),
+            allowed.add_or_refresh(launcher, &mpc_hashes, ttl),
             AllowedLauncherImageInsertion::Refreshed
         );
 
-        // Past the original deadline (1 + 100) but within the refreshed window.
+        // Past the original deadline (101) but within the refreshed window (190).
         set_block_secs(150);
-        assert_eq!(allowed.launcher_hashes(ttl).len(), 1);
+        assert_eq!(allowed.launcher_hashes().len(), 1);
     }
 
     #[test]
