@@ -220,7 +220,7 @@ impl EcdsaSignatureProvider {
             }
 
             // If the store is full, try to discard some triples which cannot be used right now
-            if my_triples_count == config.desired_triples_to_buffer {
+            if my_triples_count >= config.desired_triples_to_buffer {
                 triple_store.maybe_discard_owned(32).await;
             }
 

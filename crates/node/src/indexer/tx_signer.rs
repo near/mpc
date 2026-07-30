@@ -36,22 +36,21 @@ impl TransactionSigner {
         new_nonce
     }
 
-    #[expect(clippy::too_many_arguments)]
     pub(crate) fn create_and_sign_function_call_tx(
         &self,
         receiver_id: AccountId,
         method_name: String,
         args: Vec<u8>,
         gas: Gas,
-        deposit: Balance,
         block_hash: CryptoHash,
         block_height: u64,
     ) -> SignedTransaction {
+        // The node signs with a function-call access key, which cannot attach a deposit.
         let action = FunctionCallAction {
             method_name,
             args,
             gas,
-            deposit,
+            deposit: Balance::from_near(0),
         };
 
         let verifying_key = self.signing_key.verifying_key();

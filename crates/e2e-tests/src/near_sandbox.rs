@@ -27,6 +27,32 @@ impl NearSandbox {
 
         tracing::info!(rpc_port, network_port, version, "starting NEAR sandbox");
 
+        // The caps apply to incoming messages, so the sandbox must lift them too
+        // or it throttles the indexers' block requests during catch-up. Concrete
+        // buckets rather than `null`: near-sandbox merges with RFC 7386 semantics,
+        // which would drop the key instead of disabling the limit.
+        const UNLIMITED: u32 = 1_000_000;
+        let unlimited = serde_json::json!({
+            "maximum_size": UNLIMITED,
+            "refill_rate": UNLIMITED,
+            "initial_size": UNLIMITED,
+        });
+        let additional_config = serde_json::json!({
+            "network": {
+                "experimental": {
+                    "network_config_overrides": {
+                        "received_messages_rate_limits": {
+                            "rate_limits": {
+                                "Block": unlimited,
+                                "OptimisticBlock": unlimited,
+                                "BlockRequest": unlimited,
+                            }
+                        },
+                    }
+                }
+            }
+        });
+
         // Set chain_id to "sandbox" so MPC nodes recognize this as a local
         // network (is_localnet() returns true). Without this, `near-sandbox
         // init` generates a random chain_id like "test-chain-XXXXX".
@@ -34,6 +60,7 @@ impl NearSandbox {
             rpc_port: Some(rpc_port),
             net_port: Some(network_port),
             additional_genesis: Some(serde_json::json!({"chain_id": "sandbox"})),
+            additional_config: Some(additional_config),
             ..Default::default()
         };
 

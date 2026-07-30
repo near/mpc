@@ -146,7 +146,7 @@ impl TeeState {
         tee_state
     }
 
-    fn current_time_seconds() -> u64 {
+    pub(crate) fn current_time_seconds() -> u64 {
         env::block_timestamp_ms() / 1_000
     }
 
@@ -772,6 +772,99 @@ mod tests {
             !tee_state
                 .stored_attestations
                 .contains_key(&stale_node.tls_public_key)
+        );
+    }
+
+    #[test]
+    fn clean_invalid_attestations__should_remove_accepted_mock_valid_after_expiry() {
+        // Given: a `MockAttestation::Valid` accepted via the normal submission path.
+        // It must be stamped with an expiry so it can eventually be cleaned up.
+        testing_env!(VMContextBuilder::new().block_timestamp(0).build());
+
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        tee_state
+            .verify_and_store_mock(
+                node_id.clone(),
+                MockAttestation::Valid,
+                Duration::from_secs(0),
+                Duration::MAX,
+            )
+            .unwrap();
+
+        // Before expiry: cleanup keeps the entry.
+        assert_eq!(
+            tee_state.clean_invalid_attestations(
+                Duration::from_secs(0),
+                Duration::from_secs(0),
+                100
+            ),
+            0
+        );
+
+        // When: the clock advances past the stamped expiry window and cleanup runs.
+        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        let removed = tee_state.clean_invalid_attestations(
+            Duration::from_secs(0),
+            Duration::from_secs(0),
+            100,
+        );
+
+        // Then: the previously uncleanable mock entry is removed.
+        assert_eq!(removed, 1);
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
+        );
+    }
+
+    #[test]
+    fn verify_and_store_mock__should_cap_a_submitter_supplied_expiry_beyond_the_default() {
+        // Given: a mock submitted with an expiry far beyond the contract's default
+        // window. A submitter must not be able to extend its lifetime past the cap.
+        testing_env!(VMContextBuilder::new().block_timestamp(0).build());
+
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        let oversized = MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(attestation::DEFAULT_EXPIRATION_DURATION_SECONDS * 10),
+            expected_measurements: None,
+        };
+        tee_state
+            .verify_and_store_mock(
+                node_id.clone(),
+                oversized,
+                Duration::from_secs(0),
+                Duration::MAX,
+            )
+            .unwrap();
+
+        // When: the clock advances just past the contract's default window — well
+        // before the submitter's requested expiry.
+        set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
+        let removed = tee_state.clean_invalid_attestations(
+            Duration::from_secs(0),
+            Duration::from_secs(0),
+            100,
+        );
+
+        // Then: the entry is cleaned — the submitted expiry was capped at the default.
+        assert_eq!(removed, 1);
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
         );
     }
 

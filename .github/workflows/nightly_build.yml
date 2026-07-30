@@ -28,7 +28,7 @@ jobs:
         env:
           NEARCORE_BRANCH: ${{ inputs.nearcore-branch || 'master' }}
         run: |
-          sed -i "s|\({ git = \"https://github.com/near/nearcore\", branch = \"\)[^\"]*|\1${NEARCORE_BRANCH}|g" Cargo.toml
+          sed -i -E "s#(\{ git = \"https://github.com/near/nearcore\", )(tag|branch) = \"[^\"]*\"#\1branch = \"${NEARCORE_BRANCH}\"#g" Cargo.toml
 
       - name: Build MPC
         id: build-mpc

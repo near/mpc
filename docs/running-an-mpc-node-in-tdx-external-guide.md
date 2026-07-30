@@ -2069,11 +2069,10 @@ Invalid TEE Remote Attestation: TeeQuoteStatus is invalid:
   the submitted attestation failed verification, reason: Custom("...")
 ```
 
-The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")`. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list, the contract's deposit logic, or the contract's caller assertion):
+The `reason` is the same `VerificationError` the client-side WARN reports (see section 1) — for example `Custom("the allowed mpc image hashes list is empty")`. Errors that **only** surface on-chain (because they're checked against the contract's allowed-measurements list or the contract's caller assertion):
 
 - **`MeasurementsNotAllowed`** — your boot measurements (MRTD / RTMR0–2) are not in the contract's allowed set. Vote them in (see [OS measurement voting](#os-measurement-voting)).
 - **`EmptyMeasurementsList`** — the contract has no allowed measurements yet; the first set must be voted in before any node can attest.
-- **`Attached deposit is lower than required. Attached: X, required: Y`** — first-time joiners must attach enough yoctoNEAR for storage; the node attaches `0`, so call `submit_participant_info` manually with `--deposit` once. Exact amount tracked in [#903](https://github.com/near/mpc/issues/903).
 - **`Caller is not the signer account.`** — the access key used to sign does not match the node's `my_near_account_id`.
 
 If you see no error logs at all but `get_attestation` still returns `null`, the node has not yet generated a quote. Check `mpc_tee_attestation_attempts_total` on the `/metrics` endpoint.

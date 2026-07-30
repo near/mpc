@@ -24,12 +24,19 @@ fn valid_mock_attestation_succeeds_verification() {
     let account_key = account_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
+    // A `Valid` mock is accepted as an expiring `WithConstraints` mock so the
+    // stored attestation can later be cleaned up (#3293).
     assert_matches!(
         valid_attestation.verify_locally(report_data.into(), timestamp_s, &[], &[], &[]),
         Ok(AcceptedAttestation {
-            attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+            attestation: VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+                mpc_docker_image_hash: None,
+                launcher_docker_compose_hash: None,
+                expiry_timestamp_seconds: Some(expiry),
+                expected_measurements: None,
+            }),
             advisory_ids,
-        }) if advisory_ids.is_empty()
+        }) if advisory_ids.is_empty() && expiry == timestamp_s + DEFAULT_EXPIRATION_DURATION_SECONDS
     );
 }
 
