@@ -23,12 +23,17 @@ without any vote.
 pub struct AllowedLauncherImage {
     launcher_hash: LauncherImageHash,
     compose_hashes: Vec<LauncherDockerComposeHash>,
-    last_used: Timestamp,  // NEW: stamped when voted in / re-voted, and refreshed on
-                           // each attestation by a *current participant*.
+    expires_at: Timestamp,  // NEW: stamped `now + TTL` when voted in / re-voted, and
+                            // restamped on each attestation by a *current participant*.
 }
 ```
 
-An entry is **expired** when `last_used + TTL < now`.
+An entry is **expired** when `expires_at < now`. The expiry is computed once at write
+time (`expires_at = now + TTL`, saturating on overflow) — mirroring how attestations store
+their own expiry — so reads are a plain `expires_at < now` comparison and the TTL is only
+needed at the write sites (vote-in, refresh, migration), not threaded through every read.
+A consequence: changing the TTL config applies to an entry on its *next* stamp (a node
+resubmits hourly), not retroactively.
 TTL is a new config field `launcher_hash_unused_ttl_seconds`, default **14 days**.
 Config validation enforces `launcher_hash_unused_ttl_seconds >=
 mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS` (the
@@ -40,7 +45,7 @@ period, 7 days).
 Three parts:
 
 1. **Refresh on use** — after a successful verify in `submit_participant_info`
-   (hourly per node), the contract sets `last_used = now` on the entry
+   (hourly per node), the contract restamps `expires_at = now + TTL` on the entry
    owning the validated compose hash. No node-side changes.
    **Only a current participant's submission refreshes the timestamp.**
    `submit_participant_info` is also callable by prospective (non-participant)
@@ -64,19 +69,19 @@ Three parts:
    `clean_tee_status_tera_gas` etc. used by the post-resharing cleanups in
    `vote_reshared`.
 
-Stamping `last_used` at vote-in means a hash voted in but **never adopted**
+Stamping `expires_at = now + TTL` at vote-in means a hash voted in but **never adopted**
 (e.g. a newly voted launcher image no node ever migrated to) also expires after
 one TTL window. Recovery: `vote_add_launcher_hash` for an already-present entry
-refreshes its `last_used` (threshold vote, not unanimity).
+restamps its `expires_at` (threshold vote, not unanimity).
 
 ### Safety invariants
 
 - A hash backing a **valid participant attestation is never expired**: a
   current participant resubmits hourly, so its valid attestation (at most
-  `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 7 days, old) refreshed the
-  entry's `last_used` that recently, and `last_used + TTL >= now` holds whenever
-  `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS` — regardless of the constant's
-  exact value. Enforced by config validation
+  `DEFAULT_EXPIRATION_DURATION_SECONDS`, currently 7 days, old) restamped the
+  entry's `expires_at = now + TTL` that recently, so `expires_at >= now` holds
+  whenever `TTL >= DEFAULT_EXPIRATION_DURATION_SECONDS` — regardless of the
+  constant's exact value. Enforced by config validation
   (`launcher_hash_unused_ttl_seconds >= DEFAULT_EXPIRATION_DURATION_SECONDS`);
   the 14-day default is `>= DEFAULT_EXPIRATION_DURATION_SECONDS` (the
   attestation window, currently 7 days), leaving ample margin.
@@ -99,12 +104,12 @@ sequenceDiagram
     participant N as Nodes
 
     Ops->>C: vote_add_launcher_hash(B), threshold reached
-    Note over C: B.last_used = now, 14-day adoption clock starts
+    Note over C: B.expires_at = now + 14d, adoption clock starts
     N->>C: hourly submit_participant_info with launcher A
-    Note over C: A.last_used refreshed hourly
+    Note over C: A.expires_at restamped hourly (now + 14d)
     N->>C: hourly submit_participant_info with launcher B (after migration)
-    Note over C: B refreshed. A freezes once the last node leaves it
-    Note over C: A.last_used + 14d passes. A is rejected by all reads
+    Note over C: B restamped. A freezes once the last node leaves it
+    Note over C: A.expires_at passes. A is rejected by all reads
     Ops->>C: verify_tee (routine)
     Note over C: spawns detached self-call clean_expired_launcher_hashes
     C-->>C: clean_expired_launcher_hashes (private, separate receipt)
@@ -125,8 +130,10 @@ sequenceDiagram
 ## Migration
 
 New borsh field ⇒ state migration: existing entries get
-`last_used = migration time` — every current hash starts a fresh 14-day clock;
-stale testnet hashes age out with no further action.
+`expires_at = migration time + TTL` — every current hash starts a fresh 14-day
+clock; stale testnet hashes age out with no further action. The 3.13.0 migration
+also stamps an expiry on legacy `MockAttestation::Valid` entries (from #3785) so
+they become cleanable; the two steps run together.
 
 ## Alternatives considered
 
