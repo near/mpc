@@ -4,7 +4,7 @@
 
 This document designs the funding model tracked in [#3972](https://github.com/near/mpc/issues/3972): moving the storage cost of a stored attestation entry off the contract's balance and onto whoever onboards the node — by adding a single operational step in which the operator prepays for that storage — while keeping the node's deposit-less function-call access key able to self-attest.
 
-One prepayment buys one **grant**: permission for a node account to store one attestation entry. An operator running two nodes prepays twice — for example to keep a backup node attested, or for the second node during a migration. Nothing is refunded, and the contract never records how much anyone paid — only how many grants they hold.
+One prepayment buys one **grant**: permission for a node account to store one attestation entry. An operator running two nodes prepays twice — for example to keep a backup node attested, or for the second node during a migration. Nothing is refunded, and the contract never records how much anyone paid — only how many unused grants they have left.
 
 ## Background
 
@@ -70,14 +70,22 @@ The counter also decouples granted capacity from the NEAR price. Grants are deno
 | Method | Kind | Purpose |
 |---|---|---|
 | `prepay_attestation_storage(account_id: AccountId)` | `#[payable]` | Grants `floor(attached_deposit / fee)` entries to `account_id`. Rejects below one fee. Any remainder is kept. Permissionless — anyone may prepay for any account. |
-| `attestation_grants(account_id: AccountId) -> u32` | view | Grants remaining, so an operator can confirm prepayment landed before the node submits. |
+| `available_attestation_grants(account_id: AccountId) -> u32` | view | Grants **available** — bought, minus those currently backing an entry. This is what an operator checks to confirm a prepayment landed and the node can attest. Lifetime total is not tracked; see below. |
 | `attestation_storage_fee() -> NearToken` | view | Current per-entry fee, so tooling and the runbook do not hardcode it. |
 
 ### New state
 
+The counter holds **available** grants, not the lifetime number bought:
+
+```text
+available  =  bought  -  entries currently held
+```
+
+Prepaying increments it, storing an entry decrements it, reclaiming an entry increments it back. The contract keeps it non-negative by rejecting a new entry at zero, which is how it enforces the invariant above — so `bought` and `entries held` never need storing separately, and nothing in the design reads them.
+
 ```rust
 // contract state
-attestation_grants: LookupMap<AccountId, u32>,
+available_attestation_grants: LookupMap<AccountId, u32>,
 
 // Config, governance-votable
 attestation_storage_fee: NearToken,
@@ -217,7 +225,7 @@ Entries predating the upgrade remain contract-funded and are reclaimable under [
 
 - **Initial fee value.** [What the fee has to cover](#what-the-fee-has-to-cover) puts the floor at ~0.0073 NEAR and suggests 0.02 NEAR for headroom; the exact figure needs a decision. Size it off the *mock* worst case (450 borsh bytes), not Dstack's 445 — the largest entry is a mock one.
 - Should `prepay_attestation_storage` accept several grants in one call (`floor(attached / fee)`, as specified above) or exactly one per call?
-- Should `attestation_grants` and `attestation_storage_fee` be added to the DTO/ABI surface for the node and CLI, or are they operator-only?
+- Should `available_attestation_grants` and `attestation_storage_fee` be added to the DTO/ABI surface for the node and CLI, or are they operator-only?
 
 ## Testing
 
