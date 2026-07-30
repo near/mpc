@@ -4,7 +4,7 @@
 
 This document designs the funding model tracked in [#3972](https://github.com/near/mpc/issues/3972): moving the storage cost of a stored attestation entry off the contract's balance and onto whoever onboards the node — by adding a single operational step in which the operator prepays for that storage — while keeping the node's deposit-less function-call access key able to self-attest.
 
-One prepayment buys one **grant**: permission for a node account to store one attestation entry. **A grant comes back when the entry it paid for is reclaimed**, so a grant is a slot the operator keeps rather than a one-time charge — prepay for the capacity you run and you never have to think about it again. An operator running two nodes prepays twice, for example to keep a backup node attested or for the second node during a migration. No NEAR is ever refunded, and the contract records only how many unused grants an account has left.
+One prepayment buys one **grant**: permission for a node account to store one attestation entry. **A grant comes back when the entry it paid for is reclaimed**, so a grant is a slot the operator keeps rather than a one-time charge. Reclamation waits for the entry to expire, so in practice an operator prepays for the nodes they run plus a spare — typically two: the live node and the one they are migrating to. No NEAR is ever refunded, and the contract records only how many unused grants an account has left.
 
 ## Background
 
@@ -38,7 +38,7 @@ Together these force the shape of the answer: **paying and submitting must be se
 
 - A new attestation entry is paid for by whoever onboards the node, not by the contract.
 - The node keeps self-submitting its first attestation and every re-attestation with its function-call key.
-- An operator prepays once for the capacity they run and does not revisit it as nodes are torn down, re-provisioned, rotated or migrated.
+- An operator prepays for the nodes they run plus a spare, and does not pay again for routine rotation or migration.
 - No new unbounded growth vector, and no per-operator balance to reconcile.
 
 ## Non-goals
@@ -63,7 +63,9 @@ entries an account currently holds  ≤  grants that account has bought
 Recycling the grant on reclamation is what makes that work, and it earns its keep twice over:
 
 - **Fairness** — the fee bought storage. Once the contract has that storage back, charging again for the next entry would be charging twice for the same thing.
-- **Operator experience** — an operator prepays for the capacity they actually run (three grants for three nodes, say) and is then done with it. Nodes can be torn down, re-provisioned, rotated and migrated indefinitely without another prepayment, as long as no more than three entries are held at once. Without recycling, every re-provisioned node is a fresh purchase and a fresh thing to remember.
+- **Operator experience** — a grant is bought once per node slot rather than once per re-provisioning. An operator prepays for the nodes they run plus a spare and then keeps rotating, migrating and re-provisioning on those grants indefinitely. Without recycling, every new CVM is a fresh purchase and a fresh thing to remember.
+
+The spare is needed because a grant returns only once the entry it paid for has become invalid and been swept, which takes up to `DEFAULT_EXPIRATION_DURATION_SECONDS` (7 days). A node re-provisioned with fresh keys needs its grant immediately, so an operator running one node holds two grants, and one running three holds four. This is a deliberate trade: no explicit release method, at the cost of one spare grant. See [Alternatives not pursued](#alternatives-not-pursued).
 
 **No NEAR is ever returned.** Recycling gives back capacity, never money: a deposit is consumed permanently the moment it is made, and the only thing that ever comes back is the right to store another entry. There is no withdrawal path and none is planned.
 
@@ -99,13 +101,17 @@ attestation_storage_fee: NearToken,
 
 The fee is not just the attestation entry. Prepaying also creates the operator's row in the grants map, which is itself contract-funded storage:
 
-| Component | Bytes | At today's storage price |
+All figures below are **charged storage** — the bytes the runtime actually bills, including the map key and record overhead, not the borsh size of the value alone.
+
+| Component | Charged bytes | At today's storage price |
 |---|---|---|
 | Attestation entry, worst case (`WORST_CASE_ENTRY_BYTES`) | 604 | 0.00604 NEAR |
 | Grants-map row — account id, counter, record overhead | ~130 | ~0.0013 NEAR |
 | **Subtotal** | **~734** | **~0.0073 NEAR** |
 
-On top of that the fee needs headroom for future layout growth, since a schema change that grows either structure must not leave already-issued grants under-funded. **0.02 NEAR** gives roughly 2.7×; 0.01 NEAR is the floor and leaves only ~1.4×, which is thin for a value that governance would rather not re-vote often.
+The 604 is the larger of the two attestation variants: a worst-case `Mock` entry charges 604 bytes and a `Dstack` one 599, so the fee must be sized off the mock branch for as long as `Attestation::Mock` is accepted. (Their borsh *values* are 450 and 445 bytes; the difference is key and record overhead, which is why the charged figure is the one that matters here.)
+
+On top of that the fee needs headroom for future layout growth, since a schema change that grows either structure must not leave already-issued grants under-funded. **The fee is 0.02 NEAR**, roughly 2.7× the floor. 0.01 NEAR would leave only ~1.4×, which is thin for a value governance would rather not re-vote often.
 
 The margin is deliberately one-directional: the operator never gets any of it back, so over-sizing the fee costs the contract nothing and under-sizing it silently reintroduces the drain this design exists to close.
 
@@ -114,6 +120,13 @@ The margin is deliberately one-directional: the operator never gets any of it ba
 1. **Existing entry, same account** — a re-attestation under a TLS key this account already owns. Updates in place, grows nothing, **consumes no grant**. This is today's behaviour and is what keeps the node's function-call key working indefinitely.
 2. **New entry** — consume one grant, and reject the submission if the account holds none.
 3. **Entry reclaimed** — when `clean_invalid_attestations` removes an entry, return one grant to the account that owned it. The contract has exactly one removal site, so the counter cannot drift out of step with the entries it tracks.
+
+Two consequences for entries that predate the upgrade, both intentional and needing no extra code:
+
+- **They keep working with no grant.** An existing node re-attesting under its existing TLS key hits rule 1, so it consumes nothing and no operator has to prepay to stay attested.
+- **They yield a grant when swept.** Rule 3 does not distinguish a legacy entry from a paid one, so as pre-upgrade entries expire their owners receive one grant each. That is a deliberate grandfather: it is a small, bounded gift to the operators already running nodes — 14 entries on mainnet and 31 on testnet at the time of writing. The exposure is exactly "entries present at deploy time become permanent capacity", so the entry count should be sanity-checked at deploy rather than assumed; see [Rollout](#rollout).
+
+The early precondition check also rejects a TLS key already registered to a *different* account, so a submission that would fail `TlsKeyOwnedByOtherAccount` does not burn verification gas first.
 
 When a counter reaches zero its row is deleted rather than stored as `0`, so the map does not accumulate rows for accounts that hold nothing. Grants are *not* dropped when a node leaves the participant set: kicks are frequently temporary — an expired attestation, a node mid-upgrade — and confiscating prepaid capacity would force an operator to pay again merely to rejoin.
 
@@ -206,6 +219,7 @@ Operators running a migration or testing several nodes repeat step 4 once per no
 | **Operator submits the attestation on the node's behalf** | Blocked by the quote. `report_data` binds to `env::signer_account_pk()`, so an operator-signed submission fails verification. |
 | **Gate `Attestation::Mock` off in production** | Would remove the cheap drain vector outright, but mock attestations are still needed. |
 | **Cap entries per account** | Only marginal. Implicit accounts cost 0.00182 NEAR (recoverable via `DeleteAccount`) and 0.446 TGas to create, so a cap of one moves amplification just 7.2× → ~5.8×. Prepayment makes it redundant. |
+| **An owner-callable release method** returning a grant immediately instead of waiting for expiry | Would remove the need for a spare grant and reclaim storage sooner, and is close to what @netrome asked for. Declined for now: it is another entry point that must refuse to evict a *current participant's* live entry, and one spare grant is a cheap alternative. Revisit if operators find the 7-day wait painful. |
 | **Restrict submission to current-or-proposed participants** (governance gate) | Not possible today: `vote_new_parameters` rejects a proposal naming any participant without a valid attestation, so the order is forced — attest, then propose. Reordering would enable it, but nothing validates the proposed set at the Running→Resharing transition, so a gate would have to be added there. Worth its own issue: a governance gate removes the attack surface rather than pricing it. |
 
 ## Security analysis
@@ -214,20 +228,17 @@ Every new entry consumes a grant, and every grant was paid for at or above the w
 
 Recycling does not weaken that bound. A grant returns only when the entry it paid for is gone, so the invariant `entries held ≤ grants bought` holds at every point, and an operator can never hold more storage than they have paid for. What recycling does allow is unlimited *churn* at a fixed cost — an operator can create and abandon entries in sequence forever on one fee — but each cycle requires the previous entry to have been reclaimed first, so the contract's storage never grows.
 
-Entries predating the upgrade remain contract-funded and are reclaimable under [#3785](https://github.com/near/mpc/pull/3785).
+Entries predating the upgrade remain contract-funded and are reclaimable under [#3785](https://github.com/near/mpc/pull/3785). When they are reclaimed they yield a grant to their owner, which is the deliberate grandfather described in [Charging rules](#charging-rules); the deploy-time count check in [Rollout](#rollout) is what keeps that from grandfathering an exploit.
+
+**Accepted residual: the contract carries the price risk on outstanding grants.** Grants are denominated in entries and never expire, so if the storage price or the entry layout grows beyond the fee's ~2.7× headroom, an already-sold grant under-funds its entry and the contract absorbs the difference. The exposure is bounded by the number of outstanding grants, and governance can re-price future grants but cannot retro-price sold ones — the contract stores counts, not purchase prices, so it cannot even identify which grants are underwater. This is the flip side of not stranding operators, it is bounded, and a future contract update can address it if the gap ever becomes material.
 
 ## Rollout
 
 1. Land [#3785](https://github.com/near/mpc/pull/3785) first or alongside, so abandoned entries — including granted ones for nodes that never join — are reclaimable.
-2. Adding `Config.attestation_storage_fee` is a state-schema change; handle migration the way `crates/contract/src/v3_13_0_state.rs` handles prior `Config` changes.
-3. No grandfathering needed: existing entries re-attest under rule 1 and consume nothing.
-4. Coordinate the runbook change with the release — operators onboarding a node after the upgrade must prepay or the node's submissions fail in a loop.
-
-## Open questions
-
-- **Initial fee value.** [What the fee has to cover](#what-the-fee-has-to-cover) puts the floor at ~0.0073 NEAR and suggests 0.02 NEAR for headroom; the exact figure needs a decision. Size it off the *mock* worst case (450 borsh bytes), not Dstack's 445 — the largest entry is a mock one.
-- Should `prepay_attestation_storage` accept several grants in one call (`floor(attached / fee)`, as specified above) or exactly one per call?
-- Should `available_attestation_grants` and `attestation_storage_fee` be added to the DTO/ABI surface for the node and CLI, or are they operator-only?
+2. Both the grants map and `Config.attestation_storage_fee` change `MpcContract`'s borsh layout, so this needs a state migration: a frozen snapshot module plus a `migrate()` arm, the way `crates/contract/src/v3_13_0_state.rs` handles prior changes, and a regenerated borsh-schema and ABI snapshot.
+3. Existing entries need no grandfathering — they re-attest under rule 1 and consume nothing.
+4. **Check the stored-entry count at deploy.** Entries present at deploy time become permanent capacity once they are swept and yield a grant. Fourteen on mainnet and 31 on testnet is a rounding error; a count in the thousands would mean someone exploited the still-open drain before the release, and those entries should be purged rather than granted.
+5. Coordinate the runbook change with the release — operators onboarding a node after the upgrade must prepay or the node's submissions fail in a loop.
 
 ## Testing
 
