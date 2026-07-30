@@ -360,4 +360,72 @@ mod tests {
                 .contains_key(&node_id.tls_public_key)
         );
     }
+
+    #[test]
+    fn migration_stamps_launcher_expiry_and_makes_legacy_mocks_cleanable() {
+        // Given: a `3.13.0` TeeState carrying both a launcher image (old, timestamp-less
+        // layout) and a legacy `MockAttestation::Valid` stored attestation (no expiry) —
+        // the two things this release's migration must each handle.
+        const MIGRATION_TIME_SECS: u64 = 1_000_000;
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(MIGRATION_TIME_SECS * 1_000_000_000)
+                .build()
+        );
+
+        let launcher = LauncherImageHash::from([1u8; 32]);
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let compose = get_docker_compose_hash(&launcher, &mpc_hash);
+
+        let mut stored_attestations = IterableMap::new(StorageKey::StoredAttestations);
+        let node_id = NodeId {
+            account_id: "legacy.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id: node_id.clone(),
+                verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+            },
+        );
+
+        let old = OldTeeState {
+            allowed_docker_image_hashes: StoredDockerImageHashes::default(),
+            allowed_launcher_images: OldAllowedLauncherImages {
+                entries: vec![OldAllowedLauncherImage {
+                    launcher_hash: launcher,
+                    compose_hashes: vec![compose],
+                }],
+            },
+            votes: CodeHashesVotes::default(),
+            launcher_votes: LauncherHashVotes::default(),
+            stored_attestations,
+            allowed_measurements: Default::default(),
+            measurement_votes: Default::default(),
+        };
+
+        // When: the full `From<MpcContract>` sequence runs on the TeeState — our shadow
+        // conversion (stamps launcher `expires_at`) followed by the legacy-mock stamping.
+        let mut tee_state: TeeState = old.into();
+        stamp_expiry_on_legacy_mocks(&mut tee_state, TeeState::current_time_seconds());
+
+        // Then: the launcher was migrated with a stamped `expires_at` and is live.
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![launcher]);
+
+        // And: the previously un-expiring legacy mock is now cleanable once the clock
+        // passes its stamped window — proving both migration steps applied.
+        set_block_timestamp(
+            (MIGRATION_TIME_SECS + attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1)
+                * 1_000_000_000,
+        );
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
+        assert_eq!(removed, 1);
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
+        );
+    }
 }
