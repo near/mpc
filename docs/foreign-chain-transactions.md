@@ -675,10 +675,6 @@ The identity is set per chain rather than once per deployment, so a config can m
 value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the identities that look numeric.
 
-Nothing reads the field yet. The startup probe that asks each provider for the network it serves and
-compares it against this value lands separately, under
-[#4003](https://github.com/near/mpc/issues/4003).
-
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious
