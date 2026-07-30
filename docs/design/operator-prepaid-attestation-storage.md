@@ -36,6 +36,8 @@ The counter is **available** grants, not lifetime total, so `0` means either "ne
 | Method | Kind | Purpose |
 |---|---|---|
 | `prepay_attestation_storage(account_id)` | `#[payable]` | Grants `floor(attached / fee)`. Rejects below one fee, keeps any remainder. Permissionless — anyone may prepay for any account. |
+
+Keeping the remainder deviates from the contract's usual `require_deposit` + `refund_to` pattern, deliberately: a grant is a discrete unit, so the leftover is at most one fee short of the next grant, and adding a transfer path to return sub-0.02 NEAR dust is not worth it. "No NEAR is ever returned" means exactly that — no withdrawal method, and no refund of an overpayment.
 | `available_attestation_grants(account_id) -> u32` | view | Grants available. |
 | `attestation_storage_fee() -> NearToken` | view | Current fee. |
 
@@ -140,13 +142,13 @@ Every new entry consumes a paid grant, so the contract funds no new attestation 
 
 Two accepted residuals:
 
-- **Legacy entries yield a grant when swept**, since rule 3 does not distinguish them. That grandfathers the operators already running nodes — 14 entries on mainnet, 31 on testnet. The exposure is exactly "entries present at deploy become permanent capacity", so the count must be checked at deploy rather than assumed; a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than granted.
+- **Abandoned pre-upgrade entries yield a grant when swept**, since rule 3 cannot distinguish them from paid ones. Note who this does *not* benefit: an operator running a live node re-attests under rule 1, so its entry never fails re-verification, is never swept, and yields nothing — live operators get no grant and need none. The grants go to whoever *abandoned* an entry. Today that is a negligible set (14 entries on mainnet and 31 on testnet, nearly all live), but the exposure is precisely "abandoned entries present at deploy become permanent capacity", so the count must be checked at deploy rather than assumed. A count in the thousands would mean the still-open drain was exploited before the release, and those entries should be purged rather than granted.
 - **The contract carries the price risk on sold grants**, bounded by the number outstanding. It stores counts, not purchase prices, so it cannot retro-price them; a future update can address this if the gap becomes material.
 
 ## Implementation notes
 
-1. Land [#3785](https://github.com/near/mpc/pull/3785) first or alongside, so abandoned entries are reclaimable.
-2. **A state migration is required.** The grants map and the `Config` fee field both change `MpcContract`'s borsh layout: frozen snapshot module plus a `migrate()` arm the way `crates/contract/src/v3_13_0_state.rs` does it, and regenerated borsh-schema and ABI snapshots.
+1. [#3785](https://github.com/near/mpc/pull/3785) has landed (`stamp_expiry_on_legacy_mocks`, `v3_13_0_state.rs:122`), so abandoned mock entries are already sweepable — no dependency to wait on. Reclaimability is not universal though: `TeeState::with_mocked_participant_attestations` still stores bare, non-expiring `Mock::Valid` sentinels at init, which never fail re-verification and so are never swept. Those stay contract-funded and never yield a grant.
+2. **A state migration is required.** The grants map and the `Config` fee field both change `MpcContract`'s borsh layout: frozen snapshot module plus a `migrate()` arm the way `crates/contract/src/v3_13_0_state.rs` does it. Making the fee votable also needs the `ConfigExt` DTO plumbing in `crates/contract/src/dto_mapping.rs`, and both the borsh-schema and ABI snapshots regenerated.
 3. **Re-validate the sweep gas budget.** Rule 3 adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside gas-bounded `clean_invalid_attestations`. Re-check `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN`, with a guard test of the kind [#3936](https://github.com/near/mpc/pull/3936) adds.
 4. Check the stored-entry count at deploy, per [Security](#security).
 5. Coordinate the runbook change with the release: operators onboarding after the upgrade must prepay or their node's submissions fail in a loop.
