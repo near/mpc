@@ -35,9 +35,9 @@ The counter is **available** grants, not lifetime total, so `0` means either "ne
 |---|---|---|
 | `prepay_attestation_storage(account_id, grants)` | `#[payable]` | Adds `grants` to `account_id`. Requires an attached deposit of exactly `fee × grants` and rejects anything else, so there is no remainder to keep or refund. Permissionless — anyone may prepay for any account. |
 | `available_attestation_grants(account_id) -> u32` | view | Grants available. |
-| `attestation_storage_fee() -> NearToken` | view | Current fee. |
+| `attestation_storage_fee() -> NearToken` | view | Current fee. Also reachable through `config()`; the dedicated view keeps the prepay command scriptable without parsing the whole config. |
 
-An operator reads `attestation_storage_fee()` first and attaches the exact multiple. "No NEAR is ever returned" therefore means simply: no withdrawal method.
+An operator reads `attestation_storage_fee()` first and attaches the exact multiple — the fee is votable, so a number published in a doc instead would eventually produce failed transactions, not overpayments. "No NEAR is ever returned" therefore means simply: no withdrawal method.
 
 ### Charging rules
 
@@ -51,9 +51,11 @@ Consuming at insert means a failed attestation consumes nothing — nothing was 
 
 Migration and multi-node operators need no special rule: prepay again. Hence no cap constant, no participant-status check, and no assumption about how many nodes share an account.
 
+**Entries that predate the fee are grandfathered by the state migration**, which credits one grant to each account already holding an entry. Rule 3 then returns a grant that was genuinely issued, and the invariant holds for old and new entries alike, with no per-entry "was this paid for?" marker and no second map. It is a one-time gift of one slot per existing entry — 14 on mainnet, 31 on testnet — so check the count before deploying: a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than credited.
+
 ### Fee
 
-0.02 NEAR, about 2.7× the floor. Figures are **charged** bytes — key and record overhead included — not borsh sizes:
+0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.7× the floor. The entry figure is **charged** bytes, not a borsh size: `measure_stored_entry_bytes` (`crates/contract/src/lib.rs`) inserts into the real map, flushes, and takes the `env::storage_usage()` delta, so `IterableMap` record and key overhead are measured rather than estimated, and a test pins 604/599 and forbids updating them to make a failure pass. The grants-map row is an estimate, which the headroom covers.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
@@ -61,13 +63,13 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 | Grants-map row | ~130 | ~0.0013 NEAR |
 | **Floor** | **~734** | **~0.0073 NEAR** |
 
-The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. The fee itself is a governance-votable `Config` field, so it can be re-priced without a release.
+The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
 
 ### Flow
 
 ```mermaid
 ---
-title: Onboarding — operator prepays one grant, node self-submits
+title: Onboarding — operator prepays at account creation, node self-submits later
 ---
 sequenceDiagram
     box Operator Secure Environment
@@ -80,9 +82,11 @@ sequenceDiagram
         participant BC as mpc-contract
     end
 
+    Note over OP,BC: Before the CVM is started — the prepayment needs<br/>only the account id, not the node's key
     OP ->> BC: prepay_attestation_storage(node_account, 1) + fee
     BC ->> BC: grants[node_account] += 1
 
+    Note over NODE,BC: After start-up and indexer sync
     NODE ->> BC: submit_participant_info(attestation, tls_pubkey)
     BC ->> BC: precondition: new entry, owned by caller, grant available?<br/>rejects here if not, before any verification
     BC ->> BC: verify quote, report_data == hash(tls_pk, signer_pk)
@@ -90,11 +94,11 @@ sequenceDiagram
     BC -->> NODE: ok
 ```
 
-Without the prepayment the submission fails immediately and the node retries in a loop until granted.
+Without the prepayment the submission fails immediately and the node retries in a loop until granted. Following the guide's order avoids that state entirely.
 
 ## Operator UX
 
-One new step in the [operator guide](../running-an-mpc-node-in-tdx-external-guide.md), after [Add the Node Account Key](../running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account) and before [Submitting Participant Info](../running-an-mpc-node-in-tdx-external-guide.md#submitting-participant-info). Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
+One new step in the [operator guide](../running-an-mpc-node-in-tdx-external-guide.md), right after [Create a NEAR Account for Your Node](../running-an-mpc-node-in-tdx-external-guide.md#create-a-near-account-for-your-node) — the operator already holds that account's full-access key there, and `prepay_attestation_storage` needs only the account id. That is well before the CVM is configured and started, before the node account key is retrieved, and before it is added, so the node never starts into an ungranted state. Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
 
 ```bash
 near contract call-function as-transaction \
@@ -112,7 +116,7 @@ Ask for as many grants as the operator runs nodes, plus the spare — the exampl
 |---|---|---|---|
 | Accounting | Grant counter | Per-account NEAR balance, NEP-145 shaped | No arithmetic, no amounts stored, and a fee change cannot strand a sold grant. |
 | Multi-node / migration | Prepay per node | Free extra entry gated on `ongoing_migrations`; or a hard cap of N | Both needed a participant check or a magic number; repeating the prepayment needs neither. |
-| Grant semantics | Capacity — reclaiming returns it | Consumable ticket | The contract got the storage back, so charging again charges twice. Also lets an operator re-provision on the grants they hold. |
+| Grant semantics | Capacity — the grant returns when the entry is swept | Consumable ticket | The contract got the storage back, so charging again charges twice. Expiry alone does not return it, which is why an operator keeps a spare. |
 | Refunds | None | Redeem unconsumed grants | ~0.02 NEAR; recycling covers the real need without moving money. |
 | Fee source | Votable `Config` field | Derived from `storage_byte_cost` at call time; or a constant | Re-priceable without a release. Costs a state migration — the fee field and the grants map both change `MpcContract`'s borsh layout — plus `ConfigExt` DTO plumbing and regenerated borsh-schema and ABI snapshots. |
 | Consumption point | At insert | Up front, charging failures too | Nothing is stored on failure, so nothing is owed; keeps #3991 unblocked. |
@@ -134,7 +138,6 @@ Ask for as many grants as the operator runs nodes, plus the spare — the exampl
 
 Every new entry consumes a paid grant, so the contract funds no new attestation storage and amplification drops below 1. Recycling does not weaken that — a grant returns only once its entry is gone, so `entries held ≤ grants bought` holds throughout. It does permit unlimited churn on a fixed number of grants, which is harmless because each cycle requires the previous entry to be reclaimed first.
 
-Two accepted residuals:
+The only capacity the contract funds is the grandfathering the migration issues, bounded by the entry count at deploy time — 14 on mainnet, 31 on testnet — and auditable before the upgrade ships rather than materialising later.
 
-- **Pre-upgrade entries yield a grant when swept**, since rule 3 cannot distinguish them from paid ones. Accepted: there are 14 such entries on mainnet and 31 on testnet, so the free capacity is negligible (and init-time mock sentinels never expire, so they are never swept and never yield one). Check the count at deploy though — a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than granted.
-- **The contract carries the price risk on sold grants**, bounded by the number outstanding. It stores counts, not purchase prices, so it cannot retro-price them; a future update can address this if the gap becomes material.
+One accepted residual: **if storage gets more expensive, grants already sold may not cover their entry** — the contract absorbs the difference, bounded by the number of grants outstanding. It stores counts, not purchase prices, so sold grants cannot be re-priced; revisit if the gap becomes material.
