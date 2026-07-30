@@ -8,7 +8,15 @@ One prepayment buys one **grant**: permission for a node account to store one at
 
 ## Background
 
-Since [#3940](https://github.com/near/mpc/pull/3940), `submit_participant_info` takes no deposit and the contract funds attestation storage from its own balance. That is deliberate but unpriced: any account can create unlimited entries, each costing the contract roughly 7× what the submitter pays in gas, and exhausting the contract's balance stops it writing state, which halts signing. Measurements and the full drain analysis are in [#3972](https://github.com/near/mpc/issues/3972#issuecomment-5119758184).
+`submit_participant_info` takes no deposit, and the contract funds attestation storage from its own balance. That has been true of **every contract version ever deployed**, not just since [#3940](https://github.com/near/mpc/pull/3940). The deployed 3.13.0 does contain charging code, but it never collects: it measures the storage delta before the write is flushed, so the delta reads as zero and the caller is charged nothing. The one version that genuinely required a deposit, [#3714](https://github.com/near/mpc/pull/3714), never shipped. #3940 simply made the existing behaviour intentional.
+
+The problem is that nobody pays for that storage:
+
+- Any account can create unlimited entries.
+- Each entry costs the contract roughly 7× what the submitter spends on gas, so draining the balance costs an attacker far less than it costs us.
+- Once the balance no longer covers the contract's own storage, the contract cannot write state at all — which halts signing.
+
+Measurements and the full drain analysis are in [#3972](https://github.com/near/mpc/issues/3972#issuecomment-5119758184).
 
 Two protocol-level constraints shape every possible solution:
 
