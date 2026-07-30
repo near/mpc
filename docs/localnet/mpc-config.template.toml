@@ -78,6 +78,7 @@ kind = "none"
 [node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
+expected_chain_identity = "0x534e5f4d41494e"  # SN_MAIN; Sepolia: "0x534e5f5345504f4c4941"
 
 [node.foreign_chains.starknet.providers.public]
 rpc_url = "https://starknet-rpc.publicnode.com"

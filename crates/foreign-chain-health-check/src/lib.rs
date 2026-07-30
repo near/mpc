@@ -359,6 +359,7 @@ mod tests {
         ForeignChainConfig {
             timeout_sec: NonZeroU64::new(5).unwrap(),
             max_retries: NonZeroU64::new(1).unwrap(),
+            expected_chain_identity: None,
             providers: NonEmptyBTreeMap::new(
                 "only".to_string().into(),
                 ForeignChainProviderConfig {
@@ -517,6 +518,7 @@ mod tests {
             aptos: Some(ForeignChainConfig {
                 timeout_sec: NonZeroU64::new(5).unwrap(),
                 max_retries: NonZeroU64::new(1).unwrap(),
+                expected_chain_identity: None,
                 providers,
             }),
             ethereum: Some(config_with_provider(AuthConfig::None)),

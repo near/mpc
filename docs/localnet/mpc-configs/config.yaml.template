@@ -48,6 +48,7 @@ foreign_chains:
   starknet:
     timeout_sec: 30
     max_retries: 3
+    expected_chain_identity: "0x534e5f4d41494e" # SN_MAIN; Sepolia: "0x534e5f5345504f4c4941"
     providers:
       public:
         rpc_url: "https://starknet-rpc.publicnode.com"

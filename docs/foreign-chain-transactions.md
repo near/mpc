@@ -647,6 +647,16 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
+A chain section may also set `expected_chain_identity`: the network identity every provider of that
+chain must report, in that chain's canonical text form (`"0x534e5f4d41494e"` for Starknet mainnet,
+`"0x534e5f5345504f4c4941"` for Sepolia). The identity is set per chain rather than once per
+deployment, so a config can mix networks: the localnet template pairs mainnet Bitcoin with testnet
+Abstract. The value is always a quoted string, including the identities that look numeric.
+
+Nothing reads the field yet. The startup probe that asks each provider for the network it serves and
+compares it against this value lands separately, under
+[#4003](https://github.com/near/mpc/issues/4003).
+
 ## Risks
 
 * **RPC trust and correctness**: Verification relies on centralized RPC providers. A malicious
