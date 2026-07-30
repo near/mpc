@@ -653,19 +653,21 @@ Bitcoin it is the genesis block hash and for Sui the genesis-checkpoint digest, 
 
 | chain | identity | mainnet | testnet |
 |---|---|---|---|
-| base | EIP-155 chain id, decimal | `"8453"` | |
-| bnb | EIP-155 chain id, decimal | `"56"` | |
-| arbitrum | EIP-155 chain id, decimal | `"42161"` | |
-| polygon | EIP-155 chain id, decimal | `"137"` | |
-| hyper_evm | EIP-155 chain id, decimal | `"999"` | |
+| base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
+| bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
+| arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
+| polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
+| hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
 | abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
-| starknet | chain-id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` |
-| bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` |
+| starknet | chain-id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
+| bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
 | aptos | ledger chain id, decimal | `"1"` | `"2"` |
 | sui | genesis-checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
 
+Every value above was read back from a live provider on that network.
+
 Bitcoin's genesis hash is written the way block explorers render it, leading zeros at the front, and
-distinguishes testnet3 from testnet4, signet and regtest
+separates testnet3 from testnet4, signet and regtest
 (`"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`) where a network *name* would
 not. Aptos's one-byte id space separates mainnet from testnet, but two devnets can collide.
 
