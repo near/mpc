@@ -46,7 +46,8 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
-    /// The identity every provider of this chain must report, in the chain's canonical text form.
+    /// The network identity the operator expects every provider of this chain to report, in the
+    /// chain's canonical text form. Declarative: nothing reads it during config loading.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_chain_identity: Option<String>,
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
