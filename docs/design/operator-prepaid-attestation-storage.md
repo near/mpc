@@ -51,8 +51,6 @@ Consuming at insert means a failed attestation consumes nothing — nothing was 
 
 Migration and multi-node operators need no special rule: prepay again. Hence no cap constant, no participant-status check, and no assumption about how many nodes share an account.
 
-**Entries that predate the fee are grandfathered by the state migration**, which credits one grant to each account already holding an entry. Rule 3 then returns a grant that was genuinely issued, and the invariant holds for old and new entries alike, with no per-entry "was this paid for?" marker and no second map. It is a one-time gift of one slot per existing entry — 14 on mainnet, 31 on testnet — so check the count before deploying: a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than credited.
-
 ### Fee
 
 0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.7× the floor. The entry figure is **charged** bytes, not a borsh size: `measure_stored_entry_bytes` (`crates/contract/src/lib.rs`) inserts into the real map, flushes, and takes the `env::storage_usage()` delta, so `IterableMap` record and key overhead are measured rather than estimated, and a test pins 604/599 and forbids updating them to make a failure pass. The grants-map row is an estimate, which the headroom covers.
@@ -96,6 +94,16 @@ sequenceDiagram
 
 Without the prepayment the submission fails immediately and the node retries in a loop until granted. Following the guide's order avoids that state entirely.
 
+## Existing nodes
+
+Nodes that are already attested need no grant, and their operators need to do nothing.
+
+Their entry is already stored, and re-attesting under the same TLS key updates it in place without consuming anything (rule 1). An existing entry is therefore a grant that has already been spent: it holds a slot, and no grant was ever bought for it.
+
+Nothing in the contract treats these entries specially — no migration step, no per-entry "was this paid for?" marker, no second map. That is the point: for existing nodes this change needs no code at all.
+
+One consequence, accepted deliberately: if such an entry is later swept, rule 3 hands its owner a grant they never bought. There are 14 of these entries on mainnet and 31 on testnet, so the capacity given away is negligible. Check the count before deploying all the same — a count in the thousands would mean the still-open drain was exploited first, and those entries should be purged rather than left to become grants.
+
 ## Operator UX
 
 One new step in the [operator guide](../running-an-mpc-node-in-tdx-external-guide.md), right after [Create a NEAR Account for Your Node](../running-an-mpc-node-in-tdx-external-guide.md#create-a-near-account-for-your-node) — the operator already holds that account's full-access key there, and `prepay_attestation_storage` needs only the account id. That is well before the CVM is configured and started, before the node account key is retrieved, and before it is added, so the node never starts into an ungranted state. Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
@@ -136,8 +144,6 @@ Ask for as many grants as the operator runs nodes, plus the spare — the exampl
 
 ## Security
 
-Every new entry consumes a paid grant, so the contract funds no new attestation storage and amplification drops below 1. Recycling does not weaken that — a grant returns only once its entry is gone, so `entries held ≤ grants bought` holds throughout. It does permit unlimited churn on a fixed number of grants, which is harmless because each cycle requires the previous entry to be reclaimed first.
-
-The only capacity the contract funds is the grandfathering the migration issues, bounded by the entry count at deploy time — 14 on mainnet, 31 on testnet — and auditable before the upgrade ships rather than materialising later.
+Every new entry consumes a paid grant, so the contract funds no new attestation storage and amplification drops below 1. Recycling does not weaken that — a grant returns only once its entry is gone, so `entries held ≤ grants bought` holds throughout, for every entry created after this ships (see [Existing nodes](#existing-nodes) for the ones that predate it). It does permit unlimited churn on a fixed number of grants, which is harmless because each cycle requires the previous entry to be reclaimed first.
 
 One accepted residual: **if storage gets more expensive, grants already sold may not cover their entry** — the contract absorbs the difference, bounded by the number of grants outstanding. It stores counts, not purchase prices, so sold grants cannot be re-priced; revisit if the gap becomes material.
