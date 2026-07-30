@@ -4,7 +4,7 @@
 
 This document designs the funding model tracked in [#3972](https://github.com/near/mpc/issues/3972): moving the storage cost of a stored attestation entry off the contract's balance and onto whoever onboards the node — by adding a single operational step in which the operator prepays for that storage — while keeping the node's deposit-less function-call access key able to self-attest.
 
-One prepayment buys one **grant**: permission for a node account to store one attestation entry. An operator running two nodes prepays twice. Nothing is refunded, and the contract never records how much anyone paid — only how many grants they hold.
+One prepayment buys one **grant**: permission for a node account to store one attestation entry. An operator running two nodes prepays twice — for example to keep a backup node attested, or for the second node during a migration. Nothing is refunded, and the contract never records how much anyone paid — only how many grants they hold.
 
 ## Background
 
