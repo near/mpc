@@ -110,7 +110,7 @@ pub fn whitelist_dstack_measurements(
     launcher: LauncherImageHash,
 ) {
     tee_state.whitelist_tee_proposal(image, Duration::MAX);
-    tee_state.add_launcher_image(launcher, Duration::MAX);
+    tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
     for &measurements in default_measurements() {
         tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
     }

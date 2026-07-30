@@ -23,6 +23,14 @@ impl Timestamp {
         })
     }
 
+    /// Saturates instead of overflowing, so an absurdly large duration yields a deadline
+    /// that never elapses rather than wrapping into the past.
+    pub(crate) fn saturating_add(self, duration: Duration) -> Self {
+        Timestamp {
+            duration_since_unix_epoch: self.duration_since_unix_epoch.saturating_add(duration),
+        }
+    }
+
     pub(crate) fn as_secs(self) -> u64 {
         self.duration_since_unix_epoch.as_secs()
     }
@@ -76,6 +84,7 @@ impl borsh::BorshDeserialize for Timestamp {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use std::time::Duration;
@@ -119,6 +128,20 @@ mod tests {
 
         let new_time_stamp = time_stamp.checked_add(added_duration);
         assert_eq!(new_time_stamp, Some(expected_time_stamp));
+    }
+
+    #[test]
+    fn saturating_add__should_clamp_instead_of_overflowing() {
+        // Given
+        let max_time_stamp = Timestamp {
+            duration_since_unix_epoch: Duration::MAX,
+        };
+
+        // When
+        let new_time_stamp = max_time_stamp.saturating_add(Duration::from_secs(100));
+
+        // Then
+        assert_eq!(new_time_stamp, max_time_stamp);
     }
 
     #[test]

@@ -409,7 +409,7 @@ expression: abi
       },
       {
         "name": "clean_expired_launcher_hashes",
-        "doc": " Private endpoint to evict launcher image hashes unused past their TTL.\n Spawned as a detached promise from `verify_tee`; safe to fail (read-time\n filtering already enforces expiry).",
+        "doc": " Private endpoint to evict launcher image hashes past their expiry.\n Spawned as a detached promise from `verify_tee`; safe to fail (read-time\n filtering already enforces expiry).",
         "kind": "call",
         "modifiers": [
           "private"
