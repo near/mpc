@@ -43,7 +43,17 @@ Together these force the shape of the answer: **paying and submitting must be se
 
 ### Grants, not balances
 
-A grant is a count, not an amount. `prepay_attestation_storage` increments a per-account counter; storing a new entry decrements it. The contract never stores NEAR amounts per operator, so there is no arithmetic to get wrong and nothing to reconcile.
+A grant is a count, not an amount. `prepay_attestation_storage` increments a per-account counter, storing a new entry decrements it, and reclaiming an entry increments it back. The contract never stores NEAR amounts per operator, so there is no arithmetic to get wrong and nothing to reconcile.
+
+A grant is therefore **capacity to hold one entry**, not a one-time ticket. The invariant is:
+
+```text
+entries an account currently holds  ≤  grants that account has bought
+```
+
+So an operator who tears down a node and lets its entry expire gets the slot back and can bring up the next node without paying again. That matters for anyone testing several nodes in sequence, and it keeps the contract from charging twice for storage it already reclaimed.
+
+**No NEAR is ever returned.** Recycling gives back capacity, never money: a deposit is consumed permanently the moment it is made, and the only thing that ever comes back is the right to store another entry. There is no withdrawal path and none is planned.
 
 The counter also decouples granted capacity from the NEAR price. Grants are denominated in *entries*, so raising the fee after a storage-price change affects only the cost of future grants — it never strands an operator whose existing grant is suddenly worth less than an entry. A balance model has to handle exactly that case.
 
@@ -65,10 +75,27 @@ attestation_grants: LookupMap<AccountId, u32>,
 attestation_storage_fee: NearToken,
 ```
 
+### What the fee has to cover
+
+The fee is not just the attestation entry. Prepaying also creates the operator's row in the grants map, which is itself contract-funded storage:
+
+| Component | Bytes | At today's storage price |
+|---|---|---|
+| Attestation entry, worst case (`WORST_CASE_ENTRY_BYTES`) | 604 | 0.00604 NEAR |
+| Grants-map row — account id, counter, record overhead | ~130 | ~0.0013 NEAR |
+| **Subtotal** | **~734** | **~0.0073 NEAR** |
+
+On top of that the fee needs headroom for future layout growth, since a schema change that grows either structure must not leave already-issued grants under-funded. **0.02 NEAR** gives roughly 2.7×; 0.01 NEAR is the floor and leaves only ~1.4×, which is thin for a value that governance would rather not re-vote often.
+
+The margin is deliberately one-directional: the operator never gets any of it back, so over-sizing the fee costs the contract nothing and under-sizing it silently reintroduces the drain this design exists to close.
+
 ### Charging rules
 
 1. **Existing entry, same account** — a re-attestation under a TLS key this account already owns. Updates in place, grows nothing, **consumes no grant**. This is today's behaviour and is what keeps the node's function-call key working indefinitely.
 2. **New entry** — consume one grant, and reject the submission if the account holds none.
+3. **Entry reclaimed** — when `clean_invalid_attestations` removes an entry, return one grant to the account that owned it. The contract has exactly one removal site, so the counter cannot drift out of step with the entries it tracks.
+
+When a counter reaches zero its row is deleted rather than stored as `0`, so the map does not accumulate rows for accounts that hold nothing. Grants are *not* dropped when a node leaves the participant set: kicks are frequently temporary — an expired attestation, a node mid-upgrade — and confiscating prepaid capacity would force an operator to pay again merely to rejoin.
 
 Migration and multi-node operators need no special rule: an operator who wants a second live node prepays a second grant. That is the whole mechanism, and it is why this design needs no cap constant, no participant-status check, and no assumption about how many nodes share an account.
 
@@ -145,7 +172,9 @@ Operators running a migration or testing several nodes repeat step 4 once per no
 |---|---|---|---|
 | Grant counter vs. balance | Per-account grant counter | Full storage-credit accounting — a `LookupMap<AccountId, NearToken>` debited per entry, NEP-145 shaped. See [Alternatives not pursued](#alternatives-not-pursued). | No arithmetic, no per-operator amounts stored, and a fee change cannot strand an existing grant. Simpler for operators to reason about: one prepayment, one node. |
 | Multi-node and migration | One prepayment per node | (a) A free extra entry gated on a declared migration destination in `ongoing_migrations`. (b) A hard cap of N nodes per participant. | (a) needed a participant-status check and assumed one node per account, and still broke for operators testing several nodes. (b) hardcodes a magic number. Repeating the prepayment needs neither. |
-| Refunds | None | Redeem unconsumed grants and evict entries. | Amounts are ~0.01 NEAR; not worth the logic or the eviction semantics. Raised by @netrome — see [Open questions](#open-questions) for the garbage-accumulation half of that concern. |
+| Refunds | None — no NEAR ever returns | Redeem unconsumed grants for NEAR. Raised by @netrome. | Amounts are ~0.02 NEAR; not worth a withdrawal path. Recycling covers the legitimate need (capacity back after a reclaimed entry) without moving money. |
+| Grant semantics | Capacity — a reclaimed entry returns its grant | A consumable ticket, spent permanently on insert. | Without recycling an operator testing several nodes in sequence pays per node even though the contract reclaimed each slot. One increment at the single removal site, and no money moves. Raised by @gilcu3. |
+| Grants-map hygiene | Delete the row at zero; keep grants when a node is kicked | (a) Keep zero rows. (b) Confiscate leftover grants on removal from the participant set, per @gilcu3's suggestion. | (a) accumulates rows for accounts holding nothing. (b) punishes temporary kicks — expired attestation, mid-upgrade — forcing an operator to pay again to rejoin, to save ~130 bytes. |
 | Fee sizing | Governance-votable `Config` field | (a) Computed at call time from `env::storage_byte_cost() * WORST_CASE_ENTRY_BYTES`, needing no `Config` field or migration. (b) Hardcoded constant. | Participants can re-price after a storage-price change without a release. Cost: a `Config` field is a state-schema change requiring migration handling. |
 | When the grant is consumed | At insert, in the same receipt | Up front in `submit_participant_info`, consuming on failed attempts too. | Nothing is stored on failure, so there is nothing to fund or recover. Avoids any charge that must survive a failing callback, keeping #3991 unblocked. |
 
@@ -163,7 +192,9 @@ Operators running a migration or testing several nodes repeat step 4 once per no
 
 ## Security analysis
 
-Every new entry consumes a grant, and every grant was paid for at or above the worst-case entry cost, so the contract funds no new attestation storage at all. Re-attestations are free but grow nothing. The drain closes exactly: creating N entries costs N fees, and amplification drops below 1.
+Every new entry consumes a grant, and every grant was paid for at or above the worst-case entry cost *plus* its own map row, so the contract funds no new attestation storage at all. Re-attestations are free but grow nothing. The drain closes exactly: holding N entries at once costs N fees, and amplification drops below 1.
+
+Recycling does not weaken that bound. A grant returns only when the entry it paid for is gone, so the invariant `entries held ≤ grants bought` holds at every point, and an operator can never hold more storage than they have paid for. What recycling does allow is unlimited *churn* at a fixed cost — an operator can create and abandon entries in sequence forever on one fee — but each cycle requires the previous entry to have been reclaimed first, so the contract's storage never grows.
 
 Entries predating the upgrade remain contract-funded and are reclaimable under [#3785](https://github.com/near/mpc/pull/3785).
 
@@ -176,9 +207,7 @@ Entries predating the upgrade remain contract-funded and are reclaimable under [
 
 ## Open questions
 
-- **Should a grant be returned when an entry is reclaimed?** Raised by @gilcu3: an operator experimenting with TDX nodes burns a grant per test node and must either prepay again or wait out the TTL. Recycling the grant when `clean_invalid_attestations` removes an entry costs one increment in the sweep, refunds capacity rather than money, and matches the economics — the fee bought storage, and the storage came back. Recommended, but it was not settled in the meeting.
-- Should the map entry be deleted when a counter reaches zero, and should grants be dropped when a node is kicked from the network? Addresses @netrome's garbage-accumulation concern without adding a refund path.
-- **Initial fee value.** `WORST_CASE_ENTRY_BYTES` is 604, so 0.00604 NEAR at today's price; 0.01 NEAR gives ~1.65× headroom. Size it off the *mock* worst case (450 borsh bytes), not Dstack's 445 — the largest entry is a mock one.
+- **Initial fee value.** [What the fee has to cover](#what-the-fee-has-to-cover) puts the floor at ~0.0073 NEAR and suggests 0.02 NEAR for headroom; the exact figure needs a decision. Size it off the *mock* worst case (450 borsh bytes), not Dstack's 445 — the largest entry is a mock one.
 - Should `prepay_attestation_storage` accept several grants in one call (`floor(attached / fee)`, as specified above) or exactly one per call?
 - Should `attestation_grants` and `attestation_storage_fee` be added to the DTO/ABI surface for the node and CLI, or are they operator-only?
 
@@ -188,4 +217,6 @@ Entries predating the upgrade remain contract-funded and are reclaimable under [
 - **Unit** — a failed attestation consumes nothing and stores nothing, on both the sync and async paths.
 - **Sandbox** — end to end with a real function-call access key: ungranted submission rejected, `prepay_attestation_storage` by a second account, then the node's own zero-deposit submission succeeds.
 - **Sandbox** — two prepayments let one account hold two entries, as a migration would.
-- **Bound** — total attestation entries never exceed total grants issued.
+- **Unit** — `clean_invalid_attestations` returns one grant per entry it removes, to the account that owned it; the counter's row is deleted when it reaches zero; a kicked node keeps its remaining grants.
+- **Unit** — the recycled grant is spendable: reclaim an entry, then store a new one without prepaying again.
+- **Bound** — entries held by an account never exceed grants bought, across insert, reclaim and re-prepay sequences.
