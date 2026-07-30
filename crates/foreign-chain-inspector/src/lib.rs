@@ -5,6 +5,9 @@ use std::time::Duration;
 use derive_more::{Deref, Display, From};
 use ethereum_types::H256;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use jsonrpsee::core::client::error::Error as RpcClientError;
+use jsonrpsee::core::http_helpers::HttpError;
+use jsonrpsee::http_client::transport::Error as HttpTransportError;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
@@ -369,35 +372,33 @@ impl ForeignChainInspectionError {
     ///
     /// The messages name the HTTP status or the JSON-RPC code, never the URL: `Path`/`Query` auth
     /// splices the operator's API key into it.
-    pub fn classify_rpc_client_error(error: jsonrpsee::core::client::error::Error) -> Self {
-        use jsonrpsee::core::client::error::Error as ClientError;
-        use jsonrpsee::core::http_helpers::HttpError;
-        use jsonrpsee::http_client::transport::Error as TransportError;
-
+    pub fn classify_rpc_client_error(error: RpcClientError) -> Self {
         match error {
-            ClientError::Call(object) => {
+            RpcClientError::Call(object) => {
                 Self::RpcRequestRejected(format!("JSON-RPC error code {}", object.code()))
             }
-            ClientError::ParseError(error) => Self::MalformedRpcResponse(error.to_string()),
-            ClientError::RequestTimeout => Self::Timeout,
-            ClientError::Transport(error) => match error.downcast_ref::<TransportError>() {
-                Some(TransportError::Rejected { status_code }) => {
-                    let status = format!("HTTP status {status_code}");
-                    if is_retryable_status(*status_code) {
-                        Self::RpcRequestFailed(status)
-                    } else {
-                        Self::RpcRequestRejected(status)
+            RpcClientError::ParseError(error) => Self::MalformedRpcResponse(error.to_string()),
+            RpcClientError::RequestTimeout => Self::Timeout,
+            RpcClientError::Transport(error) => {
+                match error.downcast_ref::<HttpTransportError>() {
+                    Some(HttpTransportError::Rejected { status_code }) => {
+                        let status = format!("HTTP status {status_code}");
+                        if is_retryable_status(*status_code) {
+                            Self::RpcRequestFailed(status)
+                        } else {
+                            Self::RpcRequestRejected(status)
+                        }
                     }
+                    // Not a response the caller can use, as opposed to no response at all.
+                    Some(HttpTransportError::Http(HttpError::Malformed | HttpError::TooLarge)) => {
+                        Self::MalformedRpcResponse("response was not valid JSON-RPC".to_string())
+                    }
+                    Some(HttpTransportError::Url(_)) => {
+                        Self::RpcRequestRejected("invalid RPC URL".to_string())
+                    }
+                    _ => Self::RpcRequestFailed("transport failure".to_string()),
                 }
-                // Not a response the caller can use, as opposed to no response at all.
-                Some(TransportError::Http(HttpError::Malformed | HttpError::TooLarge)) => {
-                    Self::MalformedRpcResponse("response was not valid JSON-RPC".to_string())
-                }
-                Some(TransportError::Url(_)) => {
-                    Self::RpcRequestRejected("invalid RPC URL".to_string())
-                }
-                _ => Self::RpcRequestFailed("transport failure".to_string()),
-            },
+            }
             other => Self::RpcRequestFailed(other.to_string()),
         }
     }
