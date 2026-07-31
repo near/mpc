@@ -26,8 +26,9 @@ serves keyshares over the migration service to the backup service registered for
 
 | Metric | Measures | How to interpret |
 | --- | --- | --- |
-| [`mpc_last_backup_served_epoch`](../../crates/node/src/metrics.rs) | epoch id of the last keyset served to the backup service | should equal the current running epoch once a backup has been taken for it. Lagging behind means the latest epoch has not been backed up. |
+| [`mpc_last_backup_served_epoch`](../../crates/node/src/metrics.rs) | epoch id of the last keyset served to the backup service | should equal `mpc_current_epoch_id` once a backup has been taken for it. Lagging behind means the latest epoch has not been backed up. |
 | [`mpc_last_backup_served_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last keyshare set served to the backup service | should be recent. A large gap since the last resharing means backups are not being taken. Confirms the node served the keyshares, not that the backup service persisted them. |
+| [`mpc_current_epoch_id`](../../crates/node/src/metrics.rs) | epoch id of the keyset the contract currently holds | the reference point for `mpc_last_backup_served_epoch`. Increments on every resharing; unset until the first keyset exists. During a resharing it stays at the old epoch, which is the one still available to back up. |
 
 ## Recommended alerts
 
@@ -49,4 +50,9 @@ increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
 # Backups stale (warn): no keyshares served to the backup service recently. Only
 # meaningful once backups are being taken against this node.
 time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
+
+# Current epoch not backed up (warn): a resharing happened and its keyset has not
+# been served to the backup service since. Also fires if the node has never served
+# a backup, since the gauge starts at 0.
+mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
 ```

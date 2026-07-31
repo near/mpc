@@ -136,21 +136,21 @@ fn json_response(body: String) -> Response<Full<Bytes>> {
 #[derive(Debug, thiserror::Error)]
 enum RecordBackupServedError {
     #[error("epoch id {0} does not fit in an i64 gauge")]
-    EpochOutOfRange(u64),
+    EpochIdTooLargeForI64(u64),
     #[error("unix timestamp {0} does not fit in an i64 gauge")]
-    TimestampOutOfRange(u64),
+    TimestampTooLargeForI64(u64),
     #[error("system clock is before the unix epoch")]
     ClockBeforeUnixEpoch(#[from] SystemTimeError),
 }
 
 fn record_backup_served(keyset: &Keyset) -> Result<(), RecordBackupServedError> {
     let epoch_id = keyset.epoch_id.get();
-    let epoch =
-        i64::try_from(epoch_id).map_err(|_| RecordBackupServedError::EpochOutOfRange(epoch_id))?;
+    let epoch = i64::try_from(epoch_id)
+        .map_err(|_| RecordBackupServedError::EpochIdTooLargeForI64(epoch_id))?;
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let timestamp =
-        i64::try_from(now).map_err(|_| RecordBackupServedError::TimestampOutOfRange(now))?;
+        i64::try_from(now).map_err(|_| RecordBackupServedError::TimestampTooLargeForI64(now))?;
 
     metrics::MPC_LAST_BACKUP_SERVED_EPOCH.set(epoch);
     metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.set(timestamp);
@@ -346,7 +346,7 @@ mod tests {
         // Then
         assert_matches!(
             res,
-            Err(RecordBackupServedError::EpochOutOfRange(epoch)) if epoch == u64::MAX
+            Err(RecordBackupServedError::EpochIdTooLargeForI64(epoch)) if epoch == u64::MAX
         );
         assert_eq!(metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(), epoch_before);
         assert_eq!(

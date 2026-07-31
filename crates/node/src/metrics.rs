@@ -279,6 +279,14 @@ pub static MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS: LazyLock<prometheus::IntG
         .unwrap()
     });
 
+pub static MPC_CURRENT_EPOCH_ID: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
+    prometheus::register_int_gauge!(
+        "mpc_current_epoch_id",
+        "Epoch id of the keyset the contract currently holds, as last observed by this node"
+    )
+    .unwrap()
+});
+
 pub static MPC_LAST_BACKUP_SERVED_EPOCH: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_last_backup_served_epoch",

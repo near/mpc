@@ -110,6 +110,9 @@ where
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
+            if let Some(epoch_id) = current_epoch_id_gauge_value(&state) {
+                metrics::MPC_CURRENT_EPOCH_ID.set(epoch_id);
+            }
             let mut job: MpcJob = match state {
                 ContractState::Invalid => {
                     // Invalid state. Similar to initial state; we do nothing until the state changes.
@@ -853,6 +856,13 @@ impl Drop for ReportCurrentJobGuard {
     }
 }
 
+fn current_epoch_id_gauge_value(state: &ContractState) -> Option<i64> {
+    match state {
+        ContractState::Running(running) => i64::try_from(running.keyset.epoch_id.get()).ok(),
+        ContractState::Invalid | ContractState::Initializing(_) => None,
+    }
+}
+
 /// The `host:port` a peer is currently reachable at in live contract state, re-read on every
 /// (re)connect so a peer's URL update is picked up without a restart.
 fn peer_address_from_state(
@@ -1080,8 +1090,8 @@ fn make_initializing_stop_fn(
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        participants_change_requires_restart, peer_address_from_state, register_foreign_chains,
-        stop_running,
+        current_epoch_id_gauge_value, participants_change_requires_restart,
+        peer_address_from_state, register_foreign_chains, stop_running,
     };
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
@@ -1098,6 +1108,7 @@ mod tests {
     use near_mpc_contract_interface::types as dtos;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rstest::rstest;
     use std::collections::BTreeSet;
     use std::num::NonZeroU64;
     use tokio::sync::mpsc;
@@ -1216,6 +1227,19 @@ mod tests {
             &current,
             &me()
         ));
+    }
+
+    #[rstest]
+    #[case::running(running(base_config(), 7), Some(7))]
+    #[case::resharing_keeps_the_old_epoch(resharing(base_config(), base_config(), 7), Some(7))]
+    #[case::invalid(ContractState::Invalid, None)]
+    #[case::epoch_id_beyond_i64(running(base_config(), u64::MAX), None)]
+    fn current_epoch_id_gauge_value__should_report_the_running_keyset_epoch(
+        #[case] state: ContractState,
+        #[case] expected: Option<i64>,
+    ) {
+        // When / Then
+        assert_eq!(current_epoch_id_gauge_value(&state), expected);
     }
 
     #[test]
