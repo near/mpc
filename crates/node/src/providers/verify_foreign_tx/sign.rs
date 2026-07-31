@@ -33,9 +33,6 @@ fn build_signature_request(
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
     let msg_hash = foreign_tx_payload.compute_msg_hash()?;
-    // Refuse to sign a payload the requester does not expect: the contract rejects such a
-    // response anyway, and co-signing it would let its signature circulate as a replay
-    // candidate against other requests.
     if let Some(expected_payload_hash) = &request.expected_payload_hash
         && expected_payload_hash != &msg_hash
     {
