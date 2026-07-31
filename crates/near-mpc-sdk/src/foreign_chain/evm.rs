@@ -238,7 +238,8 @@ mod test {
             .with_expected_log(1, log_a.clone())
             .with_expected_log(2, log_b.clone())
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
@@ -275,7 +276,8 @@ mod test {
             .with_expected_block_hash(expected_hash)
             .with_expected_log(5, log.clone())
             .with_domain_id(domain_id)
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_request = ForeignChainRpcRequest::Abstract(EvmRpcRequest {
@@ -318,7 +320,8 @@ mod test {
             .with_expected_block_hash(expected_hash)
             .with_expected_log(5, log.clone())
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_verifier = ForeignChainSignatureVerifier {
@@ -346,7 +349,8 @@ mod test {
             .with_finality(EvmFinality::Safe)
             .with_domain_id(DomainId::from(1))
             // when
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_eq!(verifier.request, request_args.request);
@@ -359,7 +363,8 @@ mod test {
             .with_tx_id(EvmTxId::from([42; 32]))
             .with_finality(EvmFinality::Latest)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {

@@ -114,12 +114,14 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
 impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
     ForeignChainRequestBuilder<Request, DomainId>
 {
+    /// Errors if borsh-serializing the expected payload for hashing fails; this is not
+    /// expected to happen for any current payload type.
     pub fn build(
         self,
-    ) -> (
+    ) -> std::io::Result<(
         ForeignChainSignatureVerifier,
         VerifyForeignTransactionRequestArgs,
-    ) {
+    )> {
         let ForeignChainRpcRequestWithExpectations {
             request,
             expected_values,
@@ -134,17 +136,16 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request: verifier.request.clone(),
             values: verifier.expected_extracted_values.clone(),
         })
-        .compute_msg_hash()
-        .ok();
+        .compute_msg_hash()?;
 
         let request_args = VerifyForeignTransactionRequestArgs {
             request,
             domain_id: self.domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
-            expected_payload_hash,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
-        (verifier, request_args)
+        Ok((verifier, request_args))
     }
 }
 

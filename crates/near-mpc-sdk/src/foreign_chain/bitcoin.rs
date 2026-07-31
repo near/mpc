@@ -181,7 +181,8 @@ mod test {
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(domain_id)
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_request = ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
@@ -219,7 +220,8 @@ mod test {
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_verifier = ForeignChainSignatureVerifier {
@@ -244,7 +246,8 @@ mod test {
             .with_block_confirmations(10)
             .with_domain_id(DomainId::from(1))
             // when
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_eq!(verifier.request, request_args.request);

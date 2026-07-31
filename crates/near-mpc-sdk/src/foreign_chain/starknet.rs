@@ -182,7 +182,8 @@ mod test {
             .with_finality(StarknetFinality::AcceptedOnL1)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(domain_id)
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_request = ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
@@ -220,7 +221,8 @@ mod test {
             .with_finality(StarknetFinality::AcceptedOnL1)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_verifier = ForeignChainSignatureVerifier {
@@ -245,7 +247,8 @@ mod test {
             .with_finality(StarknetFinality::AcceptedOnL2)
             .with_domain_id(DomainId::from(1))
             // when
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_eq!(verifier.request, request_args.request);
@@ -258,7 +261,8 @@ mod test {
             .with_tx_id(StarknetTxId::from(StarknetFelt([42; 32])))
             .with_finality(StarknetFinality::AcceptedOnL2)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Starknet(rpc_request) => {
