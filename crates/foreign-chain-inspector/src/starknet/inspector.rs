@@ -1,6 +1,7 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{
-    ChainIdentity, ChainIdentityInspector, ForeignChainInspectionError, ForeignChainInspector,
+    ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprint,
+    NetworkFingerprintInspector,
 };
 use foreign_chain_rpc_interfaces::starknet::{
     BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
@@ -27,11 +28,11 @@ pub enum StarknetFinality {
     AcceptedOnL1,
 }
 
-impl<Client> ChainIdentityInspector for StarknetInspector<Client>
+impl<Client> NetworkFingerprintInspector for StarknetInspector<Client>
 where
     Client: ClientT + Send + Sync,
 {
-    async fn chain_identity(&self) -> Result<ChainIdentity, ForeignChainInspectionError> {
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
         let chain_id: ChainIdResponse = self
             .client
             .request(CHAIN_ID_METHOD, NO_PARAMS)
@@ -40,7 +41,7 @@ where
         Ok(chain_id.canonical_text().into())
     }
 
-    fn canonical_identity(expected: &str) -> ChainIdentity {
+    fn canonical_fingerprint(expected: &str) -> NetworkFingerprint {
         ChainIdResponse(expected.to_owned()).canonical_text().into()
     }
 }

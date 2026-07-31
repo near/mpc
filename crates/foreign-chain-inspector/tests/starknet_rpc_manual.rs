@@ -110,11 +110,11 @@ fn parse_starknet_felt_hash<T: core::str::FromStr<Err = mpc_primitives::hash::Ha
 }
 
 /// Starknet mainnet's chain id (`SN_MAIN`), as shipped in `expected_network_fingerprint`.
-const EXPECTED_CHAIN_IDENTITY: &str = "0x534e5f4d41494e";
+const EXPECTED_NETWORK_FINGERPRINT: &str = "0x534e5f4d41494e";
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Starknet RPC provider"]
-async fn chain_identity_matches_the_shipped_config_value_against_live_rpc_provider() {
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
     // given
     let http_client = foreign_chain_inspector::build_http_client(
         PUBLIC_NODE_URL.to_string(),
@@ -124,10 +124,11 @@ async fn chain_identity_matches_the_shipped_config_value_against_live_rpc_provid
     let inspector = StarknetInspector::new(http_client);
 
     // when
-    let identity = foreign_chain_inspector::ChainIdentityInspector::chain_identity(&inspector)
-        .await
-        .expect("chain_identity should succeed");
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
 
     // then
-    assert_eq!(identity.to_string(), EXPECTED_CHAIN_IDENTITY);
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

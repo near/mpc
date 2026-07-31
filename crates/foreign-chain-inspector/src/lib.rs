@@ -44,20 +44,20 @@ pub trait ForeignChainInspector {
 /// The network a provider serves, as the chain itself reports it: a chain id or a genesis hash, in
 /// one canonical text form per chain.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
-pub struct ChainIdentity(String);
+pub struct NetworkFingerprint(String);
 
-/// Reports the [`ChainIdentity`] of the provider an inspector talks to.
+/// Reports the [`NetworkFingerprint`] of the provider an inspector talks to.
 ///
-/// Identities are compared verbatim, so both the reported and the expected one go through the
+/// Fingerprints are compared verbatim, so both the reported and the expected one go through the
 /// impl's canonical form. Fetches a chain-wide constant providers never prune.
-pub trait ChainIdentityInspector {
-    fn chain_identity(
+pub trait NetworkFingerprintInspector {
+    fn network_fingerprint(
         &self,
-    ) -> impl Future<Output = Result<ChainIdentity, ForeignChainInspectionError>> + Send;
+    ) -> impl Future<Output = Result<NetworkFingerprint, ForeignChainInspectionError>> + Send;
 
-    /// Puts an operator-supplied identity into the form [`Self::chain_identity`] returns, so that a
-    /// spec-legal spelling of the right network does not read as the wrong network.
-    fn canonical_identity(expected: &str) -> ChainIdentity;
+    /// Puts an operator-supplied fingerprint into the form [`Self::network_fingerprint`] returns,
+    /// so that a spec-legal spelling of the right network does not read as the wrong network.
+    fn canonical_fingerprint(expected: &str) -> NetworkFingerprint;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
@@ -204,19 +204,19 @@ pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
 impl<Inspector> FanOut<Inspector>
 where
-    Inspector: ChainIdentityInspector + Clone + Send + Sync + 'static,
+    Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
 {
     /// Ask every provider for the network it serves, concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
     /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try plus
     /// [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
-    pub async fn chain_identities(
+    pub async fn network_fingerprints(
         &self,
         timeout: Duration,
         attempts: NonZeroU64,
     ) -> Vec<(
         ProviderId,
-        Result<ChainIdentity, ForeignChainInspectionError>,
+        Result<NetworkFingerprint, ForeignChainInspectionError>,
     )> {
         let mut join_set = tokio::task::JoinSet::new();
         for (provider, inspector) in self.inspectors.iter() {
@@ -224,7 +224,7 @@ where
             let provider = provider.clone();
             join_set.spawn(async move {
                 let ask = || async {
-                    tokio::time::timeout(timeout, inspector.chain_identity())
+                    tokio::time::timeout(timeout, inspector.network_fingerprint())
                         .await
                         .unwrap_or(Err(ForeignChainInspectionError::Timeout))
                 };

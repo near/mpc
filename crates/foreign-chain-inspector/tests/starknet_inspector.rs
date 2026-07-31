@@ -7,7 +7,7 @@ use crate::common::{
 };
 
 use foreign_chain_inspector::{
-    ChainIdentityInspector, FanOut, ForeignChainInspectionError, ForeignChainInspector,
+    FanOut, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     RpcAuthentication, build_http_client,
     starknet::{
         StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
@@ -519,18 +519,18 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
 const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
 
 #[tokio::test]
-async fn chain_identity__should_return_the_canonical_chain_id() {
+async fn network_fingerprint__should_return_the_canonical_chain_id() {
     // Given: the chain id padded and uppercased, as a provider is free to send it.
     let inspector = StarknetInspector::new(mock_client_from_fixed_response("0x00534E5F4D41494E"));
 
     // When
-    let identity = inspector
-        .chain_identity()
+    let fingerprint = inspector
+        .network_fingerprint()
         .await
-        .expect("chain_identity should succeed");
+        .expect("network_fingerprint should succeed");
 
     // Then
-    assert_eq!(identity.to_string(), MAINNET_CHAIN_ID);
+    assert_eq!(fingerprint.to_string(), MAINNET_CHAIN_ID);
 }
 
 /// Builds a fan-out of one Starknet provider whose client runs `respond` on each call, and reports
@@ -573,7 +573,7 @@ fn transport_error() -> RpcClientError {
 }
 
 #[tokio::test]
-async fn chain_identities__should_retry_a_transient_failure_and_report_the_later_success() {
+async fn network_fingerprints__should_retry_a_transient_failure_and_report_the_later_success() {
     // Given a provider that refuses the first call and answers the second
     let (fan_out, calls) = single_provider_fan_out(|call| match call {
         0 => Err(transport_error()),
@@ -582,26 +582,26 @@ async fn chain_identities__should_retry_a_transient_failure_and_report_the_later
 
     // When
     let results = fan_out
-        .chain_identities(Duration::from_secs(1), NonZeroU64::new(2).unwrap())
+        .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(2).unwrap())
         .await;
 
     // Then
     assert_eq!(calls.load(Ordering::SeqCst), 2);
-    let identity = results[0]
+    let fingerprint = results[0]
         .1
         .as_ref()
         .expect("second attempt should succeed");
-    assert_eq!(identity.to_string(), MAINNET_CHAIN_ID);
+    assert_eq!(fingerprint.to_string(), MAINNET_CHAIN_ID);
 }
 
 #[tokio::test]
-async fn chain_identities__should_stop_after_the_configured_number_of_attempts() {
+async fn network_fingerprints__should_stop_after_the_configured_number_of_attempts() {
     // Given a provider that never answers
     let (fan_out, calls) = single_provider_fan_out(|_| Err(transport_error()));
 
     // When
     let results = fan_out
-        .chain_identities(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+        .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
         .await;
 
     // Then
@@ -613,7 +613,7 @@ async fn chain_identities__should_stop_after_the_configured_number_of_attempts()
 }
 
 #[tokio::test]
-async fn chain_identities__should_not_retry_a_provider_that_refused_the_request() {
+async fn network_fingerprints__should_not_retry_a_provider_that_refused_the_request() {
     // Given a provider refusing with a JSON-RPC error object, as one does for a bad API key
     let (fan_out, calls) = single_provider_fan_out(|_| {
         Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
@@ -625,7 +625,7 @@ async fn chain_identities__should_not_retry_a_provider_that_refused_the_request(
 
     // When
     let results = fan_out
-        .chain_identities(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+        .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
         .await;
 
     // Then the refusal is reported as one, and the remaining attempts are not spent on it
@@ -637,7 +637,7 @@ async fn chain_identities__should_not_retry_a_provider_that_refused_the_request(
 }
 
 #[tokio::test]
-async fn chain_identity__should_propagate_rpc_client_errors() {
+async fn network_fingerprint__should_propagate_rpc_client_errors() {
     // Given
     let client = FixedResponseRpcClient::new(|| {
         Err(RpcClientError::Transport(Box::new(std::io::Error::new(
@@ -648,7 +648,7 @@ async fn chain_identity__should_propagate_rpc_client_errors() {
     let inspector = StarknetInspector::new(client);
 
     // When
-    let response = inspector.chain_identity().await;
+    let response = inspector.network_fingerprint().await;
 
     // Then
     assert_matches!(

@@ -144,7 +144,7 @@ impl ChainIdResponse {
     /// Lowercase, no leading zeros.
     ///
     /// The prefix is matched case-insensitively although the spec's pattern is not: the same
-    /// normalization is applied to operator-written identities, which the pattern does not bind.
+    /// normalization is applied to operator-written fingerprints, which the pattern does not bind.
     pub fn canonical_text(&self) -> String {
         let digits = self
             .0

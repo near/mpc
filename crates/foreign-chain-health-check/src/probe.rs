@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::{
-    ChainIdentity, FanOut, ForeignChainInspectionError, ProviderFailure,
+    FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
 };
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
@@ -23,8 +23,8 @@ use crate::prepare_jsonrpc;
 pub enum ProviderStatus {
     Healthy,
     WrongNetwork {
-        expected: ChainIdentity,
-        observed: ChainIdentity,
+        expected: NetworkFingerprint,
+        observed: NetworkFingerprint,
     },
     /// DNS, TLS, connection refused, 5xx, or rate limiting.
     Unreachable,
@@ -38,8 +38,8 @@ pub enum ProviderStatus {
     ClientSetupFailed,
     /// The chain is configured without an `expected_network_fingerprint`, so its providers cannot
     /// be checked. Reported rather than skipped: silence would read as healthy.
-    MissingExpectedIdentity,
-    /// The chain has no identity probe yet, either because none is written for it or because the
+    MissingExpectedFingerprint,
+    /// The chain has no fingerprint probe yet, either because none is written for it or because the
     /// node cannot inspect it at all.
     ProbeNotImplemented,
 }
@@ -118,12 +118,12 @@ async fn probe_chain<I>(
     new_inspector: impl Fn(&ForeignChainProviderConfig) -> anyhow::Result<I>,
 ) -> Vec<ProviderHealth>
 where
-    I: foreign_chain_inspector::ChainIdentityInspector + Clone + Send + Sync + 'static,
+    I: foreign_chain_inspector::NetworkFingerprintInspector + Clone + Send + Sync + 'static,
 {
     let Some(expected) = &config.expected_network_fingerprint else {
-        return rows_of(chain, config, ProviderStatus::MissingExpectedIdentity);
+        return rows_of(chain, config, ProviderStatus::MissingExpectedFingerprint);
     };
-    let expected = I::canonical_identity(expected);
+    let expected = I::canonical_fingerprint(expected);
 
     let mut inspectors = Vec::new();
     let mut rows = Vec::new();
@@ -144,14 +144,14 @@ where
     };
 
     let timeout = Duration::from_secs(config.timeout_sec.get());
-    let identities = FanOut::new(inspectors)
-        .chain_identities(timeout, config.max_retries)
+    let fingerprints = FanOut::new(inspectors)
+        .network_fingerprints(timeout, config.max_retries)
         .await;
-    for (provider, identity) in identities {
+    for (provider, fingerprint) in fingerprints {
         rows.push(ProviderHealth {
             chain,
             provider,
-            status: classify(&expected, identity),
+            status: classify(&expected, fingerprint),
         });
     }
     rows
@@ -186,23 +186,24 @@ fn rows_of(
         .collect()
 }
 
-/// Every chain's identity fits comfortably: the longest is Bitcoin's 66-character genesis hash. What
+/// Every chain's fingerprint fits comfortably: the longest is Bitcoin's 66-character genesis hash.
+/// What
 /// a provider answers instead is its own choice, and a report ends up in logs and metric labels.
-fn bounded(observed: ChainIdentity) -> ChainIdentity {
+fn bounded(observed: NetworkFingerprint) -> NetworkFingerprint {
     const MAX_CHARS: usize = 96;
 
     let observed = observed.to_string();
     match observed.char_indices().nth(MAX_CHARS) {
-        None => ChainIdentity::from(observed),
-        Some((cutoff, _)) => ChainIdentity::from(format!("{}…", &observed[..cutoff])),
+        None => NetworkFingerprint::from(observed),
+        Some((cutoff, _)) => NetworkFingerprint::from(format!("{}…", &observed[..cutoff])),
     }
 }
 
 fn classify(
-    expected: &ChainIdentity,
-    identity: Result<ChainIdentity, ForeignChainInspectionError>,
+    expected: &NetworkFingerprint,
+    fingerprint: Result<NetworkFingerprint, ForeignChainInspectionError>,
 ) -> ProviderStatus {
-    match identity {
+    match fingerprint {
         Ok(observed) if &observed == expected => ProviderStatus::Healthy,
         Ok(observed) => ProviderStatus::WrongNetwork {
             expected: expected.clone(),
@@ -342,14 +343,14 @@ mod tests {
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::WrongNetwork {
-                expected: ChainIdentity::from(MAINNET.to_string()),
-                observed: ChainIdentity::from(SEPOLIA.to_string()),
+                expected: NetworkFingerprint::from(MAINNET.to_string()),
+                observed: NetworkFingerprint::from(SEPOLIA.to_string()),
             }
         );
     }
 
     #[tokio::test]
-    async fn probe_all_providers__should_normalize_the_reported_identity_before_comparing() {
+    async fn probe_all_providers__should_normalize_the_reported_fingerprint_before_comparing() {
         // Given a provider padding and uppercasing the chain id, as the spec permits
         let server = httpmock::MockServer::start_async().await;
         mock_chain_id(&server, "0x00534E5F4D41494E").await;
@@ -369,7 +370,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_all_providers__should_report_a_chain_without_an_expected_identity_without_probing()
+    async fn probe_all_providers__should_report_a_chain_without_an_expected_fingerprint_without_probing()
      {
         // Given
         let server = httpmock::MockServer::start_async().await;
@@ -385,7 +386,7 @@ mod tests {
         // Then the provider is reported rather than skipped, and no request was sent
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::MissingExpectedIdentity
+            ProviderStatus::MissingExpectedFingerprint
         );
         mock.assert_calls_async(0).await;
     }
@@ -521,7 +522,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_all_providers__should_normalize_the_configured_identity_before_comparing() {
+    async fn probe_all_providers__should_normalize_the_configured_fingerprint_before_comparing() {
         // Given an operator writing the chain id padded and uppercased, as the spec permits
         let server = httpmock::MockServer::start_async().await;
         mock_chain_id(&server, MAINNET).await;
@@ -619,9 +620,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_all_providers__should_report_a_chain_with_no_identity_probe_as_not_implemented()
-    {
-        // Given a chain the node can inspect but has no identity probe for
+    async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
+     {
+        // Given a chain the node can inspect but has no fingerprint probe for
         let config = ForeignChainsConfig {
             base: Some(chain_config(
                 Some("8453"),
@@ -703,8 +704,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_all_providers__should_bound_the_identity_a_provider_reports() {
-        // Given a provider answering with far more than an identity
+    async fn probe_all_providers__should_bound_the_fingerprint_a_provider_reports() {
+        // Given a provider answering with far more than a fingerprint
         let server = httpmock::MockServer::start_async().await;
         let flood = "n".repeat(5_000);
         mock_chain_id(&server, &flood).await;
@@ -728,7 +729,7 @@ mod tests {
     #[test]
     fn classify__should_report_a_transaction_level_error_as_malformed() {
         // Given an error about a transaction, which the probe never asks about
-        let expected = ChainIdentity::from(MAINNET.to_string());
+        let expected = NetworkFingerprint::from(MAINNET.to_string());
 
         // When
         let status = classify(
