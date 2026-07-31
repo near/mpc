@@ -4088,26 +4088,6 @@ mod tests {
         }
     }
 
-    fn must_sign_foreign_tx_payload(
-        secret_key: &k256::Scalar,
-        payload: &ForeignTxSignPayload,
-    ) -> VerifyForeignTransactionResponse {
-        let payload_hash = payload.compute_msg_hash().unwrap();
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
-        let (signature, recovery_id) = secret_key
-            .sign_prehash_recoverable(&payload_hash.0)
-            .unwrap();
-        let signature = dtos::SignatureResponse::Secp256k1(
-            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
-        );
-        VerifyForeignTransactionResponse {
-            payload_hash,
-            signature,
-        }
-    }
-
     #[test]
     fn respond_verify_foreign_tx__should_reject_response_with_unexpected_payload_hash() {
         // Given
@@ -4137,7 +4117,7 @@ mod tests {
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
-        let response = must_sign_foreign_tx_payload(&secret_key, &payload);
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
         with_active_participant_and_attested_context(&contract);
 
         // When
@@ -4186,7 +4166,7 @@ mod tests {
         };
         let request = args_into_verify_foreign_tx_request(request_args.clone());
         contract.verify_foreign_transaction(request_args);
-        let response = must_sign_foreign_tx_payload(&secret_key, &payload);
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
         with_active_participant_and_attested_context(&contract);
 
         // When
@@ -4197,6 +4177,26 @@ mod tests {
             result.is_ok(),
             "response matching the expected payload hash must be accepted: {result:?}",
         );
+    }
+
+    fn sign_foreign_tx_payload(
+        secret_key: &k256::Scalar,
+        payload: &ForeignTxSignPayload,
+    ) -> VerifyForeignTransactionResponse {
+        let payload_hash = payload.compute_msg_hash().unwrap();
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
+        let (signature, recovery_id) = secret_key
+            .sign_prehash_recoverable(&payload_hash.0)
+            .unwrap();
+        let signature = dtos::SignatureResponse::Secp256k1(
+            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
+        );
+        VerifyForeignTransactionResponse {
+            payload_hash,
+            signature,
+        }
     }
 
     #[test]
