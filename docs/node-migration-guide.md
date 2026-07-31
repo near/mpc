@@ -216,7 +216,34 @@ backup-cli \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
-The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains` (with a `key` hard-link in that directory).
+The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains`, with `$BACKUP_HOME_DIR/key` as a hard link to the newest one. Both entries point at the same file, and the backup service reads only `key`.
+
+### Keeping the Backup Up to Date
+
+`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
+
+```bash
+export BACKUP_RPC_URL=https://rpc.mainnet.near.org   # your provider's endpoint; an api key goes in the query string
+export BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
+
+backup-cli \
+  --home-dir $BACKUP_HOME_DIR \
+  run \
+  --near-chain-id $NEAR_NETWORK \
+  --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
+  --mpc-node-address node.example.com:8079 \
+  --mpc-node-p2p-key "ed25519:YourNodeP2PPublicKey..."
+```
+
+Notes:
+
+- No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
+- Pass the encryption key through the environment as above rather than on the command line, where `ps` would expose it.
+- Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.
+- It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`. An unreachable endpoint is reported when it starts failing and again when it recovers, not once per read. Logs default to `info`; `RUST_LOG` overrides that.
+- This is the backup direction only. Restoring (Steps 6–8) stays manual.
+
+See [Automatic backups](./migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.
 
 
 ## Step 5: Prepare the New Node

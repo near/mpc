@@ -5,6 +5,17 @@ use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
 
 use crate::types;
 
+pub trait WatchContractState {
+    type Error: std::fmt::Debug;
+
+    /// The last state observed on chain. Marks that state as seen, so a following
+    /// [`Self::changed`] waits for the next one.
+    fn latest(&mut self) -> Result<ProtocolContractState, Self::Error>;
+
+    /// Waits until the observed state changes. `Err` means no further states will arrive.
+    fn changed(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
 pub trait SecretsRepository {
     type Error: std::fmt::Debug;
 
@@ -41,7 +52,7 @@ pub trait P2PClient {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-pub trait ContractStateReader {
+pub trait ReadContractState {
     type Error: std::fmt::Debug;
 
     fn get_contract_state(
