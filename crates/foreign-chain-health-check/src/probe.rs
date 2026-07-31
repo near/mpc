@@ -147,21 +147,18 @@ where
     let fingerprints = FanOut::new(inspectors)
         .network_fingerprints(timeout, config.max_retries)
         .await;
-    for (provider, fingerprint) in fingerprints {
+    for (provider, reported) in fingerprints {
         rows.push(ProviderHealth {
             chain,
             provider,
-            status: classify(&expected, fingerprint),
+            status: classify(&expected, reported),
         });
     }
     rows
 }
 
-/// The error itself is dropped for the reason [`ProviderStatus`] documents, so the one cause an
-/// operator can act on gets a status of its own instead.
-///
-/// A token resolves from the environment or from the config file, and only the former can fail, so
-/// a [`std::env::VarError`] in the chain is what names this case.
+/// [`ProviderStatus`] carries no error text, so the one actionable cause gets its own variant. Only
+/// a token read from the environment can fail to resolve; a [`std::env::VarError`] identifies it.
 fn setup_failure(error: &anyhow::Error) -> ProviderStatus {
     if error.chain().any(|cause| cause.is::<std::env::VarError>()) {
         ProviderStatus::AuthTokenUnresolved
@@ -186,9 +183,8 @@ fn rows_of(
         .collect()
 }
 
-/// Every chain's fingerprint fits comfortably: the longest is Bitcoin's 66-character genesis hash.
-/// What
-/// a provider answers instead is its own choice, and a report ends up in logs and metric labels.
+/// A provider answers what it likes and the report reaches logs and metric labels, so the length is
+/// capped well clear of the longest real fingerprint: Bitcoin's genesis hash, at 66 characters.
 fn bounded(observed: NetworkFingerprint) -> NetworkFingerprint {
     const MAX_CHARS: usize = 96;
 
@@ -201,9 +197,9 @@ fn bounded(observed: NetworkFingerprint) -> NetworkFingerprint {
 
 fn classify(
     expected: &NetworkFingerprint,
-    fingerprint: Result<NetworkFingerprint, ForeignChainInspectionError>,
+    reported: Result<NetworkFingerprint, ForeignChainInspectionError>,
 ) -> ProviderStatus {
-    match fingerprint {
+    match reported {
         Ok(observed) if &observed == expected => ProviderStatus::Healthy,
         Ok(observed) => ProviderStatus::WrongNetwork {
             expected: expected.clone(),
@@ -214,8 +210,8 @@ fn classify(
             Some(ProviderFailure::Rejected) => ProviderStatus::RequestRejected,
             Some(ProviderFailure::TimedOut) => ProviderStatus::TimedOut,
             Some(ProviderFailure::Malformed) => ProviderStatus::MalformedResponse,
-            // The probe inspects no transaction, so a transaction-level error means an impl
-            // answered outside its contract.
+            // Probing does not inspect transactions, so a transaction-level error means
+            // an impl answered outside its contract.
             None => ProviderStatus::MalformedResponse,
         },
     }
