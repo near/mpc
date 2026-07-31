@@ -29,6 +29,7 @@ ignore = [
   # TODO(#3732): remove once quick-xml dependency is >= 0.41.0
   "RUSTSEC-2026-0194", # quadratic attribute duplicate-check
   "RUSTSEC-2026-0195", # unbounded namespace-declaration allocation
+  "RUSTSEC-2026-0222", # wasmtime: stores can mix up type indices between engines
 ]
 
 [bans]
