@@ -45,7 +45,8 @@ pub struct ForeignChainsConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
-    /// Total attempts per provider, not additional ones: `1` means a single try.
+    /// Total attempts per provider, not additional ones: `1` means a single try. Read by the
+    /// chain-identity probe; transaction verification does not retry a provider at all.
     pub max_retries: NonZeroU64,
     /// The network fingerprint the operator expects every provider of this chain to report, in the
     /// chain's canonical text form. A chain id for chains that have one, a genesis hash or digest

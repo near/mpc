@@ -685,14 +685,16 @@ separates the test networks from each other where a network *name* would not: te
 separates mainnet from testnet, but two devnets can collide.
 
 `solana` and `ethereum` are configurable but absent from the table: neither has an inspector, so
-setting `expected_network_fingerprint` for them has no effect.
+there is nothing about them to verify in the first place.
 
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
 
-A chain configured without one is not skipped: the probe reports every provider of that chain as
-`MissingExpectedIdentity`, because a silent skip reads as healthy on a dashboard.
+Only the chains with an identity probe read the field at all — starknet today, the rest as their
+probes are written. For those chains, leaving it unset is not a silent skip: every provider of the
+chain is reported as `MissingExpectedIdentity`, because silence reads as healthy on a dashboard. A
+chain with no probe yet reports `ProbeNotImplemented` whether the field is set or not.
 
 ## Risks
 

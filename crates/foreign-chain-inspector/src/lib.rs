@@ -375,7 +375,13 @@ impl ForeignChainInspectionError {
     pub fn classify_rpc_client_error(error: RpcClientError) -> Self {
         match error {
             RpcClientError::Call(object) => {
-                Self::RpcRequestRejected(format!("JSON-RPC error code {}", object.code()))
+                let code = object.code();
+                let message = format!("JSON-RPC error code {code}");
+                if is_rate_limit_error_code(code) {
+                    Self::RpcRequestFailed(message)
+                } else {
+                    Self::RpcRequestRejected(message)
+                }
             }
             RpcClientError::ParseError(error) => Self::MalformedRpcResponse(error.to_string()),
             RpcClientError::RequestTimeout => Self::Timeout,
@@ -423,6 +429,16 @@ impl ForeignChainInspectionError {
             | Self::LogIndexOutOfBounds => None,
         }
     }
+}
+
+/// Throttling reaches some providers' callers as a JSON-RPC error object over HTTP 200 rather than
+/// as a 429, and it is the one refusal worth retrying: `-32005` is Alchemy's and Infura's "limit
+/// exceeded", `-32029` the code others use for the same.
+fn is_rate_limit_error_code(code: i32) -> bool {
+    const LIMIT_EXCEEDED: i32 = -32005;
+    const TOO_MANY_REQUESTS: i32 = -32029;
+
+    matches!(code, LIMIT_EXCEEDED | TOO_MANY_REQUESTS)
 }
 
 /// Request timeout, too many requests, and anything the server blames on itself. Every other

@@ -26,10 +26,11 @@ use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
+/// Pre-built HTTP clients for each foreign chain, one per configured provider and named by its
+/// [`ProviderId`].
 ///
-/// Built once at startup so that request handling only needs to select an index
-/// instead of re-parsing config and constructing clients on every call.
+/// Built once at startup so that request handling fans out over ready clients instead of re-parsing
+/// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
     pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
     pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,

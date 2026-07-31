@@ -8,9 +8,7 @@ use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::{
     ChainIdentity, FanOut, ForeignChainInspectionError, ProviderFailure,
 };
-use mpc_node_config::{
-    AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
-};
+use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
@@ -41,7 +39,8 @@ pub enum ProviderStatus {
     /// The chain is configured without an `expected_chain_identity`, so its providers cannot be
     /// checked. Reported rather than skipped: silence would read as healthy.
     MissingExpectedIdentity,
-    /// The node can inspect this chain's transactions but has no identity probe for it yet.
+    /// The chain has no identity probe yet, either because none is written for it or because the
+    /// node cannot inspect it at all.
     ProbeNotImplemented,
 }
 
@@ -104,7 +103,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // Other chains to be added in follow up PRs
+                // TODO(#4003): probe the remaining chains.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -132,10 +131,10 @@ where
         let provider_id = ProviderId(name.as_str().to_owned());
         match new_inspector(provider) {
             Ok(inspector) => inspectors.push((provider_id, inspector)),
-            Err(_) => rows.push(ProviderHealth {
+            Err(error) => rows.push(ProviderHealth {
                 chain,
                 provider: provider_id,
-                status: setup_failure(provider),
+                status: setup_failure(&error),
             }),
         }
     }
@@ -158,21 +157,16 @@ where
     rows
 }
 
-/// The setup error itself is dropped for the reason [`ProviderStatus`] documents, so the one cause
-/// an operator can act on gets a status of its own instead.
-fn setup_failure(provider: &ForeignChainProviderConfig) -> ProviderStatus {
-    match auth_token(&provider.auth) {
-        Some(token) if token.resolve().is_err() => ProviderStatus::AuthTokenUnresolved,
-        _ => ProviderStatus::ClientSetupFailed,
-    }
-}
-
-fn auth_token(auth: &AuthConfig) -> Option<&TokenConfig> {
-    match auth {
-        AuthConfig::None => None,
-        AuthConfig::Header { token, .. }
-        | AuthConfig::Path { token, .. }
-        | AuthConfig::Query { token, .. } => Some(token),
+/// The error itself is dropped for the reason [`ProviderStatus`] documents, so the one cause an
+/// operator can act on gets a status of its own instead.
+///
+/// A token resolves from the environment or from the config file, and only the former can fail, so
+/// a [`std::env::VarError`] in the chain is what names this case.
+fn setup_failure(error: &anyhow::Error) -> ProviderStatus {
+    if error.chain().any(|cause| cause.is::<std::env::VarError>()) {
+        ProviderStatus::AuthTokenUnresolved
+    } else {
+        ProviderStatus::ClientSetupFailed
     }
 }
 
@@ -192,6 +186,18 @@ fn rows_of(
         .collect()
 }
 
+/// Every chain's identity fits comfortably: the longest is Bitcoin's 66-character genesis hash. What
+/// a provider answers instead is its own choice, and a report ends up in logs and metric labels.
+fn bounded(observed: ChainIdentity) -> ChainIdentity {
+    const MAX_CHARS: usize = 96;
+
+    let observed = observed.to_string();
+    match observed.char_indices().nth(MAX_CHARS) {
+        None => ChainIdentity::from(observed),
+        Some((cutoff, _)) => ChainIdentity::from(format!("{}…", &observed[..cutoff])),
+    }
+}
+
 fn classify(
     expected: &ChainIdentity,
     identity: Result<ChainIdentity, ForeignChainInspectionError>,
@@ -200,7 +206,7 @@ fn classify(
         Ok(observed) if &observed == expected => ProviderStatus::Healthy,
         Ok(observed) => ProviderStatus::WrongNetwork {
             expected: expected.clone(),
-            observed,
+            observed: bounded(observed),
         },
         Err(error) => match error.provider_failure() {
             Some(ProviderFailure::Unreachable) => ProviderStatus::Unreachable,
@@ -218,6 +224,7 @@ fn classify(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
 
@@ -286,12 +293,13 @@ mod tests {
             .await
     }
 
-    fn must_status_of(report: &ProbeReport, provider: &str) -> ProviderStatus {
+    /// Keyed by chain too: provider names repeat across chains in real configs.
+    fn must_status_of(report: &ProbeReport, chain: ForeignChain, provider: &str) -> ProviderStatus {
         report
             .rows()
             .iter()
-            .find(|row| row.provider.0 == provider)
-            .unwrap_or_else(|| panic!("missing row for provider `{provider}`"))
+            .find(|row| row.chain == chain && row.provider.0 == provider)
+            .unwrap_or_else(|| panic!("missing row for `{chain:?}` provider `{provider}`"))
             .status
             .clone()
     }
@@ -312,7 +320,7 @@ mod tests {
         // Then
         mock.assert_async().await;
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -332,7 +340,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::WrongNetwork {
                 expected: ChainIdentity::from(MAINNET.to_string()),
                 observed: ChainIdentity::from(SEPOLIA.to_string()),
@@ -355,7 +363,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -376,7 +384,7 @@ mod tests {
 
         // Then the provider is reported rather than skipped, and no request was sent
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::MissingExpectedIdentity
         );
         mock.assert_calls_async(0).await;
@@ -395,7 +403,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Unreachable
         );
     }
@@ -424,7 +432,7 @@ mod tests {
 
         // Then the refusal is named as such, and retrying it is pointless
         assert_eq!(
-            must_status_of(&report, "keyed"),
+            must_status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::RequestRejected
         );
         mock.assert_calls_async(1).await;
@@ -454,7 +462,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::RequestRejected
         );
     }
@@ -479,7 +487,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::MalformedResponse
         );
     }
@@ -506,7 +514,10 @@ mod tests {
         let report = probe_all_providers(&config).await;
 
         // Then
-        assert_eq!(must_status_of(&report, "slow"), ProviderStatus::TimedOut);
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "slow"),
+            ProviderStatus::TimedOut
+        );
     }
 
     #[tokio::test]
@@ -524,7 +535,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -554,7 +565,7 @@ mod tests {
 
         // Then the operator learns which of the two setup failures it was
         assert_eq!(
-            must_status_of(&report, "keyed"),
+            must_status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::AuthTokenUnresolved
         );
     }
@@ -572,7 +583,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, "wrong-scheme"),
+            must_status_of(&report, ForeignChain::Starknet, "wrong-scheme"),
             ProviderStatus::ClientSetupFailed
         );
     }
@@ -590,9 +601,12 @@ mod tests {
         let report = probe_all_providers(&config).await;
 
         // Then
-        assert_eq!(must_status_of(&report, "healthy"), ProviderStatus::Healthy);
         assert_eq!(
-            must_status_of(&report, "broken"),
+            must_status_of(&report, ForeignChain::Starknet, "healthy"),
+            ProviderStatus::Healthy
+        );
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "broken"),
             ProviderStatus::Unreachable
         );
         assert_eq!(
@@ -621,9 +635,109 @@ mod tests {
 
         // Then it is visible in the report rather than silently absent
         assert_eq!(
-            must_status_of(&report, "publicnode"),
+            must_status_of(&report, ForeignChain::Base, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_every_configured_chain_under_its_own_chain() {
+        // Given the same provider name configured for two chains
+        let server = httpmock::MockServer::start_async().await;
+        mock_chain_id(&server, MAINNET).await;
+        let config = ForeignChainsConfig {
+            starknet: Some(chain_config(
+                Some(MAINNET),
+                one_provider("publicnode", &server.base_url()),
+            )),
+            base: Some(chain_config(
+                Some("8453"),
+                one_provider("publicnode", CLOSED_PORT_URL),
+            )),
+            ..Default::default()
+        };
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then each chain gets its own row rather than one shadowing the other
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            ProviderStatus::Healthy
+        );
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            ProviderStatus::ProbeNotImplemented
+        );
+        assert_eq!(report.counts_per_chain().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_retry_a_provider_that_refused_with_a_rate_limit_code() {
+        // Given a provider signalling throttling as a JSON-RPC error object over HTTP 200
+        let server = httpmock::MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST);
+                then.status(200).json_body(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "error": {"code": -32005, "message": "limit exceeded"},
+                }));
+            })
+            .await;
+        let config = starknet_only(with_retries(
+            chain_config(Some(MAINNET), one_provider("keyed", &server.base_url())),
+            2,
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then throttling is the one refusal worth retrying
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "keyed"),
+            ProviderStatus::Unreachable
+        );
+        mock.assert_calls_async(2).await;
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_bound_the_identity_a_provider_reports() {
+        // Given a provider answering with far more than an identity
+        let server = httpmock::MockServer::start_async().await;
+        let flood = "n".repeat(5_000);
+        mock_chain_id(&server, &flood).await;
+        let config = starknet_only(chain_config(
+            Some(MAINNET),
+            one_provider("publicnode", &server.base_url()),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then what reaches a log line or a metric label is bounded
+        let ProviderStatus::WrongNetwork { observed, .. } =
+            must_status_of(&report, ForeignChain::Starknet, "publicnode")
+        else {
+            panic!("expected the flood to read as the wrong network");
+        };
+        assert!(observed.to_string().chars().count() < 100);
+    }
+
+    #[test]
+    fn classify__should_report_a_transaction_level_error_as_malformed() {
+        // Given an error about a transaction, which the probe never asks about
+        let expected = ChainIdentity::from(MAINNET.to_string());
+
+        // When
+        let status = classify(
+            &expected,
+            Err(ForeignChainInspectionError::TransactionNotFound),
+        );
+
+        // Then the inspector answered outside the contract its probe has
+        assert_eq!(status, ProviderStatus::MalformedResponse);
     }
 
     #[tokio::test]

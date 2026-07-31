@@ -4,7 +4,7 @@
 //! whether a provider failed to answer, answered and refused, or answered unusably.
 
 use assert_matches::assert_matches;
-use foreign_chain_inspector::ForeignChainInspectionError;
+use foreign_chain_inspector::{BlockConfirmations, ForeignChainInspectionError, ProviderFailure};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use jsonrpsee::core::http_helpers::HttpError;
 use jsonrpsee::http_client::transport::Error as TransportError;
@@ -152,4 +152,56 @@ fn classify_rpc_client_error__should_report_a_client_side_timeout_as_a_timeout()
 
     // Then
     assert_matches!(classified, ForeignChainInspectionError::Timeout);
+}
+
+#[rstest]
+#[case(-32005)]
+#[case(-32029)]
+fn classify_rpc_client_error__should_report_a_rate_limit_code_as_a_transient_failure(
+    #[case] code: i32,
+) {
+    // Given a provider signalling throttling in the error object rather than with a 429
+    let error = RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+        code,
+        "limit exceeded",
+        None::<()>,
+    ));
+
+    // When
+    let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+    // Then
+    assert_matches!(
+        &classified,
+        ForeignChainInspectionError::RpcRequestFailed(_)
+    );
+    assert!(classified.is_transient());
+}
+
+#[rstest]
+#[case(ForeignChainInspectionError::RpcRequestFailed("_".to_string()), Some(ProviderFailure::Unreachable))]
+#[case(ForeignChainInspectionError::RpcRequestRejected("_".to_string()), Some(ProviderFailure::Rejected))]
+#[case(ForeignChainInspectionError::Timeout, Some(ProviderFailure::TimedOut))]
+#[case(ForeignChainInspectionError::MalformedRpcResponse("_".to_string()), Some(ProviderFailure::Malformed))]
+#[case(
+    ForeignChainInspectionError::InspectorResponseMismatch,
+    Some(ProviderFailure::Malformed)
+)]
+// The transaction's own state is an answer, not a fault of the provider that reported it.
+#[case(ForeignChainInspectionError::TransactionNotFound, None)]
+#[case(ForeignChainInspectionError::TransactionFailed, None)]
+#[case(ForeignChainInspectionError::NotFinalized, None)]
+#[case(ForeignChainInspectionError::NotEnoughBlockConfirmations {
+    expected: BlockConfirmations::from(6),
+    got: BlockConfirmations::from(1),
+}, None)]
+fn provider_failure__should_name_only_the_failures_the_provider_owns(
+    #[case] error: ForeignChainInspectionError,
+    #[case] expected: Option<ProviderFailure>,
+) {
+    // When
+    let failure = error.provider_failure();
+
+    // Then
+    assert_eq!(failure, expected);
 }

@@ -142,8 +142,15 @@ pub struct ChainIdResponse(pub String);
 
 impl ChainIdResponse {
     /// Lowercase, no leading zeros.
+    ///
+    /// The prefix is matched case-insensitively although the spec's pattern is not: the same
+    /// normalization is applied to operator-written identities, which the pattern does not bind.
     pub fn canonical_text(&self) -> String {
-        let Some(digits) = self.0.strip_prefix("0x") else {
+        let digits = self
+            .0
+            .strip_prefix("0x")
+            .or_else(|| self.0.strip_prefix("0X"));
+        let Some(digits) = digits else {
             return self.0.clone();
         };
         let significant = digits.trim_start_matches('0');
@@ -185,6 +192,18 @@ mod tests {
     fn chain_id_response__should_normalize_a_padded_uppercase_chain_id() {
         // Given: the chain id padded and upper-cased, as a provider may send it.
         let json = serde_json::json!("0x00534E5F4D41494E");
+
+        // When
+        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.canonical_text(), MAINNET_CHAIN_ID);
+    }
+
+    #[test]
+    fn chain_id_response__should_normalize_an_upper_cased_prefix() {
+        // Given: a spelling only an operator can write, since the spec's pattern binds providers
+        let json = serde_json::json!("0X534E5F4D41494E");
 
         // When
         let response: ChainIdResponse = serde_json::from_value(json).unwrap();
