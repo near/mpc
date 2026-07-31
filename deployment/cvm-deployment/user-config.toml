@@ -127,14 +127,14 @@ timeout_sec = 60
 # Foreign-chain RPC URLs below target testnet networks (Bitcoin testnet,
 # Abstract testnet, Starknet Sepolia). For mainnet, swap each provider's
 # rpc_url for the corresponding mainnet endpoint, and any
-# expected_chain_identity for the mainnet value shown beside it.
+# expected_network_fingerprint for the mainnet value shown beside it.
 
 [mpc_node_config.node.foreign_chains.bitcoin]
 timeout_sec = 30
 max_retries = 3
 # Genesis block hash, as block explorers render it.
 # mainnet: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-expected_chain_identity = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
+expected_network_fingerprint = "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"
 
 [mpc_node_config.node.foreign_chains.bitcoin.providers.public]
 rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
@@ -142,7 +142,7 @@ rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
 [mpc_node_config.node.foreign_chains.abstract]
 timeout_sec = 30
 max_retries = 3
-expected_chain_identity = "11124"  # Abstract testnet; mainnet: "2741"
+expected_network_fingerprint = "11124"  # Abstract testnet; mainnet: "2741"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.testnet.abs.xyz"
@@ -150,7 +150,7 @@ rpc_url = "https://api.testnet.abs.xyz"
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
-expected_chain_identity = "0x534e5f5345504f4c4941"  # SN_SEPOLIA; mainnet: "0x534e5f4d41494e"
+expected_network_fingerprint = "0x534e5f5345504f4c4941"  # SN_SEPOLIA; mainnet: "0x534e5f4d41494e"
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"

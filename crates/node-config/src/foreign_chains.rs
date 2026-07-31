@@ -46,10 +46,11 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
-    /// The network identity the operator expects every provider of this chain to report, in the
-    /// chain's canonical text form. Declarative: nothing reads it during config loading.
+    /// The network fingerprint the operator expects every provider of this chain to report, in the
+    /// chain's canonical text form. A chain id for chains that have one, a genesis hash or digest
+    /// for those that don't. Declarative: nothing reads it during config loading.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expected_chain_identity: Option<String>,
+    pub expected_network_fingerprint: Option<String>,
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
 }
 
@@ -185,7 +186,7 @@ mod tests {
     use crate::ConfigFile;
 
     #[test]
-    fn config_parsing__should_succeed_with_expected_chain_identity() {
+    fn config_parsing__should_succeed_with_expected_network_fingerprint() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -221,7 +222,7 @@ foreign_chains:
   starknet:
     timeout_sec: 30
     max_retries: 3
-    expected_chain_identity: "0x534e5f4d41494e"
+    expected_network_fingerprint: "0x534e5f4d41494e"
     providers:
       blast:
         rpc_url: "https://starknet-mainnet.blastapi.io/"
@@ -236,19 +237,19 @@ foreign_chains:
         // Then
         config
             .validate()
-            .expect("config with an expected chain identity should be valid");
+            .expect("config with an expected network fingerprint should be valid");
         let starknet = config
             .foreign_chains
             .starknet
             .expect("starknet section should be present");
         assert_eq!(
-            starknet.expected_chain_identity.as_deref(),
+            starknet.expected_network_fingerprint.as_deref(),
             Some("0x534e5f4d41494e")
         );
     }
 
     #[test]
-    fn config_parsing__should_leave_expected_chain_identity_unset_when_absent() {
+    fn config_parsing__should_leave_expected_network_fingerprint_unset_when_absent() {
         // Given: a chain section written before the field existed.
         let yaml = r#"
 my_near_account_id: test.near
@@ -298,12 +299,12 @@ foreign_chains:
         // Then
         config
             .validate()
-            .expect("config without an expected chain identity should still be valid");
+            .expect("config without an expected network fingerprint should still be valid");
         let starknet = config
             .foreign_chains
             .starknet
             .expect("starknet section should be present");
-        assert_eq!(starknet.expected_chain_identity, None);
+        assert_eq!(starknet.expected_network_fingerprint, None);
     }
 
     #[test]

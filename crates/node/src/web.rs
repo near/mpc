@@ -420,7 +420,7 @@ mod tests {
         ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            expected_chain_identity: None,
+            expected_network_fingerprint: None,
             providers: NonEmptyBTreeMap::new(
                 RpcProviderName::from(provider_name.to_string()),
                 ForeignChainProviderConfig {

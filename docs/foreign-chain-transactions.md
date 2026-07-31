@@ -369,7 +369,7 @@ The per-participant registration model above leaves the network with no shared n
 | What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference                                                                                                                                                        |
 | Adding a new provider                  | Every operator updates their yaml; the network effectively supports a chain once enough do  | Threshold of participants vote in `(chain, ProviderEntry)`; operators reference it by `provider_id` only                                                                                       |
 | Removing a compromised provider        | Every operator manually edits their yaml; coordination problem                              | Threshold of participants vote remove; nodes pick up the change via the indexer and drop the provider on next reconfigure                                                                       |
-| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a startup *chain-identity probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_chain_identity` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
+| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a startup *chain-identity probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_network_fingerprint` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
 
 ### Whitelist storage shape
 
@@ -525,7 +525,7 @@ Voting uses the protocol's existing signing threshold (`self.threshold()?.value(
 
 The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the fan-out across a chain's providers is the structural one. The chain-identity probe is a per-node diagnostic on top of both.
 
-At startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_chain_identity` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
+At startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
@@ -649,11 +649,12 @@ Auth variants are explicitly modeled because providers differ in how they expect
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
 
-A chain section may also set `expected_chain_identity`: the network identity every provider of that
-chain must report, in that chain's canonical text form. It is a chain id only for some chains; for
-Bitcoin it is the genesis block hash and for Sui the genesis-checkpoint digest, hence the name.
+A chain section may also set `expected_network_fingerprint`: the value every provider of that chain
+should report when asked which network it serves, in that chain's canonical text form. Only some
+chains call that value a chain id — Bitcoin's is the genesis block hash and Sui's the genesis
+checkpoint digest — hence the neutral name.
 
-| chain | identity | mainnet | testnet |
+| chain | fingerprint | mainnet | testnet |
 |---|---|---|---|
 | base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
 | bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
@@ -661,10 +662,10 @@ Bitcoin it is the genesis block hash and for Sui the genesis-checkpoint digest, 
 | polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
 | hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
 | abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
-| starknet | chain-id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
+| starknet | chain id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
 | bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
 | aptos | ledger chain id, decimal | `"1"` | `"2"` |
-| sui | genesis-checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
+| sui | genesis checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
 
 Every value above was read back from a live provider on that network.
 
@@ -676,11 +677,11 @@ separates the test networks from each other where a network *name* would not: te
 separates mainnet from testnet, but two devnets can collide.
 
 `solana` and `ethereum` are configurable but absent from the table: neither has an inspector, so
-setting `expected_chain_identity` for them has no effect.
+setting `expected_network_fingerprint` for them has no effect.
 
-The identity is set per chain rather than once per deployment, so a config can mix networks, and each
-value must match the network of the `rpc_url` beside it. The value is always a quoted string,
-including the identities that look numeric.
+The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
+each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
+including the fingerprints that look numeric.
 
 ## Risks
 

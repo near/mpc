@@ -73,7 +73,7 @@ fn mock_chain_with_providers(
         timeout_sec: NonZeroU64::new(30).unwrap(),
         max_retries: NonZeroU64::new(3).unwrap(),
         // The mocks serve inspector calls, not identity queries, so there is nothing to check.
-        expected_chain_identity: None,
+        expected_network_fingerprint: None,
         providers,
     }
 }

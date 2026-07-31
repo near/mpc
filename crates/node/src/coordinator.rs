@@ -1296,7 +1296,7 @@ mod tests {
             solana: Some(ForeignChainConfig {
                 timeout_sec: NonZeroU64::new(30).unwrap(),
                 max_retries: NonZeroU64::new(3).unwrap(),
-                expected_chain_identity: None,
+                expected_network_fingerprint: None,
                 providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
                     RpcProviderName::from("public".to_string()),
                     ForeignChainProviderConfig {

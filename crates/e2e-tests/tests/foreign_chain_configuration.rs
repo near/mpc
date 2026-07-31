@@ -20,7 +20,7 @@ fn solana_foreign_chains_config() -> ForeignChainsConfig {
         solana: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
-            expected_chain_identity: None,
+            expected_network_fingerprint: None,
             providers: NonEmptyBTreeMap::new(
                 SOLANA_PROVIDER_NAME.to_string().into(),
                 ForeignChainProviderConfig {
