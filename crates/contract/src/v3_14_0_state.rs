@@ -122,7 +122,9 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: old.pending_ckd_requests,
             // `VerifyForeignTransactionRequest` gained `expected_payload_hash`, changing the
             // borsh key encoding, so entries pending at upgrade time are abandoned; their
-            // yields time out on chain as if never responded to.
+            // yields time out on chain as if never responded to. The abandoned V2 entries
+            // are no longer addressable, so their storage staking is never reclaimed
+            // (bounded by the number of requests in flight at upgrade time).
             pending_verify_foreign_tx_requests: LookupMap::new(
                 crate::storage_keys::StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
