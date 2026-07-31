@@ -200,7 +200,7 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
 
 #[tokio::test]
 async fn respond_verify_foreign_tx__should_reject_response_not_matching_expected_payload_hash() {
-    // Given: a pending request bound to an expected payload hash the response does not match.
+    // Given
     let rpc_request = bitcoin_request();
     let chain = rpc_request.chain();
     let setup = SandboxTestSetup::builder()
@@ -244,7 +244,7 @@ async fn respond_verify_foreign_tx__should_reject_response_not_matching_expected
         foreign_tx_key.as_secp256k1(),
     );
 
-    // When: a validly signed response over a different payload hash is submitted.
+    // When
     let respond_result = setup.mpc_signer_accounts[0]
         .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
         .args_json(json!({
@@ -266,7 +266,7 @@ async fn respond_verify_foreign_tx__should_reject_response_not_matching_expected
 
 #[tokio::test]
 async fn verify_foreign_transaction__should_succeed_when_response_matches_expected_payload_hash() {
-    // Given: a request bound to the payload hash the signers will actually produce.
+    // Given
     let rpc_request = bitcoin_request();
     let extracted_values = bitcoin_extracted_values();
     let chain = rpc_request.chain();
