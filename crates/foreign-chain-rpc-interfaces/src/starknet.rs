@@ -169,6 +169,7 @@ mod tests {
         BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
         GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
     };
+    use rstest::rstest;
 
     const TEST_BLOCK_NUMBER: u64 = 842_750;
     const TEST_RECEIPT_BLOCK_NUMBER: u64 = 6_195_041;
@@ -176,81 +177,32 @@ mod tests {
     /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
     const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
 
-    #[test]
-    fn chain_id_response__should_keep_a_canonical_chain_id_unchanged() {
+    /// 66 hex digits. `CHAIN_ID` carries no length bound, though a `FELT` caps at 63.
+    const LONGER_THAN_A_FELT: &str =
+        "0x1234567890123456789012345678901234567890123456789012345678901234ab";
+
+    #[rstest]
+    #[case::canonical(MAINNET_CHAIN_ID, MAINNET_CHAIN_ID)]
+    // Padded and upper-cased, as a provider may send it.
+    #[case::padded_and_upper_cased("0x00534E5F4D41494E", MAINNET_CHAIN_ID)]
+    // A spelling only an operator can write, since the spec's pattern binds providers.
+    #[case::upper_cased_prefix("0X534E5F4D41494E", MAINNET_CHAIN_ID)]
+    #[case::zero("0x0000", "0x0")]
+    #[case::longer_than_a_felt(LONGER_THAN_A_FELT, LONGER_THAN_A_FELT)]
+    // The decoded name rather than the hex: reported as answered by the provider.
+    #[case::not_hex("NOT_CHAIN_ID", "NOT_CHAIN_ID")]
+    fn chain_id_response__should_canonicalize_what_a_provider_answers(
+        #[case] answered: &str,
+        #[case] expected: &str,
+    ) {
         // Given
-        let json = serde_json::json!(MAINNET_CHAIN_ID);
+        let json = serde_json::json!(answered);
 
         // When
         let response: ChainIdResponse = serde_json::from_value(json).unwrap();
 
         // Then
-        assert_eq!(response.canonical_text(), MAINNET_CHAIN_ID);
-    }
-
-    #[test]
-    fn chain_id_response__should_normalize_a_padded_uppercase_chain_id() {
-        // Given: the chain id padded and upper-cased, as a provider may send it.
-        let json = serde_json::json!("0x00534E5F4D41494E");
-
-        // When
-        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(response.canonical_text(), MAINNET_CHAIN_ID);
-    }
-
-    #[test]
-    fn chain_id_response__should_normalize_an_upper_cased_prefix() {
-        // Given: a spelling only an operator can write, since the spec's pattern binds providers
-        let json = serde_json::json!("0X534E5F4D41494E");
-
-        // When
-        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(response.canonical_text(), MAINNET_CHAIN_ID);
-    }
-
-    #[test]
-    fn chain_id_response__should_normalize_a_zero_chain_id() {
-        // Given
-        let json = serde_json::json!("0x0000");
-
-        // When
-        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(response.canonical_text(), "0x0");
-    }
-
-    #[test]
-    fn chain_id_response__should_accept_a_chain_id_longer_than_a_felt() {
-        // Given: 66 hex digits. `CHAIN_ID` carries no length bound, though a `FELT` caps at 63.
-        let json = serde_json::json!(
-            "0x1234567890123456789012345678901234567890123456789012345678901234ab"
-        );
-
-        // When
-        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(
-            response.canonical_text(),
-            "0x1234567890123456789012345678901234567890123456789012345678901234ab"
-        );
-    }
-
-    #[test]
-    fn chain_id_response__should_leave_a_non_hex_chain_id_unchanged() {
-        // Given: the decoded name rather than the hex.
-        let json = serde_json::json!("NOT_CHAIN_ID");
-
-        // When
-        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
-
-        // Then: reported as answered by the provider
-        assert_eq!(response.canonical_text(), "NOT_CHAIN_ID");
+        assert_eq!(response.canonical_text(), expected);
     }
 
     #[test]

@@ -198,15 +198,14 @@ where
     }
 }
 
-/// Pause between two tries at the same provider, so that a rate-limiting provider is not hit again
-/// immediately.
+/// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
 impl<Inspector> FanOut<Inspector>
 where
     Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
 {
-    /// Ask every provider for the network it serves, concurrently, one result each.
+    /// Ask every provider for the network it serves concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
     /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try plus
     /// [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
@@ -364,14 +363,11 @@ impl ForeignChainInspectionError {
         )
     }
 
-    /// Classifies a client error by what the provider did, unlike the [`From`] impl, which keeps it
-    /// whole as the [`Self::ClientError`] that [`Self::is_transient`] tolerates wholesale. A 401, a
-    /// JSON-RPC error object and an unparseable body are otherwise indistinguishable, which suits
-    /// [`FanOut::extract`] but not a caller that reports why a provider is unusable, or decides
-    /// whether retrying it can help.
+    /// Splits by what the provider did, where the [`From`] impl collapses everything into the one
+    /// [`Self::ClientError`] that [`Self::is_transient`] retries wholesale. A caller reporting why a
+    /// provider is unusable needs a 401 told apart from a 429.
     ///
-    /// The messages name the HTTP status or the JSON-RPC code, never the URL: `Path`/`Query` auth
-    /// splices the operator's API key into it.
+    /// Messages name the HTTP status or JSON-RPC code, never the URL.
     pub fn classify_rpc_client_error(error: RpcClientError) -> Self {
         match error {
             RpcClientError::Call(object) => {
@@ -431,9 +427,8 @@ impl ForeignChainInspectionError {
     }
 }
 
-/// Throttling reaches some providers' callers as a JSON-RPC error object over HTTP 200 rather than
-/// as a 429, and it is the one refusal worth retrying: `-32005` is Alchemy's and Infura's "limit
-/// exceeded", `-32029` the code others use for the same.
+/// Some providers report throttling as a JSON-RPC error object over HTTP 200 rather than a 429, and
+/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`.
 fn is_rate_limit_error_code(code: i32) -> bool {
     const LIMIT_EXCEEDED: i32 = -32005;
     const TOO_MANY_REQUESTS: i32 = -32029;
@@ -441,8 +436,6 @@ fn is_rate_limit_error_code(code: i32) -> bool {
     matches!(code, LIMIT_EXCEEDED | TOO_MANY_REQUESTS)
 }
 
-/// Request timeout, too many requests, and anything the server blames on itself. Every other
-/// status is the provider's verdict on the request, which the same request cannot change.
 fn is_retryable_status(status_code: u16) -> bool {
     const REQUEST_TIMEOUT: u16 = 408;
     const TOO_MANY_REQUESTS: u16 = 429;
