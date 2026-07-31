@@ -2,22 +2,21 @@ use super::CryptoConversionError;
 use crate::crypto::{Ed25519PublicKey, PublicKey, PublicKeyExtended, Secp256k1PublicKey};
 use crate::primitives::K256Signature;
 
-impl From<&near_sdk::PublicKey> for PublicKey {
-    fn from(pk: &near_sdk::PublicKey) -> Self {
+impl TryFrom<&near_sdk::PublicKey> for PublicKey {
+    type Error = CryptoConversionError;
+    fn try_from(pk: &near_sdk::PublicKey) -> Result<Self, Self::Error> {
         match pk.curve_type() {
             near_sdk::CurveType::SECP256K1 => {
                 let mut bytes = [0u8; 64];
                 bytes.copy_from_slice(&pk.as_bytes()[1..]);
-                PublicKey::Secp256k1(Secp256k1PublicKey::from(bytes))
+                Ok(PublicKey::Secp256k1(Secp256k1PublicKey::from(bytes)))
             }
             near_sdk::CurveType::ED25519 => {
                 let mut bytes = [0u8; 32];
                 bytes.copy_from_slice(&pk.as_bytes()[1..]);
-                PublicKey::Ed25519(Ed25519PublicKey::from(bytes))
+                Ok(PublicKey::Ed25519(Ed25519PublicKey::from(bytes)))
             }
-            near_sdk::CurveType::MLDSA65 => {
-                unreachable!("MLDSA65 near_sdk::PublicKey has no mapping to dtos::PublicKey")
-            }
+            near_sdk::CurveType::MLDSA65 => Err(CryptoConversionError::UnsupportedCurve),
         }
     }
 }
@@ -150,7 +149,7 @@ mod tests {
             .unwrap();
 
         // when
-        let dto = PublicKey::from(&near_pk);
+        let dto = PublicKey::try_from(&near_pk).unwrap();
         let recovered = near_sdk::PublicKey::try_from(dto).unwrap();
 
         // then
@@ -165,7 +164,7 @@ mod tests {
                 .parse().unwrap();
 
         // when
-        let dto = PublicKey::from(&near_pk);
+        let dto = PublicKey::try_from(&near_pk).unwrap();
         let recovered = near_sdk::PublicKey::try_from(dto).unwrap();
 
         // then

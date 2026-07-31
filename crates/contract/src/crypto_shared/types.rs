@@ -79,12 +79,18 @@ impl From<PublicKeyExtended> for dtos::PublicKey {
     fn from(public_key_extended: PublicKeyExtended) -> Self {
         match public_key_extended {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                dtos::PublicKey::from(&near_public_key)
+                let mut bytes = [0u8; 64];
+                bytes.copy_from_slice(&near_public_key.as_bytes()[1..]);
+                dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::from(bytes))
             }
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => dtos::PublicKey::from(&near_public_key_compressed),
+            } => {
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(&near_public_key_compressed.as_bytes()[1..]);
+                dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(bytes))
+            }
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         }
     }
