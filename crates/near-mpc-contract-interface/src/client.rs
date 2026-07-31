@@ -319,6 +319,21 @@ mod tests {
             })
             .await
             .unwrap();
+        // Twice: `expected_payload_hash: None` must stay omitted from the wire so
+        // that contracts predating the field never see it.
+        handle
+            .verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
+                request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                    tx_id: BitcoinTxId([7u8; 32]),
+                    confirmations: BlockConfirmations(1),
+                    extractors: vec![BitcoinExtractor::BlockHash],
+                }),
+                domain_id: DomainId(0),
+                payload_version: ForeignTxPayloadVersion::V1,
+                expected_payload_hash: None,
+            })
+            .await
+            .unwrap();
         handle
             .propose_update(ProposeUpdateArgs {
                 code: Some(vec![7u8; 4]),
@@ -338,7 +353,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 8);
+        assert_eq!(calls.len(), 9);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
