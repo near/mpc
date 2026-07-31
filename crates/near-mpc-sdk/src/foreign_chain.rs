@@ -45,13 +45,8 @@ impl ForeignChainSignatureVerifier {
         // TODO(#2232): don't use interface API types for public keys
         public_key: &PublicKey,
     ) -> Result<(), VerifyForeignChainError> {
-        let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: self.request,
-            values: self.expected_extracted_values,
-        });
-
-        let expected_payload_hash = expected_payload
-            .compute_msg_hash()
+        let expected_payload_hash = self
+            .expected_payload_hash()
             .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
@@ -86,6 +81,15 @@ impl ForeignChainSignatureVerifier {
         };
 
         verification_result.map_err(|_| VerifyForeignChainError::SignatureVerificationFailed)
+    }
+
+    fn expected_payload_hash(&self) -> std::io::Result<Hash256> {
+        ForeignTxSignPayload::new(
+            DEFAULT_PAYLOAD_VERSION,
+            self.request.clone(),
+            self.expected_extracted_values.clone(),
+        )
+        .compute_msg_hash()
     }
 }
 
@@ -132,11 +136,7 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request: request.clone(),
         };
 
-        let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: verifier.request.clone(),
-            values: verifier.expected_extracted_values.clone(),
-        })
-        .compute_msg_hash()?;
+        let expected_payload_hash = verifier.expected_payload_hash()?;
 
         let request_args = VerifyForeignTransactionRequestArgs {
             request,
