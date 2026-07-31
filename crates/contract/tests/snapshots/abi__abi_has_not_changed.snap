@@ -6207,7 +6207,6 @@ expression: abi
               "$ref": "#/definitions/DomainId"
             },
             "expected_payload_hash": {
-              "description": "See [`VerifyForeignTransactionRequestArgs::expected_payload_hash`].",
               "anyOf": [
                 {
                   "$ref": "#/definitions/Hash256"
@@ -6239,7 +6238,6 @@ expression: abi
               "$ref": "#/definitions/DomainId"
             },
             "expected_payload_hash": {
-              "description": "When set, the contract only accepts a response whose signed payload hash equals this value, binding the response to this request. Nodes refuse to sign a payload whose hash differs, so a mismatching expectation makes the request time out.",
               "anyOf": [
                 {
                   "$ref": "#/definitions/Hash256"
