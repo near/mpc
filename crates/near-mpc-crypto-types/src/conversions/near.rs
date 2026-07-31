@@ -15,6 +15,9 @@ impl From<&near_sdk::PublicKey> for PublicKey {
                 bytes.copy_from_slice(&pk.as_bytes()[1..]);
                 PublicKey::Ed25519(Ed25519PublicKey::from(bytes))
             }
+            near_sdk::CurveType::MLDSA65 => {
+                unreachable!("MLDSA65 near_sdk::PublicKey has no mapping to dtos::PublicKey")
+            }
         }
     }
 }
@@ -233,6 +236,7 @@ mod tests {
                 near_sdk::CurveType::SECP256K1 => {
                     assert_eq!(near_pk.as_bytes().len(), SECP256K1_PUBLIC_KEY_SIZE + 1);
                 }
+                near_sdk::CurveType::MLDSA65 => unreachable!(),
             }
         }
     }

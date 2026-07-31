@@ -40,6 +40,7 @@ pub enum PublicKeyExtended {
 pub enum PublicKeyExtendedConversionError {
     PublicKeyLengthMalformed,
     FailedDecompressingToEdwardsPoint,
+    UnsupportedCurve,
 }
 
 impl Display for PublicKeyExtendedConversionError {
@@ -49,6 +50,7 @@ impl Display for PublicKeyExtendedConversionError {
             Self::FailedDecompressingToEdwardsPoint => {
                 "The provided compressed key can not be decompressed to an edwards point."
             }
+            Self::UnsupportedCurve => "The provided curve is not supported.",
         };
 
         f.write_str(message)
@@ -110,6 +112,9 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
                 }
             }
             near_sdk::CurveType::SECP256K1 => Self::Secp256k1 { near_public_key },
+            near_sdk::CurveType::MLDSA65 => {
+                return Err(PublicKeyExtendedConversionError::UnsupportedCurve);
+            }
         };
 
         Ok(extended_key)
