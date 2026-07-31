@@ -1,5 +1,5 @@
 //! Asks every configured RPC provider which network it serves and compares the answer against the
-//! operator's `expected_chain_identity`.
+//! operator's `expected_network_fingerprint`.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -36,8 +36,8 @@ pub enum ProviderStatus {
     AuthTokenUnresolved,
     /// The RPC client could not be built from the provider's URL and auth.
     ClientSetupFailed,
-    /// The chain is configured without an `expected_chain_identity`, so its providers cannot be
-    /// checked. Reported rather than skipped: silence would read as healthy.
+    /// The chain is configured without an `expected_network_fingerprint`, so its providers cannot
+    /// be checked. Reported rather than skipped: silence would read as healthy.
     MissingExpectedIdentity,
     /// The chain has no identity probe yet, either because none is written for it or because the
     /// node cannot inspect it at all.
@@ -120,7 +120,7 @@ async fn probe_chain<I>(
 where
     I: foreign_chain_inspector::ChainIdentityInspector + Clone + Send + Sync + 'static,
 {
-    let Some(expected) = &config.expected_chain_identity else {
+    let Some(expected) = &config.expected_network_fingerprint else {
         return rows_of(chain, config, ProviderStatus::MissingExpectedIdentity);
     };
     let expected = I::canonical_identity(expected);
@@ -251,7 +251,7 @@ mod tests {
         ForeignChainConfig {
             timeout_sec: NonZeroU64::new(1).unwrap(),
             max_retries: NonZeroU64::new(1).unwrap(),
-            expected_chain_identity: expected.map(str::to_string),
+            expected_network_fingerprint: expected.map(str::to_string),
             providers,
         }
     }
