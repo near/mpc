@@ -110,7 +110,7 @@ where
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
-            if let Some(epoch_id) = current_epoch_id_gauge_value(&state) {
+            if let Some(epoch_id) = current_epoch_id(&state) {
                 metrics::MPC_CURRENT_EPOCH_ID.set(epoch_id);
             }
             let mut job: MpcJob = match state {
@@ -856,11 +856,10 @@ impl Drop for ReportCurrentJobGuard {
     }
 }
 
-fn current_epoch_id_gauge_value(state: &ContractState) -> Option<i64> {
-    match state {
-        ContractState::Running(running) => i64::try_from(running.keyset.epoch_id.get()).ok(),
-        ContractState::Invalid | ContractState::Initializing(_) => None,
-    }
+fn current_epoch_id(state: &ContractState) -> Option<i64> {
+    state
+        .epoch_id()
+        .and_then(|epoch_id| i64::try_from(epoch_id.get()).ok())
 }
 
 /// The `host:port` a peer is currently reachable at in live contract state, re-read on every
@@ -1090,8 +1089,8 @@ fn make_initializing_stop_fn(
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        current_epoch_id_gauge_value, participants_change_requires_restart,
-        peer_address_from_state, register_foreign_chains, stop_running,
+        current_epoch_id, participants_change_requires_restart, peer_address_from_state,
+        register_foreign_chains, stop_running,
     };
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
@@ -1234,12 +1233,12 @@ mod tests {
     #[case::resharing_keeps_the_old_epoch(resharing(base_config(), base_config(), 7), Some(7))]
     #[case::invalid(ContractState::Invalid, None)]
     #[case::epoch_id_beyond_i64(running(base_config(), u64::MAX), None)]
-    fn current_epoch_id_gauge_value__should_report_the_running_keyset_epoch(
+    fn current_epoch_id__should_report_the_running_keyset_epoch(
         #[case] state: ContractState,
         #[case] expected: Option<i64>,
     ) {
         // When / Then
-        assert_eq!(current_epoch_id_gauge_value(&state), expected);
+        assert_eq!(current_epoch_id(&state), expected);
     }
 
     #[test]
