@@ -4124,9 +4124,9 @@ mod tests {
         let result = contract.respond_verify_foreign_tx(request.clone(), response);
 
         // Then
-        assert!(
-            result.is_err(),
-            "response with a payload hash differing from the request's expected hash must be rejected"
+        assert_matches!(
+            result.unwrap_err(),
+            Error::Respond(RespondError::UnexpectedPayloadHash)
         );
         assert!(
             contract

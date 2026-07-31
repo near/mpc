@@ -258,9 +258,11 @@ async fn respond_verify_foreign_tx__should_reject_response_not_matching_expected
         .into_result();
 
     // Then
+    let error_message = respond_result.unwrap_err().to_string();
     assert!(
-        respond_result.is_err(),
-        "respond_verify_foreign_tx must reject a response not matching the expected payload hash",
+        error_message
+            .contains(&mpc_contract::errors::RespondError::UnexpectedPayloadHash.to_string()),
+        "respond_verify_foreign_tx must reject with UnexpectedPayloadHash, got: {error_message}",
     );
 }
 
