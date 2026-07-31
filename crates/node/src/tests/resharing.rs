@@ -498,4 +498,6 @@ async fn test_signature_requests_in_resharing_are_processed() {
     )
     .await
     .expect("Signature request in running should be processed.");
+
+    assert_eq!(metrics::MPC_CURRENT_EPOCH_ID.get(), 1);
 }
