@@ -14,10 +14,12 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use rand::SeedableRng as _;
-    use rand::rngs::OsRng;
+    use rand::rngs::{OsRng, StdRng};
+    use serial_test::serial;
 
     use super::test_utils::setup;
     use crate::keyshare::{Keyshare, test_utils::KeysetBuilder};
+    use crate::metrics;
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
@@ -112,6 +114,126 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(keyset_builder.keyshares().to_vec(), res);
+    }
+
+    #[serial(backup_metrics)]
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn migration_web_server__should_record_backup_served_when_keyshares_are_returned() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let epoch_id = 5;
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_BACKUP_SERVED_TEST).await;
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            &test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+        let keyset_builder = KeysetBuilder::new_populated(epoch_id, 8, &mut rng);
+        let keyset_dto = keyset_builder.keyset();
+        test_setup
+            .keyshare_storage
+            .write()
+            .await
+            .import_backup(keyset_builder.keyshares().to_vec(), &keyset_dto)
+            .await
+            .unwrap();
+
+        // When
+        make_keyshare_get_request(
+            &mut send_request,
+            &keyset_dto,
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
+
+        // Then
+        assert_eq!(
+            metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(),
+            i64::try_from(epoch_id).unwrap()
+        );
+        assert!(metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get() > 0);
+    }
+
+    #[serial(backup_metrics)]
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn migration_web_server__should_not_record_backup_served_for_an_empty_keyset() {
+        // Given
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST).await;
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            &test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+        let epoch_before = metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get();
+        let timestamp_before = metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get();
+
+        // When
+        let keyshares = make_keyshare_get_request(
+            &mut send_request,
+            &KeysetBuilder::new(5).keyset(),
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
+
+        // Then
+        assert!(keyshares.is_empty());
+        assert_eq!(metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(), epoch_before);
+        assert_eq!(
+            metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get(),
+            timestamp_before
+        );
+    }
+
+    #[serial(backup_metrics)]
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn migration_web_server__should_not_record_backup_served_for_a_keyset_it_does_not_hold() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let test_setup = setup(port_seed::MIGRATION_WEBSERVER_BACKUP_NOT_SERVED_TEST).await;
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            &test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+        let held = KeysetBuilder::new_populated(5, 8, &mut rng);
+        test_setup
+            .keyshare_storage
+            .write()
+            .await
+            .import_backup(held.keyshares().to_vec(), &held.keyset())
+            .await
+            .unwrap();
+        let requested = KeysetBuilder::new_populated(6, 8, &mut rng).keyset();
+        let epoch_before = metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get();
+        let timestamp_before = metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get();
+
+        // When
+        let res = make_keyshare_get_request(
+            &mut send_request,
+            &requested,
+            &test_setup.backup_encryption_key,
+        )
+        .await;
+
+        // Then
+        let err = res.expect_err("request for a keyset the node does not hold should fail");
+        assert!(err.to_string().contains("500"), "{err}");
+        assert_eq!(metrics::MPC_LAST_BACKUP_SERVED_EPOCH.get(), epoch_before);
+        assert_eq!(
+            metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get(),
+            timestamp_before
+        );
     }
 
     #[tokio::test]

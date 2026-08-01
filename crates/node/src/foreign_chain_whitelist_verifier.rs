@@ -376,6 +376,7 @@ mod tests {
         ForeignChainConfig {
             timeout_sec: std::num::NonZeroU64::new(30).unwrap(),
             max_retries: std::num::NonZeroU64::new(3).unwrap(),
+            expected_network_fingerprint: None,
             providers: NonEmptyBTreeMap::try_from(map)
                 .expect("test setup: providers must be non-empty"),
         }
