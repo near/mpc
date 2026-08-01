@@ -11,6 +11,7 @@ use e2e_tests::foreign_chain_mock::{
 use httpmock::prelude::*;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
+    foreign_chains::RpcProviderName,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
@@ -54,106 +55,66 @@ struct MockServerUrls {
     polygon: Vec<String>,
 }
 
+/// A chain served by a single `"mock"` provider at `rpc_url`.
+fn mock_chain(rpc_url: &str, auth: AuthConfig) -> ForeignChainConfig {
+    mock_chain_with_providers(NonEmptyBTreeMap::new(
+        "mock".to_string().into(),
+        ForeignChainProviderConfig {
+            rpc_url: rpc_url.to_string(),
+            auth,
+        },
+    ))
+}
+
+fn mock_chain_with_providers(
+    providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
+) -> ForeignChainConfig {
+    ForeignChainConfig {
+        timeout_sec: NonZeroU64::new(30).unwrap(),
+        max_retries: NonZeroU64::new(3).unwrap(),
+        // The mocks serve inspector calls, not identity queries, so there is nothing to check.
+        expected_network_fingerprint: None,
+        providers,
+    }
+}
+
 fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
     ForeignChainsConfig {
-        bitcoin: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.bitcoin.clone(),
-                    auth: AuthConfig::Path {
-                        placeholder: PATH_AUTH_PLACEHOLDER.to_string(),
-                        token: TokenConfig::Val {
-                            val: PATH_AUTH_API_KEY.to_string(),
-                        },
-                    },
+        bitcoin: Some(mock_chain(
+            &urls.bitcoin,
+            AuthConfig::Path {
+                placeholder: PATH_AUTH_PLACEHOLDER.to_string(),
+                token: TokenConfig::Val {
+                    val: PATH_AUTH_API_KEY.to_string(),
                 },
-            ),
-        }),
-        abstract_chain: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.abstract_chain.clone(),
-                    auth: Default::default(),
+            },
+        )),
+        abstract_chain: Some(mock_chain(&urls.abstract_chain, Default::default())),
+        bnb: Some(mock_chain(
+            &urls.bnb,
+            AuthConfig::Query {
+                name: QUERY_AUTH_PARAM.to_string(),
+                token: TokenConfig::Val {
+                    val: QUERY_AUTH_TOKEN.to_string(),
                 },
-            ),
-        }),
-        bnb: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.bnb.clone(),
-                    auth: AuthConfig::Query {
-                        name: QUERY_AUTH_PARAM.to_string(),
-                        token: TokenConfig::Val {
-                            val: QUERY_AUTH_TOKEN.to_string(),
-                        },
-                    },
+            },
+        )),
+        starknet: Some(mock_chain(&urls.starknet, Default::default())),
+        base: Some(mock_chain(
+            &urls.base,
+            AuthConfig::Header {
+                name: HEADER_AUTH_NAME.parse().expect("valid header name"),
+                scheme: Some(HEADER_AUTH_SCHEME.to_string()),
+                token: TokenConfig::Val {
+                    val: HEADER_AUTH_TOKEN.to_string(),
                 },
-            ),
-        }),
-        starknet: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.starknet.clone(),
-                    auth: Default::default(),
-                },
-            ),
-        }),
-        base: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.base.clone(),
-                    auth: AuthConfig::Header {
-                        name: HEADER_AUTH_NAME.parse().expect("valid header name"),
-                        scheme: Some(HEADER_AUTH_SCHEME.to_string()),
-                        token: TokenConfig::Val {
-                            val: HEADER_AUTH_TOKEN.to_string(),
-                        },
-                    },
-                },
-            ),
-        }),
-        arbitrum: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.arbitrum.clone(),
-                    auth: Default::default(),
-                },
-            ),
-        }),
-        hyper_evm: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: urls.hyper_evm.clone(),
-                    auth: Default::default(),
-                },
-            ),
-        }),
-        polygon: Some(ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            providers: common::build_providers_from_urls(&urls.polygon, "polygon"),
-        }),
+            },
+        )),
+        arbitrum: Some(mock_chain(&urls.arbitrum, Default::default())),
+        hyper_evm: Some(mock_chain(&urls.hyper_evm, Default::default())),
+        polygon: Some(mock_chain_with_providers(
+            common::build_providers_from_urls(&urls.polygon, "polygon"),
+        )),
         ..Default::default()
     }
 }
