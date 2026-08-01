@@ -10,10 +10,12 @@ inputs:
 outputs:
   cache-key-hash:
     description: >
-      Hash of the Nix inputs (flake, toolchain, lockfiles) that key the /nix
-      cache. Dependent caches (e.g. the Rust build cache) should fold this into
-      their key so they are invalidated whenever the Nix-provided toolchain
-      changes.
+      Hash of the Nix-provided toolchain and base system (flake, nix/,
+      rust-toolchain) that key the /nix cache. Dependent caches (e.g. the Rust
+      build cache) should fold this into their key so they are invalidated
+      whenever the Nix-provided toolchain changes. Cargo.lock is deliberately
+      excluded: it does not affect the saved /nix closure, and including it
+      would make every dependency bump discard those dependent caches too.
     value: ${{ steps.compute-key.outputs.hash }}
 runs:
   using: composite
@@ -21,7 +23,7 @@ runs:
     - name: Compute Nix cache key hash
       id: compute-key
       shell: bash
-      run: echo "hash=${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml', 'Cargo.lock') }}" >> "$GITHUB_OUTPUT"
+      run: echo "hash=${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}" >> "$GITHUB_OUTPUT"
 
     - name: Restore /nix from cache
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
