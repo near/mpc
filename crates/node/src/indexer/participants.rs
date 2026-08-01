@@ -3,6 +3,7 @@ use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
+use mpc_primitives::EpochId;
 use mpc_primitives::KeyEventId as ContractKeyEventId;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
@@ -263,6 +264,15 @@ impl ContractState {
                 Some(resharing) => &resharing.new_participants,
                 None => &running.participants,
             }),
+            ContractState::Invalid | ContractState::Initializing(_) => None,
+        }
+    }
+
+    /// Epoch id of the keyset the contract currently holds; `None` before the first keyset exists.
+    /// Stays at the old epoch during a resharing, until the new keyset is stored.
+    pub fn epoch_id(&self) -> Option<EpochId> {
+        match self {
+            ContractState::Running(running) => Some(running.keyset.epoch_id),
             ContractState::Invalid | ContractState::Initializing(_) => None,
         }
     }
