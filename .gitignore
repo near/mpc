@@ -1,7 +1,6 @@
 # IDE configs
 .idea
 venv
-.vscode
 
 # Lock file generated in contract integration tests
 *.itest.build.lock
@@ -34,3 +33,7 @@ mise.toml
 
 # Local git worktrees
 .worktrees/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
