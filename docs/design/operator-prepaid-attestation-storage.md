@@ -35,9 +35,9 @@ The counter is **available** grants, not lifetime total, so `0` means either "ne
 |---|---|---|
 | `prepay_attestation_storage(account_id, grants)` | `#[payable]` | Adds `grants` to `account_id`. Requires an attached deposit of exactly `fee × grants` and rejects anything else, so there is no remainder to keep or refund. Permissionless — anyone may prepay for any account. |
 | `available_attestation_grants(account_id) -> u32` | view | Grants available. |
-| `attestation_storage_fee() -> NearToken` | view | Current fee. Also reachable through `config()`; the dedicated view keeps the prepay command scriptable without parsing the whole config. |
+| `attestation_storage_fee() -> NearToken` | view | **Optional — open question.** The fee is already returned by `config()`, and reading it is a manual step on a value that almost never changes, so a dedicated method may not earn its permanent place in the API. Left out of the implementation until decided; adding it later is cheaper than removing it. |
 
-An operator reads `attestation_storage_fee()` first and attaches the exact multiple — the fee is votable, so a number published in a doc instead would eventually produce failed transactions, not overpayments. "No NEAR is ever returned" therefore means simply: no withdrawal method.
+An operator reads the current fee from `config()` and attaches the exact multiple — the fee is votable, so a number published in a doc instead would eventually produce failed transactions, not overpayments. "No NEAR is ever returned" therefore means simply: no withdrawal method.
 
 ### Charging rules
 
@@ -105,6 +105,15 @@ Accepted deliberately: if such an entry is later swept, rule 3 hands its owner a
 ## Operator UX
 
 One new step in the [operator guide](../running-an-mpc-node-in-tdx-external-guide.md), right after [Create a NEAR Account for Your Node](../running-an-mpc-node-in-tdx-external-guide.md#create-a-near-account-for-your-node) — the operator already holds that account's full-access key there, and `prepay_attestation_storage` needs only the account id. That is well before the CVM is configured and started, before the node account key is retrieved, and before it is added, so the node never starts into an ungranted state. Every other step is unchanged, including the off-chain `attestation-cli` check, which this design does not touch.
+
+First read the current fee — `attestation_storage_fee_millinear` in the config:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer config json-args '{}' network-config mainnet now
+```
+
+Then prepay that many multiples of it:
 
 ```bash
 near contract call-function as-transaction \
