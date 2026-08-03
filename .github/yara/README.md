@@ -35,6 +35,17 @@ spot this scan exists to close — a payload named `.woff2` would simply be skip
 binary treats unknown `meta:` keys as inert, so pointing it at a file list scans everything
 regardless of name.
 
+## Before making this a required check
+
+The workflow runs on `push` for same-repo branches and on `pull_request` only for forks, so a PR is
+not scanned twice. The skipped run still publishes a check run under the same name as the real one,
+and GitHub treats a skipped check as satisfying a requirement. Ordering favours safety today, since
+the skip resolves in seconds while the scan takes minutes, but it is not guaranteed.
+
+So before wiring `Scan changed files` in as required, settle the naming: distinct job names per
+event make the gate unambiguous, at the cost of fork PRs never producing the push-event check. Pick
+one deliberately rather than inheriting this default.
+
 ## blocking-rules.txt
 
 Only the rules listed there fail the build. Everything else in the pack still runs and still
@@ -53,7 +64,7 @@ measured.
    `.github/scripts/fetch-yara-rules.sh`. All three come from
    `https://pypi.org/pypi/guarddog/<version>/json`, from the `py3-none-any.whl` entry
    under `.urls[]`.
-2. Re-measure, from a clean tree:
+2. Re-measure both halves of the criterion, from a clean tree. First the tracked tree:
 
    ```sh
    .github/scripts/fetch-yara-rules.sh /tmp/yara-rules
@@ -61,7 +72,24 @@ measured.
    git ls-files -z | xargs -0 -n1 yara -w -C /tmp/rules.yarc
    ```
 
+   Then the historical sweep, which the criterion also covers — every file version touched by the
+   last 400 commits on `main`:
+
+   ```sh
+   corpus=$(mktemp -d)
+   for sha in $(git log origin/main -400 --format=%H); do
+     for f in $(git diff-tree --no-commit-id --name-only --diff-filter=ACMR -r "$sha"); do
+       mkdir -p "$corpus/$sha/$(dirname "$f")"
+       git cat-file blob "$sha:$f" > "$corpus/$sha/$f" 2>/dev/null || true
+     done
+   done
+   find "$corpus" -type f -print0 | xargs -0 -n1 yara -w -C /tmp/rules.yarc
+   ```
+
    `yara` accepts many rule files but only one target path, and given several it silently treats
-   the extras as rule sources and still exits 0 — hence `-n1`.
-3. Any rule that fires has a false positive: drop it from `blocking-rules.txt` with a note, or fix
-   the offending file.
+   the extras as rule sources and still exits 0 — hence `-n1` in both.
+3. Any rule that fires in either sweep has a false positive: drop it from `blocking-rules.txt` with
+   a note, or fix the offending file. The scan refuses to start if `blocking-rules.txt` names a rule
+   the pack no longer has, so a rule renamed upstream surfaces immediately rather than quietly
+   dropping to advisory.
+4. Run the scanner's own tests: `.github/scripts/tests/test-scan-changed-files.sh`.

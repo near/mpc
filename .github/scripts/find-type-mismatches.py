@@ -46,6 +46,13 @@ def main() -> int:
 
         result = entry.get("result", {})
         if result.get("status") != "ok":
+            # Unclassifiable, so this file leaves the check unexamined. Say so
+            # rather than letting it drop out silently.
+            print(
+                f"magika could not classify {entry.get('path', '?')}: "
+                f"{result.get('status', 'unknown')}",
+                file=sys.stderr,
+            )
             continue
 
         path = entry.get("path", "")

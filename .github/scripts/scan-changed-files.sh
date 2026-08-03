@@ -11,10 +11,10 @@ set -euo pipefail
 
 # Fetch the pack with fetch-yara-rules.sh; see .github/yara/README.md.
 RULES_DIR="${RULES_DIR:-}"
-BLOCKING_RULES_FILE="${BLOCKING_RULES_FILE:-.github/yara/blocking-rules.txt}"
 ALLOW_MISSING_SCANNERS="${ALLOW_MISSING_SCANNERS:-0}"
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+BLOCKING_RULES_FILE="${BLOCKING_RULES_FILE:-$SCRIPT_DIR/../yara/blocking-rules.txt}"
 
 # Runs on repo open or build without being invoked. Annotated, never blocked:
 # editing these is routine here.
@@ -37,18 +37,34 @@ have_scanner() {
 [[ -n "${BASE_SHA:-}" ]] || die "BASE_SHA must be set."
 [[ -n "${HEAD_SHA:-}" ]] || die "HEAD_SHA must be set."
 
-# Diffing against a base that is missing finds no files and would pass, so refuse.
-git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
-    || die "Base commit ${BASE_SHA} is not in this clone; needs actions/checkout with fetch-depth: 0."
+# A commit missing from the clone makes the diff empty, which would pass, so
+# refuse. Both ends need this: a head sha goes missing when a fork PR's branch is
+# force-pushed between event dispatch and checkout.
+for sha in "$BASE_SHA" "$HEAD_SHA"; do
+    git cat-file -e "${sha}^{commit}" 2>/dev/null \
+        || die "Commit ${sha} is not in this clone; needs actions/checkout with fetch-depth: 0."
+done
+
+workdir="$(mktemp -d)"
+trap 'rm -rf "$workdir"' EXIT
 
 # -z is required: without it core.quotePath quotes any path holding a byte above
 # 0x80, the literal fails the -f test below, and a homoglyph-named payload is
-# dropped from the scan silently.
-mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" "$HEAD_SHA")
+# dropped from the scan silently. Staged through a file because a process
+# substitution's exit status is invisible to mapfile.
+git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" "$HEAD_SHA" > "$workdir/changed" \
+    || die "git diff ${BASE_SHA}..${HEAD_SHA} failed."
+mapfile -d '' -t changed < "$workdir/changed"
 
 files=()
 for path in "${changed[@]}"; do
-    [[ -f "$path" ]] && files+=("$path")   # renames and deletions are gone
+    if [[ -f "$path" ]]; then
+        files+=("$path")
+    else
+        # ACMR excludes deletions and a rename reports only its destination, so
+        # anything else here is unexpected rather than routine.
+        log "Skipping ${path}: not a regular file."
+    fi
 done
 
 if (( ${#files[@]} == 0 )); then
@@ -64,21 +80,29 @@ if have_scanner yarac && have_scanner yara; then
     # Rules off the allowlist still report, they just do not fail the build, so a
     # version bump cannot add an unmeasured gate.
     declare -A is_blocking=()
-    while read -r rule; do
+    while read -r rule || [[ -n "$rule" ]]; do   # tolerate a missing final newline
         is_blocking["$rule"]=1
     done < <(grep -vE '^[[:space:]]*(#|$)' "$BLOCKING_RULES_FILE")
 
     (( ${#is_blocking[@]} > 0 )) || die "No blocking rules listed in $BLOCKING_RULES_FILE."
-    log "${#is_blocking[@]} rule(s) are blocking; the rest are advisory."
 
-    compiled="$(mktemp)"
-    trap 'rm -f "$compiled"' EXIT
+    compiled="$workdir/rules.yarc"
     yarac -w "$RULES_DIR"/*.yar "$compiled" || die "Failed to compile YARA rules from $RULES_DIR."
+
+    # An allowlisted name that no longer exists means a bump renamed the rule, and
+    # the renamed one would silently drop to advisory.
+    mapfile -t pack_rules < <(sed -n 's/^rule[[:space:]]\{1,\}\([A-Za-z0-9_]\{1,\}\).*/\1/p' "$RULES_DIR"/*.yar | sort -u)
+    for rule in "${!is_blocking[@]}"; do
+        printf '%s\n' "${pack_rules[@]}" | grep -qxF "$rule" \
+            || die "Blocking rule '$rule' is not in the pack; re-measure and update $BLOCKING_RULES_FILE."
+    done
+    log "${#is_blocking[@]} rule(s) are blocking; the rest are advisory."
 
     for path in "${files[@]}"; do
         # One file per invocation: yara takes a single target, and given several it
-        # silently treats the extras as rule sources and still exits 0.
-        if ! matches=$(yara -w -C "$compiled" "$path" 2>&1); then
+        # silently treats the extras as rule sources and still exits 0. ./ keeps a
+        # dash-prefixed filename from being read as an option.
+        if ! matches=$(yara -w -C "$compiled" "./$path" 2>&1); then
             fail "$path: yara failed: $matches"
             blocking_findings=1
             continue
@@ -98,10 +122,13 @@ fi
 # ----------------------------------------------------------------- magika ---
 if have_scanner magika; then
     # Status checked here, not on the pipeline below whose status is python's: a
-    # magika crash would otherwise yield no findings and pass.
-    detected=$(magika --jsonl -- "${files[@]}" 2>&1) || die "magika failed: $detected"
+    # magika crash would otherwise yield no findings and pass. stderr is kept out
+    # of the stream so a benign diagnostic cannot be parsed as JSONL.
+    magika --jsonl -- "${files[@]}" > "$workdir/detected" 2> "$workdir/magika.err" \
+        || die "magika failed: $(cat "$workdir/magika.err")"
+    [[ -s "$workdir/magika.err" ]] && log "magika stderr: $(cat "$workdir/magika.err")"
 
-    mismatches=$(printf '%s\n' "$detected" | python3 "$SCRIPT_DIR/find-type-mismatches.py") \
+    mismatches=$(python3 "$SCRIPT_DIR/find-type-mismatches.py" < "$workdir/detected") \
         || die "Could not interpret magika output."
 
     while IFS=$'\t' read -r path label extension; do

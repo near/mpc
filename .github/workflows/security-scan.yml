@@ -57,17 +57,30 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          set -euo pipefail
           if [ -n "$PR_BASE_SHA" ]; then
             base="$PR_BASE_SHA"
-          elif [ -n "$PUSH_BEFORE" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-            # Absent on branch creation, and set to all-zeroes on force-push to
-            # a ref whose old tip is already unreachable.
+          elif git cat-file -e "${PUSH_BEFORE:-missing}^{commit}" 2>/dev/null; then
             base="$PUSH_BEFORE"
           else
-            base="$(git rev-parse HEAD~1)"
+            # `before` is all-zeroes when the push created the branch, and on a
+            # force-push it is the previous tip, which is now orphaned and so not
+            # fetched even at fetch-depth 0. Both land here, and both are cases
+            # where the push carries more than one new commit - so fall back to
+            # the whole branch delta. HEAD~1 would scan only the tip and leave
+            # the rest of a force-pushed range unexamined.
+            base="$(git merge-base "origin/${DEFAULT_BRANCH}" HEAD)"
+            # Pushing to the default branch itself: merge-base is HEAD.
+            if [ "$base" = "$(git rev-parse HEAD)" ]; then
+              base="$(git rev-parse HEAD~1)"
+            fi
           fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Test the scanner
+        run: .github/scripts/tests/test-scan-changed-files.sh "$RUNNER_TEMP/yara-rules"
 
       - name: Scan
         env:
