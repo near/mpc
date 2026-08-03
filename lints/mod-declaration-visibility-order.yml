@@ -2,11 +2,19 @@ id: mod-declaration-visibility-order
 language: rust
 severity: error
 message: "`$VIS mod $M;` is declared directly after a module with narrower visibility"
-note: Order module declarations `pub`, then `pub(crate)`, then private, separated by blank lines.
-# `pub mod $M;` matches every visibility. `pub(super)` shares the middle tier. Only the immediately preceding
-# declaration is checked.
+note: Declare modules widest visibility first, `pub`, then `pub(crate)`, then private.
+# `pub mod $M;` matches any `pub` visibility including `pub(crate)` and `pub(super)`,
+# because the tokens inside `visibility_modifier` are anonymous; the `has:` and `regex:`
+# pair is what separates the tiers. `mod $M;` matches only a bare declaration.
+#
+# `stopBy` skips comments so that documenting a module does not hide its predecessor.
+#
+# The predecessor sub-rule is repeated per branch rather than shared through `utils:`
+# and `matches:`: as of ast-grep 0.42 a `matches:` reference inside a relational rule
+# matches nothing instead of erroring, which silently disables the lint.
 rule:
   any:
+    # `pub` directly after `pub(crate)`, `pub(super)` or a private declaration.
     - all:
         - pattern: pub mod $M;
         - has:
@@ -15,24 +23,27 @@ rule:
             regex: "^pub$"
             stopBy: neighbor
         - follows:
-            any:
-              - all:
-                  - pattern: pub mod $N;
-                  - has:
-                      kind: visibility_modifier
-                      regex: '^pub\('
-                      stopBy: neighbor
-              - all:
+            all:
+              - any:
+                  - all:
+                      - pattern: pub mod $N;
+                      - has:
+                          kind: visibility_modifier
+                          regex: '^pub\('
+                          stopBy: neighbor
                   - pattern: mod $N;
-                  # `#[macro_use]` modules are exempt: their macros are only in
-                  # scope for the rest of the crate textually, so they have to
-                  # stay first.
-                  - not:
-                      follows:
-                        kind: attribute_item
-                        regex: macro_use
-                        stopBy: neighbor
-            stopBy: neighbor
+              # `#[macro_use]` modules are exempt: their macros are only in scope for
+              # the rest of the crate textually, so they have to stay first.
+              - not:
+                  follows:
+                    kind: attribute_item
+                    regex: macro_use
+                    stopBy: neighbor
+            stopBy:
+              not:
+                any:
+                  - kind: line_comment
+                  - kind: block_comment
     # `pub(crate)` or `pub(super)` directly after a private declaration.
     - all:
         - pattern: pub mod $M;
@@ -49,4 +60,8 @@ rule:
                     kind: attribute_item
                     regex: macro_use
                     stopBy: neighbor
-            stopBy: neighbor
+            stopBy:
+              not:
+                any:
+                  - kind: line_comment
+                  - kind: block_comment
