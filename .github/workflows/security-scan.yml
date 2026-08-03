@@ -45,7 +45,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends yara
-          pipx install magika==1.1.0
+          # Package version, which differs from what `magika --version` prints
+          # (that is the library version, currently 1.1.0).
+          pipx install magika==1.0.3
 
       - name: Fetch YARA rules
         run: .github/scripts/fetch-yara-rules.sh "$RUNNER_TEMP/yara-rules"
