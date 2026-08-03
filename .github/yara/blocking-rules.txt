@@ -1,0 +1,52 @@
+# YARA rules promoted to blocking, i.e. they fail the build.
+#
+# A rule qualifies only with zero measured false positives over both:
+#   - all 923 files tracked at the time of measurement
+#   - 2824 file-versions changed by the last 400 commits on main
+# Every other rule in the pack still runs, but only warns, so a rule added
+# upstream on a version bump cannot start failing builds unmeasured.
+#
+# Reproduce (from a clean tree):
+#   .github/scripts/fetch-yara-rules.sh /tmp/yara-rules
+#   yarac -w /tmp/yara-rules/*.yar /tmp/r.yarc
+#   git ls-files -z | xargs -0 -n1 yara -w -C /tmp/r.yarc
+# -n1 matters: yara takes one target, and given several it silently treats the
+# extras as rule sources and still exits 0.
+# Anything that fires must be removed from this list, with a note saying why.
+
+capability_filesystem_browser
+capability_filesystem_delete
+capability_process_hooks
+capability_runtime_clipboard
+threat_filesystem_autostart
+threat_network_dns_exfil
+threat_network_exfil_messenger
+threat_network_exfil_sysinfo
+threat_network_reverse_shell
+threat_npm_preinstall_script
+threat_process_cryptomining
+threat_process_injection_dll
+threat_process_memory
+threat_process_powershell_encoded
+threat_process_spawn_silent
+threat_process_sysinfo
+threat_runtime_dynamic_loader
+threat_runtime_enumeration
+threat_runtime_environment_read
+threat_runtime_keylogging
+threat_runtime_obfuscation_api
+threat_runtime_obfuscation_base64exec
+threat_runtime_obfuscation_chr
+threat_runtime_obfuscation_dynamic_eval
+threat_runtime_obfuscation_general
+threat_runtime_obfuscation_hidden_code
+threat_runtime_obfuscation_import_exec
+threat_runtime_obfuscation_js_mangling
+threat_runtime_obfuscation_log_suppress
+threat_runtime_obfuscation_pyarmor
+threat_runtime_obfuscation_steganography
+threat_runtime_self_propagation
+threat_runtime_system_capture
+threat_runtime_system_info
+threat_setup_import_aliasing
+threat_setup_suspicious_imports

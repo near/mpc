@@ -1,0 +1,75 @@
+name: Security Scan
+
+# Runs on every branch, not just PRs. The implant this job exists to catch was
+# force-pushed onto the head branches of already-open pull requests, and a push
+# to a branch with no open PR fires no `pull_request` event at all.
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan-changed-files:
+    name: "Scan changed files"
+    # A push covers every same-repo branch, including a push to the branch of an
+    # already-merged PR, which fires no pull_request event - that is how the
+    # implant this job exists to catch arrived. Fork PRs produce no push event
+    # here, so pull_request covers those; the guard keeps same-repo PRs from being
+    # scanned twice and annotated twice.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          # Full history: the scan diffs against a base commit, and with a
+          # shallow clone that object is absent. The script treats a missing
+          # base as a hard error rather than scanning nothing and passing.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install yara and magika
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends yara
+          pipx install magika==1.1.0
+
+      - name: Fetch YARA rules
+        run: .github/scripts/fetch-yara-rules.sh "$RUNNER_TEMP/yara-rules"
+
+      - name: Resolve the base commit
+        id: base
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$PR_BASE_SHA" ]; then
+            base="$PR_BASE_SHA"
+          elif [ -n "$PUSH_BEFORE" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            # Absent on branch creation, and set to all-zeroes on force-push to
+            # a ref whose old tip is already unreachable.
+            base="$PUSH_BEFORE"
+          else
+            base="$(git rev-parse HEAD~1)"
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Scan
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RULES_DIR: ${{ runner.temp }}/yara-rules
+        run: .github/scripts/scan-changed-files.sh
