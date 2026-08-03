@@ -607,11 +607,11 @@ impl FakeIndexerCore {
                             state.foreign_chains_configs(),
                         );
                         foreign_chain_supporters_sender.send_if_modified(|previous| {
-                            if *previous == supporters {
-                                false
-                            } else {
+                            if *previous != supporters {
                                 *previous = supporters;
                                 true
+                            } else {
+                                false
                             }
                         });
                     }

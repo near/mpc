@@ -71,6 +71,7 @@ fn bitcoin_only_config(rpc_url: &str) -> ForeignChainsConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             providers,
+            expected_network_fingerprint: None,
         }),
         solana: None,
         ethereum: None,
