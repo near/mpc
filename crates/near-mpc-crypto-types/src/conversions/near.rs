@@ -2,19 +2,21 @@ use super::CryptoConversionError;
 use crate::crypto::{Ed25519PublicKey, PublicKey, PublicKeyExtended, Secp256k1PublicKey};
 use crate::primitives::K256Signature;
 
-impl From<&near_sdk::PublicKey> for PublicKey {
-    fn from(pk: &near_sdk::PublicKey) -> Self {
+impl TryFrom<&near_sdk::PublicKey> for PublicKey {
+    type Error = CryptoConversionError;
+    fn try_from(pk: &near_sdk::PublicKey) -> Result<Self, Self::Error> {
         match pk.curve_type() {
             near_sdk::CurveType::SECP256K1 => {
                 let mut bytes = [0u8; 64];
                 bytes.copy_from_slice(&pk.as_bytes()[1..]);
-                PublicKey::Secp256k1(Secp256k1PublicKey::from(bytes))
+                Ok(PublicKey::Secp256k1(Secp256k1PublicKey::from(bytes)))
             }
             near_sdk::CurveType::ED25519 => {
                 let mut bytes = [0u8; 32];
                 bytes.copy_from_slice(&pk.as_bytes()[1..]);
-                PublicKey::Ed25519(Ed25519PublicKey::from(bytes))
+                Ok(PublicKey::Ed25519(Ed25519PublicKey::from(bytes)))
             }
+            near_sdk::CurveType::MLDSA65 => Err(CryptoConversionError::UnsupportedCurve),
         }
     }
 }
@@ -104,10 +106,23 @@ impl K256Signature {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::crypto::Bls12381G2PublicKey;
     use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    const ED25519_PUBLIC_KEY_SIZE: usize = 32;
+    const SECP256K1_PUBLIC_KEY_SIZE: usize = 64;
+    const MLDSA65_PUBLIC_KEY_SIZE: usize = 1952;
+
+    fn encoded_mldsa65_key() -> String {
+        format!(
+            "ml-dsa-65:{}",
+            bs58::encode(vec![0u8; MLDSA65_PUBLIC_KEY_SIZE]).into_string()
+        )
+    }
 
     #[test]
     fn roundtrip_ed25519_public_key() {
@@ -147,7 +162,7 @@ mod tests {
             .unwrap();
 
         // when
-        let dto = PublicKey::from(&near_pk);
+        let dto = PublicKey::try_from(&near_pk).unwrap();
         let recovered = near_sdk::PublicKey::try_from(dto).unwrap();
 
         // then
@@ -162,7 +177,7 @@ mod tests {
                 .parse().unwrap();
 
         // when
-        let dto = PublicKey::from(&near_pk);
+        let dto = PublicKey::try_from(&near_pk).unwrap();
         let recovered = near_sdk::PublicKey::try_from(dto).unwrap();
 
         // then
@@ -210,31 +225,69 @@ mod tests {
     }
 
     #[test]
-    fn test_assert_near_public_key_sizes() {
-        const ED25519_PUBLIC_KEY_SIZE: usize = 32;
-        const SECP256K1_PUBLIC_KEY_SIZE: usize = 64;
+    fn public_key_try_from_near_public_key__should_reject_mldsa65() {
+        // Given
+        let near_pk = near_sdk::PublicKey::from_parts(
+            near_sdk::CurveType::MLDSA65,
+            vec![0u8; MLDSA65_PUBLIC_KEY_SIZE],
+        )
+        .unwrap();
 
-        let near_public_keys = [
-            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
-            "secp256k1:3Abs6NwUMErNAftRfipRjWxxqcTPBJTSr2uoHi3bHcthzb4iXqNnNYi86ATKwf4XWHg1JDrX2m1sJgNMYq7ey6cG",
-            "secp256k1:21C8NARZw2tUuULi1tENKi5azgDKLp9cv4FT2U1N6iF5k1W33BbJvsLr6rCZsYZxxUjBtpuWCsKvmv9P5ARzyyyn",
-            "secp256k1:4YbU8ZLEQK7gww1f65ZhtFCYfSxrm67sV9eaQi8oRo1LvCAtznztsiryJrzHg2oz285xN3ADAsGPizmCNe4hn9WR",
-            "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
-            "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
-            "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv",
-            "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k",
-        ];
-        for pk in near_public_keys {
-            let near_pk: near_sdk::PublicKey = pk.parse().unwrap();
-            match near_pk.curve_type() {
-                near_sdk::CurveType::ED25519 => {
-                    assert_eq!(near_pk.as_bytes().len(), ED25519_PUBLIC_KEY_SIZE + 1);
-                }
-                near_sdk::CurveType::SECP256K1 => {
-                    assert_eq!(near_pk.as_bytes().len(), SECP256K1_PUBLIC_KEY_SIZE + 1);
-                }
-            }
-        }
+        // When
+        let result = PublicKey::try_from(&near_pk);
+
+        // Then
+        assert_matches!(result, Err(CryptoConversionError::UnsupportedCurve));
+    }
+
+    /// The `[1..]` slicing in the conversions above relies on `as_bytes()` being
+    /// the raw key prefixed with a single curve-type byte.
+    #[rstest]
+    #[case::secp256k1_1(
+        "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
+        SECP256K1_PUBLIC_KEY_SIZE
+    )]
+    #[case::secp256k1_2(
+        "secp256k1:3Abs6NwUMErNAftRfipRjWxxqcTPBJTSr2uoHi3bHcthzb4iXqNnNYi86ATKwf4XWHg1JDrX2m1sJgNMYq7ey6cG",
+        SECP256K1_PUBLIC_KEY_SIZE
+    )]
+    #[case::secp256k1_3(
+        "secp256k1:21C8NARZw2tUuULi1tENKi5azgDKLp9cv4FT2U1N6iF5k1W33BbJvsLr6rCZsYZxxUjBtpuWCsKvmv9P5ARzyyyn",
+        SECP256K1_PUBLIC_KEY_SIZE
+    )]
+    #[case::secp256k1_4(
+        "secp256k1:4YbU8ZLEQK7gww1f65ZhtFCYfSxrm67sV9eaQi8oRo1LvCAtznztsiryJrzHg2oz285xN3ADAsGPizmCNe4hn9WR",
+        SECP256K1_PUBLIC_KEY_SIZE
+    )]
+    #[case::ed25519_1(
+        "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+        ED25519_PUBLIC_KEY_SIZE
+    )]
+    #[case::ed25519_2(
+        "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
+        ED25519_PUBLIC_KEY_SIZE
+    )]
+    #[case::ed25519_3(
+        "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv",
+        ED25519_PUBLIC_KEY_SIZE
+    )]
+    #[case::ed25519_4(
+        "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k",
+        ED25519_PUBLIC_KEY_SIZE
+    )]
+    #[case::mldsa65(&encoded_mldsa65_key(), MLDSA65_PUBLIC_KEY_SIZE)]
+    fn near_public_key__should_prefix_the_raw_key_with_one_curve_type_byte(
+        #[case] encoded_key: &str,
+        #[case] expected_key_size: usize,
+    ) {
+        // Given
+        let near_pk: near_sdk::PublicKey = encoded_key.parse().unwrap();
+
+        // When
+        let bytes = near_pk.as_bytes();
+
+        // Then
+        assert_eq!(bytes.len(), expected_key_size + 1);
     }
 
     #[test]

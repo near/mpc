@@ -8185,7 +8185,7 @@ mod tests {
     /// everything derived from it must be revisited in the same change — today
     /// [`WORST_CASE_ENTRY_BYTES`] and [`WORST_CASE_ENTRY_COST_CEILING`].
     ///
-    /// TODO(#3972): the flat onboarding deposit will be derived from these sizes too.
+    /// TODO(#4015): the prepaid-storage fee is sized from these numbers.
     #[rstest]
     #[case::dstack(599, worst_case_dstack_attestation())]
     #[case::mock(604, worst_case_mock_attestation())]

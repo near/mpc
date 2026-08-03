@@ -184,14 +184,14 @@ near-account-id = "2.6.0"
 # the git nearcore crate below, which the node's indexer stack requires.
 # Must be bumped in lockstep with `near-primitives`: its types appear in
 # near-primitives' transaction API but are not re-exported there.
-near-crypto-public = { version = "0.36.0", package = "near-crypto" }
+near-crypto-public = { version = "0.37.1", package = "near-crypto" }
 near-gas = "0.3.4"
-near-jsonrpc-client = "0.21.1"
-near-jsonrpc-primitives = "0.36.0"
+near-jsonrpc-client = "0.22.0"
+near-jsonrpc-primitives = "0.37.1"
 near-kit = { version = "0.12.1", default-features = false }
-near-primitives = "0.36.0"
+near-primitives = "0.37.1"
 near-sandbox = "0.3.11"
-near-sdk = { version = "5.28.0", features = [
+near-sdk = { version = "5.29.0", features = [
     "legacy",
     "unstable",
 ] }
