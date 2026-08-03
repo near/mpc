@@ -3,13 +3,8 @@ language: rust
 severity: error
 message: "module `$M` is declared apart from the other module declarations"
 note: Keep the module declarations of a scope together. Blank lines between visibility groups are not a split.
-# Fires only on a declaration that starts a second run: one that does not follow
-# another declaration, while a declaration already exists earlier in the scope.
-#
-# Comments and attributes count as part of a run, so a documented or `#[cfg]` gated
-# declaration does not read as the start of a new one. That also leaves an attributed
-# declaration free to sit on its own, which is what keeps `#[cfg(test)] mod tests;`
-# legal at the foot of a file.
+# Attributes and comments count as part of a run, which keeps a lone
+# `#[cfg(test)] mod tests;` legal at the foot of a file.
 rule:
   all:
     - any:
