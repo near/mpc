@@ -92,6 +92,26 @@ Note the honest comparison: `yara` 4.5.8 is faster at typical diff sizes, and `y
 roughly 150 files. The engine choice here is about following upstream, not speed. If the scan step
 ever becomes a bottleneck, the lever is the install step, not the scanner.
 
+### Where the load cost goes, and why we are not chasing it further
+
+`Rules::deserialize` does three things: a bincode decode, a wasmtime Cranelift JIT of the rules'
+WASM module, and an Aho-Corasick rebuild. Neither the native code nor the automaton is serialised
+into a `.yarc` by default — both are regenerated on every load, which is the deliberate price of
+[PR #202](https://github.com/VirusTotal/yara-x/pull/202) making the format platform-independent. That
+is also why the cost tracks generated-code size rather than file size: 318 KB → 422 KB adds 1ms while
+422 KB → 1.46 MB adds 11ms.
+
+There is a documented escape hatch, the `native-code-serialization` cargo feature, which embeds the
+JIT output and would plausibly take a 3-file scan from ~27ms to ~12ms. **Deliberately not used**: it
+requires building `yr` from source, so this security-critical job would swap an upstream release
+binary for one we build ourselves, and take on a Rust build plus its maintenance — a poor trade for
+~15ms in a 14s job. Upstream `main` already serialises the Aho-Corasick automaton
+(commit `3c61ef8d1`), so some of this improves for free on a future release.
+
+If you ever do want to measure the split rather than guess, the timings are already instrumented
+behind a cargo feature: build with `--features logging,yara-x/logging` and run with `RUST_LOG=info`
+to get `Deserialization time`, `WASM build time` and the automaton build time separately.
+
 ## Before making this a required check
 
 The workflow runs on `push` for same-repo branches and on `pull_request` only for forks, so a PR is
