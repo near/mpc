@@ -29,6 +29,10 @@ ignore = [
   # TODO(#3732): remove once quick-xml dependency is >= 0.41.0
   "RUSTSEC-2026-0194", # quadratic attribute duplicate-check
   "RUSTSEC-2026-0195", # unbounded namespace-declaration allocation
+  # Remove once near-sdk and nearcore depend on wasmtime >= 46.0.2; the 45.x line
+  # has no patched release. Only reachable through near-vm-runner, which never
+  # shares a Store across Engines.
+  "RUSTSEC-2026-0222", # wasmtime stores can mix up type indices between engines
 ]
 
 [bans]
