@@ -108,7 +108,6 @@ async fn contract_configuration_can_be_set_on_initialization() {
         resolve_verification_tera_gas: Some(16),
         // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: Some(14 * 24 * 60 * 60),
-        clean_expired_launcher_hashes_tera_gas: Some(5),
     };
 
     let SandboxTestSetup { contract, .. } = SandboxTestSetup::builder()

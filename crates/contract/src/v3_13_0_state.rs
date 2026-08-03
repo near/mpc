@@ -34,8 +34,8 @@ use crate::{
 
 /// Shadow of the `3.13.0` [`Config`]: the deployed layout predates this release's new
 /// `Config` fields — the async attestation gas fields (`fail_attestation_submission_tera_gas`,
-/// `verifier_tera_gas`, `resolve_verification_tera_gas`) and the launcher-eviction fields
-/// (`launcher_hash_unused_ttl_seconds`, `clean_expired_launcher_hashes_tera_gas`) — so
+/// `verifier_tera_gas`, `resolve_verification_tera_gas`) and the launcher-eviction field
+/// (`launcher_hash_unused_ttl_seconds`) — so
 /// migrating `3.13.0` state deserializes the old field set and defaults the new ones.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldConfig {

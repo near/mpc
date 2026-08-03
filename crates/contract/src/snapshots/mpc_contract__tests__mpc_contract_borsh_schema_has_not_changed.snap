@@ -254,10 +254,6 @@ BorshSchemaContainer {
                         "launcher_hash_unused_ttl_seconds",
                         "u64",
                     ),
-                    (
-                        "clean_expired_launcher_hashes_tera_gas",
-                        "u64",
-                    ),
                 ],
             ),
         },

@@ -43,8 +43,6 @@ const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
 /// Default TTL after which a launcher image hash unused by any participant is evicted.
 pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
-/// Prepaid gas for a `clean_expired_launcher_hashes` call.
-const DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS: u64 = 5;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -87,8 +85,6 @@ pub(crate) struct Config {
     pub(crate) resolve_verification_tera_gas: u64,
     /// TTL after which a launcher image hash unused by any participant is evicted.
     pub(crate) launcher_hash_unused_ttl_seconds: u64,
-    /// Prepaid gas for a `clean_expired_launcher_hashes` call.
-    pub(crate) clean_expired_launcher_hashes_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -119,7 +115,6 @@ impl Default for Config {
             verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
             resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
             launcher_hash_unused_ttl_seconds: DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS,
-            clean_expired_launcher_hashes_tera_gas: DEFAULT_CLEAN_EXPIRED_LAUNCHER_HASHES_TERA_GAS,
         }
     }
 }

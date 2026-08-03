@@ -284,6 +284,7 @@ impl TeeState {
     ) -> TeeValidationResult {
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
+        self.allowed_launcher_images.cleanup_expired();
 
         let participants_with_valid_attestation: Vec<_> = participants
             .participants()
@@ -417,16 +418,6 @@ impl TeeState {
     /// Returns all allowed launcher image hashes.
     pub fn get_allowed_launcher_hashes(&self) -> Vec<LauncherImageHash> {
         self.allowed_launcher_images.launcher_hashes()
-    }
-
-    /// Physically evicts launcher image hashes unused past their expiry.
-    pub fn clean_expired_launcher_images(&mut self) {
-        self.allowed_launcher_images.cleanup_expired();
-    }
-
-    /// Whether a `clean_expired_launcher_images` sweep would evict anything.
-    pub fn has_expired_launcher_images(&self) -> bool {
-        self.allowed_launcher_images.has_expired()
     }
 
     /// Casts a vote for adding or removing an OS measurement.

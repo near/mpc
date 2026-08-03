@@ -56,18 +56,12 @@ Three parts:
    views) skip expired entries, so an expired hash is rejected the moment its
    TTL lapses. If *all* entries are expired, the newest is still returned
    (disaster-recovery fallback, mirrors `AllowedDockerImageHashes`).
-3. **Deferred sweep** — `verify_tee` spawns a detached self-call
-   (`Promise::new(env::current_account_id()).function_call(CLEAN_EXPIRED_LAUNCHER_HASHES, ...).detach()`)
-   to a new `#[private]` `clean_expired_launcher_hashes` method, which deletes
-   expired entries from storage (keeping at least the newest). The method is
-   `#[private]`, so only the contract's own self-call can invoke it — **no new
-   public API**. Running it in a detached promise means a failed or
-   out-of-gas sweep can never fail the host `verify_tee` transaction; expiry is
-   already enforced by (2), so the sweep is pure housekeeping and is safe to
-   fail (it simply retries on the next `verify_tee`). Gas is reserved via a new
-   config field `clean_expired_launcher_hashes_tera_gas`, mirroring the existing
-   `clean_tee_status_tera_gas` etc. used by the post-resharing cleanups in
-   `vote_reshared`.
+3. **Inline eviction** — `reverify_and_cleanup_participants` (the body of
+   `verify_tee`) deletes expired entries right after the analogous eviction of
+   the MPC docker-image hashes. The allowed set is a small, operator-curated
+   in-memory `Vec`, so eviction is a plain `retain` (no extra storage reads, no
+   separate receipt) that always keeps at least the newest entry. **No new
+   public API and no extra config.**
 
 Stamping `expires_at = now + TTL` at vote-in means a hash voted in but **never adopted**
 (e.g. a newly voted launcher image no node ever migrated to) also expires after
@@ -111,9 +105,7 @@ sequenceDiagram
     Note over C: B restamped. A freezes once the last node leaves it
     Note over C: A.expires_at passes. A is rejected by all reads
     Ops->>C: verify_tee (routine)
-    Note over C: spawns detached self-call clean_expired_launcher_hashes
-    C-->>C: clean_expired_launcher_hashes (private, separate receipt)
-    Note over C: deletes A from storage
+    Note over C: evicts A from storage inline (same receipt)
 ```
 
 ### Operator scenarios
@@ -141,14 +133,16 @@ they become cleanable; the two steps run together.
   window; a broken new launcher would need a re-vote under incident pressure.
 - **Exempting never-used hashes** — a forgotten/mistaken vote would linger
   forever, the very problem being solved.
-- **Inline sweep in `verify_tee`** — simplest, and gas is trivial for this
-  tiny operator-curated list. Rejected in favor of the detached-promise sweep
-  (chosen above) to keep housekeeping from ever endangering the host
-  transaction, matching the post-resharing cleanup convention in
-  `vote_reshared`.
+- **Detached-promise sweep** — evict in a `#[private]` self-call spawned by
+  `verify_tee` (gas via a dedicated config field), so a failed/out-of-gas sweep
+  can't fail the host transaction, matching the post-resharing cleanups in
+  `vote_reshared`. Rejected: the allowed set is a tiny in-memory `Vec` with no
+  real failure mode, and the MPC docker-image hashes are already evicted inline
+  in the same method — inline (chosen above) is simpler, consistent, and drops
+  a `#[private]` method plus a gas config field.
 - **Public cleanup method** (the issue AC also suggests this) — rejected to
-  avoid growing the already-large public API; the `#[private]` self-call
-  covers the same need.
+  avoid growing the already-large public API; inline eviction covers the same
+  need with no new API.
 
 ## Decisions
 

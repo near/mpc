@@ -419,17 +419,6 @@ impl AllowedLauncherImages {
         }
     }
 
-    /// Whether a `cleanup_expired` call would evict anything: there is more than one entry
-    /// and at least one is expired. Used to skip spawning the detached sweep when there is
-    /// nothing to do (`cleanup_expired` never removes the last entry).
-    pub fn has_expired(&self) -> bool {
-        if self.entries.len() <= 1 {
-            return false;
-        }
-        let now = Timestamp::now();
-        self.entries.iter().any(|e| e.is_expired(now))
-    }
-
     /// Removes expired entries, always keeping at least one (the one with the latest expiry).
     pub fn cleanup_expired(&mut self) {
         if self.entries.len() <= 1 {

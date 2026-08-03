@@ -1744,20 +1744,6 @@ impl MpcContract {
         };
         let current_params = running_state.parameters.clone();
 
-        // Physical eviction runs in a detached self-call so it can never fail this
-        // transaction. Skip it when nothing is expired to avoid a wasted receipt on the
-        // common (timer-driven) path.
-        if self.tee_state.has_expired_launcher_images() {
-            Promise::new(env::current_account_id())
-                .function_call(
-                    method_names::CLEAN_EXPIRED_LAUNCHER_HASHES.to_string(),
-                    vec![],
-                    NearToken::from_yoctonear(0),
-                    Gas::from_tgas(self.config.clean_expired_launcher_hashes_tera_gas),
-                )
-                .detach();
-        }
-
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
@@ -1879,18 +1865,6 @@ impl MpcContract {
 
         self.tee_state.clean_non_participant_votes(participants);
         Ok(())
-    }
-
-    /// Private endpoint to evict launcher image hashes unused past their TTL.
-    /// Spawned as a detached promise from `verify_tee`; safe to fail (read-time
-    /// filtering already enforces expiry).
-    #[private]
-    pub fn clean_expired_launcher_hashes(&mut self) {
-        log!(
-            "clean_expired_launcher_hashes: signer={}",
-            env::signer_account_id()
-        );
-        self.tee_state.clean_expired_launcher_images();
     }
 
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
