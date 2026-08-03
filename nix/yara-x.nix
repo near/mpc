@@ -1,7 +1,8 @@
 {
   lib,
-  stdenvNoCC,
+  stdenv,
   fetchurl,
+  autoPatchelfHook,
 }:
 
 # Pinned rather than taken from nixpkgs so the dev shell and CI run the same
@@ -26,10 +27,9 @@ let
     };
   };
 
-  system = stdenvNoCC.hostPlatform.system;
-  asset = assets.${system} or (throw "yara-x: unsupported system ${system}");
+  asset = assets.${stdenv.hostPlatform.system} or (throw "yara-x: unsupported system ${stdenv.hostPlatform.system}");
 in
-stdenvNoCC.mkDerivation {
+stdenv.mkDerivation {
   pname = "yara-x";
   inherit version;
 
@@ -37,6 +37,11 @@ stdenvNoCC.mkDerivation {
     url = "https://github.com/VirusTotal/yara-x/releases/download/v${version}/yara-x-v${version}-${asset.target}.tar.gz";
     inherit (asset) hash;
   };
+
+  # The prebuilt ELF names the host's dynamic linker, which does not exist under
+  # nix, so without this it fails with "cannot execute: required file not found".
+  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
 
   # The tarball holds a bare `yr`, so there is no directory to strip.
   sourceRoot = ".";

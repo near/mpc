@@ -1,13 +1,14 @@
 {
   lib,
-  stdenvNoCC,
+  stdenv,
   fetchurl,
+  autoPatchelfHook,
 }:
 
 # nixpkgs ships magika-cli, but it is unusable on Darwin: the binary it installs
 # has no LC_RPATH, so it cannot resolve libonnxruntime.dylib and aborts on any
-# invocation. Upstream's own release binaries are self-contained and work on both
-# platforms, so take those, as nix/opengrep.nix does for the same reason.
+# invocation. Upstream's own release binaries work on both platforms, so take
+# those, as nix/opengrep.nix does for the same reason.
 let
   version = "1.1.0";
 
@@ -26,10 +27,9 @@ let
     };
   };
 
-  system = stdenvNoCC.hostPlatform.system;
-  asset = assets.${system} or (throw "magika: unsupported system ${system}");
+  asset = assets.${stdenv.hostPlatform.system} or (throw "magika: unsupported system ${stdenv.hostPlatform.system}");
 in
-stdenvNoCC.mkDerivation {
+stdenv.mkDerivation {
   pname = "magika";
   inherit version;
 
@@ -40,6 +40,11 @@ stdenvNoCC.mkDerivation {
     inherit (asset) hash;
   };
 
+  # The prebuilt ELF names the host's dynamic linker, which does not exist under
+  # nix, so without this it fails with "cannot execute: required file not found".
+  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+
   # The tarball's single directory becomes the source root, so the binary is at
   # the top level here rather than under magika-cli-<target>/.
   installPhase = ''
@@ -48,6 +53,8 @@ stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
+  # Runs the binary, so it catches a platform whose prebuilt artifact cannot
+  # actually start - which is exactly how nixpkgs' Darwin build is broken.
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
