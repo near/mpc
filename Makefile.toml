@@ -6,10 +6,8 @@ dependencies = [
   "todo-format",
   "editorconfig",
   "assert-matches",
-  "use-in-fn",
-  "mod-visibility-order",
-  "mod-contiguous",
-  "lint-rules",
+  "ast-grep-scan",
+  "ast-grep-test",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -116,25 +114,15 @@ description = "Check for assert!(matches!(...)) — use assert_matches!() instea
 command = "bash"
 args = ["scripts/check-assert-matches.sh"]
 
-[tasks.use-in-fn]
-description = "Check for use statements inside function bodies"
+[tasks.ast-grep-scan]
+description = "Run every lints/rules structural lint over the workspace"
 command = "ast-grep"
-args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
+args = ["scan", "crates/"]
 
-[tasks.mod-visibility-order]
-description = "Check that module declarations are ordered by decreasing visibility"
+[tasks.ast-grep-test]
+description = "Check that the lints/rules still report what lints/tests expects"
 command = "ast-grep"
-args = ["scan", "--rule", "lints/mod-declaration-visibility-order.yml", "crates/"]
-
-[tasks.mod-contiguous]
-description = "Check that module declarations of a scope are kept in one block"
-command = "ast-grep"
-args = ["scan", "--rule", "lints/mod-declarations-contiguous.yml", "crates/"]
-
-[tasks.lint-rules]
-description = "Check that the ast-grep rules under lints/ still report their fixtures"
-command = "bash"
-args = ["scripts/check-lint-rules.sh"]
+args = ["test"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"

@@ -1,0 +1,17 @@
+id: mod-declarations-contiguous
+snapshots:
+  ? |
+    mod a;
+
+    use std::fmt;
+
+    pub mod b;
+  : labels:
+    - source: pub mod b;
+      style: primary
+      start: 23
+      end: 33
+    - source: mod a;
+      style: secondary
+      start: 0
+      end: 6
