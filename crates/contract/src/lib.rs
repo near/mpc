@@ -4117,6 +4117,7 @@ mod tests {
 
     #[test]
     fn init_rejects_launcher_ttl_below_attestation_validity() {
+        // Given a launcher TTL one second below the attestation validity window.
         let participants = gen_participants(3);
         let signer = participants.participants()[0].0.clone();
         testing_env!(
@@ -4135,8 +4136,11 @@ mod tests {
             ..Default::default()
         };
 
+        // When init is called with that config.
         let err = MpcContract::init((&parameters).into_dto_type(), Some(bad_config))
             .expect_err("init must reject a launcher TTL below the attestation validity window");
+
+        // Then it fails, pointing at the invalid config field.
         assert!(
             format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
             "error should point at the invalid config field, got: {err:?}"
