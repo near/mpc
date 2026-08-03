@@ -2,13 +2,11 @@
   lib,
   stdenv,
   fetchurl,
-  autoPatchelfHook,
 }:
 
-# Pinned rather than taken from nixpkgs so the dev shell and CI run the same
-# scanner: nixpkgs currently has 1.16.0, and a nixpkgs bump would otherwise
-# change the engine underneath the measured blocking allowlist without anyone
-# noticing. See .github/yara/README.md.
+# nixpkgs has 1.16.0, and taking it from there would let a nixpkgs bump change
+# the engine underneath the measured blocking allowlist without anyone noticing.
+# See .github/yara/README.md.
 let
   version = "1.19.0";
 
@@ -38,10 +36,8 @@ stdenv.mkDerivation {
     inherit (asset) hash;
   };
 
-  # The prebuilt ELF names the host's dynamic linker, which does not exist under
-  # nix, so without this it fails with "cannot execute: required file not found".
-  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
-  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+  # No autoPatchelfHook here, unlike nix/magika.nix: the Linux `yr` is static-pie
+  # linked, so it names no interpreter and has no dynamic deps to rewrite.
 
   # The tarball holds a bare `yr`, so there is no directory to strip.
   sourceRoot = ".";

@@ -40,8 +40,9 @@ stdenv.mkDerivation {
     inherit (asset) hash;
   };
 
-  # The prebuilt ELF names the host's dynamic linker, which does not exist under
-  # nix, so without this it fails with "cannot execute: required file not found".
+  # The Linux binary is dynamically linked, so it names an interpreter that does
+  # not exist under nix and fails with "cannot execute: required file not found"
+  # without this. nix/yara-x.nix needs no equivalent - its binary is static-pie.
   nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
   buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
 
