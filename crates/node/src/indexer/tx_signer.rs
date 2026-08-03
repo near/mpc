@@ -45,6 +45,7 @@ impl TransactionSigner {
         block_hash: CryptoHash,
         block_height: u64,
     ) -> SignedTransaction {
+        // The node signs with a function-call access key, which cannot attach a deposit.
         let action = FunctionCallAction {
             method_name,
             args,

@@ -7,8 +7,10 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::types::HexVec;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tee_verifier_interface::VerifiedReport;
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
+pub const TEST_COLLATERAL_STRING: &str = include_str!("../assets/collateral.json");
 pub const TEST_APP_COMPOSE_STRING: &str = include_str!("../assets/app_compose.json");
 pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
     include_str!("../assets/app_compose_with_services.json");
@@ -58,8 +60,7 @@ pub fn image_digest() -> NodeImageHash {
 }
 
 pub fn collateral() -> Value {
-    let quote_collateral_json_string = include_str!("../assets/collateral.json");
-    quote_collateral_json_string
+    TEST_COLLATERAL_STRING
         .parse()
         .expect("Quote collateral file is a valid json.")
 }
@@ -96,21 +97,30 @@ pub fn near_account_key() -> near_sdk::PublicKey {
     key_file.parse().expect("File contains a valid public key")
 }
 
-pub fn mock_dstack_attestation() -> Attestation {
+pub fn mock_dstack_attestation_inner() -> DstackAttestation {
     let quote = quote();
-    let collateral_json_string = include_str!("../assets/collateral.json");
-    let collateral = mpc_attestation::collateral::collateral_from_str(collateral_json_string)
+    let collateral = mpc_attestation::collateral::collateral_from_str(TEST_COLLATERAL_STRING)
         .expect("collateral.json is valid collateral");
-
     let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+    DstackAttestation::new(quote, collateral, tcb_info)
+}
 
-    Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
+pub fn mock_dstack_attestation() -> Attestation {
+    Attestation::Dstack(mock_dstack_attestation_inner())
+}
+
+/// The [`VerifiedReport`] the real `tee-verifier` would return for the fixture
+/// quote, produced by running the DCAP step at [`VALID_ATTESTATION_TIMESTAMP`]
+/// (when the fixture collateral is valid).
+pub fn verified_report() -> VerifiedReport {
+    mock_dstack_attestation_inner()
+        .verify_dcap_quote(VALID_ATTESTATION_TIMESTAMP)
+        .expect("fixture quote verifies at VALID_ATTESTATION_TIMESTAMP")
 }
 
 pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Attestation {
     let quote = HexVec::from(Vec::from(quote()));
-    let collateral_json_string = include_str!("../assets/collateral.json");
-    let collateral = serde_json::from_str(collateral_json_string).unwrap();
+    let collateral = serde_json::from_str(TEST_COLLATERAL_STRING).unwrap();
 
     let tcb_info: near_mpc_contract_interface::types::TcbInfo =
         serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();

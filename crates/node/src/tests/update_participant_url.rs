@@ -22,7 +22,7 @@ use near_time::Clock;
 async fn update_participant_url__should_keep_signing_when_peer_address_moved_to_dead_address() {
     // Given
     const NUM_PARTICIPANTS: usize = 2;
-    const THRESHOLD: usize = 2;
+    const GOVERNANCE_THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -31,7 +31,7 @@ async fn update_participant_url__should_keep_signing_when_peer_address_moved_to_
         (0..NUM_PARTICIPANTS)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        GOVERNANCE_THRESHOLD,
         TXN_DELAY_BLOCKS,
         port_seed::UPDATE_PARTICIPANT_URL_TEST,
         DEFAULT_BLOCK_TIME,

@@ -14,8 +14,8 @@
 #   4. Regenerate third-party licenses
 #   5. Commit the release changes
 #
-# Usage:  ./scripts/prepare-release.sh <VERSION>
-# Example: ./scripts/prepare-release.sh 3.6.0
+# Usage:  ./scripts/ops/prepare-release.sh <VERSION>
+# Example: ./scripts/ops/prepare-release.sh 3.6.0
 #
 
 set -euo pipefail
@@ -67,7 +67,8 @@ require_cmds git-cliff cargo-about cargo-insta
 if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     if command -v gh &>/dev/null && gh auth status &>/dev/null; then
         echo "==> GITHUB_TOKEN not set, obtaining from 'gh auth token'."
-        export GITHUB_TOKEN=$(gh auth token)
+        GITHUB_TOKEN=$(gh auth token)
+        export GITHUB_TOKEN
     else
         echo "WARNING: GITHUB_TOKEN is not set and 'gh' CLI is not authenticated."
         echo "         PR links in the changelog may be missing. Fix: export GITHUB_TOKEN=<token> or 'gh auth login'."

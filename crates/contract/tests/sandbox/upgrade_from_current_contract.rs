@@ -16,6 +16,9 @@ use crate::sandbox::{
     },
 };
 use mpc_contract::update::UpdateId;
+use near_mpc_contract_interface::deposits::{
+    STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
+};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractState};
 use near_workspaces::types::NearToken;
@@ -113,23 +116,37 @@ async fn test_propose_update_config() {
         return_signature_and_clean_state_on_success_call_tera_gas: 66,
         return_ck_and_clean_state_on_success_call_tera_gas: 77,
         fail_on_timeout_tera_gas: 88,
+        fail_attestation_submission_tera_gas: 89,
         clean_tee_status_tera_gas: 99,
         clean_invalid_attestations_tera_gas: 101,
         cleanup_orphaned_node_migrations_tera_gas: 11,
         remove_non_participant_update_votes_tera_gas: 12,
         clean_foreign_chain_data_tera_gas: 13,
         remove_non_participant_tee_verifier_votes_tera_gas: 14,
+        verifier_tera_gas: 15,
+        resolve_verification_tera_gas: 16,
     };
+
+    let propose_args = ProposeUpdateArgs {
+        code: None,
+        config: Some(new_config.clone()),
+    };
+    let deposit = NearToken::from_yoctonear(
+        propose_update_required_deposit_yoctonear(
+            propose_args
+                .payload_bytes()
+                .expect("config serializes to JSON"),
+            STORAGE_BYTE_COST_YOCTONEAR,
+        )
+        .expect("the deposit for a config proposal fits in u128"),
+    );
 
     let mut proposals = Vec::with_capacity(mpc_signer_accounts.len());
     for account in &mpc_signer_accounts {
         let propose_execution = account
             .call(contract.id(), method_names::PROPOSE_UPDATE)
-            .args_borsh((ProposeUpdateArgs {
-                code: None,
-                config: Some(new_config.clone()),
-            },))
-            .deposit(NearToken::from_millinear(100))
+            .args_borsh((propose_args.clone(),))
+            .deposit(deposit)
             .transact()
             .await
             .unwrap();

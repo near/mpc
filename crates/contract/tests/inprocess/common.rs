@@ -4,7 +4,7 @@ use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        thresholds::ThresholdParameters,
+        thresholds::GovernanceThresholdParameters,
     },
 };
 use near_account_id::AccountId;
@@ -27,9 +27,16 @@ pub fn participant_context(account_id: &AccountId) -> VMContext {
         .build()
 }
 
+pub fn participant_context_with_deposit(account_id: &AccountId, deposit: NearToken) -> VMContext {
+    VMContext {
+        attached_deposit: deposit,
+        ..participant_context(account_id)
+    }
+}
+
 /// Initializes a `Running` contract with a single Sign domain from `parameters`.
 pub fn init_contract(
-    parameters: &ThresholdParameters,
+    parameters: &GovernanceThresholdParameters,
     init_config: Option<InitConfig>,
 ) -> MpcContract {
     let near_public_key =
@@ -52,7 +59,6 @@ pub fn init_contract(
     let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
     testing_env!(
         VMContextBuilder::new()
-            .attached_deposit(NearToken::from_yoctonear(1))
             .predecessor_account_id(contract_account_id.clone())
             .current_account_id(contract_account_id)
             .build()

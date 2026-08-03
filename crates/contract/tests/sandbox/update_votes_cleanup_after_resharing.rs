@@ -11,7 +11,7 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::{
-    primitives::{participants::Participants, thresholds::ThresholdParameters},
+    primitives::{participants::Participants, thresholds::GovernanceThresholdParameters},
     update::UpdateId,
 };
 use near_account_id::AccountId;
@@ -96,9 +96,9 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }
 
-    let new_threshold_parameters = ThresholdParameters::new(
+    let new_threshold_parameters = GovernanceThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);
@@ -210,9 +210,9 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }
 
-    let new_threshold_parameters = ThresholdParameters::new(
+    let new_threshold_parameters = GovernanceThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = dtos::EpochId(6);

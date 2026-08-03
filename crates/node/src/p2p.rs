@@ -943,11 +943,11 @@ impl MeshNetworkTransportSender for TlsMeshSender {
 
     async fn wait_for_ready(
         &self,
-        threshold: usize,
+        required_ready_count: usize,
         peers_to_consider: &[ParticipantId],
     ) -> anyhow::Result<()> {
         self.connectivities
-            .wait_for_ready(threshold, peers_to_consider)
+            .wait_for_ready(required_ready_count, peers_to_consider)
             .await;
         Ok(())
     }
@@ -1010,12 +1010,16 @@ pub mod testing {
             TestPorts::mpc_node_tests(24);
         pub const RECONSTRUCTION_THRESHOLD_RESHARING_TEST: TestPorts =
             TestPorts::mpc_node_tests(25);
-        pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(26);
+        pub const MIGRATION_WEBSERVER_BACKUP_SERVED_TEST: TestPorts = TestPorts::mpc_node_tests(26);
+        pub const MIGRATION_WEBSERVER_BACKUP_NOT_SERVED_TEST: TestPorts =
+            TestPorts::mpc_node_tests(27);
+        pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
+        pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
     }
 
     pub fn generate_test_p2p_configs(
         participant_accounts: &[AccountId],
-        threshold: usize,
+        governance_threshold: usize,
         // this is a hack to make sure that when tests run in parallel, they don't
         // collide on the same port.
         ports: &TestPorts,
@@ -1042,7 +1046,7 @@ pub mod testing {
         let mut configs = Vec::new();
         for (i, singing_key) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
-                threshold: threshold as u64,
+                threshold: governance_threshold as u64,
                 participants: participants.clone(),
             };
 

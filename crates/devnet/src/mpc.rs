@@ -24,9 +24,10 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::call_args::VoteUpdateArgs;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, EpochId, NodeImageHash, ParticipantId, ParticipantInfo,
-    Participants, ProposeUpdateArgs, ProposedThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, Threshold, ThresholdParameters, protocol_state_to_string,
+    DomainConfig, DomainPurpose, EpochId, GovernanceThreshold, GovernanceThresholdParameters,
+    NodeImageHash, ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
+    ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
+    ReconstructionThreshold, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -379,12 +380,12 @@ impl MpcInitContractCmd {
             participant_entries.push((account_id.clone(), next_id, info));
             next_id = next_id.next();
         }
-        let parameters = ThresholdParameters {
+        let parameters = GovernanceThresholdParameters {
             participants: Participants {
                 next_id,
                 participants: participant_entries,
             },
-            threshold: Threshold::new(self.threshold),
+            threshold: GovernanceThreshold::new(self.threshold),
         };
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
@@ -410,7 +411,7 @@ impl MpcInitContractCmd {
 
 #[derive(Serialize)]
 struct InitV2Args {
-    parameters: ThresholdParameters,
+    parameters: GovernanceThresholdParameters,
     init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
@@ -747,7 +748,7 @@ impl MpcVoteNewParametersCmd {
             participants.next_id = id.next();
         }
         let threshold = if let Some(threshold) = self.set_threshold {
-            Threshold::new(threshold)
+            GovernanceThreshold::new(threshold)
         } else {
             parameters.threshold
         };
@@ -761,8 +762,8 @@ impl MpcVoteNewParametersCmd {
                 )
             })
             .collect();
-        let proposal = ProposedThresholdParameters {
-            parameters: ThresholdParameters {
+        let proposal = ProposedGovernanceThresholdParameters {
+            parameters: GovernanceThresholdParameters {
                 participants,
                 threshold,
             },
@@ -916,7 +917,7 @@ pub async fn read_contract_state(
 #[derive(Serialize)]
 struct VoteNewParametersArgs {
     prospective_epoch_id: EpochId,
-    proposal: ProposedThresholdParameters,
+    proposal: ProposedGovernanceThresholdParameters,
 }
 
 #[derive(Serialize)]

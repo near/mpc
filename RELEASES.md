@@ -53,19 +53,19 @@ with whatever version you're releasing.
 ### 1. Prepare the release PR
 
 Create a working branch off the release-source branch, then run
-[`scripts/prepare-release.sh`](./scripts/prepare-release.sh) to apply the
+[`scripts/ops/prepare-release.sh`](./scripts/ops/prepare-release.sh) to apply the
 release boilerplate (changelog, version bump, ABI snapshot, licenses):
 
 ```sh
 # For a minor/major release:
 git checkout main && git pull
 git checkout -b release-prep/v3.11.0
-./scripts/prepare-release.sh 3.11.0
+./scripts/ops/prepare-release.sh 3.11.0
 
 # For a patch release:
 git checkout release/v3.11 && git pull
 git checkout -b release-prep/v3.11.1
-./scripts/prepare-release.sh 3.11.1
+./scripts/ops/prepare-release.sh 3.11.1
 ```
 
 Push the working branch and open a PR against `main` (for minor releases)
@@ -233,7 +233,7 @@ We follow [Semantic Versioning](https://semver.org/) with these compatibility ru
 ## Changelog conventions
 
 We use [`git-cliff`](https://git-cliff.org/) to maintain `CHANGELOG.md`.
-The `prepare-release.sh` script invokes `git-cliff -t <VERSION>
+The `scripts/ops/prepare-release.sh` script invokes `git-cliff -t <VERSION>
 <BASE_TAG>..<HEAD-SHA>`, where `BASE_TAG` is the most recent **semver**
 tag (`X.Y.Z`) reachable from `HEAD`, found via `git describe` with a
 `--match` glob that skips stray non-semver tags. The range head is a

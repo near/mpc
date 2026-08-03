@@ -29,7 +29,7 @@ pub(crate) fn decrypt_bytes(key: &AesKey256, nonce_and_cipher: &[u8]) -> anyhow:
     let cipher = Aes256Gcm::new(key.into());
     let plaintext_bytes = cipher
         .decrypt(&nonce, ciphertext)
-        .map_err(|err| anyhow::anyhow!("encryption failed: {err}"))?;
+        .map_err(|err| anyhow::anyhow!("decryption failed: {err}"))?;
     Ok(plaintext_bytes)
 }
 

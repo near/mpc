@@ -300,10 +300,18 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
         Self { connectivities }
     }
 
-    /// Waits for `threshold` number of connections (a freebie is included for the node itself)
+    /// Waits for `required_ready_count` number of connections (a freebie is included for the node itself)
     /// to the given `peers` to be bidirectionally established at the same time.
-    pub async fn wait_for_ready(&self, threshold: usize, peers_to_consider: &[ParticipantId]) {
-        info!("Waiting for {:?} participants to be ready.", threshold - 1);
+    pub async fn wait_for_ready(
+        &self,
+        required_ready_count: usize,
+        peers_to_consider: &[ParticipantId],
+    ) {
+        info!(
+            // Subtract the freebie for this node itself, so the count reflects the peers we still wait on.
+            "Waiting for {:?} participants to be ready.",
+            required_ready_count - 1
+        );
 
         let mut receivers = self
             .connectivities
@@ -321,7 +329,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
                     connected_count += 1;
                 }
             }
-            if connected_count + 1 >= threshold {
+            if connected_count + 1 >= required_ready_count {
                 break;
             }
 

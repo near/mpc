@@ -6,7 +6,7 @@ pub mod metrics;
 pub mod mpc_node;
 pub mod near_sandbox;
 
-pub use blockchain::{ClientHandle, DeployedContract, NearBlockchain};
+pub use blockchain::{DeployedContract, NearBlockchain, NearKitCaller};
 pub use cluster::{
     CLUSTER_WAIT_TIMEOUT, DEFAULT_PRESIGNATURES_TO_BUFFER, DEFAULT_TRIPLES_TO_BUFFER, MpcCluster,
     MpcClusterConfig, MpcNodeState,

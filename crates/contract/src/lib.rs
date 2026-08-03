@@ -49,6 +49,7 @@ use crate::{
     },
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
+    tee::verification_context::VerificationContext,
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposedUpdates, Update, UpdateId},
 };
@@ -71,6 +72,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use mpc_attestation::attestation::{Attestation, DstackAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
@@ -83,15 +85,18 @@ use primitives::{
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     participants::ParticipantInfo,
     signature::{SignRequestArgs, SignatureRequest, YieldIndex},
-    thresholds::{ProposedThresholdParameters, Threshold, ThresholdParameters},
+    thresholds::{
+        GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    },
 };
 use tee::measurements::{ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes};
 use tee::proposal::{CodeHashesVotes, LauncherHashVotes};
+use tee_verifier_interface::{VerificationResult, VerifiedReport};
 
 use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
     proposal::{LauncherVoteAction, NodeImageHash},
-    tee_state::{AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult},
+    tee_state::{NodeId, TeeValidationResult},
 };
 
 /// Register used to receive data id from `promise_await_data`.
@@ -104,6 +109,14 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Minimum deposit required for the operator-authenticated node-management methods
+/// (`register_backup_service`, `start_node_migration`, `update_participant_url`).
+///
+/// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
+/// is registered as a function-call access key, which cannot attach a deposit, so a leaked
+/// node key cannot invoke these methods.
+pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
@@ -111,12 +124,11 @@ const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
 /// A non-zero deposit is required so that the transaction must be signed by a
-/// full-access key (or a function-call access key whose `deposit` allowance is
-/// explicitly set). This prevents a **malicious frontend** from silently
+/// full-access key: function-call access keys cannot attach a deposit (their
+/// allowance covers gas only). This prevents a **malicious frontend** from silently
 /// submitting signature requests on behalf of a user via a restricted
-/// function-call access key, because such keys cannot attach deposits by
-/// default. In other words, requiring a deposit ensures the user (or their
-/// full-access key) explicitly authorised the call.
+/// function-call access key. In other words, requiring a deposit ensures the user
+/// (or their full-access key) explicitly authorised the call.
 ///
 /// See the "Deposit requirement" section in the contract README for more
 /// details.
@@ -132,12 +144,15 @@ fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
                 .to_string(),
             );
         }
-        Some(diff) => {
-            if diff > NearToken::from_yoctonear(0) {
-                log!("refund excess deposit {diff} to {predecessor}");
-                Promise::new(predecessor.clone()).transfer(diff).detach();
-            }
-        }
+        Some(diff) => refund_to(predecessor, diff),
+    }
+}
+
+/// Transfers `amount` to `account_id` via a detached promise; no-op when zero.
+fn refund_to(account_id: &AccountId, amount: NearToken) {
+    if amount > NearToken::from_near(0) {
+        log!("refund {amount} to {account_id}");
+        Promise::new(account_id.clone()).transfer(amount).detach();
     }
 }
 
@@ -166,7 +181,9 @@ pub struct MpcContract {
     metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
     /// The verifier contract account trusted for DCAP verification, or [`None`]
-    /// until participants vote one in. Not yet used to dispatch verification.
+    /// until participants vote one in. An [`Attestation::Dstack`] submission
+    /// offloads quote verification to this account; while it is [`None`], such
+    /// submissions are rejected with [`TeeError::VerifierNotConfigured`].
     // TODO(#3639): once participants have voted a verifier in, make this
     // non-optional via a migration that requires it be set.
     tee_verifier_account_id: Option<AccountId>,
@@ -211,7 +228,7 @@ impl MpcContract {
         self.protocol_state.public_key(domain_id)
     }
 
-    fn threshold(&self) -> Result<Threshold, Error> {
+    fn threshold(&self) -> Result<GovernanceThreshold, Error> {
         self.protocol_state.threshold()
     }
 
@@ -754,15 +771,21 @@ impl MpcContract {
         )
     }
 
-    /// (Prospective) Participants can submit their tee participant information through this
-    /// endpoint.
-    #[payable]
+    /// Submit a TEE attestation for a current or prospective participant.
+    ///
+    /// - [`Attestation::Mock`] is verified synchronously.
+    /// - [`Attestation::Dstack`] is verified asynchronously via a cross-contract
+    ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
+    ///   callback to run the post-DCAP checks and store the attestation.
+    ///
+    /// Storage is funded by the contract's own balance, so a node submits with no deposit via its
+    /// function-call access key, for its first attestation and re-attestations alike.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
         proposed_participant_attestation: dtos::Attestation,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<(), Error> {
+    ) -> Result<PromiseOrValue<()>, Error> {
         let proposed_participant_attestation =
             proposed_participant_attestation.try_into_contract_type()?;
 
@@ -776,13 +799,6 @@ impl MpcContract {
             account_key
         );
 
-        // Save the initial storage usage to know how much to charge the proposer for the storage
-        // used
-        let initial_storage = env::storage_usage();
-
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
         // The node always signs submissions with an Ed25519 key
         // (`near_signer_key`), so the signer key here is Ed25519 in practice.
         // Reject non-Ed25519 signer keys rather than silently storing a value
@@ -793,63 +809,57 @@ impl MpcContract {
             }
         })?;
 
-        // Add the participant information to the contract state
-        let attestation_insertion_result = self
-            .tee_state
-            .add_participant(
-                NodeId {
-                    account_id: account_id.clone(),
-                    tls_public_key,
-                    account_public_key,
-                },
-                proposed_participant_attestation,
-                tee_upgrade_deadline_duration,
-            )
-            .map_err(|err| {
-                let reason = match &err {
-                    AttestationSubmissionError::InvalidAttestation(_) => {
-                        format!("TeeQuoteStatus is invalid: {err}")
-                    }
-                    AttestationSubmissionError::TlsKeyOwnedByOtherAccount => err.to_string(),
-                };
-                InvalidParameters::InvalidTeeRemoteAttestation { reason }
-            })?;
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key,
+            account_public_key,
+        };
 
-        let caller_is_not_participant = self.voter_account().is_err();
-        let is_new_attestation = matches!(
-            attestation_insertion_result,
-            ParticipantInsertion::NewlyInsertedParticipant
-        );
-
-        let attestation_storage_must_be_paid_by_caller =
-            is_new_attestation || caller_is_not_participant;
-
-        if attestation_storage_must_be_paid_by_caller {
-            // `saturating_sub`: if a re-submission shrinks the entry, charge nothing
-            // rather than underflow. Intentional asymmetry: we do not refund freed bytes
-            // either — the caller already paid for the larger entry, and we'd rather
-            // accept that asymmetry than open a refund path for payload-shrinking games.
-            let storage_used = env::storage_usage().saturating_sub(initial_storage);
-            let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
-            let attached = env::attached_deposit();
-
-            if attached < cost {
-                return Err(InvalidParameters::InsufficientDeposit {
-                    attached: attached.as_yoctonear(),
-                    required: cost.as_yoctonear(),
-                }
-                .into());
+        match proposed_participant_attestation {
+            Attestation::Mock(mock) => {
+                let tee_upgrade_deadline_duration =
+                    Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+                self.tee_state.verify_and_store_mock(
+                    node_id,
+                    mock,
+                    tee_upgrade_deadline_duration,
+                )?;
+                Ok(PromiseOrValue::Value(()))
             }
-
-            // Refund the difference if the proposer attached more than required
-            if let Some(diff) = attached.checked_sub(cost)
-                && diff > NearToken::from_yoctonear(0)
-            {
-                Promise::new(account_id).transfer(diff).detach();
-            }
+            Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
+                self.submit_dstack_attestation(node_id, attestation)?,
+            )),
         }
+    }
 
-        Ok(())
+    /// Async [`Attestation::Dstack`] submission: spawns a promise calling
+    /// `verify_quote` on the trusted verifier contract, with
+    /// [`Self::resolve_verification`] chained as its callback.
+    fn submit_dstack_attestation(
+        &mut self,
+        node_id: NodeId,
+        attestation: DstackAttestation,
+    ) -> Result<Promise, Error> {
+        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
+            return Err(TeeError::VerifierNotConfigured.into());
+        };
+
+        Ok(Promise::new(verifier_account_id)
+            .function_call(
+                method_names::VERIFY_QUOTE.to_string(),
+                borsh::to_vec(&(&attestation.quote, &attestation.collateral))
+                    .expect("borsh serialization of verify_quote args must succeed"),
+                NearToken::from_near(0),
+                Gas::from_tgas(self.config.verifier_tera_gas),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
+                    .resolve_verification(VerificationContext {
+                        node_id,
+                        attestation,
+                    }),
+            ))
     }
 
     #[handle_result]
@@ -887,10 +897,10 @@ impl MpcContract {
     pub fn vote_new_parameters(
         &mut self,
         prospective_epoch_id: EpochId,
-        proposal: dtos::ProposedThresholdParameters,
+        proposal: dtos::ProposedGovernanceThresholdParameters,
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
-        let proposal: ProposedThresholdParameters = proposal.try_into_contract_type()?;
+        let proposal: ProposedGovernanceThresholdParameters = proposal.try_into_contract_type()?;
         log!(
             "vote_new_parameters: signer={}, proposal={:?}",
             env::signer_account_id(),
@@ -1032,13 +1042,15 @@ impl MpcContract {
         };
         // TODO(#3556): replace this with a per-scheme
         // `required_active_signers(protocol, reconstruction_threshold)`.
-        let Some(threshold) = self.protocol_state.domain_registry().ok().and_then(|r| {
-            r.domains()
-                .iter()
-                .filter(|d| d.purpose == DomainPurpose::ForeignTx)
-                .map(|d| d.reconstruction_threshold.inner())
-                .max()
-        }) else {
+        let Some(reconstruction_threshold) =
+            self.protocol_state.domain_registry().ok().and_then(|r| {
+                r.domains()
+                    .iter()
+                    .filter(|d| d.purpose == DomainPurpose::ForeignTx)
+                    .map(|d| d.reconstruction_threshold.inner())
+                    .max()
+            })
+        else {
             // No op if contract isn't in Running or Resharing state, or
             // there is no foreign tx domain registered.
             // Not panicking is intentional.
@@ -1053,7 +1065,7 @@ impl MpcContract {
             .collect();
         self.foreign_chains
             .get_mut()
-            .update_available_chains_config_cache(&active_tls_keys, threshold);
+            .update_available_chains_config_cache(&active_tls_keys, reconstruction_threshold);
     }
 
     #[deprecated(
@@ -1179,7 +1191,7 @@ impl MpcContract {
                 .function_call(
                     method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
                 )
                 .detach();
@@ -1188,7 +1200,7 @@ impl MpcContract {
                 .function_call(
                     method_names::CLEAN_TEE_STATUS.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.clean_tee_status_tera_gas),
                 )
                 .detach();
@@ -1200,7 +1212,7 @@ impl MpcContract {
                         "max_scan": RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN
                     }))
                     .unwrap(),
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.clean_invalid_attestations_tera_gas),
                 )
                 .detach();
@@ -1209,7 +1221,7 @@ impl MpcContract {
                 .function_call(
                     method_names::CLEANUP_ORPHANED_NODE_MIGRATIONS.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
                 )
                 .detach();
@@ -1218,7 +1230,7 @@ impl MpcContract {
                 .function_call(
                     method_names::CLEAN_FOREIGN_CHAIN_DATA.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(self.config.clean_foreign_chain_data_tera_gas),
                 )
                 .detach();
@@ -1227,7 +1239,7 @@ impl MpcContract {
                 .function_call(
                     method_names::REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES.to_string(),
                     vec![],
-                    NearToken::from_yoctonear(0),
+                    NearToken::from_near(0),
                     Gas::from_tgas(
                         self.config
                             .remove_non_participant_tee_verifier_votes_tera_gas,
@@ -1304,10 +1316,19 @@ impl MpcContract {
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
         let proposer = self.voter_or_panic();
+        let payload_bytes =
+            args.payload_bytes()
+                .map_err(|err| InvalidParameters::MalformedPayload {
+                    reason: err.to_string(),
+                })?;
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
-        let required = ProposedUpdates::required_deposit(&update);
+        let required = ProposedUpdates::required_deposit(payload_bytes).map_err(|err| {
+            InvalidParameters::MalformedPayload {
+                reason: err.to_string(),
+            }
+        })?;
         if attached < required {
             return Err(InvalidParameters::InsufficientDeposit {
                 attached: attached.as_yoctonear(),
@@ -1325,10 +1346,8 @@ impl MpcContract {
         );
 
         // Refund the difference if the proposer attached more than required.
-        if let Some(diff) = attached.checked_sub(required)
-            && diff > NearToken::from_yoctonear(0)
-        {
-            Promise::new(proposer).transfer(diff).detach();
+        if let Some(diff) = attached.checked_sub(required) {
+            refund_to(&proposer, diff);
         }
 
         Ok(id)
@@ -1725,11 +1744,13 @@ impl MpcContract {
                 // wait for manual intervention.
                 let max_reconstruction_threshold =
                     max_reconstruction_threshold(running_state.domains.domains());
-                if let Err(err) = ThresholdParameters::validate_governance_against_reconstruction(
-                    u64::try_from(remaining).expect("participant count fits in u64"),
-                    current_params.threshold(),
-                    max_reconstruction_threshold,
-                ) {
+                if let Err(err) =
+                    GovernanceThresholdParameters::validate_governance_against_reconstruction(
+                        u64::try_from(remaining).expect("participant count fits in u64"),
+                        current_params.threshold(),
+                        max_reconstruction_threshold,
+                    )
+                {
                     log!(
                         "Kicking out participants with an invalid TEE status would break the threshold relation ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
                         err,
@@ -1750,16 +1771,18 @@ impl MpcContract {
                 let new_threshold = usize::try_from(current_params.threshold().value())
                     .expect("threshold value fits in usize");
 
-                let threshold_parameters = ThresholdParameters::new(
+                let threshold_parameters = GovernanceThresholdParameters::new(
                     participants_with_valid_attestation,
-                    Threshold::new(new_threshold as u64),
+                    GovernanceThreshold::new(new_threshold as u64),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
                 // This resharing only changes the participant set, so the
                 // per-domain reconstruction-threshold updates map is empty.
-                let proposed_parameters =
-                    ProposedThresholdParameters::new(threshold_parameters, BTreeMap::new());
+                let proposed_parameters = ProposedGovernanceThresholdParameters::new(
+                    threshold_parameters,
+                    BTreeMap::new(),
+                );
                 let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
                 if let Some(resharing) = res {
                     self.protocol_state = ProtocolContractState::Resharing(resharing);
@@ -1925,10 +1948,10 @@ impl MpcContract {
     #[handle_result]
     #[init]
     pub fn init(
-        parameters: dtos::ThresholdParameters,
+        parameters: dtos::GovernanceThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        let parameters: ThresholdParameters = parameters.try_into_contract_type()?;
+        let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -1981,10 +2004,10 @@ impl MpcContract {
         domains: Vec<DomainConfig>,
         next_domain_id: u64,
         keyset: Keyset,
-        parameters: dtos::ThresholdParameters,
+        parameters: dtos::GovernanceThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        let parameters: ThresholdParameters = parameters.try_into_contract_type()?;
+        let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
@@ -2001,10 +2024,13 @@ impl MpcContract {
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
         let num_participants = parameters.participants().len() as u64;
         for domain in domains.domains() {
-            crate::primitives::domain::validate_domain_threshold(domain, num_participants)?;
+            crate::primitives::domain::validate_domain_reconstruction_threshold(
+                domain,
+                num_participants,
+            )?;
         }
         // Keep the GovernanceThreshold at least as large as the largest ReconstructionThreshold.
-        ThresholdParameters::validate_governance_against_reconstruction(
+        GovernanceThresholdParameters::validate_governance_against_reconstruction(
             num_participants,
             parameters.threshold(),
             max_reconstruction_threshold(domains.domains()),
@@ -2124,6 +2150,12 @@ impl MpcContract {
         &self,
     ) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
         self.tee_verifier_votes.pending()
+    }
+
+    /// Returns the trusted TEE verifier contract account, or [`None`] until
+    /// participants vote one in via [`Self::vote_tee_verifier_change`].
+    pub fn tee_verifier_account_id(&self) -> Option<AccountId> {
+        self.tee_verifier_account_id.clone()
     }
 
     /// Presence check for a pending signature request, exposed as a view call.
@@ -2271,6 +2303,78 @@ impl MpcContract {
         }
     }
 
+    /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the
+    /// attestation (storage funded by the contract's balance). On any failure it fails the
+    /// submitter's transaction.
+    #[private]
+    pub fn resolve_verification(
+        &mut self,
+        #[serializer(borsh)] context: VerificationContext,
+        #[serializer(borsh)]
+        #[callback_result]
+        result: Result<VerificationResult, PromiseError>,
+    ) -> PromiseOrValue<()> {
+        let account_id = context.node_id.account_id.clone();
+        log!("resolve_verification: account_id={account_id}");
+
+        let attestation_result = match result {
+            Ok(VerificationResult::Verified(report)) => {
+                self.verify_post_dcap_and_store(&context, &report)
+            }
+            Ok(VerificationResult::Rejected(reason)) => {
+                log!("verifier rejected quote for {account_id}: {reason}");
+                Err(TeeError::QuoteRejected {
+                    reason: reason.to_string(),
+                }
+                .into())
+            }
+            // No verdict (verifier unreachable, panicked, or out of gas)
+            Err(promise_err) => {
+                log!("verifier did not answer for {account_id}: {promise_err:?}");
+                Err(TeeError::VerifierUnavailable.into())
+            }
+        };
+
+        match attestation_result {
+            Ok(()) => PromiseOrValue::Value(()),
+            Err(err) => {
+                // Fail the submitter's transaction from a separate receipt so any prior state
+                // commits (a panic here would roll it back)
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
+                    borsh::to_vec(&err.to_string())
+                        .expect("borsh serialization of reason must succeed"),
+                    NearToken::from_near(0),
+                    Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
+                );
+                PromiseOrValue::Promise(promise.as_return())
+            }
+        }
+    }
+
+    /// Runs the post-DCAP checks and stores the attestation for a
+    /// [`VerificationResult::Verified`] response. Storage is funded by the contract's balance.
+    fn verify_post_dcap_and_store(
+        &mut self,
+        context: &VerificationContext,
+        report: &VerifiedReport,
+    ) -> Result<(), Error> {
+        let account_id = &context.node_id.account_id;
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        if let Err(err) = self.tee_state.verify_and_store_dstack(
+            context.node_id.clone(),
+            &context.attestation,
+            report,
+            tee_upgrade_deadline_duration,
+        ) {
+            log!("post-DCAP check failed for {account_id}: {err}");
+            return Err(err.into());
+        }
+        Ok(())
+    }
+
     /// Yield-resume callback for a single queued CKD request.
     ///
     /// On success, returns the confidential key to the original caller. On timeout,
@@ -2335,6 +2439,12 @@ impl MpcContract {
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
         }
+    }
+
+    #[private]
+    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
+        log!("fail_attestation_submission: {reason}");
+        env::panic_str(&reason);
     }
 
     #[private]
@@ -2455,8 +2565,10 @@ impl MpcContract {
     /// The caller (`signer_account_id`) must be an existing or prospective participant.
     /// Otherwise, the transaction will fail.
     ///
-    /// # Notes
-    /// - A deposit requirement may be added in the future.
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
+    #[payable]
     #[handle_result]
     pub fn register_backup_service(
         &mut self,
@@ -2477,6 +2589,8 @@ impl MpcContract {
             }
             .into());
         }
+        // Checked after the participant/state validation so those errors take precedence.
+        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         self.node_migrations
             .set_backup_service_info(account_id, backup_service_info);
         Ok(())
@@ -2492,15 +2606,16 @@ impl MpcContract {
     /// # Errors
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
-    /// # Note:
-    /// - might require a deposit
+    ///
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
+    #[payable]
     #[handle_result]
     pub fn start_node_migration(
         &mut self,
         destination_node_info: dtos::DestinationNodeInfo,
     ) -> Result<(), Error> {
-        // TODO(#1163): require a deposit
-
         let account_id = Self::assert_caller_is_signer();
 
         log!(
@@ -2518,15 +2633,21 @@ impl MpcContract {
             }
             .into());
         }
+        // Checked after the participant/state validation so those errors take precedence.
+        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
         Ok(())
     }
 
     /// Updates the calling participant's registered URL, keeping the TLS key and participant ID.
+    ///
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
+    #[payable]
     #[handle_result]
     pub fn update_participant_url(&mut self, url: String) -> Result<(), Error> {
-        // TODO(#1163): require a deposit
         let account_id = Self::assert_caller_is_signer();
         log!(
             "update_participant_url: signer={:?}, url={:?}",
@@ -2546,6 +2667,8 @@ impl MpcContract {
             url,
             tls_public_key: existing_info.tls_public_key.clone(),
         };
+        // Checked after the participant/state validation so those errors take precedence.
+        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         running_state.parameters.update_info(account_id, new_info)
     }
 
@@ -2714,12 +2837,13 @@ mod tests {
     use crate::state::resharing::ResharingContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
+        gen_running_state_with_params,
     };
     use crate::tee::measurements::{
         KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
     };
     use crate::tee::proposal::{LauncherVoteAction, get_docker_compose_hash};
-    use crate::tee::tee_state::{NodeAttestation, NodeId};
+    use crate::tee::tee_state::{NodeAttestation, NodeId, ParticipantInsertion};
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
@@ -2727,9 +2851,9 @@ mod tests {
     use elliptic_curve::Group;
     use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
-        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation, VerifiedAttestation,
+        MockAttestation as MpcMockAttestation, ValidatedDstackAttestation, VerifiedAttestation,
+        default_measurements,
     };
-    use mpc_primitives::hash::DockerImageHash;
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_mpc_contract_interface::types::CKDAppPublicKey;
@@ -2747,9 +2871,12 @@ mod tests {
     use rstest::rstest;
     use sha2::{Digest, Sha256};
 
+    use crate::tee::{
+        test_utils::whitelist_dstack_measurements, verification_context::VerificationContext,
+    };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, image_digest, launcher_image_hash,
-        mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
+        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -2906,7 +3033,9 @@ mod tests {
             attempt: AttemptId::new(),
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
-        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let parameters =
+            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
+                .unwrap();
         let contract =
             MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
                 .unwrap();
@@ -3576,7 +3705,7 @@ mod tests {
     #[should_panic(expected = "Attached deposit is lower than required")]
     fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        override_context_for_preconditions(NearToken::from_yoctonear(0), Gas::from_tgas(300));
+        override_context_for_preconditions(NearToken::from_near(0), Gas::from_tgas(300));
         contract.check_request_preconditions(
             DomainId::default(),
             DomainPurpose::Sign,
@@ -3893,8 +4022,9 @@ mod tests {
             .build();
         testing_env!(context);
 
-        let threshold = Threshold::new(threshold_value);
-        let parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
+        let threshold = GovernanceThreshold::new(threshold_value);
+        let parameters =
+            GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
         let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
 
         (contract, participants, first_participant_id)
@@ -3935,6 +4065,33 @@ mod tests {
         // candidate becomes the trusted verifier.
         vote_as(&mut contract, &participant_account_ids[1]);
         assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn tee_verifier_account_id__should_report_none_until_threshold_then_the_candidate() {
+        // Given
+        let (mut contract, _, _) = setup_tee_test_contract(3, 2);
+        let voters = participant_account_ids(&contract);
+        let candidate: AccountId = "verifier.near".parse().unwrap();
+        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+
+        let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
+            Environment::new(None, Some(account_id.clone()), None);
+            contract
+                .vote_tee_verifier_change(candidate.clone(), code_hash)
+                .expect("vote should succeed");
+        };
+
+        assert_eq!(contract.tee_verifier_account_id(), None);
+
+        // When
+        vote_as(&mut contract, &voters[0]);
+        assert_eq!(contract.tee_verifier_account_id(), None);
+        vote_as(&mut contract, &voters[1]);
+
+        // Then
+        assert_eq!(contract.tee_verifier_account_id(), Some(candidate));
     }
 
     #[test]
@@ -3985,8 +4142,11 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters =
-                ThresholdParameters::new(participants.subset(1..3), Threshold::new(2)).unwrap();
+            state.parameters = GovernanceThresholdParameters::new(
+                participants.subset(1..3),
+                GovernanceThreshold::new(2),
+            )
+            .unwrap();
         }
         Environment::new(None, Some(env::current_account_id()), None);
         contract
@@ -4019,11 +4179,12 @@ mod tests {
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
             .predecessor_account_id(account_id.clone())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Mock(attestation), dto_public_key)
+        contract
+            .submit_participant_info(Attestation::Mock(attestation), dto_public_key)
+            .map(|_| ())
     }
 
     fn submit_valid_attestations(
@@ -4047,17 +4208,17 @@ mod tests {
         contract: &mut MpcContract,
         first_participant_id: &AccountId,
         participants: Participants,
-        threshold: Threshold,
+        threshold: GovernanceThreshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
             .predecessor_account_id(first_participant_id.clone())
-            .attached_deposit(NearToken::from_yoctonear(0))
+            .attached_deposit(NearToken::from_near(0))
             .build();
         testing_env!(voting_context);
 
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, threshold).unwrap(),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, threshold).unwrap(),
             BTreeMap::new(),
         );
         contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
@@ -4070,7 +4231,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
+        let threshold = GovernanceThreshold::new(2);
 
         // No attestations submitted - all participants have default TEE status None
         let result = setup_voting_context_and_vote(
@@ -4092,7 +4253,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
+        let threshold = GovernanceThreshold::new(2);
 
         // Submit valid attestations for all participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -4119,7 +4280,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
-        let threshold = Threshold::new(3);
+        let threshold = GovernanceThreshold::new(3);
 
         // Submit valid attestations for first 3 participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -4135,8 +4296,8 @@ mod tests {
         if let Err(error) = result {
             let error_string = error.to_string();
             assert!(
-                error_string.contains("TeeQuoteStatus is invalid"),
-                "Error should mention invalid TEE status, got: {}",
+                error_string.contains("failed verification"),
+                "Error should mention attestation verification failure, got: {}",
                 error_string
             );
         }
@@ -4175,8 +4336,11 @@ mod tests {
                 .build()
         );
 
-        let parameters =
-            ThresholdParameters::new(participants.clone(), Threshold::new(threshold)).unwrap();
+        let parameters = GovernanceThresholdParameters::new(
+            participants.clone(),
+            GovernanceThreshold::new(threshold),
+        )
+        .unwrap();
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
@@ -4203,13 +4367,13 @@ mod tests {
     fn vote_params(
         contract: &mut MpcContract,
         signer: &AccountId,
-        proposal: &ProposedThresholdParameters,
+        proposal: &ProposedGovernanceThresholdParameters,
     ) -> Result<(), Error> {
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(signer.clone())
                 .predecessor_account_id(signer.clone())
-                .attached_deposit(NearToken::from_yoctonear(0))
+                .attached_deposit(NearToken::from_near(0))
                 .build()
         );
         contract.vote_new_parameters(EpochId::new(1), proposal.into_dto_type())
@@ -4223,8 +4387,8 @@ mod tests {
         // ...and a proposal raising that domain's reconstruction threshold to 4.
         let mut per_domain = BTreeMap::new();
         per_domain.insert(domain_id, ReconstructionThreshold::new(4));
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, Threshold::new(2)).unwrap(),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
             per_domain,
         );
 
@@ -4235,7 +4399,7 @@ mod tests {
         assert_matches!(
             result.unwrap_err(),
             Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
-                threshold: 4,
+                reconstruction_threshold: 4,
                 participants: 3,
             })
         );
@@ -4248,8 +4412,12 @@ mod tests {
             setup_running_contract_with_domain(4, 3, 3);
         // ...and a proposal that shrinks the participant set to 2 without touching
         // the per-domain thresholds.
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants.subset(0..2), Threshold::new(2)).unwrap(),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(
+                participants.subset(0..2),
+                GovernanceThreshold::new(2),
+            )
+            .unwrap(),
             BTreeMap::new(),
         );
 
@@ -4272,8 +4440,11 @@ mod tests {
         let (mut contract, participants, signer, _domain_id) =
             setup_running_contract_with_domain(3, 2, 2);
         // ...and a proposal whose signing threshold (4) exceeds the participant set.
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new_unvalidated(participants, Threshold::new(4)),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new_unvalidated(
+                participants,
+                GovernanceThreshold::new(4),
+            ),
             BTreeMap::new(),
         );
 
@@ -4296,8 +4467,8 @@ mod tests {
         // which fits the 5 participants and does not exceed the GovernanceThreshold.
         let mut per_domain = BTreeMap::new();
         per_domain.insert(domain_id, ReconstructionThreshold::new(4));
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, Threshold::new(4)).unwrap(),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(4)).unwrap(),
             per_domain,
         );
 
@@ -4316,8 +4487,8 @@ mod tests {
             setup_running_contract_with_domain(5, 4, 4);
         // ...and a proposal lowering the GovernanceThreshold to 3 (valid on its own)
         // while the domain keeps its reconstruction threshold of 4.
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, Threshold::new(3)).unwrap(),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(3)).unwrap(),
             BTreeMap::new(),
         );
 
@@ -4341,16 +4512,16 @@ mod tests {
         // Given: a participant whose vote is forwarded through another contract,
         // so signer_account_id (the participant) != predecessor_account_id (the forwarder).
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = Threshold::new(2);
-        let proposal = ProposedThresholdParameters::new(
-            ThresholdParameters::new(participants, threshold).unwrap(),
+        let threshold = GovernanceThreshold::new(2);
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, threshold).unwrap(),
             BTreeMap::new(),
         );
 
         let ctx = VMContextBuilder::new()
             .signer_account_id(first_participant_id)
             .predecessor_account_id("forwarder.near".parse().unwrap())
-            .attached_deposit(NearToken::from_yoctonear(0))
+            .attached_deposit(NearToken::from_near(0))
             .build();
         testing_env!(ctx);
 
@@ -4436,13 +4607,81 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
 
-        contract
+        let _ = contract
             .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
             .expect("Expected panic if predecessor != signer");
+    }
+
+    fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let contract_account_id = env::current_account_id();
+        let context = VMContextBuilder::new()
+            .current_account_id(contract_account_id.clone())
+            .predecessor_account_id(contract_account_id)
+            .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
+            .build();
+        testing_env!(context);
+
+        contract.tee_state = TeeState::default();
+        whitelist_dstack_measurements(
+            &mut contract.tee_state,
+            image_digest(),
+            launcher_image_hash(),
+        );
+
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
+            account_public_key: Ed25519PublicKey(account_key()),
+        };
+        let attestation = mock_dstack_attestation_inner();
+        (
+            contract,
+            VerificationContext {
+                node_id,
+                attestation,
+            },
+        )
+    }
+
+    #[test]
+    fn resolve_verification__should_store_on_verified_verdict() {
+        // Given
+        let (mut contract, context) = dstack_verification_setup();
+        let node_id = context.node_id.clone();
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(contract.tee_state.stored_attestations.len(), 1);
+        let stored = contract
+            .tee_state
+            .stored_attestations
+            .get(&node_id.tls_public_key)
+            .expect("attestation must be stored");
+        assert_eq!(stored.node_id, node_id);
+    }
+
+    #[test]
+    fn resolve_verification__should_return_fail_promise_and_store_nothing_on_verifier_unavailable()
+    {
+        // Given
+        let (mut contract, context) = dstack_verification_setup();
+
+        // When
+        let result = contract.resolve_verification(context, Err(PromiseError::Failed));
+
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Promise(_)));
+        assert!(contract.tee_state.stored_attestations.is_empty());
     }
 
     #[test]
@@ -4463,11 +4702,10 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
             .predecessor_account_id(outsider_id.clone())
-            .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
 
-        contract
+        let _ = contract
             .submit_participant_info(valid_attestation, dto_public_key)
             .expect("Outsider attestation submission should succeed");
 
@@ -4525,11 +4763,10 @@ mod tests {
             VMContextBuilder::new()
                 .signer_account_id(outsider_id.clone())
                 .predecessor_account_id(outsider_id.clone())
-                .attached_deposit(NearToken::from_near(1))
                 .build()
         );
 
-        contract
+        let _ = contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
 
@@ -4650,6 +4887,7 @@ mod tests {
         };
         let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
         for (account_id, _, _) in participants.participants() {
             test_env.set_signer(account_id);
             // sanity check
@@ -4752,6 +4990,7 @@ mod tests {
         assert!(contract.migration_info().is_empty());
         let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
         for (account_id, _, _) in participants.participants() {
             test_env.set_signer(account_id);
             // sanity check
@@ -4807,6 +5046,45 @@ mod tests {
         let initializing_state = ProtocolContractState::Initializing(initializing_state);
         let contract = MpcContract::new_from_protocol_state(initializing_state);
         test_register_backup_service_success(&participants, contract);
+    }
+
+    #[test]
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn start_node_migration__should_reject_when_no_deposit_attached() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let account_id = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id), None);
+        test_env.set_deposit(NearToken::from_yoctonear(0));
+
+        // panics via `require_deposit` before the migration is stored
+        // When, Then
+        let _ = contract.start_node_migration(gen_random_destination_info());
+    }
+
+    #[test]
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn register_backup_service__should_reject_when_no_deposit_attached() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let account_id = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id), None);
+        test_env.set_deposit(NearToken::from_yoctonear(0));
+        let backup_service_info = BackupServiceInfo {
+            public_key: bogus_ed25519_public_key(),
+        };
+
+        // panics via `require_deposit` before the backup service is stored
+        // When, Then
+        let _ = contract.register_backup_service(backup_service_info);
     }
 
     #[test]
@@ -5062,14 +5340,12 @@ mod tests {
                     destination_node_info,
                 );
             }
-            let valid_participant_attestation = mpc_attestation::attestation::Attestation::Mock(
-                mpc_attestation::attestation::MockAttestation::Valid,
-            );
+            let valid_participant_attestation = MpcMockAttestation::Valid;
 
             let tee_upgrade_duration =
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);
 
-            let insertion_result = contract.tee_state.add_participant(
+            let insertion_result = contract.tee_state.verify_and_store_mock(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
@@ -5471,7 +5747,8 @@ mod tests {
         // given: a running state with 3 participants and threshold of 2
         let mut running_state = gen_running_state(1);
         running_state.parameters =
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
+            GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
+                .unwrap();
 
         let participants = running_state.parameters.participants().participants();
         let participant_1 = participants[0].0.clone();
@@ -5515,6 +5792,53 @@ mod tests {
         );
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn propose_update__should_charge_a_deposit_covering_the_worst_case_storage_cost() {
+        // Given
+        let running_state = gen_running_state_with_params(1, 129, 129);
+        let voters: Vec<AccountId> = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let code = vec![0xff; 4096];
+        let required_deposit = ProposedUpdates::required_deposit(
+            u128::try_from(code.len()).expect("usize always fits in u128"),
+        )
+        .expect("the deposit for a 4 KiB payload fits in u128");
+
+        // When
+        let mut environment = Environment::new(None, Some(voters[0].clone()), None);
+        environment.set_deposit(required_deposit);
+        let storage_before = env::storage_usage();
+        let id = contract
+            .propose_update(ProposeUpdateArgs {
+                code: Some(code),
+                config: None,
+            })
+            .unwrap();
+        for voter in &voters[1..] {
+            Environment::new(None, Some(voter.clone()), None);
+            assert!(!contract.vote_update(id).unwrap());
+        }
+        // near-sdk `store` collections write their cached changes to storage
+        // in `Drop`; dropping the contract persists the entry and the votes.
+        drop(contract);
+        let bytes_grown = u128::from(env::storage_usage() - storage_before);
+        let storage_cost = env::storage_byte_cost().saturating_mul(bytes_grown);
+
+        // Then
+        assert!(
+            required_deposit >= storage_cost,
+            "deposit {required_deposit} does not cover {storage_cost} of storage"
+        );
     }
 
     /// Callers authorized to drive `remove_non_participant_update_votes`.
@@ -5684,7 +6008,9 @@ mod tests {
         const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
 
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(2)).unwrap();
+        let parameters =
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap();
 
         // Set up contract in Running state
         let domain_id = DomainId::default();
@@ -5719,15 +6045,15 @@ mod tests {
 
         // Replace the target's attestation with an expired one
         let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
-        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+        let expiring_attestation = MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
             expected_measurements: None,
-        });
+        };
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         // Capture the running state before verify_tee for comparison
@@ -5771,7 +6097,8 @@ mod tests {
                 .collect(),
         );
         let expected_params =
-            ThresholdParameters::new(expected_participants, parameters.threshold()).unwrap();
+            GovernanceThresholdParameters::new(expected_participants, parameters.threshold())
+                .unwrap();
 
         let expected_resharing_state = ResharingContractState {
             previous_running_state: running_state_before,
@@ -5802,9 +6129,9 @@ mod tests {
         // to 4 participants would leave the GovernanceThreshold above the participant
         // count, breaking the threshold relation.
         let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters = ThresholdParameters::new(
+        let parameters = GovernanceThresholdParameters::new(
             participants.clone(),
-            Threshold::new(
+            GovernanceThreshold::new(
                 u64::try_from(PARTICIPANT_COUNT).expect("participant count fits in u64"),
             ),
         )
@@ -5834,15 +6161,15 @@ mod tests {
         let (target_account_id, _, target_participant_info) =
             &participant_list[PARTICIPANT_COUNT - 1];
         let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
-        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+        let expiring_attestation = MpcMockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
             expected_measurements: None,
-        });
+        };
         contract
             .tee_state
-            .add_participant(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
+            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
             .expect("mock attestation is not yet expired and valid");
 
         let (first_account_id, _, _) = &participant_list[0];
@@ -5863,247 +6190,6 @@ mod tests {
         assert_matches!(result, Ok(false));
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
         assert!(!contract.accept_requests);
-    }
-
-    /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
-    /// This is a helper function that provides all the common components needed for TEE-related tests.
-    fn setup_tee_test() -> (
-        MpcContract,
-        Vec<near_sdk::AccountId>,
-        Attestation,
-        dtos::Ed25519PublicKey,
-        DockerImageHash,
-        near_sdk::PublicKey,
-    ) {
-        let (_context, contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
-
-        let participant_account_ids: Vec<_> = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-
-        let attestation = mock_dto_dstack_attestation();
-        let tls_key = p2p_tls_key().into();
-        let mpc_hash = image_digest();
-        let near_public_key = near_account_key();
-
-        (
-            contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            mpc_hash,
-            near_public_key,
-        )
-    }
-
-    /// Sets up a contract with an approved MPC hash by having the participants vote for it.
-    /// Also adds the legacy launcher image hash so that compose hashes are derived correctly.
-    /// This is a helper function commonly used in tests that require pre-approved hashes.
-    fn setup_approved_mpc_hash(
-        contract: &mut MpcContract,
-        participant_account_ids: &[near_sdk::AccountId],
-        mpc_hash: &DockerImageHash,
-        block_timestamp_ns: u64,
-    ) {
-        // Add the legacy launcher image first, so that compose hashes are derived
-        // when the MPC hash is voted in.
-        setup_approved_launcher_hash(contract, participant_account_ids, block_timestamp_ns);
-
-        for participant_account_id in participant_account_ids {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(participant_account_id.clone())
-                    .predecessor_account_id(participant_account_id.clone())
-                    .block_timestamp(block_timestamp_ns)
-                    .build()
-            );
-
-            contract.vote_code_hash(*mpc_hash).expect("vote succeeds");
-        }
-    }
-
-    /// Adds the launcher image hash from test attestation assets.
-    /// The hash is extracted from `test-utils/assets/launcher_image_compose.yaml`.
-    fn setup_approved_launcher_hash(
-        contract: &mut MpcContract,
-        participant_account_ids: &[near_sdk::AccountId],
-        block_timestamp_ns: u64,
-    ) {
-        let launcher_hash = launcher_image_hash();
-
-        for participant_account_id in participant_account_ids {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(participant_account_id.clone())
-                    .predecessor_account_id(participant_account_id.clone())
-                    .block_timestamp(block_timestamp_ns)
-                    .build()
-            );
-
-            contract
-                .vote_add_launcher_hash(launcher_hash)
-                .expect("launcher vote succeeds");
-        }
-    }
-
-    /// Adds the default OS measurements so that Dstack attestation verification passes.
-    fn setup_approved_measurements(
-        contract: &mut MpcContract,
-        participant_account_ids: &[near_sdk::AccountId],
-        block_timestamp_ns: u64,
-    ) {
-        for measurement in mpc_attestation::attestation::default_measurements() {
-            let contract_measurement = ContractExpectedMeasurements::from(*measurement);
-            for participant_account_id in participant_account_ids {
-                testing_env!(
-                    VMContextBuilder::new()
-                        .signer_account_id(participant_account_id.clone())
-                        .predecessor_account_id(participant_account_id.clone())
-                        .block_timestamp(block_timestamp_ns)
-                        .build()
-                );
-
-                contract
-                    .vote_add_os_measurement(contract_measurement.clone())
-                    .expect("measurement vote succeeds");
-            }
-        }
-    }
-
-    /// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
-    /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
-    /// the attestation data.
-    #[test]
-    fn test_submit_participant_info_succeeds_with_valid_dstack_attestation() {
-        // given
-        let (
-            mut contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            mpc_hash,
-            near_public_key,
-        ) = setup_tee_test();
-
-        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
-
-        // when
-        setup_approved_mpc_hash(
-            &mut contract,
-            &participant_account_ids,
-            &mpc_hash,
-            block_timestamp_ns,
-        );
-        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
-
-        let account_id = participant_account_ids[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_public_key.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .block_timestamp(block_timestamp_ns)
-                .build()
-        );
-        let result = contract.submit_participant_info(attestation, tls_key);
-
-        // then
-        assert_matches::assert_matches!(result, Ok(()));
-    }
-
-    /// Note - this test uses attestation data from a real MPC node. After Any change to the expected contract measurement, /test-utils/assets need to be updated.
-    ///  see crates/test-utils/assets/README.md for details.
-    /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
-    /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
-    #[test]
-    fn test_submit_participant_info_fails_without_approved_mpc_hash() {
-        // given
-        let (
-            mut contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            _mpc_hash,
-            near_public_key,
-        ) = setup_tee_test();
-
-        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
-
-        // when
-
-        let account_id = participant_account_ids[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_public_key.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .block_timestamp(block_timestamp_ns)
-                .build()
-        );
-        let result = contract.submit_participant_info(attestation, tls_key);
-
-        // then
-        let error_string = result.unwrap_err().to_string();
-        assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", error_string);
-    }
-
-    /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
-    /// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
-    /// that attestation validation properly checks the TLS key embedded in the attestation report.
-    #[test]
-    fn test_tee_attestation_fails_with_invalid_tls_key() {
-        let (
-            mut contract,
-            participant_account_ids,
-            attestation,
-            tls_key,
-            mpc_hash,
-            near_public_key,
-        ) = setup_tee_test();
-
-        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
-
-        // when
-        setup_approved_mpc_hash(
-            &mut contract,
-            &participant_account_ids,
-            &mpc_hash,
-            block_timestamp_ns,
-        );
-        setup_approved_measurements(&mut contract, &participant_account_ids, block_timestamp_ns);
-
-        // Create invalid TLS key by flipping the last bit
-        let mut invalid_tls_key_bytes = *tls_key.as_bytes();
-        let last_byte_idx = invalid_tls_key_bytes.len() - 1;
-        invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
-        let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
-
-        let account_id = participant_account_ids[0].clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .signer_account_pk(near_public_key.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .block_timestamp(block_timestamp_ns)
-                .build()
-        );
-
-        let result = contract.submit_participant_info(attestation, invalid_tls_key);
-
-        // then
-        let error_string = result.unwrap_err().to_string();
-        assert!(error_string
-        .contains("Invalid TEE Remote Attestation: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", error_string);
     }
 
     fn make_launcher_hash(byte: u8) -> LauncherImageHash {
@@ -7380,9 +7466,9 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters = ThresholdParameters::new(
+            state.parameters = GovernanceThresholdParameters::new(
                 state.parameters.participants().clone(),
-                Threshold::new(4),
+                GovernanceThreshold::new(4),
             )
             .unwrap();
             for domain in state.domains.domains_mut() {
@@ -7447,13 +7533,16 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            // Reconstruct ThresholdParameters with the updated participants.
+            // Reconstruct GovernanceThresholdParameters with the updated participants.
             let mut updated_participants = state.parameters.participants().clone();
             updated_participants
                 .update_info(operator4.clone(), new_info)
                 .unwrap();
-            state.parameters =
-                ThresholdParameters::new(updated_participants, Threshold::new(4)).unwrap();
+            state.parameters = GovernanceThresholdParameters::new(
+                updated_participants,
+                GovernanceThreshold::new(4),
+            )
+            .unwrap();
         }
         contract.recompute_available_foreign_chains();
 
@@ -7484,9 +7573,9 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters = ThresholdParameters::new(
+            state.parameters = GovernanceThresholdParameters::new(
                 state.parameters.participants().clone(),
-                Threshold::new(4),
+                GovernanceThreshold::new(4),
             )
             .unwrap();
             for domain in state.domains.domains_mut() {
@@ -7522,13 +7611,13 @@ mod tests {
         // Add attestation for the new node (mirrors what ConcludeNodeMigrationTestSetup::setup does).
         contract
             .tee_state
-            .add_participant(
+            .verify_and_store_mock(
                 NodeId {
                     account_id: operator4.clone(),
                     tls_public_key: new_tls_key.clone(),
                     account_public_key: new_signer_pk.clone(),
                 },
-                mpc_attestation::attestation::Attestation::Mock(MpcMockAttestation::Valid),
+                MpcMockAttestation::Valid,
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
             )
             .expect("attestation insertion should succeed");
@@ -7673,7 +7762,7 @@ mod tests {
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
         let participants = participant_account_ids(&contract);
 
-        // Threshold (3) participants already cover Bitcoin — but the chain is not whitelisted,
+        // GovernanceThreshold (3) participants already cover Bitcoin — but the chain is not whitelisted,
         // so the cache must be empty.
         for account_id in participants.iter().take(3) {
             register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
@@ -7724,7 +7813,10 @@ mod tests {
         };
         new_participants.remove(&participants[2]);
         // New Running: participants {0, 1, 3}, threshold 3.  Only 0 and 1 cover Bitcoin → 2 < 3.
-        let new_params = ThresholdParameters::new_unvalidated(new_participants, Threshold::new(3));
+        let new_params = GovernanceThresholdParameters::new_unvalidated(
+            new_participants,
+            GovernanceThreshold::new(3),
+        );
         contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
             domains,
             keyset,
@@ -7763,8 +7855,10 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running state");
             };
-            let proposal =
-                ProposedThresholdParameters::new(state.parameters.clone(), BTreeMap::new());
+            let proposal = ProposedGovernanceThresholdParameters::new(
+                state.parameters.clone(),
+                BTreeMap::new(),
+            );
             state
                 .transition_to_resharing_no_checks(&proposal)
                 .expect("contract has at least one domain")
@@ -7812,7 +7906,9 @@ mod tests {
             attempt: AttemptId::new(),
         };
         let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain]);
-        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let parameters =
+            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
+                .unwrap();
         let mut contract =
             MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
                 .unwrap();
@@ -7872,7 +7968,9 @@ mod tests {
             })
             .collect();
         let keyset = Keyset::new(EpochId::new(0), keys_for_domains);
-        let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+        let parameters =
+            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
+                .unwrap();
         let mut contract =
             MpcContract::init_running(domains, 2, keyset, (&parameters).into_dto_type(), None)
                 .unwrap();
@@ -7929,9 +8027,12 @@ mod tests {
         new_participants
             .insert(new_account_id.clone(), new_info)
             .expect("new participant should be inserted");
-        let new_params =
-            ThresholdParameters::new(new_participants.clone(), Threshold::new(3)).unwrap();
-        let new_proposal = ProposedThresholdParameters::new(new_params, BTreeMap::new());
+        let new_params = GovernanceThresholdParameters::new(
+            new_participants.clone(),
+            GovernanceThreshold::new(3),
+        )
+        .unwrap();
+        let new_proposal = ProposedGovernanceThresholdParameters::new(new_params, BTreeMap::new());
 
         let resharing = {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
@@ -8022,5 +8123,106 @@ mod tests {
         let configs = &contract.foreign_chains.get().foreign_chains_configs;
         assert!(configs.contains_key(&tls_key_a), "node A config must exist");
         assert!(configs.contains_key(&tls_key_b), "node B config must exist");
+    }
+
+    const MAX_HASH: [u8; 32] = [0xff; 32];
+
+    /// Charged storage of the largest attestation entry the contract can store, in bytes:
+    /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
+    /// [`VerifiedAttestation`] variant, including the `IterableMap` record overhead.
+    const WORST_CASE_ENTRY_BYTES: u64 = 604;
+
+    /// Ceiling on one entry's storage cost at today's price, with headroom over
+    /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
+    const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(10);
+
+    fn worst_case_dstack_attestation() -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: MAX_HASH.into(),
+            launcher_compose_hash: MAX_HASH.into(),
+            expiry_timestamp_seconds: u64::MAX,
+            measurements: default_measurements()[0],
+        })
+    }
+
+    fn worst_case_mock_attestation() -> VerifiedAttestation {
+        VerifiedAttestation::Mock(MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some(MAX_HASH.into()),
+            launcher_docker_compose_hash: Some(MAX_HASH.into()),
+            expiry_timestamp_seconds: Some(u64::MAX),
+            expected_measurements: Some(default_measurements()[0]),
+        })
+    }
+
+    /// Storage the contract pays for one stored attestation entry, measured the way the runtime
+    /// charges it. NEAR caps an account id at 64 bytes; every other `NodeId` field is fixed-size,
+    /// so this is the worst case for the given attestation variant.
+    fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
+        testing_env!(VMContextBuilder::new().build());
+        let node_id = create_node_id(
+            &"a".repeat(64).parse().unwrap(),
+            &bogus_ed25519_public_key(),
+        );
+
+        let mut tee_state = TeeState::default();
+        let before = env::storage_usage();
+        tee_state.stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id,
+                verified_attestation,
+            },
+        );
+        tee_state.stored_attestations.flush();
+
+        env::storage_usage() - before
+    }
+
+    /// Pins the exact stored size of the largest variant of each attestation kind.
+    ///
+    /// Do not update these numbers just to make a failing case pass. The contract funds every
+    /// entry from its own balance, so a size change alters what the contract pays per node, and
+    /// everything derived from it must be revisited in the same change — today
+    /// [`WORST_CASE_ENTRY_BYTES`] and [`WORST_CASE_ENTRY_COST_CEILING`].
+    ///
+    /// TODO(#3972): the flat onboarding deposit will be derived from these sizes too.
+    #[rstest]
+    #[case::dstack(599, worst_case_dstack_attestation())]
+    #[case::mock(604, worst_case_mock_attestation())]
+    fn stored_attestation_entry__should_have_the_pinned_size(
+        #[case] expected_bytes: u64,
+        #[case] verified_attestation: VerifiedAttestation,
+    ) {
+        // Given / When
+        let bytes_stored = measure_stored_entry_bytes(verified_attestation);
+
+        // Then
+        assert_eq!(
+            bytes_stored, expected_bytes,
+            "stored entry size changed; see this test's doc comment before updating the number"
+        );
+        assert!(
+            bytes_stored <= WORST_CASE_ENTRY_BYTES,
+            "entry ({bytes_stored} bytes) exceeds the pinned worst case \
+             ({WORST_CASE_ENTRY_BYTES} bytes)"
+        );
+    }
+
+    #[rstest]
+    #[case::dstack(worst_case_dstack_attestation())]
+    #[case::mock(worst_case_mock_attestation())]
+    fn stored_attestation_entry__should_stay_under_the_cost_ceiling(
+        #[case] verified_attestation: VerifiedAttestation,
+    ) {
+        // Given / When
+        let bytes_grown = measure_stored_entry_bytes(verified_attestation);
+        let cost = env::storage_byte_cost().saturating_mul(u128::from(bytes_grown));
+
+        // Then
+        assert!(
+            cost <= WORST_CASE_ENTRY_COST_CEILING,
+            "worst-case entry cost ({bytes_grown} bytes, {cost}) must stay under \
+             {WORST_CASE_ENTRY_COST_CEILING} at today's storage price"
+        );
     }
 }

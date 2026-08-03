@@ -113,6 +113,9 @@ where
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
+            if let Some(epoch_id) = current_epoch_id(&state) {
+                metrics::MPC_CURRENT_EPOCH_ID.set(epoch_id);
+            }
             let mut job: MpcJob = match state {
                 ContractState::Invalid => {
                     // Invalid state. Similar to initial state; we do nothing until the state changes.
@@ -881,6 +884,12 @@ impl Drop for ReportCurrentJobGuard {
     }
 }
 
+fn current_epoch_id(state: &ContractState) -> Option<i64> {
+    state
+        .epoch_id()
+        .and_then(|epoch_id| i64::try_from(epoch_id.get()).ok())
+}
+
 /// The `host:port` a peer is currently reachable at in live contract state, re-read on every
 /// (re)connect so a peer's URL update is picked up without a restart.
 fn peer_address_from_state(
@@ -898,18 +907,15 @@ fn peer_address_from_state(
 }
 
 /// Whether a participant-set change forces a job restart rather than being absorbed live. A peer
-/// address/port change is hot-swapped ([`peer_address_from_state`]); only a change to threshold,
-/// identity, or our *own* listening port (which re-binds the listener) needs a restart.
+/// address/port change is hot-swapped ([`peer_address_from_state`]); only a change to identity or
+/// our *own* listening port (which re-binds the listener) needs a restart. The governance
+/// `threshold` does not: per-domain reconstruction thresholds drive the running protocol, so a
+/// threshold-only change is absorbed live.
 fn participants_change_requires_restart(
     old: &ParticipantsConfig,
     new: &ParticipantsConfig,
     my_near_account_id: &AccountId,
 ) -> bool {
-    // TODO(#3838): a governance-threshold-only change should not require a restart
-    if old.threshold != new.threshold {
-        return true;
-    }
-
     // Destructured exhaustively so a new field forces a restart-vs-hot-swap decision here.
     let identities = |cfg: &ParticipantsConfig| {
         let mut ids: Vec<_> = cfg
@@ -1111,8 +1117,8 @@ fn make_initializing_stop_fn(
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        participants_change_requires_restart, peer_address_from_state, register_foreign_chains,
-        stop_running,
+        current_epoch_id, participants_change_requires_restart, peer_address_from_state,
+        register_foreign_chains, stop_running,
     };
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
@@ -1129,6 +1135,7 @@ mod tests {
     use near_mpc_contract_interface::types as dtos;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rstest::rstest;
     use std::collections::BTreeSet;
     use std::num::NonZeroU64;
     use tokio::sync::mpsc;
@@ -1195,14 +1202,14 @@ mod tests {
     }
 
     #[test]
-    fn participants_change_requires_restart__should_be_true_for_threshold_change() {
+    fn participants_change_requires_restart__should_be_false_for_governance_threshold_change() {
         // Given
         let old = base_config();
         let mut new = base_config();
         new.threshold = 1;
 
         // When / Then
-        assert!(participants_change_requires_restart(&old, &new, &me()));
+        assert!(!participants_change_requires_restart(&old, &new, &me()));
     }
 
     #[test]
@@ -1247,6 +1254,19 @@ mod tests {
             &current,
             &me()
         ));
+    }
+
+    #[rstest]
+    #[case::running(running(base_config(), 7), Some(7))]
+    #[case::resharing_keeps_the_old_epoch(resharing(base_config(), base_config(), 7), Some(7))]
+    #[case::invalid(ContractState::Invalid, None)]
+    #[case::epoch_id_beyond_i64(running(base_config(), u64::MAX), None)]
+    fn current_epoch_id__should_report_the_running_keyset_epoch(
+        #[case] state: ContractState,
+        #[case] expected: Option<i64>,
+    ) {
+        // When / Then
+        assert_eq!(current_epoch_id(&state), expected);
     }
 
     #[test]
@@ -1327,6 +1347,7 @@ mod tests {
             solana: Some(ForeignChainConfig {
                 timeout_sec: NonZeroU64::new(30).unwrap(),
                 max_retries: NonZeroU64::new(3).unwrap(),
+                expected_network_fingerprint: None,
                 providers: near_mpc_bounded_collections::NonEmptyBTreeMap::new(
                     RpcProviderName::from("public".to_string()),
                     ForeignChainProviderConfig {

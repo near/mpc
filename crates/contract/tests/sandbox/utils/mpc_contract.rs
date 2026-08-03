@@ -1,13 +1,26 @@
 use std::collections::BTreeSet;
 
-use super::transactions::all_receipts_successful;
+use super::transactions::{SandboxCaller, all_receipts_successful};
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
+use near_mpc_contract_interface::{
+    client::MpcContractHandle,
+    method_names,
+    types::{
+        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
+    },
 };
-use near_workspaces::{Account, Contract, result::ExecutionFinalResult};
+use near_workspaces::{
+    Account, AccountId, Contract, result::ExecutionFinalResult, types::NearToken,
+};
+
+pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
+    result
+        .outcomes()
+        .iter()
+        .map(|outcome| outcome.tokens_burnt)
+        .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+}
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract
@@ -40,21 +53,46 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
         .collect())
 }
 
-/// Helper function to submit participant info with TEE attestation.
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    let result = account
-        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
-        .args_json((attestation, tls_key))
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&result);
-    Ok(result)
+    // TODO(#3906): check if inlining is nicer once we ported the entire contract interface.
+    let contract_handle = MpcContractHandle::new(SandboxCaller(account), contract.id().clone());
+    contract_handle
+        .submit_participant_info(attestation.clone(), tls_key.clone())
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn vote_tee_verifier_change(
+    account: &Account,
+    contract: &Contract,
+    candidate_account_id: &AccountId,
+    expected_code_hash: [u8; 32],
+) -> anyhow::Result<()> {
+    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
+    all_receipts_successful(
+        account
+            .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
+            .args_json(serde_json::json!({
+                "candidate_account_id": candidate_account_id,
+                "expected_code_hash": expected_code_hash,
+            }))
+            .transact()
+            .await?,
+    )
+}
+
+pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
+    contract
+        .view(method_names::TEE_VERIFIER_ACCOUNT_ID)
+        .await
+        .unwrap()
+        .json()
+        .unwrap()
 }
 
 pub async fn get_participant_attestation(
@@ -88,7 +126,7 @@ pub async fn assert_running_return_participants(
     Ok(running_state.parameters.participants)
 }
 
-pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
+pub async fn assert_running_return_threshold(contract: &Contract) -> GovernanceThreshold {
     let final_state: ProtocolContractState = get_state(contract).await;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(

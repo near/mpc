@@ -407,9 +407,10 @@ impl IndexerViewClient {
 }
 
 pub(crate) trait ReadAttestationExpiry: Send + Sync {
-    /// The Dstack attestation expiry currently stored for `tls_public_key`, or `None` if none is
-    /// stored.
-    fn read_stored_dstack_expiry<'a>(
+    /// The attestation expiry currently stored for `tls_public_key`, or `None` if none is stored or
+    /// the stored attestation carries no expiry (an unstamped mock — e.g. from an older contract or
+    /// a genesis sentinel).
+    fn read_stored_attestation_expiry<'a>(
         &'a self,
         tls_public_key: &'a dtos::Ed25519PublicKey,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>;
@@ -426,7 +427,7 @@ impl RealAttestationExpiryReader {
 }
 
 impl ReadAttestationExpiry for RealAttestationExpiryReader {
-    fn read_stored_dstack_expiry<'a>(
+    fn read_stored_attestation_expiry<'a>(
         &'a self,
         tls_public_key: &'a dtos::Ed25519PublicKey,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>>
@@ -437,10 +438,7 @@ impl ReadAttestationExpiry for RealAttestationExpiryReader {
                 .view_client
                 .get_participant_attestation(&self.indexer_state.mpc_contract_id, tls_public_key)
                 .await?;
-            Ok(match stored {
-                Some(dtos::VerifiedAttestation::Dstack(a)) => Some(a.expiry_timestamp_seconds),
-                _ => None,
-            })
+            Ok(stored.and_then(|attestation| attestation.expiry_timestamp_seconds()))
         })
     }
 }

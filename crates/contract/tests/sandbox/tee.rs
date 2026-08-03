@@ -20,8 +20,8 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
 use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
-use near_workspaces::Contract;
-use near_workspaces::types::NearToken;
+use near_workspaces::types::{KeyType, NearToken, SecretKey};
+use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
@@ -267,17 +267,61 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key().into();
     let success = submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
-        &mock_attestation,
-        &tls_key,
+        &Attestation::Mock(MockAttestation::Valid),
+        &p2p_tls_key().into(),
     )
     .await?
     .is_success();
     assert!(success);
+    Ok(())
+}
+
+#[tokio::test]
+async fn submit_participant_info__should_accept_zero_deposit_via_function_call_key() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+
+    let account = &mpc_signer_accounts[0];
+    let participants = assert_running_return_participants(&contract).await?;
+    let tls_key = participants
+        .participants
+        .iter()
+        .find(|(id, _, _)| id == account.id())
+        .map(|(_, _, info)| info.tls_public_key.clone())
+        .expect("participant must exist");
+    let attestation = Attestation::Mock(MockAttestation::Valid);
+
+    let fc_sk = SecretKey::from_random(KeyType::ED25519);
+    account
+        .batch(account.id())
+        .add_key(
+            fc_sk.public_key(),
+            AccessKey::function_call_access(contract.id(), &[], None),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
+
+    // When
+    let outcome = submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
+
+    // Then
+    assert!(
+        outcome.is_success(),
+        "zero-deposit fc submission must succeed: {outcome:?}"
+    );
     Ok(())
 }
 
@@ -306,13 +350,10 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     assert!(!result.is_success());
 
     // Verify the error message indicates unauthorized access
-    match result.into_result() {
-        Err(failure) => {
-            let error_msg = format!("{:?}", failure);
-            assert!(error_msg.contains("Method clean_tee_status is private"));
-        }
-        Ok(_) => panic!("Call should have failed"),
-    }
+    let failure = result
+        .into_result()
+        .expect_err("clean_tee_status must reject a non-private caller");
+    assert!(format!("{failure:?}").contains("Method clean_tee_status is private"));
 
     Ok(())
 }
@@ -547,6 +588,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 #[tokio::test]
 async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestation() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -566,17 +608,21 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         "Sanity check failed. Participant tls keys can not be equal for this test."
     );
 
+    // Expiries within the default window, so the contract's expiry cap keeps them
+    // as-is (a stored mock's expiry is `min(submitted, now + default window)`) and
+    // the two attestations stay distinct.
+    let now_seconds = worker.view_block().await.unwrap().timestamp() / 1_000_000_000;
     let participant_1_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX),
+        expiry_timestamp_seconds: Some(now_seconds + 1_000),
         expected_measurements: None,
     });
 
     let participant_2_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX - 1),
+        expiry_timestamp_seconds: Some(now_seconds + 2_000),
         expected_measurements: None,
     });
 
@@ -618,6 +664,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
 #[tokio::test]
 async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -629,17 +676,21 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let participant_account = &mpc_signer_accounts[0];
     let tls_key = bogus_ed25519_public_key();
 
+    // Expiries within the default window, so the contract's expiry cap keeps them
+    // as-is (a stored mock's expiry is `min(submitted, now + default window)`) and
+    // the two attestations stay distinct.
+    let now_seconds = worker.view_block().await.unwrap().timestamp() / 1_000_000_000;
     let first_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX),
+        expiry_timestamp_seconds: Some(now_seconds + 1_000),
         expected_measurements: None,
     });
 
     let second_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(u64::MAX - 1),
+        expiry_timestamp_seconds: Some(now_seconds + 2_000),
         expected_measurements: None,
     });
 
@@ -982,5 +1033,83 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         "expected TEE-validation-failed rejection, got: {sign_err}"
     );
 
+    Ok(())
+}
+
+/// A new attestation entry is stored with no attached deposit; the contract's own balance funds
+/// the storage.
+#[tokio::test]
+async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+
+    // When
+    let result = submit_participant_info(
+        &outsider,
+        &contract,
+        &Attestation::Mock(MockAttestation::Valid),
+        &fresh_tls_key,
+    )
+    .await?;
+
+    // Then
+    assert!(
+        result.is_success(),
+        "zero-deposit submission must succeed: {result:?}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(stored.is_some(), "the entry should be stored on-chain");
+    Ok(())
+}
+
+/// `submit_participant_info` is not payable: an attached deposit is rejected outright rather than
+/// accepted and refunded, so a caller following stale guidance fails loudly instead of silently
+/// no-opping. Pins the behaviour the removed `#[payable]` marker used to allow.
+#[tokio::test]
+async fn submit_participant_info__should_reject_an_attached_deposit() -> Result<()> {
+    // Given
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let outsider = worker.dev_create_account().await?;
+    let fresh_tls_key = bogus_ed25519_public_key();
+
+    // When
+    let result = outsider
+        .call(contract.id(), method_names::SUBMIT_PARTICIPANT_INFO)
+        .args_json((
+            Attestation::Mock(MockAttestation::Valid),
+            fresh_tls_key.clone(),
+        ))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?;
+
+    // Then
+    assert!(
+        !result.is_success(),
+        "a submission attaching a deposit must fail: {result:?}"
+    );
+    let error_msg = format!("{:?}", result.into_result());
+    assert!(
+        error_msg.contains("doesn't accept deposit"),
+        "expected a non-payable rejection, got: {error_msg}"
+    );
+    let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
+    assert!(
+        stored.is_none(),
+        "nothing should be stored when the submission is rejected"
+    );
     Ok(())
 }

@@ -13,7 +13,7 @@ use crate::{
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
 use mpc_contract::primitives::test_utils::gen_participants;
-use mpc_contract::primitives::thresholds::{Threshold, ThresholdParameters};
+use mpc_contract::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
 use near_time::FakeClock;
 use rand::RngCore;
@@ -46,18 +46,22 @@ pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
 /// data, the local participant's ID, and the reconstruction threshold so
 /// callers don't have to restate the magic number alongside the fixture.
 pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThreshold) {
-    let threshold = ReconstructionThreshold::new(3);
+    let reconstruction_threshold = ReconstructionThreshold::new(3);
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
-    let parameters =
-        ThresholdParameters::new(gen_participants(4), Threshold::new(threshold.inner())).unwrap();
-    let parameters_dto: near_mpc_contract_interface::types::ThresholdParameters = parameters.into();
+    let parameters = GovernanceThresholdParameters::new(
+        gen_participants(4),
+        GovernanceThreshold::new(reconstruction_threshold.inner()),
+    )
+    .unwrap();
+    let parameters_dto: near_mpc_contract_interface::types::GovernanceThresholdParameters =
+        parameters.into();
     let participants: ParticipantsConfig = convert_participant_infos(parameters_dto, None).unwrap();
     let epoch_data = EpochData {
         epoch_id,
         participants,
     };
     let my_participant_id = epoch_data.participants.participants.first().unwrap().id;
-    (epoch_data, my_participant_id, threshold)
+    (epoch_data, my_participant_id, reconstruction_threshold)
 }
 
 pub fn get_participant_ids(epoch_data: EpochData) -> Vec<ParticipantId> {
@@ -75,7 +79,7 @@ pub struct TestContext {
     pub my_participant_id: ParticipantId,
     pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
     pub presign_domain_ids: Vec<DomainId>,
-    /// Threshold whose `TripleV2` prefix `populate`/`assert_owned` operate on;
+    /// GovernanceThreshold whose `TripleV2` prefix `populate`/`assert_owned` operate on;
     /// matches the fixture from [`gen_four_participants`].
     pub triple_threshold: ReconstructionThreshold,
 }

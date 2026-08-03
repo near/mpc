@@ -20,7 +20,7 @@ use near_sdk::near;
 use near_sdk::store::IterableMap;
 
 use crate::errors::{ChainEntryValidationError, ConversionError, Error, InvalidParameters};
-use crate::primitives::thresholds::ThresholdParameters;
+use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 use crate::storage_keys::StorageKey;
@@ -174,7 +174,7 @@ impl ProviderVotes {
         chain: ForeignChain,
         hash: ProposalHash,
         participant: AuthenticatedParticipantId,
-        threshold_parameters: &ThresholdParameters,
+        threshold_parameters: &GovernanceThresholdParameters,
     ) -> Result<bool, Error> {
         let protocol_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
@@ -223,7 +223,7 @@ impl ForeignChainRpcWhitelist {
         &mut self,
         participant: AuthenticatedParticipantId,
         votes: NonEmptyBTreeMap<ForeignChain, dtos::ChainEntry>,
-        threshold_parameters: &ThresholdParameters,
+        threshold_parameters: &GovernanceThresholdParameters,
     ) -> Result<Vec<ForeignChain>, Error> {
         let mut applied: Vec<ForeignChain> = Vec::new();
         let votes: BTreeMap<ForeignChain, dtos::ChainEntry> = votes.into();
@@ -250,15 +250,18 @@ mod tests {
         key_state::AuthenticatedParticipantId, test_utils::gen_authenticated_participants,
     };
     use assert_matches::assert_matches;
-    use mpc_primitives::Threshold;
+    use mpc_primitives::GovernanceThreshold;
     use near_mpc_contract_interface::types::AuthScheme;
 
-    /// Build a `ThresholdParameters` for tests, bypassing the relative-threshold
+    /// Build a `GovernanceThresholdParameters` for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes
     /// test deliberately uses a threshold > current participant count to assert
     /// the count_for predicate filters out non-participant rows).
-    fn tp(participants: &Participants, n: u64) -> ThresholdParameters {
-        ThresholdParameters::new_unvalidated(participants.clone(), Threshold::new(n))
+    fn tp(participants: &Participants, n: u64) -> GovernanceThresholdParameters {
+        GovernanceThresholdParameters::new_unvalidated(
+            participants.clone(),
+            GovernanceThreshold::new(n),
+        )
     }
 
     fn provider(id: &str) -> (ProviderId, ProviderConfig) {

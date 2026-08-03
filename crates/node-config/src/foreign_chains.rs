@@ -46,6 +46,11 @@ pub struct ForeignChainsConfig {
 pub struct ForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     pub max_retries: NonZeroU64,
+    /// The network fingerprint the operator expects every provider of this chain to report, in the
+    /// chain's canonical text form. A chain id for chains that have one, a genesis hash or digest
+    /// for those that don't. Declarative: nothing reads it during config loading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_network_fingerprint: Option<String>,
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
 }
 
@@ -180,10 +185,8 @@ impl ForeignChainsConfig {
 mod tests {
     use crate::ConfigFile;
 
-    #[test]
-    fn config_parsing__should_succeed_when_foreign_chains_are_unset() {
-        // Given
-        let yaml = r#"
+    /// Every section a `ConfigFile` requires except `foreign_chains`.
+    const CONFIG_WITHOUT_FOREIGN_CHAINS: &str = r#"
 my_near_account_id: test.near
 near_responder_account_id: test.near
 number_of_responder_keys: 1
@@ -215,6 +218,47 @@ ckd:
   timeout_sec: 60
 "#;
 
+    /// A valid config whose `foreign_chains` section holds `chains`, indented two spaces.
+    fn config_with_chains(chains: &str) -> String {
+        format!("{CONFIG_WITHOUT_FOREIGN_CHAINS}foreign_chains:{chains}")
+    }
+
+    #[test]
+    fn config_parsing__should_leave_expected_network_fingerprint_unset_when_absent() {
+        // Given: a chain section written before the field existed.
+        let yaml = config_with_chains(
+            r#"
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      blast:
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#,
+        );
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config without an expected network fingerprint should still be valid");
+        let starknet = config
+            .foreign_chains
+            .starknet
+            .expect("starknet section should be present");
+        assert_eq!(starknet.expected_network_fingerprint, None);
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_when_foreign_chains_are_unset() {
+        // Given
+        let yaml = CONFIG_WITHOUT_FOREIGN_CHAINS;
+
         // When
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
@@ -229,37 +273,8 @@ ckd:
     #[test]
     fn config_parsing__should_succeed_when_foreign_chains_are_set() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   solana:
     timeout_sec: 30
     max_retries: 3
@@ -317,11 +332,21 @@ foreign_chains:
           scheme: Bearer
           token:
             env: ALCHEMY_API_KEY
-"#;
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    expected_network_fingerprint: "0x534e5f4d41494e"
+    providers:
+      blast:
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
 
         // Then
         config
@@ -330,42 +355,21 @@ foreign_chains:
         assert!(config.foreign_chains.solana.is_some());
         assert!(config.foreign_chains.bitcoin.is_some());
         assert!(config.foreign_chains.ethereum.is_some());
+        let starknet = config
+            .foreign_chains
+            .starknet
+            .expect("starknet section should be present");
+        assert_eq!(
+            starknet.expected_network_fingerprint.as_deref(),
+            Some("0x534e5f4d41494e")
+        );
     }
 
     #[test]
     fn config_parsing__should_succeed_when_foreign_chain_key_is_unknown() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   solana:
     timeout_sec: 30
     max_retries: 3
@@ -386,10 +390,11 @@ foreign_chains:
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
-"#;
+"#,
+        );
 
         // When
-        let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
+        let result: Result<ConfigFile, _> = serde_yaml::from_str(&yaml);
 
         // Then
         result.expect("unknown foreign chain keys should be silently ignored");
@@ -398,37 +403,8 @@ foreign_chains:
     #[test]
     fn configured_chains__should_strip_path_auth_placeholder_from_rpc_url() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   solana:
     timeout_sec: 30
     max_retries: 3
@@ -440,11 +416,12 @@ foreign_chains:
           placeholder: "{api_key}"
           token:
             val: "secret"
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
         let configured = config.foreign_chains.configured_chains();
 
@@ -462,37 +439,8 @@ foreign_chains:
     #[test]
     fn config_parsing__should_succeed_with_starknet_section() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   starknet:
     timeout_sec: 30
     max_retries: 3
@@ -501,11 +449,12 @@ foreign_chains:
         rpc_url: "https://starknet-mainnet.blastapi.io/"
         auth:
           kind: none
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
 
         // Then
         config
@@ -517,37 +466,8 @@ foreign_chains:
     #[test]
     fn configured_chains__should_preserve_url_for_non_path_auth() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   ethereum:
     timeout_sec: 30
     max_retries: 3
@@ -560,11 +480,12 @@ foreign_chains:
           scheme: Bearer
           token:
             val: "secret"
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
         let configured = config.foreign_chains.configured_chains();
 
@@ -589,37 +510,8 @@ foreign_chains:
     #[test]
     fn config_parsing__should_succeed_with_legacy_field__api_variant() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   starknet:
     timeout_sec: 30
     max_retries: 3
@@ -629,47 +521,19 @@ foreign_chains:
         rpc_url: "https://starknet-mainnet.blastapi.io/"
         auth:
           kind: none
-"#;
+"#,
+        );
 
         // When/then
-        let _config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml serialization passes with `api_variant_field`");
+        let _config: ConfigFile = serde_yaml::from_str(&yaml)
+            .expect("yaml serialization passes with `api_variant_field`");
     }
 
     #[test]
     fn config_parsing__should_succeed_with_aptos_section() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   aptos:
     timeout_sec: 30
     max_retries: 3
@@ -678,11 +542,12 @@ foreign_chains:
         rpc_url: "https://aptos-mainnet.nodereal.io/v1/"
         auth:
           kind: none
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
 
         // Then
         config
@@ -695,37 +560,8 @@ foreign_chains:
     fn config_parsing__should_succeed_with_aptos_auth_providers() {
         // Given — one provider with the API key in the URL path (Alchemy-style) and one
         // with a header token (NOWNodes-style).
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   aptos:
     timeout_sec: 30
     max_retries: 3
@@ -744,11 +580,12 @@ foreign_chains:
           name: api-key
           token:
             val: "nownodes-secret"
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
 
         // Then
         config
@@ -765,37 +602,8 @@ foreign_chains:
     #[test]
     fn config_parsing__should_succeed_with_sui_section() {
         // Given
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   sui:
     timeout_sec: 30
     max_retries: 3
@@ -804,11 +612,12 @@ foreign_chains:
         rpc_url: "https://fullnode.mainnet.sui.io"
         auth:
           kind: none
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
 
         // Then
         config
@@ -820,37 +629,8 @@ foreign_chains:
     #[test]
     fn config_parsing__should_succeed_with_sui_auth_providers() {
         // Given — gRPC providers authenticate via headers; one bearer token and one API key.
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   sui:
     timeout_sec: 30
     max_retries: 3
@@ -870,11 +650,12 @@ foreign_chains:
           name: api-key
           token:
             val: "nownodes-secret"
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
 
         // Then
         config
@@ -891,37 +672,8 @@ foreign_chains:
     #[test]
     fn config_validation__should_reject_sui_provider_with_path_auth() {
         // Given — path auth substitutes the token into the URL, which gRPC never sends.
-        let yaml = r#"
-my_near_account_id: test.near
-near_responder_account_id: test.near
-number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8080
-migration_web_ui:
-  host: localhost
-  port: 8081
-pprof_bind_address: 127.0.0.1:34001
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: optimistic
-  concurrency: 1
-  mpc_contract_id: mpc-contract.test.near
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 1
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 1
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-foreign_chains:
+        let yaml = config_with_chains(
+            r#"
   sui:
     timeout_sec: 30
     max_retries: 3
@@ -933,11 +685,12 @@ foreign_chains:
           placeholder: "{api_key}"
           token:
             val: "secret"
-"#;
+"#,
+        );
 
         // When
         let config: ConfigFile =
-            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
         let result = config.validate();
 
         // Then — the full error chain names the offending provider and the transport rule.

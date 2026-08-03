@@ -11,15 +11,11 @@ set -euo pipefail
 
 WASM_PATH="${1:-result/mpc_contract.wasm}"
 
-# NEAR max_transaction_size = 1572864; keep some headroom.
-# The on-chain RPC provider whitelist voting machinery (issue #3215) adds
-# ~12 KB over the pre-feature baseline; this limit gives a bit of headroom
-# above the post-feature size without leaving the contract free to creep up
-# to the protocol boundary.
-# Bump up from 1500000 to 1520000 as part of #3475. TODO(#3475): reduce the limit
-# once we migrate to new endpoints after upgrading to 3.12 and drop deprecated
-# endpoints and DTO structs.
-HARD_LIMIT=1520000
+# NEAR's max_transaction_size is 1572864 bytes; the contract must deploy in a
+# single transaction, so we cap it below that. Set the limit just above the
+# current reproducible-build size so the binary can't silently creep toward the
+# protocol boundary. Lower it whenever the contract shrinks.
+HARD_LIMIT=1235000
 
 
 if [[ ! -f "$WASM_PATH" ]]; then

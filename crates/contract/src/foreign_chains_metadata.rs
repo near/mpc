@@ -41,7 +41,7 @@ impl ForeignChainsMetadata {
     pub(crate) fn update_available_chains_config_cache(
         &mut self,
         active_tls_keys: &BTreeSet<dtos::Ed25519PublicKey>,
-        threshold: u64,
+        reconstruction_threshold: u64,
     ) {
         let mut chain_to_supporter_count: std::collections::BTreeMap<dtos::ForeignChain, u64> =
             std::collections::BTreeMap::new();
@@ -60,7 +60,7 @@ impl ForeignChainsMetadata {
         }
         self.available_foreign_chains = chain_to_supporter_count
             .into_iter()
-            .filter_map(|(chain, count)| (count >= threshold).then_some(chain))
+            .filter_map(|(chain, count)| (count >= reconstruction_threshold).then_some(chain))
             .collect::<BTreeSet<_>>()
             .into();
     }

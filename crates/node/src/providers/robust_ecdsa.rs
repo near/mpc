@@ -118,23 +118,27 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn run_key_generation_client(
-        threshold: TSReconstructionThreshold,
+        reconstruction_threshold: TSReconstructionThreshold,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
+        EcdsaSignatureProvider::run_key_generation_client_internal(
+            reconstruction_threshold,
+            channel,
+        )
+        .await
     }
 
     async fn run_key_resharing_client(
-        new_threshold: TSReconstructionThreshold,
-        old_threshold: TSReconstructionThreshold,
+        new_reconstruction_threshold: TSReconstructionThreshold,
+        old_reconstruction_threshold: TSReconstructionThreshold,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            new_threshold,
-            old_threshold,
+            new_reconstruction_threshold,
+            old_reconstruction_threshold,
             my_share,
             public_key,
             old_participants,
@@ -211,9 +215,9 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 /// reconstruction threshold `t`. Returns an error if `t < 2`,
 /// which the contract's threshold validation already rejects.
 pub(super) fn compute_thresholds(
-    threshold: ReconstructionThreshold,
+    reconstruction_threshold: ReconstructionThreshold,
 ) -> anyhow::Result<(usize, MaxMalicious)> {
-    let t: usize = threshold.inner().try_into()?;
+    let t: usize = reconstruction_threshold.inner().try_into()?;
     anyhow::ensure!(
         t >= 2,
         "robust-ECDSA requires a reconstruction threshold of at least 2, got {t}"

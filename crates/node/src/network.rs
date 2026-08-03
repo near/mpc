@@ -51,11 +51,11 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// Sends a message to everyone on a best-effort basis about the current height of our indexer.
     fn send_indexer_height(&self, height: IndexerHeightMessage);
 
-    /// Waits for `threshold` number of connections (a freebie is included for the node itself)
+    /// Waits for `required_ready_count` number of connections (a freebie is included for the node itself)
     /// to the given `peers` to be bidirectionally established at the same time.
     async fn wait_for_ready(
         &self,
-        threshold: usize,
+        required_ready_count: usize,
         peers_to_consider: &[ParticipantId],
     ) -> anyhow::Result<()>;
 }
@@ -898,7 +898,7 @@ pub mod testing {
 
         async fn wait_for_ready(
             &self,
-            _threshold: usize,
+            _required_ready_count: usize,
             _peers_to_consider: &[ParticipantId],
         ) -> anyhow::Result<()> {
             Ok(())

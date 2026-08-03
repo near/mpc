@@ -18,7 +18,7 @@ use anyhow::Result;
 use mpc_contract::{
     primitives::{
         participants::Participants, test_utils::bogus_ed25519_public_key,
-        thresholds::ThresholdParameters,
+        thresholds::GovernanceThresholdParameters,
     },
     tee::tee_state::NodeId,
 };
@@ -121,9 +121,9 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     }
 
     let post_reshare_participants = build_sandbox_node_ids(&new_participants, &mpc_signer_accounts);
-    let new_threshold_parameters = ThresholdParameters::new(
+    let new_threshold_parameters = GovernanceThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
     )
     .unwrap();
 
@@ -230,9 +230,9 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
             )
             .expect("Failed to insert participant");
     }
-    let new_threshold_parameters = ThresholdParameters::new(
+    let new_threshold_parameters = GovernanceThresholdParameters::new(
         new_participants,
-        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+        mpc_contract::primitives::thresholds::GovernanceThreshold::new(threshold.0),
     )
     .unwrap();
     do_resharing(

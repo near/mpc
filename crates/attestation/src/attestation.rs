@@ -35,6 +35,7 @@ pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 const RTMR3_INDEX: u32 = 3;
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: Collateral,

@@ -39,9 +39,8 @@ pass()  { echo -e "\033[1;32m[PASS]\033[0m $*"; }
 fatal() { err "$*"; exit 1; }
 
 # ---- Host profile → IP layout --------------------------------------------
-# Sets IP_PREFIX and IP_START_OCTET. Bob's numbers match
-# deploy-tee-cluster.sh's canonical values (5.196.36.<113+i>); the older
-# test scripts used to disagree on bob, which is why this lives here now.
+# Sets IP_PREFIX / IP_START_OCTET per host. Canonical CVM IP layout, shared so
+# single-node.sh and the mpc-private tools/tee-cluster scripts stay in sync.
 HOST_PROFILE="${HOST_PROFILE:-alice}"
 case "$HOST_PROFILE" in
   alice) IP_PREFIX="51.68.219."; IP_START_OCTET=1   ;;
@@ -92,9 +91,9 @@ near_call_ro() {
     json-args "$args" network-config "$NEAR_NETWORK_CONFIG" now 2>&1
 }
 near_call_tx() {
-  local method="$1" args="$2" signer="$3"
+  local method="$1" args="$2" signer="$3" deposit="${4:-0 NEAR}"
   near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" "$method" \
-    json-args "$args" prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
+    json-args "$args" prepaid-gas '300.0 Tgas' attached-deposit "$deposit" \
     sign-as "$signer" network-config "$NEAR_NETWORK_CONFIG" sign-with-keychain send 2>&1
 }
 
