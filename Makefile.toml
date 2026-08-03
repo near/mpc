@@ -9,6 +9,7 @@ dependencies = [
   "use-in-fn",
   "mod-visibility-order",
   "mod-contiguous",
+  "lint-rules",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -129,6 +130,11 @@ args = ["scan", "--rule", "lints/mod-declaration-visibility-order.yml", "crates/
 description = "Check that module declarations of a scope are kept in one block"
 command = "ast-grep"
 args = ["scan", "--rule", "lints/mod-declarations-contiguous.yml", "crates/"]
+
+[tasks.lint-rules]
+description = "Check that the ast-grep rules under lints/ still report their fixtures"
+command = "bash"
+args = ["scripts/check-lint-rules.sh"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"
