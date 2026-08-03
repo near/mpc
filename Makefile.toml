@@ -7,6 +7,7 @@ dependencies = [
   "editorconfig",
   "assert-matches",
   "use-in-fn",
+  "mod-visibility-order",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -117,6 +118,11 @@ args = ["scripts/check-assert-matches.sh"]
 description = "Check for use statements inside function bodies"
 command = "ast-grep"
 args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
+
+[tasks.mod-visibility-order]
+description = "Check that module declarations are ordered by decreasing visibility"
+command = "ast-grep"
+args = ["scan", "--rule", "lints/mod-declaration-visibility-order.yml", "crates/"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"

@@ -1,3 +1,4 @@
+pub mod queue;
+
 mod debug;
 mod metrics;
-pub mod queue;

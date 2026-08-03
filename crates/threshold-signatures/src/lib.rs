@@ -1,16 +1,16 @@
 #[macro_use]
 mod macros;
 
-mod crypto;
-pub mod participants;
-
 pub mod confidential_key_derivation;
 pub mod ecdsa;
 pub mod errors;
 pub mod frost;
+pub mod participants;
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
+
+mod crypto;
 
 // TODO: We should probably no expose the full modules, but only the types
 // that make sense for our library
@@ -27,8 +27,9 @@ pub use crypto::polynomials::{
 };
 use zeroize::ZeroizeOnDrop;
 
-mod dkg;
 pub mod protocol;
+
+mod dkg;
 mod thresholds;
 
 use crate::dkg::{assert_key_invariants, assert_reshare_keys_invariants, do_keygen, do_reshare};
