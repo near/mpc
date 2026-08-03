@@ -3,8 +3,6 @@ language: rust
 severity: error
 message: "`$VIS mod $M;` is declared directly after a module with narrower visibility"
 note: Declare modules widest visibility first, `pub`, then `pub(crate)`, then private.
-# `pub mod $M;` matches any `pub` visibility; the `has:` regex picks the tier.
-# `stopBy` skips comments so one between declarations cannot hide the predecessor.
 # Repeated per branch: in ast-grep 0.42 a `matches:` reference inside a relational
 # rule matches nothing instead of erroring.
 rule:
