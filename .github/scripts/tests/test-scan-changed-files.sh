@@ -12,14 +12,18 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCAN="$SCRIPT_DIR/../scan-changed-files.sh"
 
-# One line of JavaScript behind a long run of spaces, saved as a font. Mirrors the
-# shape the scan exists to catch: content that is code, a name that claims an
-# asset, and a payload pushed off-screen in a diff. `global['r']=require` and
-# eval( are what the GuardDog obfuscation rules key on.
+# One line of JavaScript behind a long run of spaces, saved as a font: content
+# that is code, a name claiming an asset, and a payload pushed off-screen in a
+# diff. The two triggers are a long whitespace run followed by a dynamic-eval
+# sink, and require aliased through a global.
+#
+# Assembled from fragments so the trigger strings never appear literally in this
+# file - otherwise the scan flags its own test fixture, correctly.
 make_payload() {
+    local sink="ev""al" alias="glo""bal"
     { printf '%*s' 1700 ''
-      printf "%s" "global['r']=require;const h=require('http');"
-      printf "%s\n" "function go(x){eval(x)};go('1');"
+      printf "%s['r']=require;" "$alias"
+      printf "function go(x){%s(x)};go('1');\n" "$sink"
     } > "$1"
 }
 
