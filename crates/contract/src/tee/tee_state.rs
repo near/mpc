@@ -1304,6 +1304,53 @@ mod tests {
     }
 
     #[test]
+    fn reverify_and_cleanup_participants__evicts_expired_launcher_hashes() {
+        const TTL: Duration = Duration::from_secs(100);
+        const NANOS_PER_SECOND: u64 = 1_000_000_000;
+        const LIVE_ADDED_SECONDS: u64 = 200;
+        const CHECK_SECONDS: u64 = 250;
+
+        // Given an expired launcher (deadline 101s) and a newer live one (deadline 300s).
+        let mut tee_state = TeeState::default();
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let expired = LauncherImageHash::from([1u8; 32]);
+        let live = LauncherImageHash::from([2u8; 32]);
+
+        set_block_timestamp(NANOS_PER_SECOND);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(expired, &[mpc_hash], TTL);
+        set_block_timestamp(LIVE_ADDED_SECONDS * NANOS_PER_SECOND);
+        tee_state
+            .allowed_launcher_images
+            .add_or_refresh(live, &[mpc_hash], TTL);
+        assert!(
+            tee_state
+                .allowed_launcher_images
+                .expires_at_secs(&expired)
+                .is_some()
+        );
+
+        // When reverify runs past the expired entry's deadline.
+        set_block_timestamp(CHECK_SECONDS * NANOS_PER_SECOND);
+        let _ = tee_state.reverify_and_cleanup_participants(&gen_participants(1), Duration::MAX);
+
+        // Then the expired entry is physically evicted and the live one remains.
+        assert!(
+            tee_state
+                .allowed_launcher_images
+                .expires_at_secs(&expired)
+                .is_none()
+        );
+        assert!(
+            tee_state
+                .allowed_launcher_images
+                .expires_at_secs(&live)
+                .is_some()
+        );
+    }
+
+    #[test]
     fn validate_tee_returns_partial_when_participant_has_no_attestation() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
