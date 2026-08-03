@@ -414,6 +414,7 @@ impl TeeState {
         self.allowed_launcher_images.remove(launcher_hash)
     }
 
+    /// Returns all allowed launcher image hashes.
     pub fn get_allowed_launcher_hashes(&self) -> Vec<LauncherImageHash> {
         self.allowed_launcher_images.launcher_hashes()
     }
@@ -1726,6 +1727,16 @@ mod tests {
     fn verify_and_store_mock__should_reject_expired_launcher_hash() {
         // Given a TEE state where launcher_1 has expired but a newer launcher_2 is still live.
         const TTL: Duration = Duration::from_secs(100);
+        const NANOS_PER_SECOND: u64 = 1_000_000_000;
+        // launcher_1's deadline is LAUNCHER_1_ADDED + TTL = 101s; launcher_2's is 300s. We
+        // check at 250s: past launcher_1's deadline, before launcher_2's. launcher_2 is newer
+        // so the newest-only read fallback does not mask launcher_1's expiry.
+        const LAUNCHER_1_ADDED_SECONDS: u64 = 1;
+        const LAUNCHER_2_ADDED_SECONDS: u64 = 200;
+        const CHECK_SECONDS: u64 = 250;
+        // Far in the future so the mock's own expiry never fires — only launcher expiry does.
+        const MOCK_EXPIRY_FAR_FUTURE_SECONDS: u64 = 1_000_000;
+
         let launcher_1 = LauncherImageHash::from([1u8; 32]);
         let launcher_2 = LauncherImageHash::from([2u8; 32]);
         let mpc_hash = NodeImageHash::from([10u8; 32]);
@@ -1734,22 +1745,17 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        // launcher_1 added at t=1.
-        set_block_timestamp(1_000_000_000);
+        set_block_timestamp(LAUNCHER_1_ADDED_SECONDS * NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(launcher_1, &[mpc_hash], TTL);
 
-        // A newer launcher_2 added at t=200, so the newest-only read fallback does not
-        // mask launcher_1's expiry once launcher_1 goes stale.
-        set_block_timestamp(200 * 1_000_000_000);
+        set_block_timestamp(LAUNCHER_2_ADDED_SECONDS * NANOS_PER_SECOND);
         tee_state
             .allowed_launcher_images
             .add_or_refresh(launcher_2, &[mpc_hash], TTL);
 
-        // At t=250 with TTL=100: launcher_1 (deadline 101) is expired, launcher_2
-        // (deadline 300) is live.
-        set_block_timestamp(250 * 1_000_000_000);
+        set_block_timestamp(CHECK_SECONDS * NANOS_PER_SECOND);
 
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
@@ -1757,12 +1763,11 @@ mod tests {
             account_public_key: bogus_ed25519_public_key(),
         };
 
-        // When a submission references the expired launcher_1. Its own
-        // `expiry_timestamp_seconds` is far in the future so only the launcher expiry fires.
+        // When a submission references the expired launcher_1.
         let expired_mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: Some(compose_1),
-            expiry_timestamp_seconds: Some(1_000_000),
+            expiry_timestamp_seconds: Some(MOCK_EXPIRY_FAR_FUTURE_SECONDS),
             expected_measurements: None,
         };
         // Then it is rejected end-to-end.
@@ -1775,7 +1780,7 @@ mod tests {
         let live_mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: Some(compose_2),
-            expiry_timestamp_seconds: Some(1_000_000),
+            expiry_timestamp_seconds: Some(MOCK_EXPIRY_FAR_FUTURE_SECONDS),
             expected_measurements: None,
         };
         // Then it succeeds.

@@ -819,15 +819,7 @@ impl MpcContract {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                let launcher_unused_ttl =
-                    Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
-
-                // Capability token: only a current participant may keep its launcher hash alive.
-                let authenticated_participant = self
-                    .protocol_state
-                    .threshold_parameters()
-                    .ok()
-                    .and_then(|params| AuthenticatedParticipantId::new(params.participants()).ok());
+                // Cloned before `node_id` is moved into `verify_and_store_mock` below.
                 let tls_public_key_for_refresh = node_id.tls_public_key.clone();
 
                 self.tee_state.verify_and_store_mock(
@@ -838,10 +830,18 @@ impl MpcContract {
 
                 // A `WithConstraints` mock may reference a launcher hash; refresh-on-use keeps
                 // it alive, matching the dstack path. No-op for mocks without a launcher.
-                if let Some(participant) = &authenticated_participant {
+                // Capability token: only a current participant may keep its launcher hash alive.
+                let authenticated_participant = self
+                    .protocol_state
+                    .threshold_parameters()
+                    .ok()
+                    .and_then(|params| AuthenticatedParticipantId::new(params.participants()).ok());
+                if let Some(authenticated_participant) = &authenticated_participant {
+                    let launcher_unused_ttl =
+                        Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
                     self.tee_state.refresh_launcher_usage(
                         &tls_public_key_for_refresh,
-                        participant,
+                        authenticated_participant,
                         launcher_unused_ttl,
                     );
                 }
@@ -2020,12 +2020,7 @@ impl MpcContract {
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
         let config: Config = match init_config {
-            Some(c) => {
-                c.try_into()
-                    .map_err(|reason: &str| InvalidParameters::MalformedPayload {
-                        reason: reason.to_string(),
-                    })?
-            }
+            Some(c) => c.try_into()?,
             None => Config::default(),
         };
 
@@ -2112,12 +2107,7 @@ impl MpcContract {
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
         let config: Config = match init_config {
-            Some(c) => {
-                c.try_into()
-                    .map_err(|reason: &str| InvalidParameters::MalformedPayload {
-                        reason: reason.to_string(),
-                    })?
-            }
+            Some(c) => c.try_into()?,
             None => Config::default(),
         };
 
@@ -2548,7 +2538,8 @@ impl MpcContract {
 
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
-        let new_config: Config = Config::try_from(config).unwrap_or_else(|e| env::panic_str(e));
+        let new_config: Config =
+            Config::try_from(config).unwrap_or_else(|e| env::panic_str(&e.to_string()));
         self.config = new_config;
     }
 

@@ -447,7 +447,7 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
 }
 
 impl TryFrom<near_mpc_contract_interface::types::InitConfig> for Config {
-    type Error = &'static str;
+    type Error = Error;
 
     fn try_from(
         config_ext: near_mpc_contract_interface::types::InitConfig,
@@ -512,7 +512,11 @@ impl TryFrom<near_mpc_contract_interface::types::InitConfig> for Config {
             config.clean_expired_launcher_hashes_tera_gas = v;
         }
 
-        config.validate()?;
+        config
+            .validate()
+            .map_err(|reason| ConversionError::DataConversion {
+                reason: reason.to_string(),
+            })?;
         Ok(config)
     }
 }
@@ -551,7 +555,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
 }
 
 impl TryFrom<near_mpc_contract_interface::types::Config> for Config {
-    type Error = &'static str;
+    type Error = Error;
 
     fn try_from(value: near_mpc_contract_interface::types::Config) -> Result<Self, Self::Error> {
         let config = Config {
@@ -583,7 +587,11 @@ impl TryFrom<near_mpc_contract_interface::types::Config> for Config {
             clean_expired_launcher_hashes_tera_gas: value.clean_expired_launcher_hashes_tera_gas,
         };
 
-        config.validate()?;
+        config
+            .validate()
+            .map_err(|reason| ConversionError::DataConversion {
+                reason: reason.to_string(),
+            })?;
         Ok(config)
     }
 }

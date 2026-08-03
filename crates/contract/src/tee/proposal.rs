@@ -375,7 +375,7 @@ impl AllowedLauncherImages {
     /// Index of the entry with the latest expiry, if any. On ties (e.g. right after a
     /// migration stamps every entry with the same `expires_at`) this returns the last such
     /// entry — deterministic, but the specific choice among equal entries is arbitrary.
-    fn newest_index(&self) -> Option<usize> {
+    fn latest_expiry_index(&self) -> Option<usize> {
         self.entries
             .iter()
             .enumerate()
@@ -399,7 +399,9 @@ impl AllowedLauncherImages {
             return live;
         }
 
-        self.newest_index().map(|i| vec![i]).unwrap_or_default()
+        self.latest_expiry_index()
+            .map(|i| vec![i])
+            .unwrap_or_default()
     }
 
     /// Refreshes the `expires_at` timestamp (to `now + ttl`) of the entry whose
@@ -436,7 +438,7 @@ impl AllowedLauncherImages {
         let now = Timestamp::now();
         if self.entries.iter().any(|e| !e.is_expired(now)) {
             self.entries.retain(|e| !e.is_expired(now));
-        } else if let Some(newest) = self.newest_index() {
+        } else if let Some(newest) = self.latest_expiry_index() {
             // All expired: keep only the most-recently-used entry.
             self.entries.swap(0, newest);
             self.entries.truncate(1);
