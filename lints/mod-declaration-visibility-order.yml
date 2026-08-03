@@ -3,17 +3,15 @@ language: rust
 severity: error
 message: "`mod` declaration placed directly after one with narrower visibility"
 note: Order module declarations `pub`, then `pub(crate)`, then private, separated by blank lines.
-# `pub mod $M;` matches every visibility, hence the `visibility_modifier`
-# regexes. `pub(super)` shares the middle tier. Only the immediately preceding
-# declaration is checked, so `#[cfg(test)]` modules stay at the bottom.
+# `pub mod $M;` matches every visibility. `pub(super)` shares the middle tier. Only the immediately preceding
+# declaration is checked.
 rule:
   any:
-    # `pub` directly after `pub(crate)`, `pub(super)` or a private declaration.
     - all:
         - pattern: pub mod $M;
         - has:
             kind: visibility_modifier
-            regex: '^pub$'
+            regex: "^pub$"
             stopBy: neighbor
         - follows:
             any:
