@@ -6,12 +6,14 @@
 # Every other rule in the pack still runs, but only warns, so a rule added
 # upstream on a version bump cannot start failing builds unmeasured.
 #
-# Reproduce (from a clean tree):
+# Reproduce (from a clean tree, inside `nix develop`):
 #   .github/scripts/fetch-yara-rules.sh /tmp/yara-rules
-#   yarac -w /tmp/yara-rules/*.yar /tmp/r.yarc
-#   git ls-files -z | xargs -0 -n1 yara -w -C /tmp/r.yarc
-# -n1 matters: yara takes one target, and given several it silently treats the
-# extras as rule sources and still exits 0.
+#   ( cd /tmp/yara-rules && yr compile -w *.yar -o /tmp/r.yarc )
+#   git ls-files > /tmp/list.txt
+#   yr scan -w --compiled-rules --scan-list /tmp/r.yarc /tmp/list.txt
+# Compile from inside the rules directory, or pass --include-dir: three rules
+# `include` the .meta files by bare name and yr resolves those against the
+# working directory.
 # Anything that fires must be removed from this list, with a note saying why.
 
 capability_filesystem_browser

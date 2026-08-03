@@ -4,8 +4,10 @@
 #
 #   .github/scripts/tests/test-scan-changed-files.sh [rules-dir]
 #
-# Needs yara, yarac and magika on PATH, plus a GuardDog rule pack. Without a
-# rules-dir argument it fetches one. Exit 0 when every case passes.
+# Needs yr and magika on PATH, plus a GuardDog rule pack. Without a rules-dir
+# argument it fetches one. Exit 0 when every case passes.
+#
+# Locally: nix develop --command .github/scripts/tests/test-scan-changed-files.sh
 
 set -euo pipefail
 
@@ -126,6 +128,30 @@ check "missing RULES_DIR exits 2" 2 "$rc"
 
 rc=0; scan_in "$repo" "$head" "$head" || rc=$?
 check "empty diff exits 0" 0 "$rc"
+rm -rf "$repo"
+
+# --- a file the scanner cannot read must not pass -----------------------------
+# Both scanners exit 0 and report only on stderr when a listed path is
+# unreadable, so the script keys on stderr instead.
+repo="$(new_repo)"
+echo secret > "$repo/unreadable.txt"
+git -C "$repo" add -A
+git -C "$repo" commit -qm unreadable
+chmod 000 "$repo/unreadable.txt"
+rc=0; scan_in "$repo" "$(git -C "$repo" rev-parse HEAD~1)" "$(git -C "$repo" rev-parse HEAD)" || rc=$?
+chmod 644 "$repo/unreadable.txt"
+check "unreadable file exits 2" 2 "$rc"
+rm -rf "$repo"
+
+# --- a path containing a newline must be refused, not silently mis-listed -----
+repo="$(new_repo)"
+printf 'x\n' > "$repo/$(printf 'we\nird.txt')" 2>/dev/null || true
+if git -C "$repo" add -A 2>/dev/null && git -C "$repo" commit -qm newline 2>/dev/null; then
+    rc=0; scan_in "$repo" "$(git -C "$repo" rev-parse HEAD~1)" "$(git -C "$repo" rev-parse HEAD)" || rc=$?
+    check "newline in path exits 2" 2 "$rc"
+else
+    printf 'skip newline case (filesystem rejected the name)\n'
+fi
 rm -rf "$repo"
 
 printf '\n%d passed, %d failed\n' "$passed" "$failed"

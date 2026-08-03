@@ -16,6 +16,12 @@ ALLOW_MISSING_SCANNERS="${ALLOW_MISSING_SCANNERS:-0}"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BLOCKING_RULES_FILE="${BLOCKING_RULES_FILE:-$SCRIPT_DIR/../yara/blocking-rules.txt}"
 
+# yara-x spins up a thread pool per run, which costs more than it saves on a
+# small list. Measured on a 3-file scan: 33ms default versus 27ms single-threaded,
+# while at 930 files single-threaded is 330ms against 116ms. Switch at a point
+# comfortably above this repo's p90 diff of 17 files.
+readonly SINGLE_THREAD_BELOW=50
+
 # Runs on repo open or build without being invoked. Annotated, never blocked:
 # editing these is routine here.
 readonly AUTO_EXEC_PATTERN='^\.(vscode|devcontainer|githooks|cursor|claude|idea|github)/|\.code-workspace$|(^|/)build\.rs$|^\.cargo/config\.toml$|^(Makefile\.toml|justfile|flake\.nix|shell\.nix)$|\.(bat|cmd|ps1)$'
@@ -59,6 +65,10 @@ mapfile -d '' -t changed < "$workdir/changed"
 files=()
 for path in "${changed[@]}"; do
     if [[ -f "$path" ]]; then
+        # Both scanners take their targets as a newline-delimited list, so a path
+        # containing a newline cannot be expressed and would be read as two
+        # entries. Git permits such paths, so refuse rather than mis-scan.
+        [[ "$path" == *$'\n'* ]] && die "Path contains a newline, which cannot be scanned safely: ${path@Q}"
         files+=("$path")
     else
         # ACMR excludes deletions and a rename reports only its destination, so
@@ -73,10 +83,11 @@ if (( ${#files[@]} == 0 )); then
 fi
 
 log "Scanning ${#files[@]} changed file(s)."
+printf '%s\n' "${files[@]}" > "$workdir/list"
 blocking_findings=0
 
-# ------------------------------------------------------------------- yara ---
-if have_scanner yarac && have_scanner yara; then
+# ----------------------------------------------------------------- yara-x ---
+if have_scanner yr; then
     # Rules off the allowlist still report, they just do not fail the build, so a
     # version bump cannot add an unmeasured gate.
     declare -A is_blocking=()
@@ -86,8 +97,11 @@ if have_scanner yarac && have_scanner yara; then
 
     (( ${#is_blocking[@]} > 0 )) || die "No blocking rules listed in $BLOCKING_RULES_FILE."
 
+    # --include-dir because three rules `include` the .meta files by bare name and
+    # yr resolves those against the working directory, not the including file.
     compiled="$workdir/rules.yarc"
-    yarac -w "$RULES_DIR"/*.yar "$compiled" || die "Failed to compile YARA rules from $RULES_DIR."
+    yr compile -w --include-dir "$RULES_DIR" "$RULES_DIR"/*.yar -o "$compiled" 2>"$workdir/compile.err" \
+        || die "Failed to compile YARA rules: $(cat "$workdir/compile.err")"
 
     # An allowlisted name that no longer exists means a bump renamed the rule, and
     # the renamed one would silently drop to advisory.
@@ -98,32 +112,31 @@ if have_scanner yarac && have_scanner yara; then
     done
     log "${#is_blocking[@]} rule(s) are blocking; the rest are advisory."
 
-    for path in "${files[@]}"; do
-        # One file per invocation: yara takes a single target, and given several it
-        # silently treats the extras as rule sources and still exits 0. ./ keeps a
-        # dash-prefixed filename from being read as an option.
-        if ! matches=$(yara -w -C "$compiled" "./$path" 2>&1); then
-            fail "$path: yara failed: $matches"
+    threads=()
+    (( ${#files[@]} < SINGLE_THREAD_BELOW )) && threads=(--threads 1)
+
+    # yr exits 0 even when it could not read a listed file, reporting only on
+    # stderr, so stderr is the failure signal here rather than the exit status.
+    yr scan -w "${threads[@]}" --compiled-rules --scan-list "$compiled" "$workdir/list" \
+        > "$workdir/matches" 2> "$workdir/scan.err" \
+        || die "yr scan failed: $(cat "$workdir/scan.err")"
+    [[ -s "$workdir/scan.err" ]] && die "yr could not scan every file: $(cat "$workdir/scan.err")"
+
+    while read -r rule path; do
+        [[ -n "$rule" ]] || continue
+        if [[ -n "${is_blocking[$rule]:-}" ]]; then
+            fail "$path: yara rule $rule matched"
             blocking_findings=1
-            continue
+        else
+            warn "$path: yara rule $rule matched (advisory only)"
         fi
-        while read -r rule _; do
-            [[ -n "$rule" ]] || continue
-            if [[ -n "${is_blocking[$rule]:-}" ]]; then
-                fail "$path: yara rule $rule matched"
-                blocking_findings=1
-            else
-                warn "$path: yara rule $rule matched (advisory only)"
-            fi
-        done <<< "$matches"
-    done
+    done < "$workdir/matches"
 fi
 
 # ----------------------------------------------------------------- magika ---
 if have_scanner magika; then
-    # Status checked here, not on the pipeline below whose status is python's: a
-    # magika crash would otherwise yield no findings and pass. stderr is kept out
-    # of the stream so a benign diagnostic cannot be parsed as JSONL.
+    # Status checked separately from the pipeline below, whose status would be
+    # python's: a magika crash would otherwise yield no findings and pass.
     magika --jsonl -- "${files[@]}" > "$workdir/detected" 2> "$workdir/magika.err" \
         || die "magika failed: $(cat "$workdir/magika.err")"
     [[ -s "$workdir/magika.err" ]] && log "magika stderr: $(cat "$workdir/magika.err")"

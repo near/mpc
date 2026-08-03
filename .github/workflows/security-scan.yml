@@ -41,13 +41,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install yara and magika
+      - name: Install the scanners
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends yara
-          # Package version, which differs from what `magika --version` prints
-          # (that is the library version, currently 1.1.0).
-          pipx install magika==1.0.3
+          .github/scripts/fetch-scanners.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Fetch YARA rules
         run: .github/scripts/fetch-yara-rules.sh "$RUNNER_TEMP/yara-rules"

@@ -92,6 +92,8 @@
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
+          magika = pkgs.callPackage ./nix/magika.nix { };
+          yara-x = pkgs.callPackage ./nix/yara-x.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;
 
@@ -181,6 +183,15 @@
             graphviz
           ];
 
+          # Used by .github/scripts/scan-changed-files.sh and its tests, so both
+          # are runnable locally. CI installs the same versions from pinned
+          # release binaries instead, because a nix setup costs it more than the
+          # download does; see .github/yara/README.md.
+          securityTools = [
+            yara-x # `yr`, the scanner
+            magika # content-type detection
+          ];
+
           buildLibs =
             with pkgs;
             [
@@ -222,6 +233,7 @@
               cargoTools ++
               nearTools ++
               miscTools ++
+              securityTools ++
               buildLibs ++
               [ opengrep ];
 
