@@ -79,18 +79,14 @@ impl From<PublicKeyExtended> for dtos::PublicKey {
     fn from(public_key_extended: PublicKeyExtended) -> Self {
         match public_key_extended {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                let mut bytes = [0u8; 64];
-                bytes.copy_from_slice(&near_public_key.as_bytes()[1..]);
-                dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::from(bytes))
+                dtos::PublicKey::try_from(&near_public_key)
+                    .expect("Secp256k1 variant always has a secp256k1 key")
             }
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => {
-                let mut bytes = [0u8; 32];
-                bytes.copy_from_slice(&near_public_key_compressed.as_bytes()[1..]);
-                dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(bytes))
-            }
+            } => dtos::PublicKey::try_from(&near_public_key_compressed)
+                .expect("Ed25519 variant always has an ed25519 key"),
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         }
     }
@@ -335,8 +331,10 @@ pub mod ed25519_types {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use k256::elliptic_curve::PrimeField;
     use rstest::rstest;
 
@@ -377,5 +375,25 @@ mod tests {
             <PublicKeyExtended as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
 
         assert_eq!(deserialized, public_key_extended);
+    }
+
+    #[test]
+    fn public_key_extended_try_from_near_public_key__should_reject_mldsa65() {
+        // Given
+        const MLDSA65_PUBLIC_KEY_SIZE: usize = 1952;
+        let near_public_key = near_sdk::PublicKey::from_parts(
+            near_sdk::CurveType::MLDSA65,
+            vec![0u8; MLDSA65_PUBLIC_KEY_SIZE],
+        )
+        .unwrap();
+
+        // When
+        let result = PublicKeyExtended::try_from(near_public_key);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(PublicKeyExtendedConversionError::UnsupportedCurve)
+        );
     }
 }
