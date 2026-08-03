@@ -188,7 +188,7 @@ near-crypto-public = { version = "0.36.0", package = "near-crypto" }
 near-gas = "0.3.4"
 near-jsonrpc-client = "0.21.1"
 near-jsonrpc-primitives = "0.36.0"
-near-kit = { version = "0.11.0", default-features = false }
+near-kit = { version = "0.12.1", default-features = false }
 near-primitives = "0.36.0"
 near-sandbox = "0.3.11"
 near-sdk = { version = "5.28.0", features = [
@@ -235,7 +235,7 @@ socket2 = "0.6.3"
 subtle = "2.6.1"
 sui-rpc = "0.3.1"
 sui-sdk-types = "0.3.1"
-syn = "2.0"
+syn = "3.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
