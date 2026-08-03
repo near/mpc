@@ -1,0 +1,24 @@
+id: mod-declarations-contiguous
+language: rust
+severity: error
+message: "module `$M` is declared apart from the other module declarations"
+note: Keep all module declarations of a scope in one block.
+# Fires only on a declaration that starts a second run: one that does not follow
+# another declaration, while a declaration already exists earlier in the scope.
+rule:
+  all:
+    - any:
+        - pattern: mod $M;
+        - pattern: pub mod $M;
+    - not:
+        follows:
+          any:
+            - pattern: mod $N;
+            - pattern: pub mod $N;
+            - kind: attribute_item
+          stopBy: neighbor
+    - follows:
+        any:
+          - pattern: mod $N;
+          - pattern: pub mod $N;
+        stopBy: end

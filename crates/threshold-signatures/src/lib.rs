@@ -6,11 +6,13 @@ pub mod ecdsa;
 pub mod errors;
 pub mod frost;
 pub mod participants;
-
+pub mod protocol;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
 mod crypto;
+mod dkg;
+mod thresholds;
 
 // TODO: We should probably no expose the full modules, but only the types
 // that make sense for our library
@@ -26,11 +28,6 @@ pub use crypto::polynomials::{
     batch_compute_lagrange_coefficients, batch_invert, compute_lagrange_coefficient,
 };
 use zeroize::ZeroizeOnDrop;
-
-pub mod protocol;
-
-mod dkg;
-mod thresholds;
 
 use crate::dkg::{assert_key_invariants, assert_reshare_keys_invariants, do_keygen, do_reshare};
 use crate::errors::InitializationError;

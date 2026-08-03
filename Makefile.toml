@@ -8,6 +8,7 @@ dependencies = [
   "assert-matches",
   "use-in-fn",
   "mod-visibility-order",
+  "mod-contiguous",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -123,6 +124,11 @@ args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
 description = "Check that module declarations are ordered by decreasing visibility"
 command = "ast-grep"
 args = ["scan", "--rule", "lints/mod-declaration-visibility-order.yml", "crates/"]
+
+[tasks.mod-contiguous]
+description = "Check that module declarations of a scope are kept in one block"
+command = "ast-grep"
+args = ["scan", "--rule", "lints/mod-declarations-contiguous.yml", "crates/"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"
