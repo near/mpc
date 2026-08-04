@@ -141,6 +141,7 @@ args = [
     "--no-deps",
     "--all-features",
     "--document-private-items",
+    "--locked",
 ]
 
 [tasks.check-docs.env]
