@@ -92,7 +92,6 @@
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
-          magika = pkgs.callPackage ./nix/magika.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;
 
@@ -180,6 +179,7 @@
             procps  # pgrep, used by the kill-orphan-mpc-nodes cargo-make task
             pprof
             graphviz
+            uv  # runs .github/scripts/*.py with their pinned inline dependencies
           ];
 
           buildLibs =
@@ -224,14 +224,7 @@
               nearTools ++
               miscTools ++
               buildLibs ++
-              [
-                opengrep
-                # Used by .github/scripts/scan-changed-files.sh and its tests, so
-                # both are runnable locally. CI installs the same version from a
-                # pinned release binary instead, because a nix setup costs that
-                # job more than the download does.
-                magika
-              ];
+              [ opengrep ];
 
             env = envCommon // envDarwin;
 
