@@ -33,6 +33,13 @@ ignore = [
   # has no patched release. Only reachable through near-vm-runner, which never
   # shares a Store across Engines.
   "RUSTSEC-2026-0222", # wasmtime stores can mix up type indices between engines
+  # Package rkyv pulled from near-vm-compiler (nearcore) 
+  # Patched >=0.8.17, 
+  # TODO(#3732): drop once nearcore is bumped to version that doesn't pull in
+  # vulnerable version.
+  "RUSTSEC-2026-0233",
+  "RUSTSEC-2026-0234",
+  "RUSTSEC-2026-0235",
 ]
 
 [bans]
