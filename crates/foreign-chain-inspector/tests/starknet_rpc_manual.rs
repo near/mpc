@@ -13,7 +13,7 @@ use serde::Deserialize;
 const PUBLIC_NODE_URL: &str = "https://starknet-rpc.publicnode.com";
 
 /// A known L1-finalized Starknet mainnet tx in block 6_868_546.
-/// https://starkscan.co/tx/0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e
+/// <https://starkscan.co/tx/0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e>
 const FINALIZED_TX_HASH: &str = "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e";
 const FINALIZED_BLOCK_HASH: &str =
     "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5";
