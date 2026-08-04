@@ -15,7 +15,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Granted per job instead, so a step only ever holds what it needs.
+# No token scopes by default; each job opts into only what it needs.
 permissions: {}
 
 jobs:
