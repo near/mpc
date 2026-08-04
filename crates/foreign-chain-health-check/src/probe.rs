@@ -15,10 +15,6 @@ use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 use crate::prepare_jsonrpc;
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
-///
-/// Carries no rendered RPC error: `Path`/`Query` auth splices the operator's API key into the URL,
-/// and upstream errors interpolate that URL into their text. Dropping the text here keeps the key
-/// out of anything built from a report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderStatus {
     Healthy,
@@ -32,15 +28,11 @@ pub enum ProviderStatus {
     RequestRejected,
     MalformedResponse,
     TimedOut,
-    /// The provider's auth token did not resolve, e.g. an environment variable that is not set.
     AuthTokenUnresolved,
-    /// The RPC client could not be built from the provider's URL and auth.
     ClientSetupFailed,
     /// The chain is configured without an `expected_network_fingerprint`, so its providers cannot
-    /// be checked. Reported rather than skipped: silence would read as healthy.
+    /// be checked.
     MissingExpectedFingerprint,
-    /// The chain has no fingerprint probe yet, either because none is written for it or because the
-    /// node cannot inspect it at all.
     ProbeNotImplemented,
 }
 
@@ -221,6 +213,7 @@ fn classify(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
@@ -228,6 +221,7 @@ mod tests {
     /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
     const MAINNET: &str = "0x534e5f4d41494e";
     const SEPOLIA: &str = "0x534e5f5345504f4c4941";
+    const PADDED_UPPERCASE_MAINNET: &str = "0x00534E5F4D41494E";
     /// Reserved as "discard", so nothing listens there.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
 
@@ -290,6 +284,59 @@ mod tests {
             .await
     }
 
+    async fn mock_error_object<'a>(
+        server: &'a httpmock::MockServer,
+        status: u16,
+        code: i32,
+        message: &str,
+    ) -> httpmock::Mock<'a> {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "error": {"code": code, "message": message},
+        });
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST);
+                then.status(status).json_body(body);
+            })
+            .await
+    }
+
+    async fn mock_bad_api_key(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
+        mock_error_object(server, 401, -32600, "Must be authenticated!").await
+    }
+
+    async fn mock_unsupported_method(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
+        mock_error_object(server, 200, -32601, "Method not found").await
+    }
+
+    /// Throttling over HTTP 200, so only the JSON-RPC code tells the caller to back off.
+    async fn mock_throttled_over_http_200(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
+        mock_error_object(server, 200, -32005, "limit exceeded").await
+    }
+
+    async fn mock_non_jsonrpc_body(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST);
+                then.status(200).body("<html>gateway</html>");
+            })
+            .await
+    }
+
+    async fn mock_never_answers_in_time(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
+        let body = serde_json::json!({"jsonrpc": "2.0", "result": MAINNET, "id": 0});
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST);
+                then.status(200)
+                    .json_body(body)
+                    .delay(Duration::from_secs(30));
+            })
+            .await
+    }
+
     /// Keyed by chain too: provider names repeat across chains in real configs.
     fn must_status_of(report: &ProbeReport, chain: ForeignChain, provider: &str) -> ProviderStatus {
         report
@@ -324,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_on_another_network_as_wrong_network() {
-        // Given a provider serving Sepolia while the operator configured mainnet
+        // Given
         let server = httpmock::MockServer::start_async().await;
         mock_chain_id(&server, SEPOLIA).await;
         let config = starknet_only(chain_config(
@@ -347,9 +394,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_normalize_the_reported_fingerprint_before_comparing() {
-        // Given a provider padding and uppercasing the chain id, as the spec permits
+        // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, "0x00534E5F4D41494E").await;
+        mock_chain_id(&server, PADDED_UPPERCASE_MAINNET).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -379,7 +426,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then the provider is reported rather than skipped, and no request was sent
+        // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::MissingExpectedFingerprint
@@ -407,18 +454,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_refusing_the_request_without_retrying() {
-        // Given a provider answering the way an authenticated provider answers a bad API key
+        // Given
         let server = httpmock::MockServer::start_async().await;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(httpmock::Method::POST);
-                then.status(401).json_body(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": 0,
-                    "error": {"code": -32600, "message": "Must be authenticated!"},
-                }));
-            })
-            .await;
+        let mock = mock_bad_api_key(&server).await;
         let config = starknet_only(with_retries(
             chain_config(Some(MAINNET), one_provider("keyed", &server.base_url())),
             3,
@@ -427,7 +465,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then the refusal is named as such, and retrying it is pointless
+        // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::RequestRejected
@@ -437,18 +475,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_answering_with_a_jsonrpc_error() {
-        // Given a provider that does not serve this chain's methods
+        // Given
         let server = httpmock::MockServer::start_async().await;
-        server
-            .mock_async(|when, then| {
-                when.method(httpmock::Method::POST);
-                then.status(200).json_body(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": 0,
-                    "error": {"code": -32601, "message": "Method not found"},
-                }));
-            })
-            .await;
+        mock_unsupported_method(&server).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -466,14 +495,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_answering_with_an_unusable_body() {
-        // Given a provider whose answer is not JSON-RPC at all
+        // Given
         let server = httpmock::MockServer::start_async().await;
-        server
-            .mock_async(|when, then| {
-                when.method(httpmock::Method::POST);
-                then.status(200).body("<html>gateway</html>");
-            })
-            .await;
+        mock_non_jsonrpc_body(&server).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -491,17 +515,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_that_does_not_answer_in_time() {
-        // Given a provider slower than the configured timeout
+        // Given
         let server = httpmock::MockServer::start_async().await;
-        let body = serde_json::json!({"jsonrpc": "2.0", "result": MAINNET, "id": 0});
-        server
-            .mock_async(|when, then| {
-                when.method(httpmock::Method::POST);
-                then.status(200)
-                    .json_body(body)
-                    .delay(Duration::from_secs(30));
-            })
-            .await;
+        mock_never_answers_in_time(&server).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("slow", &server.base_url()),
@@ -519,11 +535,11 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_normalize_the_configured_fingerprint_before_comparing() {
-        // Given an operator writing the chain id padded and uppercased, as the spec permits
+        // Given
         let server = httpmock::MockServer::start_async().await;
         mock_chain_id(&server, MAINNET).await;
         let config = starknet_only(chain_config(
-            Some("0x00534E5F4D41494E"),
+            Some(PADDED_UPPERCASE_MAINNET),
             one_provider("publicnode", &server.base_url()),
         ));
 
@@ -539,7 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_whose_auth_token_does_not_resolve() {
-        // Given a provider whose auth token comes from an environment variable that is not set
+        // Given
         let config = starknet_only(chain_config(
             Some(MAINNET),
             NonEmptyBTreeMap::new(
@@ -560,7 +576,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then the operator learns which of the two setup failures it was
+        // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::AuthTokenUnresolved
@@ -569,7 +585,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_whose_client_cannot_be_built() {
-        // Given a provider whose URL is not one a client can be built for
+        // Given
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("wrong-scheme", "ws://127.0.0.1:9"),
@@ -587,7 +603,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_each_provider_of_a_chain_separately() {
-        // Given one healthy provider and one that is unreachable
+        // Given
         let server = httpmock::MockServer::start_async().await;
         mock_chain_id(&server, MAINNET).await;
         let mut providers = one_provider("healthy", &server.base_url());
@@ -618,7 +634,7 @@ mod tests {
     #[tokio::test]
     async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
      {
-        // Given a chain the node can inspect but has no fingerprint probe for
+        // Given
         let config = ForeignChainsConfig {
             base: Some(chain_config(
                 Some("8453"),
@@ -630,7 +646,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then it is visible in the report rather than silently absent
+        // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Base, "publicnode"),
             ProviderStatus::ProbeNotImplemented
@@ -639,7 +655,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_report_every_configured_chain_under_its_own_chain() {
-        // Given the same provider name configured for two chains
+        // Given
         let server = httpmock::MockServer::start_async().await;
         mock_chain_id(&server, MAINNET).await;
         let config = ForeignChainsConfig {
@@ -657,7 +673,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then each chain gets its own row rather than one shadowing the other
+        // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
@@ -671,18 +687,9 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_retry_a_provider_that_refused_with_a_rate_limit_code() {
-        // Given a provider signalling throttling as a JSON-RPC error object over HTTP 200
+        // Given
         let server = httpmock::MockServer::start_async().await;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(httpmock::Method::POST);
-                then.status(200).json_body(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": 0,
-                    "error": {"code": -32005, "message": "limit exceeded"},
-                }));
-            })
-            .await;
+        let mock = mock_throttled_over_http_200(&server).await;
         let config = starknet_only(with_retries(
             chain_config(Some(MAINNET), one_provider("keyed", &server.base_url())),
             2,
@@ -691,7 +698,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then throttling is the one refusal worth retrying
+        // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::Unreachable
@@ -701,7 +708,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_bound_the_fingerprint_a_provider_reports() {
-        // Given a provider answering with far more than a fingerprint
+        // Given
         let server = httpmock::MockServer::start_async().await;
         let flood = "n".repeat(5_000);
         mock_chain_id(&server, &flood).await;
@@ -713,7 +720,7 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then what reaches a log line or a metric label is bounded
+        // Then
         let ProviderStatus::WrongNetwork { observed, .. } =
             must_status_of(&report, ForeignChain::Starknet, "publicnode")
         else {
@@ -724,7 +731,7 @@ mod tests {
 
     #[test]
     fn classify__should_report_a_transaction_level_error_as_malformed() {
-        // Given an error about a transaction, which the probe never asks about
+        // Given
         let expected = NetworkFingerprint::from(MAINNET.to_string());
 
         // When
@@ -733,7 +740,7 @@ mod tests {
             Err(ForeignChainInspectionError::TransactionNotFound),
         );
 
-        // Then the inspector answered outside the contract its probe has
+        // Then
         assert_eq!(status, ProviderStatus::MalformedResponse);
     }
 
@@ -752,13 +759,15 @@ mod tests {
 
     #[tokio::test]
     async fn probe_all_providers__should_keep_auth_material_out_of_the_report() {
-        // Given a provider whose API key is spliced into the URL path
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_chain_id(&server, SEPOLIA).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             NonEmptyBTreeMap::new(
                 "keyed".to_string().into(),
                 ForeignChainProviderConfig {
-                    rpc_url: format!("{CLOSED_PORT_URL}/v2/API_KEY"),
+                    rpc_url: format!("{}/v2/API_KEY", server.base_url()),
                     auth: AuthConfig::Path {
                         placeholder: "API_KEY".to_string(),
                         token: TokenConfig::Val {
@@ -772,7 +781,11 @@ mod tests {
         // When
         let report = probe_all_providers(&config).await;
 
-        // Then neither the token nor the URL it was spliced into reaches the report
+        // Then
+        assert_matches!(
+            must_status_of(&report, ForeignChain::Starknet, "keyed"),
+            ProviderStatus::WrongNetwork { .. }
+        );
         let rendered = format!("{report:?}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("127.0.0.1"), "{rendered}");

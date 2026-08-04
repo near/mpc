@@ -525,15 +525,15 @@ Voting uses the protocol's existing signing threshold (`self.threshold()?.value(
 
 The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the fan-out across a chain's providers is the structural one. The network fingerprint probe is a per-node diagnostic on top of both.
 
-At startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
+Once wired into node startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
-Not every chain has a fingerprint probe. The table lists the ones that do, with the RPC each probes. A chain absent from it ignores `expected_network_fingerprint`.
+Not every chain has a fingerprint probe. The table lists the ones that do, with the RPC each probes. A chain absent from it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
 
-| chain | probe | fingerprint (mainnet) | fingerprint (testnet) |
-|---|---|---|---|
-| starknet | `starknet_chainId` | `0x534e5f4d41494e` (`SN_MAIN`) | `0x534e5f5345504f4c4941` (`SN_SEPOLIA`) |
+| chain | probe |
+|---|---|
+| starknet | `starknet_chainId` |
 
 Starknet's fingerprint is the chain id felt in lowercase `0x` hex without leading zeros. Both providers and operators are free to pad and upper-case it, so the reported and the configured value are normalized before they are compared.
 

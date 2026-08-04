@@ -46,18 +46,16 @@ pub trait ForeignChainInspector {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
 pub struct NetworkFingerprint(String);
 
-/// Reports the [`NetworkFingerprint`] of the provider an inspector talks to.
-///
-/// Fingerprints are compared verbatim, so both the reported and the expected one go through the
-/// impl's canonical form. Fetches a chain-wide constant providers never prune.
+/// Reports the [`NetworkFingerprint`] of the provider an inspector talks to, in the form
+/// [`Self::canonical_fingerprint`] produces.
 pub trait NetworkFingerprintInspector {
     fn network_fingerprint(
         &self,
     ) -> impl Future<Output = Result<NetworkFingerprint, ForeignChainInspectionError>> + Send;
 
-    /// Puts an operator-supplied fingerprint into the form [`Self::network_fingerprint`] returns,
-    /// so that a spec-legal spelling of the right network does not read as the wrong network.
-    fn canonical_fingerprint(expected: &str) -> NetworkFingerprint;
+    /// Normalizes any spec-legal spelling of this chain's fingerprint into the single form the trait
+    /// compares. Idempotent.
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
@@ -363,11 +361,7 @@ impl ForeignChainInspectionError {
         )
     }
 
-    /// Splits by what the provider did, where the [`From`] impl collapses everything into the one
-    /// [`Self::ClientError`] that [`Self::is_transient`] retries wholesale. A caller reporting why a
-    /// provider is unusable needs a 401 told apart from a 429.
-    ///
-    /// Messages name the HTTP status or JSON-RPC code, never the URL.
+    /// Maps a raw RPC client error to an error with context.
     pub fn classify_rpc_client_error(error: RpcClientError) -> Self {
         match error {
             RpcClientError::Call(object) => {
@@ -392,8 +386,11 @@ impl ForeignChainInspectionError {
                         }
                     }
                     // Not a response the caller can use, as opposed to no response at all.
-                    Some(HttpTransportError::Http(HttpError::Malformed | HttpError::TooLarge)) => {
+                    Some(HttpTransportError::Http(HttpError::Malformed)) => {
                         Self::MalformedRpcResponse("response was not valid JSON-RPC".to_string())
+                    }
+                    Some(HttpTransportError::Http(HttpError::TooLarge)) => {
+                        Self::MalformedRpcResponse("response exceeded the size limit".to_string())
                     }
                     Some(HttpTransportError::Url(_)) => {
                         Self::RpcRequestRejected("invalid RPC URL".to_string())
@@ -481,4 +478,210 @@ pub fn build_http_client(
         .build(&base_url)?;
 
     Ok(client)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    fn transport(error: HttpTransportError) -> RpcClientError {
+        RpcClientError::Transport(Box::new(error))
+    }
+
+    #[rstest]
+    #[case(400)]
+    #[case(401)]
+    #[case(403)]
+    #[case(404)]
+    fn classify_rpc_client_error__should_report_a_deterministic_status_as_a_refusal(
+        #[case] status_code: u16,
+    ) {
+        // Given
+        let error = transport(HttpTransportError::Rejected { status_code });
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestRejected(_)
+        );
+        assert!(!classified.is_transient());
+    }
+
+    #[rstest]
+    #[case(408)]
+    #[case(429)]
+    #[case(500)]
+    #[case(503)]
+    fn classify_rpc_client_error__should_report_a_retryable_status_as_a_transient_failure(
+        #[case] status_code: u16,
+    ) {
+        // Given
+        let error = transport(HttpTransportError::Rejected { status_code });
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestFailed(_)
+        );
+        assert!(classified.is_transient());
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_jsonrpc_error_object_as_a_refusal() {
+        // Given
+        let error = RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -32600,
+            "Must be authenticated!",
+            None::<()>,
+        ));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestRejected(_)
+        );
+        assert!(!classified.is_transient());
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_an_unparseable_result_as_malformed() {
+        // Given
+        let parse_error =
+            serde_json::from_str::<String>("7").expect_err("a number is not a string");
+        let error = RpcClientError::ParseError(parse_error);
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            classified,
+            ForeignChainInspectionError::MalformedRpcResponse(_)
+        );
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_body_that_is_not_jsonrpc_as_malformed() {
+        // Given
+        let error = transport(HttpTransportError::Http(HttpError::Malformed));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            classified,
+            ForeignChainInspectionError::MalformedRpcResponse(_)
+        );
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_connection_failure_as_transient() {
+        // Given
+        let error = transport(HttpTransportError::Http(HttpError::Stream(Box::new(
+            std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused"),
+        ))));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestFailed(_)
+        );
+        assert!(classified.is_transient());
+    }
+
+    /// `Path` and `Query` auth splice the API key into the URL, and jsonrpsee puts that URL in the
+    /// text of the error it reports for it.
+    #[test]
+    fn classify_rpc_client_error__should_keep_the_rpc_url_out_of_the_message() {
+        // Given
+        let url_carrying_a_key = "http://provider.example/v2/super-secret".to_string();
+        let error = transport(HttpTransportError::Url(url_carrying_a_key));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        let rendered = classified.to_string();
+        assert!(!rendered.contains("super-secret"), "{rendered}");
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_client_side_timeout_as_a_timeout() {
+        // Given
+        let error = RpcClientError::RequestTimeout;
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(classified, ForeignChainInspectionError::Timeout);
+    }
+
+    #[rstest]
+    #[case(-32005)]
+    #[case(-32029)]
+    fn classify_rpc_client_error__should_report_a_rate_limit_code_as_a_transient_failure(
+        #[case] code: i32,
+    ) {
+        // Given
+        let error = RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            code,
+            "limit exceeded",
+            None::<()>,
+        ));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestFailed(_)
+        );
+        assert!(classified.is_transient());
+    }
+
+    #[rstest]
+    #[case(ForeignChainInspectionError::RpcRequestFailed("_".to_string()), Some(ProviderFailure::Unreachable))]
+    #[case(ForeignChainInspectionError::RpcRequestRejected("_".to_string()), Some(ProviderFailure::Rejected))]
+    #[case(ForeignChainInspectionError::Timeout, Some(ProviderFailure::TimedOut))]
+    #[case(ForeignChainInspectionError::MalformedRpcResponse("_".to_string()), Some(ProviderFailure::Malformed))]
+    #[case(
+        ForeignChainInspectionError::InspectorResponseMismatch,
+        Some(ProviderFailure::Malformed)
+    )]
+    // The transaction's own state is an answer, not a fault of the provider that reported it.
+    #[case(ForeignChainInspectionError::TransactionNotFound, None)]
+    #[case(ForeignChainInspectionError::TransactionFailed, None)]
+    #[case(ForeignChainInspectionError::NotFinalized, None)]
+    #[case(ForeignChainInspectionError::NotEnoughBlockConfirmations {
+        expected: BlockConfirmations::from(6),
+        got: BlockConfirmations::from(1),
+    }, None)]
+    fn provider_failure__should_name_only_the_failures_the_provider_owns(
+        #[case] error: ForeignChainInspectionError,
+        #[case] expected: Option<ProviderFailure>,
+    ) {
+        // When
+        let failure = error.provider_failure();
+
+        // Then
+        assert_eq!(failure, expected);
+    }
 }

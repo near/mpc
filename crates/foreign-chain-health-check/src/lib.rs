@@ -4,10 +4,11 @@
 //! * [`probe::probe_all_providers`] asks each provider for the network it serves and compares that
 //!   against the operator's configured expectation.
 
+pub mod probe;
+
 mod checks;
 mod golden;
 mod network;
-pub mod probe;
 mod results;
 
 use std::future::Future;

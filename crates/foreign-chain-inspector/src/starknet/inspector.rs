@@ -41,8 +41,10 @@ where
         Ok(chain_id.canonical_text().into())
     }
 
-    fn canonical_fingerprint(expected: &str) -> NetworkFingerprint {
-        ChainIdResponse(expected.to_owned()).canonical_text().into()
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        ChainIdResponse(fingerprint.to_owned())
+            .canonical_text()
+            .into()
     }
 }
 

@@ -517,11 +517,14 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
 
 /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
 const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
+const PADDED_UPPERCASE_MAINNET_CHAIN_ID: &str = "0x00534E5F4D41494E";
 
 #[tokio::test]
 async fn network_fingerprint__should_return_the_canonical_chain_id() {
-    // Given: the chain id padded and uppercased, as a provider is free to send it.
-    let inspector = StarknetInspector::new(mock_client_from_fixed_response("0x00534E5F4D41494E"));
+    // Given
+    let inspector = StarknetInspector::new(mock_client_from_fixed_response(
+        PADDED_UPPERCASE_MAINNET_CHAIN_ID,
+    ));
 
     // When
     let fingerprint = inspector
@@ -572,9 +575,17 @@ fn transport_error() -> RpcClientError {
     )))
 }
 
+fn bad_api_key_error() -> RpcClientError {
+    RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+        -32600,
+        "Must be authenticated!",
+        None::<()>,
+    ))
+}
+
 #[tokio::test]
 async fn network_fingerprints__should_retry_a_transient_failure_and_report_the_later_success() {
-    // Given a provider that refuses the first call and answers the second
+    // Given
     let (fan_out, calls) = single_provider_fan_out(|call| match call {
         0 => Err(transport_error()),
         _ => Ok(serde_json::json!(MAINNET_CHAIN_ID)),
@@ -596,7 +607,7 @@ async fn network_fingerprints__should_retry_a_transient_failure_and_report_the_l
 
 #[tokio::test]
 async fn network_fingerprints__should_stop_after_the_configured_number_of_attempts() {
-    // Given a provider that never answers
+    // Given
     let (fan_out, calls) = single_provider_fan_out(|_| Err(transport_error()));
 
     // When
@@ -614,21 +625,15 @@ async fn network_fingerprints__should_stop_after_the_configured_number_of_attemp
 
 #[tokio::test]
 async fn network_fingerprints__should_not_retry_a_provider_that_refused_the_request() {
-    // Given a provider refusing with a JSON-RPC error object, as one does for a bad API key
-    let (fan_out, calls) = single_provider_fan_out(|_| {
-        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
-            -32600,
-            "Must be authenticated!",
-            None::<()>,
-        )))
-    });
+    // Given
+    let (fan_out, calls) = single_provider_fan_out(|_| Err(bad_api_key_error()));
 
     // When
     let results = fan_out
         .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
         .await;
 
-    // Then the refusal is reported as one, and the remaining attempts are not spent on it
+    // Then
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_matches!(
         results[0].1,
