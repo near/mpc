@@ -21,11 +21,12 @@ permissions: {}
 jobs:
   zizmor:
     name: "Audit workflows"
-    # Fork PRs produce no push event, so `pull_request` covers those; the guard
-    # keeps same-repo PRs from being audited twice.
+    # Skip a same-repo PR: the push to its branch already audited these commits.
+    # Everything else runs, which leaves pushes and fork PRs, the latter having
+    # no push event of their own.
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name != github.repository
+      !(github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
