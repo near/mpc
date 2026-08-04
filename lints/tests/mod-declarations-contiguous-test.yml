@@ -1,0 +1,49 @@
+id: mod-declarations-contiguous
+valid:
+  - |
+    pub mod a;
+    mod b;
+  # Blank lines between visibility groups are not a split.
+  - |
+    pub mod a;
+
+    mod b;
+  # A comment between two declarations does not split the run.
+  - |
+    pub mod a;
+    // documentation
+    pub mod b;
+  # An attribute is part of a run.
+  - |
+    pub mod a;
+    #[cfg(test)]
+    mod tests;
+  # A single run does not have to sit at the top of the file.
+  - |
+    use std::fmt;
+
+    mod a;
+    mod b;
+  # An attributed declaration may stand alone, which keeps this legal.
+  - |
+    mod a;
+
+    use std::fmt;
+
+    #[cfg(test)]
+    mod tests;
+invalid:
+  - |
+    mod a;
+
+    use std::fmt;
+
+    pub mod b;
+  # A comment must not hide a stray declaration.
+  - |
+    mod a;
+
+    use std::fmt;
+
+    // documentation
+    pub mod b;

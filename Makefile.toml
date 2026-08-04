@@ -6,7 +6,8 @@ dependencies = [
   "todo-format",
   "editorconfig",
   "assert-matches",
-  "use-in-fn",
+  "ast-grep-scan",
+  "ast-grep-test",
   "fmt",
   "cargo-sort",
   "cargo-shear",
@@ -113,10 +114,16 @@ description = "Check for assert!(matches!(...)) — use assert_matches!() instea
 command = "bash"
 args = ["scripts/check-assert-matches.sh"]
 
-[tasks.use-in-fn]
-description = "Check for use statements inside function bodies"
+[tasks.ast-grep-scan]
+description = "Run every lints/rules structural lint over the workspace"
 command = "ast-grep"
-args = ["scan", "--rule", "lints/no-use-in-fn.yml", "crates/"]
+args = ["scan", "crates/"]
+
+[tasks.ast-grep-test]
+description = "Check that the lints/rules accept and reject what lints/tests says they should"
+# The report each rule prints is not snapshotted, only the verdict per snippet.
+command = "ast-grep"
+args = ["test", "--skip-snapshot-tests"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"
