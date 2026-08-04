@@ -66,9 +66,9 @@ impl OnboardingJob {
     /// state
     ///
     /// Returns:
-    /// - [`Done`] if the node is already active,
-    /// - [`Onboard`] if onboarding should begin,
-    /// - [`WaitForStateChange`] otherwise.
+    /// - [`OnboardingJob::Done`] if the node is already active,
+    /// - [`OnboardingJob::Onboard`] if onboarding should begin,
+    /// - [`OnboardingJob::WaitForStateChange`] otherwise.
     pub fn new(
         my_migration_info: MigrationInfo,
         contract: ContractState,

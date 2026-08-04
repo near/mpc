@@ -406,7 +406,7 @@ async fn await_request_in_contract_queue<T: ContractQueueRequest>(
     }
 }
 
-/// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
+/// Derives a confidential key following <https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md>
 pub fn create_response_ckd(
     account_id: &AccountId,
     app_public_key: &dtos::Bls12381G1PublicKey,

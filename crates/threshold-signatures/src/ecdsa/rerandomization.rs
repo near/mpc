@@ -10,10 +10,10 @@ use crate::participants::ParticipantList;
 
 /// The arguments used to derive randomness used for presignature rerandomization.
 /// Presignature rerandomization has been thoroughly described in
-/// \[GS21\] <https://eprint.iacr.org/2021/1330.pdf>
+/// \[[GS21](https://eprint.iacr.org/2021/1330.pdf)\]
 ///
 /// *** Warning ***
-/// Following \[GS21\] <https://eprint.iacr.org/2021/1330.pdf>, the entropy should
+/// Following \[[GS21](https://eprint.iacr.org/2021/1330.pdf)\], the entropy should
 /// be public, freshly generated, and unpredictable.
 // Cannot derive Debug here because an external type inside Tweak does not implement it
 #[derive(Clone)]
@@ -31,7 +31,7 @@ pub struct RerandomizationArguments {
 impl RerandomizationArguments {
     /// The following salt is picked by hashing with sha256
     /// "NEAR 6.4478$ 7:20pm CEST 2024-11-24"
-    /// Based on [Krawczyk10] paper:
+    /// Based on \[[Krawczyk10](https://eprint.iacr.org/2010/264.pdf)\] paper:
     /// ``[...] in most applications the extractor key (or salt) can be used
     /// repeatedly with many (independent) samples from the same source [...]``
     const SALT: [u8; 32] = [
