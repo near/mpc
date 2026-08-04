@@ -1736,7 +1736,7 @@ near contract call-function as-transaction \
 
 #### Query allowed launcher manifest digests
 
-The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns only non-expired digests; digests that have aged out past their TTL are hidden and auto-evicted.
+The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns only non-expired digests; digests that have aged out past their TTL are hidden from this view (and physically removed later, during routine `verify_tee` housekeeping).
 
 ```bash
 near contract call-function as-read-only \
@@ -1826,7 +1826,7 @@ For the migration procedure, see the [node migration guide](node-migration-guide
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) and is evicted automatically once no node has attested with it for that window, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
+An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
 
 After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 

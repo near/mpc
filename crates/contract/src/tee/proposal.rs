@@ -427,9 +427,9 @@ impl AllowedLauncherImages {
         let now = Timestamp::now();
         if self.entries.iter().any(|e| !e.is_expired(now)) {
             self.entries.retain(|e| !e.is_expired(now));
-        } else if let Some(newest) = self.latest_expiry_index() {
-            // All expired: keep only the most-recently-used entry.
-            self.entries.swap(0, newest);
+        } else if let Some(latest) = self.latest_expiry_index() {
+            // All expired: keep only the entry with the latest expiry.
+            self.entries.swap(0, latest);
             self.entries.truncate(1);
         }
     }
