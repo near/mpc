@@ -1,11 +1,11 @@
+# Static analysis of this repo's own workflow files: template injection,
+# unpinned actions, over-broad permissions.
 name: Workflow Security Analysis
 
-# Audits the workflow definitions themselves for template injection, mutable
-# action tags and known-vulnerable actions. Runs on every branch for the same
-# reason the disguised-content scan does: a push to a branch with no open PR
-# fires no `pull_request` event.
 on:
   pull_request:
+  # A push to a branch with no open PR fires no `pull_request` event, so pushes
+  # are covered separately rather than relying on PRs alone.
   push:
     branches:
       - '**'
