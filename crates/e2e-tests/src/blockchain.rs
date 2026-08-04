@@ -243,7 +243,7 @@ impl DeployedContract {
             .args(args)
             .gas(gas)
             .deposit(deposit)
-            .wait_until(near_kit::Included)
+            .wait_until::<near_kit::Included>()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (included) failed: {e}"))?;
         Ok(response.transaction_hash)
@@ -260,7 +260,8 @@ impl DeployedContract {
         loop {
             match self
                 .client
-                .tx_status(&tx_hash, signer_id.as_str(), near_kit::Final)
+                .tx_status(&tx_hash, signer_id.as_str())
+                .wait_until::<Final>()
                 .await
             {
                 Ok(outcome) => return Ok(outcome),
