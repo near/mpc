@@ -89,6 +89,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
 #[tokio::test]
 async fn contract_configuration_can_be_set_on_initialization() {
     let init_config = near_mpc_contract_interface::types::InitConfig {
+        attestation_storage_fee_millinear: Some(20),
         key_event_timeout_blocks: Some(11),
         tee_upgrade_deadline_duration_seconds: Some(22),
         contract_upgrade_deposit_tera_gas: Some(33),

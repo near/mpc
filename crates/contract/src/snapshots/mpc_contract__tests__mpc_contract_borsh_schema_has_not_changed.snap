@@ -246,6 +246,10 @@ BorshSchemaContainer {
                         "resolve_verification_tera_gas",
                         "u64",
                     ),
+                    (
+                        "attestation_storage_fee_millinear",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -729,6 +733,10 @@ BorshSchemaContainer {
                     (
                         "tee_verifier_votes",
                         "TeeVerifierVotes",
+                    ),
+                    (
+                        "available_attestation_grants",
+                        "LookupMap",
                     ),
                 ],
             ),

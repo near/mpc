@@ -18,7 +18,7 @@ use mpc_attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
+use near_mpc_contract_interface::types::{self as dtos, AccountId, Ed25519PublicKey};
 use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
@@ -442,12 +442,13 @@ impl TeeState {
     /// Scans up to `max_scan` entries from `stored_attestations` and removes any whose
     /// attestation no longer passes `re_verify` under the current docker-hash /
     /// launcher-hash / measurement whitelists, or whose attestation has expired.
-    /// Returns the number of entries removed.
+    /// Returns the account that owned each removed entry, so the caller can return the
+    /// attestation-storage grant it consumed.
     pub fn clean_invalid_attestations(
         &mut self,
         tee_upgrade_deadline_duration: Duration,
         max_scan: usize,
-    ) -> u32 {
+    ) -> Vec<AccountId> {
         let has_invalid_attestation = |node_id: &NodeId| {
             !matches!(
                 self.reverify_participants(node_id, tee_upgrade_deadline_duration),
@@ -464,13 +465,22 @@ impl TeeState {
             .map(|(tls_pk, _)| tls_pk.clone())
             .collect();
 
-        let removed = u32::try_from(invalid_tls_keys.len())
-            .expect("u32 should always be convertible from usize on wasm32");
-
+        let mut removed_entry_owners = Vec::with_capacity(invalid_tls_keys.len());
         for tls_pk in invalid_tls_keys {
-            self.stored_attestations.remove(&tls_pk);
+            if let Some(removed) = self.stored_attestations.remove(&tls_pk) {
+                removed_entry_owners.push(removed.node_id.account_id);
+            }
         }
-        removed
+        removed_entry_owners
+    }
+
+    /// Account that owns the entry stored under `tls_public_key`, if any. Read-only,
+    /// so [`crate::MpcContract::submit_participant_info`] can classify a submission before doing any
+    /// verification work.
+    pub(crate) fn attestation_owner(&self, tls_public_key: &Ed25519PublicKey) -> Option<AccountId> {
+        self.stored_attestations
+            .get(tls_public_key)
+            .map(|node_attestation| node_attestation.node_id.account_id.clone())
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
@@ -704,7 +714,7 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: only the expired entry is removed.
-        assert_eq!(removed, 1);
+        assert_eq!(removed.len(), 1);
         assert!(
             tee_state
                 .stored_attestations
@@ -738,9 +748,10 @@ mod tests {
             .unwrap();
 
         // Before expiry: cleanup keeps the entry.
-        assert_eq!(
-            tee_state.clean_invalid_attestations(Duration::from_secs(0), 100),
-            0
+        assert!(
+            tee_state
+                .clean_invalid_attestations(Duration::from_secs(0), 100)
+                .is_empty()
         );
 
         // When: the clock advances past the stamped expiry window and cleanup runs.
@@ -748,7 +759,7 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the previously uncleanable mock entry is removed.
-        assert_eq!(removed, 1);
+        assert_eq!(removed.len(), 1);
         assert!(
             !tee_state
                 .stored_attestations
@@ -784,7 +795,7 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the entry is cleaned — the submitted expiry was capped at the default.
-        assert_eq!(removed, 1);
+        assert_eq!(removed.len(), 1);
         assert!(
             !tee_state
                 .stored_attestations
@@ -823,11 +834,11 @@ mod tests {
         let mut total_removed = 0u32;
         loop {
             let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 3);
-            total_removed += removed;
-            if removed == 0 {
+            total_removed += removed.len() as u32;
+            if removed.is_empty() {
                 break;
             }
-            assert!(removed <= 3);
+            assert!(removed.len() <= 3);
         }
 
         // Then: all ten entries are removed across multiple calls, each bounded by max_scan.
@@ -858,7 +869,7 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: nothing is removed.
-        assert_eq!(removed, 0);
+        assert!(removed.is_empty());
         assert!(
             tee_state
                 .stored_attestations

@@ -27,6 +27,7 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
 };
@@ -174,6 +175,9 @@ impl From<MpcContract> for crate::MpcContract {
             foreign_chains: old.foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
+            // New in this release: nobody holds a grant yet. Entries written before the
+            // upgrade are unaffected -- they re-attest without consuming one.
+            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
         }
     }
 }
@@ -214,9 +218,10 @@ mod tests {
         // Sanity: past the default window but without migration, the un-stamped
         // entry survives cleanup indefinitely.
         set_block_timestamp((attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
-        assert_eq!(
-            tee_state.clean_invalid_attestations(Duration::from_secs(0), 100),
-            0
+        assert!(
+            tee_state
+                .clean_invalid_attestations(Duration::from_secs(0), 100)
+                .is_empty()
         );
 
         // When: the migration stamps an expiry as of block time 0 (window ends at
@@ -225,7 +230,7 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the stale legacy mock entry is removed.
-        assert_eq!(removed, 1);
+        assert_eq!(removed.len(), 1);
         assert!(
             !tee_state
                 .stored_attestations

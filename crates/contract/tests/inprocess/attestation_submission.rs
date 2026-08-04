@@ -3,11 +3,11 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidState, TeeError},
+    errors::{Error, InvalidParameters, InvalidState, TeeError},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::{create_node_id, gen_participants, node_id_for},
+        test_utils::{bogus_ed25519_public_key, create_node_id, gen_participants, node_id_for},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters,
@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
-use near_sdk::{test_utils::VMContextBuilder, testing_env};
+use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
 use test_utils::attestation::mock_dto_dstack_attestation;
@@ -149,7 +149,35 @@ struct TestSetup {
 }
 
 impl TestSetup {
+    /// Prepays `grants` attestation-storage grants for `account_id`, as an operator would.
+    fn prepay_grants(&mut self, account_id: &AccountId, grants: u32) {
+        let fee_millinear = self.contract.config().attestation_storage_fee_millinear;
+        let total = NearToken::from_millinear(u128::from(fee_millinear) * u128::from(grants));
+        testing_env!(common::participant_context_with_deposit(
+            &"operator.near".parse().unwrap(),
+            total
+        ));
+        self.contract
+            .prepay_attestation_storage(account_id.clone(), grants)
+            .expect("prepayment should succeed");
+    }
+
+    /// Submits and expects success. Prepays a grant first if the node has none, standing in
+    /// for the operator step, so tests that only care about attestation behaviour do not each
+    /// have to fund their nodes. Tests that assert on grant counts prepay explicitly instead.
     fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
+        let already_owns_entry = self.contract.get_tee_accounts().iter().any(|stored| {
+            stored.tls_public_key == node_id.tls_public_key
+                && stored.account_id == node_id.account_id
+        });
+        if !already_owns_entry
+            && self
+                .contract
+                .available_attestation_grants(node_id.account_id.clone())
+                == 0
+        {
+            self.prepay_grants(&node_id.account_id, 1);
+        }
         self.try_submit_attestation_for_node(node_id, attestation)
             .unwrap();
     }
@@ -265,13 +293,54 @@ fn submit_participant_info__should_reject_overwrite_from_other_account() {
     assert_eq!(stored_before, stored_after);
 }
 
-/// A newcomer stores its first attestation with no deposit (contract-funded storage), so the
-/// node's function-call access key can self-onboard.
+/// A new entry needs a grant. Without one the submission is rejected outright, before any
+/// verification work, so an unfunded node cannot make the contract pay for its storage.
 #[test]
-fn submit_participant_info__should_store_new_entry_with_zero_deposit() {
+fn submit_participant_info__should_reject_a_new_entry_without_a_grant() {
     // Given
     let mut setup = TestSetupBuilder::new().build();
     let newcomer = node_id_for(&"newcomer.near".parse().unwrap());
+    testing_env!(common::participant_context(&newcomer.account_id));
+
+    // When
+    let result = setup
+        .contract
+        .submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            newcomer.tls_public_key.clone(),
+        )
+        .map(|_| ());
+
+    // Then
+    assert_matches!(
+        &result,
+        Err(Error::InvalidParameters(
+            InvalidParameters::NoAttestationStorageGrant { account_id }
+        )) if account_id == newcomer.account_id.as_str()
+    );
+    assert!(
+        setup
+            .contract
+            .get_attestation(newcomer.tls_public_key)
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// Once an operator has prepaid, the node self-submits with no deposit of its own and the
+/// grant is consumed.
+#[test]
+fn submit_participant_info__should_store_a_new_entry_and_consume_one_grant() {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let newcomer = node_id_for(&"newcomer.near".parse().unwrap());
+    setup.prepay_grants(&newcomer.account_id, 1);
+    assert_eq!(
+        setup
+            .contract
+            .available_attestation_grants(newcomer.account_id.clone()),
+        1
+    );
     testing_env!(common::participant_context(&newcomer.account_id));
 
     // When
@@ -291,6 +360,81 @@ fn submit_participant_info__should_store_new_entry_with_zero_deposit() {
             .get_attestation(newcomer.tls_public_key)
             .unwrap()
             .is_some()
+    );
+    assert_eq!(
+        setup
+            .contract
+            .available_attestation_grants(newcomer.account_id),
+        0,
+        "the grant should have been consumed by the insert"
+    );
+}
+
+/// Two prepayments let one account hold two entries at once, which is what an operator
+/// migrating between nodes needs.
+#[test]
+fn submit_participant_info__should_allow_two_entries_for_two_grants() {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let account_id: AccountId = "operator-node.near".parse().unwrap();
+    let first = create_node_id(&account_id, &bogus_ed25519_public_key());
+    let second = create_node_id(&account_id, &bogus_ed25519_public_key());
+    setup.prepay_grants(&account_id, 2);
+
+    // When
+    setup.submit_attestation_for_node(&first, Attestation::Mock(MockAttestation::Valid));
+    setup.submit_attestation_for_node(&second, Attestation::Mock(MockAttestation::Valid));
+
+    // Then
+    assert!(
+        setup
+            .contract
+            .get_attestation(first.tls_public_key)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        setup
+            .contract
+            .get_attestation(second.tls_public_key)
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(setup.contract.available_attestation_grants(account_id), 0);
+}
+
+/// A submission for a TLS key owned by somebody else is rejected by the precondition, not by
+/// the store, so it never reaches verification and never consumes the caller's grant.
+#[test]
+fn submit_participant_info__should_reject_a_tls_key_owned_by_another_account() {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let owner = setup.get_participant_node_ids()[0].clone();
+    setup.submit_attestation_for_node(&owner, Attestation::Mock(MockAttestation::Valid));
+    let attacker: AccountId = "attacker.near".parse().unwrap();
+    setup.prepay_grants(&attacker, 1);
+    testing_env!(common::participant_context(&attacker));
+
+    // When: the attacker submits for the owner's TLS key.
+    let result = setup
+        .contract
+        .submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            owner.tls_public_key.clone(),
+        )
+        .map(|_| ());
+
+    // Then
+    assert_matches!(
+        &result,
+        Err(Error::AttestationSubmission(
+            AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+        ))
+    );
+    assert_eq!(
+        setup.contract.available_attestation_grants(attacker),
+        1,
+        "a rejected submission must not consume the grant"
     );
 }
 
@@ -801,4 +945,168 @@ fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProto
 
     setup.vote_with_all_participants(code_hash, 100);
     assert_allowed_docker_image_hashes!(&setup, 100, &[(code_hash, None)]);
+}
+
+/// The deposit must be exactly `fee × grants`. Anything else is rejected, which is what
+/// makes a remainder — and therefore a refund path — impossible.
+#[rstest]
+#[case::one_yocto_short(-1)]
+#[case::one_yocto_over(1)]
+fn prepay_attestation_storage__should_reject_a_deposit_that_is_not_an_exact_multiple(
+    #[case] offset: i128,
+) {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let node: AccountId = "newcomer.near".parse().unwrap();
+    let fee = u128::from(setup.contract.config().attestation_storage_fee_millinear);
+    let exact = NearToken::from_millinear(fee * 2).as_yoctonear();
+    let attached = NearToken::from_yoctonear((exact as i128 + offset) as u128);
+    testing_env!(common::participant_context_with_deposit(
+        &"operator.near".parse().unwrap(),
+        attached
+    ));
+
+    // When
+    let result = setup.contract.prepay_attestation_storage(node.clone(), 2);
+
+    // Then
+    assert_matches!(
+        &result,
+        Err(Error::InvalidParameters(InvalidParameters::UnexpectedDeposit { attached: a, required }))
+            if *a == attached.as_yoctonear() && *required == exact
+    );
+    assert_eq!(setup.contract.available_attestation_grants(node), 0);
+}
+
+/// Buying zero grants is rejected rather than silently accepting the deposit.
+#[test]
+fn prepay_attestation_storage__should_reject_zero_grants() {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let node: AccountId = "newcomer.near".parse().unwrap();
+    testing_env!(common::participant_context_with_deposit(
+        &"operator.near".parse().unwrap(),
+        NearToken::from_yoctonear(0)
+    ));
+
+    // When
+    let result = setup.contract.prepay_attestation_storage(node.clone(), 0);
+
+    // Then
+    assert_matches!(
+        &result,
+        Err(Error::InvalidParameters(
+            InvalidParameters::MalformedPayload { .. }
+        ))
+    );
+    assert_eq!(setup.contract.available_attestation_grants(node), 0);
+}
+
+/// The operator pays and the node submits — two different accounts. This is the whole point
+/// of prepaying: the node's function-call key cannot attach a deposit, so somebody else must.
+#[test]
+fn prepay_attestation_storage__should_let_one_account_fund_another() {
+    // Given
+    let mut setup = TestSetupBuilder::new().build();
+    let node = node_id_for(&"node.near".parse().unwrap());
+    let operator: AccountId = "operator.near".parse().unwrap();
+    let fee = u128::from(setup.contract.config().attestation_storage_fee_millinear);
+    testing_env!(common::participant_context_with_deposit(
+        &operator,
+        NearToken::from_millinear(fee)
+    ));
+    setup
+        .contract
+        .prepay_attestation_storage(node.account_id.clone(), 1)
+        .expect("operator prepayment should succeed");
+
+    // Then: the grant sits on the node's account, not the operator's.
+    assert_eq!(
+        setup
+            .contract
+            .available_attestation_grants(node.account_id.clone()),
+        1
+    );
+    assert_eq!(setup.contract.available_attestation_grants(operator), 0);
+
+    // When: the node submits for itself, attaching nothing.
+    testing_env!(common::participant_context(&node.account_id));
+    let result = setup
+        .contract
+        .submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            node.tls_public_key.clone(),
+        )
+        .map(|_| ());
+
+    // Then
+    assert_matches!(&result, Ok(()));
+    assert!(
+        setup
+            .contract
+            .get_attestation(node.tls_public_key)
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        setup.contract.available_attestation_grants(node.account_id),
+        0
+    );
+}
+
+/// Rule 3: reclaiming an entry returns its grant, and the returned grant is spendable —
+/// which is what makes a grant a reusable slot rather than a one-time purchase.
+#[test]
+fn clean_invalid_attestations__should_return_the_grant_and_let_it_be_reused() {
+    // Given
+    const EXPIRY_SECONDS: u64 = 1_000;
+    const NOW_NS: u64 = 5_000 * NANOS_IN_SECOND;
+
+    let mut setup = TestSetupBuilder::new().build();
+    let node = node_id_for(&"churn.near".parse().unwrap());
+    let expiring = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+    setup.prepay_grants(&node.account_id, 1);
+    setup.submit_attestation_for_node(&node, expiring);
+    assert_eq!(
+        setup
+            .contract
+            .available_attestation_grants(node.account_id.clone()),
+        0,
+        "the submission should have consumed the grant"
+    );
+
+    // When: the entry expires and is swept.
+    set_system_time(NOW_NS);
+    let removed = setup.contract.clean_invalid_attestations(100).unwrap();
+
+    // Then: the grant comes back to its owner.
+    assert!(removed >= 1);
+    assert_eq!(
+        setup
+            .contract
+            .available_attestation_grants(node.account_id.clone()),
+        1,
+        "reclaiming the entry should return the grant"
+    );
+
+    // And: it can be spent again, with no further prepayment.
+    let replacement = node_id_for(&node.account_id);
+    testing_env!(common::participant_context(&node.account_id));
+    let result = setup
+        .contract
+        .submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            replacement.tls_public_key.clone(),
+        )
+        .map(|_| ());
+    assert_matches!(&result, Ok(()));
+    assert_eq!(
+        setup.contract.available_attestation_grants(node.account_id),
+        0
+    );
 }

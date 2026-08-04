@@ -7,8 +7,9 @@ use crate::sandbox::{
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
-            get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
-            vote_add_launcher_hash, vote_for_hash,
+            get_participant_attestation, get_state, get_tee_accounts, prepay_attestation_grants,
+            submit_participant_info, submit_participant_info_raw, vote_add_launcher_hash,
+            vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -1036,10 +1037,11 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// A new attestation entry is stored with no attached deposit; the contract's own balance funds
-/// the storage.
+/// A node stores a new entry attaching no deposit of its own, spending a grant that somebody
+/// else prepaid for it. "Zero deposit" is about the submitting node, whose function-call key
+/// cannot attach one — not about the storage being free.
 #[tokio::test]
-async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> Result<()> {
+async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_grant() -> Result<()> {
     // Given
     let SandboxTestSetup {
         worker, contract, ..
@@ -1051,7 +1053,13 @@ async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> 
     let fresh_tls_key = bogus_ed25519_public_key();
 
     // When
-    let result = submit_participant_info(
+    // Prepay explicitly, from a different account, so the test asserts the grant flow rather
+    // than relying on the shared helper to fund it silently.
+    let payer = worker.dev_create_account().await?;
+    let prepayment = prepay_attestation_grants(&payer, &contract, outsider.id(), 1).await?;
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+
+    let result = submit_participant_info_raw(
         &outsider,
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -1066,6 +1074,12 @@ async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> 
     );
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
     assert!(stored.is_some(), "the entry should be stored on-chain");
+    let remaining: u32 = contract
+        .view("available_attestation_grants")
+        .args_json(serde_json::json!({ "account_id": outsider.id() }))
+        .await?
+        .json()?;
+    assert_eq!(remaining, 0, "storing a new entry should consume the grant");
     Ok(())
 }
 

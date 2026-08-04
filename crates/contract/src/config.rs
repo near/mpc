@@ -23,6 +23,10 @@ const DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7;
 const DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS: u64 = 2;
 /// Prepaid gas for a `fail_attestation_submission` call
 const DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS: u64 = 2;
+/// Fee, in milliNEAR, for one attestation-storage grant. Covers the worst-case
+/// stored entry plus the grant-counter row it creates, with headroom for layout
+/// growth; see `docs/design/operator-prepaid-attestation-storage.md`.
+const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
 /// Prepaid gas for a `clean_tee_status` call
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
@@ -81,6 +85,8 @@ pub(crate) struct Config {
     pub(crate) verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub(crate) resolve_verification_tera_gas: u64,
+    /// Fee, in milliNEAR, charged for one attestation-storage grant.
+    pub(crate) attestation_storage_fee_millinear: u64,
 }
 
 impl Default for Config {
@@ -110,6 +116,7 @@ impl Default for Config {
                 DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS,
             verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
             resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
+            attestation_storage_fee_millinear: DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR,
         }
     }
 }

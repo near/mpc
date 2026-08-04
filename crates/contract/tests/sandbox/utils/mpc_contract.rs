@@ -53,7 +53,71 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
         .collect())
 }
 
+/// Prepays `grants` attestation-storage grants for `beneficiary`, signed by `payer`.
+/// Permissionless, so any deposit-capable account may fund any other.
+pub async fn prepay_attestation_grants(
+    payer: &Account,
+    contract: &Contract,
+    beneficiary: &AccountId,
+    grants: u32,
+) -> anyhow::Result<ExecutionFinalResult> {
+    // Read the fee the way an operator does: from `config()`. There is deliberately no
+    // dedicated view for it.
+    let config: serde_json::Value = contract
+        .view("config")
+        .args_json(serde_json::json!({}))
+        .await?
+        .json()?;
+    let fee_millinear = config["attestation_storage_fee_millinear"]
+        .as_u64()
+        .expect("config must carry attestation_storage_fee_millinear");
+    let total = NearToken::from_millinear(u128::from(fee_millinear) * u128::from(grants));
+    Ok(payer
+        .call(contract.id(), "prepay_attestation_storage")
+        .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
+        .deposit(total)
+        .max_gas()
+        .transact()
+        .await?)
+}
+
+/// Submits an attestation, prepaying one grant first so a new entry can be stored.
+/// Mirrors the operator step; tests that assert on grants or on rejection should call
+/// [`prepay_attestation_grants`] and the raw submit themselves.
 pub async fn submit_participant_info(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &Ed25519PublicKey,
+) -> anyhow::Result<ExecutionFinalResult> {
+    // The view is absent on pre-upgrade binaries, which have no notion of grants; those
+    // submissions need no prepayment, so treat a failed lookup as "nothing to do".
+    // Only prepay when the submission would actually need a grant: a re-attestation of an
+    // entry this account already owns consumes none, and prepaying anyway would leave stray
+    // grants behind and could mask a genuinely missing prepayment in another test.
+    let already_owns_entry = get_tee_accounts(contract)
+        .await?
+        .iter()
+        .any(|stored| &stored.tls_public_key == tls_key && stored.account_id == *account.id());
+    if !already_owns_entry {
+        let granted = match contract
+            .view("available_attestation_grants")
+            .args_json(serde_json::json!({ "account_id": account.id() }))
+            .await
+        {
+            Ok(result) => result.json::<u32>().unwrap_or(0),
+            Err(_) => 1,
+        };
+        if granted == 0 {
+            let prepayment = prepay_attestation_grants(account, contract, account.id(), 1).await?;
+            anyhow::ensure!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+        }
+    }
+    submit_participant_info_raw(account, contract, attestation, tls_key).await
+}
+
+/// Submits without prepaying anything.
+pub async fn submit_participant_info_raw(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,

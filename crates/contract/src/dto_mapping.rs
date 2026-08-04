@@ -501,6 +501,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.resolve_verification_tera_gas {
             config.resolve_verification_tera_gas = v;
         }
+        if let Some(v) = config_ext.attestation_storage_fee_millinear {
+            config.attestation_storage_fee_millinear = v;
+        }
 
         config
     }
@@ -533,6 +536,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
                 .remove_non_participant_tee_verifier_votes_tera_gas,
             verifier_tera_gas: value.verifier_tera_gas,
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            attestation_storage_fee_millinear: value.attestation_storage_fee_millinear,
         }
     }
 }
@@ -564,6 +568,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
                 .remove_non_participant_tee_verifier_votes_tera_gas,
             verifier_tera_gas: value.verifier_tera_gas,
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            attestation_storage_fee_millinear: value.attestation_storage_fee_millinear,
         }
     }
 }

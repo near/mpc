@@ -1268,6 +1268,57 @@ struct InitContractArgs {
     init_format: ContractInitFormat,
 }
 
+/// Prepays one attestation-storage grant for every node in the cluster.
+///
+/// For every node, not only the initial participants: a node joining in a later resharing
+/// attests from its own process with a function-call key, which cannot attach a deposit, so
+/// its grant has to exist before it ever submits.
+async fn prepay_attestation_grants(
+    blockchain: &NearBlockchain,
+    contract: &DeployedContract,
+    near_keys: &[SigningKey],
+) -> anyhow::Result<()> {
+    // Granting the initial participants too is harmless: their attestations update the
+    // sentinel entry written at init, so they consume nothing and the grant stays unspent.
+    for (i, near_key) in near_keys.iter().enumerate() {
+        let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
+        let client = blockchain.client_for(&account, near_key).unwrap();
+        let outcome = contract
+            .call_from_with_deposit(
+                &client,
+                "prepay_attestation_storage",
+                json!({ "account_id": account, "grants": 1 }),
+                near_kit::Gas::from_tgas(30),
+                attestation_storage_fee(),
+            )
+            .await
+            .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
+        if !outcome.is_success() {
+            let failure = format!("{:?}", outcome.failure_message());
+            // The upgrade-compatibility tests run a production contract binary that predates
+            // grants. Nothing there needs prepaying, so stop rather than fail the cluster.
+            anyhow::ensure!(
+                failure.contains("method not found"),
+                "prepay for node {i} failed: {failure}"
+            );
+            tracing::info!("contract has no prepay_attestation_storage; skipping grant prepayment");
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+/// Fee for one attestation-storage grant, mirroring `Config`'s default.
+///
+/// Hard-coded rather than read from `config()`: the prepayment happens while the cluster is
+/// still starting, before the contract has state, and a view call there panics with
+/// "Calling default not allowed". If the contract default changes, prepayment fails loudly
+/// with an exact-deposit rejection, so update this to match.
+fn attestation_storage_fee() -> near_kit::NearToken {
+    near_kit::NearToken::from_millinear(20)
+}
+
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
@@ -1307,6 +1358,8 @@ async fn init_contract(
         "init failed: {:?}",
         outcome.failure_message()
     );
+
+    prepay_attestation_grants(blockchain, contract, &near_keys).await?;
 
     for &i in &participant_indices {
         let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");

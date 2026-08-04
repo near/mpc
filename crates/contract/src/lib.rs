@@ -48,7 +48,7 @@ use crate::{
         votes::ProposalHash,
     },
     storage_keys::StorageKey,
-    tee::tee_state::{TeeQuoteStatus, TeeState},
+    tee::tee_state::{AttestationSubmissionError, ParticipantInsertion, TeeQuoteStatus, TeeState},
     tee::verification_context::VerificationContext,
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposedUpdates, Update, UpdateId},
@@ -188,6 +188,8 @@ pub struct MpcContract {
     // non-optional via a migration that requires it be set.
     tee_verifier_account_id: Option<AccountId>,
     tee_verifier_votes: TeeVerifierVotes,
+    /// A row is removed at zero, so the map holds no entry for an account with none.
+    available_attestation_grants: LookupMap<AccountId, u32>,
 }
 
 #[near(serializers=[borsh])]
@@ -771,6 +773,68 @@ impl MpcContract {
         )
     }
 
+    /// Grants available to `account_id`: bought, minus those currently backing a
+    /// stored entry. Zero therefore means either "never prepaid" or "prepaid, and the
+    /// grant is backing an entry" — cross-reference [`Self::get_tee_accounts`] to tell which.
+    pub fn available_attestation_grants(&self, account_id: AccountId) -> u32 {
+        self.grants_for(&account_id)
+    }
+
+    fn grants_for(&self, account_id: &AccountId) -> u32 {
+        self.available_attestation_grants
+            .get(account_id)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Prepay for `grants` attestation-storage entries on `account_id`'s behalf.
+    ///
+    /// Permissionless: anyone may prepay for any account, which is what lets an
+    /// operator fund a node whose function-call access key cannot attach a deposit.
+    /// Requires exactly the configured fee times `grants`; nothing is refunded and
+    /// there is no withdrawal path.
+    #[payable]
+    #[handle_result]
+    pub fn prepay_attestation_storage(
+        &mut self,
+        account_id: AccountId,
+        grants: u32,
+    ) -> Result<(), Error> {
+        if grants == 0 {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: "grants must be greater than zero".to_string(),
+            }
+            .into());
+        }
+
+        let required = self
+            .attestation_storage_fee_internal()
+            .as_yoctonear()
+            .checked_mul(u128::from(grants))
+            .ok_or(InvalidParameters::MalformedPayload {
+                reason: "requested grants overflow the fee calculation".to_string(),
+            })?;
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached != required {
+            return Err(InvalidParameters::UnexpectedDeposit { attached, required }.into());
+        }
+
+        let available = self.grants_for(&account_id);
+        let credited =
+            available
+                .checked_add(grants)
+                .ok_or(InvalidParameters::MalformedPayload {
+                    reason: "grant counter would overflow".to_string(),
+                })?;
+        self.available_attestation_grants
+            .insert(account_id.clone(), credited);
+
+        log!(
+            "prepay_attestation_storage: account_id={account_id}, grants={grants}, available={credited}"
+        );
+        Ok(())
+    }
+
     /// Submit a TEE attestation for a current or prospective participant.
     ///
     /// - [`Attestation::Mock`] is verified synchronously.
@@ -778,8 +842,9 @@ impl MpcContract {
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// Storage is funded by the contract's own balance, so a node submits with no deposit via its
-    /// function-call access key, for its first attestation and re-attestations alike.
+    /// A node submits with no deposit via its function-call access key. Storing a *new* entry
+    /// consumes one attestation-storage grant, prepaid for the node's account by whoever
+    /// onboards it; a re-attestation under a key the account already owns consumes none.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -815,21 +880,99 @@ impl MpcContract {
             account_public_key,
         };
 
+        // Fail fast: a submission that would create a new entry without a grant, or that
+        // targets a TLS key owned by another account, is rejected before any verification.
+        self.assert_attestation_storage_grant_available(
+            &node_id.account_id,
+            &node_id.tls_public_key,
+        )?;
+
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                self.tee_state.verify_and_store_mock(
-                    node_id,
+                let insertion = self.tee_state.verify_and_store_mock(
+                    node_id.clone(),
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
+                if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+                    self.consume_attestation_storage_grant(&node_id.account_id);
+                }
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
                 self.submit_dstack_attestation(node_id, attestation)?,
             )),
         }
+    }
+
+    /// Fee for one attestation-storage grant. Not exposed as its own view: [`Self::config`]
+    /// already returns `attestation_storage_fee_millinear`, and an operator reads it once
+    /// by hand. A dedicated view can be added later if operators ask for one.
+    fn attestation_storage_fee_internal(&self) -> NearToken {
+        NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
+    }
+
+    /// Whether storing `tls_public_key` for `account_id` would create a new entry and
+    /// therefore consume a grant. `Err` if the key belongs to somebody else, which the
+    /// store would reject anyway — checking it here keeps that failure ahead of
+    /// verification instead of after it.
+    fn attestation_submission_needs_grant(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> Result<bool, Error> {
+        match self.tee_state.attestation_owner(tls_public_key) {
+            Some(owner) if &owner == account_id => Ok(false),
+            Some(_) => Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into()),
+            None => Ok(true),
+        }
+    }
+
+    /// Read-only precondition for [`Self::submit_participant_info`]: rejects a
+    /// submission that would need a grant the account does not have, before any
+    /// verification work is done.
+    fn assert_attestation_storage_grant_available(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> Result<(), Error> {
+        if self.attestation_submission_needs_grant(account_id, tls_public_key)?
+            && self.grants_for(account_id) == 0
+        {
+            return Err(InvalidParameters::NoAttestationStorageGrant {
+                account_id: account_id.to_string(),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Consumes one grant for `account_id`. Infallible by construction: every caller
+    /// has just established, in this same receipt, that a grant is available.
+    fn consume_attestation_storage_grant(&mut self, account_id: &AccountId) {
+        let available = self.grants_for(account_id);
+        let remaining = available.saturating_sub(1);
+        if remaining == 0 {
+            self.available_attestation_grants.remove(account_id);
+        } else {
+            self.available_attestation_grants
+                .insert(account_id.clone(), remaining);
+        }
+    }
+
+    /// Returns one grant to `account_id`, for an entry that has been reclaimed.
+    fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
+        let available = self.grants_for(account_id);
+        // Checked like the credit in `prepay_attestation_storage`: at `u32::MAX` a saturating
+        // add would silently drop a grant that was genuinely returned.
+        let Some(returned) = available.checked_add(1) else {
+            log!("grant counter for {account_id} is saturated; not returning a grant");
+            return;
+        };
+        self.available_attestation_grants
+            .insert(account_id.clone(), returned);
     }
 
     /// Async [`Attestation::Dstack`] submission: spawns a promise calling
@@ -1843,8 +1986,9 @@ impl MpcContract {
     }
 
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
-    /// referencing stale whitelists). Returns the number of entries removed. Callable by
-    /// anyone while the protocol is in `Running`.
+    /// referencing stale whitelists), returning one attestation-storage grant to the owner
+    /// of each entry removed. Returns the number of entries removed. Callable by anyone
+    /// while the protocol is in `Running`.
     #[handle_result]
     pub fn clean_invalid_attestations(&mut self, max_scan: u32) -> Result<u32, Error> {
         log!(
@@ -1859,9 +2003,16 @@ impl MpcContract {
         }
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        Ok(self
+        let removed_entry_owners = self
             .tee_state
-            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize))
+            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize);
+        // Reclaiming an entry hands its grant back, so a slot an operator paid for is
+        // reusable once the storage it bought has been returned.
+        for account_id in &removed_entry_owners {
+            self.return_attestation_storage_grant(account_id);
+        }
+        Ok(u32::try_from(removed_entry_owners.len())
+            .expect("u32 should always be convertible from usize on wasm32"))
     }
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations
@@ -1993,6 +2144,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
         })
     }
 
@@ -2075,6 +2227,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
         })
     }
 
@@ -2304,8 +2457,8 @@ impl MpcContract {
     }
 
     /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the
-    /// attestation (storage funded by the contract's balance). On any failure it fails the
-    /// submitter's transaction.
+    /// attestation, consuming one attestation-storage grant if the entry is new. On any failure
+    /// it fails the submitter's transaction.
     #[private]
     pub fn resolve_verification(
         &mut self,
@@ -2353,24 +2506,39 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. Storage is funded by the contract's balance.
+    /// [`VerificationResult::Verified`] response. Re-checks that a grant is available before
+    /// storing, since this runs a receipt later than the submission that reserved it.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
         report: &VerifiedReport,
     ) -> Result<(), Error> {
-        let account_id = &context.node_id.account_id;
+        let account_id = context.node_id.account_id.clone();
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        if let Err(err) = self.tee_state.verify_and_store_dstack(
+        // Re-checked here, not just in `submit_participant_info`: this callback runs in a
+        // later receipt, so the grant that was available at submit time may since have
+        // been consumed by another submission from the same account.
+        self.assert_attestation_storage_grant_available(
+            &account_id,
+            &context.node_id.tls_public_key,
+        )?;
+
+        let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            log!("post-DCAP check failed for {account_id}: {err}");
-            return Err(err.into());
+            Ok(insertion) => insertion,
+            Err(err) => {
+                log!("post-DCAP check failed for {account_id}: {err}");
+                return Err(err.into());
+            }
+        };
+        if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+            self.consume_attestation_storage_grant(&account_id);
         }
         Ok(())
     }
@@ -4632,6 +4800,11 @@ mod tests {
             launcher_image_hash(),
         );
 
+        // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
+        contract
+            .available_attestation_grants
+            .insert("alice.near".parse().unwrap(), 1);
+
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
@@ -4698,6 +4871,11 @@ mod tests {
 
         let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
+        // A new entry consumes a grant; stand in for the operator's prepayment.
+        contract
+            .available_attestation_grants
+            .insert(outsider_id.clone(), 1);
+
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
@@ -4758,6 +4936,11 @@ mod tests {
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
         let tls_key = bogus_ed25519_near_public_key();
         let dto_public_key = dtos::Ed25519PublicKey::try_from(&tls_key).unwrap();
+
+        // A new entry consumes a grant; stand in for the operator's prepayment.
+        contract
+            .available_attestation_grants
+            .insert(outsider_id.clone(), 1);
 
         testing_env!(
             VMContextBuilder::new()
@@ -4848,6 +5031,7 @@ mod tests {
                 ),
                 tee_verifier_account_id: None,
                 tee_verifier_votes: Default::default(),
+                available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
             }
         }
     }
@@ -8185,7 +8369,7 @@ mod tests {
     /// everything derived from it must be revisited in the same change — today
     /// [`WORST_CASE_ENTRY_BYTES`] and [`WORST_CASE_ENTRY_COST_CEILING`].
     ///
-    /// TODO(#4015): the prepaid-storage fee is sized from these numbers.
+    /// The prepaid-storage fee is sized from these numbers.
     #[rstest]
     #[case::dstack(599, worst_case_dstack_attestation())]
     #[case::mock(604, worst_case_mock_attestation())]

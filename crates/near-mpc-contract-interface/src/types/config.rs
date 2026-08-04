@@ -55,6 +55,8 @@ pub struct InitConfig {
     pub verifier_tera_gas: Option<u64>,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: Option<u64>,
+    /// Fee, in milliNEAR, for one attestation-storage grant.
+    pub attestation_storage_fee_millinear: Option<u64>,
 }
 
 /// Configuration parameters of the contract.
@@ -111,6 +113,8 @@ pub struct Config {
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
+    /// Fee, in milliNEAR, for one attestation-storage grant.
+    pub attestation_storage_fee_millinear: u64,
 }
 
 #[cfg(test)]
@@ -138,6 +142,7 @@ mod tests {
             remove_non_participant_tee_verifier_votes_tera_gas: Some(5),
             verifier_tera_gas: Some(100),
             resolve_verification_tera_gas: Some(60),
+            attestation_storage_fee_millinear: Some(20),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
@@ -191,6 +196,7 @@ mod tests {
             remove_non_participant_tee_verifier_votes_tera_gas: None,
             verifier_tera_gas: None,
             resolve_verification_tera_gas: None,
+            attestation_storage_fee_millinear: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);
