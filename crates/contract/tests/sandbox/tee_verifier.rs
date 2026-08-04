@@ -55,9 +55,10 @@ async fn deploy_and_trust_verifier(
     trust_verifier(contract, participants, verifier.id()).await;
 }
 
-/// Prepays a grant, then submits, returning only the submission's result. Splitting the two
-/// keeps the balance assertions below about the submission alone: the prepayment legitimately
-/// costs the fee, whereas a *failed* submission must cost nothing but gas.
+/// Submits without prepaying: callers that need a grant prepay separately, from a different
+/// account. Keeping the two apart keeps the balance assertions below about the submission
+/// alone -- the prepayment legitimately costs the fee, whereas a *failed* submission must
+/// cost nothing but gas.
 async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
     submit_participant_info_raw(
         submitter,

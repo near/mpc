@@ -4820,6 +4820,47 @@ mod tests {
         )
     }
 
+    /// The callback consumes a grant when it stores a new entry. Without this the async path
+    /// would store for free while the synchronous one charged.
+    #[test]
+    fn resolve_verification__should_consume_one_grant_when_the_entry_is_new() {
+        // Given: the setup prepays one grant for alice.near.
+        let (mut contract, context) = dstack_verification_setup();
+        let account_id = context.node_id.account_id.clone();
+        assert_eq!(contract.available_attestation_grants(account_id.clone()), 1);
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(
+            contract.available_attestation_grants(account_id),
+            0,
+            "storing a new entry should consume the grant"
+        );
+    }
+
+    /// The callback runs a receipt later than the submission that reserved the grant, so it
+    /// re-checks availability: another submission from the same account may have spent it in
+    /// between. Without the re-check this would store an entry no grant paid for.
+    #[test]
+    fn resolve_verification__should_store_nothing_when_the_grant_was_spent_before_the_callback() {
+        // Given: the grant reserved at submit time is gone by the time the callback runs.
+        let (mut contract, context) = dstack_verification_setup();
+        let account_id = context.node_id.account_id.clone();
+        contract.available_attestation_grants.remove(&account_id);
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then: the submitter's transaction is failed from its own receipt, and nothing is stored.
+        assert!(matches!(result, PromiseOrValue::Promise(_)));
+        assert!(contract.tee_state.stored_attestations.is_empty());
+    }
+
     #[test]
     fn resolve_verification__should_store_on_verified_verdict() {
         // Given

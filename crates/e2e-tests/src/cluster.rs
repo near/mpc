@@ -1311,10 +1311,11 @@ async fn prepay_attestation_grants(
 
 /// Fee for one attestation-storage grant, mirroring `Config`'s default.
 ///
-/// Hard-coded rather than read from `config()`: the prepayment happens while the cluster is
-/// still starting, before the contract has state, and a view call there panics with
-/// "Calling default not allowed". If the contract default changes, prepayment fails loudly
-/// with an exact-deposit rejection, so update this to match.
+/// Hard-coded rather than read from `config()`: reading it at this point in cluster start-up
+/// made every e2e test fail with the contract panic "Calling default not allowed". The
+/// mechanism was not chased down; the fixed value simply avoids depending on contract state
+/// here. If the contract default changes, prepayment fails loudly with an exact-deposit
+/// rejection, so update this to match.
 fn attestation_storage_fee() -> near_kit::NearToken {
     near_kit::NearToken::from_millinear(20)
 }

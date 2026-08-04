@@ -1085,7 +1085,7 @@ fn clean_invalid_attestations__should_return_the_grant_and_let_it_be_reused() {
     let removed = setup.contract.clean_invalid_attestations(100).unwrap();
 
     // Then: the grant comes back to its owner.
-    assert!(removed >= 1);
+    assert_eq!(removed, 1, "only the one stored entry should be swept");
     assert_eq!(
         setup
             .contract
