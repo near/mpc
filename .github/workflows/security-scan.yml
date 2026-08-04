@@ -14,8 +14,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+# Granted per job instead, so a step only ever holds what it needs.
+permissions: {}
 
 jobs:
   scan-changed-files:

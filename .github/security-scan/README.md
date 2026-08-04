@@ -41,4 +41,21 @@ so there is no allowlist to maintain.
 Fork PRs cap `security-events` at read and cannot upload SARIF, so the job fails directly and
 annotates the lines instead.
 
+## Adding another tool
+
+One workflow file per tool, as `apache/iceberg-rust`, `sigstore/sigstore-rs` and
+`matrix-org/matrix-rust-sdk` do, so each arrives as a self-contained change. Conventions to
+match:
+
+- `permissions: {}` at the top level, granted per job, and `security-events: write` only on a
+  job that uploads
+- `persist-credentials: false` on checkout
+- actions pinned by commit SHA with a trailing `# vX.Y.Z`
+- **a `category` unique to the tool** on `upload-sarif`. Code scanning keeps one analysis per
+  category, so a shared value would make one tool overwrite another's alerts
+- upload a run even when nothing was found, which is what clears alerts an earlier commit
+  raised
+
+Each tool is then separately requireable in the ruleset's code scanning rule.
+
 [magika]: https://github.com/google/magika
