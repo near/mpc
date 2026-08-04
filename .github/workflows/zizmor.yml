@@ -2,9 +2,6 @@
 # unpinned actions, over-broad permissions.
 name: Workflow Security Analysis
 
-# Auditing a push to a feature branch would not help, because a malicious
-# workflow runs on that push whatever this reports afterwards. What matters is
-# catching it before it reaches main, so pull requests are the gate.
 on:
   push:
     branches: [main]
