@@ -1278,6 +1278,11 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
+    let Some(fee) = attestation_storage_fee(contract).await? else {
+        tracing::info!("contract config has no attestation storage fee; skipping prepayment");
+        return Ok(());
+    };
+
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
     for (i, near_key) in near_keys.iter().enumerate() {
@@ -1289,14 +1294,15 @@ async fn prepay_attestation_grants(
                 "prepay_attestation_storage",
                 json!({ "account_id": account, "grants": 1 }),
                 near_kit::Gas::from_tgas(30),
-                attestation_storage_fee(),
+                fee,
             )
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
         if !outcome.is_success() {
             let failure = format!("{:?}", outcome.failure_message());
-            // The upgrade-compatibility tests run a production contract binary that predates
-            // grants. Nothing there needs prepaying, so stop rather than fail the cluster.
+            // Fallback for a binary that predates grants: the fee read above already skips
+            // those, so reaching here means `config()` carried a fee the contract cannot
+            // charge. Nothing needs prepaying either way, so stop rather than fail the cluster.
             anyhow::ensure!(
                 failure.contains("method not found"),
                 "prepay for node {i} failed: {failure}"
@@ -1309,15 +1315,19 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-/// Fee for one attestation-storage grant, mirroring `Config`'s default.
+/// Fee for one attestation-storage grant, read from the contract the way an operator reads it.
 ///
-/// Hard-coded rather than read from `config()`: reading it at this point in cluster start-up
-/// made every e2e test fail with the contract panic "Calling default not allowed". The
-/// mechanism was not chased down; the fixed value simply avoids depending on contract state
-/// here. If the contract default changes, prepayment fails loudly with an exact-deposit
-/// rejection, so update this to match.
-fn attestation_storage_fee() -> near_kit::NearToken {
-    near_kit::NearToken::from_millinear(20)
+/// `None` when `config()` carries no fee field, which means a contract binary older than
+/// grants: the upgrade-compatibility tests run one, and nothing there needs prepaying.
+///
+/// Kept behind a wrapper so the source of the value can change without touching callers.
+async fn attestation_storage_fee(
+    contract: &DeployedContract,
+) -> anyhow::Result<Option<near_kit::NearToken>> {
+    let config: serde_json::Value = contract.view_optimistic("config").await?;
+    Ok(config["attestation_storage_fee_millinear"]
+        .as_u64()
+        .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
 }
 
 async fn init_contract(

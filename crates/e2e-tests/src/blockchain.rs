@@ -234,6 +234,23 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
     }
 
+    /// Like [`Self::view`], but reads the optimistic head instead of the last final block.
+    ///
+    /// Needed for a view that immediately follows a call: `call` returns at near-kit's default
+    /// wait level (`ExecutedOptimistic`), so the block carrying the new state is not final yet
+    /// and the default `Finality::Final` view would still see the pre-call state. Waiting for
+    /// finality instead would cost a block or two of latency on every use.
+    pub async fn view_optimistic<T: DeserializeOwned + Send + 'static>(
+        &self,
+        method: &str,
+    ) -> anyhow::Result<T> {
+        self.client
+            .view::<T>(&self.contract_id, method)
+            .finality(near_kit::Finality::Optimistic)
+            .await
+            .map_err(|e| anyhow::anyhow!("contract view `{method}` (optimistic) failed: {e}"))
+    }
+
     pub async fn view_borsh<T: borsh::BorshDeserialize + Send + 'static>(
         &self,
         method: &str,
