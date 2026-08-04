@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Useful for tests.
 /// Note: We have to hold a closure and not just the response
 /// because `RpcClientError` does not implement `Clone`.
+#[derive(Clone)]
 pub struct FixedResponseRpcClient<RespFn> {
     response_fn: RespFn,
 }
