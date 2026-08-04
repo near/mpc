@@ -137,9 +137,13 @@ contract lists, which means an already backed-up keyset is left untouched, never
 overwritten, while a keyset that gained a domain within the same epoch
 (`vote_add_domains`) is still backed up. State changes that back up nothing stay
 silent; a successful backup logs at `info` with the epoch and domain count, and a
-failed backup at `warn` (retried on the next change). An unreachable endpoint is
-reported when it starts failing and again when it recovers, rather than once per
-poll. Logs default to `info`, overridable with `RUST_LOG`.
+failed backup at `warn`. A failed contract read is reported at `warn` when it
+starts failing and whenever the failure changes, and the next readable state at
+`info`, so a recovery is visible; neither is repeated on every poll. A failed
+backup is re-attempted after
+`--poll-interval-seconds`, or sooner if the contract state changes, since the
+state it failed on may not change again for a long time. Logs default to `info`,
+overridable with `RUST_LOG`.
 
 The RPC endpoint has to be live, and it is trusted for the identity of the keyset
 to back up. A lying endpoint cannot make the node hand out keyshares it does not

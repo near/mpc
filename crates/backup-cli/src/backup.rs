@@ -83,9 +83,15 @@ pub async fn run_command(args: cli::Args) {
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
 
-            run_backup_service(mpc_p2p_client, key_shares_storage, contract_state, shutdown)
-                .await
-                .expect("automatic backup service failed");
+            run_backup_service(
+                mpc_p2p_client,
+                key_shares_storage,
+                contract_state,
+                Duration::from_secs(subcommand_args.poll_interval_seconds),
+                shutdown,
+            )
+            .await
+            .expect("automatic backup service failed");
         }
     }
 }
@@ -128,17 +134,24 @@ async fn open_node_client_and_storage(
 }
 
 /// Backs up keyshares whenever the observed contract state stops being covered by what is
-/// stored, until `shutdown` is cancelled.
+/// stored, until `shutdown` is cancelled. A failed backup is re-attempted after `retry_delay`,
+/// since the contract state it failed on may not change again for a long time.
 pub async fn run_backup_service(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
     contract_state: impl ports::WatchContractState,
+    retry_delay: Duration,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
-    Service::new(mpc_p2p_client, keyshares_storage, contract_state)
-        .await?
-        .run(shutdown)
-        .await
+    Service::new(
+        mpc_p2p_client,
+        keyshares_storage,
+        contract_state,
+        retry_delay,
+    )
+    .await?
+    .run(shutdown)
+    .await
 }
 
 fn spawn_shutdown_on_signal(shutdown: CancellationToken) {

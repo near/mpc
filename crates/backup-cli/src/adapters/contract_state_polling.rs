@@ -101,8 +101,14 @@ async fn poll<Reader: ReadContractState + Sync>(
             _ = cancel.cancelled() => break,
             _ = ticker.tick() => {
                 let observed = read(&reader, read_timeout).await;
+                let failure = observed.as_ref().err().cloned();
                 if states.send_if_modified(|last| replace_if_different(last, observed)) {
-                    tracing::debug!("observed a new contract state");
+                    match failure {
+                        None => tracing::info!("observed a new contract state"),
+                        Some(err) => {
+                            tracing::warn!(%err, "could not read the contract state")
+                        }
+                    }
                 }
             }
         }

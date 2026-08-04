@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::time::Duration;
 
 use anyhow::anyhow;
 use mpc_node::keyshare::Keyshare;
@@ -14,6 +15,7 @@ pub struct Service<Keyshares, Storage, Contract> {
     keyshares: Keyshares,
     storage: Storage,
     contract_state: Contract,
+    retry_delay: Duration,
     backed_up: Option<BackedUpKeyset>,
 }
 
@@ -29,6 +31,7 @@ where
         keyshares: Keyshares,
         storage: Storage,
         contract_state: Contract,
+        retry_delay: Duration,
     ) -> anyhow::Result<Self> {
         let stored = storage
             .load_keyshares()
@@ -39,41 +42,58 @@ where
             keyshares,
             storage,
             contract_state,
+            retry_delay,
             backed_up: BackedUpKeyset::from_keyshares(&stored),
         })
     }
 
-    /// Backs up the observed keyset, then waits for the next one, until `shutdown` is cancelled
-    /// or the contract state stops being observed.
+    /// Backs up the observed keyset, then waits for the next one, until `shutdown` is cancelled.
+    /// Returns an error if the contract state stops being observed, since that is a failure
+    /// rather than a stop that was asked for.
     pub async fn run(mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
         tracing::info!(
             backed_up = ?self.backed_up,
             "starting automatic backup service"
         );
 
+        // Armed only after a failed backup: there is work left to re-attempt, and a contract
+        // whose state never changes again would otherwise never wake us to do it.
+        let mut retry_in = None;
+
         loop {
-            match self.contract_state.latest() {
-                Ok(state) => match self.tick(&state, &shutdown).await {
+            // A read failure is reported by the watcher itself, once per distinct failure
+            // rather than once per read, and leaves nothing to back up until a state arrives.
+            if let Ok(state) = self.contract_state.latest() {
+                match self.tick(&state, &shutdown).await {
                     Ok(TickOutcome::BackedUp {
                         epoch_id,
                         num_domains,
-                    }) => tracing::info!(%epoch_id, num_domains, "backed up keyshares"),
-                    Ok(TickOutcome::Skipped(_)) => {}
+                    }) => {
+                        retry_in = None;
+                        tracing::info!(%epoch_id, num_domains, "backed up keyshares");
+                    }
+                    Ok(TickOutcome::Skipped(_)) => retry_in = None,
                     Ok(TickOutcome::Cancelled) => break,
                     Err(err) => {
-                        tracing::warn!(?err, "keyshare backup failed, retrying on the next change");
+                        retry_in = Some(self.retry_delay);
+                        tracing::warn!(
+                            ?err,
+                            retry_in_seconds = self.retry_delay.as_secs(),
+                            "keyshare backup failed, retrying"
+                        );
                     }
-                },
-                Err(err) => tracing::warn!(?err, "contract state is unavailable"),
+                }
             }
 
             tokio::select! {
                 observed = self.contract_state.changed() => {
                     if let Err(err) = observed {
-                        tracing::warn!(?err, "stopped observing the contract state");
-                        break;
+                        // Not a clean stop: nothing observes the contract any more, so the
+                        // process should exit non-zero and let a supervisor restart it.
+                        return Err(anyhow!("stopped observing the contract state: {err:?}"));
                     }
                 }
+                () = sleep_or_pending(retry_in) => {}
                 _ = shutdown.cancelled() => break,
             }
         }
@@ -138,6 +158,14 @@ pub enum SkipReason {
     AlreadyBackedUp { contract_epoch_id: EpochId },
 }
 
+/// Sleeps for `delay`, or never returns when there is nothing to retry.
+async fn sleep_or_pending(delay: Option<Duration>) {
+    match delay {
+        Some(delay) => tokio::time::sleep(delay).await,
+        None => std::future::pending().await,
+    }
+}
+
 /// What the keyshares in local storage cover.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackedUpKeyset {
@@ -195,10 +223,14 @@ mod tests {
     };
 
     const FIXTURE_DOMAIN_IDS: [u64; 2] = [0, 1];
+    /// Only the retry test waits it out, and it does so under a paused clock.
+    const TEST_RETRY_DELAY: Duration = Duration::from_secs(60);
+
     type TestService = Service<FakeP2PClient, FakeKeyshareStorage, FakeWatchContractState>;
 
     struct FakeP2PClient {
         get_keyshares_calls: AtomicUsize,
+        fetched: Arc<Notify>,
         /// Domains the node holds, or all domains of the requested keyset when `None`.
         held_domain_ids: Option<Vec<u64>>,
         fail: bool,
@@ -209,6 +241,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 get_keyshares_calls: AtomicUsize::new(0),
+                fetched: Arc::new(Notify::new()),
                 held_domain_ids: None,
                 fail: false,
                 hang: false,
@@ -248,6 +281,7 @@ mod tests {
         async fn get_keyshares(&self, keyset: &Keyset) -> Result<Vec<Keyshare>, Self::Error> {
             self.get_keyshares_calls
                 .fetch_add(1, AtomicOrdering::SeqCst);
+            self.fetched.notify_one();
             if self.hang {
                 std::future::pending::<()>().await;
             }
@@ -272,7 +306,7 @@ mod tests {
     struct FakeKeyshareStorage {
         keyshares: Mutex<Vec<Keyshare>>,
         fail_load_after_store: bool,
-        stored: AtomicUsize,
+        stored: Arc<AtomicUsize>,
         stored_notify: Arc<Notify>,
     }
 
@@ -285,7 +319,7 @@ mod tests {
             Self {
                 keyshares: Mutex::new(keyshares),
                 fail_load_after_store: false,
-                stored: AtomicUsize::new(0),
+                stored: Arc::new(AtomicUsize::new(0)),
                 stored_notify: Arc::new(Notify::new()),
             }
         }
@@ -377,7 +411,7 @@ mod tests {
         storage: FakeKeyshareStorage,
         contract_state: FakeWatchContractState,
     ) -> TestService {
-        Service::new(keyshares, storage, contract_state)
+        Service::new(keyshares, storage, contract_state, TEST_RETRY_DELAY)
             .await
             .expect("the service should read local storage on startup")
     }
@@ -617,27 +651,59 @@ mod tests {
 
     #[tokio::test]
     async fn service_run__should_back_up_the_observed_state_before_waiting_for_a_change() {
+        // Given a watcher that never reports a change, so only acting before the wait can
+        // produce a backup. `_sender` is held precisely so `changed()` stays pending.
+        let (_sender, contract_state) =
+            FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
+        let storage = FakeKeyshareStorage::empty();
+        let stored = storage.stored.clone();
+        let stored_notify = storage.stored_notify.clone();
+        let service = service_watching(FakeP2PClient::new(), storage, contract_state).await;
+        let shutdown = CancellationToken::new();
+
+        // When
+        let stop_after_the_first_backup = async {
+            stored_notify.notified().await;
+            shutdown.cancel();
+        };
+        let (result, ()) = timeout(Duration::from_secs(5), async {
+            tokio::join!(service.run(shutdown.clone()), stop_after_the_first_backup)
+        })
+        .await
+        .expect("the observed state should be backed up without waiting for a change");
+
+        // Then
+        result.expect("the service should return Ok on shutdown");
+        assert_eq!(stored.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn service_run__should_retry_a_failed_backup_after_the_retry_delay() {
         // Given
         let (_sender, contract_state) =
             FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
-        let service = service_watching(
-            FakeP2PClient::new(),
-            FakeKeyshareStorage::empty(),
-            contract_state,
-        )
-        .await;
+        let mpc_p2p_client = FakeP2PClient::failing();
+        let fetched = mpc_p2p_client.fetched.clone();
+        let service =
+            service_watching(mpc_p2p_client, FakeKeyshareStorage::empty(), contract_state).await;
         let shutdown = CancellationToken::new();
-        // The loop acts on the observed state before it waits, so a shutdown requested up front
-        // still leaves exactly one backup behind.
-        shutdown.cancel();
 
-        // When
-        let result = timeout(Duration::from_secs(5), service.run(shutdown)).await;
+        // When the observed state never changes, only the retry timer can drive a second attempt.
+        let await_a_retry = async {
+            fetched.notified().await;
+            fetched.notified().await;
+            shutdown.cancel();
+        };
+        // The guard has to outlast the retry delay: with the clock paused, tokio advances to
+        // whichever deadline comes first.
+        let (result, ()) = timeout(TEST_RETRY_DELAY * 10, async {
+            tokio::join!(service.run(shutdown.clone()), await_a_retry)
+        })
+        .await
+        .expect("the failed backup should be re-attempted without a state change");
 
         // Then
-        result
-            .expect("the service should stop once shutdown is requested")
-            .unwrap();
+        result.expect("the service should return Ok on shutdown");
     }
 
     #[tokio::test]
@@ -670,7 +736,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn service_run__should_stop_when_the_contract_state_is_no_longer_observed() {
+    async fn service_run__should_fail_when_the_contract_state_is_no_longer_observed() {
         // Given
         let (sender, contract_state) =
             FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
@@ -685,12 +751,17 @@ mod tests {
         drop(sender);
 
         // Then
-        timeout(
+        let result = timeout(
             Duration::from_secs(5),
             service.run(CancellationToken::new()),
         )
         .await
-        .expect("the service should stop once nothing observes the contract state")
-        .expect("the service should return Ok");
+        .expect("the service should stop once nothing observes the contract state");
+
+        let err = result.expect_err("losing the watcher is a failure, not a clean stop");
+        assert!(
+            err.to_string().contains("stopped observing"),
+            "unexpected error: {err:?}"
+        );
     }
 }
