@@ -31,7 +31,7 @@ pub struct RerandomizationArguments {
 impl RerandomizationArguments {
     /// The following salt is picked by hashing with sha256
     /// "NEAR 6.4478$ 7:20pm CEST 2024-11-24"
-    /// Based on [Krawczyk10] paper:
+    /// Based on \[[Krawczyk10](https://eprint.iacr.org/2010/264.pdf)\] paper:
     /// ``[...] in most applications the extractor key (or salt) can be used
     /// repeatedly with many (independent) samples from the same source [...]``
     const SALT: [u8; 32] = [

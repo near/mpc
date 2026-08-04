@@ -56,7 +56,7 @@ fn issue_peer_certificate(
 ///
 /// # Returns
 /// A `ServerConfig`, suitable for constructing a
-/// [`tokio_rustls::TlsAcceptor`].
+/// `tokio_rustls::TlsAcceptor`.
 ///
 /// # Errors
 /// Returns an error if:
@@ -92,7 +92,7 @@ fn server_tls_config(
 ///
 /// # Returns
 /// A configured [`rustls::client::ClientConfig`] ready for constructing a
-/// [`tokio_rustls::TlsConnector`].
+/// `tokio_rustls::TlsConnector`.
 ///
 /// # Errors
 /// Returns an error if the provided client certificate and private key do not form a valid identity.

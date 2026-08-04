@@ -135,7 +135,13 @@ args = ["scripts/check-third-party-licenses.sh"]
 [tasks.check-docs]
 description = "Check rustdoc for broken intra-doc links"
 command = "cargo"
-args = ["doc", "--workspace", "--no-deps"]
+args = [
+    "doc",
+    "--workspace",
+    "--no-deps",
+    "--all-features",
+    "--document-private-items",
+]
 
 [tasks.check-docs.env]
 RUSTDOCFLAGS = "-D warnings"
