@@ -87,6 +87,12 @@ fn bitcoin_only_config(rpc_url: &str) -> ForeignChainsConfig {
     }
 }
 
+// Tests that nodes only serve chain while it is available.
+//
+// Setup is with four nodes with Bitcoin RPC while meeting reconstruction
+// threshold, two nodes then drop their registration, taking Bitcoin below the
+// ForeignTx reconstruction threshold. Nodes should then reject validation
+// request based on their supporters list.
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
@@ -97,9 +103,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     const SUPPORTERS_PUBLISH_WAIT: Duration = Duration::from_secs(10);
     const UNAVAILABLE_RESPONSE_WAIT: Duration = Duration::from_secs(15);
 
-    // Given: four nodes with a mocked Bitcoin RPC (so inspection would
-    // succeed) and a ForeignTx domain whose reconstruction threshold is met
-    // by all four auto-registrations.
+    // Given
     let rpc_mock = must_start_bitcoin_rpc_mock();
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
@@ -157,8 +161,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         .is_some()
     );
 
-    // When: two nodes drop their registration, taking Bitcoin below the
-    // ForeignTx reconstruction threshold.
+    // When
     let rejections_before =
         crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.get();
     {
@@ -181,9 +184,7 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     .await
     .expect("timed out waiting for the empty supporters snapshot to publish");
 
-    // Then: nodes reject the request against their supporters snapshot,
-    // even though inspection itself would succeed. The distinct tx id keeps
-    // stray duplicate responses from the first request from matching.
+    // Then
     assert!(
         request_verify_foreign_tx_and_await_response(
             &mut setup.indexer,
