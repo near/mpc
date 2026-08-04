@@ -91,7 +91,7 @@ average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 backtrace = "0.3"
-base64 = "0.22.1"
+base64 = "0.23.0"
 blstrs = "0.7.1"
 borsh = { version = "1.6.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
