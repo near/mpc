@@ -1,0 +1,47 @@
+name: Workflow Security Analysis
+
+# Audits the workflow definitions themselves for template injection, mutable
+# action tags and known-vulnerable actions. Runs on every branch for the same
+# reason the disguised-content scan does: a push to a branch with no open PR
+# fires no `pull_request` event.
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Granted per job instead, so a step only ever holds what it needs.
+permissions: {}
+
+jobs:
+  zizmor:
+    name: "Audit workflows"
+    # Fork PRs produce no push event, so `pull_request` covers those; the guard
+    # keeps same-repo PRs from being audited twice.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      security-events: write # zizmor uploads its own SARIF
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          # Fork PRs cap security-events at read and so cannot upload; zizmor
+          # then prints its findings and fails the job instead.
+          advanced-security: ${{ github.event_name != 'pull_request' }}
