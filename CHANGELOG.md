@@ -5,6 +5,292 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.14.0] - 2026-08-04
+
+### 🚀 Features
+
+- : Add metrics to detect starvation and resolve CI flakyness (#3667)
+
+- : Support flag for wiping nearcore data (#3691)
+
+- : Add nearcore node config endpoint (#3706)
+
+- : Add foreign chain tx config checker (#3716)
+
+- : *(metrics)* Expose the TEE image-hash allowlist expiry metrics (#3752)
+
+- : *(foreign-tx)* Sui support in contract interface (#3754)
+
+- : Small defense in depth check for the evm inspector (#3781)
+
+- : *(foreign-tx)* Sui inspector (#3755)
+
+- : *(node)* Register foreign-chain configs via the new contract API (#3829)
+
+- : Support operators changing node urls (#3806)
+
+- : *(e2e)* Extend e2e cluster with new API from available chains (#3846)
+
+- : Allow smaller than 32 bytes messages for edDSA (#3876)
+
+- : Adding reconstruction threshold in node (#3640)
+
+- : *(node)* Indexer publishes foreign-chain supporters via a watch channel (#3853)
+
+- : *(near-contract-transport)* Introducing `CallContract` trait enabling different back-ends to share the same contract interface. (#3872)
+
+- : Introduce MpcContractHandle as shared contract interface (#3873)
+
+- : *(contract)* Async TEE attestation verification, drop `dcap-qvl` (#3714)
+
+- : Require deposits for a few migration functions (#3874)
+
+- : *(contract)* Add view for the current TEE verifier account (#3908)
+
+- : Add metrics for keyshare backups (#4014)
+
+- : Add expected_network_fingerprint to foreign chain config (#4017)
+
+- : Starknet RPC healthcheck probing logic (#4013)
+
+
+### 🐛 Bug Fixes
+
+- : *(ci)* Order correctly the release candidates versions from nearcore (#3663)
+
+- : *(docs)* Add http prefix to prevent node operators falling into the same trap (#3672)
+
+- : A single participant with wrong url should not break the node (#3678)
+
+- : Node crash on malformed participant set in task (#3659)
+
+- : Indexer wedging on startup (#3713)
+
+- : *(launcher)* Reuse MPC container across restarts to preserve logs (#3705)
+
+- : *(node)* Confirm submit_participant_info via advancing attestation expiry (#3736)
+
+- : *(node)* Migrate state_sync ExternalStorage → Peers on start (#3796)
+
+- : Add timeout for tls incomming connection acceptor (#3834)
+
+- : Report computations lead metrics after finishing computations + more labels (#3836)
+
+- : *(tee-verifier)* Inherit repository for reproducible builds (#3885)
+
+- : Account timeout properly for lagging nodes (#3890)
+
+- : Decryption error message (#3812)
+
+- : *(tests)* Do no attach deposit when not needed (#3937)
+
+- : Extend max collateral age (#3941) (#3945)
+
+- : *(attestation)* Revert DEFAULT_EXPIRATION_DURATION_SECONDS to 7 days (#3948)
+
+- : *(contract)* Drop the deposit for `submit_participant_info` (#3940)
+
+- : Make online assets metric more informative (#3995)
+
+- : *(contract)* Make mock attestations cleanable via expiry (#3785)
+
+
+### 💼 Other
+
+- : Bump near-sdk to 5.29.0 (#4024)
+
+
+### 🚜 Refactor
+
+- : Unify gas type to not expose near indexer internals  (#3684)
+
+- : Establish contract-interfac/call_args.rs as source of truth (#3729)
+
+- : Reducing code redundancy (#3778)
+
+- : Upgrade aes gcm 0.11.0 (#3780)
+
+- : *(contract)* Share NodeId/auth test helpers via `primitives::test_utils` (#3832)
+
+- : *(node)* Make VerifyForeignTxProvider methods inherent (#3828)
+
+- : Deduplicate test port allocators into a single allocator (#3772)
+
+- : Move `ProposeUpdateArgs` to the interface crate (#3845)
+
+- : Extract foreign-chain-health-check library from config-tester (#3797)
+
+- : *(chain-gateway)* Unify view calls behind a single ViewContract trait (#3870)
+
+- : Near-contract-transport crate for NEAR call/view vocabulary (#3871)
+
+- : Renaming per-domain reconstruction-threshold identifiers (#3911)
+
+- : THRESHOLD into GOVERNANCE_THRESHOLD (#3931)
+
+- : Contract internal-only renames from threshold to reconstruction threshold (#3935)
+
+- : Typed sign on MpcContractHandle (#3914)
+
+- : Add distinct errors for small_t and q consistency checks (#3811)
+
+- : Cross-crate type renames (#3938)
+
+- : Typed request_app_private_key on MpcContractHandle (#3916)
+
+- : *(ops)* Move prepare-release.sh under scripts/ops/ (#3952)
+
+- : Shortening the line to StdRng::seed_from_u64 (#3798)
+
+- : Typed propose_update and vote_update on MpcContractHandle (#3920)
+
+
+### 📚 Documentation
+
+- : *(tdx)* Add key-provider "DCAP error" troubleshooting entry (#3614)
+
+- : Clarify that OT setup cannot be reused in our implementation (#3707)
+
+- : *(migration)* Fix backup-key (Step 3) and P2P-key (Step 4) retrieval for TEE nodes (#3749)
+
+- : *(tdx)* Warn that changing app-compose breaks the sealed disk (#3745)
+
+- : Add reproducibility-verification step to the release guide (#3824)
+
+- : Clarify how to set backup encryption key (#3675)
+
+- : TEE verifier deploy + vote-in runbook (#3882)
+
+- : *(design)* Operator-prepaid attestation storage (#4011)
+
+
+### ⚡ Performance
+
+- : *(tests)* Improve newly introduced test performance by reducing timout (#3958)
+
+
+### 🧪 Testing
+
+- : Add support for wycheproof vectors verification for signatures (#3656)
+
+- : Cover all foreign provider auth kinds in verify-foreign-tx e2e (#3759)
+
+- : *(foreign-tx)* Sui inspector tests + localnet docs (#3791)
+
+- : Add test vectors for CKD (#3815)
+
+- : *(localnet)* Deploy and vote in the TEE verifier contract (#3855)
+
+- : *(contract)* Implement CallContract for sandbox tests (#3902)
+
+- : *(e2e-tests)* Near-kit CallContract backend for MpcContractHandle (#3899)
+
+- : Cover all schemes in per-domain threshold integration test (#4007)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- : Remove noisy warnings in cargo-shear and cargo-deny (#3670)
+
+- : Standardize public debug port to 8080 across deployment templates (#3688)
+
+- : Bump the rust-minor-and-patch group with 6 updates (#3698)
+
+- : Bump itertools from 0.14.0 to 0.15.0 (#3699)
+
+- : Bump nearcore to 2.13.0-rc.2 (#3717)
+
+- : Ignore quick-xml DoS advisories unreachable via our deps (#3730)
+
+- : Bump mockall from 0.14.0 to 0.15.0 (#3744)
+
+- : Bump near-workspaces from 0.22.2 to 0.22.4 in the rust-minor-and-patch group across 1 directory (#3741)
+
+- : *(contract)* Cleanup migrations after 3.13.0 release (#3771)
+
+- : Remove orphaned pytest config-generation code (#3775)
+
+- : Bump triple timeout and triple metrics bucket sizes (#3800)
+
+- : Mark foreign-chain rpc auth header values as sensitive (#3802)
+
+- : Fix changelog generation for patch releases from a branch (#3804)
+
+- : Bump the rust-minor-and-patch group across 1 directory with 3 updates (#3792)
+
+- : Bump rust version to 1.97 (#3819)
+
+- : Bump to nearcore 2.13.1 (#3808)
+
+- : Bump cargo near and use its new check feature (#3816)
+
+- : Bump the rust-minor-and-patch group with 7 updates (#3861)
+
+- : Bump near-workspaces from 0.22.4 to 0.23.0 (#3862)
+
+- : Delete orphan update-mpc-node.sh (#3859)
+
+- : Add semgrep job in the ci workflow (#3869)
+
+- : Make workflow runs cancellable automatically (#3879)
+
+- : Remove redundant opengrep step (#3893)
+
+- : Lower contract WASM size limit to `1235000` (#3905)
+
+- : Use upstream version of dcap-qvl (#3930)
+
+- : Job restart not needed when governance threshold changes (#3955)
+
+- : Use trait to avoid free-form strings in tracking (#3956)
+
+- : Bump quinn-proto from 0.11.14 to 0.11.16 in the cargo group across 1 directory (#3974)
+
+- : *(tee)* Move cluster deploy/test scripts to mpc-private (#3895)
+
+- : Bump toolchain to 1.97.1 (#3971)
+
+- : Bump claude review and fix env overflow for big PRs (#3989)
+
+- : Bump to nearcore 2.13.2 (#3988)
+
+- : Fix nightly build sed branch OR tags (#4002)
+
+- : Bump syn from 2.0.118 to 3.0.3 (#3980)
+
+- : Ensure blstrs scalar Copy types are zeroized (#3996)
+
+- : Bump near-kit from 0.11.2 to 0.12.1 (#3981)
+
+- : Bump the rust-minor-and-patch group across 1 directory with 20 updates (#4001)
+
+- : Harden claude reviews (#4009)
+
+- : Stop the review bot demanding license notices on dependency bumps (#4019)
+
+- : Make nix cache independent of Cargo.lock to avoid invalidating rust caches (#4022)
+
+- : Bump ruint to 1.20.0 for RUSTSEC-2026-0220 (#4018)
+
+- : Add exception for wasmtime 45 vulnerability (#4033)
+
+- : Bump serial_test from 3.5.0 to 4.0.1 (#4042)
+
+- : Bump base64 from 0.22.1 to 0.23.0 (#4041)
+
+- : Bump nearkit from 0.12.1 to 0.14.0 (#4044)
+
+- : Bump the rust-minor-and-patch group with 4 updates (#4039)
+
+- : Bump up rkyv as per RUSTSEC 2026-0233/0234/0235 (#4048)
+
+- : Make rust doc lints cover all cases (#4046)
+
+- : Lint module declaration order by visibility and grouping (#4036)
+
+- : Bump nearcore to 2.13.3 (#4053)
+
+
 ## [3.13.0] - 2026-06-24
 
 ### 🚀 Features
