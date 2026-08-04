@@ -4,6 +4,13 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use foreign_chain_inspector::abstract_chain::inspector::Abstract;
+use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
+use foreign_chain_inspector::base::inspector::Base;
+use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
+use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
+use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
@@ -95,13 +102,31 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe the remaining chains.
+                ForeignChain::Abstract => probe_evm::<Abstract>(chain, chain_config).await,
+                ForeignChain::Arbitrum => probe_evm::<Arbitrum>(chain, chain_config).await,
+                ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
+                ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
+                ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
+                ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
+                // TODO(#4003): probe Bitcoin, Aptos and Sui. Ethereum, Solana and Ton have no
+                // inspector, so there is nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
 
     let report_rows = futures::future::join_all(probe_attempts).await.concat();
     ProbeReport { rows: report_rows }
+}
+
+/// The chain marker only types the inspector; `eth_chainId` is the same call for all of them.
+async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> Vec<ProviderHealth>
+where
+    Chain: EvmChain + Clone + Send + Sync + 'static,
+{
+    probe_chain(chain, config, |provider| {
+        Ok(EvmInspector::<_, Chain>::new(prepare_jsonrpc(provider)?))
+    })
+    .await
 }
 
 async fn probe_chain<I>(
@@ -224,6 +249,19 @@ mod tests {
     const PADDED_UPPERCASE_MAINNET: &str = "0x00534E5F4D41494E";
     /// Reserved as "discard", so nothing listens there.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
+    /// For a chain with no probe: the value is never read, only whether it is set at all.
+    const ANY_FINGERPRINT: &str = "any-fingerprint";
+
+    /// Every EVM chain the probe covers: what `eth_chainId` answers on mainnet, and the decimal
+    /// chain id an operator configures.
+    const EVM_MAINNETS: [(ForeignChain, &str, &str); 6] = [
+        (ForeignChain::Abstract, "0xab5", "2741"),
+        (ForeignChain::Arbitrum, "0xa4b1", "42161"),
+        (ForeignChain::Base, "0x2105", "8453"),
+        (ForeignChain::Bnb, "0x38", "56"),
+        (ForeignChain::HyperEvm, "0x3e7", "999"),
+        (ForeignChain::Polygon, "0x89", "137"),
+    ];
 
     fn provider(rpc_url: &str) -> ForeignChainProviderConfig {
         ForeignChainProviderConfig {
@@ -269,6 +307,30 @@ mod tests {
             starknet: Some(config),
             ..Default::default()
         }
+    }
+
+    fn bitcoin_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            bitcoin: Some(config),
+            ..Default::default()
+        }
+    }
+
+    fn must_put_chain(
+        chains: &mut ForeignChainsConfig,
+        chain: ForeignChain,
+        config: ForeignChainConfig,
+    ) {
+        let slot = match chain {
+            ForeignChain::Abstract => &mut chains.abstract_chain,
+            ForeignChain::Arbitrum => &mut chains.arbitrum,
+            ForeignChain::Base => &mut chains.base,
+            ForeignChain::Bnb => &mut chains.bnb,
+            ForeignChain::HyperEvm => &mut chains.hyper_evm,
+            ForeignChain::Polygon => &mut chains.polygon,
+            other => panic!("no config slot wired for `{other:?}`"),
+        };
+        *slot = Some(config);
     }
 
     async fn mock_chain_id<'a>(
@@ -635,20 +697,17 @@ mod tests {
     async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
      {
         // Given
-        let config = ForeignChainsConfig {
-            base: Some(chain_config(
-                Some("8453"),
-                one_provider("publicnode", CLOSED_PORT_URL),
-            )),
-            ..Default::default()
-        };
+        let config = bitcoin_only(chain_config(
+            Some(ANY_FINGERPRINT),
+            one_provider("publicnode", CLOSED_PORT_URL),
+        ));
 
         // When
         let report = probe_all_providers(&config).await;
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
     }
@@ -663,8 +722,8 @@ mod tests {
                 Some(MAINNET),
                 one_provider("publicnode", &server.base_url()),
             )),
-            base: Some(chain_config(
-                Some("8453"),
+            bitcoin: Some(chain_config(
+                Some(ANY_FINGERPRINT),
                 one_provider("publicnode", CLOSED_PORT_URL),
             )),
             ..Default::default()
@@ -679,10 +738,70 @@ mod tests {
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
         assert_eq!(report.counts_per_chain().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_every_evm_chain_on_its_expected_network_as_healthy()
+    {
+        // Given
+        // Each chain gets its own mock, all of which have to outlive the probe.
+        let mut servers = Vec::new();
+        let mut config = ForeignChainsConfig::default();
+        for (chain, answered, expected) in EVM_MAINNETS {
+            let server = httpmock::MockServer::start_async().await;
+            mock_chain_id(&server, answered).await;
+            must_put_chain(
+                &mut config,
+                chain,
+                chain_config(
+                    Some(expected),
+                    one_provider("publicnode", &server.base_url()),
+                ),
+            );
+            servers.push(server);
+        }
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        for (chain, _, _) in EVM_MAINNETS {
+            assert_eq!(
+                must_status_of(&report, chain, "publicnode"),
+                ProviderStatus::Healthy,
+                "{chain:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_evm_provider_on_another_network_as_wrong_network()
+     {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_chain_id(&server, "0x14a34").await;
+        let mut config = ForeignChainsConfig::default();
+        must_put_chain(
+            &mut config,
+            ForeignChain::Base,
+            chain_config(Some("8453"), one_provider("publicnode", &server.base_url())),
+        );
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::from("8453".to_string()),
+                observed: NetworkFingerprint::from("84532".to_string()),
+            }
+        );
     }
 
     #[tokio::test]
