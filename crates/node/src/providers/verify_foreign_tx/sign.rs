@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{Context, bail};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
 use foreign_chain_inspector::aptos::inspector::{AptosExtractor, AptosFinality};
@@ -15,6 +17,7 @@ use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -55,19 +58,31 @@ impl VerifyForeignTxProvider {
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
-        // Also checked in `execute_foreign_chain_request`; checked early here
-        // because `take_owned` below irreversibly consumes a presignature. An
-        // availability flip between the two checks still costs one presignature.
-        ensure_chain_is_available(
-            &self.supporters_by_foreign_chain.borrow(),
-            &foreign_tx_request.request,
-        )
-        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
+        let requested_chain = foreign_tx_request.request.chain();
 
+        // Also checked in `execute_foreign_chain_request`; resolved early here
+        // because the supporter set scopes which presignature may be taken. An
+        // availability flip after the take still costs one presignature.
+        let chain_supporters: HashSet<ParticipantId> = {
+            let snapshot = self.supporters_by_foreign_chain.borrow();
+            ensure_chain_is_available(&snapshot, &foreign_tx_request.request).inspect_err(
+                |_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc(),
+            )?;
+            snapshot.get(&requested_chain).cloned().unwrap_or_default()
+        };
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
+        let eligible: Vec<ParticipantId> = self
+            .ecdsa_signature_provider
+            .alive_participant_ids()
+            .into_iter()
+            .filter(|id| chain_supporters.contains(id))
+            .collect();
+        let (presignature_id, presignature) = keyshare
+            .presignature_store
+            .take_owned_matching(eligible)
+            .await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {

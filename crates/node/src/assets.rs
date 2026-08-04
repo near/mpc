@@ -165,6 +165,38 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         self.cold_queue.push_back((id, value));
         ColdQueueAddIfNotSatisfiedResult::Enqueued
     }
+
+    /// Adds an element to the cold queue based on condition evaluation:
+    /// - if satisfied: it to the front of the queue
+    /// - if not: at the end
+    ///   and modifies barriers accordingly.
+    pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
+        self.update_condition_value();
+        if (self.condition)(&self.last_condition_value, &value) {
+            self.cold_queue.push_front((id, value));
+            self.cold_ready += 1;
+            self.cold_available += 1;
+        } else {
+            self.cold_queue.push_back((id, value));
+        }
+    }
+
+    /// Removes and returns the first element satisfying the condition with
+    /// supplied condition value.
+    /// Modifies barriers accordingly.
+    pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
+        let pos = self
+            .cold_queue
+            .iter()
+            .position(|(_, val)| (self.condition)(cond_val, val))?;
+        if pos < self.cold_ready {
+            self.cold_ready -= 1;
+        }
+        if pos < self.cold_available {
+            self.cold_available -= 1;
+        }
+        self.cold_queue.remove(pos)
+    }
 }
 
 enum ColdQueueTakeResult<T> {
@@ -265,6 +297,31 @@ where
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
+        loop {
+            {
+                let mut cold = self.cold_queue.lock().unwrap();
+                while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
+                    cold.ingest(id, value);
+                }
+                if let Some(taken) = cold.take_first_matching(&cond_val) {
+                    return taken;
+                }
+            }
+            // If the cold queue is exhausted, wait for a new element.
+            tokio::select! {
+                _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
+                    continue;
+                }
+                received = self.hot_receiver.recv_async() => {
+                    // can't fail, because self keeps a sender.
+                    let (id, val) = received.unwrap();
+                    self.cold_queue.lock().unwrap().ingest(id, val);
                 }
             }
         }
@@ -567,6 +624,18 @@ where
         // Always remove from in-flight, whether the take succeeded or not.
         self.unowned_in_flight.lock().unwrap().remove(&id);
         result
+    }
+
+    // Takes an owned asset whose participants are all in eligible.
+    // Blocks until there is an asset available satisfying the condition.
+    pub async fn take_owned_matching(&self, eligible: Vec<ParticipantId>) -> (UniqueId, T) {
+        let (id, val) = self.owned_queue.take_owned_matching(eligible).await;
+        let mut update = self.db.update();
+        update.delete(self.col, &self.make_key(id));
+        update
+            .commit()
+            .expect("Unrecoverable error writing to database");
+        (id, val)
     }
 
     fn take_unowned_inner(&self, id: UniqueId) -> anyhow::Result<T> {
@@ -1397,5 +1466,77 @@ mod tests {
                 assert_db_num_owned(db_col, domain_id, 1);
             }
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_owned_matching__should_return_matching_asset_immediately() {
+        // Given: a queue holding one non-matching and one matching asset.
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+        queue.add_owned(id2, 3);
+
+        // When: taking with a condition value matching only the second asset.
+        let taken = queue.take_owned_matching(1).now_or_never();
+
+        // Then: the matching asset is returned and the non-matching one stays.
+        assert_eq!(taken, Some((id2, 3)));
+        assert_eq!(queue.available(), 1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_owned_matching__should_wait_until_matching_asset_is_added() {
+        // Given: a queue holding only a non-matching asset.
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+
+        // When: taking with a condition value nothing matches yet.
+        let fut = queue.take_owned_matching(1);
+        let MaybeReady::Future(fut) = run_future_once(fut) else {
+            panic!("should not take a value when no element matches");
+        };
+
+        // Then: the take completes once a matching asset is added.
+        queue.add_owned(id2, 3);
+        assert_eq!(fut.now_or_never().unwrap(), (id2, 3));
+        // And: the non-matching asset was not consumed.
+        assert_eq!(queue.available(), 1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_first_matching__should_maintain_barrier_invariants() {
+        // Given: a cold queue partitioned into ready and non-satisfying sections.
+        let clock = FakeClock::default();
+        let mut queue = ColdQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
+        let id2 = id1.add_to_counter(1).unwrap();
+        let id3 = id1.add_to_counter(2).unwrap();
+        queue.ingest(id1, 2);
+        queue.ingest(id2, 4);
+        queue.ingest(id3, 3);
+        verify_cold_queue_internal_consistency(&queue, 3);
+
+        // When: taking with a condition value differing from the standing one.
+        let taken = queue.take_first_matching(&1);
+
+        // Then: the non-satisfying element is removed, barriers stay consistent.
+        assert_eq!(taken, Some((id3, 3)));
+        verify_cold_queue_internal_consistency(&queue, 2);
+
+        // And: taking under the standing value removes from the ready section.
+        assert_eq!(queue.take_first_matching(&0), Some((id2, 4)));
+        verify_cold_queue_internal_consistency(&queue, 1);
+
+        // And: no match leaves the queue untouched.
+        assert_eq!(queue.take_first_matching(&1), None);
+        verify_cold_queue_internal_consistency(&queue, 1);
     }
 }
