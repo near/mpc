@@ -114,6 +114,8 @@ pub struct Config {
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
     /// TTL after which a launcher image hash unused by any participant is evicted.
+    /// Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on
+    /// use), not retroactively — changing it does not re-date existing entries.
     pub launcher_hash_unused_ttl_seconds: u64,
 }
 
