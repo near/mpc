@@ -92,6 +92,7 @@
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
           opengrep = pkgs.callPackage ./nix/opengrep.nix { };
+          magika = pkgs.callPackage ./nix/magika.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;
 
@@ -223,7 +224,14 @@
               nearTools ++
               miscTools ++
               buildLibs ++
-              [ opengrep ];
+              [
+                opengrep
+                # Used by .github/scripts/scan-changed-files.sh and its tests, so
+                # both are runnable locally. CI installs the same version from a
+                # pinned release binary instead, because a nix setup costs that
+                # job more than the download does.
+                magika
+              ];
 
             env = envCommon // envDarwin;
 

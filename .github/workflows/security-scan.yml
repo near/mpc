@@ -1,0 +1,113 @@
+name: Security Scan
+
+# Runs on every branch, not just PRs. The implant this job exists to catch was
+# force-pushed onto the head branches of already-open pull requests, and a push
+# to a branch with no open PR fires no `pull_request` event at all.
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan-changed-files:
+    name: "Scan changed files"
+    # A push covers every same-repo branch, including a push to the branch of an
+    # already-merged PR, which fires no pull_request event - that is how the
+    # implant this job exists to catch arrived. Fork PRs produce no push event
+    # here, so pull_request covers those; the guard keeps same-repo PRs from being
+    # scanned twice.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      security-events: write # github/codeql-action/upload-sarif
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          # Full history: the scan diffs against a base commit, and with a
+          # shallow clone that object is absent. The script treats a missing
+          # base as a hard error rather than scanning nothing and passing.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the scanner
+        run: |
+          .github/scripts/fetch-scanners.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve the base commit
+        id: base
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ -n "$PR_BASE_SHA" ]; then
+            base="$PR_BASE_SHA"
+          elif git cat-file -e "${PUSH_BEFORE:-missing}^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE"
+          else
+            # `before` is all-zeroes when the push created the branch, and on a
+            # force-push it is the previous tip, which is now orphaned and so not
+            # fetched even at fetch-depth 0. Both land here, and both are cases
+            # where the push carries more than one new commit - so fall back to
+            # the whole branch delta. HEAD~1 would scan only the tip and leave
+            # the rest of a force-pushed range unexamined.
+            base="$(git merge-base "origin/${DEFAULT_BRANCH}" HEAD)"
+            # Pushing to the default branch itself: merge-base is HEAD.
+            if [ "$base" = "$(git rev-parse HEAD)" ]; then
+              base="$(git rev-parse HEAD~1)"
+            fi
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Test the scanner
+        run: .github/scripts/tests/test-scan-changed-files.sh
+
+      - name: Scan
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SARIF_OUT: ${{ runner.temp }}/results.sarif
+        run: .github/scripts/scan-changed-files.sh
+
+      # Findings become code scanning alerts, and a ruleset code scanning rule is
+      # what blocks a merge on them. See .github/security-scan/README.md.
+      - name: Upload results to code scanning
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        with:
+          sarif_file: ${{ runner.temp }}/results.sarif
+          category: disguised-content
+
+      # Fork PRs cap `security-events` at read, so the upload above cannot run for
+      # them. Fail the job directly instead, so a fork's findings still surface.
+      - name: Fail on findings
+        if: github.event_name == 'pull_request'
+        env:
+          SARIF: ${{ runner.temp }}/results.sarif
+        run: |
+          set -euo pipefail
+          jq -r '.runs[].results[]
+                 | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri)::\(.message.text)"' "$SARIF"
+          count="$(jq '[.runs[].results[]] | length' "$SARIF")"
+          if [ "$count" -ne 0 ]; then
+            echo "$count finding(s); see the annotations above." >&2
+            exit 1
+          fi
