@@ -9,6 +9,7 @@ use near_kit::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::{
+    call_args::SignArgs,
     client::MpcContractHandle,
     method_names,
     types::{
@@ -834,6 +835,33 @@ impl MpcCluster {
             })
             .await
             .context("failed to send sign request")
+    }
+
+    /// Like [`Self::send_sign_request`], but returns the tx hash once included instead
+    /// of awaiting it — for requests that resolve past the RPC timeout.
+    pub async fn send_sign_request_included(
+        &self,
+        domain_id: DomainId,
+        payload: Payload,
+        account_id: &AccountId,
+    ) -> anyhow::Result<near_kit::CryptoHash> {
+        let client = self.client_for(account_id)?;
+        let args = SignArgs::new(SignRequestArgs {
+            path: "test".to_string(),
+            payload,
+            domain_id,
+        });
+        self.contract
+            .call_from_with_deposit_included(
+                &client,
+                method_names::SIGN,
+                serde_json::to_value(&args)?,
+                near_mpc_contract_interface::client::SIGN_GAS,
+                near_kit::NearToken::from_yoctonear(
+                    near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR,
+                ),
+            )
+            .await
     }
 
     /// Send a CKD (Confidential Key Derivation) request from the given user account.

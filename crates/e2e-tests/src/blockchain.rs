@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::FinalExecutionOutcome;
+use near_kit::{AccountId, CryptoHash, FinalExecutionOutcome};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
@@ -8,6 +10,7 @@ use serde::de::DeserializeOwned;
 use crate::conversions::ToNearKey;
 
 const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
+const TX_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
@@ -222,6 +225,53 @@ impl DeployedContract {
             .map_err(|e| {
                 anyhow::anyhow!("contract call `{method}` (borsh args, with deposit) failed: {e}")
             })
+    }
+
+    /// Submit a call and return its tx hash once included. Pair with [`Self::wait_tx_final`]
+    /// for requests (e.g. a yielding `sign`) that resolve past the RPC timeout.
+    pub async fn call_from_with_deposit_included(
+        &self,
+        client: &NearKitCaller,
+        method: &str,
+        args: serde_json::Value,
+        gas: near_kit::Gas,
+        deposit: near_kit::NearToken,
+    ) -> anyhow::Result<CryptoHash> {
+        let response = client
+            .inner
+            .call(&self.contract_id, method)
+            .args(args)
+            .gas(gas)
+            .deposit(deposit)
+            .wait_until(near_kit::Included)
+            .await
+            .map_err(|e| anyhow::anyhow!("contract call `{method}` (included) failed: {e}"))?;
+        Ok(response.transaction_hash)
+    }
+
+    /// Poll `tx_status` for `tx_hash` (sent by `signer_id`) until `Final` or `timeout`.
+    pub async fn wait_tx_final(
+        &self,
+        tx_hash: CryptoHash,
+        signer_id: &AccountId,
+        timeout: Duration,
+    ) -> anyhow::Result<FinalExecutionOutcome> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            match self
+                .client
+                .tx_status(&tx_hash, signer_id.as_str(), near_kit::Final)
+                .await
+            {
+                Ok(outcome) => return Ok(outcome),
+                Err(e) if tokio::time::Instant::now() >= deadline => {
+                    return Err(anyhow::anyhow!(
+                        "tx {tx_hash} did not reach Final within {timeout:?}: {e}"
+                    ));
+                }
+                Err(_) => tokio::time::sleep(TX_STATUS_POLL_INTERVAL).await,
+            }
+        }
     }
 
     pub async fn view<T: DeserializeOwned + Send + 'static>(
