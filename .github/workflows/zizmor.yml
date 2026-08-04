@@ -2,17 +2,17 @@
 # unpinned actions, over-broad permissions.
 name: Workflow Security Analysis
 
+# Auditing a push to a feature branch would not help, because a malicious
+# workflow runs on that push whatever this reports afterwards. What matters is
+# catching it before it reaches main, so pull requests are the gate.
 on:
-  pull_request:
-  # A push to a branch with no open PR fires no `pull_request` event, so pushes
-  # are covered separately rather than relying on PRs alone.
   push:
-    branches:
-      - '**'
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # No token scopes by default; each job opts into only what it needs.
@@ -21,13 +21,7 @@ permissions: {}
 jobs:
   zizmor:
     name: "Audit workflows"
-    # Skip a same-repo PR: the push to its branch already audited these commits.
-    # Everything else runs, which leaves pushes and fork PRs, the latter having
-    # no push event of their own.
-    if: >-
-      !(github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 10
 
     permissions:
@@ -43,6 +37,7 @@ jobs:
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
         with:
-          # Fork PRs cap security-events at read and so cannot upload; zizmor
-          # then prints its findings and fails the job instead.
-          advanced-security: ${{ github.event_name != 'pull_request' }}
+          # A fork's pull request gets a read-only token, so uploading SARIF
+          # would fail with a 403. Turned off for those, and zizmor then prints
+          # its findings and fails the job, which still surfaces them.
+          advanced-security: ${{ !github.event.pull_request.head.repo.fork }}
