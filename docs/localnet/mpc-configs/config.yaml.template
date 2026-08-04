@@ -78,3 +78,7 @@ foreign_chains:
         rpc_url: "https://archive.mainnet.sui.io"
         auth:
           kind: none
+foreign_chain_health_check:
+  identities:
+    starknet: "0x534e5f4d41494e"
+    sui: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"

@@ -3814,8 +3814,10 @@ dependencies = [
  "hex",
  "http",
  "httpmock",
+ "jsonrpsee",
  "mpc-node-config",
  "near-mpc-bounded-collections",
+ "serde",
  "serde_json",
  "tokio",
 ]
