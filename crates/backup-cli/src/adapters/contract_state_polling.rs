@@ -263,7 +263,7 @@ mod tests {
             .expect("the next poll should publish the new state");
 
         // Then
-        assert_eq!(changed, Ok(()));
+        changed.expect("the watcher should still be observing");
         assert_eq!(watcher.latest(), Ok(reshared));
     }
 
@@ -292,12 +292,9 @@ mod tests {
         tokio::task::yield_now().await;
 
         // Then
-        assert_eq!(
-            states
-                .changed()
-                .await
-                .map_err(|_| PollError::PollingStopped),
-            Err(PollError::PollingStopped)
-        );
+        states
+            .changed()
+            .await
+            .expect_err("the channel should close once polling stops");
     }
 }
