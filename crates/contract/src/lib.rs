@@ -4834,6 +4834,7 @@ mod tests {
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
         // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
         assert_eq!(
             contract.available_attestation_grants(account_id),
@@ -4857,6 +4858,7 @@ mod tests {
             .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
 
         // Then: the submitter's transaction is failed from its own receipt, and nothing is stored.
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Promise(_)));
         assert!(contract.tee_state.stored_attestations.is_empty());
     }
