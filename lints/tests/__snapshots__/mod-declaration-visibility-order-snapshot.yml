@@ -2,6 +2,23 @@ id: mod-declaration-visibility-order
 snapshots:
   ? |
     mod a;
+    #[cfg(test)]
+    pub mod b;
+  : labels:
+    - source: pub mod b;
+      style: primary
+      start: 20
+      end: 30
+    - source: pub
+      style: secondary
+      start: 20
+      end: 23
+    - source: mod a;
+      style: secondary
+      start: 0
+      end: 6
+  ? |
+    mod a;
     // documentation
     pub mod b;
   : labels:

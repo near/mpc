@@ -2,9 +2,35 @@ id: mod-declaration-visibility-order
 language: rust
 severity: error
 message: "`$VIS mod $M;` is declared directly after a module with narrower visibility"
-note: Declare modules widest visibility first, `pub`, then `pub(crate)`, then private.
-# Repeated per branch: in ast-grep 0.42 a `matches:` reference inside a relational
-# rule matches nothing instead of erroring.
+note: Declare modules widest visibility first, `pub`, then `pub(crate)` and `pub(super)`, then private, with a blank line between groups so that rustfmt keeps them apart.
+utils:
+  # `#[macro_use]` has to stay textually first, so such a declaration never counts
+  # as a predecessor.
+  after-macro-use:
+    follows:
+      kind: attribute_item
+      regex: macro_use
+      stopBy: neighbor
+  restricted-predecessor:
+    all:
+      - pattern: pub mod $N;
+      - has:
+          kind: visibility_modifier
+          regex: '^pub\('
+          stopBy: neighbor
+      - not:
+          matches: after-macro-use
+  private-predecessor:
+    all:
+      - pattern: mod $N;
+      - not:
+          matches: after-macro-use
+  # Comments and attributes sit between declarations without separating them.
+  between-declarations:
+    any:
+      - kind: line_comment
+      - kind: block_comment
+      - kind: attribute_item
 rule:
   any:
     - all:
@@ -15,26 +41,12 @@ rule:
             regex: "^pub$"
             stopBy: neighbor
         - follows:
-            all:
-              - any:
-                  - all:
-                      - pattern: pub mod $N;
-                      - has:
-                          kind: visibility_modifier
-                          regex: '^pub\('
-                          stopBy: neighbor
-                  - pattern: mod $N;
-              # `#[macro_use]` must stay textually first.
-              - not:
-                  follows:
-                    kind: attribute_item
-                    regex: macro_use
-                    stopBy: neighbor
+            any:
+              - matches: restricted-predecessor
+              - matches: private-predecessor
             stopBy:
               not:
-                any:
-                  - kind: line_comment
-                  - kind: block_comment
+                matches: between-declarations
     - all:
         - pattern: pub mod $M;
         - has:
@@ -43,15 +55,7 @@ rule:
             regex: '^pub\('
             stopBy: neighbor
         - follows:
-            all:
-              - pattern: mod $N;
-              - not:
-                  follows:
-                    kind: attribute_item
-                    regex: macro_use
-                    stopBy: neighbor
+            matches: private-predecessor
             stopBy:
               not:
-                any:
-                  - kind: line_comment
-                  - kind: block_comment
+                matches: between-declarations

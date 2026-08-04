@@ -8,11 +8,12 @@ valid:
     pub mod a;
 
     mod b;
-  # Comments and attributes are part of a run.
+  # A comment between two declarations does not split the run.
   - |
     pub mod a;
     // documentation
     pub mod b;
+  # An attribute is part of a run.
   - |
     pub mod a;
     #[cfg(test)]
@@ -37,4 +38,12 @@ invalid:
 
     use std::fmt;
 
+    pub mod b;
+  # A comment must not hide a stray declaration.
+  - |
+    mod a;
+
+    use std::fmt;
+
+    // documentation
     pub mod b;

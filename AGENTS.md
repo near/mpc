@@ -30,6 +30,10 @@ cargo nextest run --cargo-profile=test-release <test_name>  # Run failing test t
 cargo insta review                                          # Interactively review pending snapshots
 cargo insta accept                                          # Accept all pending snapshots
 # Commit updated .snap files alongside code changes
+
+# The ast-grep lints under lints/ snapshot what each rule reports for its test fixtures
+cargo make ast-grep-test                                    # Check the recorded reports
+cargo make ast-grep-test-update                             # Record the current reports
 ```
 
 ### E2E Tests

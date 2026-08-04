@@ -3,8 +3,9 @@ language: rust
 severity: error
 message: "module `$M` is declared apart from the other module declarations"
 note: Keep the module declarations of a scope together. Blank lines between visibility groups are not a split.
-# Attributes and comments count as part of a run, which keeps a lone
-# `#[cfg(test)] mod tests;` legal at the foot of a file.
+# An attribute counts as part of a run, which keeps a lone `#[cfg(test)] mod tests;`
+# legal at the foot of a file. Comments are looked past instead, so that documenting
+# a stray declaration does not hide it.
 rule:
   all:
     - any:
@@ -16,9 +17,11 @@ rule:
             - pattern: mod $N;
             - pattern: pub mod $N;
             - kind: attribute_item
-            - kind: line_comment
-            - kind: block_comment
-          stopBy: neighbor
+          stopBy:
+            not:
+              any:
+                - kind: line_comment
+                - kind: block_comment
     - follows:
         any:
           - pattern: mod $N;

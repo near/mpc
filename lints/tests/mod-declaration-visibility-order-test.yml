@@ -32,8 +32,12 @@ invalid:
   - |
     mod a;
     pub(super) mod b;
-  # A comment must not hide the predecessor.
+  # Neither a comment nor an attribute must hide the predecessor.
   - |
     mod a;
     // documentation
+    pub mod b;
+  - |
+    mod a;
+    #[cfg(test)]
     pub mod b;

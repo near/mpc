@@ -124,6 +124,11 @@ description = "Check that the lints/rules still report what lints/tests expects"
 command = "ast-grep"
 args = ["test"]
 
+[tasks.ast-grep-test-update]
+description = "Record what the lints/rules currently report for the lints/tests fixtures"
+command = "ast-grep"
+args = ["test", "--update-all"]
+
 [tasks.cargo-deny]
 description = "Run cargo deny"
 command = "cargo"
