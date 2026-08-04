@@ -409,7 +409,6 @@ expression: abi
       },
       {
         "name": "available_attestation_grants",
-        "doc": " Grants available to `account_id`: bought, minus those currently backing a\n stored entry. Zero therefore means either \"never prepaid\" or \"prepaid, and the\n grant is backing an entry\" — cross-reference [`Self::get_tee_accounts`] to tell which.",
         "kind": "view",
         "params": {
           "serialization_type": "json",

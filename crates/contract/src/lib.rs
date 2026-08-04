@@ -773,9 +773,6 @@ impl MpcContract {
         )
     }
 
-    /// Grants available to `account_id`: bought, minus those currently backing a
-    /// stored entry. Zero therefore means either "never prepaid" or "prepaid, and the
-    /// grant is backing an entry" — cross-reference [`Self::get_tee_accounts`] to tell which.
     pub fn available_attestation_grants(&self, account_id: AccountId) -> u32 {
         self.grants_for(&account_id)
     }
