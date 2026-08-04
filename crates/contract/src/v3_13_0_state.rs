@@ -261,7 +261,8 @@ mod tests {
     /// expire every migrated hash). Both entries surviving at the migration block time
     /// proves the expiry was stamped forward rather than to epoch 0.
     #[test]
-    fn migrating_launcher_images_preserves_hashes_and_stamps_timestamps() {
+    fn migration__should_preserve_launcher_hashes_and_stamp_timestamps() {
+        // Given two 3.13.0 launcher entries in the old, timestamp-less layout.
         const MIGRATION_TIME_SECS: u64 = 1_000_000;
         let launcher_1 = LauncherImageHash::from([1u8; 32]);
         let launcher_2 = LauncherImageHash::from([2u8; 32]);
@@ -296,12 +297,12 @@ mod tests {
             measurement_votes: Default::default(),
         };
 
-        // Round-trip through borsh to exercise the shadow's on-chain byte layout.
+        // When migrated (borsh round-trip through the shadow, then into the real `TeeState`).
         let bytes = borsh::to_vec(&old).unwrap();
         let decoded: OldTeeState = borsh::from_slice(&bytes).unwrap();
         let migrated: crate::tee::tee_state::TeeState = decoded.into();
 
-        // Launcher hashes and compose hashes are carried over.
+        // Then launcher hashes and compose hashes are carried over.
         assert_eq!(
             migrated.get_allowed_launcher_hashes(),
             vec![launcher_1, launcher_2]
@@ -362,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_stamps_launcher_expiry_and_makes_legacy_mocks_cleanable() {
+    fn migration__should_stamp_launcher_expiry_and_make_legacy_mocks_cleanable() {
         // Given: a `3.13.0` TeeState carrying both a launcher image (old, timestamp-less
         // layout) and a legacy `MockAttestation::Valid` stored attestation (no expiry) —
         // the two things this release's migration must each handle.

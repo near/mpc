@@ -31,6 +31,15 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
         .unwrap()
 }
 
+pub async fn get_allowed_launcher_image_hashes(
+    contract: &Contract,
+) -> anyhow::Result<Vec<LauncherImageHash>> {
+    Ok(contract
+        .view(method_names::ALLOWED_LAUNCHER_IMAGE_HASHES)
+        .await?
+        .json()?)
+}
+
 pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
     let state = get_state(contract).await;
     let ProtocolContractState::Running(running) = state else {

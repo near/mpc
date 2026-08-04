@@ -813,26 +813,25 @@ mod tests {
     }
 
     #[test]
-    fn refresh_keeps_entry_alive_past_ttl() {
+    fn refresh__should_keep_entry_alive_past_ttl() {
+        // Given an entry added at t=1 with ttl=100 (expires_at=101).
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let launcher = dummy_launcher_hash(1);
         let mpc_hash = dummy_code_hash(10);
-        // Added at t=1 with ttl=100 ⇒ expires_at=101.
         allowed.add_or_refresh(launcher, &[mpc_hash], ttl);
         let compose = get_docker_compose_hash(&launcher, &mpc_hash);
 
-        // Just before original deadline, refresh on use ⇒ expires_at=190.
+        // When it is refreshed on use just before the deadline (expires_at=190).
         set_block_secs(90);
         assert!(allowed.refresh(&compose, ttl));
 
-        // Past the original deadline (101), but within the refreshed window (190).
+        // Then it stays live past the original deadline (101), within the refreshed window (190),
         set_block_secs(150);
         assert_eq!(allowed.launcher_hashes().len(), 1);
         assert_eq!(allowed.all_compose_hashes().len(), 1);
-
-        // Refreshing an unknown compose hash returns false.
+        // and refreshing an unknown compose hash returns false.
         assert!(!allowed.refresh(
             &get_docker_compose_hash(&dummy_launcher_hash(9), &mpc_hash),
             ttl
@@ -840,63 +839,64 @@ mod tests {
     }
 
     #[test]
-    fn expired_entries_are_filtered_from_reads() {
+    fn launcher_hashes__should_exclude_expired_entries() {
+        // Given launcher_1 (expires_at=101) and a newer launcher_2 (expires_at=300).
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
-        // launcher_1 added at t=1 ⇒ expires_at=101.
         allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
-
-        // Add a second, newer launcher later ⇒ expires_at=300.
         set_block_secs(200);
         allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
 
-        // At t=250, launcher_1 (expires_at=101) is expired but launcher_2 (expires_at=300) is live.
+        // When reading at t=250, past launcher_1's deadline but before launcher_2's.
         set_block_secs(250);
         let hashes = allowed.launcher_hashes();
+
+        // Then only the live launcher_2 is returned.
         assert_eq!(hashes.len(), 1);
         assert!(hashes.contains(&dummy_launcher_hash(2)));
         assert_eq!(allowed.all_compose_hashes().len(), 1);
     }
 
     #[test]
-    fn newest_fallback_when_all_expired() {
+    fn launcher_hashes__should_fall_back_to_newest_when_all_expired() {
+        // Given launcher_1 (expires_at=101) and launcher_2 (expires_at=150).
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
-        // launcher_1: expires_at=101; launcher_2: expires_at=150.
         allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
         set_block_secs(50);
         allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
 
-        // Far in the future: both expired, fallback keeps the one with the latest expiry.
+        // When reading far in the future, so both are expired.
         set_block_secs(10_000);
         let hashes = allowed.launcher_hashes();
+
+        // Then the fallback keeps the one with the latest expiry.
         assert_eq!(hashes.len(), 1);
         assert!(hashes.contains(&dummy_launcher_hash(2)));
     }
 
     #[test]
-    fn cleanup_expired_removes_expired_but_keeps_one() {
+    fn cleanup_expired__should_remove_expired_but_keep_one() {
+        // Given launcher_1 (expires_at=101) and a live launcher_2 (expires_at=300).
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let mpc_hashes = vec![dummy_code_hash(10)];
-        // launcher_1: expires_at=101; launcher_2: expires_at=300.
         allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
         set_block_secs(200);
         allowed.add_or_refresh(dummy_launcher_hash(2), &mpc_hashes, ttl);
 
-        // launcher_1 expired, launcher_2 live: only the live one remains.
+        // When cleaning up at t=250, only the live launcher_2 remains.
         set_block_secs(250);
         allowed.cleanup_expired();
         assert_eq!(allowed.launcher_hashes().len(), 1);
         assert!(allowed.launcher_hashes().contains(&dummy_launcher_hash(2)));
 
-        // Both expired now: cleanup still keeps exactly one (the one with the latest expiry).
-        // Re-add an older entry to have two expired entries.
+        // Then even when all entries are expired, cleanup keeps exactly one (latest expiry).
         let mut allowed2 = AllowedLauncherImages::default();
         set_block_secs(1);
         allowed2.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, ttl);
@@ -910,23 +910,23 @@ mod tests {
     }
 
     #[test]
-    fn re_add_refresh_resets_expires_at_and_keeps_alive() {
+    fn add_or_refresh__should_reset_expires_at_on_re_add() {
+        // Given an entry added at t=1 with ttl=100 (expires_at=101).
         let ttl = Duration::from_secs(100);
         set_block_secs(1);
         let mut allowed = AllowedLauncherImages::default();
         let launcher = dummy_launcher_hash(1);
         let mpc_hashes = vec![dummy_code_hash(10)];
-        // Added at t=1 with ttl=100 ⇒ expires_at=101.
         allowed.add_or_refresh(launcher, &mpc_hashes, ttl);
 
-        // Just before expiry, re-vote (re-add): refreshes and resets `expires_at` to 190.
+        // When it is re-added (re-vote) just before expiry, resetting expires_at to 190.
         set_block_secs(90);
         assert_eq!(
             allowed.add_or_refresh(launcher, &mpc_hashes, ttl),
             AllowedLauncherImageInsertion::Refreshed
         );
 
-        // Past the original deadline (101) but within the refreshed window (190).
+        // Then it stays live past the original deadline (101), within the refreshed window (190).
         set_block_secs(150);
         assert_eq!(allowed.launcher_hashes().len(), 1);
     }

@@ -1304,7 +1304,7 @@ mod tests {
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__evicts_expired_launcher_hashes() {
+    fn reverify_and_cleanup_participants__should_evict_expired_launcher_hashes() {
         const TTL: Duration = Duration::from_secs(100);
         const NANOS_PER_SECOND: u64 = 1_000_000_000;
         const LIVE_ADDED_SECONDS: u64 = 200;
@@ -1686,7 +1686,9 @@ mod tests {
     }
 
     #[test]
-    fn refresh_launcher_usage__keeps_attested_launcher_alive() {
+    fn refresh_launcher_usage__should_keep_attested_launcher_alive() {
+        // Given a state with launcher_1 and a newer launcher_2, plus a stored mock
+        // attestation (from a current participant) referencing launcher_1.
         const TTL: Duration = Duration::from_secs(100);
         let launcher_1 = LauncherImageHash::from([1u8; 32]);
         let launcher_2 = LauncherImageHash::from([2u8; 32]);
@@ -1738,7 +1740,7 @@ mod tests {
             .verify_and_store_mock(node_id.clone(), mock, Duration::from_secs(0))
             .unwrap();
 
-        // Refresh launcher_1 shortly before its original deadline (10 + 100).
+        // When launcher_1 is refreshed on use shortly before its original deadline (10 + 100).
         testing_env!(
             VMContextBuilder::new()
                 .block_timestamp(90 * 1_000_000_000)
@@ -1746,7 +1748,7 @@ mod tests {
         );
         tee_state.refresh_launcher_usage(&node_id.tls_public_key, &authenticated, TTL);
 
-        // At t=150: launcher_1 (refreshed at 90 → deadline 190) is live; launcher_2
+        // Then at t=150 launcher_1 (refreshed at 90 → deadline 190) is live while launcher_2
         // (added at 20 → deadline 120) is expired. Without the refresh, both would be
         // expired and the fallback would surface launcher_2 instead.
         testing_env!(

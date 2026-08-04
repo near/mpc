@@ -4090,7 +4090,8 @@ mod tests {
     }
 
     #[test]
-    fn init_rejects_launcher_ttl_below_attestation_validity() {
+    #[expect(non_snake_case)]
+    fn init__should_reject_launcher_ttl_below_attestation_validity() {
         // Given a launcher TTL one second below the attestation validity window.
         let participants = gen_participants(3);
         let signer = participants.participants()[0].0.clone();
