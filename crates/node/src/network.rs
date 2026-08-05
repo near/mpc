@@ -366,7 +366,7 @@ impl MeshNetworkClient {
 }
 
 struct IncompleteNetworkTaskChannel {
-    receiver: tokio::sync::mpsc::UnboundedReceiver<MpcPeerMessage>,
+    receiver: mpsc::UnboundedReceiver<MpcPeerMessage>,
 }
 
 enum SenderOrNewChannel {
@@ -467,7 +467,7 @@ pub fn run_network_client(
 pub struct NetworkTaskChannel {
     sender: Arc<NetworkTaskChannelSender>,
     /// Used for calling receive(&mut self).
-    receiver: tokio::sync::mpsc::UnboundedReceiver<MpcPeerMessage>,
+    receiver: mpsc::UnboundedReceiver<MpcPeerMessage>,
     /// The set of participants who sent us a Success message; for leader only.
     successful_participants: HashSet<ParticipantId>,
     /// Function to clean up relevant data structures in the network transport implementation.
@@ -567,6 +567,12 @@ impl NetworkTaskChannelSender {
     /// original connection), in which case the sending would then fail (due to outdated connection
     /// version) immediately.
     ///
+    /// The wait for each participant is bounded by `PARTICIPANT_CONNECTION_WAIT_TIMEOUT`, which
+    /// is ishort and independent of the overall computation timeout. This is to prevent further
+    /// waiting on the full computation when say the leader is connected to participants,
+    /// but some participants are not connected to each other. This will produce a specific
+    /// error earlier on in the process.
+    ///
     /// This should be called at the beginning of the computation if:
     ///  - This is a leader-centric computation, and we are a follower.
     ///    (Rationale: the leader already determined that the participants are online. We wait
@@ -591,10 +597,28 @@ impl NetworkTaskChannelSender {
                 continue;
             }
             tracking::set_progress(&format!("Waiting for connection to {}", participant));
-            self.transport_sender
-                .connectivity(participant)
-                .wait_for_connection(self.connection_versions[&participant])
-                .await?;
+            let connectivity = self.transport_sender.connectivity(participant);
+            tokio::time::timeout(
+                mpc_node_config::PARTICIPANT_CONNECTION_WAIT_TIMEOUT,
+                connectivity.wait_for_connection(self.connection_versions[&participant]),
+            )
+            .await
+            .map_err(|_| {
+                tracing::warn!(
+                    target: "network",
+                    "[{}] [Task {:?}] Not connected to participant {} \
+                     after {:?}, cannot continue",
+                    self.my_participant_id,
+                    self.task_id,
+                    participant,
+                    mpc_node_config::PARTICIPANT_CONNECTION_WAIT_TIMEOUT,
+                );
+                anyhow::anyhow!(
+                    "Not connected to participant {} after {:?}, cannot continue",
+                    participant,
+                    mpc_node_config::PARTICIPANT_CONNECTION_WAIT_TIMEOUT,
+                )
+            })??;
         }
         tracking::set_progress("All participants connected");
         Ok(())
@@ -823,7 +847,15 @@ pub mod testing {
 
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
-        senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<PeerMessage>>,
+        senders: HashMap<ParticipantId, mpsc::UnboundedSender<PeerMessage>>,
+        // Used to simulate a network partition
+        blocked_pairs: HashSet<(ParticipantId, ParticipantId)>,
+    }
+
+    impl TestMeshTransport {
+        fn is_blocked(&self, a: ParticipantId, b: ParticipantId) -> bool {
+            self.blocked_pairs.contains(&(a, b)) || self.blocked_pairs.contains(&(b, a))
+        }
     }
 
     pub struct TestMeshTransportSender {
@@ -832,30 +864,36 @@ pub mod testing {
     }
 
     pub struct TestMeshTransportReceiver {
-        receiver: tokio::sync::mpsc::UnboundedReceiver<PeerMessage>,
+        receiver: mpsc::UnboundedReceiver<PeerMessage>,
     }
 
-    pub struct TestConnectivityInterface;
+    pub struct TestConnectivityInterface {
+        connected: bool,
+    }
 
     #[async_trait::async_trait]
     impl NodeConnectivityInterface for TestConnectivityInterface {
-        fn is_bidirectionally_connected(&self) -> bool {
-            true
-        }
-
-        async fn wait_for_connection(
-            &self,
-            _connection_version: ConnectionVersion,
-        ) -> anyhow::Result<()> {
-            Ok(())
+        fn connection_version(&self) -> ConnectionVersion {
+            ConnectionVersion::default()
         }
 
         fn was_connection_interrupted(&self, _connection_version: ConnectionVersion) -> bool {
             false
         }
 
-        fn connection_version(&self) -> ConnectionVersion {
-            ConnectionVersion::default()
+        async fn wait_for_connection(
+            &self,
+            _connection_version: ConnectionVersion,
+        ) -> anyhow::Result<()> {
+            if self.connected {
+                Ok(())
+            } else {
+                std::future::pending().await
+            }
+        }
+
+        fn is_bidirectionally_connected(&self) -> bool {
+            self.connected
         }
     }
 
@@ -871,9 +909,13 @@ pub mod testing {
 
         fn connectivity(
             &self,
-            _participant_id: ParticipantId,
+            participant_id: ParticipantId,
         ) -> Arc<dyn NodeConnectivityInterface> {
-            Arc::new(TestConnectivityInterface)
+            Arc::new(TestConnectivityInterface {
+                connected: !self
+                    .transport
+                    .is_blocked(self.my_participant_id, participant_id),
+            })
         }
 
         fn send(
@@ -882,6 +924,13 @@ pub mod testing {
             message: crate::primitives::MpcMessage,
             _connection_version: ConnectionVersion,
         ) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                !self
+                    .transport
+                    .is_blocked(self.my_participant_id, recipient_id),
+                "no connection to {} (blocked in test partition)",
+                recipient_id
+            );
             self.transport
                 .senders
                 .get(&recipient_id)
@@ -918,11 +967,18 @@ pub mod testing {
     pub fn new_test_transports(
         participants: Vec<ParticipantId>,
     ) -> Vec<(Arc<TestMeshTransportSender>, Box<TestMeshTransportReceiver>)> {
+        new_test_transports_with_partition(participants, &[])
+    }
+
+    pub fn new_test_transports_with_partition(
+        participants: Vec<ParticipantId>,
+        blocked_pairs: &[(ParticipantId, ParticipantId)],
+    ) -> Vec<(Arc<TestMeshTransportSender>, Box<TestMeshTransportReceiver>)> {
         let mut sender_by_participant_id = HashMap::new();
         let mut senders = Vec::new();
         let mut receivers = Vec::new();
         for participant_id in &participants {
-            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let (sender, receiver) = mpsc::unbounded_channel();
             sender_by_participant_id.insert(*participant_id, sender.clone());
             senders.push(sender);
             receivers.push(receiver);
@@ -931,6 +987,7 @@ pub mod testing {
         let transport = Arc::new(TestMeshTransport {
             participant_ids: participants.clone(),
             senders: sender_by_participant_id,
+            blocked_pairs: blocked_pairs.iter().copied().collect(),
         });
 
         let mut transports = Vec::new();
@@ -960,6 +1017,7 @@ pub mod testing {
         let transport = Arc::new(TestMeshTransport {
             participant_ids: participants.clone(),
             senders: HashMap::new(),
+            blocked_pairs: HashSet::new(),
         });
         let transport_sender = Arc::new(TestMeshTransportSender {
             transport,
@@ -992,13 +1050,22 @@ pub mod testing {
         client_runner: F,
     ) -> anyhow::Result<Vec<T>>
     where
-        F: Fn(
-            Arc<super::MeshNetworkClient>,
-            tokio::sync::mpsc::UnboundedReceiver<super::NetworkTaskChannel>,
-        ) -> FR,
-        FR: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+        F: Fn(Arc<super::MeshNetworkClient>, mpsc::UnboundedReceiver<NetworkTaskChannel>) -> FR,
+        FR: Future<Output = anyhow::Result<T>> + Send + 'static,
     {
-        let transports = new_test_transports(participants.clone());
+        run_test_clients_with_partition(participants, &[], client_runner).await
+    }
+
+    pub async fn run_test_clients_with_partition<T: 'static + Send, F, FR>(
+        participants: Vec<ParticipantId>,
+        blocked_pairs: &[(ParticipantId, ParticipantId)],
+        client_runner: F,
+    ) -> anyhow::Result<Vec<T>>
+    where
+        F: Fn(Arc<super::MeshNetworkClient>, mpsc::UnboundedReceiver<NetworkTaskChannel>) -> FR,
+        FR: Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        let transports = new_test_transports_with_partition(participants.clone(), blocked_pairs);
         let join_handles = transports
             .into_iter()
             .enumerate()
@@ -1015,8 +1082,7 @@ pub mod testing {
         futures::future::join_all(join_handles)
             .await
             .into_iter()
-            .collect::<Result<_, _>>()
-            .unwrap()
+            .collect::<Result<_, _>>()?
     }
 }
 
@@ -1218,6 +1284,136 @@ mod tests {
             err_msg.starts_with("Not enough active participants"),
             "unexpected error message: {}",
             err_msg
+        );
+    }
+}
+
+#[cfg(test)]
+mod participant_connection_wait_tests {
+    use super::conn::{ConnectionVersion, NodeConnectivityInterface};
+    use super::{ChannelId, MeshNetworkTransportSender, NetworkTaskChannelSender};
+    use crate::primitives::{IndexerHeightMessage, MpcMessage, MpcTaskId, ParticipantId, UniqueId};
+    use crate::providers::EcdsaTaskId;
+    use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    /// A connectivity mock, returns immediately if `connected` is true,
+    /// and otherwise never resolves.
+    struct MockConnectivity {
+        connected: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl NodeConnectivityInterface for MockConnectivity {
+        fn connection_version(&self) -> ConnectionVersion {
+            ConnectionVersion::default()
+        }
+        fn was_connection_interrupted(&self, _version: ConnectionVersion) -> bool {
+            false
+        }
+        async fn wait_for_connection(&self, _version: ConnectionVersion) -> anyhow::Result<()> {
+            if self.connected {
+                Ok(())
+            } else {
+                std::future::pending().await
+            }
+        }
+        fn is_bidirectionally_connected(&self) -> bool {
+            self.connected
+        }
+    }
+
+    struct MockTransportSender {
+        my_participant_id: ParticipantId,
+        all_participant_ids: Vec<ParticipantId>,
+        unreachable_participant_id: ParticipantId,
+    }
+
+    #[async_trait::async_trait]
+    impl MeshNetworkTransportSender for MockTransportSender {
+        fn my_participant_id(&self) -> ParticipantId {
+            self.my_participant_id
+        }
+        fn all_participant_ids(&self) -> Vec<ParticipantId> {
+            self.all_participant_ids.clone()
+        }
+        fn connectivity(
+            &self,
+            participant_id: ParticipantId,
+        ) -> Arc<dyn NodeConnectivityInterface> {
+            Arc::new(MockConnectivity {
+                connected: participant_id != self.unreachable_participant_id,
+            })
+        }
+        fn send(
+            &self,
+            _recipient_id: ParticipantId,
+            _message: MpcMessage,
+            _connection_version: ConnectionVersion,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn send_indexer_height(&self, _height: IndexerHeightMessage) {}
+        async fn wait_for_ready(
+            &self,
+            _required_ready_count: usize,
+            _peers_to_consider: &[ParticipantId],
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+    #[tokio::test(start_paused = true)]
+    async fn rejects_quickly_when_a_participant_is_unreachable() {
+        let me = ParticipantId::from_raw(0);
+        let leader = ParticipantId::from_raw(1);
+        let unreachable = ParticipantId::from_raw(2);
+        let participants = vec![me, leader, unreachable];
+
+        let transport_sender = Arc::new(MockTransportSender {
+            my_participant_id: me,
+            all_participant_ids: participants.clone(),
+            unreachable_participant_id: unreachable,
+        });
+
+        let connection_versions: HashMap<ParticipantId, ConnectionVersion> = participants
+            .iter()
+            .filter(|&&p| p != me)
+            .map(|&p| (p, transport_sender.connectivity(p).connection_version()))
+            .collect();
+
+        let sender = NetworkTaskChannelSender {
+            channel_id: ChannelId(UniqueId::new(me, 0, 0)),
+            task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
+                start: UniqueId::new(me, 0, 0),
+                count: 1,
+            }),
+            leader,
+            my_participant_id: me,
+            participants,
+            connection_versions,
+            transport_sender,
+        };
+
+        let (start, result) = start_root_task_with_periodic_dump(async move {
+            let start = tokio::time::Instant::now();
+            let result = sender.initialize_all_participants_connections().await;
+            (start, result)
+        })
+        .await;
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains(&format!(
+                "Not connected to participant {}",
+                &unreachable.to_string()
+            )),
+            "Not connected to participant {}",
+            err
+        );
+        assert_eq!(
+            start.elapsed(),
+            mpc_node_config::PARTICIPANT_CONNECTION_WAIT_TIMEOUT,
+            "reject at PARTICIPANT_CONNECTION_WAIT_TIMEOUT, instead of computation timeout"
         );
     }
 }
@@ -1445,5 +1641,122 @@ mod fault_handling_tests {
                 FaultTestCase::SlowNoWaitSuccess(_, _)
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod partition_fault_handling_tests {
+    use super::computation::MpcLeaderCentricComputation;
+    use super::{MeshNetworkClient, NetworkTaskChannel};
+    use crate::network::testing::run_test_clients_with_partition;
+    use crate::primitives::UniqueId;
+    use crate::providers::EcdsaTaskId;
+    use crate::tests::into_participant_ids;
+    use crate::tracking::testing::start_root_task_with_periodic_dump;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use threshold_signatures::test_utils::generate_participants;
+    use tokio::sync::mpsc;
+
+    const COMPUTATION_TIMEOUT: Duration = Duration::from_secs(10);
+    const FAST_FAILURE_BOUND: Duration = Duration::from_secs(5);
+
+    struct NoOpLeader;
+    struct NoOpFollower;
+
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<()> for NoOpLeader {
+        async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+            channel.receive().await?;
+            Ok(())
+        }
+        fn leader_waits_for_success(&self) -> bool {
+            false
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MpcLeaderCentricComputation<()> for NoOpFollower {
+        async fn compute(self, _channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
+            unreachable!("follower should reject before reaching compute()")
+        }
+        fn leader_waits_for_success(&self) -> bool {
+            false
+        }
+    }
+
+    async fn run_partition_test_client(
+        client: Arc<MeshNetworkClient>,
+        mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
+    ) -> anyhow::Result<()> {
+        let me = client.my_participant_id();
+        let is_leader = me.raw() == 0;
+        let channel = if is_leader {
+            client.new_channel_for_task(
+                EcdsaTaskId::ManyTriples {
+                    start: UniqueId::new(me, 0, 0),
+                    count: 1,
+                },
+                client.all_participant_ids(),
+            )?
+        } else {
+            channel_receiver.recv().await.unwrap()
+        };
+        let start = tokio::time::Instant::now();
+        let result = if is_leader {
+            NoOpLeader
+                .perform_leader_centric_computation(channel, COMPUTATION_TIMEOUT)
+                .await
+        } else {
+            NoOpFollower
+                .perform_leader_centric_computation(channel, COMPUTATION_TIMEOUT)
+                .await
+        };
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < FAST_FAILURE_BOUND,
+            "[{}] took {:?} to fail, expected well under the {:?} computation timeout",
+            me,
+            elapsed,
+            COMPUTATION_TIMEOUT,
+        );
+        let err_string = result.unwrap_err().to_string();
+        if is_leader {
+            assert!(
+                err_string.contains("Aborted by participant"),
+                "[{}] expected to receive failure, got: {}",
+                me,
+                err_string
+            );
+        } else {
+            let other_follower = client
+                .all_participant_ids()
+                .into_iter()
+                .find(|&p| p != me && p.raw() != 0)
+                .unwrap();
+            assert!(
+                err_string.contains("Not connected to participant")
+                    && err_string.contains(&other_follower.to_string()),
+                "[{}] the unreachable peer {}, got: {}",
+                me,
+                other_follower,
+                err_string
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn leader_learns_quickly_when_two_followers_cannot_reach_each_other() {
+        let participants = into_participant_ids(&generate_participants(3));
+        let a = *participants.iter().find(|p| p.raw() == 1).unwrap();
+        let b = *participants.iter().find(|p| p.raw() == 2).unwrap();
+        start_root_task_with_periodic_dump(async move {
+            // Assertions are evaluated within the task
+            run_test_clients_with_partition(participants, &[(a, b)], run_partition_test_client)
+                .await
+                .unwrap();
+        })
+        .await;
     }
 }
