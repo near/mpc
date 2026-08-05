@@ -16,9 +16,8 @@ pub enum MessageType<T> {
     Ready(T),
 }
 
-/// A homemade sturcture that allows counting the number of
-/// votes gathered during the reliable-broadcast protocol
-/// only requiring from votes to have trait [`PartialEq`]
+/// Counts the votes gathered during the reliable-broadcast protocol,
+/// requiring only [`PartialEq`] from the vote type
 #[derive(Clone)]
 struct CounterList<T> {
     list: Vec<(T, usize)>,

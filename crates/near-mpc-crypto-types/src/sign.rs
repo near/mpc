@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
     }
 
-    /// A a sign request whose `payload` field is
+    /// A sign request whose `payload` field is
     /// a raw 32-byte array (no [`Ecdsa`] / [`Eddsa`] tag) — the legacy on-chain
     /// wire format predating EdDSA support — must be deserialized as
     /// [`Payload::Ecdsa`]
