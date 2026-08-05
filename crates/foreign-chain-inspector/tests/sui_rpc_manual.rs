@@ -16,7 +16,7 @@ const PUBLIC_ARCHIVE_URL: &str = "https://archive.mainnet.sui.io";
 
 /// The first epoch-change transaction on Sui mainnet (checkpoint 9769), whose first event
 /// is `0x3::validator_set::ValidatorEpochInfoEventV2` emitted by the system package `0x3`.
-/// https://suiscan.xyz/mainnet/tx/8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo
+/// <https://suiscan.xyz/mainnet/tx/8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo>
 const CHECKPOINTED_TX_DIGEST: &str = "8eBMXpC8Np7RNDwwiGwSmeev1cSoc7w3fPXdikhH7RZo";
 const EXPECTED_EVENT_MODULE: &str = "sui_system";
 

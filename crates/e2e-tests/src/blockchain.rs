@@ -1,6 +1,6 @@
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::FinalExecutionOutcome;
+use near_kit::{Final, FinalExecutionOutcome};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
@@ -78,7 +78,7 @@ impl NearBlockchain {
             tx = tx.add_full_access_key(key.to_near_public_key());
         }
 
-        tx.wait_until(near_kit::Final)
+        tx.wait_until::<Final>()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account {name}: {e}"))?;
         Ok(())
@@ -97,7 +97,7 @@ impl NearBlockchain {
             .transfer(near_kit::NearToken::from_near(balance_near))
             .add_full_access_key(key.to_near_public_key())
             .deploy(wasm.to_vec())
-            .wait_until(near_kit::Final)
+            .wait_until::<Final>()
             .await
             .map_err(|e| anyhow::anyhow!("failed to create account and deploy to {name}: {e}"))?;
 

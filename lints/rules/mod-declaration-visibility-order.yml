@@ -1,0 +1,61 @@
+id: mod-declaration-visibility-order
+language: rust
+severity: error
+message: "`$VIS mod $M;` is declared directly after a module with narrower visibility"
+note: Declare modules widest visibility first, `pub`, then `pub(crate)` and `pub(super)`, then private, with a blank line between groups so that rustfmt keeps them apart.
+utils:
+  # `#[macro_use]` has to stay textually first, so such a declaration never counts
+  # as a predecessor.
+  after-macro-use:
+    follows:
+      kind: attribute_item
+      regex: macro_use
+      stopBy: neighbor
+  restricted-predecessor:
+    all:
+      - pattern: pub mod $N;
+      - has:
+          kind: visibility_modifier
+          regex: '^pub\('
+          stopBy: neighbor
+      - not:
+          matches: after-macro-use
+  private-predecessor:
+    all:
+      - pattern: mod $N;
+      - not:
+          matches: after-macro-use
+  # Comments and attributes sit between declarations without separating them.
+  between-declarations:
+    any:
+      - kind: line_comment
+      - kind: block_comment
+      - kind: attribute_item
+rule:
+  any:
+    - all:
+        - pattern: pub mod $M;
+        - has:
+            kind: visibility_modifier
+            pattern: $VIS
+            regex: "^pub$"
+            stopBy: neighbor
+        - follows:
+            any:
+              - matches: restricted-predecessor
+              - matches: private-predecessor
+            stopBy:
+              not:
+                matches: between-declarations
+    - all:
+        - pattern: pub mod $M;
+        - has:
+            kind: visibility_modifier
+            pattern: $VIS
+            regex: '^pub\('
+            stopBy: neighbor
+        - follows:
+            matches: private-predecessor
+            stopBy:
+              not:
+                matches: between-declarations

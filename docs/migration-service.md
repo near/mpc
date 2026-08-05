@@ -37,8 +37,13 @@ The Migration Service enables secure backup and recovery of MPC node key shares.
   A person or entity responsible for an MPC node.
 - **Backup Service**
   A separate process, running on a different machine than the MPC node. The backup service stores the encrypted key shares from the MPC node.
-  During the *soft launch*, this service is implemented as a simple CLI and manually triggered by the node operator.
-  For the *hard launch*, it will be a long-running program inside its own TEE, maintain an up-to-date view of the on-chain MPC contract and handle back-up and recovery processes in an automated manner. Each node operator must run their own back-up service.
+  During the *soft launch*, this service is a CLI: one-shot commands the node
+  operator triggers by hand, plus `backup-cli run`, which watches the contract
+  over a third-party JSON-RPC endpoint and backs up new keysets unattended.
+  For the *hard launch*, it will be a long-running program inside its own TEE
+  that attests itself, submits its own transactions, and handles recovery as
+  well as back-up in an automated manner. Each node operator must run their own
+  back-up service.
 - **MPC Smart Contract**
   Serves as the source of truth for protocol state and node information.
   It stores metadata about registered backup services and information about node migrations.
@@ -66,7 +71,10 @@ node, but only of the secret shares. The MPC node generates a few secrets that w
     3. The MPC node returns the AES-256 encrypted keyshares. The MPC node uses the node-operator provided symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX` for encryption.
     4. The `backup-cli` saves the encrypted keyshares to local storage
 
-> **Note**: For soft launch, the operator must manually trigger the backup using the `backup-cli` tool. There is no automatic periodic backup.
+> **Note**: `backup-cli get-keyshares` is a one-shot backup that the operator
+> triggers manually. For unattended operation, run `backup-cli run` instead (see
+> [Automatic backups](#automatic-backups-backup-cli-run) below), which performs
+> the same exchange on every new epoch.
 
 Each keyshare set the node hands out is recorded in its `mpc_last_backup_served_epoch` and
 `mpc_last_backup_served_timestamp_seconds` metrics, which let an operator alert on backups
@@ -115,6 +123,65 @@ flowchart TD
     MPC@{ shape: proc}
 ```
 
+##### Automatic backups (`backup-cli run`)
+
+`backup-cli run` is a long-running variant of the soft-launch backup that
+removes the need to trigger backups by hand. It watches the MPC contract's state
+and performs the same fetch-and-store exchange as `get-keyshares` whenever the
+contract keyset is not covered by what is already stored locally.
+
+What is stored locally is read back from disk, so a restart re-uses the existing
+backup instead of re-fetching it. A keyset counts as covered when the stored
+keyshares are from the same (or a later) epoch and include every domain the
+contract lists, which means an already backed-up keyset is left untouched, never
+overwritten, while a keyset that gained a domain within the same epoch
+(`vote_add_domains`) is still backed up. State changes that back up nothing stay
+silent; a successful backup logs at `info` with the epoch and domain count, and a
+failed backup at `warn`. A failed contract read is reported at `warn` when it
+starts failing and whenever the failure changes, and the next readable state at
+`info`, so a recovery is visible; neither is repeated on every poll. A failed
+backup is re-attempted after
+`--poll-interval-seconds`, or sooner if the contract state changes, since the
+state it failed on may not change again for a long time. Logs default to `info`,
+overridable with `RUST_LOG`.
+
+The RPC endpoint has to be live, and it is trusted for the identity of the keyset
+to back up. A lying endpoint cannot make the node hand out keyshares it does not
+hold, and it cannot downgrade an existing backup:
+[`PermanentKeyStorage::store`](../crates/node/src/keyshare/permanent.rs) rejects
+an older epoch, a keyset that drops a domain, and a public-key mismatch. It can,
+however, name a **superseded key event** and so waste an epoch's backup. Attempt
+ids are public on-chain, the node keeps the keyshares of failed attempts until a
+later epoch concludes, and all attempts of a domain share one public key, so a
+keyset pairing the real epoch and public key with an attempt the network never
+adopted passes every check. Those shares lie on a different polynomial than the
+ones the participants hold, so the resulting backup cannot reconstruct the live
+key, and it occupies the epoch: `store` then refuses the real keyset, which has
+the same epoch and domain count, and coverage is decided on epoch and domains
+only, so the service reports the epoch as already backed up and stays quiet.
+Recovering means stopping the service, which reads local storage only at startup,
+then moving both `$BACKUP_HOME_DIR/permanent_keys/epoch_<N>_with_<M>_domains` and
+`$BACKUP_HOME_DIR/key` aside before restarting it. Those two entries are hard
+links to the same file, so moving one is not enough: dropping only the link makes
+every later backup fail on the leftover epoch file, and dropping only the epoch
+file leaves the bad keyset loaded and still reported as covered. Use an endpoint
+you run or trust, and compare the stored `epoch_<N>_with_<M>_domains` file against
+the contract's keyset after a resharing.
+
+Prerequisites are the same as for the one-shot command: keys from
+`backup-cli generate-keys`, plus a `register_backup_service` registration (see
+`backup-cli register`). Pass the encryption key through the environment
+(`BACKUP_ENCRYPTION_KEY_HEX`) rather than on the command line, and the endpoint
+through `BACKUP_RPC_URL` when it carries a provider api key; only the scheme and
+host of that url are ever logged. The contract account comes from
+`--mpc-contract-account-id`, the poll cadence from `--poll-interval-seconds`
+(default 60). Each contract read and each request to the MPC node is bounded by
+`--request-timeout-seconds` (default 30).
+
+This mode still runs outside a TEE and persists to disk, and it never signs or
+submits transactions. Verification is observed on the MPC node: every keyshare
+set served updates `mpc_last_backup_served_epoch` and
+`mpc_last_backup_served_timestamp_seconds`.
 
 ##### Hard Launch
 
@@ -171,7 +238,9 @@ flowchart TD
     - The node decrypts the received encrypted keyshares using the symmetric key (`MPC_BACKUP_ENCRYPTION_KEY_HEX`)
     - The new node calls `conclude_node_migration(keyset)` to finalize the migration
 
-> **Note**: For soft launch, the operator must manually trigger the keyshare transfer using the `backup-cli` tool. There is no automatic contract monitoring.
+> **Note**: For soft launch, recovery stays manual: the operator triggers the
+> keyshare transfer with the `backup-cli` tool, and nothing watches the contract
+> for migrations. Only the backup direction is automated, by `backup-cli run`.
 
 ```mermaid
 ---

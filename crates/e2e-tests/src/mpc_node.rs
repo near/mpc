@@ -153,7 +153,7 @@ impl MpcNode {
 pub const STDERR_LOG: &str = "stderr.log";
 
 /// Guard that kills the child process on drop.
-struct ProcessGuard(Child);
+pub struct ProcessGuard(pub Child);
 
 impl ProcessGuard {
     fn has_exited(&mut self) -> bool {
@@ -164,10 +164,10 @@ impl ProcessGuard {
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
         if let Err(e) = self.0.kill() {
-            tracing::error!(error = %e, "failed to kill mpc-node process");
+            tracing::error!(error = %e, "failed to kill child process");
         }
         if let Err(e) = self.0.wait() {
-            tracing::error!(error = %e, "failed to wait on mpc-node process");
+            tracing::error!(error = %e, "failed to wait on child process");
         }
     }
 }

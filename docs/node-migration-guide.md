@@ -182,7 +182,7 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host where your node is running (e.g., `node.example.com`). Available from the contract — your participant entry's `url` in the `state` view.
+- **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view.
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
@@ -205,7 +205,12 @@ near contract call-function as-read-only \
 This saves the contract state to `contract_state.json`, which the backup-cli uses to determine the current epoch and which keyshares to request from the node (based on the domains in the current keyset).
 
 ### Run the Backup
-Port 8079 is the default port for the migration endpoint.
+
+The migration endpoint listens on the node's `migration_web_ui` port. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
+
+```bash
+curl -s http://<IP>:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
+```
 
 ```bash
 backup-cli \
@@ -216,7 +221,38 @@ backup-cli \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
-The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains` (with a `key` hard-link in that directory).
+Each request to the node is bounded by `--request-timeout-seconds` (default 30). If the transfer fails with a timeout on a slow link, raise it.
+
+> **No `http://` in `--mpc-node-address`** — it takes a bare `host:port`. With a scheme, the lookup fails with `Name or service not known`.
+
+The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains`, with `$BACKUP_HOME_DIR/key` as a hard link to the newest one. Both entries point at the same file, and the backup service reads only `key`.
+
+### Keeping the Backup Up to Date
+
+`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a JSON-RPC endpoint and takes a backup whenever the contract's keyset is not the one already stored:
+
+```bash
+export BACKUP_RPC_URL=https://rpc.mainnet.near.org   # your provider's endpoint; an api key goes in the query string
+export BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
+
+backup-cli \
+  --home-dir $BACKUP_HOME_DIR \
+  run \
+  --near-chain-id $NEAR_NETWORK \
+  --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
+  --mpc-node-address node.example.com:8079 \
+  --mpc-node-p2p-key "ed25519:YourNodeP2PPublicKey..."
+```
+
+Notes:
+
+- No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
+- Pass the encryption key through the environment as above rather than on the command line, where `ps` would expose it.
+- Keyshares already backed up are never re-fetched or overwritten, so restarting the service is safe and older epochs' files are kept.
+- It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
+- This is the backup direction only. Restoring (Steps 6–8) stays manual.
+
+See [Automatic backups](./migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.
 
 
 ## Step 5: Prepare the New Node
@@ -344,6 +380,8 @@ backup-cli \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
+Each request to the node is bounded by `--request-timeout-seconds` (default 30). If the transfer fails with a timeout on a slow link, raise it.
+
 The new node will:
 1. Receive the encrypted keyshares
 2. Decrypt them using its configured backup encryption key (Step 5)
@@ -409,7 +447,9 @@ After verifying the migration was successful:
 
 If backup-cli cannot connect to your node:
 
-- **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
+- **`failed to lookup address information: Name or service not known`**: `--mpc-node-address` must be a bare `host:port` with no URL scheme and no trailing path. A value like `http://node.example.com:8079` is parsed as hostname `http://node.example.com`, which no resolver can answer.
+- **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://<IP>:8080/debug/node_config`. The same endpoint shows the bind address, which must not be loopback-only.
+- **Verify firewall rules**: Ensure the backup service can reach the node's address and that the migration port is open and accessible. Test with `nc -vz <host> <port>` rather than `curl`; the endpoint is a raw TLS channel authenticated against the registered backup-service key, so it does not answer plain HTTP requests.
 
 ## Known Limitations
 

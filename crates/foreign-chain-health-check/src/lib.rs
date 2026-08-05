@@ -1,6 +1,10 @@
-//! Foreign-chain RPC provider health checks: probe every configured provider
-//! with a fixed golden request and report a per-provider result. Sui is the
-//! exception — see `run_sui`.
+//! Foreign-chain RPC provider health checks, in two independent routes:
+//!
+//! * [`check_all_providers`] replays a fixed golden transaction per chain.
+//! * [`probe::probe_all_providers`] asks each provider for the network it serves and compares that
+//!   against the operator's configured expectation.
+
+pub mod probe;
 
 mod checks;
 mod golden;
@@ -35,6 +39,8 @@ use crate::golden::{AptosVector, BlockHashVector, SuiVector};
 /// Chains with no reference for `network`, or configured but unsupported, are
 /// [`Status::Skipped`]; a chain absent from the config still yields a single
 /// placeholder `Skipped` result so its absence stays visible.
+///
+/// TODO(#3969): retire this route in favour of [`probe::probe_all_providers`].
 pub async fn check_all_providers(
     fc: &ForeignChainsConfig,
     network: Network,

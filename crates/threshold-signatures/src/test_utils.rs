@@ -6,6 +6,8 @@
     clippy::indexing_slicing
 )]
 
+pub mod simulator_bench;
+
 mod ckd;
 mod dkg;
 mod mockrng;
@@ -14,7 +16,6 @@ mod participants;
 mod presign;
 mod protocol;
 mod sign;
-pub mod simulator_bench;
 mod snapshot;
 
 use crate::KeygenOutput;
