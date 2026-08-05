@@ -365,11 +365,11 @@ mod tests {
         *slot = Some(config);
     }
 
-    async fn mock_chain_id<'a>(
+    async fn mock_fingerprint<'a>(
         server: &'a httpmock::MockServer,
-        chain_id: &str,
+        fingerprint: &str,
     ) -> httpmock::Mock<'a> {
-        let body = serde_json::json!({"jsonrpc": "2.0", "result": chain_id, "id": 0});
+        let body = serde_json::json!({"jsonrpc": "2.0", "result": fingerprint, "id": 0});
         server
             .mock_async(|when, then| {
                 when.method(httpmock::Method::POST);
@@ -446,7 +446,7 @@ mod tests {
     async fn probe_all_providers__should_report_a_provider_on_the_expected_network_as_healthy() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        let mock = mock_chain_id(&server, MAINNET).await;
+        let mock = mock_fingerprint(&server, MAINNET).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -467,7 +467,7 @@ mod tests {
     async fn probe_all_providers__should_report_a_provider_on_another_network_as_wrong_network() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, SEPOLIA).await;
+        mock_fingerprint(&server, SEPOLIA).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -490,7 +490,7 @@ mod tests {
     async fn probe_all_providers__should_normalize_the_reported_fingerprint_before_comparing() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, PADDED_UPPERCASE_MAINNET).await;
+        mock_fingerprint(&server, PADDED_UPPERCASE_MAINNET).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -511,7 +511,7 @@ mod tests {
      {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        let mock = mock_chain_id(&server, MAINNET).await;
+        let mock = mock_fingerprint(&server, MAINNET).await;
         let config = starknet_only(chain_config(
             None,
             one_provider("publicnode", &server.base_url()),
@@ -631,7 +631,7 @@ mod tests {
     async fn probe_all_providers__should_normalize_the_configured_fingerprint_before_comparing() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, MAINNET).await;
+        mock_fingerprint(&server, MAINNET).await;
         let config = starknet_only(chain_config(
             Some(PADDED_UPPERCASE_MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -699,7 +699,7 @@ mod tests {
     async fn probe_all_providers__should_report_each_provider_of_a_chain_separately() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, MAINNET).await;
+        mock_fingerprint(&server, MAINNET).await;
         let mut providers = one_provider("healthy", &server.base_url());
         providers.insert("broken".to_string().into(), provider(CLOSED_PORT_URL));
         let config = starknet_only(chain_config(Some(MAINNET), providers));
@@ -748,7 +748,7 @@ mod tests {
     async fn probe_all_providers__should_report_every_configured_chain_under_its_own_chain() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, MAINNET).await;
+        mock_fingerprint(&server, MAINNET).await;
         let config = ForeignChainsConfig {
             starknet: Some(chain_config(
                 Some(MAINNET),
@@ -784,7 +784,7 @@ mod tests {
         let mut config = ForeignChainsConfig::default();
         for mainnet in EVM_MAINNETS {
             let server = httpmock::MockServer::start_async().await;
-            mock_chain_id(&server, &mainnet.answered()).await;
+            mock_fingerprint(&server, &mainnet.answered()).await;
             must_put_chain(
                 &mut config,
                 mainnet.chain,
@@ -814,7 +814,7 @@ mod tests {
      {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, "0x14a34").await;
+        mock_fingerprint(&server, "0x14a34").await;
         let mut config = ForeignChainsConfig::default();
         must_put_chain(
             &mut config,
@@ -839,7 +839,7 @@ mod tests {
     async fn probe_all_providers__should_report_bitcoin_on_its_genesis_block_as_healthy() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, BITCOIN_MAINNET).await;
+        mock_fingerprint(&server, BITCOIN_MAINNET).await;
         let config = ForeignChainsConfig {
             bitcoin: Some(chain_config(
                 Some(BITCOIN_MAINNET),
@@ -862,7 +862,7 @@ mod tests {
     async fn probe_all_providers__should_report_bitcoin_on_another_network_as_wrong_network() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, BITCOIN_TESTNET3).await;
+        mock_fingerprint(&server, BITCOIN_TESTNET3).await;
         let config = ForeignChainsConfig {
             bitcoin: Some(chain_config(
                 Some(BITCOIN_MAINNET),
@@ -910,7 +910,7 @@ mod tests {
         // Given
         let server = httpmock::MockServer::start_async().await;
         let flood = "n".repeat(5_000);
-        mock_chain_id(&server, &flood).await;
+        mock_fingerprint(&server, &flood).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -966,7 +966,7 @@ mod tests {
     async fn probe_all_providers__should_keep_auth_material_out_of_the_report() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, SEPOLIA).await;
+        mock_fingerprint(&server, SEPOLIA).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             NonEmptyBTreeMap::new(
