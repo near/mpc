@@ -99,8 +99,6 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#4024](https://github.com/near/mpc/pull/4024)(@karim-en): Bump near-sdk to 5.29.0 (#4024)
 
-- (@anodar): V3.14.0
-
 
 ### 🚜 Refactor
 
