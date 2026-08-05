@@ -7,7 +7,8 @@ use crate::common::{
 };
 
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication, build_http_client,
+    FanOut, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
+    RpcAuthentication, build_http_client,
     starknet::{
         StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
@@ -22,8 +23,14 @@ use foreign_chain_rpc_interfaces::starknet::{
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
+use near_mpc_bounded_collections::NonEmptyVec;
+use near_mpc_contract_interface::types::ProviderId;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 use rstest::rstest;
+use std::num::NonZeroU64;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 fn mock_receipt(
     finality_status: StarknetFinalityStatus,
@@ -505,5 +512,152 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
             keys: vec![StarknetFelt([0xaa; 32])],
         })],
         extracted_values,
+    );
+}
+
+/// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
+const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
+const PADDED_UPPERCASE_MAINNET_CHAIN_ID: &str = "0x00534E5F4D41494E";
+
+#[tokio::test]
+async fn network_fingerprint__should_return_the_canonical_chain_id() {
+    // Given
+    let inspector = StarknetInspector::new(mock_client_from_fixed_response(
+        PADDED_UPPERCASE_MAINNET_CHAIN_ID,
+    ));
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    assert_eq!(fingerprint.to_string(), MAINNET_CHAIN_ID);
+}
+
+/// Builds a fan-out of one Starknet provider whose client runs `respond` on each call, and reports
+/// the number of calls it received.
+#[expect(
+    clippy::type_complexity,
+    reason = "the client holds an unnameable closure type, so the tuple has to spell it out"
+)]
+fn single_provider_fan_out(
+    respond: impl Fn(usize) -> Result<serde_json::Value, RpcClientError> + Send + Sync + 'static,
+) -> (
+    FanOut<
+        StarknetInspector<
+            FixedResponseRpcClient<
+                impl Fn() -> Result<serde_json::Value, RpcClientError> + Clone + Sync,
+            >,
+        >,
+    >,
+    Arc<AtomicUsize>,
+) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&calls);
+    let respond: Arc<dyn Fn(usize) -> Result<serde_json::Value, RpcClientError> + Send + Sync> =
+        Arc::new(respond);
+    let client = FixedResponseRpcClient::new(move || respond(seen.fetch_add(1, Ordering::SeqCst)));
+    let inspectors: NonEmptyVec<_> = vec![(
+        ProviderId("only".to_string()),
+        StarknetInspector::new(client),
+    )]
+    .try_into()
+    .expect("one inspector");
+    (FanOut::new(inspectors), calls)
+}
+
+fn transport_error() -> RpcClientError {
+    RpcClientError::Transport(Box::new(std::io::Error::new(
+        std::io::ErrorKind::ConnectionRefused,
+        "connection refused",
+    )))
+}
+
+fn bad_api_key_error() -> RpcClientError {
+    RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+        -32600,
+        "Must be authenticated!",
+        None::<()>,
+    ))
+}
+
+#[tokio::test]
+async fn network_fingerprints__should_retry_a_transient_failure_and_report_the_later_success() {
+    // Given
+    let (fan_out, calls) = single_provider_fan_out(|call| match call {
+        0 => Err(transport_error()),
+        _ => Ok(serde_json::json!(MAINNET_CHAIN_ID)),
+    });
+
+    // When
+    let results = fan_out
+        .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(2).unwrap())
+        .await;
+
+    // Then
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let fingerprint = results[0]
+        .1
+        .as_ref()
+        .expect("second attempt should succeed");
+    assert_eq!(fingerprint.to_string(), MAINNET_CHAIN_ID);
+}
+
+#[tokio::test]
+async fn network_fingerprints__should_stop_after_the_configured_number_of_attempts() {
+    // Given
+    let (fan_out, calls) = single_provider_fan_out(|_| Err(transport_error()));
+
+    // When
+    let results = fan_out
+        .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+        .await;
+
+    // Then
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_matches!(
+        results[0].1,
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
+    );
+}
+
+#[tokio::test]
+async fn network_fingerprints__should_not_retry_a_provider_that_refused_the_request() {
+    // Given
+    let (fan_out, calls) = single_provider_fan_out(|_| Err(bad_api_key_error()));
+
+    // When
+    let results = fan_out
+        .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+        .await;
+
+    // Then
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_matches!(
+        results[0].1,
+        Err(ForeignChainInspectionError::RpcRequestRejected(_))
+    );
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_propagate_rpc_client_errors() {
+    // Given
+    let client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Transport(Box::new(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        ))))
+    });
+    let inspector = StarknetInspector::new(client);
+
+    // When
+    let response = inspector.network_fingerprint().await;
+
+    // Then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
     );
 }

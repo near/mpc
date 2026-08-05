@@ -696,6 +696,9 @@ Once the voting threshold is reached:
     new Launcher measurement.
 -   Multiple Launcher versions may temporarily coexist during migration.
 
+> Launcher hashes left unused past a TTL are now auto-removed without a unanimous
+> vote — see [auto-removal of unused launcher hashes](design/auto-remove-launcher-hashes-design.md).
+
 ### OS Measurement Upgrade
 
 > Implemented in PR [#2447](https://github.com/near/mpc/pull/2447).

@@ -79,6 +79,10 @@ BorshSchemaContainer {
                         "compose_hashes",
                         "Vec<LauncherDockerComposeHash>",
                     ),
+                    (
+                        "expires_at",
+                        "Timestamp",
+                    ),
                 ],
             ),
         },
@@ -248,6 +252,10 @@ BorshSchemaContainer {
                     ),
                     (
                         "attestation_storage_fee_millinear",
+                        "u64",
+                    ),
+                    (
+                        "launcher_hash_unused_ttl_seconds",
                         "u64",
                     ),
                 ],
