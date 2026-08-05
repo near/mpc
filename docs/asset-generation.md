@@ -74,6 +74,7 @@ operations:
 |--------|-------------|
 | `add_owned(id, value)` | Stores a newly generated asset as owned. Persists to `RocksDB` and pushes to the in-memory queue. |
 | `take_owned()` | Blocks until an online asset is available, removes it from storage, and returns it. |
+| `take_owned_matching(eligible)` | Like `take_owned()`, but only returns an asset whose borrowers are additionally all in `eligible`. Used by the verify-foreign-tx leader with the requested chain's supporters. |
 | `maybe_discard_owned(n)` | Examines up to `n` assets. Discards those with offline borrowers; keeps online ones aside as ready. |
 | `add_unowned(id, value)` | Stores another owner's asset share in `RocksDB`. |
 | `take_unowned(id)` | Looks up an unowned asset by ID, removes it from `RocksDB`, and returns it. Fails if not found. |
@@ -85,7 +86,9 @@ operations:
 
 ### Properties of an asset taken from the queue
 
-When `take_owned()` returns an asset, the following holds:
+When `take_owned()` or `take_owned_matching(eligible)` returns an asset,
+the following holds (`take_owned_matching` additionally guarantees all
+borrowers are in `eligible`):
 
 1. **All borrowers were online at check time.** The queue verifies
    that the asset is online by the time it is taken from the queue
@@ -162,6 +165,11 @@ A `VecDeque` divided into three logical regions by two barriers:
   current condition. Checked lazily during `take()`.
 - **Non-satisfying** (cold_available..len): offline assets. Skipped by
   `take()`, targeted by `discard()`.
+
+`take_first_matching()` (backing `take_owned_matching`) is the exception
+to front/back access: it removes the first online asset also matching the
+caller's set from *any* position before `cold_available`, shifting the
+barriers past the removal point down by one.
 
 The **condition** is whether the asset is online. The set of corresponding
 online participants is cached for up to 1 second. When it changes, the barriers
@@ -245,7 +253,9 @@ Unlike triples and presignatures, signatures are not pre-generated.
 When a signature request arrives:
 
 1. **Leader** calls `presignature_store.take_owned()` for the relevant
-   domain, consuming one presignature.
+   domain, consuming one presignature. Verify-foreign-tx leaders call
+   `take_owned_matching(supporters)` instead, so the borrowers can all
+   inspect the requested chain.
 2. Leader opens a network channel with the presignature's borrowers
    and broadcasts the presignature ID along with the signature request.
 3. **Followers** call `presignature_store.take_unowned(id)` to retrieve

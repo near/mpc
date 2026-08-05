@@ -31,6 +31,9 @@ use std::sync::{Arc, Mutex};
 ///      If the element *doesn't satisfy* the condition it is inserted at the back.
 ///   4. When the condition changes the barriers are reset, marking
 ///      the entire queue as unknown.
+///   5. When taking an asset matching a caller-supplied condition value we may
+///      remove from any position before the cold_available barrier. Barriers
+///      past the removed position shift down by one.
 ///
 /// NB: Assets may be reordered by these operations. No guarantees are made on the order in which
 /// assets are taken or discarded from the queue.
