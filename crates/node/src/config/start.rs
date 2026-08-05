@@ -31,7 +31,7 @@ impl TeeAuthorityImpl for TeeConfig {
 }
 
 pub trait NearInitConfigExt {
-    /// Runs `near_indexer::init_configs` to create the NEAR data directory.
+    /// Runs [`near_indexer::init_configs`] to create the NEAR data directory.
     fn run_init(&self, home_dir: &Path) -> anyhow::Result<()>;
 }
 
@@ -72,7 +72,7 @@ impl StartConfigExt for StartConfig {
     }
 }
 
-/// Runs `near_indexer::init_configs` to create the NEAR data directory.
+/// Runs [`near_indexer::init_configs`] to create the NEAR data directory.
 fn run_near_init(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()> {
     let is_localnet = config.chain_id.is_localnet();
     let genesis_arg = config.genesis_path.as_deref().and_then(Path::to_str);
@@ -148,7 +148,7 @@ fn require_tier3_public_addr(near_init: &NearInitConfig) -> anyhow::Result<()> {
 
 /// Applies post-init patches to the NEAR node `config.json`. Overlaps with, but
 /// no longer matches, `update_near_node_config()` in `start.sh`: that script runs
-/// `CliCommand::Start`, which sets `near_init: None`, so this never runs there.
+/// [`CliCommand::Start`](crate::cli::CliCommand::Start), which sets `near_init: None`, so this never runs there.
 fn patch_near_config(
     config_path: &Path,
     near_init: &NearInitConfig,
@@ -332,7 +332,7 @@ pub(crate) fn read_near_config_json(home_dir: &Path) -> serde_json::Value {
 }
 
 /// Pure JSON-manipulation half of [`patch_near_config`], extracted so it can
-/// be unit-tested without filesystem I/O or constructing a full `ConfigFile`.
+/// be unit-tested without filesystem I/O or constructing a full [`ConfigFile`].
 fn apply_near_config_patches(
     config: &mut serde_json::Value,
     near_init: &NearInitConfig,

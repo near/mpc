@@ -7,13 +7,13 @@ use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 use crate::common::localnet::LocalnetBuilder;
 use near_contract_transport::ViewArgs;
 
-/// This integration test uses the `ChainGateway` struct to spin up two neard nodes
+/// This integration test uses the [`ChainGateway`] struct to spin up two neard nodes
 /// for a localnet. One of the nodes is an observer node (what the MPC node would be running),
 /// the other is a validator node.
 /// A smart contract is injected in the genesis file to simplify testing.
 ///
 /// The test uses the chain gateway of the observer node to verify that view functions of
-/// the smart contract yield expected results. It constructs a `TransactionSigner` from
+/// the smart contract yield expected results. It constructs a [`TransactionSigner`] from
 /// the private key of the contract account and has the observer's chain gateway
 /// sign and route the transaction.
 #[tokio::test]

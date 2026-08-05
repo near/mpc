@@ -18,7 +18,7 @@ pub enum MessageType<T> {
 
 /// A homemade sturcture that allows counting the number of
 /// votes gathered during the reliable-broadcast protocol
-/// only requiring from votes to have trait `PartialEq`
+/// only requiring from votes to have trait [`PartialEq`]
 #[derive(Clone)]
 struct CounterList<T> {
     list: Vec<(T, usize)>,
@@ -133,7 +133,7 @@ impl<'a, T: PartialEq> BroadcastProtocolState<'a, T> {
 
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
 ///
-/// It broadcasts a vote of type `MessageType::Send` and expects that the output
+/// It broadcasts a vote of type [`MessageType::Send`] and expects that the output
 /// of the broadcasts be the same as the input vote.
 /// `Reliable_broadcast_receive_all` is expected to be called right after `reliable_broadcast_send`.
 #[allow(clippy::too_many_lines)]

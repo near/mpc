@@ -775,14 +775,14 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that when a participant's TEE attestation expires and `verify_tee()` is called,
+/// Tests that when a participant's TEE attestation expires and [`verify_tee()`] is called,
 /// the contract transitions to Resharing state and eventually removes that participant.
 ///
 /// Steps:
 /// 1. Initialize contract with 3 participants
 /// 2. Submit an expiring attestation for the last participant
 /// 3. Fast-forward blocks past the attestation expiry
-/// 4. Call `verify_tee()` which detects the expired attestation and triggers resharing
+/// 4. Call [`verify_tee()`] which detects the expired attestation and triggers resharing
 /// 5. Complete resharing with remaining 2 participants
 /// 6. Verify participant count reduced from 3 to 2
 #[tokio::test]
@@ -904,7 +904,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 /// 1. Initialize contract with 3 participants (threshold 2).
 /// 2. Expire the attestations of 2 of the 3 participants, leaving only 1 valid (< threshold).
 /// 3. Fast-forward blocks past the attestation expiry.
-/// 4. Call `verify_tee()`, which returns `false` and does NOT enter resharing.
+/// 4. Call [`verify_tee()`], which returns `false` and does NOT enter resharing.
 /// 5. Verify the contract stays Running with all 3 participants (no kickout).
 /// 6. Verify a `sign` request is now refused with the TEE-validation-failed error.
 #[tokio::test]

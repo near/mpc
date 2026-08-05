@@ -11,8 +11,8 @@ struct SelfSignedCert {
     self_signed_certificate: rcgen::Certificate,
 }
 
-/// Creates a self-signed certificate using the embedded `constants::DUMMY_ISSUER_PRIVATE_KEY`.
-/// The certificate will have `constants::ROOT_CERT` as its subject name.
+/// Creates a self-signed certificate using the embedded [`constants::DUMMY_ISSUER_PRIVATE_KEY`].
+/// The certificate will have [`constants::ROOT_CERT`] as its subject name.
 fn self_signed_dummy_certificate() -> anyhow::Result<SelfSignedCert> {
     let dummy_keypair: rcgen::KeyPair =
         rcgen::KeyPair::from_pem(constants::DUMMY_ISSUER_PRIVATE_KEY)?;
@@ -27,7 +27,7 @@ fn self_signed_dummy_certificate() -> anyhow::Result<SelfSignedCert> {
 
 /// Issues a new certificate for the given `public_key`,
 /// signed by the provided `issuer_cert`.
-/// The new certificate will have `constants::SERVER_NAME` as its subject name.
+/// The new certificate will have [`constants::SERVER_NAME`] as its subject name.
 fn issue_peer_certificate(
     issuer_cert: &SelfSignedCert,
     public_key: &impl rcgen::PublicKeyData,
@@ -44,7 +44,7 @@ fn issue_peer_certificate(
 /// Builds a [`rustls::server::ServerConfig`] for a peer-to-peer server.
 ///
 /// The returned configuration:
-/// - Restricts protocol versions to `constants::TLS_PROTOCOL_VERSION`.
+/// - Restricts protocol versions to [`constants::TLS_PROTOCOL_VERSION`].
 /// - Uses `p2p_cert` and `p2p_private_key` as the server's identity (certificate + private key).
 /// - Enforces **mutual TLS (mTLS)** by requiring connecting clients to present certificates
 ///   that chain back to one of the roots in `root_cert_store`.
@@ -55,7 +55,7 @@ fn issue_peer_certificate(
 /// - `p2p_private_key`: DER-encoded private key matching the public key contained in `p2p_cert`.
 ///
 /// # Returns
-/// A `ServerConfig`, suitable for constructing a
+/// A [`ServerConfig`](rustls::server::ServerConfig), suitable for constructing a
 /// [`tokio_rustls::TlsAcceptor`](https://docs.rs/tokio-rustls/latest/tokio_rustls/struct.TlsAcceptor.html).
 ///
 /// # Errors
@@ -79,7 +79,7 @@ fn server_tls_config(
 /// Builds a [`rustls::client::ClientConfig`] for peer-to-peer connections.
 ///
 /// The returned configuration:
-/// - Restricts protocol versions to `constants::TLS_PROTOCOL_VERSION` (e.g., TLS 1.3 only).
+/// - Restricts protocol versions to [`constants::TLS_PROTOCOL_VERSION`] (e.g., TLS 1.3 only).
 /// - Trusts servers presenting certificates that chain back to the provided `root_cert_store`
 ///   (in this setup, the dummy issuer).
 /// - Configures the client to authenticate itself with `p2p_cert` and `p2p_private_key`,
@@ -164,7 +164,7 @@ pub fn configure_tls(
 /// The extraction process:
 /// - Ensures that the peer presented exactly one certificate.
 /// - Parses the certificate as DER and extracts its public key.
-/// - Validates that the key is of the expected type (Ed25519, handled as `Unknown` by the parser).
+/// - Validates that the key is of the expected type (Ed25519, handled as [`Unknown`](x509_parser::public_key::PublicKey::Unknown) by the parser).
 /// - Converts the raw key bytes into a [`ed25519_dalek::VerifyingKey`].
 ///
 /// # Parameters

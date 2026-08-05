@@ -161,7 +161,7 @@ impl_op_ex!(&|u: &BitVector, v: &BitVector| -> BitVector { u.and(v) });
 impl_op_ex!(&= |u: &mut BitVector, v: &BitVector| { u.and_mut(v) });
 impl_op_ex!(!|u: &BitVector| -> BitVector { u.not() });
 
-/// A `BitVector` of double the size.
+/// A [`BitVector`] of double the size.
 ///
 /// This is useful because it's quicker to avoid reducing the result of GF multiplication.
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -215,7 +215,7 @@ impl_op_ex!(^= |u: &mut DoubleBitVector, v: &DoubleBitVector| { u.xor_mut(v) });
 
 /// Represents a matrix of bits.
 ///
-/// Each row of this matrix is a `BitVector`, although we might have more or less
+/// Each row of this matrix is a [`BitVector`], although we might have more or less
 /// rows.
 ///
 /// This is a fundamental object used for our OT extension protocol.
