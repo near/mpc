@@ -22,3 +22,5 @@ pub const CKDS_QUEUE_ATTEMPTS: &str = "mpc_pending_ckds_queue_attempts_generated
 pub const INDEXER_LATEST_BLOCK_HEIGHT: &str = "mpc_indexer_latest_block_height";
 
 pub const TIMEOUTS_INDEXED: &str = "mpc_num_fail_on_timeout_indexed";
+
+pub const LAST_BACKUP_SERVED_EPOCH: &str = "mpc_last_backup_served_epoch";

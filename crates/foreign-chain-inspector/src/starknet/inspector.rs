@@ -1,14 +1,21 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprint,
+    NetworkFingerprintInspector,
+};
 use foreign_chain_rpc_interfaces::starknet::{
-    BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse, GetTransactionReceiptArgs,
-    GetTransactionReceiptResponse, H256, StarknetExecutionStatus, StarknetFinalityStatus,
+    BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+    GetTransactionReceiptArgs, GetTransactionReceiptResponse, H256, StarknetExecutionStatus,
+    StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
+const CHAIN_ID_METHOD: &str = "starknet_chainId";
+/// `starknet_chainId` takes no arguments. Sent as an explicit empty array.
+const NO_PARAMS: [(); 0] = [];
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -19,6 +26,26 @@ pub struct StarknetInspector<Client> {
 pub enum StarknetFinality {
     AcceptedOnL2,
     AcceptedOnL1,
+}
+
+impl<Client> NetworkFingerprintInspector for StarknetInspector<Client>
+where
+    Client: ClientT + Send + Sync,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let chain_id: ChainIdResponse = self
+            .client
+            .request(CHAIN_ID_METHOD, NO_PARAMS)
+            .await
+            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+        Ok(chain_id.canonical_text().into())
+    }
+
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        ChainIdResponse(fingerprint.to_owned())
+            .canonical_text()
+            .into()
+    }
 }
 
 impl<Client> ForeignChainInspector for StarknetInspector<Client>

@@ -314,11 +314,18 @@ cargo make e2e-tests
 ## Running the tests
 
 ```bash
-cargo make e2e-tests                       # Build required binaries and run all tests
-cargo make e2e-tests-skip-build            # Reuse binaries from a previous run
-cargo make e2e-tests-skip-build -- <name>  # Run a single test (filter passed to nextest)
-cargo make kill-orphan-mpc-nodes           # Recover from ports held by crashed runs
+cargo make e2e-tests                            # Build required binaries and run all tests
+cargo make e2e-tests-skip-build                 # Reuse binaries from a previous run
+cargo make e2e-tests-skip-build <name>          # Run tests matching a substring filter
+cargo make e2e-tests-skip-build -E 'test(request_lifecycle)' --no-capture  # Forward nextest flags
+cargo make kill-orphan-mpc-nodes                # Recover from ports held by crashed runs
 ```
+
+Everything after the task name is forwarded to `cargo nextest run` unchanged,
+so any nextest filter or flag works (substring filters, `-E` expressions,
+`--no-capture`, `--retries`, `-j`, etc.). With no arguments, the whole suite
+runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
+forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
 The task runner builds three things before tests run: the mpc-node binary
 with the `network-hardship-simulation` feature, the MPC contract WASM, and
