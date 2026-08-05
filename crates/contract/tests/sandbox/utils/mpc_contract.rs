@@ -99,8 +99,6 @@ pub async fn submit_participant_info(
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // The view is absent on pre-upgrade binaries, which have no notion of grants; those
-    // submissions need no prepayment, so treat a failed lookup as "nothing to do".
     // Only prepay when the submission would actually need a grant: a re-attestation of an
     // entry this account already owns consumes none, and prepaying anyway would leave stray
     // grants behind and could mask a genuinely missing prepayment in another test.
@@ -114,8 +112,12 @@ pub async fn submit_participant_info(
             .args_json(serde_json::json!({ "account_id": account.id() }))
             .await
         {
-            Ok(result) => result.json::<u32>().unwrap_or(0),
-            Err(_) => 1,
+            Ok(result) => result.json::<u32>()?,
+            // Pre-upgrade binaries have no notion of grants, so there is nothing to prepay.
+            // Any other failure is real and would otherwise surface as a confusing
+            // `NoAttestationStorageGrant` from the submission below.
+            Err(err) if is_method_not_found(&err) => 1,
+            Err(err) => return Err(err.into()),
         };
         if granted == 0 {
             let prepayment = prepay_attestation_grants(account, contract, account.id(), 1).await?;
@@ -123,6 +125,10 @@ pub async fn submit_participant_info(
         }
     }
     submit_participant_info_raw(account, contract, attestation, tls_key).await
+}
+
+fn is_method_not_found(err: &near_workspaces::error::Error) -> bool {
+    err.to_string().contains("MethodResolveError") || err.to_string().contains("method not found")
 }
 
 /// Submits without prepaying anything.

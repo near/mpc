@@ -826,9 +826,6 @@ impl MpcContract {
         self.available_attestation_grants
             .insert(account_id.clone(), credited);
 
-        log!(
-            "prepay_attestation_storage: account_id={account_id}, grants={grants}, available={credited}"
-        );
         Ok(())
     }
 
@@ -930,10 +927,6 @@ impl MpcContract {
         NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
     }
 
-    /// Whether storing `tls_public_key` for `account_id` would create a new entry and
-    /// therefore consume a grant. `Err` if the key belongs to somebody else, which the
-    /// store would reject anyway — checking it here keeps that failure ahead of
-    /// verification instead of after it.
     fn attestation_submission_needs_grant(
         &self,
         account_id: &AccountId,
@@ -965,11 +958,16 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Consumes one grant for `account_id`. Infallible by construction: every caller
-    /// has just established, in this same receipt, that a grant is available.
+    /// Consumes one grant for `account_id`.
+    ///
+    /// Panics if none is available. Every caller has established, in this same receipt, that
+    /// a grant is there; panicking reverts the receipt, so an invariant broken by a future
+    /// call site costs a failed transaction rather than an entry nobody paid for.
     fn consume_attestation_storage_grant(&mut self, account_id: &AccountId) {
-        let available = self.grants_for(account_id);
-        let remaining = available.saturating_sub(1);
+        let remaining = self
+            .grants_for(account_id)
+            .checked_sub(1)
+            .expect("caller must establish an available grant before consuming one");
         if remaining == 0 {
             self.available_attestation_grants.remove(account_id);
         } else {
