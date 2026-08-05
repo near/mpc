@@ -72,7 +72,6 @@ impl ProbeReport {
         &self.rows
     }
 
-    /// Only configured chains appear, never reports on a chain the operator did not configure.
     pub fn counts_per_chain(&self) -> BTreeMap<ForeignChain, ProviderCounts> {
         let mut counts: BTreeMap<ForeignChain, ProviderCounts> = BTreeMap::new();
         for row in &self.rows {
