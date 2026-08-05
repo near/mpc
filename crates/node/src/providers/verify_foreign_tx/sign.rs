@@ -427,7 +427,11 @@ mod tests {
         let result = build_signature_request(&request, &payload);
 
         // Then
-        result.unwrap_err();
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("does not match the request's expected payload hash"),
+            "expected the payload hash mismatch error, got: {error}",
+        );
     }
 
     #[test]
