@@ -49,12 +49,33 @@ pub enum AptosRpcError {
     ApiError { status: u16, body: String },
 }
 
+/// Partial response of the API root: the ledger info every Aptos node reports.
+/// <https://api.mainnet.aptoslabs.com/v1/spec#/operations/get_ledger_info>
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct LedgerInfoResponse {
+    /// One byte in the spec, one digit in practice: 1 is mainnet, 2 is testnet.
+    pub chain_id: u64,
+}
+
+/// Decimal without leading zeros, the form Aptos publishes chain ids in. Text that is not a
+/// number is returned unchanged, so a nonsense answer can be reported as it was given.
+pub fn canonical_chain_id_text(chain_id: &str) -> String {
+    match chain_id.parse::<u64>() {
+        Ok(parsed) => parsed.to_string(),
+        Err(_) => chain_id.to_owned(),
+    }
+}
+
 /// Client interface for the Aptos REST API v1.
 pub trait AptosRpcClient: Send + Sync {
     fn get_transaction_by_hash(
         &self,
         tx_hash_hex: &str,
     ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send;
+
+    fn get_ledger_info(
+        &self,
+    ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send;
 }
 
 #[derive(Clone)]
@@ -119,6 +140,27 @@ impl AptosRpcClient for ReqwestAptosClient {
             Ok(parsed)
         }
     }
+
+    /// The ledger info lives at the API root, so the base URL is requested as configured.
+    fn get_ledger_info(
+        &self,
+    ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
+        let url = self.base.clone();
+        let client = self.client.clone();
+        async move {
+            let response = client.get(url).send().await?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(AptosRpcError::ApiError {
+                    status: status.as_u16(),
+                    body,
+                });
+            }
+            let parsed = response.json::<LedgerInfoResponse>().await?;
+            Ok(parsed)
+        }
+    }
 }
 
 /// Canonical string form of the event `data`: object keys sorted recursively so all nodes hash
@@ -154,6 +196,7 @@ fn sort_keys(v: serde_json::Value) -> serde_json::Value {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn build_request_url__appends_resource_path_to_versioned_base() {
@@ -308,5 +351,38 @@ mod tests {
             normalized,
             r#"{"outer_a":0,"outer_b":{"inner_a":1,"inner_z":9}}"#
         );
+    }
+
+    #[rstest]
+    #[case::mainnet("1", "1")]
+    #[case::padded("0002", "2")]
+    // Reported as answered.
+    #[case::not_a_number("mainnet", "mainnet")]
+    fn canonical_chain_id_text__should_canonicalize_what_is_configured(
+        #[case] configured: &str,
+        #[case] expected: &str,
+    ) {
+        // When
+        let canonical = canonical_chain_id_text(configured);
+
+        // Then
+        assert_eq!(canonical, expected);
+    }
+
+    #[test]
+    fn deserialize_ledger_info__should_ignore_the_fields_the_probe_does_not_read() {
+        // Given
+        let json = serde_json::json!({
+            "chain_id": 1,
+            "epoch": "13",
+            "ledger_version": "1234",
+            "node_role": "full_node",
+        });
+
+        // When
+        let parsed: LedgerInfoResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(parsed.chain_id, 1);
     }
 }

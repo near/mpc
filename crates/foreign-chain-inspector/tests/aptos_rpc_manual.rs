@@ -60,3 +60,24 @@ fn parse_tx_hash(hash: &str) -> AptosTransactionHash {
         .expect("transaction hash should be 32 bytes");
     AptosTransactionHash::from(array)
 }
+
+/// Aptos mainnet's ledger chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "1";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Aptos RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let client =
+        ReqwestAptosClient::new(PUBLIC_NODE_URL.to_string(), None, Duration::from_secs(10));
+    let inspector = AptosInspector::new(client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
+}
