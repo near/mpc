@@ -1,10 +1,11 @@
 pub mod compat;
-mod gcp;
 pub mod local;
 pub mod permanent;
-mod temporary;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
+
+mod gcp;
+mod temporary;
 
 use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};

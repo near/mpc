@@ -1688,7 +1688,18 @@ impl ForeignTxSignPayload {
 
 /// Stable label for an RPC provider entry (e.g. `"alchemy"`, `"ankr"`, `"drpc"`).
 /// Unique within a chain in the on-chain foreign-chain RPC whitelist.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Display,
+)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
