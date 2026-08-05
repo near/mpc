@@ -721,8 +721,7 @@ evm_inspector_tests!(
     polygon
 );
 
-/// Base mainnet. One chain stands in for all of them: the fingerprint call has no chain-specific
-/// parts.
+// Base mainnet, standing in for every EVM chain: the fingerprint call has no chain-specific parts.
 const CHAIN_ID_8453: &str = "0x2105";
 const PADDED_CHAIN_ID_8453: &str = "0x002105";
 

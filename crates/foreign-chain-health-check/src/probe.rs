@@ -200,18 +200,6 @@ fn rows_of(
         .collect()
 }
 
-/// A provider answers what it likes and the report reaches logs and metric labels, so the length is
-/// capped well clear of the longest real fingerprint: Bitcoin's genesis hash, at 66 characters.
-fn bounded(observed: NetworkFingerprint) -> NetworkFingerprint {
-    const MAX_CHARS: usize = 96;
-
-    let observed = observed.to_string();
-    match observed.char_indices().nth(MAX_CHARS) {
-        None => NetworkFingerprint::from(observed),
-        Some((cutoff, _)) => NetworkFingerprint::from(format!("{}…", &observed[..cutoff])),
-    }
-}
-
 fn classify(
     expected: &NetworkFingerprint,
     reported: Result<NetworkFingerprint, ForeignChainInspectionError>,
@@ -220,7 +208,7 @@ fn classify(
         Ok(observed) if &observed == expected => ProviderStatus::Healthy,
         Ok(observed) => ProviderStatus::WrongNetwork {
             expected: expected.clone(),
-            observed: bounded(observed),
+            observed,
         },
         Err(error) => match error.provider_failure() {
             Some(ProviderFailure::Unreachable) => ProviderStatus::Unreachable,
@@ -448,8 +436,8 @@ mod tests {
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::from(MAINNET.to_string()),
-                observed: NetworkFingerprint::from(SEPOLIA.to_string()),
+                expected: NetworkFingerprint::new(MAINNET),
+                observed: NetworkFingerprint::new(SEPOLIA),
             }
         );
     }
@@ -748,7 +736,6 @@ mod tests {
     async fn probe_all_providers__should_report_every_evm_chain_on_its_expected_network_as_healthy()
     {
         // Given
-        // Each chain gets its own mock, all of which have to outlive the probe.
         let mut servers = Vec::new();
         let mut config = ForeignChainsConfig::default();
         for (chain, answered, expected) in EVM_MAINNETS {
@@ -798,8 +785,8 @@ mod tests {
         assert_eq!(
             must_status_of(&report, ForeignChain::Base, "publicnode"),
             ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::from("8453".to_string()),
-                observed: NetworkFingerprint::from("84532".to_string()),
+                expected: NetworkFingerprint::new("8453"),
+                observed: NetworkFingerprint::new("84532"),
             }
         );
     }
@@ -851,7 +838,7 @@ mod tests {
     #[test]
     fn classify__should_report_a_transaction_level_error_as_malformed() {
         // Given
-        let expected = NetworkFingerprint::from(MAINNET.to_string());
+        let expected = NetworkFingerprint::new(MAINNET);
 
         // When
         let status = classify(

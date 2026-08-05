@@ -7,12 +7,12 @@ use foreign_chain_inspector::{
     },
 };
 
+const ARBITRUM_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
+
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Arbitrum RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    const ARBITRUM_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
-
     let threshold = EthereumFinality::Finalized;
 
     // Example transaction on Arbitrum One with 3 logs;
@@ -57,4 +57,28 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     assert_matches!(extracted_values[1], ArbitrumExtractedValue::Log(_));
     assert_matches!(extracted_values[2], ArbitrumExtractedValue::Log(_));
     assert_matches!(extracted_values[3], ArbitrumExtractedValue::Log(_));
+}
+
+/// Arbitrum One's chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "42161";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Arbitrum RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        ARBITRUM_RPC_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = ArbitrumInspector::new(http_client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

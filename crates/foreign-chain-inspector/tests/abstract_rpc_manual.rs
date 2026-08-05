@@ -7,14 +7,14 @@ use foreign_chain_inspector::{
     },
 };
 
+// Note: Replace with your actual Abstract RPC endpoint URL
+// Example: QuickNode Abstract endpoint
+const ABSTRACT_RPC_URL: &str = "https://api.testnet.abs.xyz";
+
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Abstract RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    // Note: Replace with your actual Abstract RPC endpoint URL
-    // Example: QuickNode Abstract endpoint
-    const ABSTRACT_RPC_URL: &str = "https://api.testnet.abs.xyz";
-
     let threshold = EthereumFinality::Finalized;
 
     // Example transaction from Abstract testnet
@@ -55,4 +55,28 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         AbstractExtractedValue::BlockHash(expected_block_hash)
     );
     assert_matches!(extracted_values[1], AbstractExtractedValue::Log(_));
+}
+
+/// Abstract testnet's chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "11124";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Abstract RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        ABSTRACT_RPC_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = AbstractInspector::new(http_client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

@@ -43,8 +43,25 @@ pub trait ForeignChainInspector {
 
 /// The network a provider serves, as the chain itself reports it: a chain id or a genesis hash, in
 /// one canonical text form per chain.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
+///
+/// A provider answers what it likes and a fingerprint reaches logs and metric labels, so
+/// [`NetworkFingerprint::new`] is the only way to build one and it caps the length.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display)]
 pub struct NetworkFingerprint(String);
+
+impl NetworkFingerprint {
+    /// Text longer than the longest real fingerprint, Bitcoin's 66 character genesis hash, is cut
+    /// short and marked with an ellipsis.
+    pub fn new(fingerprint: impl Into<String>) -> Self {
+        const MAX_CHARS: usize = 96;
+
+        let fingerprint = fingerprint.into();
+        match fingerprint.char_indices().nth(MAX_CHARS) {
+            None => Self(fingerprint),
+            Some((cutoff, _)) => Self(format!("{}…", &fingerprint[..cutoff])),
+        }
+    }
+}
 
 /// Reports the [`NetworkFingerprint`] of the provider an inspector talks to, in the form
 /// [`Self::canonical_fingerprint`] produces.
@@ -684,5 +701,30 @@ mod tests {
 
         // Then
         assert_eq!(failure, expected);
+    }
+
+    #[test]
+    fn network_fingerprint_new__should_keep_the_longest_real_fingerprint_whole() {
+        // Given
+        let bitcoin_genesis_hash =
+            "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+        // When
+        let fingerprint = NetworkFingerprint::new(bitcoin_genesis_hash);
+
+        // Then
+        assert_eq!(fingerprint.to_string(), bitcoin_genesis_hash);
+    }
+
+    #[test]
+    fn network_fingerprint_new__should_cut_short_what_a_provider_answers_at_length() {
+        // Given
+        let answered = "🙂".repeat(200);
+
+        // When
+        let fingerprint = NetworkFingerprint::new(answered);
+
+        // Then
+        assert_eq!(fingerprint.to_string(), format!("{}…", "🙂".repeat(96)));
     }
 }

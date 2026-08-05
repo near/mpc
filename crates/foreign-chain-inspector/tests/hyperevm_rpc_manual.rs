@@ -7,12 +7,12 @@ use foreign_chain_inspector::{
     },
 };
 
+const HYPEREVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
+
 #[tokio::test]
 #[ignore = "manual test to sanity check against live HyperEVM RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    const HYPEREVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
-
     let threshold = EthereumFinality::Finalized;
 
     // Example transaction on HyperEVM (block 0x20c6dc5) with 3 logs;
@@ -57,4 +57,28 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     assert_matches!(extracted_values[1], HyperEvmExtractedValue::Log(_));
     assert_matches!(extracted_values[2], HyperEvmExtractedValue::Log(_));
     assert_matches!(extracted_values[3], HyperEvmExtractedValue::Log(_));
+}
+
+/// HyperEVM mainnet's chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "999";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live HyperEVM RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        HYPEREVM_RPC_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = HyperEvmInspector::new(http_client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

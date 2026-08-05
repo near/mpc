@@ -100,8 +100,7 @@ pub struct Log {
     pub topics: Vec<H256>,
 }
 
-/// RPC response for `eth_chainId`: the EIP-155 chain id as a hex quantity (Base mainnet is
-/// `0x2105`).
+/// RPC response for `eth_chainId`: the EIP-155 chain id as a hex quantity.
 /// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_chainid>
 ///
 /// Kept as text rather than parsed into a [`U64`], so that whatever a provider answers can be
@@ -111,9 +110,8 @@ pub struct Log {
 pub struct ChainIdResponse(pub String);
 
 impl ChainIdResponse {
-    /// Decimal, which is how EIP-155 chain ids are published. A `0x` prefix reads as hex, since
-    /// that is what the RPC answers; anything else as the decimal an operator writes. Text that is
-    /// neither is returned unchanged, to be reported as the network the provider claims.
+    /// Decimal, the form EIP-155 chain ids are published in. A `0x` prefix reads as hex, anything
+    /// else as decimal; text that is neither is returned unchanged.
     pub fn canonical_text(&self) -> String {
         let hex = self
             .0
