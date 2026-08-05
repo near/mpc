@@ -99,7 +99,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
         .map(|(chain, chain_config)| async move {
             match chain {
                 ForeignChain::Starknet => {
-                    probe_chain(chain, chain_config, |provider, _| {
+                    probe_chain(chain, chain_config, |provider| {
                         Ok(StarknetInspector::new(prepare_jsonrpc(provider)?))
                     })
                     .await
@@ -111,13 +111,14 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                 ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
                 ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
                 ForeignChain::Bitcoin => {
-                    probe_chain(chain, chain_config, |provider, _| {
+                    probe_chain(chain, chain_config, |provider| {
                         Ok(BitcoinInspector::new(prepare_jsonrpc(provider)?))
                     })
                     .await
                 }
                 ForeignChain::Aptos => {
-                    probe_chain(chain, chain_config, |provider, timeout| {
+                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
+                    probe_chain(chain, chain_config, move |provider| {
                         let (url, auth_header) = prepare_aptos(provider)?;
                         Ok(AptosInspector::new(ReqwestAptosClient::new(
                             url,
@@ -141,18 +142,18 @@ async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> V
 where
     Chain: EvmChain + Clone + Send + Sync + 'static,
 {
-    probe_chain(chain, config, |provider, _| {
+    probe_chain(chain, config, |provider| {
         Ok(EvmInspector::<_, Chain>::new(prepare_jsonrpc(provider)?))
     })
     .await
 }
 
-/// `new_inspector` is handed the same deadline the probe gives each attempt, for the clients that
-/// carry their own.
+// TODO(#4043): take the inspectors as a dependency instead, so that building a client from
+// config, and the deadline it is built with, live outside the probe.
 async fn probe_chain<I>(
     chain: ForeignChain,
     config: &ForeignChainConfig,
-    new_inspector: impl Fn(&ForeignChainProviderConfig, Duration) -> anyhow::Result<I>,
+    new_inspector: impl Fn(&ForeignChainProviderConfig) -> anyhow::Result<I>,
 ) -> Vec<ProviderHealth>
 where
     I: foreign_chain_inspector::NetworkFingerprintInspector + Clone + Send + Sync + 'static,
@@ -162,12 +163,11 @@ where
     };
     let expected = I::canonical_fingerprint(expected);
 
-    let timeout = Duration::from_secs(config.timeout_sec.get());
     let mut inspectors = Vec::new();
     let mut rows = Vec::new();
     for (name, provider) in config.providers.iter() {
         let provider_id = ProviderId(name.as_str().to_owned());
-        match new_inspector(provider, timeout) {
+        match new_inspector(provider) {
             Ok(inspector) => inspectors.push((provider_id, inspector)),
             Err(error) => rows.push(ProviderHealth {
                 chain,
@@ -181,6 +181,7 @@ where
         return rows;
     };
 
+    let timeout = Duration::from_secs(config.timeout_sec.get());
     let fingerprints = FanOut::new(inspectors)
         .network_fingerprints(timeout, config.max_retries)
         .await;
