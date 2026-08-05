@@ -50,15 +50,12 @@ pub fn run(args: Args) -> Result<()> {
 
     let ckd_response = read_response()?;
 
-    let secret = decrypt_secret_and_verify(
-        &ckd_response.big_y,
-        &ckd_response.big_c,
+    let key = compute_app_key(
+        &ckd_response,
         ephemeral_private_key,
         app_id,
         &args.mpc_ckd_public_key,
     )?;
-
-    let key = derive_strong_key(secret, HKDF_INFO_STRONG_KEY)?;
     let key_hex = hex::encode(key);
 
     println!("The key is: {key_hex}");
@@ -116,6 +113,22 @@ pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective
     blstrs::pairing(&base1, &element2).eq(&blstrs::pairing(&element1, &base2))
 }
 
+fn compute_app_key(
+    response: &CKDResponse,
+    ephemeral_private_key: Scalar,
+    app_id: CkdAppId,
+    mpc_public_key: &Bls12381G2PublicKey,
+) -> Result<[u8; OUTPUT_SECRET_SIZE]> {
+    let secret = decrypt_secret_and_verify(
+        &response.big_y,
+        &response.big_c,
+        ephemeral_private_key,
+        app_id,
+        mpc_public_key,
+    )?;
+    derive_strong_key(secret, HKDF_INFO_STRONG_KEY)
+}
+
 fn decrypt_secret_and_verify(
     big_y: &Bls12381G1PublicKey,
     big_c: &Bls12381G1PublicKey,
@@ -139,8 +152,10 @@ fn decrypt_secret_and_verify(
     Ok(secret.to_compressed())
 }
 
-/// Callers deriving multiple keys from the same CKD output should use a distinct `info`
-/// per key purpose, so that keys for different purposes are cryptographically unrelated.
+/// The HKDF salt and `info` instantiation is chosen by the application and is not part of
+/// the CKD protocol; the values here are this example's convention. Callers deriving
+/// multiple keys from the same CKD output should use a distinct `info` per key purpose,
+/// so that keys for different purposes are cryptographically unrelated.
 fn derive_strong_key(
     ikm: [u8; BLS12381G1_PUBLIC_KEY_SIZE],
     info: &[u8],
@@ -165,23 +180,73 @@ pub fn derive_app_id(account_id: &AccountId, path: &str) -> CkdAppId {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rand::{SeedableRng as _, rngs::StdRng};
     use rstest::rstest;
+
+    /// Plays the MPC side of the CKD exchange: `sig = msk · H(pk, app_id)` encrypted
+    /// as `(Y, C) = (y·G1, sig + y·a·G1)` against the app's ephemeral key `a`.
+    fn simulate_ckd_response(
+        msk: Scalar,
+        ephemeral_private_key: Scalar,
+        app_id: &CkdAppId,
+        rng: &mut impl CryptoRngCore,
+    ) -> (G2Projective, G1Projective, CKDResponse) {
+        let mpc_public_key = G2Projective::generator() * msk;
+        let hash_input = [mpc_public_key.to_compressed().as_slice(), app_id.as_ref()].concat();
+        let sig = G1Projective::hash_to_curve(&hash_input, NEAR_CKD_DOMAIN, &[]) * msk;
+
+        let y = Scalar::random(rng);
+        let big_y = G1Projective::generator() * y;
+        let big_c = sig + G1Projective::generator() * (ephemeral_private_key * y);
+        let response = CKDResponse::new(
+            Bls12381G1PublicKey::from(&big_y),
+            Bls12381G1PublicKey::from(&big_c),
+        );
+        (mpc_public_key, sig, response)
+    }
+
+    #[test]
+    fn compute_app_key__should_derive_strong_key_with_purpose_tagged_info() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let msk = Scalar::random(&mut rng);
+        let ephemeral_private_key = Scalar::random(&mut rng);
+        let app_id = CkdAppId::from([9u8; 32]);
+        let (mpc_public_key, sig, response) =
+            simulate_ckd_response(msk, ephemeral_private_key, &app_id, &mut rng);
+        let mut expected = [0u8; OUTPUT_SECRET_SIZE];
+        Hkdf::<Sha256>::new(Some(HKDF_SALT), &sig.to_compressed())
+            .expand(HKDF_INFO_STRONG_KEY, &mut expected)
+            .unwrap();
+
+        // When
+        let key = compute_app_key(
+            &response,
+            ephemeral_private_key,
+            app_id,
+            &Bls12381G2PublicKey::from(&mpc_public_key),
+        )
+        .unwrap();
+
+        // Then
+        assert_eq!(key, expected);
+    }
 
     #[test]
     fn derive_strong_key__should_use_nonempty_salt() {
         // Given
         let ikm = [7u8; BLS12381G1_PUBLIC_KEY_SIZE];
         let info = b"some-info";
-        let mut expected = [0u8; OUTPUT_SECRET_SIZE];
-        Hkdf::<Sha256>::new(Some(HKDF_SALT), &ikm)
-            .expand(info, &mut expected)
+        let mut unsalted = [0u8; OUTPUT_SECRET_SIZE];
+        Hkdf::<Sha256>::new(None, &ikm)
+            .expand(info, &mut unsalted)
             .unwrap();
 
         // When
         let key = derive_strong_key(ikm, info).unwrap();
 
         // Then
-        assert_eq!(key, expected);
+        assert_ne!(key, unsalted);
     }
 
     #[rstest]

@@ -1989,6 +1989,7 @@ dependencies = [
  "hex",
  "hkdf",
  "near-mpc-contract-interface",
+ "rand 0.8.6",
  "rand_core 0.6.4",
  "rstest",
  "serde",
