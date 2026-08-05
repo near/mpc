@@ -53,6 +53,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#4013](https://github.com/near/mpc/pull/4013)(@haiyuechen-nearone): Starknet RPC healthcheck probing logic (#4013)
 
+- [#3564](https://github.com/near/mpc/pull/3564)(@barakeinav1): *(contract)* Auto-expire unused launcher image hashes (#3564)
+
 
 ### 🐛 Bug Fixes
 
