@@ -1,7 +1,11 @@
 use crate::aptos::{AptosExtractedValue, AptosTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    ForeignChainInspectionError, ForeignChainInspector, HexBytes, NetworkFingerprint,
+    NetworkFingerprintInspector,
+};
 use foreign_chain_rpc_interfaces::aptos::{
-    AptosRpcClient, AptosRpcError, TransactionResponse, normalize_event_data,
+    AptosRpcClient, AptosRpcError, TransactionResponse, canonical_chain_id_text,
+    normalize_event_data,
 };
 use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
 use std::borrow::Cow;
@@ -28,6 +32,28 @@ pub enum AptosExtractor {
     Event { event_index: usize },
 }
 
+impl<Client> NetworkFingerprintInspector for AptosInspector<Client>
+where
+    Client: AptosRpcClient + Send + Sync,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let ledger_info = self
+            .client
+            .get_ledger_info()
+            .await
+            // Unlike a transaction lookup, a 404 here means the URL does not serve the Aptos
+            // API at all, which no retry can change.
+            .map_err(classify_rest_error)?;
+        Ok(Self::canonical_fingerprint(
+            &ledger_info.chain_id.to_string(),
+        ))
+    }
+
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(canonical_chain_id_text(fingerprint))
+    }
+}
+
 impl<Client> ForeignChainInspector for AptosInspector<Client>
 where
     Client: AptosRpcClient + Send + Sync,
@@ -49,29 +75,12 @@ where
             .client
             .get_transaction_by_hash(&tx_hash_hex)
             .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                match e {
-                    // 404 = definitively absent → a non-transient verdict.
-                    AptosRpcError::ApiError { status: 404, .. } => {
-                        ForeignChainInspectionError::TransactionNotFound
-                    }
-                    // Rate limits and server errors are provider hiccups → transient, so the
-                    // affected provider is dropped from the quorum instead of blocking it.
-                    AptosRpcError::ApiError {
-                        status: 408 | 429, ..
-                    } => ForeignChainInspectionError::RpcRequestFailed(msg),
-                    AptosRpcError::ApiError { status, .. } if status >= 500 => {
-                        ForeignChainInspectionError::RpcRequestFailed(msg)
-                    }
-                    // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
-                    // retrying cannot change them, so they count as substantive verdicts.
-                    AptosRpcError::ApiError { .. } => {
-                        ForeignChainInspectionError::RpcRequestRejected(msg)
-                    }
-                    // Transport failures, including timeouts.
-                    AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(msg),
+            // 404 = definitively absent → a non-transient verdict.
+            .map_err(|e| match e {
+                AptosRpcError::ApiError { status: 404, .. } => {
+                    ForeignChainInspectionError::TransactionNotFound
                 }
+                other => classify_rest_error(other),
             })?;
 
         ensure_hash_matches(&tx_id, &tx.hash)?;
@@ -100,6 +109,26 @@ where
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(extracted_values)
+    }
+}
+
+/// A refusal is a substantive verdict, so only what a retry could change is transient.
+fn classify_rest_error(error: AptosRpcError) -> ForeignChainInspectionError {
+    let message = error.to_string();
+    match error {
+        // Rate limits and server errors are provider hiccups → transient, so the affected
+        // provider is dropped from the quorum instead of blocking it.
+        AptosRpcError::ApiError {
+            status: 408 | 429, ..
+        } => ForeignChainInspectionError::RpcRequestFailed(message),
+        AptosRpcError::ApiError { status, .. } if status >= 500 => {
+            ForeignChainInspectionError::RpcRequestFailed(message)
+        }
+        // Remaining 4xx (400/401/403/410, …) are deterministic rejections — retrying cannot
+        // change them, so they count as substantive verdicts.
+        AptosRpcError::ApiError { .. } => ForeignChainInspectionError::RpcRequestRejected(message),
+        // Transport failures, including timeouts.
+        AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
     }
 }
 
@@ -236,25 +265,46 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
-        AptosEventResponse, AptosRpcError, EventGuid, TransactionResponse,
+        AptosEventResponse, AptosRpcError, EventGuid, LedgerInfoResponse, TransactionResponse,
     };
     use rstest::rstest;
 
+    /// Mainnet, as the docs and the config templates ship it.
+    const MAINNET_CHAIN_ID: u64 = 1;
+
     struct MockAptosClient {
         response: Result<TransactionResponse, AptosRpcError>,
+        ledger_info: Result<LedgerInfoResponse, AptosRpcError>,
     }
 
     impl MockAptosClient {
         fn success(tx: TransactionResponse) -> Self {
-            Self { response: Ok(tx) }
+            Self {
+                response: Ok(tx),
+                ledger_info: Ok(LedgerInfoResponse {
+                    chain_id: MAINNET_CHAIN_ID,
+                }),
+            }
         }
 
         fn api_error(status: u16) -> Self {
             Self {
-                response: Err(AptosRpcError::ApiError {
-                    status,
-                    body: format!("http {status}"),
-                }),
+                response: Err(Self::error(status)),
+                ledger_info: Err(Self::error(status)),
+            }
+        }
+
+        fn on_chain(chain_id: u64) -> Self {
+            Self {
+                ledger_info: Ok(LedgerInfoResponse { chain_id }),
+                ..Self::api_error(404)
+            }
+        }
+
+        fn error(status: u16) -> AptosRpcError {
+            AptosRpcError::ApiError {
+                status,
+                body: format!("http {status}"),
             }
         }
     }
@@ -266,6 +316,23 @@ mod tests {
         ) -> impl Future<Output = Result<TransactionResponse, AptosRpcError>> + Send {
             let r = match &self.response {
                 Ok(tx) => Ok(tx.clone()),
+                Err(AptosRpcError::ApiError { status, body }) => Err(AptosRpcError::ApiError {
+                    status: *status,
+                    body: body.clone(),
+                }),
+                Err(other) => Err(AptosRpcError::ApiError {
+                    status: 500,
+                    body: other.to_string(),
+                }),
+            };
+            std::future::ready(r)
+        }
+
+        fn get_ledger_info(
+            &self,
+        ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
+            let r = match &self.ledger_info {
+                Ok(info) => Ok(info.clone()),
                 Err(AptosRpcError::ApiError { status, body }) => Err(AptosRpcError::ApiError {
                     status: *status,
                     body: body.clone(),
@@ -730,6 +797,37 @@ mod tests {
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+        );
+    }
+
+    #[tokio::test]
+    async fn network_fingerprint__should_return_the_ledger_chain_id() {
+        // Given
+        const TESTNET_CHAIN_ID: u64 = 2;
+        let inspector = AptosInspector::new(MockAptosClient::on_chain(TESTNET_CHAIN_ID));
+
+        // When
+        let fingerprint = inspector
+            .network_fingerprint()
+            .await
+            .expect("network_fingerprint should succeed");
+
+        // Then
+        assert_eq!(fingerprint.to_string(), "2");
+    }
+
+    #[tokio::test]
+    async fn network_fingerprint__should_report_a_root_that_refuses_as_rejected() {
+        // Given
+        let inspector = AptosInspector::new(MockAptosClient::api_error(404));
+
+        // When
+        let fingerprint = inspector.network_fingerprint().await;
+
+        // Then
+        assert_matches!(
+            fingerprint,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
         );
     }
 }
