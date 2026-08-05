@@ -117,7 +117,6 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
     ProbeReport { rows: report_rows }
 }
 
-/// The chain marker only types the inspector; `eth_chainId` is the same call for all of them.
 async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> Vec<ProviderHealth>
 where
     Chain: EvmChain + Clone + Send + Sync + 'static,
