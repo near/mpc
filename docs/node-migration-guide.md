@@ -224,7 +224,7 @@ backup-cli \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
-> **No `http://` in `--mpc-node-address`.** The value is a bare `host:port`. Prefixing it with a scheme — `http://node.example.com:8079` — makes the CLI treat `http://node.example.com` as the hostname and fail with `TCP connect: failed to lookup address information: Name or service not known`, which reads like a firewall problem but is not one.
+> **No `http://` in `--mpc-node-address`** — it takes a bare `host:port`. With a scheme, the lookup fails with `Name or service not known`.
 
 The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains` (with a `key` hard-link in that directory).
 
