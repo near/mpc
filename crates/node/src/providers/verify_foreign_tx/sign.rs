@@ -30,6 +30,7 @@ use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const PRESIGNATURE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -70,19 +71,39 @@ impl VerifyForeignTxProvider {
             )?;
             snapshot.get(&requested_chain).cloned().unwrap_or_default()
         };
+
+        // Owned presignatures always include this node, so a non-supporting
+        // leader could never match one. Bail before waiting on the take.
+        let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
+        if !chain_supporters.contains(&my_participant_id) {
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
+            anyhow::bail!("this node does not support the requested chain {requested_chain:?}");
+        }
+
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        let eligible: Vec<ParticipantId> = self
-            .ecdsa_signature_provider
-            .alive_participant_ids()
-            .into_iter()
-            .filter(|id| chain_supporters.contains(id))
-            .collect();
-        let (presignature_id, presignature) = keyshare
+        // Aliveness is enforced inside the store: the take requires the
+        // presignature's participants to satisfy the (continuously refreshed)
+        // alive condition and be a subset of the chain's supporters. Since
+        // presignature generation is not chain-aware, a compatible one may
+        // not exist yet, count and log when the take has to wait.
+        let take = keyshare
             .presignature_store
-            .take_owned_matching(eligible)
-            .await;
+            .take_owned_matching(chain_supporters.iter().copied().collect());
+        tokio::pin!(take);
+        let (presignature_id, presignature) =
+            match timeout(PRESIGNATURE_TAKE_GRACE_PERIOD, &mut take).await {
+                Ok(taken) => taken,
+                Err(_) => {
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS.inc();
+                    tracing::warn!(
+                        ?requested_chain,
+                        "no chain-compatible presignature available, waiting"
+                    );
+                    take.await
+                }
+            };
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {

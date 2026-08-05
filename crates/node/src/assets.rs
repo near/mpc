@@ -166,12 +166,9 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         ColdQueueAddIfNotSatisfiedResult::Enqueued
     }
 
-    /// Adds an element to the cold queue based on condition evaluation:
-    /// - if satisfied: it to the front of the queue
-    /// - if not: at the end
-    ///   and modifies barriers accordingly.
+    /// Adds an element to the cold queue unconditionally, never returned.
     pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
-        self.update_condition_value();
+        self.update_condition_value_if_due();
         if (self.condition)(&self.last_condition_value, &value) {
             self.cold_queue.push_front((id, value));
             self.cold_ready += 1;
@@ -181,14 +178,14 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         }
     }
 
-    /// Removes and returns the first element satisfying the condition with
-    /// supplied condition value.
-    /// Modifies barriers accordingly.
+    /// Removes and returns the first element satisfying both the standing
+    /// condition and the caller-supplied `cond_val`, shifting the barriers
+    /// that lie past the removed position.
     pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
-        let pos = self
-            .cold_queue
-            .iter()
-            .position(|(_, val)| (self.condition)(cond_val, val))?;
+        self.update_condition_value_if_due();
+        let pos = self.cold_queue.iter().position(|(_, val)| {
+            (self.condition)(&self.last_condition_value, val) && (self.condition)(cond_val, val)
+        })?;
         if pos < self.cold_ready {
             self.cold_ready -= 1;
         }
@@ -626,8 +623,10 @@ where
         result
     }
 
-    // Takes an owned asset whose participants are all in eligible.
-    // Blocks until there is an asset available satisfying the condition.
+    /// Takes an owned asset satisfying both the standing alive-condition and
+    /// the supplied `eligible` set. Blocks indefinitely if none becomes
+    /// available.
+    /// Callers are expected to enforce their own timeout.
     pub async fn take_owned_matching(&self, eligible: Vec<ParticipantId>) -> (UniqueId, T) {
         let (id, val) = self.owned_queue.take_owned_matching(eligible).await;
         let mut update = self.db.update();
@@ -1468,54 +1467,75 @@ mod tests {
         }
     }
 
+    // The standing condition holds for 2 and 3, the supplied one for 3 and 4:
+    // only 3 satisfies both and may be taken; the rest stay in the queue.
     #[test]
     #[expect(non_snake_case)]
-    fn take_owned_matching__should_return_matching_asset_immediately() {
-        // Given: a queue holding one non-matching and one matching asset.
+    fn take_owned_matching__should_only_take_asset_satisfying_both_conditions() {
+        // Given
         let clock = FakeClock::default();
-        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            |cond: &Vec<i32>, val| cond.contains(val),
+            Arc::new(|| vec![2, 3]),
+        );
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id2 = id1.add_to_counter(1).unwrap();
+        let id3 = id1.add_to_counter(2).unwrap();
         queue.add_owned(id1, 2);
         queue.add_owned(id2, 3);
+        queue.add_owned(id3, 4);
 
-        // When: taking with a condition value matching only the second asset.
-        let taken = queue.take_owned_matching(1).now_or_never();
+        // When
+        let taken = queue.take_owned_matching(vec![3, 4]).now_or_never();
 
-        // Then: the matching asset is returned and the non-matching one stays.
+        // Then
         assert_eq!(taken, Some((id2, 3)));
         assert_eq!(queue.available(), 1);
+        assert_eq!(queue.offline(), 1);
     }
 
+    // A take with a supplied value nothing matches yet parks; it completes once
+    // a matching asset is added, without consuming the non-matching one.
     #[test]
     #[expect(non_snake_case)]
     fn take_owned_matching__should_wait_until_matching_asset_is_added() {
-        // Given: a queue holding only a non-matching asset.
+        // Given
         let clock = FakeClock::default();
-        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            |cond: &Vec<i32>, val| cond.contains(val),
+            Arc::new(|| vec![2, 3]),
+        );
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id2 = id1.add_to_counter(1).unwrap();
         queue.add_owned(id1, 2);
 
-        // When: taking with a condition value nothing matches yet.
-        let fut = queue.take_owned_matching(1);
+        // When
+        let fut = queue.take_owned_matching(vec![3]);
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not take a value when no element matches");
         };
 
-        // Then: the take completes once a matching asset is added.
+        // Then
         queue.add_owned(id2, 3);
         assert_eq!(fut.now_or_never().unwrap(), (id2, 3));
-        // And: the non-matching asset was not consumed.
         assert_eq!(queue.available(), 1);
     }
 
+    // Takes from the middle and the front of the ready section, then attempts an
+    // element failing the standing condition (never returned even when it
+    // satisfies the supplied value), checking barrier consistency at every step.
     #[test]
     #[expect(non_snake_case)]
     fn take_first_matching__should_maintain_barrier_invariants() {
-        // Given: a cold queue partitioned into ready and non-satisfying sections.
+        // Given
         let clock = FakeClock::default();
-        let mut queue = ColdQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let mut queue = ColdQueue::new(
+            clock.clock(),
+            |cond: &Vec<i32>, val| cond.contains(val),
+            Arc::new(|| vec![2, 4]),
+        );
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
         let id2 = id1.add_to_counter(1).unwrap();
         let id3 = id1.add_to_counter(2).unwrap();
@@ -1524,19 +1544,95 @@ mod tests {
         queue.ingest(id3, 3);
         verify_cold_queue_internal_consistency(&queue, 3);
 
-        // When: taking with a condition value differing from the standing one.
-        let taken = queue.take_first_matching(&1);
+        // When
+        let taken = queue.take_first_matching(&vec![2, 3]);
 
-        // Then: the non-satisfying element is removed, barriers stay consistent.
-        assert_eq!(taken, Some((id3, 3)));
+        // Then
+        assert_eq!(taken, Some((id1, 2)));
         verify_cold_queue_internal_consistency(&queue, 2);
 
-        // And: taking under the standing value removes from the ready section.
-        assert_eq!(queue.take_first_matching(&0), Some((id2, 4)));
+        assert_eq!(queue.take_first_matching(&vec![4]), Some((id2, 4)));
         verify_cold_queue_internal_consistency(&queue, 1);
 
-        // And: no match leaves the queue untouched.
-        assert_eq!(queue.take_first_matching(&1), None);
+        assert_eq!(queue.take_first_matching(&vec![3]), None);
         verify_cold_queue_internal_consistency(&queue, 1);
+    }
+
+    // Flips the standing condition between operations (advancing the fake
+    // clock past the refresh interval): the barrier reset must keep the
+    // sections consistent, and takes must honor the new standing value.
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_first_matching__should_stay_consistent_when_condition_value_changes() {
+        // Given
+        let clock = FakeClock::default();
+        let standing = Arc::new(Mutex::new(vec![2, 4]));
+        let mut queue = ColdQueue::new(clock.clock(), |cond: &Vec<i32>, val| cond.contains(val), {
+            let standing = standing.clone();
+            Arc::new(move || standing.lock().unwrap().clone())
+        });
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.ingest(id1, 2);
+        queue.ingest(id2, 3);
+        verify_cold_queue_internal_consistency(&queue, 2);
+
+        // When: the standing condition changes and the refresh comes due.
+        *standing.lock().unwrap() = vec![3];
+        clock.advance(near_time::Duration::seconds(1));
+
+        // Then: 2 no longer satisfies the standing condition and cannot be
+        // taken, while 3 (previously non-satisfying) now can.
+        assert_eq!(queue.take_first_matching(&vec![2]), None);
+        verify_cold_queue_internal_consistency(&queue, 2);
+        assert_eq!(queue.take_first_matching(&vec![3]), Some((id2, 3)));
+        verify_cold_queue_internal_consistency(&queue, 1);
+    }
+
+    // Takes the asset matching the supplied participant set, then reopens the
+    // store from the same DB: only the taken asset is deleted from disk.
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn distributed_store_take_owned_matching__should_delete_taken_asset_from_disk() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let condition: fn(&Vec<ParticipantId>, &u32) -> bool =
+            |eligible, val| eligible.contains(&ParticipantId::from_raw(*val));
+        let alive = || vec![ParticipantId::from_raw(123), ParticipantId::from_raw(456)];
+        let new_store = |db: Arc<crate::db::SecretDB>| {
+            DistributedAssetStorage::<u32>::new(
+                FakeClock::default().clock(),
+                db,
+                crate::db::DBCol::TripleV2,
+                Vec::new(),
+                ParticipantId::from_raw(42),
+                condition,
+                Arc::new(alive),
+            )
+            .unwrap()
+        };
+        let store = new_store(db.clone());
+        let id1 = store.generate_and_reserve_id();
+        let id2 = store.generate_and_reserve_id();
+        store.add_owned(id1, 123);
+        store.add_owned(id2, 456);
+
+        // When
+        let taken = store
+            .take_owned_matching(vec![ParticipantId::from_raw(456)])
+            .await;
+        drop(store);
+        let reopened = new_store(db);
+
+        // Then
+        assert_eq!(taken, (id2, 456));
+        assert_eq!(reopened.num_owned(), 1);
+        assert_eq!(
+            reopened
+                .take_owned_matching(vec![ParticipantId::from_raw(123)])
+                .await,
+            (id1, 123)
+        );
     }
 }
