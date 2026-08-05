@@ -41,8 +41,6 @@ where
             .client
             .get_ledger_info()
             .await
-            // Unlike a transaction lookup, a 404 here means the URL does not serve the Aptos
-            // API at all, which no retry can change.
             .map_err(classify_rest_error)?;
         Ok(Self::canonical_fingerprint(
             &ledger_info.chain_id.to_string(),
@@ -112,7 +110,9 @@ where
     }
 }
 
-/// A refusal is a substantive verdict, so only what a retry could change is transient.
+/// A refusal is a substantive verdict, so only what a retry could change is transient. A 404 is a
+/// refusal like any other; a caller that asked for something that can legitimately be absent, such
+/// as a transaction, maps it before delegating.
 fn classify_rest_error(error: AptosRpcError) -> ForeignChainInspectionError {
     let message = error.to_string();
     match error {
