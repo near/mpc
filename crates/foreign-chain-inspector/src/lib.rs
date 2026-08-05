@@ -1,10 +1,16 @@
 use std::hash::Hash;
+use std::num::NonZeroU64;
+use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
 use ethereum_types::H256;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use jsonrpsee::core::client::error::Error as RpcClientError;
+use jsonrpsee::core::http_helpers::HttpError;
+use jsonrpsee::http_client::transport::Error as HttpTransportError;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use near_mpc_bounded_collections::NonEmptyVec;
+use near_mpc_contract_interface::types::ProviderId;
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -35,6 +41,23 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
 }
 
+/// The network a provider serves, as the chain itself reports it: a chain id or a genesis hash, in
+/// one canonical text form per chain.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
+pub struct NetworkFingerprint(String);
+
+/// Reports the [`NetworkFingerprint`] of the provider an inspector talks to, in the form
+/// [`Self::canonical_fingerprint`] produces.
+pub trait NetworkFingerprintInspector {
+    fn network_fingerprint(
+        &self,
+    ) -> impl Future<Output = Result<NetworkFingerprint, ForeignChainInspectionError>> + Send;
+
+    /// Normalizes any spec-legal spelling of this chain's fingerprint into the single form the trait
+    /// compares. Idempotent.
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint;
+}
+
 /// Combines multiple inspectors that target the same chain into a single inspector.
 ///
 /// All inner inspectors are queried concurrently. The fan-out treats every
@@ -58,7 +81,7 @@ pub trait ForeignChainInspector {
 /// inner fields differ.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
-    inspectors: NonEmptyVec<Inspector>,
+    inspectors: NonEmptyVec<(ProviderId, Inspector)>,
 }
 
 impl<Inspector> ForeignChainInspector for FanOut<Inspector>
@@ -81,25 +104,30 @@ where
         extractors: Vec<Self::Extractor>,
     ) -> Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
-        for (idx, inspector) in self.inspectors.iter().enumerate() {
+        for (provider, inspector) in self.inspectors.iter() {
             let tx_id = tx_id.clone();
             let finality = finality.clone();
             let extractors = extractors.clone();
             let inspector = inspector.clone();
-            join_set
-                .spawn(async move { (idx, inspector.extract(tx_id, finality, extractors).await) });
+            let provider = provider.clone();
+            join_set.spawn(async move {
+                (
+                    provider,
+                    inspector.extract(tx_id, finality, extractors).await,
+                )
+            });
         }
 
-        let mut successes: Vec<(usize, Vec<Self::ExtractedValue>)> = Vec::new();
-        let mut non_transient_errors: Vec<(usize, ForeignChainInspectionError)> = Vec::new();
+        let mut successes: Vec<(ProviderId, Vec<Self::ExtractedValue>)> = Vec::new();
+        let mut non_transient_errors: Vec<(ProviderId, ForeignChainInspectionError)> = Vec::new();
         let mut first_transient_error: Option<ForeignChainInspectionError> = None;
 
-        for (idx, result) in join_set.join_all().await {
+        for (provider, result) in join_set.join_all().await {
             match result {
-                Ok(values) => successes.push((idx, values)),
+                Ok(values) => successes.push((provider, values)),
                 Err(err) if err.is_transient() => {
                     tracing::warn!(
-                        inspector_index = idx,
+                        %provider,
                         error = %err,
                         "fan-out inspector failed (transient)",
                     );
@@ -107,11 +135,11 @@ where
                 }
                 Err(err) => {
                     tracing::error!(
-                        inspector_index = idx,
+                        %provider,
                         error = %err,
                         "fan-out inspector failed (non-transient)",
                     );
-                    non_transient_errors.push((idx, err));
+                    non_transient_errors.push((provider, err));
                 }
             }
         }
@@ -168,6 +196,50 @@ where
     }
 }
 
+/// Pause between two tries at the same provider.
+pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
+
+impl<Inspector> FanOut<Inspector>
+where
+    Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+{
+    /// Ask every provider for the network it serves concurrently, one result each.
+    /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
+    /// individual answers. Each provider gets up to `attempts` tries, `timeout` per try plus
+    /// [`RETRY_BACKOFF`] between them, and only a transient failure is retried.
+    pub async fn network_fingerprints(
+        &self,
+        timeout: Duration,
+        attempts: NonZeroU64,
+    ) -> Vec<(
+        ProviderId,
+        Result<NetworkFingerprint, ForeignChainInspectionError>,
+    )> {
+        let mut join_set = tokio::task::JoinSet::new();
+        for (provider, inspector) in self.inspectors.iter() {
+            let inspector = inspector.clone();
+            let provider = provider.clone();
+            join_set.spawn(async move {
+                let ask = || async {
+                    tokio::time::timeout(timeout, inspector.network_fingerprint())
+                        .await
+                        .unwrap_or(Err(ForeignChainInspectionError::Timeout))
+                };
+                let mut outcome = ask().await;
+                for _ in 1..attempts.get() {
+                    if !matches!(&outcome, Err(err) if err.is_transient()) {
+                        break;
+                    }
+                    tokio::time::sleep(RETRY_BACKOFF).await;
+                    outcome = ask().await;
+                }
+                (provider, outcome)
+            });
+        }
+        join_set.join_all().await
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RpcAuthentication {
     /// The key is in the URL (e.g., Alchemy, QuickNode).
@@ -218,6 +290,8 @@ pub enum ForeignChainInspectionError {
     /// Transient provider failure (transport error, timeout, rate limit, 5xx).
     #[error("RPC request failed: {0}")]
     RpcRequestFailed(String),
+    #[error("RPC request did not complete within the configured timeout")]
+    Timeout,
     /// The provider rejected the request with a deterministic client error (4xx other than
     /// 408/429); retrying cannot change the outcome.
     #[error("RPC rejected the request: {0}")]
@@ -281,10 +355,103 @@ impl ForeignChainInspectionError {
             self,
             Self::ClientError(_)
                 | Self::RpcRequestFailed(_)
+                | Self::Timeout
                 | Self::NotFinalized
                 | Self::NotEnoughBlockConfirmations { .. }
         )
     }
+
+    /// Maps a raw RPC client error to an error with context.
+    pub fn classify_rpc_client_error(error: RpcClientError) -> Self {
+        match error {
+            RpcClientError::Call(object) => {
+                let code = object.code();
+                let message = format!("JSON-RPC error code {code}");
+                if is_rate_limit_error_code(code) {
+                    Self::RpcRequestFailed(message)
+                } else {
+                    Self::RpcRequestRejected(message)
+                }
+            }
+            RpcClientError::ParseError(error) => Self::MalformedRpcResponse(error.to_string()),
+            RpcClientError::RequestTimeout => Self::Timeout,
+            RpcClientError::Transport(error) => {
+                match error.downcast_ref::<HttpTransportError>() {
+                    Some(HttpTransportError::Rejected { status_code }) => {
+                        let status = format!("HTTP status {status_code}");
+                        if is_retryable_status(*status_code) {
+                            Self::RpcRequestFailed(status)
+                        } else {
+                            Self::RpcRequestRejected(status)
+                        }
+                    }
+                    // Not a response the caller can use, as opposed to no response at all.
+                    Some(HttpTransportError::Http(HttpError::Malformed)) => {
+                        Self::MalformedRpcResponse("response was not valid JSON-RPC".to_string())
+                    }
+                    Some(HttpTransportError::Http(HttpError::TooLarge)) => {
+                        Self::MalformedRpcResponse("response exceeded the size limit".to_string())
+                    }
+                    Some(HttpTransportError::Url(_)) => {
+                        Self::RpcRequestRejected("invalid RPC URL".to_string())
+                    }
+                    _ => Self::RpcRequestFailed("transport failure".to_string()),
+                }
+            }
+            other => Self::RpcRequestFailed(other.to_string()),
+        }
+    }
+
+    /// How the provider failed, or [`None`] when the provider did not: the remaining variants
+    /// report the transaction's own state, which is an answer rather than a fault.
+    pub fn provider_failure(&self) -> Option<ProviderFailure> {
+        match self {
+            Self::ClientError(_) | Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
+            Self::Timeout => Some(ProviderFailure::TimedOut),
+            Self::RpcRequestRejected(_) => Some(ProviderFailure::Rejected),
+            Self::MalformedRpcResponse(_)
+            | Self::InconsistentRpcResponse { .. }
+            | Self::LogNotBoundToReceipt { .. }
+            | Self::EventLogFailedBorshSerialization(_)
+            | Self::InspectorResponseMismatch => Some(ProviderFailure::Malformed),
+            Self::NotFinalized
+            | Self::NotEnoughBlockConfirmations { .. }
+            | Self::NonCanonicalBlock { .. }
+            | Self::TransactionFailed
+            | Self::TransactionNotFound
+            | Self::LogIndexOutOfBounds => None,
+        }
+    }
+}
+
+/// Some providers report throttling as a JSON-RPC error object over HTTP 200 rather than a 429, and
+/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`.
+fn is_rate_limit_error_code(code: i32) -> bool {
+    const LIMIT_EXCEEDED: i32 = -32005;
+    const TOO_MANY_REQUESTS: i32 = -32029;
+
+    matches!(code, LIMIT_EXCEEDED | TOO_MANY_REQUESTS)
+}
+
+fn is_retryable_status(status_code: u16) -> bool {
+    const REQUEST_TIMEOUT: u16 = 408;
+    const TOO_MANY_REQUESTS: u16 = 429;
+    const SERVER_ERROR: u16 = 500;
+
+    matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
+}
+
+/// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
+/// on it. Says nothing about retryability: see [`ForeignChainInspectionError::is_transient`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProviderFailure {
+    /// No answer arrived: transport failure, 5xx, or rate limiting.
+    Unreachable,
+    /// The provider answered and refused. Retrying cannot change it.
+    Rejected,
+    /// The provider answered with something the caller could not use.
+    Malformed,
+    TimedOut,
 }
 
 /// Builds an HTTP client with the specified authentication method.
@@ -311,4 +478,210 @@ pub fn build_http_client(
         .build(&base_url)?;
 
     Ok(client)
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use rstest::rstest;
+
+    fn transport(error: HttpTransportError) -> RpcClientError {
+        RpcClientError::Transport(Box::new(error))
+    }
+
+    #[rstest]
+    #[case(400)]
+    #[case(401)]
+    #[case(403)]
+    #[case(404)]
+    fn classify_rpc_client_error__should_report_a_deterministic_status_as_a_refusal(
+        #[case] status_code: u16,
+    ) {
+        // Given
+        let error = transport(HttpTransportError::Rejected { status_code });
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestRejected(_)
+        );
+        assert!(!classified.is_transient());
+    }
+
+    #[rstest]
+    #[case(408)]
+    #[case(429)]
+    #[case(500)]
+    #[case(503)]
+    fn classify_rpc_client_error__should_report_a_retryable_status_as_a_transient_failure(
+        #[case] status_code: u16,
+    ) {
+        // Given
+        let error = transport(HttpTransportError::Rejected { status_code });
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestFailed(_)
+        );
+        assert!(classified.is_transient());
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_jsonrpc_error_object_as_a_refusal() {
+        // Given
+        let error = RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -32600,
+            "Must be authenticated!",
+            None::<()>,
+        ));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestRejected(_)
+        );
+        assert!(!classified.is_transient());
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_an_unparseable_result_as_malformed() {
+        // Given
+        let parse_error =
+            serde_json::from_str::<String>("7").expect_err("a number is not a string");
+        let error = RpcClientError::ParseError(parse_error);
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            classified,
+            ForeignChainInspectionError::MalformedRpcResponse(_)
+        );
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_body_that_is_not_jsonrpc_as_malformed() {
+        // Given
+        let error = transport(HttpTransportError::Http(HttpError::Malformed));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            classified,
+            ForeignChainInspectionError::MalformedRpcResponse(_)
+        );
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_connection_failure_as_transient() {
+        // Given
+        let error = transport(HttpTransportError::Http(HttpError::Stream(Box::new(
+            std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused"),
+        ))));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestFailed(_)
+        );
+        assert!(classified.is_transient());
+    }
+
+    /// `Path` and `Query` auth splice the API key into the URL, and jsonrpsee puts that URL in the
+    /// text of the error it reports for it.
+    #[test]
+    fn classify_rpc_client_error__should_keep_the_rpc_url_out_of_the_message() {
+        // Given
+        let url_carrying_a_key = "http://provider.example/v2/super-secret".to_string();
+        let error = transport(HttpTransportError::Url(url_carrying_a_key));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        let rendered = classified.to_string();
+        assert!(!rendered.contains("super-secret"), "{rendered}");
+    }
+
+    #[test]
+    fn classify_rpc_client_error__should_report_a_client_side_timeout_as_a_timeout() {
+        // Given
+        let error = RpcClientError::RequestTimeout;
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(classified, ForeignChainInspectionError::Timeout);
+    }
+
+    #[rstest]
+    #[case(-32005)]
+    #[case(-32029)]
+    fn classify_rpc_client_error__should_report_a_rate_limit_code_as_a_transient_failure(
+        #[case] code: i32,
+    ) {
+        // Given
+        let error = RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            code,
+            "limit exceeded",
+            None::<()>,
+        ));
+
+        // When
+        let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
+
+        // Then
+        assert_matches!(
+            &classified,
+            ForeignChainInspectionError::RpcRequestFailed(_)
+        );
+        assert!(classified.is_transient());
+    }
+
+    #[rstest]
+    #[case(ForeignChainInspectionError::RpcRequestFailed("_".to_string()), Some(ProviderFailure::Unreachable))]
+    #[case(ForeignChainInspectionError::RpcRequestRejected("_".to_string()), Some(ProviderFailure::Rejected))]
+    #[case(ForeignChainInspectionError::Timeout, Some(ProviderFailure::TimedOut))]
+    #[case(ForeignChainInspectionError::MalformedRpcResponse("_".to_string()), Some(ProviderFailure::Malformed))]
+    #[case(
+        ForeignChainInspectionError::InspectorResponseMismatch,
+        Some(ProviderFailure::Malformed)
+    )]
+    // The transaction's own state is an answer, not a fault of the provider that reported it.
+    #[case(ForeignChainInspectionError::TransactionNotFound, None)]
+    #[case(ForeignChainInspectionError::TransactionFailed, None)]
+    #[case(ForeignChainInspectionError::NotFinalized, None)]
+    #[case(ForeignChainInspectionError::NotEnoughBlockConfirmations {
+        expected: BlockConfirmations::from(6),
+        got: BlockConfirmations::from(1),
+    }, None)]
+    fn provider_failure__should_name_only_the_failures_the_provider_owns(
+        #[case] error: ForeignChainInspectionError,
+        #[case] expected: Option<ProviderFailure>,
+    ) {
+        // When
+        let failure = error.provider_failure();
+
+        // Then
+        assert_eq!(failure, expected);
+    }
 }

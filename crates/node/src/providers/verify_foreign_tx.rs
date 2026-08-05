@@ -22,13 +22,15 @@ use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
+use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Pre-built HTTP clients for each foreign chain, keyed in provider config order.
+/// Pre-built HTTP clients for each foreign chain, one per configured provider and named by its
+/// [`ProviderId`].
 ///
-/// Built once at startup so that request handling only needs to select an index
-/// instead of re-parsing config and constructing clients on every call.
+/// Built once at startup so that request handling fans out over ready clients instead of re-parsing
+/// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
     pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
     pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
@@ -52,12 +54,13 @@ impl ForeignChainInspectors<HttpClient> {
                 return Ok(None);
             };
             let timeout = Duration::from_secs(c.timeout_sec.get());
-            let inspectors = c.providers.try_map_to_vec(|_, p| {
+            let inspectors = c.providers.try_map_to_vec(|name, p| {
                 // `Path`/`Query` auth is substituted into `url`; `Header` auth is returned
                 // as `RpcAuthentication::CustomHeader` for the client to install.
                 let mut url = p.rpc_url.clone();
                 let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                new_inspector(url, rpc_auth, timeout)
+                let inspector = new_inspector(url, rpc_auth, timeout)?;
+                anyhow::Ok((ProviderId(name.as_str().to_owned()), inspector))
             })?;
             Ok(Some(FanOut::new(inspectors)))
         }

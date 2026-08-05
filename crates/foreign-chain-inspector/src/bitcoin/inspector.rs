@@ -7,13 +7,13 @@ use foreign_chain_rpc_interfaces::bitcoin::{
     GetRawTransactionVerboseResponse, TransportBitcoinBlockHash, TransportBitcoinTransactionHash,
 };
 
-/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
+/// <https://developer.bitcoin.org/reference/rpc/getrawtransaction.html>
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
-/// https://developer.bitcoin.org/reference/rpc/getblockheader.html
+/// <https://developer.bitcoin.org/reference/rpc/getblockheader.html>
 const GET_BLOCK_HEADER_METHOD: &str = "getblockheader";
-/// https://developer.bitcoin.org/reference/rpc/getblockhash.html
+/// <https://developer.bitcoin.org/reference/rpc/getblockhash.html>
 const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 
 #[derive(Clone)]

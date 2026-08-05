@@ -182,7 +182,7 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host where your node is running (e.g., `node.example.com`). Available from the contract — your participant entry's `url` in the `state` view.
+- **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view.
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
@@ -205,7 +205,12 @@ near contract call-function as-read-only \
 This saves the contract state to `contract_state.json`, which the backup-cli uses to determine the current epoch and which keyshares to request from the node (based on the domains in the current keyset).
 
 ### Run the Backup
-Port 8079 is the default port for the migration endpoint.
+
+The migration endpoint listens on the node's `migration_web_ui` port. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
+
+```bash
+curl -s http://<IP>:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
+```
 
 ```bash
 backup-cli \
@@ -217,6 +222,8 @@ backup-cli \
 ```
 
 Each request to the node is bounded by `--request-timeout-seconds` (default 30). If the transfer fails with a timeout on a slow link, raise it.
+
+> **No `http://` in `--mpc-node-address`** — it takes a bare `host:port`. With a scheme, the lookup fails with `Name or service not known`.
 
 The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains`, with `$BACKUP_HOME_DIR/key` as a hard link to the newest one. Both entries point at the same file, and the backup service reads only `key`.
 
@@ -440,7 +447,9 @@ After verifying the migration was successful:
 
 If backup-cli cannot connect to your node:
 
-- **Verify firewall rules**: Ensure the backup service can reach the node's address and that port 8079 is open and accessible.
+- **`failed to lookup address information: Name or service not known`**: `--mpc-node-address` must be a bare `host:port` with no URL scheme and no trailing path. A value like `http://node.example.com:8079` is parsed as hostname `http://node.example.com`, which no resolver can answer.
+- **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://<IP>:8080/debug/node_config`. The same endpoint shows the bind address, which must not be loopback-only.
+- **Verify firewall rules**: Ensure the backup service can reach the node's address and that the migration port is open and accessible. Test with `nc -vz <host> <port>` rather than `curl`; the endpoint is a raw TLS channel authenticated against the registered backup-service key, so it does not answer plain HTTP requests.
 
 ## Known Limitations
 

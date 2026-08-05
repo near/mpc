@@ -126,7 +126,8 @@ impl RobustEcdsaSignatureProvider {
 
 /// Performs an MPC signature operation. This is the same for the initiator
 /// and for passive participants.
-/// The entropy is used to rerandomize the presignature (inspired by [GS21])
+/// The entropy is used to rerandomize the presignature (inspired by
+/// \[[GS21](https://eprint.iacr.org/2021/1330.pdf)\])
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,

@@ -44,7 +44,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.13.0"
+version = "3.14.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -91,7 +91,7 @@ average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 backtrace = "0.3"
-base64 = "0.22.1"
+base64 = "0.23.0"
 blstrs = "0.7.1"
 borsh = { version = "1.6.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
@@ -188,7 +188,7 @@ near-crypto-public = { version = "0.37.1", package = "near-crypto" }
 near-gas = "0.3.4"
 near-jsonrpc-client = "0.22.0"
 near-jsonrpc-primitives = "0.37.1"
-near-kit = { version = "0.12.1", default-features = false }
+near-kit = { version = "0.14.0", default-features = false, features = ["rpc"] }
 near-primitives = "0.37.1"
 near-sandbox = "0.3.11"
 near-sdk = { version = "5.29.0", features = [
@@ -227,7 +227,7 @@ serde_bytes = "0.11.19"
 serde_json = "1.0"
 serde_repr = "0.1.20"
 serde_with = { version = "3.20.0", features = ["hex"] }
-serial_test = "3.4.0"
+serial_test = "4.0.1"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
@@ -270,16 +270,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.2" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88

@@ -1,0 +1,43 @@
+id: mod-declaration-visibility-order
+valid:
+  - |
+    pub mod a;
+    pub(crate) mod b;
+    pub(super) mod c;
+
+    mod d;
+  # A `#[macro_use]` module has to stay first, so it never counts as a predecessor.
+  - |
+    #[macro_use]
+    mod macros;
+    pub mod a;
+  - |
+    #[macro_use]
+    pub(crate) mod macros;
+    pub mod a;
+  # Same tier in either direction.
+  - |
+    pub(crate) mod a;
+    pub(super) mod b;
+invalid:
+  - |
+    mod a;
+    pub mod b;
+  - |
+    pub(crate) mod a;
+    pub mod b;
+  - |
+    mod a;
+    pub(crate) mod b;
+  - |
+    mod a;
+    pub(super) mod b;
+  # Neither a comment nor an attribute must hide the predecessor.
+  - |
+    mod a;
+    // documentation
+    pub mod b;
+  - |
+    mod a;
+    #[cfg(test)]
+    pub mod b;
