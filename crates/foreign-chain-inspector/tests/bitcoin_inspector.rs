@@ -7,7 +7,8 @@ use crate::common::{
 };
 
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
+    NetworkFingerprintInspector, RpcAuthentication,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
         inspector::{BitcoinExtractor, BitcoinInspector},
@@ -371,4 +372,54 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
     assert_eq!(expected_extractions, extracted_values);
+}
+
+/// Bitcoin mainnet's genesis block hash, as block explorers render it.
+const GENESIS_HASH: &str = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+#[tokio::test]
+async fn network_fingerprint__should_return_the_genesis_block_hash_in_lowercase() {
+    // Given
+    let inspector = BitcoinInspector::new(mock_client_from_fixed_response(
+        GENESIS_HASH.to_ascii_uppercase(),
+    ));
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    assert_eq!(fingerprint.to_string(), GENESIS_HASH);
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zero() {
+    // Given
+    let server = MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .body_includes(r#""method":"getblockhash""#)
+                .body_includes(r#""params":[0]"#);
+            then.status(200).json_body(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "result": GENESIS_HASH,
+            }));
+        })
+        .await;
+    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let inspector = BitcoinInspector::new(client);
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    mock.assert_async().await;
+    assert_eq!(fingerprint.to_string(), GENESIS_HASH);
 }
