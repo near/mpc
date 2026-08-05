@@ -1059,6 +1059,10 @@ expression: abi
                       [
                         "resolve_verification_tera_gas",
                         "u64"
+                      ],
+                      [
+                        "launcher_hash_unused_ttl_seconds",
+                        "u64"
                       ]
                     ]
                   },
@@ -3587,6 +3591,7 @@ expression: abi
             "fail_attestation_submission_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "launcher_hash_unused_ttl_seconds",
             "remove_non_participant_tee_verifier_votes_tera_gas",
             "remove_non_participant_update_votes_tera_gas",
             "resolve_verification_tera_gas",
@@ -3647,6 +3652,12 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "launcher_hash_unused_ttl_seconds": {
+              "description": "TTL after which a launcher image hash unused by any participant is evicted. Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on use), not retroactively — changing it does not re-date existing entries.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -4335,6 +4346,15 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "launcher_hash_unused_ttl_seconds": {
+              "description": "TTL after which a launcher image hash unused by any participant is evicted.",
               "type": [
                 "integer",
                 "null"
