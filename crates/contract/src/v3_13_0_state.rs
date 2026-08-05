@@ -27,15 +27,16 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
+    tee::tee_state::TeeState,
+    tee::verifier_votes::TeeVerifierVotes,
     update::ProposedUpdates,
 };
 
-/// Shadow of the `3.13.0` [`Config`]: the deployed layout predates the async
-/// attestation gas fields (`fail_attestation_submission_tera_gas`,
-/// `verifier_tera_gas`, `resolve_verification_tera_gas`), so migrating state
-/// written by `3.13.0` must deserialize the old field set and then default the
-/// new ones.
+/// Shadow of the `3.13.0` [`Config`]: the deployed layout predates this release's new
+/// `Config` fields — the async attestation gas fields (`fail_attestation_submission_tera_gas`,
+/// `verifier_tera_gas`, `resolve_verification_tera_gas`) and the launcher-eviction field
+/// (`launcher_hash_unused_ttl_seconds`) — so
+/// migrating `3.13.0` state deserializes the old field set and defaults the new ones.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldConfig {
     key_event_timeout_blocks: u64,
@@ -56,8 +57,8 @@ struct OldConfig {
 
 impl From<OldConfig> for Config {
     fn from(old: OldConfig) -> Self {
-        // Carry the deployed values; the async attestation gas fields are new in
-        // this release, so take their defaults.
+        // Carry the deployed values; the new fields (async attestation gas + launcher
+        // eviction) are added in this release, so take their defaults.
         Config {
             key_event_timeout_blocks: old.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
@@ -85,9 +86,68 @@ impl From<OldConfig> for Config {
     }
 }
 
-/// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
-/// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.13.0` contract still deserializes during migration.
+/// `3.13.0` layout of `AllowedLauncherImage`: the current type appends an `expires_at`
+/// timestamp, so the real type can no longer decode old bytes.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldAllowedLauncherImage {
+    launcher_hash: mpc_primitives::hash::LauncherImageHash,
+    compose_hashes: Vec<mpc_primitives::hash::LauncherDockerComposeHash>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldAllowedLauncherImages {
+    entries: Vec<OldAllowedLauncherImage>,
+}
+
+/// `3.13.0` layout of `TeeState`. Only `allowed_launcher_images` changed borsh
+/// layout; every other field reuses the real (byte-identical) type. Field order
+/// must match [`crate::tee::tee_state::TeeState`] exactly.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: crate::tee::proposal::StoredDockerImageHashes,
+    allowed_launcher_images: OldAllowedLauncherImages,
+    votes: crate::tee::proposal::CodeHashesVotes,
+    launcher_votes: crate::tee::proposal::LauncherHashVotes,
+    stored_attestations: near_sdk::store::IterableMap<
+        near_mpc_contract_interface::types::Ed25519PublicKey,
+        crate::tee::tee_state::NodeAttestation,
+    >,
+    allowed_measurements: crate::tee::measurements::AllowedMeasurements,
+    measurement_votes: crate::tee::measurements::MeasurementVotes,
+}
+
+impl From<OldTeeState> for crate::tee::tee_state::TeeState {
+    fn from(old: OldTeeState) -> Self {
+        // `new` stamps `expires_at = migration_block_time + default_TTL` (constant within
+        // this call), so migrated entries stay live for the default unused-TTL window.
+        let ttl =
+            std::time::Duration::from_secs(crate::config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS);
+        let entries = old
+            .allowed_launcher_images
+            .entries
+            .into_iter()
+            .map(|e| {
+                crate::tee::proposal::AllowedLauncherImage::new(
+                    e.launcher_hash,
+                    e.compose_hashes,
+                    ttl,
+                )
+            })
+            .collect();
+        crate::tee::tee_state::TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: crate::tee::proposal::AllowedLauncherImages::from_entries(
+                entries,
+            ),
+            votes: old.votes,
+            launcher_votes: old.launcher_votes,
+            stored_attestations: old.stored_attestations,
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: old.measurement_votes,
+        }
+    }
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -97,7 +157,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: OldConfig,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     metrics: Metrics,
@@ -153,10 +213,10 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         }
 
-        // Legacy `MockAttestation::Valid` entries never expire and can never be
-        // cleaned up. Stamp an expiry on them so the standard cleanup flow can
-        // evict stale mock entries after the upgrade.
-        let mut tee_state = old.tee_state;
+        // First convert the shadowed `3.13.0` `TeeState` (stamping `expires_at` on launcher
+        // entries), then stamp an expiry on legacy `MockAttestation::Valid` entries — which
+        // never expire and could otherwise never be cleaned up.
+        let mut tee_state: crate::tee::tee_state::TeeState = old.tee_state.into();
         stamp_expiry_on_legacy_mocks(&mut tee_state, TeeState::current_time_seconds());
 
         crate::MpcContract {
@@ -181,14 +241,83 @@ impl From<MpcContract> for crate::MpcContract {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{TeeState, VerifiedAttestation, attestation, stamp_expiry_on_legacy_mocks};
+    use super::*;
     use crate::primitives::test_utils::bogus_ed25519_public_key;
+    use crate::storage_keys::StorageKey;
+    use crate::tee::proposal::{
+        CodeHashesVotes, LauncherHashVotes, StoredDockerImageHashes, get_docker_compose_hash,
+    };
     use crate::tee::tee_state::{NodeAttestation, NodeId};
     use crate::tee::test_utils::set_block_timestamp;
     use mpc_attestation::attestation::MockAttestation;
-    use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
+    use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
+    use near_sdk::store::IterableMap;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use std::time::Duration;
+
+    /// The `3.13.0` launcher layout (no timestamp) must deserialize under the shadow and
+    /// migrate: launcher hash + compose hashes preserved, and `expires_at` set to
+    /// `migration_time + default_TTL` (NOT the borsh/epoch default, which would immediately
+    /// expire every migrated hash). Both entries surviving at the migration block time
+    /// proves the expiry was stamped forward rather than to epoch 0.
+    #[test]
+    fn migration__should_preserve_launcher_hashes_and_stamp_timestamps() {
+        // Given two 3.13.0 launcher entries in the old, timestamp-less layout.
+        const MIGRATION_TIME_SECS: u64 = 1_000_000;
+        let launcher_1 = LauncherImageHash::from([1u8; 32]);
+        let launcher_2 = LauncherImageHash::from([2u8; 32]);
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let compose_1 = get_docker_compose_hash(&launcher_1, &mpc_hash);
+        let compose_2 = get_docker_compose_hash(&launcher_2, &mpc_hash);
+
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(MIGRATION_TIME_SECS * 1_000_000_000)
+                .build()
+        );
+
+        let old = OldTeeState {
+            allowed_docker_image_hashes: StoredDockerImageHashes::default(),
+            allowed_launcher_images: OldAllowedLauncherImages {
+                entries: vec![
+                    OldAllowedLauncherImage {
+                        launcher_hash: launcher_1,
+                        compose_hashes: vec![compose_1],
+                    },
+                    OldAllowedLauncherImage {
+                        launcher_hash: launcher_2,
+                        compose_hashes: vec![compose_2],
+                    },
+                ],
+            },
+            votes: CodeHashesVotes::default(),
+            launcher_votes: LauncherHashVotes::default(),
+            stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
+            allowed_measurements: Default::default(),
+            measurement_votes: Default::default(),
+        };
+
+        // When migrated (borsh round-trip through the shadow, then into the real `TeeState`).
+        let bytes = borsh::to_vec(&old).unwrap();
+        let decoded: OldTeeState = borsh::from_slice(&bytes).unwrap();
+        let migrated: crate::tee::tee_state::TeeState = decoded.into();
+
+        // Then launcher hashes and compose hashes are carried over.
+        assert_eq!(
+            migrated.get_allowed_launcher_hashes(),
+            vec![launcher_1, launcher_2]
+        );
+        assert_eq!(
+            migrated.get_allowed_launcher_compose_hashes(),
+            vec![compose_1, compose_2]
+        );
+
+        // `expires_at` was stamped to `migration_time + default_TTL`: at the migration block
+        // time both entries are still live (both surface, not just the newest-only fallback).
+        // Had they defaulted to epoch 0, both would be expired and the fallback would surface
+        // only one.
+        assert_eq!(migrated.get_allowed_launcher_hashes().len(), 2);
+    }
 
     #[test]
     fn stamp_expiry_on_legacy_mocks__should_make_valid_mock_cleanable() {
@@ -225,6 +354,74 @@ mod tests {
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
 
         // Then: the stale legacy mock entry is removed.
+        assert_eq!(removed, 1);
+        assert!(
+            !tee_state
+                .stored_attestations
+                .contains_key(&node_id.tls_public_key)
+        );
+    }
+
+    #[test]
+    fn migration__should_stamp_launcher_expiry_and_make_legacy_mocks_cleanable() {
+        // Given: a `3.13.0` TeeState carrying both a launcher image (old, timestamp-less
+        // layout) and a legacy `MockAttestation::Valid` stored attestation (no expiry) —
+        // the two things this release's migration must each handle.
+        const MIGRATION_TIME_SECS: u64 = 1_000_000;
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(MIGRATION_TIME_SECS * 1_000_000_000)
+                .build()
+        );
+
+        let launcher = LauncherImageHash::from([1u8; 32]);
+        let mpc_hash = NodeImageHash::from([10u8; 32]);
+        let compose = get_docker_compose_hash(&launcher, &mpc_hash);
+
+        let mut stored_attestations = IterableMap::new(StorageKey::StoredAttestations);
+        let node_id = NodeId {
+            account_id: "legacy.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_public_key(),
+            account_public_key: bogus_ed25519_public_key(),
+        };
+        stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id: node_id.clone(),
+                verified_attestation: VerifiedAttestation::Mock(MockAttestation::Valid),
+            },
+        );
+
+        let old = OldTeeState {
+            allowed_docker_image_hashes: StoredDockerImageHashes::default(),
+            allowed_launcher_images: OldAllowedLauncherImages {
+                entries: vec![OldAllowedLauncherImage {
+                    launcher_hash: launcher,
+                    compose_hashes: vec![compose],
+                }],
+            },
+            votes: CodeHashesVotes::default(),
+            launcher_votes: LauncherHashVotes::default(),
+            stored_attestations,
+            allowed_measurements: Default::default(),
+            measurement_votes: Default::default(),
+        };
+
+        // When: the full `From<MpcContract>` sequence runs on the TeeState — our shadow
+        // conversion (stamps launcher `expires_at`) followed by the legacy-mock stamping.
+        let mut tee_state: TeeState = old.into();
+        stamp_expiry_on_legacy_mocks(&mut tee_state, TeeState::current_time_seconds());
+
+        // Then: the launcher was migrated with a stamped `expires_at` and is live.
+        assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![launcher]);
+
+        // And: the previously un-expiring legacy mock is now cleanable once the clock
+        // passes its stamped window — proving both migration steps applied.
+        set_block_timestamp(
+            (MIGRATION_TIME_SECS + attestation::DEFAULT_EXPIRATION_DURATION_SECONDS + 1)
+                * 1_000_000_000,
+        );
+        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100);
         assert_eq!(removed, 1);
         assert!(
             !tee_state

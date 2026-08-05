@@ -40,6 +40,7 @@ pub enum PublicKeyExtended {
 pub enum PublicKeyExtendedConversionError {
     PublicKeyLengthMalformed,
     FailedDecompressingToEdwardsPoint,
+    UnsupportedCurve,
 }
 
 impl Display for PublicKeyExtendedConversionError {
@@ -49,6 +50,7 @@ impl Display for PublicKeyExtendedConversionError {
             Self::FailedDecompressingToEdwardsPoint => {
                 "The provided compressed key can not be decompressed to an edwards point."
             }
+            Self::UnsupportedCurve => "The provided curve is not supported.",
         };
 
         f.write_str(message)
@@ -77,12 +79,14 @@ impl From<PublicKeyExtended> for dtos::PublicKey {
     fn from(public_key_extended: PublicKeyExtended) -> Self {
         match public_key_extended {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                dtos::PublicKey::from(&near_public_key)
+                dtos::PublicKey::try_from(&near_public_key)
+                    .expect("Secp256k1 variant always has a secp256k1 key")
             }
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => dtos::PublicKey::from(&near_public_key_compressed),
+            } => dtos::PublicKey::try_from(&near_public_key_compressed)
+                .expect("Ed25519 variant always has an ed25519 key"),
             PublicKeyExtended::Bls12381 { public_key } => public_key,
         }
     }
@@ -110,6 +114,9 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
                 }
             }
             near_sdk::CurveType::SECP256K1 => Self::Secp256k1 { near_public_key },
+            near_sdk::CurveType::MLDSA65 => {
+                return Err(PublicKeyExtendedConversionError::UnsupportedCurve);
+            }
         };
 
         Ok(extended_key)
@@ -324,8 +331,10 @@ pub mod ed25519_types {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use k256::elliptic_curve::PrimeField;
     use rstest::rstest;
 
@@ -366,5 +375,25 @@ mod tests {
             <PublicKeyExtended as BorshDeserialize>::deserialize(&mut slice_ref).unwrap();
 
         assert_eq!(deserialized, public_key_extended);
+    }
+
+    #[test]
+    fn public_key_extended_try_from_near_public_key__should_reject_mldsa65() {
+        // Given
+        const MLDSA65_PUBLIC_KEY_SIZE: usize = 1952;
+        let near_public_key = near_sdk::PublicKey::from_parts(
+            near_sdk::CurveType::MLDSA65,
+            vec![0u8; MLDSA65_PUBLIC_KEY_SIZE],
+        )
+        .unwrap();
+
+        // When
+        let result = PublicKeyExtended::try_from(near_public_key);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(PublicKeyExtendedConversionError::UnsupportedCurve)
+        );
     }
 }

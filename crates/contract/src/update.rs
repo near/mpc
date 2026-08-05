@@ -83,7 +83,13 @@ impl TryFrom<ProposeUpdateArgs> for Update {
         let ProposeUpdateArgs { code, config } = value;
         let update = match (code, config) {
             (Some(contract), None) => Update::Contract(contract),
-            (None, Some(config)) => Update::Config(config),
+            (None, Some(config)) => {
+                // Reject unusable configs at proposal time: `update_config` runs in its own
+                // receipt, so a validation failure at apply time cannot roll back `do_update`
+                // (which has already cleared the pending proposals in the caller's receipt).
+                let _: crate::config::Config = config.clone().try_into()?;
+                Update::Config(config)
+            }
             (Some(_), Some(_)) => {
                 return Err(ConversionError::DataConversion {
                     reason: "Code and config updates are not allowed at the same time".into(),
@@ -302,6 +308,29 @@ mod tests {
         id: u64,
         votes: BTreeMap<AccountId, u64>,
         entries: BTreeMap<u64, UpdateEntry>,
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn update_try_from__should_reject_invalid_config_at_propose_time() {
+        // Given a proposed config whose launcher TTL is below the attestation validity window.
+        let mut config = dummy_config(1);
+        config.launcher_hash_unused_ttl_seconds = 0;
+        let args = near_mpc_contract_interface::types::ProposeUpdateArgs {
+            code: None,
+            config: Some(config),
+        };
+
+        // When it is converted into an `Update`.
+        let result = Update::try_from(args);
+
+        // Then it is rejected up front, so `do_update` never clears proposals for a config
+        // that would panic at apply time.
+        let err = result.expect_err("invalid config must be rejected at propose time");
+        assert!(
+            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
+            "error should point at the invalid field, got: {err:?}"
+        );
     }
 
     /// Ensure that the default [`ProposedUpdates`] struct is empty.

@@ -172,7 +172,7 @@
           miscTools = with pkgs; [
             git
             binaryen
-            ast-grep  # structural lints, e.g. lints/no-use-in-fn.yml
+            ast-grep  # structural lints, e.g. lints/rules/*
             editorconfig-checker
             jq
             perl

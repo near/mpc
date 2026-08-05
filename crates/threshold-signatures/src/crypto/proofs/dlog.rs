@@ -23,7 +23,7 @@ pub struct Statement<'a, C: Ciphersuite> {
 }
 
 impl<C: Ciphersuite> Statement<'_, C> {
-    /// Encode into Vec<u8>: some sort of serialization
+    /// Encode into `Vec<u8>`: some sort of serialization
     fn encode(self) -> Result<Vec<u8>, ProtocolError> {
         let mut enc = Vec::new();
         enc.extend_from_slice(NEAR_DLOG_ENCODE_LABEL_STATEMENT);

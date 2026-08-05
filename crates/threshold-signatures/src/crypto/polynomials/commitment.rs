@@ -114,7 +114,7 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
     /// Input requirements:
     ///     * identifiers MUST be pairwise distinct and of length greater than 1
     ///     * shares and identifiers must be of same length
-    ///     * identifier[i] corresponds to share[i]
+    ///     * `identifier[i]` corresponds to `share[i]`
     // Returns error if shares' and identifiers' lengths are distinct or less than or equals to 1.
     pub fn eval_exponent_interpolation(
         identifiers: &[Scalar<C>],

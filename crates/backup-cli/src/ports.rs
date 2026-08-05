@@ -5,6 +5,13 @@ use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
 
 use crate::types;
 
+pub trait WatchContractState {
+    type Error: std::fmt::Debug;
+
+    fn latest(&mut self) -> Result<ProtocolContractState, Self::Error>;
+    fn changed(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
 pub trait SecretsRepository {
     type Error: std::fmt::Debug;
 
@@ -41,7 +48,7 @@ pub trait P2PClient {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-pub trait ContractStateReader {
+pub trait ReadContractState {
     type Error: std::fmt::Debug;
 
     fn get_contract_state(
