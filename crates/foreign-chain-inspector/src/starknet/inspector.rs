@@ -1,6 +1,6 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{
-    ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprint,
+    ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS, NetworkFingerprint,
     NetworkFingerprintInspector,
 };
 use foreign_chain_rpc_interfaces::starknet::{
@@ -14,8 +14,6 @@ use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
 const CHAIN_ID_METHOD: &str = "starknet_chainId";
-/// `starknet_chainId` takes no arguments. Sent as an explicit empty array.
-const NO_PARAMS: [(); 0] = [];
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {

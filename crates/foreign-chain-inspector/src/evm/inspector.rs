@@ -4,8 +4,8 @@ use std::hash::Hash;
 use jsonrpsee::core::client::ClientT;
 
 use crate::{
-    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprint,
-    NetworkFingerprintInspector,
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS,
+    NetworkFingerprint, NetworkFingerprintInspector,
 };
 
 use foreign_chain_rpc_interfaces::evm::{
@@ -17,8 +17,6 @@ use foreign_chain_rpc_interfaces::evm::{
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
 const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
 const CHAIN_ID_METHOD: &str = "eth_chainId";
-/// `eth_chainId` takes no arguments. Sent as an explicit empty array.
-const NO_PARAMS: [(); 0] = [];
 
 /// Marker trait for EVM-compatible chain type parameters.
 ///

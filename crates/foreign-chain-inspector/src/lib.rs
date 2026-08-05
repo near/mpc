@@ -41,24 +41,35 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
 }
 
+/// Parameters for an RPC that takes none. Sent as an explicit empty array.
+pub(crate) const NO_PARAMS: [(); 0] = [];
+
 /// The network a provider serves, as the chain itself reports it: a chain id or a genesis hash, in
 /// one canonical text form per chain.
-///
-/// A provider answers what it likes and a fingerprint reaches logs and metric labels, so
-/// [`NetworkFingerprint::new`] is the only way to build one and it caps the length.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display)]
 pub struct NetworkFingerprint(String);
 
 impl NetworkFingerprint {
-    /// Text longer than the longest real fingerprint, Bitcoin's 66 character genesis hash, is cut
-    /// short and marked with an ellipsis.
+    /// The longest fingerprint in use is Bitcoin's genesis hash at 66 characters. This leaves
+    /// room for a chain that reports a longer one.
+    pub const MAX_CHARS: usize = 96;
+    const CUT_SHORT_MARKER: &str = "_TRUNCATED";
+
+    /// Text longer than [`Self::MAX_CHARS`] is cut short, a very long string answered by
+    /// faulty providers does not reach logs and metric labels in full length.
     pub fn new(fingerprint: impl Into<String>) -> Self {
-        const MAX_CHARS: usize = 96;
+        const KEPT_CHARS: usize =
+            NetworkFingerprint::MAX_CHARS - NetworkFingerprint::CUT_SHORT_MARKER.len();
 
         let fingerprint = fingerprint.into();
-        match fingerprint.char_indices().nth(MAX_CHARS) {
-            None => Self(fingerprint),
-            Some((cutoff, _)) => Self(format!("{}…", &fingerprint[..cutoff])),
+        let mut characters = fingerprint.chars();
+        let within_cap: String = characters.by_ref().take(Self::MAX_CHARS).collect();
+        match characters.next() {
+            None => Self(within_cap),
+            Some(_) => {
+                let kept: String = within_cap.chars().take(KEPT_CHARS).collect();
+                Self(kept + Self::CUT_SHORT_MARKER)
+            }
         }
     }
 }
@@ -717,14 +728,31 @@ mod tests {
     }
 
     #[test]
-    fn network_fingerprint_new__should_cut_short_what_a_provider_answers_at_length() {
+    fn network_fingerprint_new__should_keep_an_answer_exactly_at_length() {
         // Given
-        let answered = "🙂".repeat(200);
+        let answered = "a".repeat(NetworkFingerprint::MAX_CHARS);
+
+        // When
+        let fingerprint = NetworkFingerprint::new(&answered);
+
+        // Then
+        assert_eq!(fingerprint.to_string(), answered);
+    }
+
+    #[test]
+    fn network_fingerprint_new__should_truncate_long_provider_results_based_on_chars() {
+        // Given
+        // Four bytes wide character
+        let wide_char = "\u{1F642}";
+        let answered = wide_char.repeat(200);
 
         // When
         let fingerprint = NetworkFingerprint::new(answered);
 
         // Then
-        assert_eq!(fingerprint.to_string(), format!("{}…", "🙂".repeat(96)));
+        let reported = fingerprint.to_string();
+        assert!(reported.starts_with(wide_char));
+        assert!(reported.ends_with(NetworkFingerprint::CUT_SHORT_MARKER));
+        assert_eq!(reported.chars().count(), NetworkFingerprint::MAX_CHARS);
     }
 }

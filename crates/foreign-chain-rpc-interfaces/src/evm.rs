@@ -103,8 +103,7 @@ pub struct Log {
 /// RPC response for `eth_chainId`: the EIP-155 chain id as a hex quantity.
 /// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_chainid>
 ///
-/// Kept as text rather than parsed into a [`U64`], so that whatever a provider answers can be
-/// reported back to an operator.
+/// Kept as text rather than parsed into a [`U64`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(transparent)]
 pub struct ChainIdResponse(pub String);
