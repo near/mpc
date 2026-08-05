@@ -4,7 +4,9 @@ use derive_more::{Constructor, From};
 use jsonrpsee::core::traits::ToRpcParams;
 use serde::{Deserialize, Serialize};
 
-pub use ethereum_types::{H160, H256, U64, U256};
+pub use ethereum_types::{H160, H256, U64};
+
+use ethereum_types::U256;
 
 /// Partial RPC response for `eth_getTransactionReceipt`.
 /// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
