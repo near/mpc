@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::ProtocolContractState;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::ports::ContractStateReader;
+use crate::ports::ReadContractState;
 
 const CONTRACT_STATE_FILENAME: &str = "contract_state.json";
 
@@ -18,9 +18,6 @@ pub enum Error {
 
     #[error("failed to deserialize secrets")]
     JsonDeserialization(serde_json::Error),
-
-    #[error("incorrect contract state: {0}")]
-    IncorrectContractState(String),
 }
 
 pub struct ContractStateFixture {
@@ -36,7 +33,7 @@ impl ContractStateFixture {
     }
 }
 
-impl ContractStateReader for ContractStateFixture {
+impl ReadContractState for ContractStateFixture {
     type Error = Error;
 
     async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
@@ -53,33 +50,13 @@ impl ContractStateReader for ContractStateFixture {
     }
 }
 
-pub fn get_keyset_from_contract_state(
-    contract_state: &ProtocolContractState,
-) -> Result<Keyset, Error> {
-    match contract_state {
-        ProtocolContractState::NotInitialized => {
-            Err(Error::IncorrectContractState("NotInitialized".to_string()))
-        }
-        ProtocolContractState::Resharing(_) => {
-            Err(Error::IncorrectContractState("Resharing".to_string()))
-        }
-        ProtocolContractState::Initializing(state) => Ok(Keyset {
-            epoch_id: state.epoch_id,
-            domains: state.generated_keys.clone(),
-        }),
-        ProtocolContractState::Running(state) => Ok(state.keyset.clone()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use near_mpc_contract_interface::types::{GovernanceThreshold, ProtocolContractState};
 
-    use crate::{
-        adapters::contract_state_fixture::ContractStateFixture, ports::ContractStateReader,
-    };
+    use crate::{adapters::contract_state_fixture::ContractStateFixture, ports::ReadContractState};
 
     pub const TEST_CONTRACT_STATE_PATH: &str = "assets/";
     #[tokio::test]

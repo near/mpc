@@ -446,8 +446,12 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
     }
 }
 
-impl From<near_mpc_contract_interface::types::InitConfig> for Config {
-    fn from(config_ext: near_mpc_contract_interface::types::InitConfig) -> Self {
+impl TryFrom<near_mpc_contract_interface::types::InitConfig> for Config {
+    type Error = Error;
+
+    fn try_from(
+        config_ext: near_mpc_contract_interface::types::InitConfig,
+    ) -> Result<Self, Self::Error> {
         let mut config = super::Config::default();
 
         if let Some(v) = config_ext.key_event_timeout_blocks {
@@ -501,8 +505,16 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.resolve_verification_tera_gas {
             config.resolve_verification_tera_gas = v;
         }
+        if let Some(v) = config_ext.launcher_hash_unused_ttl_seconds {
+            config.launcher_hash_unused_ttl_seconds = v;
+        }
 
         config
+            .validate()
+            .map_err(|reason| ConversionError::DataConversion {
+                reason: reason.to_string(),
+            })?;
+        Ok(config)
     }
 }
 
@@ -533,13 +545,16 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
                 .remove_non_participant_tee_verifier_votes_tera_gas,
             verifier_tera_gas: value.verifier_tera_gas,
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
         }
     }
 }
 
-impl From<near_mpc_contract_interface::types::Config> for Config {
-    fn from(value: near_mpc_contract_interface::types::Config) -> Self {
-        Config {
+impl TryFrom<near_mpc_contract_interface::types::Config> for Config {
+    type Error = Error;
+
+    fn try_from(value: near_mpc_contract_interface::types::Config) -> Result<Self, Self::Error> {
+        let config = Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
@@ -564,7 +579,15 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
                 .remove_non_participant_tee_verifier_votes_tera_gas,
             verifier_tera_gas: value.verifier_tera_gas,
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
-        }
+            launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+        };
+
+        config
+            .validate()
+            .map_err(|reason| ConversionError::DataConversion {
+                reason: reason.to_string(),
+            })?;
+        Ok(config)
     }
 }
 

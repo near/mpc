@@ -5,6 +5,294 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.14.0] - 2026-08-05
+
+### 🚀 Features
+
+- [#3667](https://github.com/near/mpc/pull/3667)(@kevindeforth): Add metrics to detect starvation and resolve CI flakyness (#3667)
+
+- [#3691](https://github.com/near/mpc/pull/3691)(@anodar): Support flag for wiping nearcore data (#3691)
+
+- [#3706](https://github.com/near/mpc/pull/3706)(@gilcu3): Add nearcore node config endpoint (#3706)
+
+- [#3716](https://github.com/near/mpc/pull/3716)(@gilcu3): Add foreign chain tx config checker (#3716)
+
+- [#3752](https://github.com/near/mpc/pull/3752)(@kevindeforth): *(metrics)* Expose the TEE image-hash allowlist expiry metrics (#3752)
+
+- [#3754](https://github.com/near/mpc/pull/3754)(@frolvanya): *(foreign-tx)* Sui support in contract interface (#3754)
+
+- [#3781](https://github.com/near/mpc/pull/3781)(@gilcu3): Small defense in depth check for the evm inspector (#3781)
+
+- [#3755](https://github.com/near/mpc/pull/3755)(@frolvanya): *(foreign-tx)* Sui inspector (#3755)
+
+- [#3829](https://github.com/near/mpc/pull/3829)(@anodar): *(node)* Register foreign-chain configs via the new contract API (#3829)
+
+- [#3806](https://github.com/near/mpc/pull/3806)(@gilcu3): Support operators changing node urls (#3806)
+
+- [#3846](https://github.com/near/mpc/pull/3846)(@anodar): *(e2e)* Extend e2e cluster with new API from available chains (#3846)
+
+- [#3876](https://github.com/near/mpc/pull/3876)(@gilcu3): Allow smaller than 32 bytes messages for edDSA (#3876)
+
+- [#3640](https://github.com/near/mpc/pull/3640)(@SimonRastikian): Adding reconstruction threshold in node (#3640)
+
+- [#3853](https://github.com/near/mpc/pull/3853)(@anodar): *(node)* Indexer publishes foreign-chain supporters via a watch channel (#3853)
+
+- [#3872](https://github.com/near/mpc/pull/3872)(@kevindeforth): *(near-contract-transport)* Introducing `CallContract` trait enabling different back-ends to share the same contract interface. (#3872)
+
+- [#3873](https://github.com/near/mpc/pull/3873)(@kevindeforth): Introduce MpcContractHandle as shared contract interface (#3873)
+
+- [#3714](https://github.com/near/mpc/pull/3714)(@pbeza): *(contract)* Async TEE attestation verification, drop `dcap-qvl` (#3714)
+
+- [#3874](https://github.com/near/mpc/pull/3874)(@gilcu3): Require deposits for a few migration functions (#3874)
+
+- [#3908](https://github.com/near/mpc/pull/3908)(@pbeza): *(contract)* Add view for the current TEE verifier account (#3908)
+
+- [#4014](https://github.com/near/mpc/pull/4014)(@gilcu3): Add metrics for keyshare backups (#4014)
+
+- [#4017](https://github.com/near/mpc/pull/4017)(@haiyuechen-nearone): Add expected_network_fingerprint to foreign chain config (#4017)
+
+- [#4013](https://github.com/near/mpc/pull/4013)(@haiyuechen-nearone): Starknet RPC healthcheck probing logic (#4013)
+
+- [#3564](https://github.com/near/mpc/pull/3564)(@barakeinav1): *(contract)* Auto-expire unused launcher image hashes (#3564)
+
+
+### 🐛 Bug Fixes
+
+- [#3663](https://github.com/near/mpc/pull/3663)(@gilcu3): *(ci)* Order correctly the release candidates versions from nearcore (#3663)
+
+- [#3672](https://github.com/near/mpc/pull/3672)(@gilcu3): *(docs)* Add http prefix to prevent node operators falling into the same trap (#3672)
+
+- [#3678](https://github.com/near/mpc/pull/3678)(@gilcu3): A single participant with wrong url should not break the node (#3678)
+
+- [#3659](https://github.com/near/mpc/pull/3659)(@gilcu3): Node crash on malformed participant set in task (#3659)
+
+- [#3713](https://github.com/near/mpc/pull/3713)(@gilcu3): Indexer wedging on startup (#3713)
+
+- [#3705](https://github.com/near/mpc/pull/3705)(@barakeinav1): *(launcher)* Reuse MPC container across restarts to preserve logs (#3705)
+
+- [#3736](https://github.com/near/mpc/pull/3736)(@barakeinav1): *(node)* Confirm submit_participant_info via advancing attestation expiry (#3736)
+
+- [#3796](https://github.com/near/mpc/pull/3796)(@barakeinav1): *(node)* Migrate state_sync ExternalStorage → Peers on start (#3796)
+
+- [#3834](https://github.com/near/mpc/pull/3834)(@gilcu3): Add timeout for tls incomming connection acceptor (#3834)
+
+- [#3836](https://github.com/near/mpc/pull/3836)(@netrome): Report computations lead metrics after finishing computations + more labels (#3836)
+
+- [#3885](https://github.com/near/mpc/pull/3885)(@pbeza): *(tee-verifier)* Inherit repository for reproducible builds (#3885)
+
+- [#3890](https://github.com/near/mpc/pull/3890)(@gilcu3): Account timeout properly for lagging nodes (#3890)
+
+- [#3812](https://github.com/near/mpc/pull/3812)(@metalurgical): Decryption error message (#3812)
+
+- [#3937](https://github.com/near/mpc/pull/3937)(@gilcu3): *(tests)* Do no attach deposit when not needed (#3937)
+
+- [#3945](https://github.com/near/mpc/pull/3945)(@gilcu3): Extend max collateral age (#3941) (#3945)
+
+- [#3948](https://github.com/near/mpc/pull/3948)(@barakeinav1): *(attestation)* Revert DEFAULT_EXPIRATION_DURATION_SECONDS to 7 days (#3948)
+
+- [#3940](https://github.com/near/mpc/pull/3940)(@pbeza): *(contract)* Drop the deposit for `submit_participant_info` (#3940)
+
+- [#3995](https://github.com/near/mpc/pull/3995)(@gilcu3): Make online assets metric more informative (#3995)
+
+- [#3785](https://github.com/near/mpc/pull/3785)(@barakeinav1): *(contract)* Make mock attestations cleanable via expiry (#3785)
+
+
+### 💼 Other
+
+- [#4024](https://github.com/near/mpc/pull/4024)(@karim-en): Bump near-sdk to 5.29.0 (#4024)
+
+
+### 🚜 Refactor
+
+- [#3684](https://github.com/near/mpc/pull/3684)(@kevindeforth): Unify gas type to not expose near indexer internals  (#3684)
+
+- [#3729](https://github.com/near/mpc/pull/3729)(@kevindeforth): Establish contract-interfac/call_args.rs as source of truth (#3729)
+
+- [#3778](https://github.com/near/mpc/pull/3778)(@SimonRastikian): Reducing code redundancy (#3778)
+
+- [#3780](https://github.com/near/mpc/pull/3780)(@metalurgical): Upgrade aes gcm 0.11.0 (#3780)
+
+- [#3832](https://github.com/near/mpc/pull/3832)(@pbeza): *(contract)* Share NodeId/auth test helpers via `primitives::test_utils` (#3832)
+
+- [#3828](https://github.com/near/mpc/pull/3828)(@anodar): *(node)* Make VerifyForeignTxProvider methods inherent (#3828)
+
+- [#3772](https://github.com/near/mpc/pull/3772)(@haiyuechen-nearone): Deduplicate test port allocators into a single allocator (#3772)
+
+- [#3845](https://github.com/near/mpc/pull/3845)(@kevindeforth): Move `ProposeUpdateArgs` to the interface crate (#3845)
+
+- [#3797](https://github.com/near/mpc/pull/3797)(@haiyuechen-nearone): Extract foreign-chain-health-check library from config-tester (#3797)
+
+- [#3870](https://github.com/near/mpc/pull/3870)(@kevindeforth): *(chain-gateway)* Unify view calls behind a single ViewContract trait (#3870)
+
+- [#3871](https://github.com/near/mpc/pull/3871)(@kevindeforth): Near-contract-transport crate for NEAR call/view vocabulary (#3871)
+
+- [#3911](https://github.com/near/mpc/pull/3911)(@SimonRastikian): Renaming per-domain reconstruction-threshold identifiers (#3911)
+
+- [#3931](https://github.com/near/mpc/pull/3931)(@SimonRastikian): THRESHOLD into GOVERNANCE_THRESHOLD (#3931)
+
+- [#3935](https://github.com/near/mpc/pull/3935)(@SimonRastikian): Contract internal-only renames from threshold to reconstruction threshold (#3935)
+
+- [#3914](https://github.com/near/mpc/pull/3914)(@kevindeforth): Typed sign on MpcContractHandle (#3914)
+
+- [#3811](https://github.com/near/mpc/pull/3811)(@metalurgical): Add distinct errors for small_t and q consistency checks (#3811)
+
+- [#3938](https://github.com/near/mpc/pull/3938)(@SimonRastikian): Cross-crate type renames (#3938)
+
+- [#3916](https://github.com/near/mpc/pull/3916)(@kevindeforth): Typed request_app_private_key on MpcContractHandle (#3916)
+
+- [#3952](https://github.com/near/mpc/pull/3952)(@SimonRastikian): *(ops)* Move prepare-release.sh under scripts/ops/ (#3952)
+
+- [#3798](https://github.com/near/mpc/pull/3798)(@SimonRastikian): Shortening the line to StdRng::seed_from_u64 (#3798)
+
+- [#3920](https://github.com/near/mpc/pull/3920)(@kevindeforth): Typed propose_update and vote_update on MpcContractHandle (#3920)
+
+
+### 📚 Documentation
+
+- [#3614](https://github.com/near/mpc/pull/3614)(@barakeinav1): *(tdx)* Add key-provider "DCAP error" troubleshooting entry (#3614)
+
+- [#3707](https://github.com/near/mpc/pull/3707)(@gilcu3): Clarify that OT setup cannot be reused in our implementation (#3707)
+
+- [#3749](https://github.com/near/mpc/pull/3749)(@barakeinav1): *(migration)* Fix backup-key (Step 3) and P2P-key (Step 4) retrieval for TEE nodes (#3749)
+
+- [#3745](https://github.com/near/mpc/pull/3745)(@barakeinav1): *(tdx)* Warn that changing app-compose breaks the sealed disk (#3745)
+
+- [#3824](https://github.com/near/mpc/pull/3824)(@barakeinav1): Add reproducibility-verification step to the release guide (#3824)
+
+- [#3675](https://github.com/near/mpc/pull/3675)(@netrome): Clarify how to set backup encryption key (#3675)
+
+- [#3882](https://github.com/near/mpc/pull/3882)(@pbeza): TEE verifier deploy + vote-in runbook (#3882)
+
+- [#4011](https://github.com/near/mpc/pull/4011)(@barakeinav1): *(design)* Operator-prepaid attestation storage (#4011)
+
+
+### ⚡ Performance
+
+- [#3958](https://github.com/near/mpc/pull/3958)(@gilcu3): *(tests)* Improve newly introduced test performance by reducing timout (#3958)
+
+
+### 🧪 Testing
+
+- [#3656](https://github.com/near/mpc/pull/3656)(@gilcu3): Add support for wycheproof vectors verification for signatures (#3656)
+
+- [#3759](https://github.com/near/mpc/pull/3759)(@haiyuechen-nearone): Cover all foreign provider auth kinds in verify-foreign-tx e2e (#3759)
+
+- [#3791](https://github.com/near/mpc/pull/3791)(@frolvanya): *(foreign-tx)* Sui inspector tests + localnet docs (#3791)
+
+- [#3815](https://github.com/near/mpc/pull/3815)(@gilcu3): Add test vectors for CKD (#3815)
+
+- [#3855](https://github.com/near/mpc/pull/3855)(@pbeza): *(localnet)* Deploy and vote in the TEE verifier contract (#3855)
+
+- [#3902](https://github.com/near/mpc/pull/3902)(@kevindeforth): *(contract)* Implement CallContract for sandbox tests (#3902)
+
+- [#3899](https://github.com/near/mpc/pull/3899)(@kevindeforth): *(e2e-tests)* Near-kit CallContract backend for MpcContractHandle (#3899)
+
+- [#4007](https://github.com/near/mpc/pull/4007)(@gilcu3): Cover all schemes in per-domain threshold integration test (#4007)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#3670](https://github.com/near/mpc/pull/3670)(@gilcu3): Remove noisy warnings in cargo-shear and cargo-deny (#3670)
+
+- [#3688](https://github.com/near/mpc/pull/3688)(@barakeinav1): Standardize public debug port to 8080 across deployment templates (#3688)
+
+- [#3698](https://github.com/near/mpc/pull/3698)(@dependabot[bot]): Bump the rust-minor-and-patch group with 6 updates (#3698)
+
+- [#3699](https://github.com/near/mpc/pull/3699)(@dependabot[bot]): Bump itertools from 0.14.0 to 0.15.0 (#3699)
+
+- [#3717](https://github.com/near/mpc/pull/3717)(@gilcu3): Bump nearcore to 2.13.0-rc.2 (#3717)
+
+- [#3730](https://github.com/near/mpc/pull/3730)(@kevindeforth): Ignore quick-xml DoS advisories unreachable via our deps (#3730)
+
+- [#3744](https://github.com/near/mpc/pull/3744)(@dependabot[bot]): Bump mockall from 0.14.0 to 0.15.0 (#3744)
+
+- [#3741](https://github.com/near/mpc/pull/3741)(@dependabot[bot]): Bump near-workspaces from 0.22.2 to 0.22.4 in the rust-minor-and-patch group across 1 directory (#3741)
+
+- [#3771](https://github.com/near/mpc/pull/3771)(@gilcu3): *(contract)* Cleanup migrations after 3.13.0 release (#3771)
+
+- [#3775](https://github.com/near/mpc/pull/3775)(@haiyuechen-nearone): Remove orphaned pytest config-generation code (#3775)
+
+- [#3800](https://github.com/near/mpc/pull/3800)(@gilcu3): Bump triple timeout and triple metrics bucket sizes (#3800)
+
+- [#3802](https://github.com/near/mpc/pull/3802)(@haiyuechen-nearone): Mark foreign-chain rpc auth header values as sensitive (#3802)
+
+- [#3804](https://github.com/near/mpc/pull/3804)(@gilcu3): Fix changelog generation for patch releases from a branch (#3804)
+
+- [#3792](https://github.com/near/mpc/pull/3792)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 3 updates (#3792)
+
+- [#3819](https://github.com/near/mpc/pull/3819)(@gilcu3): Bump rust version to 1.97 (#3819)
+
+- [#3808](https://github.com/near/mpc/pull/3808)(@barakeinav1): Bump to nearcore 2.13.1 (#3808)
+
+- [#3816](https://github.com/near/mpc/pull/3816)(@gilcu3): Bump cargo near and use its new check feature (#3816)
+
+- [#3861](https://github.com/near/mpc/pull/3861)(@dependabot[bot]): Bump the rust-minor-and-patch group with 7 updates (#3861)
+
+- [#3862](https://github.com/near/mpc/pull/3862)(@dependabot[bot]): Bump near-workspaces from 0.22.4 to 0.23.0 (#3862)
+
+- [#3859](https://github.com/near/mpc/pull/3859)(@SimonRastikian): Delete orphan update-mpc-node.sh (#3859)
+
+- [#3869](https://github.com/near/mpc/pull/3869)(@anodar): Add semgrep job in the ci workflow (#3869)
+
+- [#3879](https://github.com/near/mpc/pull/3879)(@gilcu3): Make workflow runs cancellable automatically (#3879)
+
+- [#3893](https://github.com/near/mpc/pull/3893)(@gilcu3): Remove redundant opengrep step (#3893)
+
+- [#3905](https://github.com/near/mpc/pull/3905)(@pbeza): Lower contract WASM size limit to `1235000` (#3905)
+
+- [#3930](https://github.com/near/mpc/pull/3930)(@gilcu3): Use upstream version of dcap-qvl (#3930)
+
+- [#3955](https://github.com/near/mpc/pull/3955)(@gilcu3): Job restart not needed when governance threshold changes (#3955)
+
+- [#3956](https://github.com/near/mpc/pull/3956)(@gilcu3): Use trait to avoid free-form strings in tracking (#3956)
+
+- [#3974](https://github.com/near/mpc/pull/3974)(@dependabot[bot]): Bump quinn-proto from 0.11.14 to 0.11.16 in the cargo group across 1 directory (#3974)
+
+- [#3895](https://github.com/near/mpc/pull/3895)(@barakeinav1): *(tee)* Move cluster deploy/test scripts to mpc-private (#3895)
+
+- [#3971](https://github.com/near/mpc/pull/3971)(@gilcu3): Bump toolchain to 1.97.1 (#3971)
+
+- [#3989](https://github.com/near/mpc/pull/3989)(@gilcu3): Bump claude review and fix env overflow for big PRs (#3989)
+
+- [#3988](https://github.com/near/mpc/pull/3988)(@github-actions[bot]): Bump to nearcore 2.13.2 (#3988)
+
+- [#4002](https://github.com/near/mpc/pull/4002)(@andrei-near): Fix nightly build sed branch OR tags (#4002)
+
+- [#3980](https://github.com/near/mpc/pull/3980)(@dependabot[bot]): Bump syn from 2.0.118 to 3.0.3 (#3980)
+
+- [#3996](https://github.com/near/mpc/pull/3996)(@gilcu3): Ensure blstrs scalar Copy types are zeroized (#3996)
+
+- [#3981](https://github.com/near/mpc/pull/3981)(@dependabot[bot]): Bump near-kit from 0.11.2 to 0.12.1 (#3981)
+
+- [#4001](https://github.com/near/mpc/pull/4001)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 20 updates (#4001)
+
+- [#4009](https://github.com/near/mpc/pull/4009)(@gilcu3): Harden claude reviews (#4009)
+
+- [#4019](https://github.com/near/mpc/pull/4019)(@haiyuechen-nearone): Stop the review bot demanding license notices on dependency bumps (#4019)
+
+- [#4022](https://github.com/near/mpc/pull/4022)(@gilcu3): Make nix cache independent of Cargo.lock to avoid invalidating rust caches (#4022)
+
+- [#4018](https://github.com/near/mpc/pull/4018)(@haiyuechen-nearone): Bump ruint to 1.20.0 for RUSTSEC-2026-0220 (#4018)
+
+- [#4033](https://github.com/near/mpc/pull/4033)(@gilcu3): Add exception for wasmtime 45 vulnerability (#4033)
+
+- [#4042](https://github.com/near/mpc/pull/4042)(@dependabot[bot]): Bump serial_test from 3.5.0 to 4.0.1 (#4042)
+
+- [#4041](https://github.com/near/mpc/pull/4041)(@dependabot[bot]): Bump base64 from 0.22.1 to 0.23.0 (#4041)
+
+- [#4044](https://github.com/near/mpc/pull/4044)(@metalurgical): Bump nearkit from 0.12.1 to 0.14.0 (#4044)
+
+- [#4039](https://github.com/near/mpc/pull/4039)(@dependabot[bot]): Bump the rust-minor-and-patch group with 4 updates (#4039)
+
+- [#4048](https://github.com/near/mpc/pull/4048)(@anodar): Bump up rkyv as per RUSTSEC 2026-0233/0234/0235 (#4048)
+
+- [#4046](https://github.com/near/mpc/pull/4046)(@gilcu3): Make rust doc lints cover all cases (#4046)
+
+- [#4036](https://github.com/near/mpc/pull/4036)(@haiyuechen-nearone): Lint module declaration order by visibility and grouping (#4036)
+
+- [#4053](https://github.com/near/mpc/pull/4053)(@anodar): Bump nearcore to 2.13.3 (#4053)
+
+
 ## [3.13.0] - 2026-06-24
 
 ### 🚀 Features

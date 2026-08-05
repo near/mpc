@@ -13,7 +13,7 @@ use serde::Deserialize;
 const PUBLIC_NODE_URL: &str = "https://starknet-rpc.publicnode.com";
 
 /// A known L1-finalized Starknet mainnet tx in block 6_868_546.
-/// https://starkscan.co/tx/0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e
+/// <https://starkscan.co/tx/0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e>
 const FINALIZED_TX_HASH: &str = "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e";
 const FINALIZED_BLOCK_HASH: &str =
     "0x1b716b05027567f9f4a2fe37f8769dc3b04a2e5a3893f6e0ed45f24c7c0ffa5";
@@ -107,4 +107,28 @@ fn parse_starknet_felt_hash<T: core::str::FromStr<Err = mpc_primitives::hash::Ha
     padded
         .parse()
         .map_err(|e| format!("invalid felt hash {value}: {e}"))
+}
+
+/// Starknet mainnet's chain id (`SN_MAIN`), as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "0x534e5f4d41494e";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Starknet RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        PUBLIC_NODE_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = StarknetInspector::new(http_client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }
