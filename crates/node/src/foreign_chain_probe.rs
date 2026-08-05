@@ -24,7 +24,8 @@ pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     }
 }
 
-/// A [`ProviderStatus`] carries no provider text and no auth material, so it is logged whole.
+/// A [`ProviderStatus`] carries no auth material and no rendered error text, and its one
+/// provider written field is length capped, so it is logged whole.
 fn log_report(report: &ProbeReport) {
     for row in report.rows() {
         match &row.status {
