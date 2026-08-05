@@ -136,8 +136,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 ForeignChain::Sui => {
-                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
-                    probe_chain(chain, chain_config, move |provider| {
+                    probe_chain(chain, chain_config, |provider, timeout| {
                         Ok(SuiInspector::new(prepare_sui(provider, timeout)?))
                     })
                     .await
