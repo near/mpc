@@ -56,9 +56,9 @@ fn describe(err: &NearKitError) -> String {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use tokio::net::TcpListener;
-
     use super::*;
+
+    use tokio::net::TcpListener;
 
     const API_KEY: &str = "d0n0tl0gme";
 

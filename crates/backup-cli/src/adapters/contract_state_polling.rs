@@ -138,13 +138,14 @@ fn replace_if_different(last: &mut Observed, observed: Observed) -> bool {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::*;
+
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
     use rstest::rstest;
 
-    use super::*;
-    use crate::test_utils::must_get_running_state_with_epoch;
+    use crate::test_utils::running_state_with_epoch;
 
     const POLL_INTERVAL: Duration = Duration::from_secs(60);
     const READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -197,18 +198,14 @@ mod tests {
 
     #[rstest]
     #[case::unchanged_state(
-        Ok(must_get_running_state_with_epoch(5)),
-        Ok(must_get_running_state_with_epoch(5)),
+        Ok(running_state_with_epoch(5)),
+        Ok(running_state_with_epoch(5)),
         false
     )]
-    #[case::changed_state(
-        Ok(must_get_running_state_with_epoch(5)),
-        Ok(must_get_running_state_with_epoch(6)),
-        true
-    )]
+    #[case::changed_state(Ok(running_state_with_epoch(5)), Ok(running_state_with_epoch(6)), true)]
     #[case::repeated_failure(read_error(), read_error(), false)]
-    #[case::started_failing(Ok(must_get_running_state_with_epoch(5)), read_error(), true)]
-    #[case::recovered(read_error(), Ok(must_get_running_state_with_epoch(5)), true)]
+    #[case::started_failing(Ok(running_state_with_epoch(5)), read_error(), true)]
+    #[case::recovered(read_error(), Ok(running_state_with_epoch(5)), true)]
     fn replace_if_different__should_replace_only_what_differs(
         #[case] mut last: Observed,
         #[case] observed: Observed,
@@ -235,7 +232,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn spawn__should_seed_the_first_state_before_any_poll() {
         // Given
-        let state = must_get_running_state_with_epoch(5);
+        let state = running_state_with_epoch(5);
         let reader = FakeReader::answering(vec![Ok(state.clone())]);
 
         // When
@@ -249,11 +246,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn poll__should_publish_a_state_that_changed_since_the_last_read() {
         // Given
-        let reshared = must_get_running_state_with_epoch(6);
-        let reader = FakeReader::answering(vec![
-            Ok(must_get_running_state_with_epoch(5)),
-            Ok(reshared.clone()),
-        ]);
+        let reshared = running_state_with_epoch(6);
+        let reader =
+            FakeReader::answering(vec![Ok(running_state_with_epoch(5)), Ok(reshared.clone())]);
         let mut watcher =
             PollingContractStateWatcher::spawn(reader, POLL_INTERVAL, READ_TIMEOUT).await;
 
@@ -283,7 +278,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn drop__should_stop_polling_and_fail_later_changes() {
         // Given
-        let reader = FakeReader::answering(vec![Ok(must_get_running_state_with_epoch(5))]);
+        let reader = FakeReader::answering(vec![Ok(running_state_with_epoch(5))]);
         let watcher = PollingContractStateWatcher::spawn(reader, POLL_INTERVAL, READ_TIMEOUT).await;
         let mut states = watcher.states.clone();
 

@@ -25,8 +25,8 @@ where
     Storage: KeyShareRepository,
     Contract: WatchContractState,
 {
-    /// Reads back what local storage already holds, so a restart neither re-fetches nor
-    /// overwrites an existing backup.
+    /// Reads back what local storage already holds, so a restart does not re-fetch a keyset
+    /// that is already stored.
     pub async fn new(
         keyshares: Keyshares,
         storage: Storage,
@@ -102,8 +102,9 @@ where
         Ok(())
     }
 
-    /// Backs up keyshares unless local storage already covers `state`'s keyset. `backed_up` is
-    /// derived from what was stored, not from what was requested, so the two cannot drift apart.
+    /// Backs up keyshares unless local storage already covers `state`'s keyset.
+    /// [`Self::backed_up`] is derived from what was stored, not from what was requested, so the
+    /// two cannot drift apart.
     async fn back_up_if_needed(
         &mut self,
         state: &ProtocolContractState,
@@ -166,8 +167,8 @@ pub struct BackedUpKeyset {
 }
 
 impl BackedUpKeyset {
-    /// `None` when there is nothing stored. All keyshares of a stored keyset share its epoch,
-    /// enforced by `PermanentKeyshareData`.
+    /// All keyshares of a stored keyset share its epoch, enforced by
+    /// [`PermanentKeyshareData`](mpc_node::keyshare::permanent::PermanentKeyshareData).
     fn from_keyshares(keyshares: &[Keyshare]) -> Option<Self> {
         let first = keyshares.first()?;
         Some(Self {
@@ -204,6 +205,8 @@ async fn sleep_or_pending(delay: Option<Duration>) {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::*;
+
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::time::Duration;
@@ -216,10 +219,9 @@ mod tests {
     use tokio::sync::{Mutex, Notify, watch};
     use tokio::time::timeout;
 
-    use super::*;
     use crate::test_utils::{
-        must_get_fixture_epoch_id, must_get_initializing_state, must_get_resharing_state,
-        must_get_running_state_with_epoch, must_get_running_state_without_domains,
+        fixture_epoch_id, initializing_state, resharing_state, running_state_with_epoch,
+        running_state_without_domains,
     };
 
     const FIXTURE_DOMAIN_IDS: [u64; 2] = [0, 1];
@@ -368,7 +370,7 @@ mod tests {
 
         /// For tests that never read the contract state.
         fn unused() -> Self {
-            Self::observing(must_get_running_state_with_epoch(0)).1
+            Self::observing(running_state_with_epoch(0)).1
         }
     }
 
@@ -432,8 +434,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(5)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -455,8 +456,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(6)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(6)).await;
 
         // Then
         assert_eq!(
@@ -477,8 +477,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(5)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -499,8 +498,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(5)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -520,8 +518,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(5)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -540,26 +537,26 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &must_get_resharing_state()).await;
+        let outcome = must_back_up_if_needed(&mut service, &resharing_state()).await;
 
         // Then
         assert_eq!(
             outcome,
             BackupOutcome::BackedUp {
-                epoch_id: must_get_fixture_epoch_id(),
+                epoch_id: fixture_epoch_id(),
                 num_domains: 2
             }
         );
         assert_eq!(
             service.backed_up,
-            backed_up(must_get_fixture_epoch_id().get(), &FIXTURE_DOMAIN_IDS)
+            backed_up(fixture_epoch_id().get(), &FIXTURE_DOMAIN_IDS)
         );
     }
 
     #[rstest]
     #[case::not_initialized(ProtocolContractState::NotInitialized)]
-    #[case::initializing(must_get_initializing_state())]
-    #[case::running_without_domains(must_get_running_state_without_domains())]
+    #[case::initializing(initializing_state())]
+    #[case::running_without_domains(running_state_without_domains())]
     #[tokio::test]
     async fn back_up_if_needed__should_skip_when_contract_has_no_concluded_keyset(
         #[case] contract_state: ProtocolContractState,
@@ -586,10 +583,7 @@ mod tests {
 
         // When
         let result = service
-            .back_up_if_needed(
-                &must_get_running_state_with_epoch(5),
-                &CancellationToken::new(),
-            )
+            .back_up_if_needed(&running_state_with_epoch(5), &CancellationToken::new())
             .await;
 
         // Then
@@ -608,8 +602,7 @@ mod tests {
         .await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(5)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -630,8 +623,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome =
-            must_back_up_if_needed(&mut service, &must_get_running_state_with_epoch(5)).await;
+        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -653,7 +645,7 @@ mod tests {
 
         // When
         let outcome = service
-            .back_up_if_needed(&must_get_running_state_with_epoch(5), &shutdown)
+            .back_up_if_needed(&running_state_with_epoch(5), &shutdown)
             .await
             .expect("a cancelled fetch is not a failure");
 
@@ -668,7 +660,7 @@ mod tests {
         // Given a watcher that never reports a change, so only acting before the wait can
         // produce a backup. `_sender` is held precisely so `changed()` stays pending.
         let (_sender, contract_state) =
-            FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(5));
         let storage = FakeKeyshareStorage::empty();
         let stored = storage.stored.clone();
         let stored_notify = storage.stored_notify.clone();
@@ -695,7 +687,7 @@ mod tests {
     async fn service_run__should_retry_a_failed_backup_after_the_retry_delay() {
         // Given
         let (_sender, contract_state) =
-            FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(5));
         let mpc_p2p_client = FakeP2PClient::failing();
         let fetched = mpc_p2p_client.fetched.clone();
         let service =
@@ -725,7 +717,7 @@ mod tests {
         // Given
         let stored = keyshares_for(5, &FIXTURE_DOMAIN_IDS);
         let (sender, contract_state) =
-            FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(5));
         let storage = FakeKeyshareStorage::with_keyshares(stored.clone());
         let stored_notify = storage.stored_notify.clone();
         let service = service_watching(FakeP2PClient::new(), storage, contract_state).await;
@@ -734,7 +726,7 @@ mod tests {
         // When
         let observe_a_resharing = async {
             sender
-                .send(Ok(must_get_running_state_with_epoch(6)))
+                .send(Ok(running_state_with_epoch(6)))
                 .expect("the service should still be listening");
             stored_notify.notified().await;
             shutdown.cancel();
@@ -753,7 +745,7 @@ mod tests {
     async fn service_run__should_fail_when_the_contract_state_is_no_longer_observed() {
         // Given
         let (sender, contract_state) =
-            FakeWatchContractState::observing(must_get_running_state_with_epoch(5));
+            FakeWatchContractState::observing(running_state_with_epoch(5));
         let service = service_watching(
             FakeP2PClient::new(),
             FakeKeyshareStorage::empty(),

@@ -1,6 +1,6 @@
 use crate::common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -10,6 +10,7 @@ use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
+use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
     AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ProtocolContractState,
 };
@@ -135,21 +136,18 @@ impl BackupService {
             ])
             .spawn()
             .context("failed to spawn backup-cli run")?;
-        Ok(RunningBackupService { child })
+        Ok(RunningBackupService {
+            _process: ProcessGuard(child),
+        })
     }
 
     /// Keyshare files the service has written, named `epoch_<n>_with_<m>_domains` by
     /// `PermanentKeyStorage`.
     fn stored_keyshare_files(&self) -> Vec<String> {
-        let keys_dir = self.home_dir.path().join("permanent_keys");
-        let Ok(read_dir) = std::fs::read_dir(&keys_dir) else {
-            return Vec::new();
-        };
-        let mut names: Vec<String> = read_dir
-            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-            .collect();
-        names.sort();
-        names
+        list_permanent_keys(self.home_dir.path())
+            .into_iter()
+            .map(|(name, _size)| name)
+            .collect()
     }
 
     fn put_keyshares(
@@ -181,6 +179,10 @@ impl BackupService {
     }
 }
 
+struct RunningBackupService {
+    _process: ProcessGuard,
+}
+
 struct RunArgs<'a> {
     rpc_url: &'a str,
     chain_id: &'a str,
@@ -188,18 +190,6 @@ struct RunArgs<'a> {
     node_migration_address: &'a str,
     node_p2p_key: &'a str,
     backup_encryption_key_hex: &'a str,
-}
-
-/// Kills the service on drop so a failing assertion cannot leak the process.
-struct RunningBackupService {
-    child: std::process::Child,
-}
-
-impl Drop for RunningBackupService {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
 }
 
 /// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
@@ -582,16 +572,20 @@ fn snapshot_permanent_keys(cluster: &e2e_tests::MpcCluster, idx: usize) -> Vec<(
         MpcNodeState::Running(n) => n.setup().home_dir().to_path_buf(),
         MpcNodeState::Stopped(s) => s.home_dir().to_path_buf(),
     };
-    let keys_dir = home_dir.join("permanent_keys");
-    let Ok(read_dir) = std::fs::read_dir(&keys_dir) else {
+    list_permanent_keys(&home_dir)
+}
+
+fn list_permanent_keys(home_dir: &Path) -> Vec<(String, u64)> {
+    let Ok(read_dir) = std::fs::read_dir(home_dir.join("permanent_keys")) else {
         return Vec::new();
     };
     let mut entries: Vec<(String, u64)> = read_dir
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().into_string().ok()?;
-            let len = e.metadata().ok()?.len();
-            Some((name, len))
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            Some((
+                entry.file_name().into_string().ok()?,
+                entry.metadata().ok()?.len(),
+            ))
         })
         .collect();
     entries.sort();

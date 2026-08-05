@@ -27,19 +27,20 @@ pub enum NoKeysetInState {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::*;
+
     use near_mpc_contract_interface::types::EpochId;
     use rstest::rstest;
 
-    use super::*;
     use crate::test_utils::{
-        must_get_fixture_epoch_id, must_get_initializing_state, must_get_resharing_state,
-        must_get_running_state_with_epoch, must_get_running_state_without_domains,
+        fixture_epoch_id, initializing_state, resharing_state, running_state_with_epoch,
+        running_state_without_domains,
     };
 
     #[test]
     fn keyset_to_backup__should_return_the_keyset_of_a_running_state() {
         // Given
-        let state = must_get_running_state_with_epoch(5);
+        let state = running_state_with_epoch(5);
 
         // When
         let keyset = keyset_to_backup(&state).unwrap();
@@ -51,21 +52,21 @@ mod tests {
     #[test]
     fn keyset_to_backup__should_return_the_previous_keyset_while_resharing() {
         // Given
-        let state = must_get_resharing_state();
+        let state = resharing_state();
 
         // When
         let keyset = keyset_to_backup(&state).unwrap();
 
         // Then
-        assert_eq!(keyset.epoch_id, must_get_fixture_epoch_id());
+        assert_eq!(keyset.epoch_id, fixture_epoch_id());
         assert!(!keyset.domains.is_empty());
     }
 
     #[rstest]
     #[case::not_initialized(ProtocolContractState::NotInitialized, NoKeysetInState::NotInitialized)]
-    #[case::initializing(must_get_initializing_state(), NoKeysetInState::Initializing)]
+    #[case::initializing(initializing_state(), NoKeysetInState::Initializing)]
     #[case::running_without_domains(
-        must_get_running_state_without_domains(),
+        running_state_without_domains(),
         NoKeysetInState::NoKeysGenerated
     )]
     fn keyset_to_backup__should_fail_without_a_concluded_keyset(
