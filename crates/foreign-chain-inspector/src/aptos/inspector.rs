@@ -127,7 +127,8 @@ fn classify_rest_error(error: AptosRpcError) -> ForeignChainInspectionError {
         // Remaining 4xx (400/401/403/410, …) are deterministic rejections — retrying cannot
         // change them, so they count as substantive verdicts.
         AptosRpcError::ApiError { .. } => ForeignChainInspectionError::RpcRequestRejected(message),
-        // Transport failures, including timeouts.
+        // Named so a probe can report a slow provider as timed out rather than unreachable.
+        AptosRpcError::Http(error) if error.is_timeout() => ForeignChainInspectionError::Timeout,
         AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
     }
 }
