@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
+use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
@@ -16,11 +17,12 @@ use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
 };
+use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
-use crate::prepare_jsonrpc;
+use crate::{prepare_aptos, prepare_jsonrpc};
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,8 +116,20 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe Aptos and Sui. Ethereum, Solana and Ton have no inspector, so
-                // there is nothing to probe them with.
+                ForeignChain::Aptos => {
+                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
+                    probe_chain(chain, chain_config, move |provider| {
+                        let (url, auth_header) = prepare_aptos(provider)?;
+                        Ok(AptosInspector::new(ReqwestAptosClient::new(
+                            url,
+                            auth_header,
+                            timeout,
+                        )))
+                    })
+                    .await
+                }
+                // TODO(#4003): probe Sui. Ethereum, Solana and Ton have no inspector, so there is
+                // nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -244,6 +258,9 @@ mod tests {
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
+    /// Aptos publishes its ledger chain id in decimal.
+    const APTOS_MAINNET: u64 = 1;
+    const APTOS_TESTNET: u64 = 2;
     /// Bitcoin's genesis block hash, which is what tells its networks apart.
     const BITCOIN_MAINNET: &str =
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
@@ -881,6 +898,68 @@ mod tests {
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new(BITCOIN_MAINNET),
                 observed: NetworkFingerprint::new(BITCOIN_TESTNET3),
+            }
+        );
+    }
+
+    async fn mock_ledger_info<'a>(
+        server: &'a httpmock::MockServer,
+        chain_id: u64,
+    ) -> httpmock::Mock<'a> {
+        let body = serde_json::json!({"chain_id": chain_id, "ledger_version": "1"});
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET);
+                then.status(200).json_body(body);
+            })
+            .await
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_aptos_on_its_expected_chain_id_as_healthy() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_ledger_info(&server, APTOS_MAINNET).await;
+        let config = ForeignChainsConfig {
+            aptos: Some(chain_config(
+                Some("1"),
+                one_provider("publicnode", &server.base_url()),
+            )),
+            ..Default::default()
+        };
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Aptos, "publicnode"),
+            ProviderStatus::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_aptos_on_another_network_as_wrong_network() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_ledger_info(&server, APTOS_TESTNET).await;
+        let config = ForeignChainsConfig {
+            aptos: Some(chain_config(
+                Some("1"),
+                one_provider("publicnode", &server.base_url()),
+            )),
+            ..Default::default()
+        };
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Aptos, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new("1"),
+                observed: NetworkFingerprint::new("2"),
             }
         );
     }
