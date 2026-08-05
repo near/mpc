@@ -15,6 +15,7 @@ use foreign_chain_inspector::{
     BlockConfirmations, FanOut, ForeignChainInspectionError, ForeignChainInspector,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
+use near_mpc_contract_interface::types::ProviderId;
 
 mockall::mock! {
     Inspector {}
@@ -93,7 +94,12 @@ fn err(make: impl Fn() -> ForeignChainInspectionError + Send + Sync + 'static) -
 }
 
 fn fan_out_of(inspectors: Vec<MockInspector>) -> FanOut<MockInspector> {
-    let inspectors: NonEmptyVec<MockInspector> = inspectors
+    let named: Vec<(ProviderId, MockInspector)> = inspectors
+        .into_iter()
+        .enumerate()
+        .map(|(index, inspector)| (ProviderId(format!("provider-{index}")), inspector))
+        .collect();
+    let inspectors: NonEmptyVec<(ProviderId, MockInspector)> = named
         .try_into()
         .expect("test must provide at least one inspector");
     FanOut::new(inspectors)

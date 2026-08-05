@@ -143,7 +143,7 @@ pub enum FreshnessError {
 /// Emit a structured WARN for a failed PCCS freshness check, with all
 /// the fields the issue's acceptance criteria call for (field, issued
 /// timestamp, the relevant delta, the configured limit, and the
-/// `pccs_url`). Fires at the [`fetch_collateral_from`] layer where the
+/// `pccs_url`). Fires at the [`TeeAuthority::fetch_collateral_from`] layer where the
 /// URL is known; the inner check is intentionally pure-logic and
 /// returns a typed [`FreshnessError`] which this function decomposes
 /// into separate structured fields rather than logging via `Debug`.

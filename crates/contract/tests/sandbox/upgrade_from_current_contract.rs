@@ -125,6 +125,8 @@ async fn test_propose_update_config() {
         remove_non_participant_tee_verifier_votes_tera_gas: 14,
         verifier_tera_gas: 15,
         resolve_verification_tera_gas: 16,
+        // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
+        launcher_hash_unused_ttl_seconds: 14 * 24 * 60 * 60,
     };
 
     let propose_args = ProposeUpdateArgs {

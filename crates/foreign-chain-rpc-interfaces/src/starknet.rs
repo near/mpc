@@ -131,18 +131,79 @@ where
         .map(|s| parse_felt(s).map_err(serde::de::Error::custom))
         .collect()
 }
+/// RPC response for `starknet_chainId`: the network's id in hex (`SN_MAIN` is `0x534e5f4d41494e`).
+/// <https://github.com/starkware-libs/starknet-specs/blob/master/api/starknet_api_openrpc.json>
+///
+/// The spec types this as `CHAIN_ID`, `^0x[a-fA-F0-9]+$`, not as a `FELT`. It carries no length
+/// bound and permits leading zeros, so it is kept as Hex text rather than parsed into an [`H256`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct ChainIdResponse(pub String);
+
+impl ChainIdResponse {
+    /// Lowercase, no leading zeros.
+    ///
+    /// The prefix is matched case-insensitively although the spec's pattern is not: the same
+    /// normalization is applied to operator-written fingerprints, which the pattern does not bind.
+    pub fn canonical_text(&self) -> String {
+        let digits = self
+            .0
+            .strip_prefix("0x")
+            .or_else(|| self.0.strip_prefix("0X"));
+        let Some(digits) = digits else {
+            return self.0.clone();
+        };
+        let significant = digits.trim_start_matches('0');
+        if significant.is_empty() {
+            "0x0".to_string()
+        } else {
+            format!("0x{}", significant.to_ascii_lowercase())
+        }
+    }
+}
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        BlockId, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
+        BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
         GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus, parse_felt,
     };
+    use rstest::rstest;
 
     const TEST_BLOCK_NUMBER: u64 = 842_750;
     const TEST_RECEIPT_BLOCK_NUMBER: u64 = 6_195_041;
     const SHORT_HEX_BLOCK_HASH: &str = "0x5";
+    /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
+    const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
+
+    /// 66 hex digits. `CHAIN_ID` carries no length bound, though a `FELT` caps at 63.
+    const LONGER_THAN_A_FELT: &str =
+        "0x1234567890123456789012345678901234567890123456789012345678901234ab";
+
+    #[rstest]
+    #[case::canonical(MAINNET_CHAIN_ID, MAINNET_CHAIN_ID)]
+    // Padded and upper-cased, as a provider may send it.
+    #[case::padded_and_upper_cased("0x00534E5F4D41494E", MAINNET_CHAIN_ID)]
+    // A spelling only an operator can write, since the spec's pattern binds providers.
+    #[case::upper_cased_prefix("0X534E5F4D41494E", MAINNET_CHAIN_ID)]
+    #[case::zero("0x0000", "0x0")]
+    #[case::longer_than_a_felt(LONGER_THAN_A_FELT, LONGER_THAN_A_FELT)]
+    // The decoded name rather than the hex: reported as answered by the provider.
+    #[case::not_hex("NOT_CHAIN_ID", "NOT_CHAIN_ID")]
+    fn chain_id_response__should_canonicalize_what_a_provider_answers(
+        #[case] answered: &str,
+        #[case] expected: &str,
+    ) {
+        // Given
+        let json = serde_json::json!(answered);
+
+        // When
+        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.canonical_text(), expected);
+    }
 
     #[test]
     fn deserialize_receipt__should_accept_short_hex_block_hash() {

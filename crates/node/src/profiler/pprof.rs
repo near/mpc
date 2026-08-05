@@ -19,7 +19,7 @@ macro_rules! define_block_list {
 /// Use a blocklist to ensure async-signal safety.
 /// This prevents deadlocks if a profiling signal interrupts a thread
 /// while it holds internal locks in libc/libgcc (e.g., during unwinding).
-/// Ref: https://github.com/tikv/pprof-rs#backtrace
+/// Ref: <https://github.com/tikv/pprof-rs#backtrace>
 const SYS_CALL_BLOCK_LIST: &[&str] = define_block_list! {
     common: ["libc", "libgcc", "pthread", "vdso"],
     // macOS, especially Apple Silicon, requires a much stricter blocklist.

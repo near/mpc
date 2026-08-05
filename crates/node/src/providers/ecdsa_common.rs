@@ -1,5 +1,7 @@
-//! Plumbing shared by the two ECDSA providers (cait-sith [`EcdsaSignatureProvider`] and
-//! Damgård-et-al [`RobustEcdsaSignatureProvider`], both over secp256k1). Both keep the same
+//! Plumbing shared by the two ECDSA providers (cait-sith
+//! [`EcdsaSignatureProvider`](crate::providers::ecdsa::EcdsaSignatureProvider) and Damgård-et-al
+//! [`RobustEcdsaSignatureProvider`](crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider),
+//! both over secp256k1). Both keep the same
 //! per-domain keyshare + presignature store; only the presignature payload `P` and the surrounding
 //! protocol differ, so the storage and per-domain scaffolding are generic over `P` here.
 

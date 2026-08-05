@@ -21,7 +21,7 @@ pub struct Polynomial<C: Ciphersuite> {
 
 impl<C: Ciphersuite> Polynomial<C> {
     /// Constructs the polynomial out of scalars
-    /// The first scalar (coefficients[0]) is the constant term
+    /// The first scalar (`coefficients[0]`) is the constant term
     /// The highest degree null coefficients are dropped
     pub fn new(coefficients: &[Scalar<C>]) -> Result<Self, ProtocolError> {
         if coefficients.is_empty() {
@@ -104,7 +104,7 @@ impl<C: Ciphersuite> Polynomial<C> {
     /// Evaluates a polynomial at a certain scalar
     /// Evaluate the polynomial with the given coefficients
     /// at the point using Horner's method.
-    /// Implements [`polynomial_evaluate`] from the spec:
+    /// Implements `polynomial_evaluate` from the spec:
     /// <https://datatracker.ietf.org/doc/html/rfc9591#name-additional-polynomial-opera>
     /// Returns error if the polynomial is empty
     pub fn eval_at_point(&self, point: Scalar<C>) -> Result<SerializableScalar<C>, ProtocolError> {
@@ -136,7 +136,7 @@ impl<C: Ciphersuite> Polynomial<C> {
     /// Input requirements:
     ///     * identifiers MUST be pairwise distinct and of length greater than 1
     ///     * shares and identifiers must be of same length
-    ///     * identifier[i] corresponds to share[i]
+    ///     * `identifier[i]` corresponds to `share[i]`
     // Returns error if shares' and identifiers' lengths are distinct or less than or equals to 1
     pub fn eval_interpolation(
         identifiers: &[Scalar<C>],
