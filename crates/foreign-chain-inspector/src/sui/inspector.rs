@@ -141,8 +141,9 @@ where
 fn classify_status(status: Status) -> ForeignChainInspectionError {
     match status.code() {
         Code::NotFound => ForeignChainInspectionError::TransactionNotFound,
-        Code::DeadlineExceeded
-        | Code::Unavailable
+        // Named so a probe can report a slow provider as timed out rather than unreachable.
+        Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
+        Code::Unavailable
         | Code::ResourceExhausted
         | Code::Internal
         | Code::Unknown
@@ -300,8 +301,17 @@ mod tests {
         assert!(!classified.is_transient());
     }
 
+    #[test]
+    fn classify_status__should_name_a_deadline_as_a_timeout() {
+        // Given / When
+        let classified = classify_status(Status::new(Code::DeadlineExceeded, "too slow"));
+
+        // Then — transient like the other hiccups, but reportable as what it was.
+        assert_matches!(classified, ForeignChainInspectionError::Timeout);
+        assert!(classified.is_transient());
+    }
+
     #[rstest]
-    #[case::deadline_exceeded(Code::DeadlineExceeded)]
     #[case::unavailable(Code::Unavailable)]
     #[case::resource_exhausted(Code::ResourceExhausted)]
     #[case::internal(Code::Internal)]
