@@ -13,7 +13,7 @@ const PUBLIC_NODE_URL: &str = "https://fullnode.mainnet.aptoslabs.com/v1";
 
 /// A committed Aptos mainnet transaction (ledger version 5667962944) whose first event is
 /// `0x1::block::NewBlockEvent` emitted by the framework account `0x1`.
-/// https://explorer.aptoslabs.com/txn/0xadc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c?network=mainnet
+/// <https://explorer.aptoslabs.com/txn/0xadc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c?network=mainnet>
 const COMMITTED_TX_HASH: &str = "adc6b85a0931fc7f0d7e3839b52d63105e22cec1cb1cdee48aa2065773098c3c";
 const EXPECTED_EVENT_TYPE_TAG: &str = "0x1::block::NewBlockEvent";
 const EXPECTED_EVENT_SEQUENCE_NUMBER: u64 = 822_198_006;

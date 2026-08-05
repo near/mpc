@@ -51,7 +51,7 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
     }
 }
 
-/// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
+/// Spawns a real indexer, returning a handle to the indexer, [`IndexerAPI`].
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
 /// will be used to propagate the error.
