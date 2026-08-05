@@ -184,7 +184,7 @@ Now backup the keyshares from your currently running node.
 You'll need:
 - **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view.
 
-  > **Strip the URL scheme.** The contract stores participant URLs with a scheme (e.g. `http://node.example.com:80`), but `--mpc-node-address` accepts only `host:port`. Passing `http://node.example.com:8079` makes the CLI resolve `http://node.example.com` as a hostname and fail with `TCP connect: failed to lookup address information: Name or service not known`. The port in the contract URL is the P2P port, not the migration port — see [Run the Backup](#run-the-backup).
+  > **Strip the URL scheme.** The contract stores participant URLs with a scheme (e.g. `http://node.example.com:80`), but `--mpc-node-address` accepts only `host:port`. Passing `http://node.example.com:8079` makes the CLI resolve `http://node.example.com` as a hostname and fail on the TCP connect, with `failed to lookup address information: Name or service not known` as the underlying cause. The port in the contract URL is the P2P port, not the migration port — see [Run the Backup](#run-the-backup).
 
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
