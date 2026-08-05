@@ -152,8 +152,9 @@ mod tests {
 
     #[rstest]
     #[case::hex(CHAIN_ID_8453, "8453")]
-    // Padded and upper-cased, as a provider may send it.
-    #[case::padded_and_upper_cased("0x002105", "8453")]
+    // Padded and upper-cased, as a provider may send it. Arbitrum, whose id has hex letters.
+    #[case::padded("0x002105", "8453")]
+    #[case::upper_cased_digits("0xA4B1", "42161")]
     // Spellings only an operator writes: the published decimal, and an upper-cased prefix.
     #[case::decimal("8453", "8453")]
     #[case::upper_cased_prefix("0X2105", "8453")]

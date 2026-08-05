@@ -50,8 +50,9 @@ pub(crate) const NO_PARAMS: [(); 0] = [];
 pub struct NetworkFingerprint(String);
 
 impl NetworkFingerprint {
-    /// The longest fingerprint in use is Bitcoin's genesis hash at 66 characters. This leaves
-    /// room for a chain that reports a longer one.
+    /// The longest fingerprint in use is Bitcoin's genesis hash, at 64 characters. Must stay
+    /// clear of what any chain reports, since fingerprints are compared after the cut and two
+    /// that agree up to it would read as one network.
     pub const MAX_CHARS: usize = 96;
     const CUT_SHORT_MARKER: &str = "_TRUNCATED";
 

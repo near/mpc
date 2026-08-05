@@ -831,7 +831,13 @@ mod tests {
         else {
             panic!("expected the flood to read as the wrong network");
         };
-        assert!(observed.to_string().chars().count() < 100);
+        let observed = observed.to_string();
+        assert!(observed.ends_with("_TRUNCATED"), "{observed}");
+        assert_eq!(
+            observed.chars().count(),
+            NetworkFingerprint::MAX_CHARS,
+            "{observed}"
+        );
     }
 
     #[test]
