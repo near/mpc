@@ -217,7 +217,7 @@ The window must stay well above the honest-node resubmit cadence so nobody is ev
 
 Note what this does *not* do: it bounds future trust in entries the old verifier produced, but does not undo whatever MPC operations a node holding such an entry already participated in. This is containment of future trust, not remediation of past damage, which is out of scope here.
 
-Verifier rotation is also not the right response when the fault is not in the verifier. If the bad behavior can be pinned to a specific image or launcher hash, operators can leave the verifier alone and drop the affected hash from the post-DCAP allowlist; any subsequent [`verify_tee`][verify-tee] or [`clean_invalid_attestations`][clean-invalid-attestations] sweep then evicts the matching entries through the existing allowlist-mismatch path. That path is unchanged by this design and remains available as a faster, targeted response when the offending measurement is known.
+Verifier rotation is also not the right response when the fault is not in the verifier. If the bad behavior can be pinned to a specific image or launcher hash, operators can leave the verifier alone and drop the affected hash from the post-DCAP allowlist. A subsequent [`verify_tee`][verify-tee] then demotes the affected nodes out of the participant set through the existing allowlist-mismatch path, and a [`clean_invalid_attestations`][clean-invalid-attestations] sweep evicts their stored entries — only the latter reclaims storage; `verify_tee` leaves `stored_attestations` untouched. That path is unchanged by this design and remains available as a faster, targeted response when the offending measurement is known.
 
 ### Requirements on the verifier account
 

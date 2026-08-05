@@ -59,6 +59,12 @@ impl From<OldConfig> for Config {
     fn from(old: OldConfig) -> Self {
         // Carry the deployed values; the new fields (async attestation gas + launcher
         // eviction) are added in this release, so take their defaults.
+        //
+        // `clean_invalid_attestations_tera_gas` is the deliberate exception: it is reset to
+        // the new default rather than carried over. The deployed 10 TGas cannot fund the
+        // 100-entry scan `vote_reshared` requests, and the promise is detached, so every
+        // removal rolls back unnoticed (#4035). Carrying it forward would leave the fix
+        // unreachable without a governance config vote.
         Config {
             key_event_timeout_blocks: old.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
@@ -73,7 +79,8 @@ impl From<OldConfig> for Config {
                 .return_ck_and_clean_state_on_success_call_tera_gas,
             fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
             clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
-            clean_invalid_attestations_tera_gas: old.clean_invalid_attestations_tera_gas,
+            clean_invalid_attestations_tera_gas: Config::default()
+                .clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: old
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: old
@@ -317,6 +324,113 @@ mod tests {
         // Had they defaulted to epoch 0, both would be expired and the fallback would surface
         // only one.
         assert_eq!(migrated.get_allowed_launcher_hashes().len(), 2);
+    }
+
+    /// Builds an `OldConfig` whose every field is distinguishable from `Config::default()`,
+    /// so a carried-forward value cannot be mistaken for a defaulted one.
+    fn deployed_config() -> OldConfig {
+        OldConfig {
+            key_event_timeout_blocks: 1,
+            tee_upgrade_deadline_duration_seconds: 2,
+            contract_upgrade_deposit_tera_gas: 3,
+            sign_call_gas_attachment_requirement_tera_gas: 4,
+            ckd_call_gas_attachment_requirement_tera_gas: 5,
+            return_signature_and_clean_state_on_success_call_tera_gas: 6,
+            return_ck_and_clean_state_on_success_call_tera_gas: 7,
+            fail_on_timeout_tera_gas: 8,
+            clean_tee_status_tera_gas: 9,
+            clean_invalid_attestations_tera_gas: 10,
+            cleanup_orphaned_node_migrations_tera_gas: 11,
+            remove_non_participant_update_votes_tera_gas: 12,
+            clean_foreign_chain_data_tera_gas: 13,
+            remove_non_participant_tee_verifier_votes_tera_gas: 14,
+        }
+    }
+
+    /// The deployed 10 TGas cannot fund the 100-entry scan `vote_reshared` requests, so the
+    /// sweep exhausts its budget and rolls back silently. Carrying the stored value forward
+    /// would leave that unreachable without a governance config vote, so migration
+    /// deliberately resets this one field (#4035).
+    #[test]
+    fn config_migration__should_reset_clean_invalid_attestations_gas_to_the_new_default() {
+        // given: state written by 3.13.0 carrying the under-funded budget.
+        let old = deployed_config();
+        assert_ne!(
+            old.clean_invalid_attestations_tera_gas,
+            Config::default().clean_invalid_attestations_tera_gas,
+        );
+
+        // when
+        let migrated = Config::from(old);
+
+        // then
+        assert_eq!(
+            migrated.clean_invalid_attestations_tera_gas,
+            Config::default().clean_invalid_attestations_tera_gas,
+        );
+    }
+
+    /// The reset above must not leak into the other fields: every remaining value an operator
+    /// may have voted in has to survive the upgrade untouched.
+    #[test]
+    fn config_migration__should_carry_every_other_deployed_value_forward() {
+        // given / when
+        let old = deployed_config();
+        let migrated = Config::from(deployed_config());
+
+        // then
+        assert_eq!(
+            migrated.key_event_timeout_blocks,
+            old.key_event_timeout_blocks
+        );
+        assert_eq!(
+            migrated.tee_upgrade_deadline_duration_seconds,
+            old.tee_upgrade_deadline_duration_seconds
+        );
+        assert_eq!(
+            migrated.contract_upgrade_deposit_tera_gas,
+            old.contract_upgrade_deposit_tera_gas
+        );
+        assert_eq!(
+            migrated.sign_call_gas_attachment_requirement_tera_gas,
+            old.sign_call_gas_attachment_requirement_tera_gas
+        );
+        assert_eq!(
+            migrated.ckd_call_gas_attachment_requirement_tera_gas,
+            old.ckd_call_gas_attachment_requirement_tera_gas
+        );
+        assert_eq!(
+            migrated.return_signature_and_clean_state_on_success_call_tera_gas,
+            old.return_signature_and_clean_state_on_success_call_tera_gas
+        );
+        assert_eq!(
+            migrated.return_ck_and_clean_state_on_success_call_tera_gas,
+            old.return_ck_and_clean_state_on_success_call_tera_gas
+        );
+        assert_eq!(
+            migrated.fail_on_timeout_tera_gas,
+            old.fail_on_timeout_tera_gas
+        );
+        assert_eq!(
+            migrated.clean_tee_status_tera_gas,
+            old.clean_tee_status_tera_gas
+        );
+        assert_eq!(
+            migrated.cleanup_orphaned_node_migrations_tera_gas,
+            old.cleanup_orphaned_node_migrations_tera_gas
+        );
+        assert_eq!(
+            migrated.remove_non_participant_update_votes_tera_gas,
+            old.remove_non_participant_update_votes_tera_gas
+        );
+        assert_eq!(
+            migrated.clean_foreign_chain_data_tera_gas,
+            old.clean_foreign_chain_data_tera_gas
+        );
+        assert_eq!(
+            migrated.remove_non_participant_tee_verifier_votes_tera_gas,
+            old.remove_non_participant_tee_verifier_votes_tera_gas
+        );
     }
 
     #[test]
