@@ -36,8 +36,10 @@ cargo insta accept                                          # Accept all pending
 ```bash
 cargo make e2e-tests                            # Build required binaries and run all E2E tests
 cargo make e2e-tests-skip-build                 # Reuse binaries from a previous run
-cargo make e2e-tests-skip-build -- <name>       # Run a single test (filter passed to nextest)
+cargo make e2e-tests-skip-build <name>          # Run tests matching a substring filter
+cargo make e2e-tests-skip-build -E 'test(request_lifecycle)' --no-capture  # Forward nextest flags
 ```
+Everything after the task name is forwarded to `cargo nextest run` unchanged (filters, `-E` expressions, `--no-capture`, `--retries`, `-j`, etc.); no arguments runs the whole suite with the `ci-e2e` profile. Do not put flags after a `--` separator: it is forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 See `crates/e2e-tests/README.md` for details.
 
 ## Architecture Overview
