@@ -17,6 +17,8 @@ use crate::{cli::Args, types::CKDResponse};
 const BLS12381G1_PUBLIC_KEY_SIZE: usize = 48;
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 const OUTPUT_SECRET_SIZE: usize = 32;
+const HKDF_SALT: &[u8] = b"near-mpc-ckd-hkdf-v1";
+const HKDF_INFO_STRONG_KEY: &[u8] = b"near-mpc-ckd-strong-key-v1";
 
 pub fn run(args: Args) -> Result<()> {
     let account_id: AccountId = args.signer_account_id.parse()?;
@@ -56,7 +58,7 @@ pub fn run(args: Args) -> Result<()> {
         &args.mpc_ckd_public_key,
     )?;
 
-    let key = derive_strong_key(secret, b"")?;
+    let key = derive_strong_key(secret, HKDF_INFO_STRONG_KEY)?;
     let key_hex = hex::encode(key);
 
     println!("The key is: {key_hex}");
@@ -137,11 +139,13 @@ fn decrypt_secret_and_verify(
     Ok(secret.to_compressed())
 }
 
+/// Callers deriving multiple keys from the same CKD output should use a distinct `info`
+/// per key purpose, so that keys for different purposes are cryptographically unrelated.
 fn derive_strong_key(
     ikm: [u8; BLS12381G1_PUBLIC_KEY_SIZE],
     info: &[u8],
 ) -> Result<[u8; OUTPUT_SECRET_SIZE]> {
-    let hk = Hkdf::<Sha256>::new(None, &ikm);
+    let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), &ikm);
     let mut okm = [0u8; OUTPUT_SECRET_SIZE];
     hk.expand(info, &mut okm).map_err(|err| anyhow!("{err}"))?;
     Ok(okm)
@@ -155,4 +159,46 @@ pub fn derive_app_id(account_id: &AccountId, path: &str) -> CkdAppId {
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();
     hash.into()
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[test]
+    fn derive_strong_key__should_use_nonempty_salt() {
+        // Given
+        let ikm = [7u8; BLS12381G1_PUBLIC_KEY_SIZE];
+        let info = b"some-info";
+        let mut expected = [0u8; OUTPUT_SECRET_SIZE];
+        Hkdf::<Sha256>::new(Some(HKDF_SALT), &ikm)
+            .expand(info, &mut expected)
+            .unwrap();
+
+        // When
+        let key = derive_strong_key(ikm, info).unwrap();
+
+        // Then
+        assert_eq!(key, expected);
+    }
+
+    #[rstest]
+    #[case(b"purpose-a", b"purpose-b")]
+    #[case(b"", HKDF_INFO_STRONG_KEY)]
+    fn derive_strong_key__should_produce_different_keys_for_different_info(
+        #[case] info_a: &[u8],
+        #[case] info_b: &[u8],
+    ) {
+        // Given
+        let ikm = [3u8; BLS12381G1_PUBLIC_KEY_SIZE];
+
+        // When
+        let key_a = derive_strong_key(ikm, info_a).unwrap();
+        let key_b = derive_strong_key(ikm, info_b).unwrap();
+
+        // Then
+        assert_ne!(key_a, key_b);
+    }
 }
