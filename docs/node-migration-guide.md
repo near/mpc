@@ -183,9 +183,6 @@ Now backup the keyshares from your currently running node.
 
 You'll need:
 - **MPC node address**: The host where your node is running, as bare `host:port` (e.g. `node.example.com:8079`). The host is available from the contract — your participant entry's `url` in the `state` view.
-
-  > **Strip the URL scheme.** The contract stores participant URLs with a scheme (e.g. `http://node.example.com:80`), but `--mpc-node-address` accepts only `host:port`. Passing `http://node.example.com:8079` makes the CLI resolve `http://node.example.com` as a hostname and fail on the TCP connect, with `failed to lookup address information: Name or service not known` as the underlying cause. The port in the contract URL is the P2P port, not the migration port — see [Run the Backup](#run-the-backup).
-
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication. Available from the contract (your participant's `tls_public_key` in `state` / `get_tee_accounts`), or from the node's public-data endpoint:
 
   ```bash
@@ -212,7 +209,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 The migration endpoint listens on the node's `migration_web_ui` port. `8079` is the current default, but nodes configured before that default was introduced commonly use `8081`. Read the actual value from the node instead of assuming:
 
 ```bash
-curl -s http://<IP>:8080/debug/node_config | jq -r .migration_web_ui
+curl -s http://<IP>:8080/debug/node_config | jq -r '.migration_web_ui | split(":") | last'
 ```
 
 ```bash
