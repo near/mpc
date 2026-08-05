@@ -7,6 +7,7 @@ use std::time::Duration;
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
 use foreign_chain_inspector::base::inspector::Base;
+use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
 use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
@@ -107,8 +108,14 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                 ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
                 ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
                 ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
-                // TODO(#4003): probe Bitcoin, Aptos and Sui. Ethereum, Solana and Ton have no
-                // inspector, so there is nothing to probe them with.
+                ForeignChain::Bitcoin => {
+                    probe_chain(chain, chain_config, |provider| {
+                        Ok(BitcoinInspector::new(prepare_jsonrpc(provider)?))
+                    })
+                    .await
+                }
+                // TODO(#4003): probe Aptos and Sui. Ethereum, Solana and Ton have no inspector, so
+                // there is nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -237,6 +244,11 @@ mod tests {
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
+    /// Bitcoin's genesis block hash, which is what tells its networks apart.
+    const BITCOIN_MAINNET: &str =
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+    const BITCOIN_TESTNET3: &str =
+        "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943";
 
     struct EvmMainnet {
         chain: ForeignChain,
@@ -329,9 +341,9 @@ mod tests {
         }
     }
 
-    fn bitcoin_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+    fn solana_only(config: ForeignChainConfig) -> ForeignChainsConfig {
         ForeignChainsConfig {
-            bitcoin: Some(config),
+            solana: Some(config),
             ..Default::default()
         }
     }
@@ -717,7 +729,7 @@ mod tests {
     async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
      {
         // Given
-        let config = bitcoin_only(chain_config(
+        let config = solana_only(chain_config(
             Some(ANY_FINGERPRINT),
             one_provider("publicnode", CLOSED_PORT_URL),
         ));
@@ -727,7 +739,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            must_status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
     }
@@ -742,7 +754,7 @@ mod tests {
                 Some(MAINNET),
                 one_provider("publicnode", &server.base_url()),
             )),
-            bitcoin: Some(chain_config(
+            solana: Some(chain_config(
                 Some(ANY_FINGERPRINT),
                 one_provider("publicnode", CLOSED_PORT_URL),
             )),
@@ -758,7 +770,7 @@ mod tests {
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            must_status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
         assert_eq!(report.counts_per_chain().len(), 2);
@@ -819,6 +831,55 @@ mod tests {
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new("8453"),
                 observed: NetworkFingerprint::new("84532"),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_bitcoin_on_its_genesis_block_as_healthy() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_chain_id(&server, BITCOIN_MAINNET).await;
+        let config = ForeignChainsConfig {
+            bitcoin: Some(chain_config(
+                Some(BITCOIN_MAINNET),
+                one_provider("publicnode", &server.base_url()),
+            )),
+            ..Default::default()
+        };
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            ProviderStatus::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_bitcoin_on_another_network_as_wrong_network() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_chain_id(&server, BITCOIN_TESTNET3).await;
+        let config = ForeignChainsConfig {
+            bitcoin: Some(chain_config(
+                Some(BITCOIN_MAINNET),
+                one_provider("publicnode", &server.base_url()),
+            )),
+            ..Default::default()
+        };
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new(BITCOIN_MAINNET),
+                observed: NetworkFingerprint::new(BITCOIN_TESTNET3),
             }
         );
     }

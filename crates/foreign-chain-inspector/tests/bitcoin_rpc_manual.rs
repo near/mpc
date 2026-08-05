@@ -118,3 +118,28 @@ struct GetBlockchainInfoResponse {
 struct GetBlockVerbosityOneResponse {
     tx: Vec<String>,
 }
+
+/// Bitcoin mainnet's genesis block hash, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str =
+    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Bitcoin RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        PUBLIC_NODE_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = BitcoinInspector::new(http_client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
+}
