@@ -4894,6 +4894,66 @@ mod tests {
         )
     }
 
+    /// The deposit must be exactly `fee × grants`, which is what makes a remainder — and so a
+    /// refund path — impossible.
+    #[rstest]
+    #[case::one_yocto_short(-1)]
+    #[case::one_yocto_over(1)]
+    fn prepay_attestation_storage__should_reject_a_deposit_that_is_not_an_exact_multiple(
+        #[case] offset: i128,
+    ) {
+        // Given
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let node: AccountId = "newcomer.near".parse().unwrap();
+        let fee = u128::from(contract.config().attestation_storage_fee_millinear);
+        let exact = NearToken::from_millinear(fee * 2).as_yoctonear();
+        let attached = NearToken::from_yoctonear((exact as i128 + offset) as u128);
+        testing_env!(
+            VMContextBuilder::new()
+                .predecessor_account_id("operator.near".parse().unwrap())
+                .attached_deposit(attached)
+                .build()
+        );
+
+        // When
+        let result = contract.prepay_attestation_storage(node.clone(), 2);
+
+        // Then
+        assert_matches!(
+            &result,
+            Err(Error::InvalidParameters(InvalidParameters::UnexpectedDeposit {
+                attached: a,
+                required
+            })) if *a == attached.as_yoctonear() && *required == exact
+        );
+        assert_eq!(contract.available_attestation_grants(node), 0);
+    }
+
+    #[test]
+    fn prepay_attestation_storage__should_reject_zero_grants() {
+        // Given
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let node: AccountId = "newcomer.near".parse().unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .predecessor_account_id("operator.near".parse().unwrap())
+                .attached_deposit(NearToken::from_yoctonear(0))
+                .build()
+        );
+
+        // When
+        let result = contract.prepay_attestation_storage(node.clone(), 0);
+
+        // Then
+        assert_matches!(
+            &result,
+            Err(Error::InvalidParameters(
+                InvalidParameters::MalformedPayload { .. }
+            ))
+        );
+        assert_eq!(contract.available_attestation_grants(node), 0);
+    }
+
     /// Without this the async path would store for free while the synchronous one charged.
     #[test]
     fn resolve_verification__should_consume_one_grant_when_the_entry_is_new() {

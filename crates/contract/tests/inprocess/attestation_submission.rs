@@ -942,61 +942,6 @@ fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProto
     assert_allowed_docker_image_hashes!(&setup, 100, &[(code_hash, None)]);
 }
 
-/// The deposit must be exactly `fee × grants`. Anything else is rejected, which is what
-/// makes a remainder — and therefore a refund path — impossible.
-#[rstest]
-#[case::one_yocto_short(-1)]
-#[case::one_yocto_over(1)]
-fn prepay_attestation_storage__should_reject_a_deposit_that_is_not_an_exact_multiple(
-    #[case] offset: i128,
-) {
-    // Given
-    let mut setup = TestSetupBuilder::new().build();
-    let node: AccountId = "newcomer.near".parse().unwrap();
-    let fee = u128::from(setup.contract.config().attestation_storage_fee_millinear);
-    let exact = NearToken::from_millinear(fee * 2).as_yoctonear();
-    let attached = NearToken::from_yoctonear((exact as i128 + offset) as u128);
-    testing_env!(common::participant_context_with_deposit(
-        &"operator.near".parse().unwrap(),
-        attached
-    ));
-
-    // When
-    let result = setup.contract.prepay_attestation_storage(node.clone(), 2);
-
-    // Then
-    assert_matches!(
-        &result,
-        Err(Error::InvalidParameters(InvalidParameters::UnexpectedDeposit { attached: a, required }))
-            if *a == attached.as_yoctonear() && *required == exact
-    );
-    assert_eq!(setup.contract.available_attestation_grants(node), 0);
-}
-
-/// Buying zero grants is rejected rather than silently accepting the deposit.
-#[test]
-fn prepay_attestation_storage__should_reject_zero_grants() {
-    // Given
-    let mut setup = TestSetupBuilder::new().build();
-    let node: AccountId = "newcomer.near".parse().unwrap();
-    testing_env!(common::participant_context_with_deposit(
-        &"operator.near".parse().unwrap(),
-        NearToken::from_yoctonear(0)
-    ));
-
-    // When
-    let result = setup.contract.prepay_attestation_storage(node.clone(), 0);
-
-    // Then
-    assert_matches!(
-        &result,
-        Err(Error::InvalidParameters(
-            InvalidParameters::MalformedPayload { .. }
-        ))
-    );
-    assert_eq!(setup.contract.available_attestation_grants(node), 0);
-}
-
 /// The operator pays and the node submits — two different accounts. This is the whole point
 /// of prepaying: the node's function-call key cannot attach a deposit, so somebody else must.
 #[test]
