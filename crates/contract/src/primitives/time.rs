@@ -7,7 +7,7 @@ pub(crate) struct Timestamp {
 
 impl Timestamp {
     /// The largest representable timestamp. Used as the saturating result when adding a
-    /// TTL to `now()` would overflow, so a bogus timestamp or enormous TTL yields an
+    /// TTL to [`now()`](Timestamp::now) would overflow, so a bogus timestamp or enormous TTL yields an
     /// entry that never expires rather than panicking.
     pub(crate) const MAX: Self = Self {
         duration_since_unix_epoch: Duration::MAX,

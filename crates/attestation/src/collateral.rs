@@ -1,6 +1,6 @@
 //! Quote collateral (Intel certificates + TCB info) used to verify a quote.
 //!
-//! `Collateral` is re-exported from `tee-verifier-interface`, not redefined,
+//! [`Collateral`] is re-exported from `tee-verifier-interface`, not redefined,
 //! so it has a single canonical definition.
 //!
 //! The `test-utils` JSON parser below lives here, not in the wire crate:

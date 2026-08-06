@@ -63,7 +63,7 @@ impl ToRpcParams for &GetTransactionReceiptArgs {
 }
 
 /// Block identifier accepted by Starknet block-lookup RPCs. The inspector's canonical-chain
-/// check uses `Number`; add more variants only when a caller actually needs them.
+/// check uses [`BlockId::Number`]; add more variants only when a caller actually needs them.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum BlockId {

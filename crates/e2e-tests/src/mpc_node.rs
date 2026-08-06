@@ -42,7 +42,7 @@ impl MpcNode {
     /// Send SIGTERM and wait up to `grace` for the node to exit. If grace
     /// expires before the process exits on its own, send SIGKILL and wait
     /// for it explicitly (instead of relying on `ProcessGuard::Drop` to do
-    /// the same). Either way, returns the child's `ExitStatus`:
+    /// the same). Either way, returns the child's [`ExitStatus`](std::process::ExitStatus):
     /// `status.success()` ⇒ graceful exit via mpc-node's SIGTERM handler;
     /// `status.signal() == Some(9)` ⇒ SIGKILL fallback fired. Used to
     /// exercise the production SIGTERM handler.

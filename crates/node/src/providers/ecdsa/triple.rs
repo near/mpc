@@ -584,7 +584,7 @@ mod tests {
     /// Snapshot test pinning the on-disk DB key layout for the triple store.
     ///
     /// The exact byte layout is load-bearing: any drift in how
-    /// `ReconstructionThreshold` or `UniqueId` serialize would silently change
+    /// [`ReconstructionThreshold`] or [`UniqueId`] serialize would silently change
     /// the on-disk format. The snapshot makes the layout an explicit, reviewed
     /// artifact — if it diffs, you're changing on-disk format and must think
     /// about migration.

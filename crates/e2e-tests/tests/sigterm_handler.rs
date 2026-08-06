@@ -8,8 +8,8 @@ use crate::common;
 ///
 /// Would fail under revert in two ways:
 /// - Without the SIGTERM handler at all, the OS default-terminates the
-///   process and `status.success()` is false (`code()` is `None`,
-///   `signal()` is `Some(15)`).
+///   process and `status.success()` is false ([`code()`] is `None`,
+///   [`signal()`] is `Some(15)`).
 /// - With a handler that returns an error from `run_mpc_node` on signal
 ///   shutdown (the previous behavior, before the signal/image-hash split),
 ///   `status.success()` is also false (exit code 1).

@@ -1,6 +1,6 @@
 //! Integration test for the stateless `tee-verifier` contract.
 //!
-//! Calls `TeeVerifier::verify_quote` directly (no Promise round-trip)
+//! Calls [`TeeVerifier::verify_quote`] directly (no Promise round-trip)
 //! with a real Dstack quote+collateral fixture taken from `test-utils`,
 //! and asserts the returned [`VerificationResult`]:
 //!

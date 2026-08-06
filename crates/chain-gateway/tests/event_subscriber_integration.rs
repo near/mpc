@@ -69,7 +69,7 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
 }
 
 /// Spins up a two-node localnet where the observer is started with a
-/// `BlockEventSubscriptions` filtering for executor function calls.
+/// [`BlockEventSubscriptions`] filtering for executor function calls.
 /// Ensures happy path: successful calls are tracked.
 #[tokio::test]
 async fn test_event_subscriber_executor_function_call_success_success_calls_are_tracked() {
@@ -217,7 +217,7 @@ async fn setup_receiver_function_call_filter_with_buffer(
     }
 }
 
-/// Ensures `ReceiverFunctionCall` registers for private methods that return success.
+/// Ensures [`ReceiverFunctionCall`] registers for private methods that return success.
 #[tokio::test]
 #[rstest]
 #[case::successful_calls_will_be_logged(true)]
@@ -262,7 +262,7 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
     localnet.shutdown().await;
 }
 
-/// Ensures `ReceiverFunctionCall` for private methods called by non-contract
+/// Ensures [`ReceiverFunctionCall`] for private methods called by non-contract
 /// are registered but have an error (NEAR rejects: predecessor != contract).
 #[tokio::test]
 async fn test_event_subscriber_receiver_error_if_non_private_call() {
@@ -364,7 +364,7 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
     localnet.shutdown().await;
 }
 
-/// Ensures a `BlockStatusHandle` from a `BlockUpdate` eventually reports finality.
+/// Ensures a [`BlockStatusHandle`] from a [`BlockUpdate`] eventually reports finality.
 ///
 /// Synchronisation: the state viewer only reports finalised contract state, so once
 /// it sees the value change, the block whose handle we hold is necessarily final too.

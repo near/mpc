@@ -229,7 +229,7 @@ mod tests {
     use rstest::rstest;
     use serde_json;
 
-    /// `TcbInfo` holds both `HexBytes<48>` and `HexBytes<32>`; schema
+    /// [`TcbInfo`] holds both `HexBytes<48>` and `HexBytes<32>`; schema
     /// generation panics if their declarations collide.
     #[cfg(feature = "borsh-schema")]
     #[test]

@@ -1,8 +1,8 @@
 //! [`Zeroize`] wrapper for the `blstrs` scalars holding CKD secrets.
 //!
-//! `blstrs::Scalar` is `Copy` and does not implement [`Zeroize`], so secrets are
-//! wrapped here and held in `Zeroizing` to get a volatile overwrite on drop.
-//! Zeroization stays *best-effort*: `Copy` semantics mean every read of the value
+//! [`blstrs::Scalar`] is [`Copy`] and does not implement [`Zeroize`], so secrets are
+//! wrapped here and held in [`Zeroizing`](zeroize::Zeroizing) to get a volatile overwrite on drop.
+//! Zeroization stays *best-effort*: [`Copy`] semantics mean every read of the value
 //! produces a fresh copy (function arguments, register spills, temporaries inside
 //! `blstrs`' arithmetic) that the wrapper cannot reach. Only the wrapped location
 //! is guaranteed to be cleared.

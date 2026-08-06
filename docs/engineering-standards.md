@@ -7,6 +7,7 @@ To ensure consistent high quality code, every PR must conform to the following p
 - [Separate business logic from I/O](#separate-business-logic-from-io)
 - [Add tests](#add-tests)
 - [Measure performance](#measure-performance)
+- [Name capability traits after the action](#name-capability-traits-after-the-action)
 - [Write helpful code comments](#write-helpful-code-comments)
 
 Beyond our engineering standards,
@@ -227,6 +228,31 @@ Therefore, any proposed performance improvements should come with benchmarks
 or some other objective measure of improvement and regression tests that
 prevent the optimization from regressing in future iterations.
 
+## Name capability traits after the action
+Following [Separate business logic from I/O](#separate-business-logic-from-io), much of our code takes its dependencies as trait bounds. When such a trait models a single capability, name it after the action it grants, not as an agent noun derived from that action. The trait is the capability; the implementor is the actor. `ContractStateReader` invents an actor whose only property is that it performs the action, while `ReadContractState` states the capability directly and reads naturally at the use site: `fn backup(chain: impl ReadContractState)` says exactly what `backup` is allowed to do.
+
+```rust
+// Don't
+pub trait ContractStateReader {
+    fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error>;
+}
+
+// Do
+pub trait ReadContractState {
+    fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error>;
+}
+```
+
+The test: if the trait's name is just its one action with an `-er`/`-or` suffix attached (`Reader`, `Writer`, `Watcher`, or a `Provider` of one thing), drop the suffix and name the action.
+
+**The rule is to avoid nouns, not to force every name into a verb.** Prepositions and predicates state a capability just as well:
+
+- **Conversion traits** (`From*`, `Into*`, `To*`, `TryFrom*`, `TryInto*`) follow the standard library convention; see the Rust API guidelines linked at the top of this document.
+- **Extension traits** (`*Ext`): the suffix is the idiom.
+- **Predicate traits** (`Is*`, `Has*`) are already named after the state they expose.
+
+**Scope.** This applies to new traits, and to traits you are already renaming or substantially reworking. It is not a request to rename existing noun-style traits in bulk; rename them opportunistically when a change touches them anyway.
+
 ## Write helpful code comments
 With the advent of LLMs, code comments have become much more prevalent. The issue is that LLMs tend to document **what** the code does, less so **why** the code does it.
 As usual, the PR author is taking ownership of the code, regardless of whether that code has been produced by an LLM or was written by themselves.
@@ -336,4 +362,12 @@ comment names another type, function, module, or path, write it as
 inline-code span). `cargo doc` verifies the former and reports broken
 references; plain backticks render the same but are not checked, so
 references silently rot when items are renamed or moved.
+`cargo make check-docs` verifies that links resolve in everything rustdoc
+documents: library and binary code, private items included. Doc comments
+in test code (`tests/` directories and `#[cfg(test)]` modules) are outside
+rustdoc's view, so links there are unchecked; the convention still applies,
+but reviewers are the only safeguard. When a backticked word merely looks
+like an item but is not one (an algorithm name, a type in a crate we
+deliberately do not depend on, a `cfg(test)` item rustdoc cannot see),
+leave it as a plain code span.
 

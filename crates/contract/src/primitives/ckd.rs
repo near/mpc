@@ -264,7 +264,7 @@ mod tests {
     }
 
     /// The contract's `hash_app_id_with_pk` must produce the same output as
-    /// `threshold_signatures::confidential_key_derivation::hash_app_id_with_pk`
+    /// [`threshold_signatures::confidential_key_derivation::hash_app_id_with_pk`]
     /// for the same inputs, since nodes and the contract must agree on the hash point.
     #[test]
     #[expect(non_snake_case)]
