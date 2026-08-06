@@ -8,7 +8,7 @@ use std::path::Path;
 use syn::{LitStr, parse_macro_input};
 
 /// Expands TCB info measurements from the given JSON file
-/// into an `ExpectedMeasurements` struct literal.
+/// into an [`ExpectedMeasurements`](attestation::measurements::ExpectedMeasurements) struct literal.
 ///
 /// # Usage
 ///

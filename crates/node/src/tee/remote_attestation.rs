@@ -362,7 +362,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     Ok(())
 }
 
-/// Allows repeatedly awaiting for something, like a `tokio::time::Interval`.
+/// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
 pub trait Tick {
     async fn tick(&mut self);
 }

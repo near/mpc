@@ -34,10 +34,10 @@ use test_utils::attestation::p2p_tls_key;
 /// 2. Adds additional TEE attestations that do not belong to any participant
 /// 3. Initiates a new resharing with a subset of the original participants
 /// 4. Completes the resharing process by voting
-/// 5. Verifies that after `vote_reshared` the contract returns to `Running` with the reduced set
+/// 5. Verifies that after `vote_reshared` the contract returns to [`Running`] with the reduced set
 /// 6. Confirms valid non-participant attestations remain in TEE storage: the post-resharing
 ///    `clean_invalid_attestations` sweep only evicts entries failing re-verification
-///    (expired, stale docker/launcher/measurement whitelists), and mock `Valid`
+///    (expired, stale docker/launcher/measurement whitelists), and mock [`Valid`]
 ///    attestations never fail re-verification.
 #[tokio::test]
 async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -> Result<()> {
@@ -160,7 +160,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
 
 /// Companion to the test above: verifies that the post-resharing promise chain actually
 /// invokes `clean_invalid_attestations` and evicts entries that fail re-verification.
-/// `verify()` rejects attestations that are already expired at insert time, so this test
+/// [`verify()`] rejects attestations that are already expired at insert time, so this test
 /// submits an attestation with an expiry a few seconds in the future and then fast-forwards
 /// past it before triggering the reshare.
 #[tokio::test]

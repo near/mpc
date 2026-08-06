@@ -18,7 +18,7 @@ pub fn running_state_with_epoch(epoch_id: u64) -> ProtocolContractState {
     ProtocolContractState::Running(running)
 }
 
-/// What contract initialization leaves behind: `Running`, but without any key yet.
+/// What contract initialization leaves behind: [`Running`], but without any key yet.
 pub fn running_state_without_domains() -> ProtocolContractState {
     let mut running = running_contract_state();
     running.keyset.epoch_id = EpochId::new(0);

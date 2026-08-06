@@ -100,7 +100,7 @@ where
     }
 }
 
-/// gRPC status codes carry the verdict semantics directly: `NotFound` is the node's
+/// gRPC status codes carry the verdict semantics directly: [`NotFound`](Code::NotFound) is the node's
 /// deterministic answer for an unknown (or pruned) digest, other deterministic rejections
 /// (bad request, auth, unimplemented method) must count as substantive verdicts in the
 /// fan-out, and only genuine provider hiccups stay transient.
@@ -120,7 +120,7 @@ fn classify_status(status: Status) -> ForeignChainInspectionError {
 
 /// Rejects a backend that returned a different transaction than queried. A digest that is not
 /// valid base58 for 32 bytes is a malformed response; a well-formed but different digest is a
-/// hard inconsistency. `Digest::from_base58` decodes into a fixed 32-byte buffer, so an
+/// hard inconsistency. [`Digest::from_base58`](sui_sdk_types::Digest::from_base58) decodes into a fixed 32-byte buffer, so an
 /// oversized string is rejected without a superlinear decode.
 fn ensure_digest_matches(
     requested: &[u8; 32],

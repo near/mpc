@@ -1,7 +1,7 @@
-//! Canonical `AccountId` re-export.
+//! Canonical [`AccountId`] re-export.
 //!
-//! All MPC crates get their `AccountId` from here (via `mpc_primitives::AccountId`)
-//! so the workspace never mixes wrappers around `near_account_id::AccountId` with
+//! All MPC crates get their [`AccountId`] from here (via [`mpc_primitives::AccountId`](crate::AccountId))
+//! so the workspace never mixes wrappers around [`near_account_id::AccountId`] with
 //! the real thing.
 
 pub use near_account_id::AccountId;

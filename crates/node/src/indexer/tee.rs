@@ -175,7 +175,7 @@ async fn fetch_allowed_foreign_chain_providers_with_retry(
 
 /// Monitor the allowed foreign-chain providers whitelist stored in the contract and update the
 /// watch channel when changes are detected. Consumed by
-/// `crate::foreign_chain_whitelist_verifier::run`.
+/// [`crate::foreign_chain_whitelist_verifier::run`].
 pub async fn monitor_allowed_foreign_chain_providers(
     sender: watch::Sender<BTreeMap<ForeignChain, ChainEntry>>,
     indexer_state: Arc<IndexerState>,

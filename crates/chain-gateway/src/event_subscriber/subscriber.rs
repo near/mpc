@@ -32,7 +32,7 @@ impl BlockEventSubscriptions {
 /// Filters, can be extended if necessary
 pub enum BlockEventSubscription {
     /// Filters for executions of method `method_name` on `transaction_outcome_executor_id`
-    /// that spawn a promise (execution status == `SuccessReceiptId`).
+    /// that spawn a promise (execution status == [`SuccessReceiptId`](near_indexer_primitives::views::ExecutionStatusView::SuccessReceiptId)).
     ///
     /// Calls to `transaction_outcome_executor_id.method_name`, that do not spawn a promise will be
     /// ignored.

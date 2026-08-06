@@ -38,7 +38,7 @@ pub const MAX_PENDING_REQUEST_FAN_OUT: u8 = 128;
 
 /// Append a yield index to the pending-request fan-out queue for `request`.
 ///
-/// Panics with `RequestError::PendingRequestQueueFull` if the resulting queue would
+/// Panics with [`RequestError::PendingRequestQueueFull`] if the resulting queue would
 /// exceed `MAX_PENDING_REQUEST_FAN_OUT`.
 pub(crate) fn push_pending_yield<K>(
     requests: &mut LookupMap<K, Vec<YieldIndex>>,

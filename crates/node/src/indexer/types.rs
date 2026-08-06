@@ -316,7 +316,7 @@ mod request_serialization_tests {
 
     /// The request serializes as the on-chain call args, so the node-internal `pre_submit_expiry`
     /// must not leak into the payload — it has to serialize exactly like the bare args. Guards the
-    /// `#[serde(flatten)]` + `#[serde(skip)]` on the `SubmitParticipantInfo` variant.
+    /// `#[serde(flatten)]` + `#[serde(skip)]` on the [`SubmitParticipantInfo`] variant.
     #[test]
     #[expect(non_snake_case)]
     fn submit_participant_info__should_serialize_as_bare_args() {

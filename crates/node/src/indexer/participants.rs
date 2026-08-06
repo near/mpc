@@ -520,7 +520,7 @@ pub mod test_utils {
         })
     }
 
-    /// A `Running` state with a resharing in progress whose prospective set is `new_participants`.
+    /// A [`Running`] state with a resharing in progress whose prospective set is `new_participants`.
     pub(crate) fn resharing(
         participants: ParticipantsConfig,
         new_participants: ParticipantsConfig,

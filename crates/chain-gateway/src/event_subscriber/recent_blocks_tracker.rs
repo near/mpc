@@ -8,13 +8,14 @@ use crate::event_subscriber::block_events::BlockContext;
 use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
 use near_contract_transport::BlockHeight;
 
+#[expect(rustdoc::private_intra_doc_links)]
 /// Tracks the topology of the recent blocks, using the blocks given by the indexer.
 ///
 /// This class provides two important functionalities:
 ///  - Converts a stream of optimistic blocks from the indexer into a stream of finalized
 ///    blocks.
-///  - For each block added via `add_block`, it returns a `BlockStatusHandle` that can be
-///    used to observe that block's current `BlockStatus` (non-canonical, canonical or final).
+///  - For each block added via `add_block`, it returns a [`BlockStatusHandle`] that can be
+///    used to observe that block's current [`BlockStatus`] (non-canonical, canonical or final).
 ///
 /// This class provides the following invariants (provided the requirements listed below are met):
 ///  - A block that is final will never be reverted to non-final;
@@ -51,10 +52,10 @@ use near_contract_transport::BlockHeight;
 /// Despite the assumptions we make on the indexer's behavior, this class guarantees not to panic
 /// even if the indexer violates these assumptions in arbitrary ways.
 ///
-/// Note that the `RecentBlocksTracker` is removing blocks aggressively. A block is removed if one
+/// Note that the [`RecentBlocksTracker`] is removing blocks aggressively. A block is removed if one
 /// of the following conditions is met:
 ///  - The block sits on a dead fork and can't ever be finalized;
-///  - The block is outside of the recency window `RecentBlocksTracker::window_size`
+///  - The block is outside of the recency window [`RecentBlocksTracker::window_size`]
 ///
 /// Cleanup takes place after every `add_block` in two methods:
 ///  - `maybe_update_final_head` owns **dead-fork cleanup**. When a new final block is established,
@@ -120,10 +121,11 @@ pub struct RecentBlocksTracker {
 pub enum BlockStatus {
     /// The block is optimistically included in the chain, but it is not on the canonical chain.
     OptimisticButNotCanonical = 0,
+    #[expect(rustdoc::private_intra_doc_links)]
     /// The block is optimistically included in the chain, and it is on the canonical chain,
     /// but it is not yet part of the final chain.
     /// Note that if two chains tie for canonical height, the first one seen is considered the
-    /// canonical chain (c.f. `RecentBlocksTracker::update_canonical_head`).
+    /// canonical chain (c.f. [`RecentBlocksTracker::update_canonical_head`]).
     OptimisticAndCanonical = 1,
     /// The block is finalized by the blockchain.
     /// It is an ancestor (including self) of the latest final block.
@@ -208,7 +210,7 @@ pub struct AddBlockResult {
 struct BlockNode {
     hash: CryptoHash,
     height: BlockHeight,
-    /// Indicates the finality status of this block. Held as `Arc`.
+    /// Indicates the finality status of this block. Held as [`Arc`].
     /// A [`BlockStatusHandle`] is handed out via [`AddBlockResult::block_status`] to consumers,
     /// allowing them to observe status changes and detect pruning.
     status: Arc<AtomicBlockStatus>,
@@ -369,7 +371,7 @@ impl RecentBlocksTracker {
 
     /// Advance the final head, mark its ancestors as final, and drop every
     /// subtree that BFT-safety guarantees can no longer be on the final chain.
-    /// See `RecentBlocksTracker` for the picture of which subtrees this catches.
+    /// See [`RecentBlocksTracker`] for the picture of which subtrees this catches.
     ///
     /// Returns the newly finalized blocks in ascending height order.
     fn maybe_update_final_head(&mut self, potential_final_head: CryptoHash) -> Vec<Arc<BlockNode>> {
@@ -511,7 +513,7 @@ impl RecentBlocksTracker {
 
     /// Recency-window prune. Drops every node below `min_height_to_keep` and
     /// promotes the first in-window descendant on each branch to a new root.
-    /// See `RecentBlocksTracker` for the picture; dead-fork cleanup happens in
+    /// See [`RecentBlocksTracker`] for the picture; dead-fork cleanup happens in
     /// `maybe_update_final_head`, not here.
     fn prune_old_blocks(&mut self) {
         let Some(min_height_to_keep) = self.minimum_height_to_keep() else {
