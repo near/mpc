@@ -319,8 +319,8 @@ mod tests {
             })
             .await
             .unwrap();
-        // Twice: `expected_payload_hash: None` must stay omitted from the wire so
-        // that contracts predating the field never see it.
+        // Second call with `expected_payload_hash: None`: pins that an unset field is
+        // omitted from the wire entirely.
         handle
             .verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
