@@ -97,6 +97,11 @@ pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
+    /// The deployed `3.14.0` keys predate `expected_payload_hash`, so this type parameter
+    /// does not describe their borsh layout — do not read entries through this map. Not
+    /// shadowed because `LookupMap`'s own borsh form is just the storage prefix: the type
+    /// parameters never touch the state deserialization this struct exists for, and the
+    /// migration discards the map unread.
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
