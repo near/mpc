@@ -230,9 +230,9 @@ mod tests {
         assert_epoch_data_in_db_matches(&ctx, &end_data);
     }
 
-    /// End-to-end check that a triple written via `TripleStorage::add_owned`
-    /// (into `DBCol::TripleV2` under `[t]`) is removed when the participant set
-    /// changes. The other cleanup tests populate `TripleV2` via a local helper;
+    /// End-to-end check that a triple written via [`TripleStorage::add_owned`]
+    /// (into [`DBCol::TripleV2`] under `[t]`) is removed when the participant set
+    /// changes. The other cleanup tests populate [`TripleV2`] via a local helper;
     /// this one exercises the realistic post-`add_owned` state.
     #[test]
     #[expect(non_snake_case)]

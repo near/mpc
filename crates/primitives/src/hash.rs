@@ -48,8 +48,9 @@ pub fn parse_hash<const N: usize>(s: &str) -> Result<[u8; N], HashParseError> {
 }
 
 /// Generates a newtype hash struct wrapping `[u8; N]` with hex serde, borsh,
-/// `Debug`, `FromStr`, `Deref`, `AsRef`, `Into`, and (behind the `abi` feature)
-/// `BorshSchema` / `JsonSchema`.
+/// [`Debug`], [`FromStr`](core::str::FromStr), [`Deref`](core::ops::Deref), [`AsRef`],
+/// [`Into`], and (behind the `abi` feature)
+/// [`BorshSchema`](borsh::BorshSchema) / [`JsonSchema`](schemars::JsonSchema).
 #[macro_export]
 macro_rules! define_hash {
     ($(#[$meta:meta])* $name:ident, $n:literal) => {

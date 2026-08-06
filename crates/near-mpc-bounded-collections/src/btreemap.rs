@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{NonEmptyBTreeSet, NonEmptyVec};
 
-/// A `BTreeMap` that is guaranteed to contain at least one entry.
+/// A [`BTreeMap`] that is guaranteed to contain at least one entry.
 ///
 /// Implements `Deref<Target = BTreeMap<K, V>>` for read access but intentionally
-/// does not implement `DerefMut` to prevent callers from breaking the non-empty
-/// invariant (e.g. via `clear()` or `remove()`).
+/// does not implement [`DerefMut`](std::ops::DerefMut) to prevent callers from breaking the non-empty
+/// invariant (e.g. via [`clear()`](BTreeMap::clear) or [`remove()`](BTreeMap::remove)).
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
 )]
@@ -29,7 +29,7 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         self.0.insert(key, value)
     }
 
-    /// Transforms both keys and values of this map, producing a new `NonEmptyBTreeMap`.
+    /// Transforms both keys and values of this map, producing a new [`NonEmptyBTreeMap`].
     ///
     /// Note: if `f` maps multiple keys to the same new key, later entries (by
     /// the original key ordering) will overwrite earlier ones.
@@ -43,7 +43,7 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         NonEmptyBTreeMap(map)
     }
 
-    /// Maps each entry to a value and collects into a `NonEmptyBTreeSet`.
+    /// Maps each entry to a value and collects into a [`NonEmptyBTreeSet`].
     pub fn map_to_set<T, F>(&self, mut f: F) -> NonEmptyBTreeSet<T>
     where
         T: Ord,
@@ -54,7 +54,7 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         NonEmptyBTreeSet::new_unchecked(set)
     }
 
-    /// Maps each entry to a value and collects into a `NonEmptyVec`, in
+    /// Maps each entry to a value and collects into a [`NonEmptyVec`], in
     /// ascending key order.
     pub fn map_to_vec<T, F>(&self, mut f: F) -> NonEmptyVec<T>
     where
@@ -66,7 +66,7 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
 
     /// Like [`Self::map_to_vec`] but the mapping closure may fail. The
     /// non-empty invariant is preserved structurally — only the user's `f` can
-    /// turn the conversion into a `Result::Err`.
+    /// turn the conversion into a [`Result::Err`].
     pub fn try_map_to_vec<T, E, F>(&self, mut f: F) -> Result<NonEmptyVec<T>, E>
     where
         F: FnMut(&K, &V) -> Result<T, E>,

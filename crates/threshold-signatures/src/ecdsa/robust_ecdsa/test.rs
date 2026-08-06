@@ -19,7 +19,7 @@ use crate::thresholds::MaxMalicious;
 use rand::seq::SliceRandom as _;
 use rand_core::{CryptoRngCore, SeedableRng};
 
-/// Runs signing by calling the generic `run_sign` function from `crate::test`
+/// Runs signing by calling the generic `run_sign` function from [`crate::test`]
 /// This signing does not rerandomize the presignatures and tests only the core protocol
 pub fn run_sign_without_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
@@ -65,7 +65,7 @@ pub fn run_sign_without_rerandomization(
     Ok((coordinator, signature))
 }
 
-/// Runs signing by calling the generic `run_sign` function from `crate::test`
+/// Runs signing by calling the generic `run_sign` function from [`crate::test`]
 /// This signing mimics what should happen in real world, i.e.,
 /// rerandomizing the presignatures
 pub fn run_sign_with_rerandomization(

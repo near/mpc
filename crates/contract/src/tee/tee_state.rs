@@ -513,7 +513,7 @@ impl TeeState {
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
-    /// Finds the `NodeId` (account_id + tls_public_key) for the node whose attested
+    /// Finds the [`NodeId`] (account_id + tls_public_key) for the node whose attested
     /// account public key matches `signer_account_pk`.
     pub(crate) fn lookup_node_id_by_signer_pk(
         &self,

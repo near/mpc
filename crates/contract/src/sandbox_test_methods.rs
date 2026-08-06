@@ -27,7 +27,7 @@ impl MpcContract {
     ///
     /// The queue is hard-capped at [`crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT`]
     /// (a `u8`), so the `try_from` is constrained to succeed today; the `expect` is a
-    /// tripwire in case the cap ever grows past `u32::MAX`.
+    /// tripwire in case the cap ever grows past [`u32::MAX`].
     pub fn pending_signature_queue_len(&self, request: SignatureRequest) -> u32 {
         let len = self
             .pending_signature_requests

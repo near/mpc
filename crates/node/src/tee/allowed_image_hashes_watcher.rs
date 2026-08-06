@@ -284,7 +284,7 @@ mod tests {
     /// Verifies that if writing the allowed image hashes to the storage
     /// backend fails (e.g., disk I/O error), the MPC node:
     ///
-    /// - propagates the error as `ExitError::StorageProviderError`
+    /// - propagates the error as [`ExitError::StorageProviderError`]
     /// - sends a shutdown signal to the node supervisor
     /// - stops the watcher loop cleanly
     #[rstest]
@@ -376,11 +376,11 @@ mod tests {
         assert!(event_loop_is_alive, "Event loop should be running.");
     }
 
-    /// Validates behavior when the `watch::Receiver` for allowed image
+    /// Validates behavior when the [`watch::Receiver`] for allowed image
     /// hashes is closed unexpectedly (e.g., indexer process died).
     ///
     /// Expected behavior:
-    /// - the watcher detects the closure and exits with `ExitError::IndexerClosed`
+    /// - the watcher detects the closure and exits with [`ExitError::IndexerClosed`]
     /// - the watcher still writes the final received allowed hash list
     ///   to storage before exiting
     /// - a shutdown signal is sent to the node supervisor
@@ -433,7 +433,7 @@ mod tests {
 
     /// Ensures the watcher writes the full list of allowed image hashes to storage
     /// when the contract provides multiple hashes, preserving order and making only
-    /// a single storage `set()` call.
+    /// a single storage [`set()`] call.
     #[tokio::test]
     async fn test_full_hash_list_is_written_to_storage() {
         // Contract sends a list of three hashes

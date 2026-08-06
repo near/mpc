@@ -25,7 +25,7 @@ impl ReconstructionThreshold {
     }
 }
 
-/// Lower bound to reconstruct the secret is `MaxMalicious` + 1.
+/// Lower bound to reconstruct the secret is [`MaxMalicious`] + 1.
 impl TryFrom<MaxMalicious> for ReconstructionThreshold {
     type Error = ThresholdError;
 

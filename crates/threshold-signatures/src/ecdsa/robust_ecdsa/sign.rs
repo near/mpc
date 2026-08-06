@@ -34,7 +34,7 @@ pub(crate) const ROBUST_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 0;
 /// rerandomization inputs for the same presignature).
 /// To reduce risk in this implementation, require `N1 = N2 = 2 * max_malicious + 1`,
 /// ensure all participants agree on `(msg_hash, tweak, participants)` when creating
-/// `RerandomizedPresignOutput`, never reuse a presignature, and do not sign with
+/// [`RerandomizedPresignOutput`], never reuse a presignature, and do not sign with
 /// `msg_hash == 0`.
 pub fn sign<M>(
     participants: &[Participant],

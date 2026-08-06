@@ -57,7 +57,7 @@ impl CodeHashesVotes {
         self.proposal_by_account.clear();
     }
 
-    /// Returns a new `CodeHashesVotes` containing only votes from current participants.
+    /// Returns a new [`CodeHashesVotes`] containing only votes from current participants.
     pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
         let remaining = self
             .proposal_by_account
@@ -125,7 +125,7 @@ impl LauncherHashVotes {
         self.vote_by_account.clear();
     }
 
-    /// Returns a new `LauncherHashVotes` containing only votes from current participants.
+    /// Returns a new [`LauncherHashVotes`] containing only votes from current participants.
     pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
         let remaining = self
             .vote_by_account
@@ -331,7 +331,9 @@ pub(crate) struct AllowedLauncherImages {
     entries: Vec<AllowedLauncherImage>,
 }
 
-/// Outcome of `AllowedLauncherImages::add_or_refresh`, mirroring `ParticipantInsertion`.
+#[expect(rustdoc::private_intra_doc_links)]
+/// Outcome of [`AllowedLauncherImages::add_or_refresh`], mirroring
+/// [`ParticipantInsertion`](crate::tee::tee_state::ParticipantInsertion).
 #[derive(Debug, PartialEq, Eq)]
 pub enum AllowedLauncherImageInsertion {
     Added,
