@@ -485,14 +485,6 @@ mod tests {
         );
     }
 
-    fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
-        dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
-            tx_id: dtos::BitcoinTxId([0; 32]),
-            confirmations: dtos::BlockConfirmations(6),
-            extractors: vec![dtos::BitcoinExtractor::BlockHash],
-        })
-    }
-
     fn bitcoin_payload() -> dtos::ForeignTxSignPayload {
         dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
             request: bitcoin_request(),
@@ -515,6 +507,14 @@ mod tests {
             timestamp_nanosec: 0,
             domain_id: mpc_primitives::domain::DomainId(0),
         }
+    }
+
+    fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
+        dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
+            tx_id: dtos::BitcoinTxId([0; 32]),
+            confirmations: dtos::BlockConfirmations(6),
+            extractors: vec![dtos::BitcoinExtractor::BlockHash],
+        })
     }
 
     fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
