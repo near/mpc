@@ -278,7 +278,7 @@ where
     /// be kept alive for the duration of the run — alongside the handle that
     /// generation tasks spawn on. When disabled there is no separate runtime and
     /// the handle is the current one, so generation shares the MPC runtime. Must
-    /// be called from within the MPC runtime so `Handle::current()` resolves to it.
+    /// be called from within the MPC runtime so [`Handle::current()`](tokio::runtime::Handle::current) resolves to it.
     fn build_gen_runtime(
         config_file: &ConfigFile,
     ) -> anyhow::Result<(Option<AsyncDroppableRuntime>, tokio::runtime::Handle)> {

@@ -48,7 +48,7 @@ pub const BACKUP_SERVICE_RUN_PORT_SEED: u16 = 26;
 /// Pass `|_| {}` for defaults.
 ///
 /// Plumbing helper: every caller treats setup failure as fatal, so we panic
-/// instead of returning `Result`.
+/// instead of returning [`Result`].
 ///
 /// ```ignore
 /// // Default 3-node cluster:
@@ -398,7 +398,7 @@ pub fn must_get_bls_public_key(
     }
 }
 
-/// Builds a `DamgardEtAl` signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
+/// Builds a [`DamgardEtAl`] signing domain with reconstruction threshold `t`, which needs `2t - 1` signers.
 pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),
@@ -408,7 +408,7 @@ pub fn damgard_etal_domain(id: u64, t: u64) -> DomainConfig {
     }
 }
 
-/// Builds a `ConfidentialKeyDerivation` (CKD) domain with reconstruction threshold `t`, which needs `t` signers.
+/// Builds a [`ConfidentialKeyDerivation`] (CKD) domain with reconstruction threshold `t`, which needs `t` signers.
 pub fn ckd_domain(id: u64, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),

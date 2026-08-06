@@ -33,8 +33,8 @@ pub fn random_verifying_key() -> VerifyingKey {
     signing_key.verifying_key()
 }
 
-/// On-disk key for a `DBCol::TripleV2` entry: `[t (8 BE)][borsh(UniqueId)]`.
-/// Mirrors the internal `make_key` in `DistributedAssetStorage` so tests don't
+/// On-disk key for a [`DBCol::TripleV2`] entry: `[t (8 BE)][borsh(UniqueId)]`.
+/// Mirrors the internal `make_key` in [`DistributedAssetStorage`] so tests don't
 /// depend on its implementation details.
 pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
     let mut key = t.inner().to_be_bytes().to_vec();
@@ -79,7 +79,7 @@ pub struct TestContext {
     pub my_participant_id: ParticipantId,
     pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
     pub presign_domain_ids: Vec<DomainId>,
-    /// GovernanceThreshold whose `TripleV2` prefix `populate`/`assert_owned` operate on;
+    /// GovernanceThreshold whose [`TripleV2`] prefix `populate`/`assert_owned` operate on;
     /// matches the fixture from [`gen_four_participants`].
     pub triple_threshold: ReconstructionThreshold,
 }

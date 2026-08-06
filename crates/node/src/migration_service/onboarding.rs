@@ -155,9 +155,9 @@ fn start_onboarding_monitoring_task(
 
 /// Retries `conclude_node_migration` until the contract reflects completion.
 ///
-/// `tx_sender::send` returns `Ok` once the tx is applied — even if the
+/// [`tx_sender::send`](TransactionSender::send) returns `Ok` once the tx is applied — even if the
 /// contract method returned `Err` and rolled back. So we also wait for
-/// `active_migration` to flip false on the local `MigrationInfo` watch
+/// `active_migration` to flip false on the local [`MigrationInfo`] watch
 /// (cleared when the contract removes our migration record on success); if
 /// it doesn't, we retry.
 async fn retry_conclude_onboarding(

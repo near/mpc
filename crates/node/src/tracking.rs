@@ -41,7 +41,7 @@ impl<R> Future for AutoAbortTask<R> {
 
 /// Spawns a new task that is a child of the current tokio task.
 /// Must be called from a tracked tokio task.
-/// Unlike tokio::spawn, the returned `AutoAbortTask` will abort the task if it
+/// Unlike tokio::spawn, the returned [`AutoAbortTask`] will abort the task if it
 /// is dropped, so the caller must explicitly decide on when the spawned task
 /// would continue to exist.
 pub fn spawn<F, R>(description: &str, f: F) -> AutoAbortTask<R>
@@ -107,7 +107,7 @@ impl<R: Send + 'static> AutoAbortTaskCollection<R> {
 
 impl AutoAbortTaskCollection<()> {
     /// Like the free function spawn_checked, but spawns the task into the
-    /// `AutoAbortTaskCollection`.
+    /// [`AutoAbortTaskCollection`].
     /// Note: there's no `spawn` function. This is because if we want to spawn
     /// a task into such a collection, then this task is a fire-and-forget task,
     /// so an error should always be printed out.
@@ -161,8 +161,8 @@ pub fn set_progress(progress: &str) {
 }
 
 /// Starts a root task. This is the entry point for tracking tasks.
-/// All other futures must be spawned with `tracking::spawn`, rather than
-/// `tokio::spawn`.
+/// All other futures must be spawned with [`tracking::spawn`](crate::tracking::spawn), rather than
+/// [`tokio::spawn`].
 pub fn start_root_task<F, R>(
     name: &str,
     f: F,

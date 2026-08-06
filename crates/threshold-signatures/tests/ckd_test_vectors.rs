@@ -29,7 +29,7 @@ const VECTORS_PATH: &str = concat!(
     "/tests/vectors/ckd_test_vectors.json"
 );
 
-/// Mirror of the crate-private `crypto::constants::NEAR_CKD_DOMAIN` (the source
+/// Mirror of the crate-private [`crypto::constants::NEAR_CKD_DOMAIN`] (the source
 /// of truth); used only to document the DST in the generated vectors file.
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 

@@ -199,7 +199,7 @@ fn ckd_promise(target_contract: &AccountId, request: CKDRequestArgs) -> Promise 
     )
 }
 
-/// Combines the given child promises via `Promise::and`, chains `handle_results` as
+/// Combines the given child promises via [`Promise::and`], chains `handle_results` as
 /// the resolution callback, and returns the resulting promise. `handle_results`
 /// observes every child's resolution and panics if any of them failed, so a parent
 /// transaction that completes with `Ok` is proof that every queued call resolved.
