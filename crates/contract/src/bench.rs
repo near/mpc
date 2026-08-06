@@ -134,7 +134,7 @@ impl MpcContract {
     /// keeps — the latter isolates the per-entry scan cost paid for surviving entries.
     /// Returns the resulting map size.
     pub fn bench_seed_attestations(&mut self, offset: u32, count: u32, expired: bool) -> u32 {
-        let measurements = default_measurements()[0].clone();
+        let measurements = default_measurements()[0];
         let verified_attestation = if expired {
             VerifiedAttestation::Dstack(ValidatedDstackAttestation {
                 mpc_image_hash: [7u8; 32].into(),
