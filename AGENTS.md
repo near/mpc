@@ -121,7 +121,7 @@ See `docs/engineering-standards.md` for the full rationale and additional testin
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
 ### Trait Naming
-When a trait models a single capability, name it after the action, not as an agent noun derived from it: `ReadContractState`, not `ContractStateReader`. This does not apply to std-idiomatic patterns (`From*`/`Into*`/`To*` conversions, `*Ext` extension traits, `Is*`/`Has*` predicates) or to role nouns for multi-operation abstractions (`SecretsRepository`, `P2PClient`). It applies to new traits and opportunistic renames, not bulk renames of existing traits.
+Traits should model a single capability, and be named after the action, not as an agent noun derived from it: `ReadContractState`, not `ContractStateReader`. This follows std-idiomatic patterns (`From*`/`Into*`/`To*` conversions). This applies to new traits and opportunistic renames, existing traits may deviate from this principle.
 
 See `docs/engineering-standards.md` §Name capability traits after the action for the full rationale and a `Don't` / `Do` example.
 
