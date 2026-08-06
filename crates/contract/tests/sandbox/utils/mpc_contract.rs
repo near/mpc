@@ -87,35 +87,16 @@ pub async fn prepay_attestation_grants(
         .await?)
 }
 
+/// Prepays one grant, then submits. For a first submission; a re-attestation of a key the
+/// account already owns consumes no grant and should use [`submit_participant_info_raw`].
 pub async fn prepay_and_submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // A re-attestation of an entry this account already owns consumes no grant.
-    let already_owns_entry = get_tee_accounts(contract)
-        .await?
-        .iter()
-        .any(|stored| &stored.tls_public_key == tls_key && stored.account_id == *account.id());
-    if !already_owns_entry {
-        let granted = match contract
-            .view("available_attestation_grants")
-            .args_json(serde_json::json!({ "account_id": account.id() }))
-            .await
-        {
-            Ok(result) => result.json::<u32>()?,
-            // Pre-upgrade binaries have no notion of grants, so there is nothing to prepay.
-            // Any other failure is real and would otherwise surface as a confusing
-            // `NoAttestationStorageGrant` from the submission below.
-            Err(err) if is_method_not_found(&err) => 1,
-            Err(err) => return Err(err.into()),
-        };
-        if granted == 0 {
-            let prepayment = prepay_attestation_grants(account, contract, account.id(), 1).await?;
-            anyhow::ensure!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
-        }
-    }
+    let prepayment = prepay_attestation_grants(account, contract, account.id(), 1).await?;
+    anyhow::ensure!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
     submit_participant_info_raw(account, contract, attestation, tls_key).await
 }
 

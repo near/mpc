@@ -4,6 +4,7 @@ use crate::sandbox::utils::{
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
         assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
+        submit_participant_info_raw,
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
@@ -469,6 +470,25 @@ pub async fn submit_tee_attestations(
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
+        let result =
+            submit_participant_info_raw(account, contract, &attestation, &node_id.tls_public_key)
+                .await?;
+        assert!(result.is_success());
+    }
+    Ok(())
+}
+
+/// Like [`submit_tee_attestations`], for accounts whose entry does not exist yet: each
+/// submission stores a new entry, so each needs a grant.
+pub async fn prepay_and_submit_tee_attestations(
+    contract: &Contract,
+    env_accounts: &mut [Account],
+    node_ids: &BTreeSet<NodeId>,
+) -> anyhow::Result<()> {
+    env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
+    for (account, node_id) in env_accounts.iter().zip(node_ids) {
+        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+        let attestation = Attestation::Mock(MockAttestation::Valid);
         let result = prepay_and_submit_participant_info(
             account,
             contract,
@@ -495,11 +515,10 @@ pub async fn submit_attestations(
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
             let tls_key = participant.tls_public_key.clone();
-            let success =
-                prepay_and_submit_participant_info(account, contract, &attestation, &tls_key)
-                    .await
-                    .expect("submit_participant_info should not error")
-                    .is_success();
+            let success = submit_participant_info_raw(account, contract, &attestation, &tls_key)
+                .await
+                .expect("submit_participant_info should not error")
+                .is_success();
             assert!(
                 success,
                 "submit_participant_info failed for participant {}",

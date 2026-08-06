@@ -1,7 +1,10 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
-    common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
+    common::{
+        SandboxTestSetup, build_sandbox_node_ids, gen_accounts, prepay_and_submit_tee_attestations,
+        submit_tee_attestations,
+    },
     utils::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
@@ -317,7 +320,7 @@ async fn submit_participant_info__should_accept_zero_deposit_via_function_call_k
 
     // When
     let outcome =
-        prepay_and_submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
+        submit_participant_info_raw(&fc_account, &contract, &attestation, &tls_key).await?;
 
     // Then
     assert!(
@@ -390,7 +393,8 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     let (mut additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
     let additional_uids = build_sandbox_node_ids(&additional_participants, &additional_accounts);
-    submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
+    prepay_and_submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids)
+        .await?;
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
@@ -521,6 +525,16 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
         let previous_and_current_approved_hashes = &hashes[..=i];
 
+        // One grant covers the whole loop: every iteration re-submits the same TLS key, so only
+        // the first stores a new entry.
+        let prepayment = prepay_attestation_grants(
+            participant_account_1,
+            &contract,
+            participant_account_1.id(),
+            1,
+        )
+        .await?;
+        assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
         for approved_hash in previous_and_current_approved_hashes {
             let mock_attestation = MockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some((*approved_hash).into()),
@@ -532,7 +546,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
             let dummy_tls_key = p2p_tls_key().into();
 
-            let validation_success = prepay_and_submit_participant_info(
+            let validation_success = submit_participant_info_raw(
                 participant_account_1,
                 &contract,
                 &attestation,
@@ -714,7 +728,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     assert!(validation_success, "First attestation submission failed");
 
     // Submit the second attestation with the same TLS key (overwrites the first)
-    let validation_success = prepay_and_submit_participant_info(
+    let validation_success = submit_participant_info_raw(
         participant_account,
         &contract,
         &second_attestation,
@@ -832,7 +846,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         expected_measurements: None,
     });
 
-    let submit_result = prepay_and_submit_participant_info(
+    let submit_result = submit_participant_info_raw(
         target_account,
         &contract,
         &expiring_attestation,
@@ -964,7 +978,7 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
             .iter()
             .find(|node| node.account_id == *target_account.id())
             .expect("target participant not found");
-        let submit_success = prepay_and_submit_participant_info(
+        let submit_success = submit_participant_info_raw(
             target_account,
             &contract,
             &expiring_attestation,

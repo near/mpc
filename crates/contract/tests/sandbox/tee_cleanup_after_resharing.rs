@@ -3,7 +3,7 @@
 use crate::sandbox::{
     common::{
         SandboxTestSetup, account_ed25519_public_key, build_sandbox_node_ids, gen_accounts,
-        submit_tee_attestations,
+        prepay_and_submit_tee_attestations, submit_tee_attestations,
     },
     utils::{
         interface::IntoContractType,
@@ -67,7 +67,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids =
         build_sandbox_node_ids(&non_participants, &env_non_participant_accounts);
-    submit_tee_attestations(
+    prepay_and_submit_tee_attestations(
         &contract,
         &mut env_non_participant_accounts,
         &non_participant_uids,
