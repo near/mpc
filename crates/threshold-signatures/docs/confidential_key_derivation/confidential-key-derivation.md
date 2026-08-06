@@ -193,7 +193,10 @@ contract.
   If correct, the app can
   use the computed $`\texttt{sig} = \texttt{msk} \cdot H(\texttt{pk},\, \texttt{app\_id})`$ to
   compute the key $`s = \texttt{HKDF}(\texttt{sig})`$, using a
-  [HKDF](https://en.wikipedia.org/wiki/HKDF) function.
+  [HKDF](https://en.wikipedia.org/wiki/HKDF) function. The HKDF salt and
+  `info` instantiation is chosen by the application and is not part of the
+  CKD protocol; the test vectors below use `salt = none, info = ""`, while
+  applications are encouraged to use non-empty, purpose-tagged values.
 
 ## Test vectors
 

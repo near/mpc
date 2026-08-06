@@ -308,7 +308,7 @@ pub struct Comms {
 }
 
 impl Comms {
-    /// Create a new `Comms` with an explicit message-buffer capacity.
+    /// Create a new [`Comms`] with an explicit message-buffer capacity.
     pub fn with_buffer_capacity(max_entries: usize) -> Self {
         Self {
             incoming: MessageBuffer::new(max_entries),
@@ -320,9 +320,9 @@ impl Comms {
     /// Pause the protocol so the executor's caller can run other tasks.
     ///
     /// The suspension must self-wake: nested executors like the
-    /// `FuturesUnordered` behind `try_join_all` only re-poll children whose
+    /// [`FuturesUnordered`](futures::stream::FuturesUnordered) behind `try_join_all` only re-poll children whose
     /// waker fired, so a plain pending return would never be polled again.
-    /// `futures_lite::future::yield_now` wakes before returning pending.
+    /// [`futures_lite::future::yield_now`] wakes before returning pending.
     pub(crate) async fn yield_point(&self) {
         self.yield_requested.store(true, Ordering::Relaxed);
         futures_lite::future::yield_now().await;
@@ -476,7 +476,7 @@ impl SharedChannel {
 
 /// Represents a private channel.
 ///
-/// This can be seen as a separate "namespace" for `SharedChannel`.
+/// This can be seen as a separate "namespace" for [`SharedChannel`].
 pub struct PrivateChannel {
     header: MessageHeader,
     pub(crate) to: Participant,

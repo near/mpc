@@ -170,7 +170,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         outgoing.is_connected() && incoming.is_connected()
     }
 
-    /// Given the result of a previous call to `connection_version()`, determine
+    /// Given the result of a previous call to [`connection_version()`](Self::connection_version), determine
     /// if the network connection in either direction may have been interrupted
     /// since that call. If this returns false, then all messages sent in the
     /// meantime have been sent on the same connection.

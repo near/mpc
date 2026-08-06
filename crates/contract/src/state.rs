@@ -108,7 +108,7 @@ impl ProtocolContractState {
     }
 
     /// Casts a vote for `public_key` in `key_event_id` during Initialization.
-    /// Fails if the protocol is not in `Initializing` state.
+    /// Fails if the protocol is not in [`Initializing`](ProtocolContractState::Initializing) state.
     /// Returns the new protocol state if enough votes have been submitted.
     pub fn vote_pk(
         &mut self,
@@ -246,14 +246,14 @@ impl ProtocolContractState {
         Ok(())
     }
 
-    /// Returns a reference to the relevant `Participants` list
+    /// Returns a reference to the relevant [`Participants`] list
     /// based on the current protocol phase.
     ///
-    /// - `Initializing` → uses proposed participants from generating_key
-    /// - `Running` → uses current active participants
-    /// - `Resharing` → uses new participants from resharing proposal
+    /// - [`Initializing`](ProtocolContractState::Initializing) → uses proposed participants from generating_key
+    /// - [`Running`](ProtocolContractState::Running) → uses current active participants
+    /// - [`Resharing`](ProtocolContractState::Resharing) → uses new participants from resharing proposal
     ///
-    /// Panics if called when `NotInitialized`.
+    /// Panics if called when [`NotInitialized`](ProtocolContractState::NotInitialized).
     pub fn active_participants(&self) -> &Participants {
         match self {
             ProtocolContractState::Initializing(state) => {

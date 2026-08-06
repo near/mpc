@@ -570,7 +570,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     ///  - The generation has failed. A retry can be issued immediately after that,
     ///    subject to a throttle of once per CHECK_EACH_REQUEST_INTERVAL.
     ///  - The generation is successful, and the time that the response is submitted to
-    ///    the chain has been written to the `ComputationProgress`.
+    ///    the chain has been written to the [`ComputationProgress`].
     pub fn get_requests_to_attempt(
         &mut self,
     ) -> Vec<Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>> {
@@ -820,8 +820,8 @@ mod tests {
         responses_to_submit: Vec<CryptoHash>,
         rng: rand::rngs::StdRng,
         /// Test-side counterpart to the shared tracker that mpc_client owns in production.
-        /// Each `update*` adds a block to it; the resulting `BlockStatusHandle` ends up
-        /// inside the returned `RequestsUpdate`.
+        /// Each `update*` adds a block to it; the resulting [`BlockStatusHandle`] ends up
+        /// inside the returned [`RequestsUpdate`].
         tracker: RecentBlocksTracker,
     }
 
@@ -895,7 +895,7 @@ mod tests {
 
         /// Highest block height across all known heads. Each new block (canonical or fork)
         /// is built strictly above this so that the most-recently-added block always wins
-        /// the canonical-chain tie-break inside `RecentBlocksTracker`.
+        /// the canonical-chain tie-break inside [`RecentBlocksTracker`].
         fn max_known_height(&self) -> u64 {
             let fork_height = self
                 .fork

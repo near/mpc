@@ -129,7 +129,7 @@ impl<Chain> ForeignChainRequestBuilder<BuildableEvmRequest<Chain>, NotSet> {
 }
 
 /// Tests for the generic EVM builder logic. Uses Abstract as the representative chain
-/// since the builder is generic over `Chain` — chain-specific variant tests live in each
+/// since the builder is generic over [`Chain`] — chain-specific variant tests live in each
 /// chain module.
 #[cfg(test)]
 mod test {

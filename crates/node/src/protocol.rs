@@ -321,7 +321,7 @@ mod tests {
     }
 
     /// The leader's protocol yields twice and then returns without ever needing
-    /// a message; `run_protocol` must keep poking after `Action::Yield` to let it
+    /// a message; `run_protocol` must keep poking after [`Action::Yield`] to let it
     /// complete. If a yield were treated like a wait, the leader would hang.
     #[test_log::test(tokio::test)]
     #[expect(non_snake_case)]
@@ -341,7 +341,7 @@ mod tests {
         .await;
     }
 
-    /// A `Computation` from outside the participant set must error, not crash the node.
+    /// A [`Computation`] from outside the participant set must error, not crash the node.
     #[test_log::test(tokio::test)]
     #[expect(non_snake_case)]
     async fn run_protocol__should_reject_computation_from_non_participant() {

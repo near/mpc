@@ -86,10 +86,13 @@ where
     ///
     /// The two RPC calls are necessarily sequential — `getblockhash`'s height parameter
     /// depends on `getblockheader`'s response — so a reorg landing between them could in
-    /// principle yield a spurious `NonCanonicalBlock`. The caller is expected to retry.
+    /// principle yield a spurious
+    /// [`NonCanonicalBlock`](crate::ForeignChainInspectionError::NonCanonicalBlock). The caller
+    /// is expected to retry.
     ///
     /// Failures from the RPCs themselves ("Block not found" / "block height out of range")
-    /// surface as `ClientError` rather than `NonCanonicalBlock`; mapping those error
+    /// surface as [`ClientError`](crate::ForeignChainInspectionError::ClientError) rather than
+    /// [`NonCanonicalBlock`](crate::ForeignChainInspectionError::NonCanonicalBlock); mapping those error
     /// messages to a more specific variant is left to a follow-up.
     async fn verify_block_is_canonical(
         &self,

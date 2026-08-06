@@ -32,7 +32,7 @@ enum AllowedDockerImageHashesResponse {
 }
 
 impl AllowedDockerImageHashesResponse {
-    /// Entries newest first; `Legacy` hashes have no expiry timestamp.
+    /// Entries newest first; [`Legacy`](AllowedDockerImageHashesResponse::Legacy) hashes have no expiry timestamp.
     fn into_entries(self) -> Vec<AllowedMpcDockerImageHash> {
         match self {
             Self::WithExpiry(entries) => entries,
@@ -56,7 +56,7 @@ impl AllowedDockerImageHashesResponse {
 pub struct TeeContext<S> {
     /// Allowed TEE hashes from the governance contract.
     allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
-    /// Cancels the background hash-watcher task when `TeeContext` is dropped.
+    /// Cancels the background hash-watcher task when [`TeeContext`] is dropped.
     _watcher_cancel: CancelOnDrop,
     /// Typed handle for submitting attestations and triggering re-validation.
     mpc_contract_handle: MpcContractHandle<AccountCaller<S>>,
@@ -75,7 +75,7 @@ impl<S> TeeContext<S>
 where
     S: SubmitFunctionCall + SubscribeToContractMethod + Clone + Send + Sync + 'static,
 {
-    /// Creates a new `TeeContext`.
+    /// Creates a new [`TeeContext`].
     ///
     /// Subscribes to the governance contract's allowed image and launcher hash
     /// view methods, waits for the first successful poll of each, then spawns

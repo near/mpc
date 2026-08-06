@@ -137,7 +137,7 @@ impl RunningContractState {
         .next()
     }
 
-    /// Casts a vote for `proposal`, removing any previous votes by `env::signer_account_id()`.
+    /// Casts a vote for `proposal`, removing any previous votes by [`env::signer_account_id()`](near_sdk::env::signer_account_id).
     /// Fails if the proposal is invalid or the signer is not a proposed participant.
     /// Returns true if all participants of the proposed parameters voted for it.
     pub(super) fn process_new_parameters_proposal(
@@ -644,7 +644,7 @@ pub mod running_tests {
         );
     }
 
-    /// Builds a `DomainConfig` for the next domain id with the given protocol,
+    /// Builds a [`DomainConfig`] for the next domain id with the given protocol,
     /// purpose, and reconstruction threshold.
     fn single_domain_proposal(
         state: &RunningContractState,

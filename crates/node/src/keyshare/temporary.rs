@@ -127,7 +127,7 @@ pub struct PendingKeyshareStorageHandle {
 impl PendingKeyshareStorageHandle {
     /// Commits the keyshare to temporary key storage. This can only succeed once per key ID.
     /// It should always succeed, since we already performed the only-once check in
-    /// `TemporaryKeyStorage::start_generating_keyshare`, but we still check here just in case.
+    /// [`TemporaryKeyStorage::start_generating_keyshare`], but we still check here just in case.
     pub async fn commit_keyshare(self, keyshare: Keyshare) -> anyhow::Result<()> {
         anyhow::ensure!(
             keyshare.key_id == self.key_id,

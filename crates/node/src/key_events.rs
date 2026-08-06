@@ -180,7 +180,7 @@ pub struct ResharingArgs {
 /// - commits the new keyshare to storage
 /// - votes on the contract to conclude the resharing.
 ///
-/// If existing keyshares in `ResharingArgs` is not None, then they must contain a matching keyshare
+/// If existing keyshares in [`ResharingArgs`] is not None, then they must contain a matching keyshare
 /// of same domain as `key_id`.
 async fn resharing_computation_inner(
     channel: NetworkTaskChannel,
