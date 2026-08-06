@@ -27,13 +27,16 @@ const DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS: u64 = 2;
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
 ///
-/// Sized to cover a full `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` sweep in which every
-/// scanned entry is also removed — the worst case, measured at ~53 TGas, with room for the
-/// extra per-removal write #4015 adds (~75 TGas). Keep the two in step: at ~0.24 TGas per
-/// entry re-verified and ~0.49 TGas per entry removed, a scan limit this budget cannot fund
-/// exhausts the promise, and because it is detached every removal then rolls back with no
-/// partial progress. `clean_invalid_attestations__budget_covers_max_scan` pins the relation.
-const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 80;
+/// Sized against `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN`: ~3.9 TGas of fixed overhead,
+/// then ~0.24 TGas per entry re-verified and ~0.25 TGas more for each one removed. A full
+/// 30-entry scan therefore costs ~11.1 TGas before any removal, and this budget covers that
+/// plus roughly 8 removals once #4015's extra per-removal write lands.
+///
+/// It does **not** cover the worst case of all 30 being removable (~25 TGas post-#4015). The
+/// promise is detached, so exceeding it rolls back every removal with no partial progress;
+/// the permissionless `clean_invalid_attestations` entry point is the recovery path.
+/// `clean_invalid_attestations__budget_covers_max_scan` pins the relation.
+const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;

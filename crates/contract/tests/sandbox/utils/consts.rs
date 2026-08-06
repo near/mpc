@@ -19,10 +19,10 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
 /// increases unexpectedly in the future.
 ///
 /// Must exceed the cleanup-promise budgets the concluding `vote_reshared` reserves out of its
-/// own prepaid gas — 109 TGas, dominated by `clean_invalid_attestations_tera_gas` — plus its
-/// own ~5 TGas burn. Below that, promise creation fails and takes the deciding reshare vote
-/// with it.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(130);
+/// own prepaid gas — 44 TGas, of which `clean_invalid_attestations_tera_gas` is the largest —
+/// plus its own ~5 TGas burn. Below that, promise creation fails and takes the deciding
+/// reshare vote with it.
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(60);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
 pub const GAS_FOR_VOTE_CANCEL_RESHARING: Gas = Gas::from_tgas(5);
