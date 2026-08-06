@@ -696,7 +696,8 @@ First read the current fee, `attestation_storage_fee_millinear`, in milliNEAR:
 
 ```bash
 near contract call-function as-read-only \
-  v1.signer config json-args '{}' network-config mainnet now
+  v1.signer config json-args '{}' network-config mainnet now \
+  | jq .attestation_storage_fee_millinear
 ```
 
 Then prepay that many multiples of it. Ask for one grant per node you run plus one spare, so you can re-provision or migrate without waiting for the old attestation to expire. At the current 20 milliNEAR fee, the two grants below cost 0.04 NEAR:

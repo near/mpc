@@ -326,8 +326,6 @@ fn submit_participant_info__should_reject_a_new_entry_without_a_grant() {
     );
 }
 
-/// Once an operator has prepaid, the node self-submits with no deposit of its own and the
-/// grant is consumed.
 #[test]
 fn submit_participant_info__should_store_a_new_entry_and_consume_one_grant() {
     // Given
