@@ -6,8 +6,7 @@
 //! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) info per configured chain — expected during rollout,
 //! clears once the whitelist is populated and the watch channel updates.
 
-use std::collections::BTreeMap;
-
+use itertools::Itertools;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
     foreign_chains::RpcProviderName,
@@ -15,6 +14,7 @@ use mpc_node_config::{
 use near_mpc_contract_interface::types::{
     self as dtos, AuthScheme, ChainEntry, ChainRouting, ProviderConfig, ProviderId,
 };
+use std::collections::BTreeMap;
 use tokio::sync::watch;
 
 /// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
