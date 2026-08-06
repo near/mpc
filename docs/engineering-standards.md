@@ -245,7 +245,7 @@ pub trait ReadContractState {
 
 The test: if the trait's name is just its one action with an `-er`/`-or` suffix attached (`Reader`, `Writer`, `Watcher`, or a `Provider` of one thing), drop the suffix and name the action.
 
-**This rule does not turn every trait name into a verb.** The following patterns are established Rust idioms or carry information a verb phrase would lose, and they stay as they are:
+**The rule is to avoid nouns, not to force every name into a verb.** Prepositions and predicates state a capability just as well:
 
 - **Conversion traits** (`From*`, `Into*`, `To*`, `TryFrom*`, `TryInto*`) follow the standard library convention; see the Rust API guidelines linked at the top of this document.
 - **Extension traits** (`*Ext`): the suffix is the idiom.
