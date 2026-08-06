@@ -72,8 +72,10 @@ impl VerifyForeignTxProvider {
             snapshot.get(&requested_chain).cloned().unwrap_or_default()
         };
 
-        // Owned presignatures always include this node, so a non-supporting
-        // leader could never match one. Bail before waiting on the take.
+        // Election is not chain support aware, so a non-supporting node can be
+        // assigned leader for a request. Owned presignatures always include this
+        // node, so `take_owned_matching` below would never resolve.
+        // TODO(#3961): narrow election to chain supporters.
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();

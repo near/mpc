@@ -186,9 +186,13 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
     /// that lie past the removed position.
     pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
         self.update_condition_value_if_due();
-        let pos = self.cold_queue.iter().position(|(_, val)| {
-            (self.condition)(&self.last_condition_value, val) && (self.condition)(cond_val, val)
-        })?;
+        let pos = self
+            .cold_queue
+            .iter()
+            .take(self.cold_available)
+            .position(|(_, val)| {
+                (self.condition)(&self.last_condition_value, val) && (self.condition)(cond_val, val)
+            })?;
         if pos < self.cold_ready {
             self.cold_ready -= 1;
         }
