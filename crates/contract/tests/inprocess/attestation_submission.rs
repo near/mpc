@@ -162,21 +162,19 @@ impl TestSetup {
             .expect("prepayment should succeed");
     }
 
-    /// Prepays if the node has no grant, so tests that only care about attestation behaviour
-    /// need not fund their nodes. Tests asserting on grant counts prepay explicitly.
+    /// Prepays one grant, then submits. For a first submission; re-attesting a key the account
+    /// already owns consumes no grant, so use [`Self::submit_attestation_for_node`] there.
+    fn prepay_and_submit_attestation_for_node(
+        &mut self,
+        node_id: &NodeId,
+        attestation: Attestation,
+    ) {
+        self.prepay_grants(&node_id.account_id, 1);
+        self.submit_attestation_for_node(node_id, attestation);
+    }
+
+    /// For a re-attestation, which consumes no grant.
     fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
-        let already_owns_entry = self.contract.get_tee_accounts().iter().any(|stored| {
-            stored.tls_public_key == node_id.tls_public_key
-                && stored.account_id == node_id.account_id
-        });
-        if !already_owns_entry
-            && self
-                .contract
-                .available_attestation_grants(node_id.account_id.clone())
-                == 0
-        {
-            self.prepay_grants(&node_id.account_id, 1);
-        }
         self.try_submit_attestation_for_node(node_id, attestation)
             .unwrap();
     }
@@ -508,7 +506,7 @@ fn clean_tee_status__should_not_touch_attestations() {
 
     // Add TEE account for someone who is NOT a current participant
     let removed_participant_node = node_id_for(&"removed.participant.near".parse().unwrap());
-    setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
+    setup.prepay_and_submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
     const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
@@ -570,7 +568,7 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     setup.submit_attestation_for_node(&participant_node, expiring_attestation.clone());
 
     let stale_node = node_id_for(&"stale.near".parse().unwrap());
-    setup.submit_attestation_for_node(&stale_node, expiring_attestation);
+    setup.prepay_and_submit_attestation_for_node(&stale_node, expiring_attestation);
 
     const EXPECTED_STORED: usize = PARTICIPANT_COUNT + 1; // original mocks + outsider entry
     assert_eq!(setup.contract.get_tee_accounts().len(), EXPECTED_STORED);

@@ -3,7 +3,7 @@
 use crate::sandbox::{
     common::{
         SandboxTestSetup, account_ed25519_public_key, build_sandbox_node_ids, gen_accounts,
-        prepay_and_submit_tee_attestations, submit_tee_attestations,
+        prepay_and_submit_tee_attestations,
     },
     utils::{
         interface::IntoContractType,

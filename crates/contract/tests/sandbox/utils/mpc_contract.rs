@@ -100,10 +100,6 @@ pub async fn prepay_and_submit_participant_info(
     submit_participant_info_raw(account, contract, attestation, tls_key).await
 }
 
-fn is_method_not_found(err: &near_workspaces::error::Error) -> bool {
-    err.to_string().contains("MethodResolveError") || err.to_string().contains("method not found")
-}
-
 /// Submits without prepaying anything.
 pub async fn submit_participant_info_raw(
     account: &Account,
