@@ -93,8 +93,8 @@ impl ProbeReport {
 /// Each provider is tried up to `max_retries` times, `timeout_sec` per try, and only for as long as
 /// the failures stay transient. This returns within the largest configured `timeout_sec *
 /// max_retries`, plus the [`foreign_chain_inspector::RETRY_BACKOFF`] between tries.
-// TODO(#4043): take the inspectors as a dependency instead, so that choosing a client per chain,
-// and the deadline it is built with, happens outside the probe.
+///
+/// TODO(#4043): take the inspectors as a dependency instead
 pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
     let probe_attempts = config
         .iter_chains()
