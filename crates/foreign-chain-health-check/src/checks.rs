@@ -32,8 +32,8 @@ use http::{HeaderName, HeaderValue};
 use crate::golden;
 
 /// Typed "wrong network / wrong value" failures, so tests can assert on the kind instead of
-/// matching error-message substrings. Wrapped into `anyhow::Error` on the way out, so the
-/// operator-facing report (`{e:#}`) still renders the `Display` text below.
+/// matching error-message substrings. Wrapped into [`anyhow::Error`] on the way out, so the
+/// operator-facing report (`{e:#}`) still renders the [`Display`](std::fmt::Display) text below.
 #[derive(Debug)]
 pub enum Mismatch {
     ChainId { expected: String, got: String },

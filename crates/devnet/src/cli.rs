@@ -354,7 +354,7 @@ pub struct MpcTerraformDeployNomadCmd {
     #[clap(long)]
     pub shutdown_and_reset: bool,
     /// Overrides the docker image to use for MPC nodes.
-    /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
+    /// The default is [`constants::DEFAULT_MPC_DOCKER_IMAGE`](crate::constants::DEFAULT_MPC_DOCKER_IMAGE).
     #[clap(long)]
     pub docker_image: Option<String>,
     /// Overrides the neard docker image for the localnet validator job. Defaults to the image
@@ -412,7 +412,7 @@ pub struct UpdateLoadtestCmd {
 #[derive(clap::Parser)]
 pub struct DeployParallelSignContractCmd {
     /// File path that contains the parallel signature request contract code.
-    /// Defaults to `constants::DEFAULT_PARALLEL_SIGN_CONTRACT_PATH`.
+    /// Defaults to [`constants::DEFAULT_PARALLEL_SIGN_CONTRACT_PATH`](crate::constants::DEFAULT_PARALLEL_SIGN_CONTRACT_PATH).
     #[clap(long)]
     pub path: Option<String>,
     #[clap(long, default_value = "20")]

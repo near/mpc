@@ -16,7 +16,7 @@ use near_mpc_contract_interface::types::{
 };
 use rand::SeedableRng;
 
-/// Mirror of the production `node::indexer::migrations::ContractMigrationInfo`
+/// Mirror of the production [`node::indexer::migrations::ContractMigrationInfo`]
 /// type. Used to deserialize the `/debug/migrations` response strictly so the
 /// readiness asserts compare typed fields rather than substring-match the
 /// JSON body.
@@ -142,7 +142,7 @@ impl BackupService {
     }
 
     /// Keyshare files the service has written, named `epoch_<n>_with_<m>_domains` by
-    /// `PermanentKeyStorage`.
+    /// [`PermanentKeyStorage`].
     fn stored_keyshare_files(&self) -> Vec<String> {
         list_permanent_keys(self.home_dir.path())
             .into_iter()
@@ -227,7 +227,7 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
 }
 
 /// Fetch one node's `/debug/migrations` endpoint and deserialize the body
-/// into the typed `ContractMigrationInfo` map (the second element of the
+/// into the typed [`ContractMigrationInfo`] map (the second element of the
 /// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
 async fn fetch_debug_migration_info(
     http_client: &reqwest::Client,
@@ -245,7 +245,7 @@ async fn fetch_debug_migration_info(
 }
 
 /// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
-/// re-running `check` against the typed `ContractMigrationInfo` until it
+/// re-running `check` against the typed [`ContractMigrationInfo`] until it
 /// returns `Ok` (or the timeout elapses). `description` is interpolated
 /// into the timeout error.
 async fn wait_for_debug_migration<F>(

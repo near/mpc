@@ -2,7 +2,7 @@
 //!
 //! The mock is generated locally with `mockall::mock!` so the production trait
 //! definition stays clean and `mockall` is only pulled in as a dev-dep. The
-//! `impl Clone for Inspector` block makes the mock satisfy `FanOut`'s
+//! `impl Clone for Inspector` block makes the mock satisfy [`FanOut`]'s
 //! `Inspector: Clone` bound; mockall doesn't deep-clone expectations, so the
 //! factory below sets the same `expect_extract` behaviour on every clone.
 
@@ -42,10 +42,10 @@ mockall::mock! {
 type ResponseFn =
     Arc<dyn Fn() -> Result<Vec<u32>, ForeignChainInspectionError> + Send + Sync + 'static>;
 
-/// Builds a mock that returns `response()` whenever `extract` is called, and
-/// whose `clone()` produces another mock with the same behaviour.
+/// Builds a mock that returns [`response()`] whenever `extract` is called, and
+/// whose [`clone()`] produces another mock with the same behaviour.
 ///
-/// `FanOut::extract` calls `clone()` on the inspector and only `extract` on the
+/// [`FanOut::extract`] calls [`clone()`] on the inspector and only `extract` on the
 /// resulting clone; the inverse never happens. We allow `times(0..)` on both
 /// expectations so a single helper covers both "original" and "cloned" roles
 /// without surprising the test author with expectation failures on drop.
@@ -81,14 +81,14 @@ fn mock_called_once(response: ResponseFn) -> MockInspector {
     original
 }
 
-/// Sugar for a `ResponseFn` that always returns `Ok(values)`.
+/// Sugar for a [`ResponseFn`] that always returns `Ok(values)`.
 fn ok(values: Vec<u32>) -> ResponseFn {
     Arc::new(move || Ok(values.clone()))
 }
 
-/// Sugar for a `ResponseFn` that always returns `Err(make())`. The closure
-/// rebuilds the error on every call because `ForeignChainInspectionError` is
-/// not `Clone`.
+/// Sugar for a [`ResponseFn`] that always returns `Err(make())`. The closure
+/// rebuilds the error on every call because [`ForeignChainInspectionError`] is
+/// not [`Clone`].
 fn err(make: impl Fn() -> ForeignChainInspectionError + Send + Sync + 'static) -> ResponseFn {
     Arc::new(move || Err(make()))
 }

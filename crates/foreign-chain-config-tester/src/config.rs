@@ -1,6 +1,6 @@
 //! Config loading. The dstack `user-config.toml` wraps the node config in an
 //! opaque `[mpc_node_config]` table the launcher patches before it becomes a
-//! `StartConfig`, so there is no single whole-config type to reuse. Instead we
+//! [`StartConfig`](mpc_node_config::StartConfig), so there is no single whole-config type to reuse. Instead we
 //! locate the `foreign_chains` subtree wherever it lives and deserialize just
 //! that into the canonical [`ForeignChainsConfig`].
 

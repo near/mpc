@@ -187,7 +187,7 @@ impl ForeignChainsConfig {
 mod tests {
     use crate::ConfigFile;
 
-    /// Every section a `ConfigFile` requires except `foreign_chains`.
+    /// Every section a [`ConfigFile`] requires except `foreign_chains`.
     const CONFIG_WITHOUT_FOREIGN_CHAINS: &str = r#"
 my_near_account_id: test.near
 near_responder_account_id: test.near

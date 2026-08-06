@@ -1,4 +1,4 @@
-//! This module wraps a signature generation functionality from `Frost` library
+//! This module wraps a signature generation functionality from [`Frost`](frost_ed25519) library
 //!  into `cait-sith::Protocol` representation.
 use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{

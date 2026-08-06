@@ -3,7 +3,7 @@
 //!     - FetchLatestFinalBlockInfo-> fetches height and hash of the latest final block
 //!     - SubmitSignedTransaction --> submits a signed transaction to the blockchain
 //!
-//! View calls go through `near_contract_transport::ViewContract`.
+//! View calls go through [`near_contract_transport::ViewContract`].
 use crate::types::LatestFinalBlockInfo;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::future::Future;
