@@ -436,11 +436,6 @@ impl AllowedLauncherImages {
         }
     }
 
-    /// Migration constructor.
-    pub(crate) fn from_entries(entries: Vec<AllowedLauncherImage>) -> Self {
-        Self { entries }
-    }
-
     /// Removes a launcher image hash and all its associated compose hashes.
     /// Returns `false` if the launcher hash was not found or if removal would leave the list empty.
     pub fn remove(&mut self, launcher_hash: &LauncherImageHash) -> bool {
