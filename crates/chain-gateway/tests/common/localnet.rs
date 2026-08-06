@@ -169,7 +169,7 @@ impl Localnet {
 }
 
 /// Returns a temp directory.
-/// The returned `TempDir` is automatically deleted when dropped.
+/// The returned [`TempDir`] is automatically deleted when dropped.
 fn make_test_home_dir(account_id: &str) -> tempfile::TempDir {
     tempfile::Builder::new()
         .prefix(&format!("{account_id}-"))

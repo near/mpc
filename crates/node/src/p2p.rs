@@ -811,7 +811,7 @@ async fn incoming_connection_handler(
     result
 }
 
-/// Adapts a `TcpListener` into a `Stream` of accepted connections, so that the
+/// Adapts a [`TcpListener`] into a [`Stream`](futures::Stream) of accepted connections, so that the
 /// accept loop can be tested by substituting a fake stream of results.
 fn listener_accept_stream(
     listener: TcpListener,
@@ -850,7 +850,7 @@ async fn run_accept_loop<S>(
 /// A missing close_notify is therefore indistinguishable from a normal
 /// connection drop that the protocol already tolerates.
 ///
-/// We check for both `UnexpectedEof` kind and the rustls-specific error
+/// We check for both [`UnexpectedEof`](std::io::ErrorKind::UnexpectedEof) kind and the rustls-specific error
 /// message to avoid accidentally suppressing unrelated EOF errors from
 /// other I/O layers (e.g. LengthDelimitedCodec truncated frame headers).
 fn is_tls_close_notify_error(err: &anyhow::Error) -> bool {
@@ -1426,7 +1426,7 @@ mod tests {
 
     /// Regression test to ensure that
     /// the incoming-connections accept loop keeps running after an
-    /// `accept()` error, including across a burst of consecutive errors as can
+    /// [`accept()`] error, including across a burst of consecutive errors as can
     /// happen under FD exhaustion or other transient conditions.
     #[tokio::test]
     async fn run_accept_loop__should_continue_after_accept_error() {

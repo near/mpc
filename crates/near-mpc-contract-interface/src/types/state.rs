@@ -145,10 +145,10 @@ pub struct GovernanceThresholdParameters {
 }
 
 /// A proposed set of threshold parameters submitted to `vote_new_parameters`:
-/// the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold`
+/// the proposed [`GovernanceThresholdParameters`] plus per-domain [`ReconstructionThreshold`]
 /// updates for the resharing it would trigger. An empty `per_domain_thresholds`
 /// keeps the current ones; a populated map must reference only existing domains
-/// (contract-validated), is applied to the `DomainRegistry` on resharing, and
+/// (contract-validated), is applied to the [`DomainRegistry`] on resharing, and
 /// never persists onto the stored [`GovernanceThresholdParameters`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
@@ -262,8 +262,8 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
-    /// Per-domain `ReconstructionThreshold` updates carried from the accepted
-    /// proposal. Applied to the `DomainRegistry` when resharing completes.
+    /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
+    /// proposal. Applied to the [`DomainRegistry`] when resharing completes.
     #[serde(default)]
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }

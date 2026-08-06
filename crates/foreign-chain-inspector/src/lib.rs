@@ -77,7 +77,8 @@ pub trait NetworkFingerprintInspector {
 /// * Every inspector returned a transient error → the first such error is propagated.
 ///
 /// Variant-level comparison is used for non-transient errors, so inspectors that all report
-/// the same failure mode (e.g. `NonCanonicalBlock`) are considered to agree even if the
+/// the same failure mode (e.g. [`NonCanonicalBlock`](ForeignChainInspectionError::NonCanonicalBlock))
+/// are considered to agree even if the
 /// inner fields differ.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
@@ -605,7 +606,7 @@ mod tests {
         assert!(classified.is_transient());
     }
 
-    /// `Path` and `Query` auth splice the API key into the URL, and jsonrpsee puts that URL in the
+    /// [`Path`] and [`Query`] auth splice the API key into the URL, and jsonrpsee puts that URL in the
     /// text of the error it reports for it.
     #[test]
     fn classify_rpc_client_error__should_keep_the_rpc_url_out_of_the_message() {

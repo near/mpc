@@ -185,7 +185,7 @@ impl SandboxTestSetup {
         }
     }
 
-    /// Returns the first key with `ForeignTx` purpose.
+    /// Returns the first key with [`ForeignTx`] purpose.
     pub fn foreign_tx_key(&self) -> &DomainKey {
         self.keys
             .iter()
@@ -224,7 +224,7 @@ impl SandboxTestSetupBuilder {
     }
 
     /// Deploys the wasm built with `--features sandbox-test-methods`, exposing the
-    /// introspection view methods in `crate::sandbox_test_methods` (e.g. fan-out queue
+    /// introspection view methods in [`crate::sandbox_test_methods`] (e.g. fan-out queue
     /// length).
     pub fn with_sandbox_test_methods(mut self) -> Self {
         self.with_sandbox_test_methods = true;
@@ -417,8 +417,8 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the `Account`'s
-/// signer. Mirrors what the contract reads via `env::signer_account_pk()` when
+/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s
+/// signer. Mirrors what the contract reads via [`env::signer_account_pk()`] when
 /// the account submits a transaction.
 pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
     let bytes: [u8; 32] = account
@@ -433,10 +433,10 @@ pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
 /// Builds the set of [`NodeId`]s that a sandbox contract will store after
 /// each participant has submitted its attestation. Both the TLS key (from the
 /// participant's `tls_public_key`) and the account public key (read from the
-/// matching `Account`'s signer) must line up with what `submit_participant_info`
-/// will persist on-chain — it stores `env::signer_account_pk()` alongside the
-/// TLS key. Keep this in sync with `MpcContract::submit_participant_info` so
-/// that test-side `NodeId` comparisons against `get_tee_accounts()` stay valid.
+/// matching [`Account`]'s signer) must line up with what `submit_participant_info`
+/// will persist on-chain — it stores [`env::signer_account_pk()`] alongside the
+/// TLS key. Keep this in sync with [`MpcContract::submit_participant_info`] so
+/// that test-side [`NodeId`] comparisons against [`get_tee_accounts()`] stay valid.
 pub fn build_sandbox_node_ids(
     participants: &Participants,
     accounts: &[Account],

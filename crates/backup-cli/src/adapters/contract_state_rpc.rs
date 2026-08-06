@@ -37,8 +37,8 @@ impl ReadContractState for RpcContractStateReader {
 #[error("contract state view call failed: {0}")]
 pub struct RpcError(String);
 
-/// `reqwest` writes the request url, which is where an api key lives, into both the `Display` and
-/// the `Debug` of its errors, so its own text is dropped in favour of the causes below it, which do
+/// `reqwest` writes the request url, which is where an api key lives, into both the [`Display`](std::fmt::Display) and
+/// the [`Debug`] of its errors, so its own text is dropped in favour of the causes below it, which do
 /// not know the url. Every other variant carries text `near_kit` authored itself.
 fn describe(err: &NearKitError) -> String {
     match err {

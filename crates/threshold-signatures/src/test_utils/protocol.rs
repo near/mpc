@@ -243,10 +243,11 @@ fn run_protocol_common<T>(
     Ok((out, protocol_snapshots))
 }
 
-/// Build protocols with unbounded `Comms` for buffer-capacity testing.
+#[expect(rustdoc::private_intra_doc_links)]
+/// Build protocols with unbounded [`Comms`] for buffer-capacity testing.
 ///
 /// For each participant, creates a `Comms::with_buffer_capacity(usize::MAX)`,
-/// a `ParticipantList`, and a per-participant RNG, then calls `make_future`
+/// a [`ParticipantList`], and a per-participant RNG, then calls `make_future`
 /// to obtain the protocol future. Returns the ready-to-run protocols and
 /// a vec of `(Participant, Comms)` references for later assertions.
 pub fn build_buffer_test<T: Send + 'static, Fut, F>(
@@ -274,8 +275,9 @@ where
     (protocols, comms_refs)
 }
 
+#[expect(rustdoc::private_intra_doc_links)]
 /// Run protocols to completion and assert that each participant's
-/// `Comms::buffer_len()` equals the value returned by `expected(participant)`.
+/// [`Comms::buffer_len()`] equals the value returned by `expected(participant)`.
 pub fn run_and_assert_buffer_entries<T>(
     protocols: GenProtocol<T>,
     comms_refs: &[(Participant, Comms)],
