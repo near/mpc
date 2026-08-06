@@ -75,7 +75,7 @@ pub struct MeshNetworkClient {
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     channels: Arc<Mutex<NetworkTaskChannelManager>>,
     indexer_heights: Arc<IndexerHeightTracker>,
-    /// Helper data to ensure `ChannelId` uniqueness.
+    /// Helper data to ensure [`ChannelId`] uniqueness.
     last_id: Arc<Mutex<UniqueId>>,
 }
 
@@ -133,7 +133,7 @@ impl MeshNetworkClient {
 
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
     /// new MPC task. It is expected that the caller is the leader of this MPC task.
-    /// There may be two tasks with the same `MpcTaskId` (e.g. EdDSA retry computation),
+    /// There may be two tasks with the same [`MpcTaskId`] (e.g. EdDSA retry computation),
     /// but they would have different channel ids.
     pub fn new_channel_for_task(
         &self,
@@ -1006,7 +1006,7 @@ pub mod testing {
     }
 
     /// Builds a channel over the given participant set, returning the raw inbound sender so
-    /// tests can inject arbitrary `MpcPeerMessage`s, including ones from outside the set.
+    /// tests can inject arbitrary [`MpcPeerMessage`]s, including ones from outside the set.
     pub fn new_task_channel_for_test(
         task_id: MpcTaskId,
         leader: ParticipantId,

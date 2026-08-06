@@ -31,7 +31,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at\n startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.",
+        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at\n startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.",
         "kind": "view",
         "result": {
           "serialization_type": "borsh",
@@ -423,7 +423,7 @@ expression: abi
       },
       {
         "name": "clean_invalid_attestations",
-        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists). Returns the number of entries removed. Callable by\n anyone while the protocol is in `Running`.",
+        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists). Returns the number of entries removed. Callable by\n anyone while the protocol is in [`Running`](ProtocolContractState::Running).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -487,7 +487,7 @@ expression: abi
       },
       {
         "name": "conclude_node_migration",
-        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a `Running` state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - `InvalidState::ProtocolStateNotRunning`: if protocol is not in `Running` state\n - `InvalidState::NotParticipant`: if caller is not a current participant\n - `NodeMigrationError::KeysetMismatch`: if provided keyset does not match the expected keyset\n - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller\n - `NodeMigrationError::AccountPublicKeyMismatch`: if caller’s public key does not match the expected destination node\n - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid",
+        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -668,7 +668,7 @@ expression: abi
       },
       {
         "name": "get_pending_ckd_request",
-        "doc": " Presence check for a pending CKD request, exposed as a view call.\n\n See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`\n is an arbitrary representative of a fan-out queue, not \"the\" yield. Only the\n `Some`/`None` distinction is meaningful.",
+        "doc": " Presence check for a pending CKD request, exposed as a view call.\n\n See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]\n is an arbitrary representative of a fan-out queue, not \"the\" yield. Only the\n `Some`/`None` distinction is meaningful.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -697,7 +697,7 @@ expression: abi
       },
       {
         "name": "get_pending_request",
-        "doc": " Presence check for a pending signature request, exposed as a view call.\n\n **The returned `YieldIndex` is an arbitrary representative, not \"the\" yield\n for this request.** Since the duplicate-request fan-out feature (PR #3187),\n a single request key can have N queued yields; this method returns the head of the\n queue. Callers that need to act on the full set are wrong to use this. The\n only correct interpretation is presence: `Some(_)` vs `None`.\n\n The `Option<YieldIndex>` shape is retained for JSON wire compatibility with\n out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)\n only matches on presence. Prefer a `bool`-shaped accessor if one is added.",
+        "doc": " Presence check for a pending signature request, exposed as a view call.\n\n **The returned [`YieldIndex`] is an arbitrary representative, not \"the\" yield\n for this request.** Since the duplicate-request fan-out feature (PR #3187),\n a single request key can have N queued yields; this method returns the head of the\n queue. Callers that need to act on the full set are wrong to use this. The\n only correct interpretation is presence: `Some(_)` vs `None`.\n\n The `Option<YieldIndex>` shape is retained for JSON wire compatibility with\n out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)\n only matches on presence. Prefer a `bool`-shaped accessor if one is added.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -726,7 +726,7 @@ expression: abi
       },
       {
         "name": "get_pending_verify_foreign_tx_request",
-        "doc": " Presence check for a pending foreign-tx verification request, exposed as a\n view call.\n\n See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`\n is an arbitrary representative of a fan-out queue, not \"the\" yield. Only the\n `Some`/`None` distinction is meaningful.",
+        "doc": " Presence check for a pending foreign-tx verification request, exposed as a\n view call.\n\n See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]\n is an arbitrary representative of a fan-out queue, not \"the\" yield. Only the\n `Some`/`None` distinction is meaningful.",
         "kind": "view",
         "params": {
           "serialization_type": "json",
@@ -1228,7 +1228,7 @@ expression: abi
       },
       {
         "name": "register_foreign_chain_support",
-        "doc": " Registers the set of foreign chains the calling node supports.\n\n Must be called directly from the participant's own NEAR account\n (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded\n through another contract). Callable by a participant in any active protocol phase\n (Initializing, Running, or Resharing — authenticated against that phase's participant\n set); panics in `NotInitialized` or when the caller is not a participant. Entries for\n accounts that are no longer participants are pruned after resharing by\n [`Self::clean_foreign_chain_data`].",
+        "doc": " Registers the set of foreign chains the calling node supports.\n\n Must be called directly from the participant's own NEAR account\n (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded\n through another contract). Callable by a participant in any active protocol phase\n (Initializing, Running, or Resharing — authenticated against that phase's participant\n set); panics in [`NotInitialized`](ProtocolContractState::NotInitialized) or when the caller is not a participant. Entries for\n accounts that are no longer participants are pruned after resharing by\n [`Self::clean_foreign_chain_data`].",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1302,7 +1302,7 @@ expression: abi
       },
       {
         "name": "request_app_private_key",
-        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in `AppPublicKeyPV` to support use cases\n where the derived key is intentionally public (no encryption).",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in\n [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)\n to support use cases\n where the derived key is intentionally public (no encryption).",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2288,7 +2288,7 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided `DestinationNodeInfo` is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided [`DestinationNodeInfo`](dtos::DestinationNodeInfo) is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2636,7 +2636,7 @@ expression: abi
       },
       {
         "name": "vote_new_parameters",
-        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain `ReconstructionThreshold` updates\n (empty map keeps the current ones), applied on resharing completion.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: `assert_caller_is_signer()` requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
+        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain\n [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates\n (empty map keeps the current ones), applied on resharing completion.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: [`assert_caller_is_signer()`](MpcContract::assert_caller_is_signer) requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2809,7 +2809,7 @@ expression: abi
       },
       {
         "name": "vote_update_foreign_chain_providers",
-        "doc": " Vote on per-chain RPC provider whitelist state. The input is keyed by\n `ForeignChain`; each `ChainEntry` value carries the proposed full provider list\n and the RPC response quorum for that chain. The chain's stored state is replaced\n once the protocol's signing threshold of participants has voted the same\n `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and\n at-most-one entry per chain at borsh-deserialize time.",
+        "doc": " Vote on per-chain RPC provider whitelist state. The input is keyed by\n [`ForeignChain`](dtos::ForeignChain); each [`ChainEntry`](dtos::ChainEntry) value carries the proposed full provider list\n and the RPC response quorum for that chain. The chain's stored state is replaced\n once the protocol's signing threshold of participants has voted the same\n `(providers, quorum)` pair. [`NonEmptyBTreeMap`](near_mpc_bounded_collections::NonEmptyBTreeMap) enforces a non-empty batch and\n at-most-one entry per chain at borsh-deserialize time.",
         "kind": "call",
         "params": {
           "serialization_type": "borsh",
@@ -3329,7 +3329,7 @@ expression: abi
           ]
         },
         "AuthenticatedParticipantId2": {
-          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
+          "description": "This struct is supposed to contain the participant id associated to the account [`env::signer_account_id()`], but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
           "allOf": [
             {
               "$ref": "#/definitions/ParticipantId"
@@ -4963,7 +4963,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "description": "DTO representation of the contract-internal [`Participants`] type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters) from the internal [`Participants`] representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
           "type": "object",
           "required": [
             "next_id",
@@ -5108,7 +5108,7 @@ expression: abi
           }
         },
         "ProposedGovernanceThresholdParameters": {
-          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParameters`] plus per-domain `ReconstructionThreshold` updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the `DomainRegistry` on resharing, and never persists onto the stored [`GovernanceThresholdParameters`].",
+          "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParameters`] plus per-domain [`ReconstructionThreshold`] updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the [`DomainRegistry`] on resharing, and never persists onto the stored [`GovernanceThresholdParameters`].",
           "type": "object",
           "required": [
             "parameters"
@@ -5427,7 +5427,7 @@ expression: abi
               "uniqueItems": true
             },
             "per_domain_thresholds": {
-              "description": "Per-domain `ReconstructionThreshold` updates carried from the accepted proposal. Applied to the `DomainRegistry` when resharing completes.",
+              "description": "Per-domain [`ReconstructionThreshold`] updates carried from the accepted proposal. Applied to the [`DomainRegistry`] when resharing completes.",
               "default": {},
               "type": "object",
               "additionalProperties": {

@@ -3,11 +3,11 @@ use std::collections::BTreeSet;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-/// A `BTreeSet` that is guaranteed to contain at least one element.
+/// A [`BTreeSet`] that is guaranteed to contain at least one element.
 ///
 /// Implements `Deref<Target = BTreeSet<T>>` for read access but intentionally
-/// does not implement `DerefMut` to prevent callers from breaking the non-empty
-/// invariant (e.g. via `clear()` or `remove()`).
+/// does not implement [`DerefMut`](std::ops::DerefMut) to prevent callers from breaking the non-empty
+/// invariant (e.g. via [`clear()`](BTreeSet::clear) or [`remove()`](BTreeSet::remove)).
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
 )]

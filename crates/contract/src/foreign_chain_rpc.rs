@@ -4,8 +4,8 @@
 //! participants holds the same proposal.
 //!
 //! Pending votes are stored hash-only via [`Votes<V>`][crate::primitives::votes::Votes],
-//! which is backed by lazy-loaded `IterableMap`s. The applied state lives in
-//! `AllowedProviders` (also `IterableMap`-backed) and retains the full `ChainEntry`
+//! which is backed by lazy-loaded [`IterableMap`]s. The applied state lives in
+//! `AllowedProviders` (also [`IterableMap`]-backed) and retains the full [`ChainEntry`]
 //! content. The tipping voter always brings the proposal in as a call argument, so the
 //! applied state is reconstructable from the call that crosses threshold — pending
 //! state can stay hash-only without losing data on apply.
@@ -34,7 +34,7 @@ impl From<ChainEntryValidationError> for Error {
     }
 }
 
-/// Contract-side `ChainEntry`. Mirrors [`dtos::ChainEntry`] in layout but enforces
+/// Contract-side [`ChainEntry`]. Mirrors [`dtos::ChainEntry`] in layout but enforces
 /// validation rules at construction. The DTO type is the wire shape; this type is
 /// what the contract stores and reasons about. Conversion is via
 /// [`TryFrom<dtos::ChainEntry>`] (validates) and [`From<ChainEntry> for dtos::ChainEntry`]
@@ -136,7 +136,7 @@ impl AllowedProviders {
             .collect()
     }
 
-    /// Whether `chain` is currently whitelisted (has a voted-in `ChainEntry`).
+    /// Whether `chain` is currently whitelisted (has a voted-in [`ChainEntry`]).
     pub fn is_whitelisted(&self, chain: &ForeignChain) -> bool {
         self.entries.contains_key(chain)
     }
@@ -253,7 +253,7 @@ mod tests {
     use mpc_primitives::GovernanceThreshold;
     use near_mpc_contract_interface::types::AuthScheme;
 
-    /// Build a `GovernanceThresholdParameters` for tests, bypassing the relative-threshold
+    /// Build a [`GovernanceThresholdParameters`] for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes
     /// test deliberately uses a threshold > current participant count to assert
     /// the count_for predicate filters out non-participant rows).
@@ -275,7 +275,7 @@ mod tests {
         )
     }
 
-    /// Build a `dtos::ChainEntry` from a list of provider id stubs and a quorum.
+    /// Build a [`dtos::ChainEntry`] from a list of provider id stubs and a quorum.
     fn chain_entry(ids: &[&str], quorum: u64) -> dtos::ChainEntry {
         let providers: BTreeMap<ProviderId, ProviderConfig> =
             ids.iter().map(|id| provider(id)).collect();
@@ -286,7 +286,7 @@ mod tests {
         }
     }
 
-    /// Build a single-chain vote batch wrapped in `NonEmptyBTreeMap`.
+    /// Build a single-chain vote batch wrapped in [`NonEmptyBTreeMap`].
     fn single_chain_votes(
         chain: ForeignChain,
         ids: &[&str],
@@ -295,7 +295,7 @@ mod tests {
         NonEmptyBTreeMap::new(chain, chain_entry(ids, quorum))
     }
 
-    /// Build a multi-chain vote batch wrapped in `NonEmptyBTreeMap`.
+    /// Build a multi-chain vote batch wrapped in [`NonEmptyBTreeMap`].
     fn votes_from(
         entries: impl IntoIterator<Item = (ForeignChain, dtos::ChainEntry)>,
     ) -> NonEmptyBTreeMap<ForeignChain, dtos::ChainEntry> {
@@ -335,7 +335,7 @@ mod tests {
         wl.votes.pending.all().values().any(|s| s.contains(voter))
     }
 
-    /// The `ProposalHash` that `voter` is currently holding (if any).
+    /// The [`ProposalHash`] that `voter` is currently holding (if any).
     fn pending_proposal_hash_for(
         wl: &ForeignChainRpcWhitelist,
         voter: &(AuthenticatedParticipantId, ForeignChain),

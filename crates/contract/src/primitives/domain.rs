@@ -37,7 +37,7 @@ pub fn validate_domain_purpose(domain: &DomainConfig) -> Result<(), Error> {
 }
 
 /// Validates the per-domain reconstruction threshold against the participant
-/// count. Universal bound `2 <= t <= n` plus, for `DamgardEtAl`, the
+/// count. Universal bound `2 <= t <= n` plus, for [`DamgardEtAl`](Protocol::DamgardEtAl), the
 /// honest-majority bound `2t - 1 <= n`.
 pub fn validate_domain_reconstruction_threshold(
     domain: &DomainConfig,
@@ -72,7 +72,7 @@ pub fn validate_domain_reconstruction_threshold(
     Ok(())
 }
 
-/// The largest `ReconstructionThreshold` across `domains`, or `None` if there are none
+/// The largest [`ReconstructionThreshold`] across `domains`, or `None` if there are none
 /// (an empty set imposes no cross-domain lower bound on the GovernanceThreshold).
 /// Feeds [`GovernanceThresholdParameters::validate_governance_against_reconstruction`](crate::primitives::thresholds::GovernanceThresholdParameters::validate_governance_against_reconstruction).
 pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<ReconstructionThreshold> {

@@ -29,11 +29,11 @@ use serde::Serialize;
 use std::time::Duration;
 use threshold_signatures::blstrs;
 
-/// Sign-flavored schemes attach 15 TGas per cross-contract `sign()` call. Ten calls
+/// Sign-flavored schemes attach 15 TGas per cross-contract [`sign()`] call. Ten calls
 /// (≈150 TGas) fit comfortably under the per-receipt 300 TGas ceiling.
 const SIGN_CALLS_PER_BATCH: u64 = 10;
 
-/// CKD attaches 30 TGas per cross-contract `request_app_private_key()` call. Five calls
+/// CKD attaches 30 TGas per cross-contract [`request_app_private_key()`] call. Five calls
 /// (≈150 TGas) leave equivalent headroom.
 const CKD_CALLS_PER_BATCH: u64 = 5;
 
@@ -151,8 +151,8 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
 }
 
 /// Drives the sign-flavored fan-out exercise: stack `MAX_PENDING_REQUEST_FAN_OUT`
-/// identical `sign()` calls via the parallel contract, wait for the queue to reach that
-/// length, then submit the single matching `respond()`. Returns the batch transaction
+/// identical [`sign()`] calls via the parallel contract, wait for the queue to reach that
+/// length, then submit the single matching [`respond()`]. Returns the batch transaction
 /// handles for the caller to await as the Then phase.
 async fn run_sign_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
@@ -182,7 +182,7 @@ async fn run_sign_fan_out(
 
 /// Splits a total fan-out of `total_calls` into batch transactions, each calling the
 /// parallel contract's `make_duplicate_sign_calls` to enqueue up to `SIGN_CALLS_PER_BATCH`
-/// duplicates of `sign_args`. Batching is required because each child `sign()` call
+/// duplicates of `sign_args`. Batching is required because each child [`sign()`] call
 /// reserves ~15 TGas of the parent receipt's 300 TGas budget.
 async fn submit_duplicate_sign_batches(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
@@ -212,7 +212,7 @@ async fn submit_duplicate_sign_batches(
     Ok(statuses)
 }
 
-/// Wire shape for `test_parallel_contract::make_duplicate_sign_calls`. The contract
+/// Wire shape for [`test_parallel_contract::make_duplicate_sign_calls`]. The contract
 /// just fans the supplied `request` out `count` times; the test owns the payload.
 #[derive(Serialize)]
 struct MakeDuplicateSignCallsArgs<'a> {
@@ -340,7 +340,7 @@ async fn wait_for_pending_ckd_queue(
 }
 
 /// Generates a Bls12-381 G1 app public key from an arbitrary scalar so the test can
-/// produce a `CKDRequestArgs` to fan out. The value is opaque — what matters is that
+/// produce a [`CKDRequestArgs`] to fan out. The value is opaque — what matters is that
 /// the test holds it and can feed the matching `request` into `create_response_ckd`.
 ///
 /// Callers should pass a non-zero `seed` (e.g. `domain_id.0 + 1`) so the scalar avoids

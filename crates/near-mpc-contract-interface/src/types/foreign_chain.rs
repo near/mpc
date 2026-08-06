@@ -56,7 +56,8 @@ pub type TonCellRefs = UpperBoundedVec<Hash256, TON_CELL_MAX_REFS>;
     derive(borsh::BorshSchema)
 )]
 /// Serialized as a `u8` discriminant via `serde_repr` and `#[borsh(use_discriminant = true)]`.
-/// The `JsonSchema` impl below delegates to `u8` because schemars doesn't understand `serde_repr`.
+/// The [`JsonSchema`](schemars::JsonSchema) impl below delegates to `u8` because schemars doesn't
+/// understand `serde_repr`.
 /// The schema and serialization need to be kept in sync so that our ABI snapshot test captures
 /// breaking changes.
 #[non_exhaustive]
@@ -443,7 +444,7 @@ impl TonCellBody {
     }
 }
 
-/// Wire representation shared by the `Deserialize` and `BorshDeserialize` impls, so the
+/// Wire representation shared by the [`Deserialize`] and [`BorshDeserialize`] impls, so the
 /// field layout and the routing through [`TonCellBody::new`] live in one place.
 #[derive(Deserialize, BorshDeserialize)]
 struct TonCellBodyRepr {
@@ -1631,7 +1632,7 @@ pub struct StarknetTxId(pub StarknetFelt);
 ///
 /// This enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte
 /// `msg_hash` that the MPC network signs. Callers select the payload version
-/// via `VerifyForeignTransactionRequestArgs::payload_version`.
+/// via [`VerifyForeignTransactionRequestArgs::payload_version`].
 ///
 /// IMPORTANT: Never reorder existing enum variants or struct fields, as this
 /// would change the Borsh encoding and break signature verification.
@@ -1756,7 +1757,7 @@ pub enum ChainRouting {
 }
 
 /// One provider's per-chain configuration, stored as a value in `ChainEntry.providers`
-/// (keyed by `ProviderId`). Read by nodes at startup to assemble the actual RPC URL
+/// (keyed by [`ProviderId`]). Read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
@@ -1774,11 +1775,11 @@ pub struct ProviderConfig {
 }
 
 /// Stored state for one chain in the on-chain whitelist: a non-empty map from
-/// `ProviderId` to that provider's per-chain configuration, plus the RPC response
+/// [`ProviderId`] to that provider's per-chain configuration, plus the RPC response
 /// quorum nodes should use when querying. Returned by the
-/// `allowed_foreign_chain_providers` view fn. `NonEmptyBTreeMap` enforces a non-empty
-/// provider set and at-most-one entry per `ProviderId` at borsh-deserialize time,
-/// and the map iterates in `ProviderId` order — so the canonical hash matches across
+/// `allowed_foreign_chain_providers` view fn. [`NonEmptyBTreeMap`] enforces a non-empty
+/// provider set and at-most-one entry per [`ProviderId`] at borsh-deserialize time,
+/// and the map iterates in [`ProviderId`] order — so the canonical hash matches across
 /// voters without an explicit sort step.
 #[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]

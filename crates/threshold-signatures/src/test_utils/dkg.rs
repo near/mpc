@@ -178,7 +178,7 @@ pub fn make_keygen_output<C: Ciphersuite>(
 }
 
 /// Centralized key generation for testing: generates random participant IDs
-/// and creates `KeygenOutput` for each using polynomial evaluation.
+/// and creates [`KeygenOutput`] for each using polynomial evaluation.
 #[cfg(test)]
 pub fn build_frost_key_packages_with_dealer<C: Ciphersuite>(
     max_signers: u16,

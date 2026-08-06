@@ -98,9 +98,11 @@ pub enum VoteError {
     VoterPending,
 }
 
-/// Reasons a `ChainEntry` proposal fails validation. `NonEmptyBTreeMap` already
-/// enforces non-empty + unique-`ProviderId` at borsh-deserialize time, so those
-/// cases are absent here.
+/// Reasons a [`ChainEntry`](crate::foreign_chain_rpc::ChainEntry) proposal fails
+/// validation. [`NonEmptyBTreeMap`](near_mpc_bounded_collections::NonEmptyBTreeMap)
+/// already enforces non-empty +
+/// unique-[`ProviderId`](near_mpc_contract_interface::types::ProviderId) at
+/// borsh-deserialize time, so those cases are absent here.
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum ChainEntryValidationError {
     #[error("ChainEntry.quorum must be >= 1")]

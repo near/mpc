@@ -2,7 +2,7 @@
 //! into contract interface types from the [`near_mpc_contract_interface::types`] module.
 //!
 //! Crypto type conversions (e.g. `k256`, `ed25519-dalek`, `blstrs`, `near-sdk`)
-//! have been moved to `near-mpc-contract-interface` as standard `From`/`TryFrom` impls.
+//! have been moved to `near-mpc-contract-interface` as standard [`From`]/[`TryFrom`] impls.
 //! This module retains attestation conversions where the orphan rule applies.
 
 use mpc_attestation::{
