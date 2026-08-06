@@ -1,6 +1,6 @@
 //! Stateless TEE attestation verifier contract.
 //!
-//! Wraps `dcap_qvl::verify::verify` in a single `verify_quote` method. The
+//! Wraps [`dcap_qvl::verify::verify`] in a single `verify_quote` method. The
 //! contract holds no state and has no admin; verifier-internal policy (the
 //! `dcap-qvl` version, Intel root certs, etc.) is bound to the deployed
 //! code hash. Per-team allowlists, report-data binding, and other
@@ -32,7 +32,7 @@ pub struct TeeVerifier {}
 impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
-    /// Calls `dcap_qvl::verify::verify` with the current block timestamp
+    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp
     /// and returns `VerificationResult::Verified(report)` on success. The
     /// caller is responsible for any post-DCAP policy (RTMR3 replay,
     /// report-data binding, measurement allowlist matching, etc.).
@@ -40,7 +40,7 @@ impl TeeVerifier {
     /// A rejected quote returns [`VerificationResult::Rejected`] as the
     /// **value** of a *successful* receipt — deliberately not via
     /// `#[handle_result]`. near-sdk serializes the returned enum through
-    /// `env::value_return`, so an on-chain caller's `#[callback_result]` sees
+    /// [`env::value_return`], so an on-chain caller's `#[callback_result]` sees
     /// `Ok(VerificationResult::Rejected(_))` and can distinguish "verifier
     /// rejected this quote" from `Err(PromiseError::Failed)` ("verifier
     /// unreachable / crashed / timed out"). A failed receipt would carry no

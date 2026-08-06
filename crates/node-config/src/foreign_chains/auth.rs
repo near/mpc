@@ -30,7 +30,7 @@ pub enum AuthConfig {
 impl AuthConfig {
     /// Returns the RPC URL with auth placeholders stripped.
     ///
-    /// For `Path` auth, removes the placeholder string from the URL (returning an owned `String`).
+    /// For [`Path`](AuthConfig::Path) auth, removes the placeholder string from the URL (returning an owned [`String`]).
     /// For all other auth kinds, returns the original URL by reference (zero-cost borrow).
     pub(crate) fn strip_placeholder<'a>(&self, rpc_url: &'a str) -> Cow<'a, str> {
         match self {

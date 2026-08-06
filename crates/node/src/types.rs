@@ -320,8 +320,9 @@ pub struct SignerContext {
     pub method: &'static str,
 }
 
+#[expect(rustdoc::private_intra_doc_links)]
 /// The metadata of a successfully built-and-submitted transaction, captured in
-/// `crate::indexer::tx_sender`.
+/// [`crate::indexer::tx_sender`].
 #[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
 #[display("txid={tx_hash}  nonce={nonce}  block={block_height}  sig={signature}")]
 pub struct SubmittedTxMetadata {
@@ -392,7 +393,7 @@ mod tests {
     use std::str::FromStr;
 
     /// A submitted (Executed) transaction whose hash is fixed
-    /// (`CryptoHash::default()`). Used by the `Display` tests, which pin the
+    /// ([`CryptoHash::default()`]). Used by the [`Display`] tests, which pin the
     /// exact rendered txid.
     fn test_transaction(method: &'static str) -> SubmittedTransaction {
         SubmittedTransaction {

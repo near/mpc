@@ -223,11 +223,12 @@ impl GovernanceThresholdParameters {
     }
 }
 
+#[expect(rustdoc::private_intra_doc_links)]
 /// A proposal submitted to `vote_new_parameters`: the new [`GovernanceThresholdParameters`]
-/// plus per-domain `ReconstructionThreshold` updates applied to the
+/// plus per-domain [`ReconstructionThreshold`] updates applied to the
 /// [`super::domain::DomainRegistry`] when resharing completes. An empty map keeps
 /// the current thresholds; a populated map must reference only existing domains
-/// (validated in `RunningContractState::process_new_parameters_proposal`).
+/// (validated in [`RunningContractState::process_new_parameters_proposal`](crate::state::running::RunningContractState::process_new_parameters_proposal)).
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ProposedGovernanceThresholdParameters {

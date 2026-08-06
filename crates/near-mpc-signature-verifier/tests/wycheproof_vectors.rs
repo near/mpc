@@ -1,14 +1,14 @@
 //! Wycheproof test-vector coverage for the consumer-facing signature verifiers.
 //!
 //! EdDSA vectors map directly onto [`verify_eddsa_signature`]. ECDSA vectors are
-//! DER-encoded `(r, s)` with no recovery id, and many `Valid` vectors carry a
+//! DER-encoded `(r, s)` with no recovery id, and many [`Valid`] vectors carry a
 //! high-S signature; our verifier recovers the key and enforces low-S, so ECDSA
 //! results are mapped rather than compared one-to-one:
-//!   * `Invalid`        -> must be rejected for every candidate recovery id,
-//!   * `Valid` + low-S  -> must be accepted,
-//!   * `Valid` + high-S -> must be rejected, but accepted once `s` is normalized.
+//!   * [`Invalid`]        -> must be rejected for every candidate recovery id,
+//!   * [`Valid`] + low-S  -> must be accepted,
+//!   * [`Valid`] + high-S -> must be rejected, but accepted once `s` is normalized.
 //!
-//! `Acceptable` vectors are spec-optional and left unasserted.
+//! [`Acceptable`] vectors are spec-optional and left unasserted.
 
 #![allow(non_snake_case)]
 

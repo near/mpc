@@ -149,8 +149,9 @@ pub trait ProposalHashEncoding {
     fn bytes_for_hash(&self) -> Vec<u8>;
 }
 
+#[expect(rustdoc::private_intra_doc_links)]
 /// The set of voters who voted for a particular proposal. Always non-empty when stored
-/// inside `VotesByProposal`.
+/// inside [`Votes::votes_by_proposal`].
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct VoterSet<V>(pub(super) BTreeSet<V>)

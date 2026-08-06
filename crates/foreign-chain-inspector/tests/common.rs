@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// A client that always returns a hard-coded response.
 /// Useful for tests.
 /// Note: We have to hold a closure and not just the response
-/// because `RpcClientError` does not implement `Clone`.
+/// because [`RpcClientError`] does not implement [`Clone`].
 #[derive(Clone)]
 pub struct FixedResponseRpcClient<RespFn> {
     response_fn: RespFn,
