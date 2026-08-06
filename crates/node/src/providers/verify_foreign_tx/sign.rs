@@ -65,6 +65,17 @@ where
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
+        let response_payload = self
+            .execute_foreign_chain_request(
+                &foreign_tx_request.request,
+                foreign_tx_request.payload_version,
+            )
+            .await?;
+
+        // Build and validate the request before the presignature is popped, so invalid/malicious
+        // requests don't cost a presignature.
+        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
+
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
@@ -77,15 +88,6 @@ where
             },
             participants,
         )?;
-
-        let response_payload = self
-            .execute_foreign_chain_request(
-                &foreign_tx_request.request,
-                foreign_tx_request.payload_version,
-            )
-            .await?;
-
-        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let response = self
             .ecdsa_signature_provider
