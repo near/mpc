@@ -274,9 +274,12 @@ impl TeeState {
     }
 
     /// Evicts expired entries from the allowed docker-image and launcher-image sets, then
-    /// reverifies stored participant attestations, removing any that fail reverification
+    /// reverifies stored participant attestations and returns the subset still passing
     /// (e.g. the MPC image hash the attestation was tied to is no longer allowed, or a
     /// certificate expired).
+    ///
+    /// Despite the name, `stored_attestations` is only read here, never pruned — reclaiming
+    /// entries is [`TeeState::clean_invalid_attestations`]'s job alone.
     pub fn reverify_and_cleanup_participants(
         &mut self,
         participants: &Participants,
