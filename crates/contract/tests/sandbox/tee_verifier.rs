@@ -14,9 +14,9 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         contract_build::tee_verifier_contract,
         mpc_contract::{
-            get_participant_attestation, prepay_attestation_grants, submit_participant_info,
-            submit_participant_info_raw, tee_verifier_account_id, total_gas_fee,
-            vote_tee_verifier_change,
+            get_participant_attestation, prepay_and_submit_participant_info,
+            prepay_attestation_grants, submit_participant_info_raw, tee_verifier_account_id,
+            total_gas_fee, vote_tee_verifier_change,
         },
     },
 };
@@ -55,10 +55,6 @@ async fn deploy_and_trust_verifier(
     trust_verifier(contract, participants, verifier.id()).await;
 }
 
-/// Submits without prepaying: callers that need a grant prepay separately, from a different
-/// account. Keeping the two apart keeps the balance assertions below about the submission
-/// alone -- the prepayment legitimately costs the fee, whereas a *failed* submission must
-/// cost nothing but gas.
 async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
     submit_participant_info_raw(
         submitter,
@@ -123,7 +119,7 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
     } = setup().await;
 
     // When
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &mock_dto_dstack_attestation(),

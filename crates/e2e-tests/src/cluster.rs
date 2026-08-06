@@ -1317,16 +1317,12 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-/// Fee for one attestation-storage grant, read from the contract the way an operator reads it.
-///
-/// `None` when `config()` carries no fee field, which means a contract binary older than
-/// grants: the upgrade-compatibility tests run one, and nothing there needs prepaying.
-///
-/// Kept behind a wrapper so the source of the value can change without touching callers.
+/// `None` when `config()` carries no fee field: a contract binary older than grants, which
+/// the upgrade-compatibility tests run and which needs no prepayment.
 async fn attestation_storage_fee(
     contract: &DeployedContract,
 ) -> anyhow::Result<Option<near_kit::NearToken>> {
-    let config: serde_json::Value = contract.view_optimistic("config").await?;
+    let config: serde_json::Value = contract.view("config").await?;
     Ok(config["attestation_storage_fee_millinear"]
         .as_u64()
         .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
@@ -1360,8 +1356,10 @@ async fn init_contract(
     );
     let init_config = json!({ "key_event_timeout_blocks": KEY_EVENT_TIMEOUT_BLOCKS });
     let parameters_json = init_format.init_parameters_json(&params)?;
+    // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
+    // next, and a view resolves against the last final block.
     let outcome = contract
-        .call(
+        .call_final(
             method_names::INIT,
             json!({ "parameters": parameters_json, "init_config": init_config }),
         )

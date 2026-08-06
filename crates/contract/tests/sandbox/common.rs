@@ -2,7 +2,9 @@ use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-    mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
+    mpc_contract::{
+        assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
+    },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
@@ -467,9 +469,13 @@ pub async fn submit_tee_attestations(
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
-        let result =
-            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
-                .await?;
+        let result = prepay_and_submit_participant_info(
+            account,
+            contract,
+            &attestation,
+            &node_id.tls_public_key,
+        )
+        .await?;
         assert!(result.is_success());
     }
     Ok(())
@@ -489,10 +495,11 @@ pub async fn submit_attestations(
         .map(|(i, ((_, _, participant), account))| async move {
             let attestation = Attestation::Mock(MockAttestation::Valid);
             let tls_key = participant.tls_public_key.clone();
-            let success = submit_participant_info(account, contract, &attestation, &tls_key)
-                .await
-                .expect("submit_participant_info should not error")
-                .is_success();
+            let success =
+                prepay_and_submit_participant_info(account, contract, &attestation, &tls_key)
+                    .await
+                    .expect("submit_participant_info should not error")
+                    .is_success();
             assert!(
                 success,
                 "submit_participant_info failed for participant {}",
@@ -748,7 +755,7 @@ pub async fn generate_participant_and_submit_attestation(
 
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),

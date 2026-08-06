@@ -47,6 +47,7 @@ pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant
 pub const SUBMIT_PARTICIPANT_INFO: &str = "submit_participant_info";
+pub const PREPAY_ATTESTATION_STORAGE: &str = "prepay_attestation_storage";
 pub const UPDATE_PARTICIPANT_URL: &str = "update_participant_url";
 pub const VERIFY_TEE: &str = "verify_tee";
 pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
@@ -83,6 +84,7 @@ pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
+pub const AVAILABLE_ATTESTATION_GRANTS: &str = "available_attestation_grants";
 pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee_verifier_account_id";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";

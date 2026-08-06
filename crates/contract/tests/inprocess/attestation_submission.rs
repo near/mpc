@@ -162,9 +162,8 @@ impl TestSetup {
             .expect("prepayment should succeed");
     }
 
-    /// Submits and expects success. Prepays a grant first if the node has none, standing in
-    /// for the operator step, so tests that only care about attestation behaviour do not each
-    /// have to fund their nodes. Tests that assert on grant counts prepay explicitly instead.
+    /// Prepays if the node has no grant, so tests that only care about attestation behaviour
+    /// need not fund their nodes. Tests asserting on grant counts prepay explicitly.
     fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
         let already_owns_entry = self.contract.get_tee_accounts().iter().any(|stored| {
             stored.tls_public_key == node_id.tls_public_key

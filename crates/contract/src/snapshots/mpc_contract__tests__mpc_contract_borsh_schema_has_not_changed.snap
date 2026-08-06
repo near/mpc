@@ -251,11 +251,11 @@ BorshSchemaContainer {
                         "u64",
                     ),
                     (
-                        "attestation_storage_fee_millinear",
+                        "launcher_hash_unused_ttl_seconds",
                         "u64",
                     ),
                     (
-                        "launcher_hash_unused_ttl_seconds",
+                        "attestation_storage_fee_millinear",
                         "u64",
                     ),
                 ],

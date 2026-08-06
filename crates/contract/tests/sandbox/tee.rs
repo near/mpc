@@ -7,9 +7,9 @@ use crate::sandbox::{
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
-            get_participant_attestation, get_state, get_tee_accounts, prepay_attestation_grants,
-            submit_participant_info, submit_participant_info_raw, vote_add_launcher_hash,
-            vote_for_hash,
+            get_participant_attestation, get_state, get_tee_accounts,
+            prepay_and_submit_participant_info, prepay_attestation_grants,
+            submit_participant_info_raw, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -268,7 +268,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let success = submit_participant_info(
+    let success = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -316,7 +316,8 @@ async fn submit_participant_info__should_accept_zero_deposit_via_function_call_k
     let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
 
     // When
-    let outcome = submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
+    let outcome =
+        prepay_and_submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
 
     // Then
     assert!(
@@ -456,7 +457,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
         expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
         expected_measurements: None,
     });
-    let submit_result = submit_participant_info(
+    let submit_result = prepay_and_submit_participant_info(
         stale_account,
         &contract,
         &expiring_attestation,
@@ -531,7 +532,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
             let dummy_tls_key = p2p_tls_key().into();
 
-            let validation_success = submit_participant_info(
+            let validation_success = prepay_and_submit_participant_info(
                 participant_account_1,
                 &contract,
                 &attestation,
@@ -566,7 +567,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 
     let tls_key_2 = bogus_ed25519_public_key();
 
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account_1,
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -632,7 +633,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         "Sanity check failed. Participants can not be equal for this test."
     );
 
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account_1,
         &contract,
         &participant_1_attestation,
@@ -643,7 +644,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     .is_success();
     assert!(validation_success, "Submitting attestation failed.");
 
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account_2,
         &contract,
         &participant_2_attestation,
@@ -701,15 +702,19 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     );
 
     // Submit the first attestation
-    let validation_success =
-        submit_participant_info(participant_account, &contract, &first_attestation, &tls_key)
-            .await
-            .unwrap()
-            .is_success();
+    let validation_success = prepay_and_submit_participant_info(
+        participant_account,
+        &contract,
+        &first_attestation,
+        &tls_key,
+    )
+    .await
+    .unwrap()
+    .is_success();
     assert!(validation_success, "First attestation submission failed");
 
     // Submit the second attestation with the same TLS key (overwrites the first)
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account,
         &contract,
         &second_attestation,
@@ -827,7 +832,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         expected_measurements: None,
     });
 
-    let submit_result = submit_participant_info(
+    let submit_result = prepay_and_submit_participant_info(
         target_account,
         &contract,
         &expiring_attestation,
@@ -959,7 +964,7 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
             .iter()
             .find(|node| node.account_id == *target_account.id())
             .expect("target participant not found");
-        let submit_success = submit_participant_info(
+        let submit_success = prepay_and_submit_participant_info(
             target_account,
             &contract,
             &expiring_attestation,

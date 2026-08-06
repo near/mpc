@@ -786,12 +786,11 @@ impl MpcContract {
             .unwrap_or(0)
     }
 
-    /// Prepay for `grants` attestation-storage entries on `account_id`'s behalf.
+    /// Buys `grants` attestation-storage grants for `account_id`.
     ///
-    /// Permissionless: anyone may prepay for any account, which is what lets an
-    /// operator fund a node whose function-call access key cannot attach a deposit.
-    /// Requires exactly the configured fee times `grants`; nothing is refunded and
-    /// there is no withdrawal path.
+    /// Permissionless, which is what lets an operator fund a node whose function-call key
+    /// cannot attach a deposit. Requires exactly the fee times `grants`; no refunds, no
+    /// withdrawal.
     #[payable]
     #[handle_result]
     pub fn prepay_attestation_storage(
@@ -876,8 +875,7 @@ impl MpcContract {
             account_public_key,
         };
 
-        // Fail fast: a submission that would create a new entry without a grant, or that
-        // targets a TLS key owned by another account, is rejected before any verification.
+        // Before any verification: an ungranted or unauthorised submission stops here.
         self.assert_attestation_storage_grant_available(
             &node_id.account_id,
             &node_id.tls_public_key,
@@ -922,9 +920,7 @@ impl MpcContract {
         }
     }
 
-    /// Fee for one attestation-storage grant. Not exposed as its own view: [`Self::config`]
-    /// already returns `attestation_storage_fee_millinear`, and an operator reads it once
-    /// by hand. A dedicated view can be added later if operators ask for one.
+    /// Read from `config()` by operators; deliberately not its own view.
     fn attestation_storage_fee_internal(&self) -> NearToken {
         NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
     }
@@ -941,9 +937,6 @@ impl MpcContract {
         }
     }
 
-    /// Read-only precondition for [`Self::submit_participant_info`]: rejects a
-    /// submission that would need a grant the account does not have, before any
-    /// verification work is done.
     fn assert_attestation_storage_grant_available(
         &self,
         account_id: &AccountId,
@@ -978,11 +971,9 @@ impl MpcContract {
         }
     }
 
-    /// Returns one grant to `account_id`, for an entry that has been reclaimed.
     fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let available = self.grants_for(account_id);
-        // Checked like the credit in `prepay_attestation_storage`: at `u32::MAX` a saturating
-        // add would silently drop a grant that was genuinely returned.
+        // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
         let Some(returned) = available.checked_add(1) else {
             log!("grant counter for {account_id} is saturated; not returning a grant");
             return;
@@ -2027,8 +2018,6 @@ impl MpcContract {
         let removed_entry_owners = self
             .tee_state
             .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize);
-        // Reclaiming an entry hands its grant back, so a slot an operator paid for is
-        // reusable once the storage it bought has been returned.
         for account_id in &removed_entry_owners {
             self.return_attestation_storage_grant(account_id);
         }
@@ -2559,9 +2548,6 @@ impl MpcContract {
             .and_then(|params| AuthenticatedParticipantId::new(params.participants()).ok());
         let tls_public_key_for_refresh = context.node_id.tls_public_key.clone();
 
-        // Re-checked here, not just in `submit_participant_info`: this callback runs in a
-        // later receipt, so the grant that was available at submit time may since have
-        // been consumed by another submission from the same account.
         self.assert_attestation_storage_grant_available(
             &account_id,
             &context.node_id.tls_public_key,
@@ -4908,8 +4894,7 @@ mod tests {
         )
     }
 
-    /// The callback consumes a grant when it stores a new entry. Without this the async path
-    /// would store for free while the synchronous one charged.
+    /// Without this the async path would store for free while the synchronous one charged.
     #[test]
     fn resolve_verification__should_consume_one_grant_when_the_entry_is_new() {
         // Given: the setup prepays one grant for alice.near.

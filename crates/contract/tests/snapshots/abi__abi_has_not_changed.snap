@@ -998,7 +998,7 @@ expression: abi
       },
       {
         "name": "prepay_attestation_storage",
-        "doc": " Prepay for `grants` attestation-storage entries on `account_id`'s behalf.\n\n Permissionless: anyone may prepay for any account, which is what lets an\n operator fund a node whose function-call access key cannot attach a deposit.\n Requires exactly the configured fee times `grants`; nothing is refunded and\n there is no withdrawal path.",
+        "doc": " Buys `grants` attestation-storage grants for `account_id`.\n\n Permissionless, which is what lets an operator fund a node whose function-call key\n cannot attach a deposit. Requires exactly the fee times `grants`; no refunds, no\n withdrawal.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1119,11 +1119,11 @@ expression: abi
                         "u64"
                       ],
                       [
-                        "attestation_storage_fee_millinear",
+                        "launcher_hash_unused_ttl_seconds",
                         "u64"
                       ],
                       [
-                        "launcher_hash_unused_ttl_seconds",
+                        "attestation_storage_fee_millinear",
                         "u64"
                       ]
                     ]

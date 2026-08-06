@@ -7,7 +7,8 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
+        Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
+        ProtocolContractState,
     },
 };
 use near_workspaces::{
@@ -62,25 +63,21 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
         .collect())
 }
 
-/// Prepays `grants` attestation-storage grants for `beneficiary`, signed by `payer`.
-/// Permissionless, so any deposit-capable account may fund any other.
 pub async fn prepay_attestation_grants(
     payer: &Account,
     contract: &Contract,
     beneficiary: &AccountId,
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // Read the fee the way an operator does: from `config()`. There is deliberately no
-    // dedicated view for it.
-    let config: serde_json::Value = contract
-        .view("config")
+    // The fee is read from `config()`, the way an operator reads it.
+    let config: Config = contract
+        .view(method_names::CONFIG)
         .args_json(serde_json::json!({}))
         .await?
         .json()?;
-    let fee_millinear = config["attestation_storage_fee_millinear"]
-        .as_u64()
-        .expect("config must carry attestation_storage_fee_millinear");
-    let total = NearToken::from_millinear(u128::from(fee_millinear) * u128::from(grants));
+    let total = NearToken::from_millinear(
+        u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
+    );
     Ok(payer
         .call(contract.id(), "prepay_attestation_storage")
         .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
@@ -90,18 +87,13 @@ pub async fn prepay_attestation_grants(
         .await?)
 }
 
-/// Submits an attestation, prepaying one grant first so a new entry can be stored.
-/// Mirrors the operator step; tests that assert on grants or on rejection should call
-/// [`prepay_attestation_grants`] and the raw submit themselves.
-pub async fn submit_participant_info(
+pub async fn prepay_and_submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    // Only prepay when the submission would actually need a grant: a re-attestation of an
-    // entry this account already owns consumes none, and prepaying anyway would leave stray
-    // grants behind and could mask a genuinely missing prepayment in another test.
+    // A re-attestation of an entry this account already owns consumes no grant.
     let already_owns_entry = get_tee_accounts(contract)
         .await?
         .iter()
