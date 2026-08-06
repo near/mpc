@@ -24,7 +24,7 @@ use serde::Serialize;
 const SIGN_TGAS: u64 = 15;
 /// Gas attached to a `request_app_private_key` (CKD) call. Matches the
 /// e2e cluster's `CKD_PV_GAS`. CKD is more expensive than `sign` because
-/// `AppPublicKeyPV` does an on-chain bls12381 pairing check before
+/// [`AppPublicKeyPV`](CKDAppPublicKey::AppPublicKeyPV) does an on-chain bls12381 pairing check before
 /// yielding.
 const CKD_TGAS: u64 = 100;
 /// Gas attached to a `make_parallel_sign_calls` invocation on the

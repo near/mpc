@@ -470,7 +470,7 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
     assert_eq!(stored_before, stored_after);
 }
 
-/// Test that a `Dstack` submission is rejected when no verifier is configured.
+/// Test that a [`Dstack`] submission is rejected when no verifier is configured.
 #[test]
 fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
     // Given
@@ -487,7 +487,7 @@ fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() 
     );
 }
 
-/// **Test that `clean_tee_status()` is vote-only** — attestations for non-participants
+/// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants
 /// remain in `stored_attestations` after the call. Attestation pruning is handled by the
 /// separate `clean_invalid_attestations` endpoint.
 #[test]
@@ -543,7 +543,7 @@ fn clean_tee_status__should_not_touch_attestations() {
     );
 }
 
-/// **Test that `clean_invalid_attestations()` prunes expired attestations end-to-end via
+/// **Test that [`clean_invalid_attestations()`] prunes expired attestations end-to-end via
 /// the public endpoint**, including attestations that belong to current participants.
 /// Restores the cleanup-path coverage that lived in the old `clean_tee_status` test.
 #[test]
@@ -592,7 +592,7 @@ fn clean_invalid_attestations__should_remove_expired_entries() {
     );
 }
 
-/// **Test that `clean_invalid_attestations()` rejects calls outside `Running` state** so
+/// **Test that [`clean_invalid_attestations()`] rejects calls outside [`Running`] state** so
 /// that keygen / resharing flows (which may reference not-yet-activated attestations)
 /// aren't disrupted.
 #[test]

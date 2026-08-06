@@ -11,7 +11,7 @@ const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
 
 /// RPC client for any NEAR network (sandbox or testnet).
 ///
-/// Wraps `near_kit::Near` client signed as the root/funder account.
+/// Wraps [`near_kit::Near`] client signed as the root/funder account.
 /// Whether the RPC URL points to a local Docker sandbox or NEAR testnet,
 /// the code path is identical.
 pub struct NearBlockchain {
@@ -19,7 +19,7 @@ pub struct NearBlockchain {
     rpc_url: String,
 }
 
-/// A `near_kit::Near` client bound to a specific account: the e2e
+/// A [`near_kit::Near`] client bound to a specific account: the e2e
 /// [`CallContract`] backend.
 pub struct NearKitCaller {
     inner: near_kit::Near,

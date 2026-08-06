@@ -37,7 +37,7 @@ struct ForeignTxTestEnv {
     foreign_tx_domain_id: DomainId,
     _mock_servers: Vec<MockServer>,
     /// Polygon is configured with multiple RPC providers so the test can verify
-    /// that `FanOut` queries every one of them.
+    /// that [`FanOut`] queries every one of them.
     polygon_mocks: Vec<MockServerExt>,
     bitcoin_mock: MockServerExt,
     base_mock: MockServerExt,
@@ -451,7 +451,7 @@ fn assert_authenticated_provider_was_queried(mock: &MockServerExt, provider: &st
 /// Verifies that every Polygon RPC provider configured in the fan-out received
 /// at least one HTTP request during the preceding `verify_polygon` call.
 ///
-/// A regression in `FanOut` (e.g. routing each verify request to a single
+/// A regression in [`FanOut`] (e.g. routing each verify request to a single
 /// provider instead of fanning out to all of them) would leave at least one
 /// mock untouched and this assertion would fail.
 fn assert_fan_out_queried_every_polygon_provider(env: &ForeignTxTestEnv) {

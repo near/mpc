@@ -16,7 +16,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_13_0_state;
+pub mod v3_14_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -327,7 +327,7 @@ impl MpcContract {
     /// Creates a yield-resume promise that calls back into `callback_method` with the
     /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
     ///
-    /// This function calls `env::promise_return` and so must be the last operation performed
+    /// This function calls [`env::promise_return`] and so must be the last operation performed
     /// in the enclosing contract method.
     fn enqueue_yield_request(
         &mut self,
@@ -482,7 +482,9 @@ impl MpcContract {
     /// To avoid overloading the network with too many requests,
     /// we ask for a small deposit for each ckd request.
     ///
-    /// Note: identity points are accepted in `AppPublicKeyPV` to support use cases
+    /// Note: identity points are accepted in
+    /// [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)
+    /// to support use cases
     /// where the derived key is intentionally public (no encryption).
     #[handle_result]
     #[payable]
@@ -1036,8 +1038,10 @@ impl MpcContract {
             }))
     }
 
+    #[expect(rustdoc::private_intra_doc_links)]
     /// Propose new parameters for the MPC network: participants, governance
-    /// threshold, and optional per-domain `ReconstructionThreshold` updates
+    /// threshold, and optional per-domain
+    /// [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates
     /// (empty map keeps the current ones), applied on resharing completion.
     /// If a threshold number of votes are reached on the exact same proposal, this will transition
     /// the contract into the Resharing state.
@@ -1047,7 +1051,7 @@ impl MpcContract {
     /// accidentally voting on outdated proposals.
     ///
     /// Like the other governance voting methods, this must be called directly from the
-    /// participant's own NEAR account: `assert_caller_is_signer()` requires
+    /// participant's own NEAR account: [`assert_caller_is_signer()`](MpcContract::assert_caller_is_signer) requires
     /// `signer_account_id == predecessor_account_id`, so calls forwarded through another
     /// contract are rejected.
     #[handle_result]
@@ -1133,7 +1137,7 @@ impl MpcContract {
     /// (`voter_or_panic` requires `signer == predecessor`, blocking calls forwarded
     /// through another contract). Callable by a participant in any active protocol phase
     /// (Initializing, Running, or Resharing — authenticated against that phase's participant
-    /// set); panics in `NotInitialized` or when the caller is not a participant. Entries for
+    /// set); panics in [`NotInitialized`](ProtocolContractState::NotInitialized) or when the caller is not a participant. Entries for
     /// accounts that are no longer participants are pruned after resharing by
     /// [`Self::clean_foreign_chain_data`].
     #[handle_result]
@@ -1744,10 +1748,10 @@ impl MpcContract {
     }
 
     /// Vote on per-chain RPC provider whitelist state. The input is keyed by
-    /// `ForeignChain`; each `ChainEntry` value carries the proposed full provider list
+    /// [`ForeignChain`](dtos::ForeignChain); each [`ChainEntry`](dtos::ChainEntry) value carries the proposed full provider list
     /// and the RPC response quorum for that chain. The chain's stored state is replaced
     /// once the protocol's signing threshold of participants has voted the same
-    /// `(providers, quorum)` pair. `NonEmptyBTreeMap` enforces a non-empty batch and
+    /// `(providers, quorum)` pair. [`NonEmptyBTreeMap`](near_mpc_bounded_collections::NonEmptyBTreeMap) enforces a non-empty batch and
     /// at-most-one entry per chain at borsh-deserialize time.
     #[handle_result]
     pub fn vote_update_foreign_chain_providers(
@@ -1846,7 +1850,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// On-chain RPC provider whitelist keyed by `ForeignChain`. Nodes read this at
+    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at
     /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
     #[result_serializer(borsh)]
     pub fn allowed_foreign_chain_providers(
@@ -2003,9 +2007,9 @@ impl MpcContract {
     }
 
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
-    /// referencing stale whitelists), returning one attestation-storage grant to the owner
-    /// of each entry removed. Returns the number of entries removed. Callable by anyone
-    /// while the protocol is in `Running`.
+    /// referencing stale whitelists), returning one attestation-storage grant to the owner of
+    /// each entry removed. Returns the number of entries removed. Callable by anyone while the
+    /// protocol is in [`Running`](ProtocolContractState::Running).
     #[handle_result]
     pub fn clean_invalid_attestations(&mut self, max_scan: u32) -> Result<u32, Error> {
         log!(
@@ -2166,7 +2170,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
-            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
+            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
         })
     }
 
@@ -2254,7 +2258,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
-            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
+            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
         })
     }
 
@@ -2270,11 +2274,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_13_0_state::MpcContract>() {
+        match try_state_read::<v3_14_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.13.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.14.0 state: {:?}", err);
             }
         };
 
@@ -2340,7 +2344,7 @@ impl MpcContract {
 
     /// Presence check for a pending signature request, exposed as a view call.
     ///
-    /// **The returned `YieldIndex` is an arbitrary representative, not "the" yield
+    /// **The returned [`YieldIndex`] is an arbitrary representative, not "the" yield
     /// for this request.** Since the duplicate-request fan-out feature (PR #3187),
     /// a single request key can have N queued yields; this method returns the head of the
     /// queue. Callers that need to act on the full set are wrong to use this. The
@@ -2357,7 +2361,7 @@ impl MpcContract {
 
     /// Presence check for a pending CKD request, exposed as a view call.
     ///
-    /// See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`
+    /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
     /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
     /// `Some`/`None` distinction is meaningful.
     pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
@@ -2369,7 +2373,7 @@ impl MpcContract {
     /// Presence check for a pending foreign-tx verification request, exposed as a
     /// view call.
     ///
-    /// See [`Self::get_pending_request`] for the contract: the returned `YieldIndex`
+    /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
     /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
     /// `Some`/`None` distinction is meaningful.
     pub fn get_pending_verify_foreign_tx_request(
@@ -2707,9 +2711,9 @@ impl MpcContract {
     /// in the currently active protocol phase.
     ///
     /// Active phases:
-    /// - `Initializing` → uses proposed participants from generating_key
-    /// - `Running` → uses current active participants
-    /// - `Resharing` → uses new participants from resharing proposal
+    /// - [`Initializing`](ProtocolContractState::Initializing) → uses proposed participants from generating_key
+    /// - [`Running`](ProtocolContractState::Running) → uses current active participants
+    /// - [`Resharing`](ProtocolContractState::Resharing) → uses new participants from resharing proposal
     ///
     /// Panics if:
     /// - The protocol is not active (e.g., NotInitialized)
@@ -2817,13 +2821,13 @@ impl MpcContract {
 
     /// Sets the destination node for the calling account.
     ///
-    /// This function can only be called while the protocol is in a `Running` state.
+    /// This function can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state.
     /// The signer must be a current participant of the current epoch, otherwise an error is returned.
-    /// On success, the provided `DestinationNodeInfo` is stored in the contract state
+    /// On success, the provided [`DestinationNodeInfo`](dtos::DestinationNodeInfo) is stored in the contract state
     /// under the signer’s account ID.
     ///
     /// # Errors
-    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
+    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
@@ -2893,18 +2897,18 @@ impl MpcContract {
 
     /// Finalizes a node migration for the calling account.
     ///
-    /// This method can only be called while the protocol is in a `Running` state
+    /// This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state
     /// and by an existing participant. On success, the participant’s information is
     /// updated to the new destination node.
     ///
     /// # Errors
     /// Returns the following errors:
-    /// - `InvalidState::ProtocolStateNotRunning`: if protocol is not in `Running` state
-    /// - `InvalidState::NotParticipant`: if caller is not a current participant
-    /// - `NodeMigrationError::KeysetMismatch`: if provided keyset does not match the expected keyset
-    /// - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller
-    /// - `NodeMigrationError::AccountPublicKeyMismatch`: if caller’s public key does not match the expected destination node
-    /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
+    /// - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state
+    /// - [`InvalidState::NotParticipant`]: if caller is not a current participant
+    /// - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset
+    /// - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller
+    /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node
+    /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
@@ -3298,7 +3302,7 @@ mod tests {
 
     /// Temporarily sets the testing environment so that calls appear
     /// to come from an attested MPC node registered in the contract's `tee_state`.
-    /// Returns the `AccountId` of the node used.
+    /// Returns the [`AccountId`] of the node used.
     pub fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
         let active_participant_pks: Vec<dtos::Ed25519PublicKey> = contract
             .protocol_state
@@ -4571,7 +4575,7 @@ mod tests {
     }
 
     /// Builds a Running contract with `num_participants` participants, signing
-    /// threshold `threshold`, and a single CaitSith `Sign` domain whose
+    /// threshold `threshold`, and a single CaitSith [`Sign`] domain whose
     /// reconstruction threshold is `reconstruction_threshold`.
     fn setup_running_contract_with_domain(
         num_participants: usize,
@@ -4785,7 +4789,7 @@ mod tests {
 
     /// Builds a Running-state contract and installs a VM context where the participant is the
     /// signer but the call is forwarded through another contract (`predecessor != signer`).
-    /// All governance methods gated by `assert_caller_is_signer()` run that check before any
+    /// All governance methods gated by [`assert_caller_is_signer()`] run that check before any
     /// protocol-state logic, so Running state is sufficient to exercise the guard for every one.
     fn forwarded_participant_call_contract() -> MpcContract {
         let running_state = gen_running_state(1);
@@ -5359,7 +5363,7 @@ mod tests {
                 ),
                 tee_verifier_account_id: None,
                 tee_verifier_votes: Default::default(),
-                available_attestation_grants: LookupMap::new(StorageKey::AttestationGrantsV1),
+                available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
             }
         }
     }
@@ -6413,7 +6417,7 @@ mod tests {
     }
 
     /// A caller that is neither the contract itself nor a current participant is rejected with
-    /// `NotParticipant`, and the votes are left untouched.
+    /// [`NotParticipant`], and the votes are left untouched.
     #[test]
     fn remove_non_participant_update_votes__should_reject_unauthorized_caller() {
         // Given: a running state with update votes from both participants and non-participants.
@@ -6968,7 +6972,7 @@ mod tests {
         );
     }
 
-    /// Tests the `launcher_hash_votes()` view method:
+    /// Tests the [`launcher_hash_votes()`] view method:
     /// 1. Starts empty
     /// 2. After each vote, reflects the correct count and action (Add)
     /// 3. After threshold is reached, votes are cleared
@@ -7031,7 +7035,7 @@ mod tests {
         );
     }
 
-    /// Tests the `code_hash_votes()` view method:
+    /// Tests the [`code_hash_votes()`] view method:
     /// 1. Starts empty
     /// 2. After each vote, reflects the correct participant and hash
     /// 3. After threshold is reached, votes are cleared
@@ -7514,7 +7518,7 @@ mod tests {
         );
     }
 
-    /// Tests JSON serialization roundtrip for `ContractExpectedMeasurements`.
+    /// Tests JSON serialization roundtrip for [`ContractExpectedMeasurements`].
     /// Verifies hex encoding/decoding of 48-byte fields works correctly.
     #[test]
     fn test_contract_expected_measurements_json_roundtrip() {
@@ -8641,7 +8645,7 @@ mod tests {
 
     /// Charged storage of the largest attestation entry the contract can store, in bytes:
     /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
-    /// [`VerifiedAttestation`] variant, including the `IterableMap` record overhead.
+    /// [`VerifiedAttestation`] variant, including the [`IterableMap`] record overhead.
     const WORST_CASE_ENTRY_BYTES: u64 = 604;
 
     /// Ceiling on one entry's storage cost at today's price, with headroom over
@@ -8667,7 +8671,7 @@ mod tests {
     }
 
     /// Storage the contract pays for one stored attestation entry, measured the way the runtime
-    /// charges it. NEAR caps an account id at 64 bytes; every other `NodeId` field is fixed-size,
+    /// charges it. NEAR caps an account id at 64 bytes; every other [`NodeId`] field is fixed-size,
     /// so this is the worst case for the given attestation variant.
     fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());

@@ -38,7 +38,7 @@ use crate::golden::{AptosVector, BlockHashVector, SuiVector};
 /// transaction, one [`ProviderResult`] per provider, each checked independently.
 /// Chains with no reference for `network`, or configured but unsupported, are
 /// [`Status::Skipped`]; a chain absent from the config still yields a single
-/// placeholder `Skipped` result so its absence stays visible.
+/// placeholder [`Skipped`](Status::Skipped) result so its absence stays visible.
 ///
 /// TODO(#3969): retire this route in favour of [`probe::probe_all_providers`].
 pub async fn check_all_providers(

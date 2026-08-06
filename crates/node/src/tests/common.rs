@@ -9,7 +9,7 @@ use crate::indexer::{
     types::ChainSendTransactionRequest,
 };
 
-/// Builds a signing `DomainConfig` for `protocol` with reconstruction threshold `t`.
+/// Builds a signing [`DomainConfig`] for `protocol` with reconstruction threshold `t`.
 pub fn sign_domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),
@@ -19,7 +19,7 @@ pub fn sign_domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
     }
 }
 
-/// Builds a `ConfidentialKeyDerivation` (CKD) `DomainConfig` with reconstruction threshold `t`.
+/// Builds a [`ConfidentialKeyDerivation`] (CKD) [`DomainConfig`] with reconstruction threshold `t`.
 pub fn ckd_domain(id: u64, t: u64) -> DomainConfig {
     DomainConfig {
         id: DomainId(id),

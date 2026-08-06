@@ -234,7 +234,7 @@ impl PortsConfig {
 /// Shared helper for injecting an account into genesis.json.
 ///
 /// When `wasm` is `Some`, the account is treated as a contract: the code hash is
-/// computed from the WASM bytes and a `Contract` record is added.
+/// computed from the WASM bytes and a [`Contract`] record is added.
 /// When `wasm` is `None`, the account is a plain user account with default code hash.
 fn inject_genesis_account(
     genesis_path: &Path,

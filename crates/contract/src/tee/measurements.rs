@@ -70,7 +70,7 @@ impl MeasurementVotes {
         self.vote_by_account.clear();
     }
 
-    /// Returns a new `MeasurementVotes` containing only votes from current participants.
+    /// Returns a new [`MeasurementVotes`] containing only votes from current participants.
     pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
         let remaining = self
             .vote_by_account
@@ -96,7 +96,8 @@ pub enum MeasurementVoteAction {
 
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
 /// remove requires unanimity). Starts empty on fresh contracts (consistent with docker
-/// image hashes and launcher hashes); seeded from `default_measurements()` on migration.
+/// image hashes and launcher hashes); seeded from
+/// [`default_measurements()`](mpc_attestation::attestation::default_measurements) on migration.
 /// Once populated, at least one measurement must remain.
 #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(

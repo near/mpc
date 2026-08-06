@@ -266,6 +266,7 @@ args = [
   "--locked",
   "--profile",
   "ci-e2e",
+  "${@}",
 ]
 
 [tasks._run-e2e-logic.env]

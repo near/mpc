@@ -1,9 +1,9 @@
 //! Test-only conversions from internal `mpc-contract` types to their
 //! `near-mpc-contract-interface` DTO counterparts.
 //!
-//! This mirrors the contract crate's internal `IntoInterfaceType` impl, which
+//! This mirrors the contract crate's internal [`IntoInterfaceType`] impl, which
 //! is `pub(crate)` and therefore unreachable from the node. The orphan rule
-//! prevents the node from providing a `From`/`Into` impl (both types are
+//! prevents the node from providing a [`From`]/[`Into`] impl (both types are
 //! foreign), so this is a plain free function.
 
 use k256::elliptic_curve::group::GroupEncoding as _;
@@ -68,8 +68,8 @@ mod tests {
     }
 
     /// The DTO produced by `keyset_to_dto` must serialize identically to the
-    /// internal `Keyset`, guarding against drift from the contract's own
-    /// `IntoInterfaceType` impl.
+    /// internal [`Keyset`], guarding against drift from the contract's own
+    /// [`IntoInterfaceType`] impl.
     #[test]
     fn keyset_to_dto__should_match_internal_serialization() {
         // Given

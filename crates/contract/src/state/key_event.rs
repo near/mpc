@@ -42,7 +42,7 @@ impl KeyEvent {
         }
     }
 
-    /// Reconstruct a `KeyEvent` from all raw fields.
+    /// Reconstruct a [`KeyEvent`] from all raw fields.
     /// Used by state migration when converting from a previous layout.
     pub fn from_raw(
         epoch_id: EpochId,

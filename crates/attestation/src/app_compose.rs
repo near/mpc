@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize, de::IgnoredAny};
 /// `deny_unknown_fields` makes verification fail closed: every key dstack can emit into
 /// `app-compose.json` must be modeled here, so a field added by a future dstack version is rejected
 /// until it is reviewed and modeled, rather than silently ignored. Fields are mirrored from
-/// dstack's `AppCompose` (`dstack-types/src/lib.rs`) plus the script keys read directly via `jq`
+/// dstack's [`AppCompose`] (`dstack-types/src/lib.rs`) plus the script keys read directly via `jq`
 /// during boot (`pre_launch_script`, `init_script`, `bash_script`). Fields without a security
 /// implication are modeled only to absorb their key; they are not validated.
 #[derive(Debug, Deserialize)]

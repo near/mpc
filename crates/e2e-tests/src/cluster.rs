@@ -142,7 +142,7 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// Mainnet/Testnet, drop the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
-    /// Current `GovernanceThresholdParameters` shape.
+    /// Current [`GovernanceThresholdParameters`] shape.
     #[default]
     Current,
 }
@@ -502,9 +502,11 @@ impl MpcCluster {
         self.contract.view(method_names::GET_TEE_ACCOUNTS).await
     }
 
-    /// Vote to add domains and wait until the contract returns to the `Running`
+    /// Vote to add domains and wait until the contract returns to the
+    /// [`Running`](ProtocolContractState::Running)
     /// state (i.e. key generation has completed for all new domains).
-    /// Use `start_add_domains` to stop waiting once `Initializing` is entered.
+    /// Use `start_add_domains` to stop waiting once
+    /// [`Initializing`](ProtocolContractState::Initializing) is entered.
     pub async fn add_domains_and_wait(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
         self.start_add_domains(domains).await?;
 
@@ -517,7 +519,7 @@ impl MpcCluster {
     }
 
     /// Vote to add domains and wait only until the contract enters the
-    /// `Initializing` state. Does NOT wait for key generation to complete —
+    /// [`Initializing`](ProtocolContractState::Initializing) state. Does NOT wait for key generation to complete —
     /// use `add_domains_and_wait` for the full flow.
     pub async fn start_add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
         let args = json!({ "domains": &domains });

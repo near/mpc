@@ -36,8 +36,10 @@ cargo insta accept                                          # Accept all pending
 ```bash
 cargo make e2e-tests                            # Build required binaries and run all E2E tests
 cargo make e2e-tests-skip-build                 # Reuse binaries from a previous run
-cargo make e2e-tests-skip-build -- <name>       # Run a single test (filter passed to nextest)
+cargo make e2e-tests-skip-build <name>          # Run tests matching a substring filter
+cargo make e2e-tests-skip-build -E 'test(request_lifecycle)' --no-capture  # Forward nextest flags
 ```
+Everything after the task name is forwarded to `cargo nextest run` unchanged (filters, `-E` expressions, `--no-capture`, `--retries`, `-j`, etc.); no arguments runs the whole suite with the `ci-e2e` profile. Do not put flags after a `--` separator: it is forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 See `crates/e2e-tests/README.md` for details.
 
 ## Architecture Overview
@@ -118,6 +120,11 @@ See `docs/engineering-standards.md` for the full rationale and additional testin
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
+### Trait Naming
+Traits should model a single capability, and be named after the action, not as an agent noun derived from it: `ReadContractState`, not `ContractStateReader`. This follows std-idiomatic patterns (`From*`/`Into*`/`To*` conversions). This applies to new traits and opportunistic renames, existing traits may deviate from this principle.
+
+See `docs/engineering-standards.md` §Name capability traits after the action for the full rationale and a `Don't` / `Do` example.
+
 ### Code Comments
 Default to writing no comments. Add one only in case one of the following applies:
 - the *why* is non-obvious: an invariant, a constraint, a surprising behavior;
@@ -129,7 +136,11 @@ Avoid comments that are:
 - explaining common knowledge or terminology;
 - burdening the reader with non-relevant information;
 
+AI-generated code tends to arrive with obvious comments: restating what the next line does, labeling steps (`// setup`, `// send the request`), or narrating the edit that produced the code. Strip these before submitting. Keep a comment only if it says something the code cannot; if a reader can reconstruct it from the names and types on the same screen, delete it. This applies doubly in tests, where the `// Given` / `// When` / `// Then` structure already tells the story.
+
 Prefer concise comments, using correct terminology.
+
+In doc comments, reference other items with rustdoc intra-doc links (`` [`Foo`] ``), not plain `` `Foo` `` backticks. CI rejects broken links in everything rustdoc documents (test code is outside its view), and only linked references are checked at all; a plain backtick reference rots silently when the item is renamed. A backticked word that merely looks like an item (an algorithm name, a type from a crate we do not depend on, a `cfg(test)` item invisible to rustdoc) stays a plain code span.
 
 See `docs/engineering-standards.md` §Write helpful code comments for the full rationale and a `Don't` / `Do` example.
 
