@@ -34,9 +34,9 @@ use zeroize::Zeroizing;
 /// as if it were the message.
 /// For reference, see how RFC 8032 handles "pre-hashing".
 ///
-/// Maximum incoming buffer entries for the coordinator in the `RedJubjub` sign protocol.
+/// Maximum incoming buffer entries for the coordinator in the [`RedJubjub`](reddsa::frost::redjubjub) sign protocol.
 pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 1;
-/// Maximum incoming buffer entries for non-coordinator participants in the `RedJubjub` sign protocol.
+/// Maximum incoming buffer entries for non-coordinator participants in the [`RedJubjub`](reddsa::frost::redjubjub) sign protocol.
 #[cfg(test)]
 pub(crate) const REDJUBJUB_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 

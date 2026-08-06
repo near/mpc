@@ -18,7 +18,7 @@ pub struct PolynomialCommitment<C: Ciphersuite> {
 }
 
 impl<C: Ciphersuite> PolynomialCommitment<C> {
-    /// Creates a `PolynomialCommitment` out of a vector of `CoefficientCommitment`
+    /// Creates a [`PolynomialCommitment`] out of a vector of [`CoefficientCommitment`]
     /// This function raises Error if the vector is empty or if it is the all identity vector
     pub fn new(coefcommitments: &[CoefficientCommitment<C>]) -> Result<Self, ProtocolError> {
         // count the number of zero coeffs before spotting the first non-zero from the back
@@ -48,7 +48,7 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         self.coefficients.len() - 1
     }
 
-    /// Adds two `PolynomialCommitment` together
+    /// Adds two [`PolynomialCommitment`] together
     /// and raises an error if the result is the identity
     pub fn add(&self, rhs: &Self) -> Result<Self, ProtocolError> {
         let max_len = self.coefficients.len().max(rhs.coefficients.len());

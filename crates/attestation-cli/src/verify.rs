@@ -127,7 +127,7 @@ fn load_measurements(
     }
 }
 
-/// Parse a `TcbInfo`-format JSON into `ExpectedMeasurements`, replicating
+/// Parse a [`TcbInfo`]-format JSON into [`ExpectedMeasurements`], replicating
 /// the same logic as the `include_measurements!()` proc macro at runtime.
 fn parse_measurements_from_json(json: &str) -> anyhow::Result<ExpectedMeasurements> {
     let tcb_info: TcbInfo = serde_json::from_str(json).context("invalid TcbInfo JSON")?;

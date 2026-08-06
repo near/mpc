@@ -114,7 +114,7 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
 
 /// Checks the contract in the following order:
 /// 1. Are there any state-breaking changes?
-/// 2. If so, does `migrate()` still work correctly?
+/// 2. If so, does [`migrate()`] still work correctly?
 ///
 /// These checks use the previous contract version (the one that introduced breaking changes)
 /// as a baseline. If step 2 fails, you will be prompted to update the baseline contract.
@@ -225,10 +225,10 @@ async fn propose_upgrade_from_production_to_current_binary(
 /// This test:
 /// 1. Deploys an older version of the contract.
 /// 2. Initializes it with participants and submits a parameter update proposal.
-/// 3. Adds multiple domains with both `Ed25519` and `Secp256k1` schemes.
+/// 3. Adds multiple domains with both [`Ed25519`] and [`Secp256k1`] schemes.
 /// 4. Submits pending signature requests across those domains.
 /// 5. Captures the full pre-upgrade state.
-/// 6. Upgrades the contract to the new version and runs `migrate()`.
+/// 6. Upgrades the contract to the new version and runs [`migrate()`].
 /// 7. Asserts that the state (participants, domains, proposals, signature requests, etc.)
 ///    is identical post-upgrade.
 /// 8. Confirms that pending signature requests created before the upgrade
@@ -346,10 +346,10 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
 /// This test:
 /// 1. Deploys an older version of the contract.
 /// 2. Initializes it with participants and submits a parameter update proposal.
-/// 3. Adds multiple domains with both `Ed25519` and `Secp256k1` schemes.
+/// 3. Adds multiple domains with both [`Ed25519`] and [`Secp256k1`] schemes.
 /// 4. Submits pending signature requests across those domains.
 /// 5. Captures the full pre-upgrade state.
-/// 6. Upgrades the contract to the new version and runs `migrate()`.
+/// 6. Upgrades the contract to the new version and runs [`migrate()`].
 /// 7. Asserts that the state (participants, domains, proposals, signature requests, etc.)
 ///    is identical post-upgrade.
 /// 10. Adds new domains, including CKD
@@ -507,7 +507,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
 /// Verifies that per-node foreign chain configurations registered on the old
 /// contract via the deprecated `register_foreign_chain_config` are migrated to
 /// the new `node_foreign_chain_support` layout: each node's full
-/// `ForeignChainConfiguration` (chain → RPC providers) collapses to the set of
+/// [`ForeignChainConfiguration`] (chain → RPC providers) collapses to the set of
 /// supported chains, and per-node entries are preserved (not merged).
 #[rstest]
 #[tokio::test]

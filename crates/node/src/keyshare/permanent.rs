@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
 ///
 /// Keyshares are stored in a `NonEmptyBTreeMap<DomainId, Keyshare>`, which enforces
-/// ordering by `DomainId`, uniqueness, and non-emptiness at the type level.
+/// ordering by [`DomainId`], uniqueness, and non-emptiness at the type level.
 ///
 /// Serialization format is backwards-compatible: keyshares are serialized as a
 /// JSON array (`Vec<Keyshare>`) and deserialized from the same format.

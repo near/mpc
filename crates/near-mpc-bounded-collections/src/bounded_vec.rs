@@ -52,7 +52,7 @@ pub enum BoundedVecOutOfBounds {
 
 /// Module for type witnesses used to prove vector bounds at compile time
 pub mod witnesses {
-    /// Compile-time proof of valid bounds. Must be constructed with same bounds to instantiate `BoundedVec`.
+    /// Compile-time proof of valid bounds. Must be constructed with same bounds to instantiate [`BoundedVec`](crate::BoundedVec).
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub struct NonEmpty<const L: usize, const U: usize>(
         (), // private field to prevent direct construction.
@@ -93,7 +93,7 @@ impl<T, const U: usize> BoundedVec<T, 0, U, witnesses::PossiblyEmpty<U>> {
     ///
     /// # Errors
     ///
-    /// * `UpperBoundError` - if `items` len is more than U (upper bound)
+    /// * [`UpperBoundError`](BoundedVecOutOfBounds::UpperBoundError) - if `items` len is more than U (upper bound)
     ///
     /// # Example
     /// ```
@@ -242,8 +242,8 @@ impl<T, const L: usize, const U: usize> BoundedVec<T, L, U, witnesses::NonEmpty<
     ///
     /// # Errors
     ///
-    /// * `LowerBoundError` - if `items` len is less than L (lower bound)
-    /// * `UpperBoundError` - if `items` len is more than U (upper bound)
+    /// * [`LowerBoundError`](BoundedVecOutOfBounds::LowerBoundError) - if `items` len is less than L (lower bound)
+    /// * [`UpperBoundError`](BoundedVecOutOfBounds::UpperBoundError) - if `items` len is more than U (upper bound)
     ///
     /// # Example
     /// ```
@@ -319,10 +319,10 @@ impl<T, const L: usize, const U: usize, Witness> BoundedVec<T, L, U, Witness>
 where
     Witness: Copy,
 {
-    /// Create a new `BoundedVec` by consuming `self` and mapping each element.
+    /// Create a new [`BoundedVec`] by consuming `self` and mapping each element.
     ///
     /// This is useful as it keeps the knowledge that the length is >= L, <= U,
-    /// even through the old `BoundedVec` is consumed and turned into an iterator.
+    /// even through the old [`BoundedVec`] is consumed and turned into an iterator.
     ///
     /// # Example
     ///
@@ -342,10 +342,10 @@ where
         }
     }
 
-    /// Create a new `BoundedVec` by mapping references to the elements of self
+    /// Create a new [`BoundedVec`] by mapping references to the elements of self
     ///
     /// This is useful as it keeps the knowledge that the length is >= L, <= U,
-    /// will still hold for new `BoundedVec`
+    /// will still hold for new [`BoundedVec`]
     ///
     /// # Example
     ///
@@ -365,16 +365,16 @@ where
         }
     }
 
-    /// Create a new `BoundedVec` by consuming `self` and mapping each element
-    /// to a `Result`.
+    /// Create a new [`BoundedVec`] by consuming `self` and mapping each element
+    /// to a [`Result`].
     ///
     /// This is useful as it keeps the knowledge that the length is preserved
-    /// even through the old `BoundedVec` is consumed and turned into an iterator.
+    /// even through the old [`BoundedVec`] is consumed and turned into an iterator.
     ///
     /// As this method consumes self, returning an error means that this
     /// vec is dropped. I.e. this method behaves roughly like using a
-    /// chain of `into_iter()`, `map`, `collect::<Result<Vec<N>,E>>` and
-    /// then converting the `Vec` back to a `Vec1`.
+    /// chain of [`into_iter()`](IntoIterator::into_iter), `map`, `collect::<Result<Vec<N>,E>>` and
+    /// then converting the [`Vec`] back to a [`BoundedVec`].
     ///
     ///
     /// # Errors
@@ -406,11 +406,11 @@ where
         })
     }
 
-    /// Create a new `BoundedVec` by mapping references of `self` elements
-    /// to a `Result`.
+    /// Create a new [`BoundedVec`] by mapping references of `self` elements
+    /// to a [`Result`].
     ///
     /// This is useful as it keeps the knowledge that the length is preserved
-    /// even through the old `BoundedVec` is consumed and turned into an iterator.
+    /// even through the old [`BoundedVec`] is consumed and turned into an iterator.
     ///
     /// # Errors
     ///
@@ -1176,7 +1176,7 @@ mod hex_serde_tests {
         data: UpperBoundedVec<u8, 4>,
     }
 
-    /// The generalized helper must round-trip the `PossiblyEmpty` witness,
+    /// The generalized helper must round-trip the [`PossiblyEmpty`] witness,
     /// including the empty payload (empty hex string).
     #[rstest]
     #[case("", vec![])]
