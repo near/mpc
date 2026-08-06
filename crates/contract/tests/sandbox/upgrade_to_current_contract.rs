@@ -182,8 +182,8 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    // Vote in a launcher image hash so the launcher-image migration decodes a non-empty
-    // `entries` vec off the real 3.13.0 layout, not just the empty-vec path.
+    // Vote in a launcher image hash so migration decodes a non-empty `entries` vec off the
+    // real production layout, not just the empty-vec path.
     let launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xAA; 32]);
     for account in &accounts {
         vote_add_launcher_hash(account, &contract, &launcher_hash)
@@ -209,8 +209,6 @@ async fn propose_upgrade_from_production_to_current_binary(
         "State of the contract should remain the same post upgrade."
     );
 
-    // The launcher hash survives migration: it is decoded from the old (timestamp-less)
-    // layout and re-stamped with a fresh expiry, so it is still live post-upgrade.
     assert!(
         get_allowed_launcher_image_hashes(&contract)
             .await
