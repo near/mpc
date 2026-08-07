@@ -4165,6 +4165,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn respond_verify_foreign_tx__should_reject_request_with_erased_expected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: request.request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let tampered_request = VerifyForeignTransactionRequest {
+            expected_payload_hash: None,
+            ..request.clone()
+        };
+        let result = contract.respond_verify_foreign_tx(tampered_request, response);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidParameters(InvalidParameters::RequestNotFound)
+        );
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_some(),
+            "the pending request must remain unresolved",
+        );
+    }
+
     fn sign_foreign_tx_payload(
         secret_key: &k256::Scalar,
         payload: &ForeignTxSignPayload,
