@@ -209,6 +209,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
+    // Detached and diagnostic only: reports which network each configured provider serves.
+    root_runtime.spawn(crate::foreign_chain_probe::run_startup_probe(
+        node_config.foreign_chains.clone(),
+    ));
+
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
     // Dedicated cancellation token for the indexer thread. Cancelled after

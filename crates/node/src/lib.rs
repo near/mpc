@@ -41,6 +41,7 @@ mod async_testing;
 mod background;
 mod coordinator;
 mod db;
+mod foreign_chain_probe;
 mod foreign_chain_whitelist_verifier;
 mod home_paths;
 mod indexer;
