@@ -81,11 +81,7 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
 
         tracing::debug!(target: "indexer", "querying migration state");
 
-        match indexer_state
-            .view_client
-            .get_mpc_migration_info(indexer_state.mpc_contract_id.clone())
-            .await
-        {
+        match indexer_state.view_client.get_mpc_migration_info().await {
             Ok(res) => {
                 return res;
             }

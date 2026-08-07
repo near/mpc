@@ -230,7 +230,7 @@ async fn observe_tx_result(
             // A successful respond removes the request from contract state.
             let pending_request_response = indexer_state
                 .view_client
-                .get_pending_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .get_pending_request(&respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
@@ -246,7 +246,7 @@ async fn observe_tx_result(
             // A successful respond removes the request from contract state.
             let pending_request_response = indexer_state
                 .view_client
-                .get_pending_ckd_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .get_pending_ckd_request(&respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
@@ -262,10 +262,7 @@ async fn observe_tx_result(
             // A successful respond removes the request from contract state.
             let pending_request_response = indexer_state
                 .view_client
-                .get_pending_verify_foreign_tx_request(
-                    &indexer_state.mpc_contract_id,
-                    &respond_args.request,
-                )
+                .get_pending_verify_foreign_tx_request(&respond_args.request)
                 .await?;
 
             let transaction_status = match pending_request_response {
@@ -281,7 +278,7 @@ async fn observe_tx_result(
         } => {
             let stored_attestation = indexer_state
                 .view_client
-                .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
+                .get_participant_attestation(&args.tls_public_key)
                 .await?;
 
             let Some(stored_attestation) = stored_attestation else {
