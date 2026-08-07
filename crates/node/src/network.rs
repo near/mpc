@@ -476,7 +476,7 @@ async fn run_receive_messages_loop(
         )
         .await
         {
-            tracing::warn!("run_receive_message failed with error: {err}");
+            tracing::warn!("run_receive_message failed with error: {err:#}");
         }
     }
 }
@@ -1294,6 +1294,7 @@ mod tests {
         InvalidStartMessage::DuplicateParticipant(ORIGINATOR)
     )]
     #[case::without_us(vec![ORIGINATOR, THIRD_PARTY], InvalidStartMessage::SelfNotIncluded)]
+    #[case::empty(vec![], InvalidStartMessage::SelfNotIncluded)]
     #[case::without_the_originator(
         vec![ME, THIRD_PARTY],
         InvalidStartMessage::OriginatorNotIncluded(ORIGINATOR)
