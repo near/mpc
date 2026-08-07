@@ -40,16 +40,23 @@ printf '%s' "$(jq -r --indent 4 '.tee_participant_info.Dstack.tcb_info.app_compo
 # arrays, while the fixture parser (`attestation::collateral::collateral_from_json`)
 # reads them as hex strings, so hex-encode those four fields here. Fields that
 # are already hex pass through unchanged.
+# The PEM chain arrives NUL-terminated from the quote's C string; strip it so the
+# fixture stays valid PEM for consumers stricter than dcap-qvl.
 jq -r 'def tohex:
          if type == "array" then
            reduce .[] as $b (""; . + ("0123456789abcdef" | .[(($b / 16) | floor):(($b / 16) | floor) + 1])
                                   + ("0123456789abcdef" | .[($b % 16):($b % 16) + 1]))
          else . end;
+       def strip_nul: if type == "string" then until(endswith("\u0000") | not; rtrimstr("\u0000")) else . end;
        .tee_participant_info.Dstack.collateral
        | .root_ca_crl |= tohex
        | .pck_crl |= tohex
        | .tcb_info_signature |= tohex
-       | .qe_identity_signature |= tohex' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
+       | .qe_identity_signature |= tohex
+       | .pck_crl_issuer_chain |= strip_nul
+       | .tcb_info_issuer_chain |= strip_nul
+       | .qe_identity_issuer_chain |= strip_nul
+       | .pck_certificate_chain |= strip_nul' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
 
 # Extract quote
 jq -c '.tee_participant_info.Dstack.quote' "$INPUT_FILE" > "$OUTPUT_DIR/quote.json"
@@ -68,12 +75,12 @@ echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
 
 # The secret counterpart of near_account_public_key.pub is not part of
-# public_data: it must be exported from the node (secrets.json in the node
-# home dir) by whoever regenerates the assets. Without it, the sandbox tests
-# that sign as the fixture account cannot run (issue #3787).
-if [ ! -f "$OUTPUT_DIR/near_account_secret_key" ]; then
-    echo ""
-    echo "WARNING: '$OUTPUT_DIR/near_account_secret_key' is missing."
-    echo "Copy the node's NEAR signer secret key (ed25519:<base58>, one line) there,"
-    echo "or the fixture keypair will drift apart. See README.md."
-fi
+# public_data: it must be exported from the node (secrets.json in the node home
+# dir) by whoever regenerates the assets. It is committed, so it is normally
+# present but stale — hence an unconditional reminder rather than an
+# existence check. A mismatched pair fails the sandbox tests that sign as the
+# fixture account.
+echo ""
+echo "REMINDER: replace '$OUTPUT_DIR/near_account_secret_key' with the secret key of"
+echo "the node you just extracted from (ed25519:<base58>, one line). It must pair with"
+echo "the freshly written near_account_public_key.pub. See README.md."

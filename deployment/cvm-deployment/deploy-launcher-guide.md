@@ -162,6 +162,14 @@ USER_CONFIG_FILE_PATH=user-config.toml
 DISK=1000G
 ```
 
+> **Never set `PRELAUNCH_SCRIPT` for a real deployment.** It bakes a script into
+> the app-compose that runs as root inside the CVM before the node starts.
+> Attestation verification rejects any app-compose carrying one, so such a CVM
+> can never join the network; it exists only to collect test fixtures (see
+> `localnet/tee/scripts/rust-launcher/README.md`). The `.env` file is sourced
+> under `set -a`, so a leftover line takes effect silently — `deploy-launcher.sh`
+> prints a warning when it finds one.
+
 ---
 
 Based on: [Original Dstack deploy script](https://github.com/Dstack-TEE/dstack/blob/be9d0476a63e937eda4c13659547a25088393394/kms/dstack-app/deploy-to-vmm.sh)

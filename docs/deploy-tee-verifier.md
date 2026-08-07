@@ -103,11 +103,11 @@ near account list-keys "$VERIFIER_ACCOUNT" network-config "$NETWORK" now
 ```
 
 Optionally confirm the contract executes by calling `verify_quote` read-only with the
-committed fixture. With the fixture's time-expired collateral on the live clock this
-returns `TCBInfo expired`, which proves the DCAP path runs (the accepting verdict is
-covered by the pinned-clock unit test in `crates/tee-verifier/tests/verify_quote.rs`
-and, cross-contract, by the sandbox tests in
-`crates/contract/tests/sandbox/tee_verifier.rs`):
+committed fixture. Either outcome proves the DCAP path runs: a verified report while
+the fixture's collateral is inside its validity window, or `TCBInfo expired` once the
+live clock passes it. Tests pin the verification clock instead of relying on that
+window (`crates/tee-verifier/tests/verify_quote.rs` and, cross-contract, the sandbox
+tests in `crates/contract/tests/sandbox/tee_verifier.rs`):
 
 ```shell
 near contract call-function as-read-only "$VERIFIER_ACCOUNT" verify_quote file-args crates/tee-verifier/tests/fixtures/verify_quote_args.borsh network-config "$NETWORK" now

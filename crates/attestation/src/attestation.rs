@@ -628,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn scripts_absent_with__rejects_pre_launch_script_when_disallowed() {
+    fn scripts_absent_with__should_reject_pre_launch_script_when_disallowed() {
         // Asserts the production policy, which test builds relax for the fixture.
 
         // Given
@@ -644,7 +644,25 @@ mod tests {
     }
 
     #[test]
-    fn scripts_absent_with__accepts_pre_launch_script_when_allowed() {
+    fn validate_app_compose_config__should_follow_the_compiled_in_pre_launch_policy() {
+        // Covers the wired-in policy at the call site, which the tests below reach
+        // only through the helper.
+
+        // Given
+        let app_compose = AppCompose {
+            pre_launch_script: Some("echo collecting fixtures".to_string()),
+            ..valid_app_compose()
+        };
+
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert_eq!(result, cfg!(feature = "allow-pre-launch-script"));
+    }
+
+    #[test]
+    fn scripts_absent_with__should_accept_pre_launch_script_when_allowed() {
         // Given
         let app_compose = AppCompose {
             pre_launch_script: Some("echo collecting fixtures".to_string()),
@@ -658,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn scripts_absent_with__rejects_other_scripts_even_when_pre_launch_is_allowed() {
+    fn scripts_absent_with__should_reject_other_scripts_when_pre_launch_is_allowed() {
         // The relaxation must stay scoped to `pre_launch_script`.
 
         // Given

@@ -273,7 +273,9 @@ if [ -n "${PRELAUNCH_SCRIPT:-}" ]; then
     echo "Error: PRELAUNCH_SCRIPT '$PRELAUNCH_SCRIPT' does not exist"
     exit 1
   fi
-  echo "Including pre-launch script: $PRELAUNCH_SCRIPT"
+  echo "WARNING: baking pre-launch script '$PRELAUNCH_SCRIPT' into the app-compose."
+  echo "         Attestation verification rejects any app-compose carrying a script,"
+  echo "         so this CVM will FAIL attestation. Use only for fixture collection."
   PRELAUNCH_ARGS=(--prelaunch-script "$PRELAUNCH_SCRIPT")
 fi
 

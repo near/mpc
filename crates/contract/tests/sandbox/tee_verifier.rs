@@ -361,10 +361,10 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then: the real DCAP run succeeds within the production gas budget and its
-    // Verified verdict reaches the callback. The submission then fails at the
-    // post-DCAP report_data binding, because the submitter does not hold the
-    // fixture account key (see #3787); that terminal error is asserted to pin
-    // that the verdict was Verified, not Rejected.
+    // Verified verdict reaches the callback. This test deliberately submits from
+    // a plain dev account rather than the fixture node, so it then fails at the
+    // post-DCAP report_data binding; asserting that terminal error pins that the
+    // verdict was Verified, not Rejected.
     let outcomes = result.outcomes();
     let verify_quote_outcome = outcomes
         .iter()

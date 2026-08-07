@@ -57,7 +57,9 @@ All files will be written into the specified output directory.
    exported during collection, which is what the `PRELAUNCH_SCRIPT` in
    [the rust-launcher README](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key)
    is for. The fixture node is a throwaway localnet node, which is the only reason its
-   secret key may live in the repo.
+   secret key may live in the repo: its account (`frodo.test.near`) exists on no
+   public network, and the quote and collateral that bind the key are public anyway.
+   Re-check that before committing a regenerated key.
 
    Because of that export hook, the fixture's app-compose carries a
    `pre_launch_script`, which production verification rejects as arbitrary root code.
@@ -87,6 +89,19 @@ All files will be written into the specified output directory.
    > will be managed entirely through on-chain voting (`vote_add_os_measurement`), and these
    > files will no longer need to be kept in sync with the deployed OS image.
 
+8. Regenerate the verifier's borsh argument fixture and refresh the report values
+   the verifier test hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with
+   every new node):
+
+   ```shell
+   UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
+   cargo test -p tee-verifier --test verify_quote
+   ```
+
+   The second run fails on `verify_quote__should_return_verified_td10_report_for_valid_fixture`
+   and prints the values actually produced; copy them into
+   `crates/tee-verifier/tests/verify_quote.rs`.
+
 ## Tests that depend on these assets
 
 After updating assets, these tests should pass:
@@ -104,5 +119,5 @@ also depend on these assets (including `near_account_secret_key` for the tests t
 sign as the fixture account):
 
 ```shell
-cargo nextest run --cargo-profile=test-release -p mpc-contract tee_verifier --run-ignored all
+cargo nextest run --cargo-profile=test-release -p mpc-contract tee_verifier
 ```
