@@ -44,11 +44,11 @@ pub struct EventGuid {
 #[derive(Debug, thiserror::Error)]
 pub enum AptosRpcError {
     #[error("HTTP request failed: {0}")]
-    Http(reqwest::Error),
+    Http(#[from] reqwest::Error),
     #[error("Aptos API returned HTTP {status}: {body}")]
     ApiError { status: u16, body: String },
     #[error("failed to decode the Aptos API response: {0}")]
-    MalformedBody(serde_json::Error),
+    MalformedBody(#[from] serde_json::Error),
 }
 
 /// Partial response of the API root: the ledger info every Aptos node reports.
@@ -110,12 +110,7 @@ impl ReqwestAptosClient {
     }
 
     async fn get_json<T: DeserializeOwned>(&self, url: Url) -> Result<T, AptosRpcError> {
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(AptosRpcError::Http)?;
+        let response = self.client.get(url).send().await?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -125,8 +120,8 @@ impl ReqwestAptosClient {
             });
         }
 
-        let body = response.bytes().await.map_err(AptosRpcError::Http)?;
-        serde_json::from_slice(&body).map_err(AptosRpcError::MalformedBody)
+        let body = response.bytes().await?;
+        Ok(serde_json::from_slice(&body)?)
     }
 }
 
