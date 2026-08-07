@@ -346,8 +346,9 @@ near contract call-function as-read-only tee-verifier.test.near verify_quote fil
 This returns `TCBInfo expired`: the contract ran the real DCAP verification and
 rejected because the fixture's collateral is time-expired against the live block
 clock. The accepting verdict is covered by the pinned-clock unit test
-`crates/tee-verifier/tests/verify_quote.rs`. Regenerate the fixture (after
-changing the quote/collateral fixtures) with:
+`crates/tee-verifier/tests/verify_quote.rs` and, cross-contract, by the sandbox
+tests in `crates/contract/tests/sandbox/tee_verifier.rs`. Regenerate the fixture
+(after changing the quote/collateral fixtures) with:
 
 ```shell
 UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture

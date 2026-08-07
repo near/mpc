@@ -97,6 +97,31 @@ pub fn near_account_key() -> near_sdk::PublicKey {
     key_file.parse().expect("File contains a valid public key")
 }
 
+/// Secret counterpart of [`account_key`], the key the fixture quote's
+/// report_data binds. Lets sandbox tests sign `submit_participant_info` as the
+/// fixture node (the contract reads the account key from the transaction
+/// signer). Returned as the raw "ed25519:..." string; parse it into the key
+/// type of the calling test framework.
+///
+/// The key belongs to a throwaway dev-TDX fixture account with no standing on
+/// any network. Read at runtime rather than `include_str!` so the crate builds
+/// while the asset is still pending.
+///
+/// TODO(#3787): the asset does not exist yet; retrieve the key from the
+/// fixture node or regenerate the assets, then switch to `include_str!`.
+pub fn account_secret_key() -> String {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/near_account_secret_key"
+    );
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|err| {
+            panic!("TODO(#3787): missing asset {path} (the fixture account secret key): {err}")
+        })
+        .trim()
+        .to_string()
+}
+
 pub fn mock_dstack_attestation_inner() -> DstackAttestation {
     let quote = quote();
     let collateral = mpc_attestation::collateral::collateral_from_str(TEST_COLLATERAL_STRING)

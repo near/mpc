@@ -8,6 +8,7 @@ const TEE_VERIFIER_MANIFEST: &str = "crates/tee-verifier/Cargo.toml";
 const MPC_CONTRACT_OUT_DIR: &str = "target/near/contract-noabi";
 const MPC_CONTRACT_BENCH_OUT_DIR: &str = "target/near/contract-noabi-bench";
 const MPC_CONTRACT_SANDBOX_OUT_DIR: &str = "target/near/contract-noabi-sandbox";
+const TEE_VERIFIER_SANDBOX_OUT_DIR: &str = "target/near/tee-verifier-sandbox";
 
 static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static CONTRACT_WITH_BENCH_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
@@ -15,6 +16,7 @@ static CONTRACT_WITH_SANDBOX_TEST_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static PARALLEL_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 static TEE_VERIFIER_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
+static TEE_VERIFIER_CONTRACT_WITH_SANDBOX_TEST_HOOKS: OnceLock<Vec<u8>> = OnceLock::new();
 
 /// Returns the current contract WASM without benchmark utilities.
 /// Use this for most sandbox tests.
@@ -59,4 +61,16 @@ pub fn parallel_contract() -> &'static [u8] {
 
 pub fn tee_verifier_contract() -> &'static [u8] {
     TEE_VERIFIER_CONTRACT.get_or_init(|| ContractBuilder::new(TEE_VERIFIER_MANIFEST).build())
+}
+
+/// Returns the tee-verifier WASM with the pinnable verification clock enabled.
+/// Use this for tests that need the time-expired fixture quote to reach a
+/// Verified verdict; everything else should deploy [`tee_verifier_contract`].
+pub fn tee_verifier_contract_with_sandbox_test_hooks() -> &'static [u8] {
+    TEE_VERIFIER_CONTRACT_WITH_SANDBOX_TEST_HOOKS.get_or_init(|| {
+        ContractBuilder::new(TEE_VERIFIER_MANIFEST)
+            .out_dir(TEE_VERIFIER_SANDBOX_OUT_DIR)
+            .features(&["sandbox-test-hooks"])
+            .build()
+    })
 }

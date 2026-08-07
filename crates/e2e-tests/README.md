@@ -168,12 +168,16 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 8. Call `init()` on the contract with the initial participants.
 9. Call `submit_participant_info` for each initial participant (with a
    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
-10. Spawn the `mpc-node` binaries (start *before* adding domains so key
+10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
+    every participant, for topology parity with production. Mock attestations
+    are verified without calling it, so the verifier stays idle; the
+    cross-contract flow is covered by the mpc-contract sandbox tests.
+11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
-11. Sleep briefly and assert no node exited early.
-12. If `config.domains` is non-empty, vote `add_domains` from each participant
+12. Sleep briefly and assert no node exited early.
+13. If `config.domains` is non-empty, vote `add_domains` from each participant
     and wait for `Running` state.
-13. Create user accounts for signing/CKD/verify requests.
+14. Create user accounts for signing/CKD/verify requests.
 
 The returned cluster exposes:
 
@@ -204,6 +208,7 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     pub binary_paths: Vec<PathBuf>,             // one or num_nodes
     pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
+    pub tee_verifier_wasm: Vec<u8>,             // loaded via MPC_TEE_VERIFIER_WASM
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
