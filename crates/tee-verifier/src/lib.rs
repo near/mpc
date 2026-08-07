@@ -9,6 +9,8 @@
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
 use near_sdk::{env, near};
+#[cfg(feature = "sandbox-test-hooks")]
+use tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY;
 use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
 
 use tee_verifier_conversions::{IntoDcapType as _, IntoInterfaceType as _};
@@ -33,8 +35,9 @@ impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
     /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp
-    /// and returns `VerificationResult::Verified(report)` on success. The
-    /// caller is responsible for any post-DCAP policy (RTMR3 replay,
+    /// (pinnable by sandbox tests in builds with the `sandbox-test-hooks`
+    /// feature) and returns `VerificationResult::Verified(report)` on success.
+    /// The caller is responsible for any post-DCAP policy (RTMR3 replay,
     /// report-data binding, measurement allowlist matching, etc.).
     ///
     /// A rejected quote returns [`VerificationResult::Rejected`] as the
@@ -51,7 +54,7 @@ impl TeeVerifier {
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResult {
-        let now_seconds = env::block_timestamp_ms() / 1000;
+        let now_seconds = now_seconds();
         let quote_bytes: Vec<u8> = quote.into_dcap_type();
         let collateral = collateral.into_dcap_type();
         match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
@@ -61,4 +64,19 @@ impl TeeVerifier {
             }
         }
     }
+}
+
+/// The timestamp quotes are verified against: block time, unless a sandbox test
+/// pinned one under [`SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`]. The pin exists
+/// because sandbox chain time is wall-clock and forward-only, so it can never
+/// fall inside the validity window of a checked-in collateral fixture.
+fn now_seconds() -> u64 {
+    #[cfg(feature = "sandbox-test-hooks")]
+    if let Some(bytes) = env::storage_read(SANDBOX_TEST_PINNED_NOW_STORAGE_KEY) {
+        let bytes: [u8; 8] = bytes
+            .try_into()
+            .expect("pinned timestamp must be exactly 8 little-endian bytes");
+        return u64::from_le_bytes(bytes);
+    }
+    env::block_timestamp_ms() / 1000
 }
