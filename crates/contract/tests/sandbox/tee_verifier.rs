@@ -478,49 +478,6 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 }
 
 #[tokio::test]
-<<<<<<< HEAD
-#[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
-async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_verification_runs_out_of_gas()
- {
-    // Given: a callback budget far below the ~20 Tgas the post-DCAP work needs,
-    // but enough to schedule the callback receipt. Reaching that gas-heavy path
-    // requires a Verified verdict and a submitter holding the fixture key.
-    let SandboxTestSetup {
-        worker,
-        mpc_signer_accounts,
-        contract,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .with_init_config(dtos::InitConfig {
-            resolve_verification_tera_gas: Some(3),
-            ..Default::default()
-        })
-        .build()
-        .await;
-    deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    whitelist_fixture_dstack_measurements(&contract, &mpc_signer_accounts).await;
-    let submitter = create_fixture_account(&worker, "fixture-node-a").await;
-    let balance_before = submitter.view_account().await.unwrap().balance;
-
-    // When
-    let result = submit_dstack(&submitter, &contract).await;
-
-    // Then: the callback receipt rolls back, so nothing may be stored.
-    assert_submission_failed_cleanly(
-        &result,
-        &contract,
-        &submitter,
-        balance_before,
-        &["Exceeded the prepaid gas"],
-    )
-    .await;
-}
-
-#[tokio::test]
-#[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
-=======
->>>>>>> cf27fef8 (test(contract): store the Verified attestation cross-contract in sandbox)
 async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owned_by_other_account()
 {
     // Given: an owner stored a Verified attestation for the fixture TLS key.
