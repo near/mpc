@@ -11,8 +11,8 @@ use crate::sandbox::{
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, prepay_attestation_grants,
-            submit_participant_info_raw, vote_add_launcher_hash, vote_for_hash,
+            prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
+            vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -319,8 +319,7 @@ async fn submit_participant_info__should_accept_zero_deposit_via_function_call_k
     let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
 
     // When
-    let outcome =
-        submit_participant_info_raw(&fc_account, &contract, &attestation, &tls_key).await?;
+    let outcome = submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;
 
     // Then
     assert!(
@@ -546,7 +545,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
             let dummy_tls_key = p2p_tls_key().into();
 
-            let validation_success = submit_participant_info_raw(
+            let validation_success = submit_participant_info(
                 participant_account_1,
                 &contract,
                 &attestation,
@@ -728,7 +727,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     assert!(validation_success, "First attestation submission failed");
 
     // Submit the second attestation with the same TLS key (overwrites the first)
-    let validation_success = submit_participant_info_raw(
+    let validation_success = submit_participant_info(
         participant_account,
         &contract,
         &second_attestation,
@@ -846,7 +845,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         expected_measurements: None,
     });
 
-    let submit_result = submit_participant_info_raw(
+    let submit_result = submit_participant_info(
         target_account,
         &contract,
         &expiring_attestation,
@@ -978,7 +977,7 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
             .iter()
             .find(|node| node.account_id == *target_account.id())
             .expect("target participant not found");
-        let submit_success = submit_participant_info_raw(
+        let submit_success = submit_participant_info(
             target_account,
             &contract,
             &expiring_attestation,
@@ -1056,9 +1055,9 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// A node stores a new entry attaching no deposit of its own, spending a grant that somebody
-/// else prepaid for it. "Zero deposit" is about the submitting node, whose function-call key
-/// cannot attach one — not about the storage being free.
+/// A new entry is stored by a submission that attaches no deposit, spending a grant prepaid by
+/// an earlier call. "Zero deposit" is about the submitting node, whose function-call key cannot
+/// attach one, not about the storage being free.
 #[tokio::test]
 async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_grant() -> Result<()> {
     // Given
@@ -1072,13 +1071,10 @@ async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_gra
     let fresh_tls_key = bogus_ed25519_public_key();
 
     // When
-    // Prepay explicitly, from a different account, so the test asserts the grant flow rather
-    // than relying on the shared helper to fund it silently.
-    let payer = worker.dev_create_account().await?;
-    let prepayment = prepay_attestation_grants(&payer, &contract, outsider.id(), 1).await?;
+    let prepayment = prepay_attestation_grants(&outsider, &contract, outsider.id(), 1).await?;
     assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
 
-    let result = submit_participant_info_raw(
+    let result = submit_participant_info(
         &outsider,
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -1094,7 +1090,7 @@ async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_gra
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
     assert!(stored.is_some(), "the entry should be stored on-chain");
     let remaining: u32 = contract
-        .view("available_attestation_grants")
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
         .args_json(serde_json::json!({ "account_id": outsider.id() }))
         .await?
         .json()?;

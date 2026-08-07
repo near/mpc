@@ -189,7 +189,7 @@ pub struct MpcContract {
     tee_verifier_account_id: Option<AccountId>,
     tee_verifier_votes: TeeVerifierVotes,
     /// A row is removed at zero, so the map holds no entry for an account with none.
-    available_attestation_grants: LookupMap<AccountId, u32>,
+    available_attestation_grants: IterableMap<AccountId, u32>,
 }
 
 #[near(serializers=[borsh])]
@@ -806,7 +806,7 @@ impl MpcContract {
         }
 
         let required = self
-            .attestation_storage_fee_internal()
+            .attestation_storage_fee()
             .as_yoctonear()
             .checked_mul(u128::from(grants))
             .ok_or(InvalidParameters::MalformedPayload {
@@ -921,7 +921,7 @@ impl MpcContract {
     }
 
     /// Read from `config()` by operators; deliberately not its own view.
-    fn attestation_storage_fee_internal(&self) -> NearToken {
+    fn attestation_storage_fee(&self) -> NearToken {
         NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
     }
 
@@ -954,10 +954,6 @@ impl MpcContract {
     }
 
     /// Consumes one grant for `account_id`.
-    ///
-    /// Panics if none is available. Every caller has established, in this same receipt, that
-    /// a grant is there; panicking reverts the receipt, so an invariant broken by a future
-    /// call site costs a failed transaction rather than an entry nobody paid for.
     fn consume_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let remaining = self
             .grants_for(account_id)
@@ -2159,7 +2155,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
-            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         })
     }
 
@@ -2247,7 +2243,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
-            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         })
     }
 
@@ -5408,7 +5404,7 @@ mod tests {
                 ),
                 tee_verifier_account_id: None,
                 tee_verifier_votes: Default::default(),
-                available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
+                available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             }
         }
     }

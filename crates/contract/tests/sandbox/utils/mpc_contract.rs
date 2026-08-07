@@ -79,7 +79,7 @@ pub async fn prepay_attestation_grants(
         u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
     );
     Ok(payer
-        .call(contract.id(), "prepay_attestation_storage")
+        .call(contract.id(), method_names::PREPAY_ATTESTATION_STORAGE)
         .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
         .deposit(total)
         .max_gas()
@@ -88,7 +88,7 @@ pub async fn prepay_attestation_grants(
 }
 
 /// Prepays one grant, then submits. For a first submission; a re-attestation of a key the
-/// account already owns consumes no grant and should use [`submit_participant_info_raw`].
+/// account already owns consumes no grant and should use [`submit_participant_info`].
 pub async fn prepay_and_submit_participant_info(
     account: &Account,
     contract: &Contract,
@@ -97,11 +97,11 @@ pub async fn prepay_and_submit_participant_info(
 ) -> anyhow::Result<ExecutionFinalResult> {
     let prepayment = prepay_attestation_grants(account, contract, account.id(), 1).await?;
     anyhow::ensure!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
-    submit_participant_info_raw(account, contract, attestation, tls_key).await
+    submit_participant_info(account, contract, attestation, tls_key).await
 }
 
 /// Submits without prepaying anything.
-pub async fn submit_participant_info_raw(
+pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,

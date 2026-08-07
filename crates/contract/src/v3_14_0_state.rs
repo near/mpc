@@ -11,7 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{
     AccountId, env,
-    store::{Lazy, LookupMap},
+    store::{IterableMap, Lazy, LookupMap},
 };
 
 use crate::{
@@ -131,7 +131,7 @@ impl From<MpcContract> for crate::MpcContract {
             foreign_chains: old.foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
-            available_attestation_grants: LookupMap::new(StorageKey::AttestationGrants),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         }
     }
 }

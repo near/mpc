@@ -1308,7 +1308,10 @@ async fn prepay_attestation_grants(
         if !outcome.is_success() {
             let failure = format!("{:?}", outcome.failure_message());
             // A contract binary predating grants, as run by the upgrade-compatibility tests:
-            // it has no `prepay_attestation_storage` and needs no prepayment.
+            // it has no `prepay_attestation_storage` and needs no prepayment. Delete this
+            // branch, and `attestation_storage_fee`'s `None` case, once
+            // `contract_history::current_{mainnet,testnet}` point past 3.14.0, the last
+            // release without grants.
             anyhow::ensure!(
                 failure.contains("method not found"),
                 "prepay for node {i} failed: {failure}"
@@ -1321,8 +1324,8 @@ async fn prepay_attestation_grants(
     Ok(())
 }
 
-/// `None` when `config()` carries no fee field: a contract binary older than grants, which
-/// the upgrade-compatibility tests run and which needs no prepayment.
+/// `None` when `config()` carries no fee field: a contract binary older than grants (3.14.0 and
+/// earlier), which the upgrade-compatibility tests run and which needs no prepayment.
 async fn attestation_storage_fee(
     contract: &DeployedContract,
 ) -> anyhow::Result<Option<near_kit::NearToken>> {

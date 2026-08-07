@@ -15,7 +15,7 @@ use crate::sandbox::{
         contract_build::tee_verifier_contract,
         mpc_contract::{
             get_participant_attestation, prepay_and_submit_participant_info,
-            prepay_attestation_grants, submit_participant_info_raw, tee_verifier_account_id,
+            prepay_attestation_grants, submit_participant_info, tee_verifier_account_id,
             total_gas_fee, vote_tee_verifier_change,
         },
     },
@@ -56,7 +56,7 @@ async fn deploy_and_trust_verifier(
 }
 
 async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
-    submit_participant_info_raw(
+    submit_participant_info(
         submitter,
         contract,
         &mock_dto_dstack_attestation(),
@@ -194,7 +194,7 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
 
     // When
     let result =
-        submit_participant_info_raw(&submitter, &contract, &attestation, &p2p_tls_key().into())
+        submit_participant_info(&submitter, &contract, &attestation, &p2p_tls_key().into())
             .await
             .unwrap();
 
