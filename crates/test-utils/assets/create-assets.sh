@@ -36,8 +36,20 @@ jq -j '.near_signer_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_account_public
 # Extract app_compose.json. We set 4 width indentation, and remove trailing newline, so it matches the original string in tests.
 printf '%s' "$(jq -r --indent 4 '.tee_participant_info.Dstack.tcb_info.app_compose' "$INPUT_FILE")" > "$OUTPUT_DIR/app_compose.json"
 
-# Extract collateral
-jq -r '.tee_participant_info.Dstack.collateral' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
+# Extract collateral. The node serializes the DER/signature fields as JSON byte
+# arrays, while the fixture parser (`attestation::collateral::collateral_from_json`)
+# reads them as hex strings, so hex-encode those four fields here. Fields that
+# are already hex pass through unchanged.
+jq -r 'def tohex:
+         if type == "array" then
+           reduce .[] as $b (""; . + ("0123456789abcdef" | .[(($b / 16) | floor):(($b / 16) | floor) + 1])
+                                  + ("0123456789abcdef" | .[($b % 16):($b % 16) + 1]))
+         else . end;
+       .tee_participant_info.Dstack.collateral
+       | .root_ca_crl |= tohex
+       | .pck_crl |= tohex
+       | .tcb_info_signature |= tohex
+       | .qe_identity_signature |= tohex' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
 
 # Extract quote
 jq -c '.tee_participant_info.Dstack.quote' "$INPUT_FILE" > "$OUTPUT_DIR/quote.json"
