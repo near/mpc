@@ -113,7 +113,7 @@ pub struct ChainIdResponse(pub String);
 impl ChainIdResponse {
     /// Decimal, the form EIP-155 chain ids are published in. A `0x` prefix reads as hex, anything
     /// else as decimal; text that is neither is returned unchanged.
-    pub fn canonical_text(&self) -> String {
+    pub fn canonical_text(self) -> String {
         let hex = self
             .0
             .strip_prefix("0x")
@@ -124,11 +124,11 @@ impl ChainIdResponse {
         };
         // Empty digits parse as zero, which would report a bare `0x` as chain 0.
         if digits.is_empty() {
-            return self.0.clone();
+            return self.0;
         }
         match U256::from_str_radix(digits, radix) {
             Ok(chain_id) => chain_id.to_string(),
-            Err(_) => self.0.clone(),
+            Err(_) => self.0,
         }
     }
 }
