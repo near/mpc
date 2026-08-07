@@ -1,11 +1,11 @@
 use crate::aptos::{AptosExtractedValue, AptosTransactionHash};
 use crate::{
-    ForeignChainInspectionError, ForeignChainInspector, HexBytes, NetworkFingerprint,
-    NetworkFingerprintInspector,
+    AbsenceMeaning, ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector,
+    HasAbsenceMeaning, HexBytes, NetworkFingerprint, NetworkFingerprintInspector,
 };
 use foreign_chain_rpc_interfaces::aptos::{
-    AptosRpcClient, AptosRpcError, TransactionResponse, canonical_chain_id_text,
-    normalize_event_data,
+    AptosRpcClient, AptosRpcError, LedgerInfoResponse, TransactionResponse,
+    canonical_chain_id_text, normalize_event_data,
 };
 use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
 use std::borrow::Cow;
@@ -37,11 +37,7 @@ where
     Client: AptosRpcClient + Send + Sync,
 {
     async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
-        let ledger_info = self
-            .client
-            .get_ledger_info()
-            .await
-            .map_err(classify_rest_error)?;
+        let ledger_info = self.client.get_ledger_info().await.classified()?;
         Ok(Self::canonical_fingerprint(
             &ledger_info.chain_id.to_string(),
         ))
@@ -73,13 +69,7 @@ where
             .client
             .get_transaction_by_hash(&tx_hash_hex)
             .await
-            // 404 = definitively absent → a non-transient verdict.
-            .map_err(|e| match e {
-                AptosRpcError::ApiError { status: 404, .. } => {
-                    ForeignChainInspectionError::TransactionNotFound
-                }
-                other => classify_rest_error(other),
-            })?;
+            .classified()?;
 
         ensure_hash_matches(&tx_id, &tx.hash)?;
 
@@ -110,12 +100,38 @@ where
     }
 }
 
-/// A refusal is a substantive verdict, so only what a retry could change is transient. A 404 is a
-/// refusal like any other; a caller that asked for something that can legitimately be absent, such
-/// as a transaction, maps it before delegating.
-fn classify_rest_error(error: AptosRpcError) -> ForeignChainInspectionError {
+/// A transaction the chain does not have is a verdict about that transaction.
+impl HasAbsenceMeaning for TransactionResponse {
+    const ABSENCE: AbsenceMeaning = AbsenceMeaning::TransactionIsAbsent;
+}
+
+/// The ledger info is the REST API root, which every Aptos node serves.
+impl HasAbsenceMeaning for LedgerInfoResponse {
+    const ABSENCE: AbsenceMeaning = AbsenceMeaning::ApiIsNotServed;
+}
+
+impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
+    type Response = T;
+
+    fn classified(self) -> Result<T, ForeignChainInspectionError> {
+        self.map_err(|error| classify_rest_error(error, T::ABSENCE))
+    }
+}
+
+fn classify_rest_error(
+    error: AptosRpcError,
+    absence: AbsenceMeaning,
+) -> ForeignChainInspectionError {
     let message = error.to_string();
     match error {
+        // Aptos answers 404 both for a transaction it does not have and for a path it does not
+        // route; only the resource that was read tells the two apart.
+        AptosRpcError::ApiError { status: 404, .. } => match absence {
+            AbsenceMeaning::TransactionIsAbsent => ForeignChainInspectionError::TransactionNotFound,
+            AbsenceMeaning::ApiIsNotServed => {
+                ForeignChainInspectionError::RpcRequestRejected(message)
+            }
+        },
         // Rate limits and server errors are provider hiccups → transient, so the affected
         // provider is dropped from the quorum instead of blocking it.
         AptosRpcError::ApiError {
@@ -829,6 +845,54 @@ mod tests {
         assert_matches!(
             fingerprint,
             Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
+    }
+
+    #[test]
+    fn classified__should_read_an_absent_transaction_as_the_chains_verdict() {
+        // Given
+        let answered: Result<TransactionResponse, _> = Err(MockAptosClient::error(404));
+
+        // When
+        let error = answered.classified().unwrap_err();
+
+        // Then
+        assert_matches!(error, ForeignChainInspectionError::TransactionNotFound);
+    }
+
+    #[test]
+    fn classified__should_read_an_absent_ledger_root_as_a_refusal() {
+        // Given
+        let answered: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(404));
+
+        // When
+        let error = answered.classified().unwrap_err();
+
+        // Then
+        assert_matches!(error, ForeignChainInspectionError::RpcRequestRejected(_));
+    }
+
+    #[rstest]
+    #[case::request_timeout(408)]
+    #[case::rate_limited(429)]
+    #[case::internal_error(500)]
+    #[case::bad_request(400)]
+    #[case::unauthorized(401)]
+    fn classify_rest_error__should_read_every_status_but_404_alike(#[case] status: u16) {
+        // When
+        let as_transaction = classify_rest_error(
+            MockAptosClient::error(status),
+            AbsenceMeaning::TransactionIsAbsent,
+        );
+        let as_api_root = classify_rest_error(
+            MockAptosClient::error(status),
+            AbsenceMeaning::ApiIsNotServed,
+        );
+
+        // Then
+        assert_eq!(
+            std::mem::discriminant(&as_transaction),
+            std::mem::discriminant(&as_api_root)
         );
     }
 }
