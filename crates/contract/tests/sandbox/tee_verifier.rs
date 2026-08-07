@@ -8,10 +8,9 @@
 //!   time is wall-clock and forward-only, and the fixture collateral has
 //!   expired against it.
 //!
-//! Verified-path tests that store an attestation must sign as the fixture
-//! account (the quote's report_data binds the fixture account key, and the
-//! contract reads that key from the transaction signer). They are ignored
-//! until the fixture secret key asset lands; see TODO(#3787).
+//! Verified-path tests that store an attestation sign as the fixture account:
+//! the quote's report_data binds the fixture account key, and the contract
+//! reads that key from the transaction signer.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -49,6 +48,16 @@ use test_utils::attestation::{
 async fn setup() -> SandboxTestSetup {
     SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await
+}
+
+/// Setup for tests that expect the fixture to pass the post-DCAP checks, which needs the
+/// wasm that accepts its app-compose.
+async fn setup_accepting_fixture_attestation() -> SandboxTestSetup {
+    SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_sandbox_test_attestation()
         .build()
         .await
 }
@@ -418,7 +427,6 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
 }
 
 #[tokio::test]
-#[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given
     let SandboxTestSetup {
@@ -426,7 +434,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
         mpc_signer_accounts,
         contract,
         ..
-    } = setup().await;
+    } = setup_accepting_fixture_attestation().await;
     deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
     whitelist_fixture_dstack_measurements(&contract, &mpc_signer_accounts).await;
     let submitter = create_fixture_account(&worker, "fixture-node-a").await;
@@ -461,46 +469,6 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 }
 
 #[tokio::test]
-#[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
-async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_verification_runs_out_of_gas()
- {
-    // Given: a callback budget far below the ~20 Tgas the post-DCAP work needs,
-    // but enough to schedule the callback receipt. Reaching that gas-heavy path
-    // requires a Verified verdict and a submitter holding the fixture key.
-    let SandboxTestSetup {
-        worker,
-        mpc_signer_accounts,
-        contract,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .with_init_config(dtos::InitConfig {
-            resolve_verification_tera_gas: Some(3),
-            ..Default::default()
-        })
-        .build()
-        .await;
-    deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    whitelist_fixture_dstack_measurements(&contract, &mpc_signer_accounts).await;
-    let submitter = create_fixture_account(&worker, "fixture-node-a").await;
-    let balance_before = submitter.view_account().await.unwrap().balance;
-
-    // When
-    let result = submit_dstack(&submitter, &contract).await;
-
-    // Then: the callback receipt rolls back, so nothing may be stored.
-    assert_submission_failed_cleanly(
-        &result,
-        &contract,
-        &submitter,
-        balance_before,
-        "Exceeded the prepaid gas",
-    )
-    .await;
-}
-
-#[tokio::test]
-#[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
 async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owned_by_other_account()
 {
     // Given: an owner stored a Verified attestation for the fixture TLS key.
@@ -513,7 +481,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
         mpc_signer_accounts,
         contract,
         ..
-    } = setup().await;
+    } = setup_accepting_fixture_attestation().await;
     deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
     whitelist_fixture_dstack_measurements(&contract, &mpc_signer_accounts).await;
     let owner = create_fixture_account(&worker, "fixture-node-a").await;

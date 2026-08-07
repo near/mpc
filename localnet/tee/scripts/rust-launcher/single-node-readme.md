@@ -44,6 +44,13 @@ export OS_IMAGE=dstack-0.5.8
 # Custom NEAR accounts
 export NODE_ACCOUNT=frodo.test.near
 export CONTRACT_ACCOUNT=mpc-contract.test.near
+
+# Script executed inside the CVM before docker compose up, and the only way to
+# run anything of your own in there. Needed when collecting test assets, to
+# export the node's in-enclave signer key; the dev image has no sshd, and the
+# guest agent serves only node info and container logs. See
+# ../../../../localnet/tee/scripts/rust-launcher/README.md for a working script.
+export PRELAUNCH_SCRIPT=/path/to/prelaunch.sh
 ```
 
 ## Run

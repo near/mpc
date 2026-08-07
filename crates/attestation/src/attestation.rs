@@ -409,11 +409,19 @@ impl DstackAttestation {
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            // Reject all three arbitrary-root-code fields. `pre_launch_script` and `init_script` run
-            // unconditionally; `bash_script` only runs when `runner == "bash"` (so the runner pin
-            // above already neutralizes it), but we reject it explicitly so the guarantee does not
-            // silently depend on that pin.
-            && app_compose.pre_launch_script.is_none()
+            && Self::scripts_absent(app_compose)
+    }
+
+    /// Rejects the arbitrary-root-code fields. `bash_script` only runs when
+    /// `runner == "bash"`, but is rejected explicitly so the guarantee does not depend on
+    /// the runner pin above.
+    fn scripts_absent(app_compose: &AppCompose) -> bool {
+        Self::scripts_absent_with(app_compose, cfg!(feature = "allow-pre-launch-script"))
+    }
+
+    /// Takes the policy as an argument so tests can assert both, whatever features are on.
+    fn scripts_absent_with(app_compose: &AppCompose, allow_pre_launch_script: bool) -> bool {
+        (allow_pre_launch_script || app_compose.pre_launch_script.is_none())
             && app_compose.init_script.is_none()
             && app_compose.bash_script.is_none()
     }
@@ -620,17 +628,56 @@ mod tests {
     }
 
     #[test]
-    fn validate_app_compose_config__rejects_present_pre_launch_script() {
+    fn scripts_absent_with__rejects_pre_launch_script_when_disallowed() {
+        // Asserts the production policy, which test builds relax for the fixture.
+
         // Given
         let app_compose = AppCompose {
             pre_launch_script: Some("echo pwn".to_string()),
             ..valid_app_compose()
         };
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::scripts_absent_with(&app_compose, false);
 
         // Then
         assert!(!result)
+    }
+
+    #[test]
+    fn scripts_absent_with__accepts_pre_launch_script_when_allowed() {
+        // Given
+        let app_compose = AppCompose {
+            pre_launch_script: Some("echo collecting fixtures".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::scripts_absent_with(&app_compose, true);
+
+        // Then
+        assert!(result)
+    }
+
+    #[test]
+    fn scripts_absent_with__rejects_other_scripts_even_when_pre_launch_is_allowed() {
+        // The relaxation must stay scoped to `pre_launch_script`.
+
+        // Given
+        let with_init = AppCompose {
+            init_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        let with_bash = AppCompose {
+            bash_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+
+        // When
+        let init_result = DstackAttestation::scripts_absent_with(&with_init, true);
+        let bash_result = DstackAttestation::scripts_absent_with(&with_bash, true);
+
+        // Then
+        assert!(!init_result);
+        assert!(!bash_result);
     }
 
     #[test]
