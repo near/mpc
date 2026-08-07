@@ -33,9 +33,22 @@ require_cmds() {
     [[ "$missing" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
+# Mirrors the pattern .github/workflows/release.yml accepts, so a release
+# candidate can be rolled out with this tooling too.
 check_version() {
-    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-        || die "'$1' is not valid semver (expected MAJOR.MINOR.PATCH)."
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] \
+        || die "'$1' is not valid semver (expected MAJOR.MINOR.PATCH[-SUFFIX])."
+}
+
+# sha256sum is GNU-only; macOS ships shasum instead.
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        die "Need sha256sum or shasum to hash ${1}."
+    fi
 }
 
 confirm() {

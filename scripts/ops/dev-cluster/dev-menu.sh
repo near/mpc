@@ -73,11 +73,18 @@ fi
 
 step "### Step 2 — contract"
 echo "Only for releases that change crates/contract (diff it between the two tags)."
+CONTRACT_RESULT="skipped — nodes only"
 if confirm "Upgrade the contract too?"; then
-    run_cmd "${SCRIPT_DIR}/upgrade-dev-contract.sh" "$VERSION" "$NETWORK" || true
-else
-    echo "Skipped — nodes only."
+    if run_cmd "${SCRIPT_DIR}/upgrade-dev-contract.sh" "$VERSION" "$NETWORK"; then
+        CONTRACT_RESULT="upgraded"
+    else
+        CONTRACT_RESULT="FAILED — see the output above"
+    fi
 fi
 
 echo
-ok "Done. Testnet first — upgrade the mainnet dev cluster only once this one is healthy."
+if [[ "$CONTRACT_RESULT" == FAILED* ]]; then
+    warn "Nodes done; contract step ${CONTRACT_RESULT}. Do not upgrade the mainnet dev cluster yet."
+else
+    ok "Done (contract: ${CONTRACT_RESULT}). Testnet first — upgrade the mainnet dev cluster only once this one is healthy."
+fi

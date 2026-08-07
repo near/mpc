@@ -20,8 +20,6 @@ source "${SCRIPT_DIR}/../common.sh"
 # shellcheck source=dev-common.sh
 source "${SCRIPT_DIR}/dev-common.sh"
 
-SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
-
 write_u32_le() {
     local n=$1 i
     for i in 0 8 16 24; do
@@ -63,9 +61,10 @@ fetch_wasm() {
         step "==> Building the contract from ${root} (local build — not a released artifact)..." >&2
         ( cd "$root" && run_cmd cargo near build non-reproducible-wasm --features abi \
             --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked >&2 )
-        built=$(find "${root}/target/near" -maxdepth 1 -name '*.wasm' -newermt '-10 minutes' \
-            | head -1)
-        [[ -n "$built" ]] || die "No freshly built .wasm found under ${root}/target/near."
+        # Naming the artifact rather than globbing: target/near also holds
+        # tee_verifier and test_parallel_contract builds.
+        built="${root}/target/near/mpc_contract/mpc_contract.wasm"
+        [[ -f "$built" ]] || die "Expected ${built} after the cargo-near build."
         cp "$built" "$wasm"
     fi
     echo "$wasm"
@@ -75,13 +74,13 @@ fetch_wasm() {
 VERSION=$1
 check_version "$VERSION"
 resolve_dev_cluster "$2"
-require_cmds near sha256sum
+require_cmds near
 
 CACHE="${MPC_OPS_CACHE:-$HOME/.cache/mpc-ops}/${VERSION}"
 mkdir -p "$CACHE"
 
 WASM=$(fetch_wasm "$VERSION" "$CACHE")
-echo "    wasm sha256: $(sha256sum "$WASM" | cut -d' ' -f1)"
+echo "    wasm sha256: $(sha256_of "$WASM")"
 
 SERIALIZED="${CACHE}/serialized.bin"
 WASM_SIZE=$(wc -c < "$WASM")

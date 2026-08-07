@@ -3,6 +3,11 @@
 # dev-common.sh — helpers specific to the NEAR One dev clusters (source, don't
 # run). Generic helpers live in ../common.sh.
 #
+# MPC_SIGN_WITH overrides how near-cli signs — use sign-with-legacy-keychain
+# when the keychain can't find a key written to ~/.near-credentials.
+#
+
+SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
 
 # Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT, PROPOSE_DEPOSIT for a
 # dev cluster, and re-points the endpoint vars at it when per-cluster ones are
@@ -12,16 +17,18 @@ resolve_dev_cluster() {
     local suffix var
     case "$1" in
         testnet)
-            CONTRACT="mpc-dev-contract.testnet" NEAR_NET="testnet" SIGN_DEPOSIT="1"
+            CONTRACT="mpc-dev-contract.testnet" NEAR_NET="testnet" SIGN_DEPOSIT="1 NEAR"
             MEMBER_ACCOUNTS="mpc-node-0-mpc-dev.testnet mpc-node-1-mpc-dev.testnet"
             suffix="TESTNET" ;;
         mainnet)
-            CONTRACT="dev-contract.near" NEAR_NET="mainnet" SIGN_DEPOSIT="0.1"
+            CONTRACT="dev-contract.near" NEAR_NET="mainnet" SIGN_DEPOSIT="0.1 NEAR"
             MEMBER_ACCOUNTS="mpc-0-dev-mainnet.dev-signer.near mpc-1-dev-mainnet.dev-signer.near"
             suffix="MAINNET" ;;
         *) die "Unknown dev cluster '$1' (expected testnet|mainnet)." ;;
     esac
-    # 15 NEAR is just under the ~15.13 storage requirement.
+    # Comfortably over ProposedUpdates::required_deposit (see
+    # propose_update_required_deposit_yoctonear); the excess is refunded.
+    # Read by upgrade-dev-contract.sh.
     PROPOSE_DEPOSIT="16 NEAR"
 
     var="NOMAD_ADDR_DEV_${suffix}";      [[ -z "${!var:-}" ]] || export NOMAD_ADDR="${!var}"
@@ -86,15 +93,21 @@ verify_nodes() {
 
     local addr info ok=0 fail=0
     for addr in ${MPC_NODE_ADDRS}; do
+        # The node's debug/metrics listener is plain HTTP, reachable only from
+        # inside the cluster network; there is no TLS endpoint to point at.
+        # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
         show_cmd curl -sf "http://${addr}/metrics" '|' grep mpc_node_build_info
+        # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
         info=$(curl -sf --max-time 5 "http://${addr}/metrics" \
             | grep -o 'mpc_node_build_info{[^}]*}') || { echo "  (unreachable)"; fail=1; continue; }
         echo "  $info"
         if [[ "$info" == *"release=\"${version}\""* ]]; then ok=1; else fail=1; fi
     done
-    [[ "$fail" -eq 0 && "$ok" -eq 1 ]] \
-        && ok "All nodes report release=\"${version}\"." \
-        || warn "Not all nodes are on ${version} yet."
+    if [[ "$fail" -eq 0 && "$ok" -eq 1 ]]; then
+        ok "All nodes report release=\"${version}\"."
+    else
+        warn "Not all nodes are on ${version} yet."
+    fi
 }
 
 # Submit a test signature request to the dev cluster contract (on-chain txn).
@@ -104,14 +117,17 @@ test_sign() {
 
     local signer=${MEMBER_ACCOUNTS%% *}
     local payload='[12,1,2,0,4,5,6,8,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,44]'
-    local cmd=(near call --network-id "$NEAR_NET" "$CONTRACT" sign
-        "{\"request\": {\"payload\": ${payload}, \"path\": \"test\", \"key_version\": 0}}"
-        --accountId "$signer" --gas 300000000000000 --deposit "$SIGN_DEPOSIT")
+    local cmd=(near contract call-function as-transaction "$CONTRACT" sign
+        json-args "{\"request\": {\"payload\": ${payload}, \"path\": \"test\", \"key_version\": 0}}"
+        prepaid-gas '300.0 Tgas' attached-deposit "$SIGN_DEPOSIT"
+        sign-as "$signer" network-config "$NEAR_NET" "$SIGN_WITH" send)
 
-    echo "Test sign on ${CONTRACT} as ${signer} (deposit ${SIGN_DEPOSIT} NEAR)."
+    echo "Test sign on ${CONTRACT} as ${signer} (deposit ${SIGN_DEPOSIT})."
     show_cmd "${cmd[@]}"
     confirm "Send it?" || return 0
-    "${cmd[@]}" \
-        && ok "Signature returned — the cluster is signing." \
-        || warn "Test sign failed — investigate before proceeding."
+    if "${cmd[@]}"; then
+        ok "Signature returned — the cluster is signing."
+    else
+        warn "Test sign failed — investigate before proceeding."
+    fi
 }

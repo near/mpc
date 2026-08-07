@@ -23,18 +23,28 @@ source "${SCRIPT_DIR}/dev-common.sh"
 nomad_curl() {
     local method=$1 path=$2 data=${3:-}
     local url="${NOMAD_ADDR%/}/v1${path}"
-    local args=(-sf --max-time 30 -X "$method" "$url")
-    [[ -z "${NOMAD_TOKEN:-}" ]] || args+=(-H "X-Nomad-Token: ${NOMAD_TOKEN}")
+    # --fail-with-body (curl >= 7.76) keeps Nomad's diagnostics on a non-2xx;
+    # plain -f discards exactly the body the operator needs to see.
+    local args=(-sS --fail-with-body --max-time 30 -X "$method" "$url")
     [[ -z "$data" ]] || args+=(-H 'Content-Type: application/json' --data "$data")
 
     show_cmd curl -X "$method" "$url" ${data:+--data @-}
 
-    local response
-    if [[ -n "${NOMAD_HTTP_AUTH:-}" ]]; then
-        # -K - keeps the credentials out of the process list.
-        response=$(printf 'user = "%s"\n' "$NOMAD_HTTP_AUTH" | curl -K - "${args[@]}") || return 1
+    # Both the basic-auth pair and the ACL token go through the config stream:
+    # anything in argv is readable from ps / /proc/<pid>/cmdline.
+    local config=""
+    [[ -z "${NOMAD_HTTP_AUTH:-}" ]] || config+="user = \"${NOMAD_HTTP_AUTH}\""$'\n'
+    [[ -z "${NOMAD_TOKEN:-}" ]] || config+="header = \"X-Nomad-Token: ${NOMAD_TOKEN}\""$'\n'
+
+    local response status=0
+    if [[ -n "$config" ]]; then
+        response=$(printf '%s' "$config" | curl -K - "${args[@]}") || status=$?
     else
-        response=$(curl "${args[@]}") || return 1
+        response=$(curl "${args[@]}") || status=$?
+    fi
+    if (( status != 0 )); then
+        [[ -z "$response" ]] || show_output "$response"
+        return "$status"
     fi
 
     # GET bodies are job definitions the caller only parses; showing them buries
@@ -45,12 +55,15 @@ nomad_curl() {
 
 wait_for_alloc() {
     local job_id=$1 tries=36 job_version status
-    job_version=$(nomad_curl GET "/job/${job_id}" | jq -r '.Version')
+    job_version=$(nomad_curl GET "/job/${job_id}" | jq -r '.Version') \
+        || die "Could not read the new job version for ${job_id}."
     printf '    waiting for allocation (job version %s) ' "$job_version"
     while (( tries-- > 0 )); do
+        # A blip here must not abandon the jobs still queued behind this one.
         status=$(nomad_curl GET "/job/${job_id}/allocations" \
             | jq -r --argjson v "$job_version" \
-              '[.[] | select(.JobVersion == $v)] | sort_by(.CreateIndex) | last | .ClientStatus // "pending"')
+              '[.[] | select(.JobVersion == $v)] | sort_by(.CreateIndex) | last | .ClientStatus // "pending"') \
+            || status="unreachable"
         if [[ "$status" == "running" ]]; then
             ok "running."
             return
