@@ -4,14 +4,13 @@
 //! - Unavailable: a verifier account that was never deployed.
 //! - Verified: real verifier built with `sandbox-test-hooks`, its verification
 //!   time pinned to the fixture's validity window. The pin is needed because
-//!   real `verify_quote` checks the quote against block time, sandbox chain
-//!   time is wall-clock and forward-only, and the fixture collateral has
-//!   expired against it.
+//!   real `verify_quote` checks the quote against block time: the fixture
+//!   collateral is valid only inside a fixed window, while sandbox time is
+//!   wall-clock and forward-only.
 //!
-//! Verified-path tests that store an attestation must sign as the fixture
-//! account (the quote's report_data binds the fixture account key, and the
-//! contract reads that key from the transaction signer). They are ignored
-//! until the fixture secret key asset lands; see #3787.
+//! Verified-path tests that store an attestation sign as the fixture account:
+//! the quote's report_data binds the fixture account key, and the contract
+//! reads that key from the transaction signer.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -49,6 +48,16 @@ use test_utils::attestation::{
 async fn setup() -> SandboxTestSetup {
     SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await
+}
+
+/// Setup for tests that expect the fixture to pass the post-DCAP checks, which needs the
+/// wasm that accepts its app-compose.
+async fn setup_accepting_fixture_attestation() -> SandboxTestSetup {
+    SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_sandbox_test_attestation()
         .build()
         .await
 }
@@ -427,7 +436,6 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
 }
 
 #[tokio::test]
-#[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given
     let SandboxTestSetup {
@@ -435,7 +443,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
         mpc_signer_accounts,
         contract,
         ..
-    } = setup().await;
+    } = setup_accepting_fixture_attestation().await;
     deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
     whitelist_fixture_dstack_measurements(&contract, &mpc_signer_accounts).await;
     let submitter = create_fixture_account(&worker, "fixture-node-a").await;
@@ -470,6 +478,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 }
 
 #[tokio::test]
+<<<<<<< HEAD
 #[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
 async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_verification_runs_out_of_gas()
  {
@@ -510,6 +519,8 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_ver
 
 #[tokio::test]
 #[ignore = "TODO(#3787): requires the near_account_secret_key asset"]
+=======
+>>>>>>> cf27fef8 (test(contract): store the Verified attestation cross-contract in sandbox)
 async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owned_by_other_account()
 {
     // Given: an owner stored a Verified attestation for the fixture TLS key.
@@ -522,7 +533,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
         mpc_signer_accounts,
         contract,
         ..
-    } = setup().await;
+    } = setup_accepting_fixture_attestation().await;
     deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
     whitelist_fixture_dstack_measurements(&contract, &mpc_signer_accounts).await;
     let owner = create_fixture_account(&worker, "fixture-node-a").await;
