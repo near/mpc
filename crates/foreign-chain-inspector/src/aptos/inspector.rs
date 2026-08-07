@@ -104,7 +104,7 @@ impl HasAbsenceMeaning for TransactionResponse {
     const ABSENCE: AbsenceMeaning = AbsenceMeaning::TransactionIsAbsent;
 }
 
-/// The ledger info is the REST API root, which every Aptos node serves.
+/// Every Aptos node serves the ledger info at its REST API base.
 impl HasAbsenceMeaning for LedgerInfoResponse {
     const ABSENCE: AbsenceMeaning = AbsenceMeaning::ApiIsNotServed;
 }
@@ -137,8 +137,7 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
             AptosRpcError::ApiError { status, .. } if status >= 500 => {
                 ForeignChainInspectionError::RpcRequestFailed(message)
             }
-            // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
-            // retrying cannot change them, so they count as substantive verdicts.
+            // Retrying cannot change a deterministic 4xx, so it counts as a substantive verdict.
             AptosRpcError::ApiError { .. } => {
                 ForeignChainInspectionError::RpcRequestRejected(message)
             }
@@ -292,7 +291,6 @@ mod tests {
     };
     use rstest::rstest;
 
-    /// Mainnet, as the docs and the config templates ship it.
     const MAINNET_CHAIN_ID: u64 = 1;
 
     struct MockAptosClient {
@@ -878,7 +876,7 @@ mod tests {
     #[case::internal_error(500)]
     #[case::bad_request(400)]
     #[case::unauthorized(401)]
-    fn classified__should_read_every_status_but_404_alike(#[case] status: u16) {
+    fn classified__should_treat_404_as_the_only_resource_dependent_status(#[case] status: u16) {
         // Given
         let read_as_transaction: Result<TransactionResponse, _> =
             Err(MockAptosClient::error(status));

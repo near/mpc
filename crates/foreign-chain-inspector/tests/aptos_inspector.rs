@@ -211,7 +211,7 @@ async fn extract__should_classify_http_errors_by_status(
 
 #[tokio::test]
 async fn extract__should_reject_a_response_that_does_not_carry_the_resource() {
-    // Given — a URL that answers but serves something other than the Aptos REST API.
+    // Given
     let server = MockServer::start();
     server.mock(|when, then| {
         when.method(GET).path(tx_path());
@@ -226,7 +226,7 @@ async fn extract__should_reject_a_response_that_does_not_carry_the_resource() {
         .extract(tx_id(), AptosFinality::Committed, vec![])
         .await;
 
-    // Then — the endpoint is wrong, not slow, so retrying it cannot help.
+    // Then
     let error = response.expect_err("extract should fail");
     assert_matches!(error, ForeignChainInspectionError::MalformedRpcResponse(_));
     assert!(!error.is_transient());
