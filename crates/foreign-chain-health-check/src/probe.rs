@@ -348,6 +348,13 @@ mod tests {
         }
     }
 
+    fn bitcoin_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            bitcoin: Some(config),
+            ..Default::default()
+        }
+    }
+
     fn must_put_chain(
         chains: &mut ForeignChainsConfig,
         chain: ForeignChain,
@@ -840,13 +847,10 @@ mod tests {
         // Given
         let server = httpmock::MockServer::start_async().await;
         mock_fingerprint(&server, BITCOIN_MAINNET).await;
-        let config = ForeignChainsConfig {
-            bitcoin: Some(chain_config(
-                Some(BITCOIN_MAINNET),
-                one_provider("publicnode", &server.base_url()),
-            )),
-            ..Default::default()
-        };
+        let config = bitcoin_only(chain_config(
+            Some(BITCOIN_MAINNET),
+            one_provider("publicnode", &server.base_url()),
+        ));
 
         // When
         let report = probe_all_providers(&config).await;
@@ -863,13 +867,10 @@ mod tests {
         // Given
         let server = httpmock::MockServer::start_async().await;
         mock_fingerprint(&server, BITCOIN_TESTNET3).await;
-        let config = ForeignChainsConfig {
-            bitcoin: Some(chain_config(
-                Some(BITCOIN_MAINNET),
-                one_provider("publicnode", &server.base_url()),
-            )),
-            ..Default::default()
-        };
+        let config = bitcoin_only(chain_config(
+            Some(BITCOIN_MAINNET),
+            one_provider("publicnode", &server.base_url()),
+        ));
 
         // When
         let report = probe_all_providers(&config).await;
