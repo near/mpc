@@ -1014,6 +1014,7 @@ pub mod testing {
         pub const MIGRATION_WEBSERVER_BACKUP_NOT_SERVED_TEST: TestPorts =
             TestPorts::mpc_node_tests(27);
         pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
+        pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
     }
 
     pub fn generate_test_p2p_configs(
