@@ -171,9 +171,11 @@ scripted parts of a release. It offers two things:
    cluster via [`scripts/ops/dev-cluster/dev-menu.sh`](./scripts/ops/dev-cluster/dev-menu.sh).
 
 The dev-cluster flow asks for the network (testnet first, then mainnet), the
-version, and the cluster's Nomad IP and credentials, then swaps each
-`mpc-node-*` Nomad job to the release image (plan, confirm, run) and checks the
-nodes report the new `release=` in their build info.
+version, and the cluster's Nomad IP and credentials, then runs the upgrade in
+runbook order: swap each `mpc-node-*` Nomad job to the release image (plan,
+confirm, run), check the nodes report the new `release=` in their build info,
+offer a test signature, and finally — only for releases that change
+`crates/contract` — propose and vote the contract update.
 
 Every command is printed before it runs and every write is behind a
 confirmation prompt, so a run can be stopped at any step. Nothing
