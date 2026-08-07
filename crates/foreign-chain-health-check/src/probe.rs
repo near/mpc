@@ -249,7 +249,7 @@ mod tests {
             self.chain_id.to_string()
         }
 
-        /// The form `eth_chainId` answers.
+        /// The `0xXXX` hex quantity an RPC provider answers to an `eth_chainId` request.
         fn answered(&self) -> String {
             format!("{:#x}", self.chain_id)
         }
