@@ -49,12 +49,22 @@ All files will be written into the specified output directory.
 
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
-5. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
+5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,
+   `ed25519:<base58>`, matching the format of the `.pub` files). It is not part of
+   `public_data.json` — export it from the node itself (`secrets.json` in the node
+   home directory; on a dev image you can fetch it over SSH). It must be the secret
+   counterpart of `near_account_public_key.pub`: sandbox tests sign
+   `submit_participant_info` with it, because the quote's `report_data` binds that
+   key and the contract reads it from the transaction signer (see issue #3787).
+   The fixture account is a throwaway dev account with no standing on any network,
+   which is the only reason its secret key may live in the repo.
+
+6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
    This is optional — the tests only verify parsing, not measurement values — but keeping it
    in sync avoids confusion.
 
-6. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
+7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
    - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
    - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
 
@@ -81,4 +91,12 @@ cargo test -p mpc-contract test_tee_attestation_fails_with_invalid_tls_key
 cargo test -p mpc-contract test_submit_participant_info_fails_without_approved_mpc_hash
 cargo test -p mpc-contract test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation
 cargo test -p test-utils
+```
+
+The cross-contract sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`
+also depend on these assets (including `near_account_secret_key` for the tests that
+sign as the fixture account):
+
+```shell
+cargo nextest run --cargo-profile=test-release -p mpc-contract tee_verifier --run-ignored all
 ```

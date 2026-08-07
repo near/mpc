@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 
 use super::transactions::{SandboxCaller, all_receipts_successful};
-use mpc_contract::tee::tee_state::NodeId;
+use mpc_contract::tee::{measurements::ContractExpectedMeasurements, tee_state::NodeId};
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
         Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
+        VerifiedAttestation,
     },
 };
 use near_workspaces::{
@@ -104,10 +105,31 @@ pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
         .unwrap()
 }
 
+/// Note: `get_attestation` actually returns an optional [`VerifiedAttestation`];
+/// parsing it as [`Attestation`] only works for `Mock` and `None` results
+/// (the variants share their JSON shape). Use [`get_verified_attestation`] for
+/// anything that can hold a stored `Dstack` entry.
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<Option<Attestation>> {
+    let result = contract
+        .as_account()
+        .call(contract.id(), method_names::GET_ATTESTATION)
+        .args_json(serde_json::json!({
+            "tls_public_key": tls_key
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+
+    Ok(result.json()?)
+}
+
+pub async fn get_verified_attestation(
+    contract: &Contract,
+    tls_key: &Ed25519PublicKey,
+) -> anyhow::Result<Option<VerifiedAttestation>> {
     let result = contract
         .as_account()
         .call(contract.id(), method_names::GET_ATTESTATION)
@@ -168,6 +190,20 @@ pub async fn vote_add_launcher_hash(
     let result = account
         .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
         .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn vote_add_os_measurement(
+    account: &Account,
+    contract: &Contract,
+    measurement: &ContractExpectedMeasurements,
+) -> anyhow::Result<()> {
+    let result = account
+        .call(contract.id(), method_names::VOTE_ADD_OS_MEASUREMENT)
+        .args_json(serde_json::json!({"measurement": measurement}))
         .transact()
         .await?;
     all_receipts_successful(result)?;

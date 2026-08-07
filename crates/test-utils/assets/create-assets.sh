@@ -54,3 +54,14 @@ printf "%s" "$(grep 'DEFAULT_IMAGE_DIGEST' "$OUTPUT_DIR/launcher_image_compose.y
 
 echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
+
+# The secret counterpart of near_account_public_key.pub is not part of
+# public_data: it must be exported from the node (secrets.json in the node
+# home dir) by whoever regenerates the assets. Without it, the sandbox tests
+# that sign as the fixture account cannot run (issue #3787).
+if [ ! -f "$OUTPUT_DIR/near_account_secret_key" ]; then
+    echo ""
+    echo "WARNING: '$OUTPUT_DIR/near_account_secret_key' is missing."
+    echo "Copy the node's NEAR signer secret key (ed25519:<base58>, one line) there,"
+    echo "or the fixture keypair will drift apart. See README.md."
+fi
