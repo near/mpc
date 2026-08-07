@@ -50,14 +50,20 @@ All files will be written into the specified output directory.
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
 5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,
-   `ed25519:<base58>`, matching the format of the `.pub` files). It is not part of
-   `public_data.json` — export it from the node itself (`secrets.json` in the node
-   home directory; on a dev image you can fetch it over SSH). It must be the secret
-   counterpart of `near_account_public_key.pub`: sandbox tests sign
-   `submit_participant_info` with it, because the quote's `report_data` binds that
-   key and the contract reads it from the transaction signer (see issue #3787).
-   The fixture account is a throwaway dev account with no standing on any network,
-   which is the only reason its secret key may live in the repo.
+   `ed25519:<base58>`, matching the format of the `.pub` files). Sandbox tests sign
+   `submit_participant_info` with it, because the quote's `report_data` binds that key
+   and the contract reads it from the transaction signer. It is not part of
+   `public_data.json`: it lives in `secrets.json` inside the CVM and has to be
+   exported during collection, which is what the `PRELAUNCH_SCRIPT` in
+   [the rust-launcher README](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key)
+   is for. The fixture node is a throwaway localnet node, which is the only reason its
+   secret key may live in the repo.
+
+   Because of that export hook, the fixture's app-compose carries a
+   `pre_launch_script`, which production verification rejects as arbitrary root code.
+   Test builds accept it via `attestation/allow-pre-launch-script` (and, for the
+   sandbox wasm, `mpc-contract/sandbox-test-attestation`). Keep the hook minimal, and
+   do not treat this fixture as an example of a production-valid attestation.
 
 6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
