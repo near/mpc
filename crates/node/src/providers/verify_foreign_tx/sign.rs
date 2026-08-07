@@ -52,6 +52,23 @@ fn build_signature_request(
     })
 }
 
+// Awaits on the future for specified grace duration, and calls on_slow
+// if grace period expires.
+async fn await_with_slow_hook<F: Future>(
+    grace: Duration,
+    fut: F,
+    on_slow: impl FnOnce(),
+) -> F::Output {
+    tokio::pin!(fut);
+    match timeout(grace, &mut fut).await {
+        Ok(output) => output,
+        Err(_) => {
+            on_slow();
+            fut.await
+        }
+    }
+}
+
 impl VerifyForeignTxProvider {
     pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
@@ -90,22 +107,20 @@ impl VerifyForeignTxProvider {
         // alive condition and be a subset of the chain's supporters. Since
         // presignature generation is not chain-aware, a compatible one may
         // not exist yet, count and log when the take has to wait.
-        let take = keyshare
-            .presignature_store
-            .take_owned_matching(chain_supporters.iter().copied().collect());
-        tokio::pin!(take);
-        let (presignature_id, presignature) =
-            match timeout(PRESIGNATURE_TAKE_GRACE_PERIOD, &mut take).await {
-                Ok(taken) => taken,
-                Err(_) => {
-                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS.inc();
-                    tracing::warn!(
-                        ?requested_chain,
-                        "no chain-compatible presignature available, waiting"
-                    );
-                    take.await
-                }
-            };
+        let (presignature_id, presignature) = await_with_slow_hook(
+            PRESIGNATURE_TAKE_GRACE_PERIOD,
+            keyshare
+                .presignature_store
+                .take_owned_matching(chain_supporters.iter().copied().collect()),
+            || {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS.inc();
+                tracing::warn!(
+                    ?requested_chain,
+                    "no chain-compatible presignatures available, waiting"
+                )
+            },
+        )
+        .await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {

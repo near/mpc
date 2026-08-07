@@ -289,8 +289,7 @@ where
                             continue;
                         }
                         received = self.hot_receiver.recv_async() => {
-                            // can't fail, because self keeps a sender.
-                            let (id, value) = received.unwrap();
+                            let (id, value) = received.expect("should never fail because self keeps a sender");
                             match self.cold_queue.lock().unwrap().add_if_condition_not_satisfied(id, value) {
                                 ColdQueueAddIfNotSatisfiedResult::ConditionSatisfied(value) => {
                                     return (id, value);
@@ -323,9 +322,8 @@ where
                     continue;
                 }
                 received = self.hot_receiver.recv_async() => {
-                    // can't fail, because self keeps a sender.
-                    let (id, val) = received.unwrap();
-                    self.cold_queue.lock().unwrap().ingest(id, val);
+                    let (id, value) = received.expect("should never fail because self keeps a sender");
+                    self.cold_queue.lock().unwrap().ingest(id, value);
                 }
             }
         }
@@ -640,6 +638,8 @@ where
         update.delete(self.col, &self.make_key(id));
         update
             .commit()
+            // TODO(#4090): propagate err instead in here and rest of the functions
+            // in this file.
             .expect("Unrecoverable error writing to database");
         (id, val)
     }
