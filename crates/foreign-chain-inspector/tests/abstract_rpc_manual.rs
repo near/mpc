@@ -1,14 +1,12 @@
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     abstract_chain::{
         AbstractBlockHash, AbstractTransactionHash,
         inspector::{AbstractExtractedValue, AbstractExtractor, AbstractInspector},
     },
 };
 
-// Note: Replace with your actual Abstract RPC endpoint URL
-// Example: QuickNode Abstract endpoint
 const ABSTRACT_RPC_URL: &str = "https://api.testnet.abs.xyz";
 
 #[tokio::test]
@@ -72,10 +70,10 @@ async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_p
     let inspector = AbstractInspector::new(http_client);
 
     // when
-    let fingerprint =
-        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
-            .await
-            .expect("network_fingerprint should succeed");
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
 
     // then
     assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);

@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     polygon::{
         PolygonBlockHash, PolygonTransactionHash,
         inspector::{PolygonExtractedValue, PolygonExtractor, PolygonInspector},
@@ -74,10 +74,10 @@ async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_p
     let inspector = PolygonInspector::new(http_client);
 
     // when
-    let fingerprint =
-        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
-            .await
-            .expect("network_fingerprint should succeed");
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
 
     // then
     assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
