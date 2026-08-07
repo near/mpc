@@ -120,6 +120,10 @@ impl EcdsaSignatureProvider {
     ) -> anyhow::Result<NetworkTaskChannel> {
         self.client.new_channel_for_task(task_id, participants)
     }
+
+    pub(super) fn my_participant_id(&self) -> ParticipantId {
+        self.client.my_participant_id()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
