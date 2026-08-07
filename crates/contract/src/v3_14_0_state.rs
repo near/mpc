@@ -11,7 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 use near_sdk::{
     AccountId, env,
-    store::{Lazy, LookupMap},
+    store::{IterableMap, Lazy, LookupMap},
 };
 
 use crate::{
@@ -24,9 +24,70 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
     update::ProposedUpdates,
 };
+
+/// Shadow of the `3.14.0` [`Config`]: the deployed layout predates this release's
+/// `attestation_storage_fee_millinear`, so migrating `3.14.0` state deserializes the old
+/// field set and defaults the new one.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldConfig {
+    key_event_timeout_blocks: u64,
+    tee_upgrade_deadline_duration_seconds: u64,
+    contract_upgrade_deposit_tera_gas: u64,
+    sign_call_gas_attachment_requirement_tera_gas: u64,
+    ckd_call_gas_attachment_requirement_tera_gas: u64,
+    return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    fail_on_timeout_tera_gas: u64,
+    fail_attestation_submission_tera_gas: u64,
+    clean_tee_status_tera_gas: u64,
+    clean_invalid_attestations_tera_gas: u64,
+    cleanup_orphaned_node_migrations_tera_gas: u64,
+    remove_non_participant_update_votes_tera_gas: u64,
+    clean_foreign_chain_data_tera_gas: u64,
+    remove_non_participant_tee_verifier_votes_tera_gas: u64,
+    verifier_tera_gas: u64,
+    resolve_verification_tera_gas: u64,
+    launcher_hash_unused_ttl_seconds: u64,
+}
+
+impl From<OldConfig> for Config {
+    fn from(old: OldConfig) -> Self {
+        // Carry the deployed values; the attestation-storage fee is new in this release, so
+        // it takes its default.
+        Config {
+            key_event_timeout_blocks: old.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: old
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: old
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: old
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: old
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: old.fail_attestation_submission_tera_gas,
+            clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: old.clean_invalid_attestations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: old
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: old
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
+            remove_non_participant_tee_verifier_votes_tera_gas: old
+                .remove_non_participant_tee_verifier_votes_tera_gas,
+            verifier_tera_gas: old.verifier_tera_gas,
+            resolve_verification_tera_gas: old.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
+            ..Default::default()
+        }
+    }
+}
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
@@ -39,7 +100,7 @@ pub struct MpcContract {
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
-    config: Config,
+    config: OldConfig,
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
@@ -62,13 +123,14 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
-            config: old.config,
+            config: old.config.into(),
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         }
     }
 }

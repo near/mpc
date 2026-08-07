@@ -386,7 +386,7 @@ pub struct Contract {
 }
 ```
 
-_Note_: submit_participant_info must be called by the node itself - the quote's report_data binds hash(tls_public_key, account_public_key) to env::signer_account_pk(), so a submission signed by any other key fails verification. Attestation storage is funded by the contract's own balance, so submissions attach no deposit and the node's function-call access key works for both a first-time (join) submission and re-attestations.
+_Note_: submit_participant_info must be called by the node itself - the quote's report_data binds hash(tls_public_key, account_public_key) to env::signer_account_pk(), so a submission signed by any other key fails verification. The node's function-call access key attaches no deposit; storing a new entry instead consumes an attestation-storage grant prepaid for the node's account by whoever onboards it, and a re-attestation consumes none. See `docs/design/operator-prepaid-attestation-storage.md`.
 
 ## MPC Node changes:
 

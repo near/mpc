@@ -40,6 +40,11 @@ pub const DEFAULT_PRESIGNATURES_TO_BUFFER: usize = 10;
 pub const CLUSTER_WAIT_TIMEOUT: Duration = Duration::from_secs(240);
 pub const CLUSTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Account id for node `i`. Single source for the cluster's node naming.
+fn node_account(i: usize) -> String {
+    format!("node{i}.{SANDBOX_ROOT_ACCOUNT}")
+}
+
 pub fn cluster_poll_retry() -> ConstantBuilder {
     ConstantBuilder::default()
         .with_delay(CLUSTER_POLL_INTERVAL)
@@ -1253,7 +1258,7 @@ async fn create_node_accounts(
     operator_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
     for (i, (near_key, operator_key)) in near_keys.iter().zip(operator_keys).enumerate() {
-        let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
+        let account = node_account(i);
         tracing::info!(account = %account, "creating MPC node account");
         blockchain
             .create_account_with_keys(&account, 100, &[near_key.clone(), operator_key.clone()])
@@ -1268,6 +1273,66 @@ struct InitContractArgs {
     threshold: usize,
     participant_indices: Vec<usize>,
     init_format: ContractInitFormat,
+}
+
+/// Prepays one attestation-storage grant for every node in the cluster.
+///
+/// For every node, not only the initial participants: a node joining in a later resharing
+/// attests from its own process with a function-call key, which cannot attach a deposit, so
+/// its grant has to exist before it ever submits.
+async fn prepay_attestation_grants(
+    blockchain: &NearBlockchain,
+    contract: &DeployedContract,
+    near_keys: &[SigningKey],
+) -> anyhow::Result<()> {
+    let Some(fee) = attestation_storage_fee(contract).await? else {
+        tracing::info!("contract config has no attestation storage fee; skipping prepayment");
+        return Ok(());
+    };
+
+    // Granting the initial participants too is harmless: their attestations update the
+    // sentinel entry written at init, so they consume nothing and the grant stays unspent.
+    for (i, near_key) in near_keys.iter().enumerate() {
+        let account = node_account(i);
+        let client = blockchain.client_for(&account, near_key).unwrap();
+        let outcome = contract
+            .call_from_with_deposit(
+                &client,
+                method_names::PREPAY_ATTESTATION_STORAGE,
+                json!({ "account_id": account, "grants": 1 }),
+                near_kit::Gas::from_tgas(30),
+                fee,
+            )
+            .await
+            .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
+        if !outcome.is_success() {
+            let failure = format!("{:?}", outcome.failure_message());
+            // A contract binary predating grants, as run by the upgrade-compatibility tests:
+            // it has no `prepay_attestation_storage` and needs no prepayment. Delete this
+            // branch, and `attestation_storage_fee`'s `None` case, once
+            // `contract_history::current_{mainnet,testnet}` point past 3.14.0, the last
+            // release without grants.
+            anyhow::ensure!(
+                failure.contains("method not found"),
+                "prepay for node {i} failed: {failure}"
+            );
+            tracing::info!("contract has no prepay_attestation_storage; skipping grant prepayment");
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+/// `None` when `config()` carries no fee field: a contract binary older than grants (3.14.0 and
+/// earlier), which the upgrade-compatibility tests run and which needs no prepayment.
+async fn attestation_storage_fee(
+    contract: &DeployedContract,
+) -> anyhow::Result<Option<near_kit::NearToken>> {
+    let config: serde_json::Value = contract.view("config").await?;
+    Ok(config["attestation_storage_fee_millinear"]
+        .as_u64()
+        .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
 }
 
 async fn init_contract(
@@ -1298,8 +1363,10 @@ async fn init_contract(
     );
     let init_config = json!({ "key_event_timeout_blocks": KEY_EVENT_TIMEOUT_BLOCKS });
     let parameters_json = init_format.init_parameters_json(&params)?;
+    // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
+    // next, and a view resolves against the last final block.
     let outcome = contract
-        .call(
+        .call_final(
             method_names::INIT,
             json!({ "parameters": parameters_json, "init_config": init_config }),
         )
@@ -1310,8 +1377,10 @@ async fn init_contract(
         outcome.failure_message()
     );
 
+    prepay_attestation_grants(blockchain, contract, &near_keys).await?;
+
     for &i in &participant_indices {
-        let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
+        let account = node_account(i);
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
         contract
@@ -1340,7 +1409,7 @@ async fn add_initial_domains(
     let args = json!({ "domains": domains });
 
     for &i in participant_indices {
-        let account = format!("node{i}.{SANDBOX_ROOT_ACCOUNT}");
+        let account = node_account(i);
         let client = blockchain.client_for(&account, &operator_keys[i])?;
         contract
             .call_from(&client, method_names::VOTE_ADD_DOMAINS, args.clone())
@@ -1399,7 +1468,7 @@ fn start_mpc_nodes(
             node_index: i,
             home_dir: test_dir.join(format!("node{i}")),
             binary_path,
-            signer_account_id: format!("node{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?,
+            signer_account_id: node_account(i).parse()?,
             p2p_signing_key: p2p_keys[i].clone(),
             near_signer_key: near_keys[i].clone(),
             ports: NodePorts::from_allocator(ports, i),
@@ -1468,8 +1537,7 @@ fn build_participants(
 ) -> Participants {
     let mut list = Vec::new();
     for (participant_id, &i) in indices.iter().enumerate() {
-        let account_id: ContractAccountId =
-            format!("node{i}.{SANDBOX_ROOT_ACCOUNT}").parse().unwrap();
+        let account_id: ContractAccountId = node_account(i).parse().unwrap();
         let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&p2p_keys[i].verifying_key());
         list.push((
             account_id,

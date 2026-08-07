@@ -254,6 +254,10 @@ BorshSchemaContainer {
                         "launcher_hash_unused_ttl_seconds",
                         "u64",
                     ),
+                    (
+                        "attestation_storage_fee_millinear",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -719,6 +723,10 @@ BorshSchemaContainer {
                     (
                         "tee_verifier_votes",
                         "TeeVerifierVotes",
+                    ),
+                    (
+                        "available_attestation_grants",
+                        "IterableMap",
                     ),
                 ],
             ),

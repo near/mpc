@@ -682,6 +682,46 @@ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manuall
 
 For more details, please refer to the NEAR account documentation.
 
+### Prepay Your Node's Attestation Storage
+
+The contract charges a one-time fee for the storage your node's attestation occupies. One prepayment buys one **grant**: permission for the node account to hold one stored attestation.
+
+**The fee is currently 20 milliNEAR (0.02 NEAR) per grant**, so a typical operator running one node pays 0.04 NEAR — one grant for the node, one spare (see below). The fee is a votable contract parameter rather than a constant, so read the current value before paying rather than trusting this number; the steps below show how.
+
+The node cannot pay for this itself. Its access key is a function-call key, and the NEAR protocol forbids those from attaching a deposit — so the operator prepays, using the full-access key of the account you just created.
+
+Do this now, before the CVM is started. `prepay_attestation_storage` needs only the account id, so nothing waits on the node's keys, and the node will not start up into a state where its attestation submissions are rejected.
+
+First read the current fee, `attestation_storage_fee_millinear`, in milliNEAR:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer config json-args '{}' network-config mainnet now \
+  | jq .attestation_storage_fee_millinear
+```
+
+Then prepay that many multiples of it. Ask for one grant per node you run plus one spare, so you can re-provision or migrate without waiting for the old attestation to expire. At the current 20 milliNEAR fee, the two grants below cost 0.04 NEAR:
+
+```bash
+near contract call-function as-transaction \
+  v1.signer prepay_attestation_storage \
+  json-args '{"account_id":"<YOUR_NODE_ACCOUNT>","grants":2}' \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.04 NEAR' \
+  sign-as <YOUR_OPERATOR_ACCOUNT> network-config mainnet sign-with-keychain send
+```
+
+The attached deposit must equal the fee times `grants` exactly; anything else is rejected. Nothing is refunded, and there is no withdrawal — so **check the account id carefully**: a grant prepaid to a mistyped or non-existent account cannot be recovered or redirected, and the fee is lost.
+
+Confirm it landed:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer available_attestation_grants \
+  json-args '{"account_id":"<YOUR_NODE_ACCOUNT>"}' network-config mainnet now
+```
+
+A node that is already attested needs no action here: re-attesting an existing entry consumes no grant.
+
 ### Prepare MPC Node Configuration
 
 Create a `user-config.toml` file based on the [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template.
@@ -1282,8 +1322,7 @@ Once the MPC node is fully synced, it will call `submit_participant_info` to sub
 
 If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
 
-> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.
-> _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
+> **Note:** The node attaches no deposit. The storage it needs must already have been prepaid by the operator — see [Prepay Your Node's Attestation Storage](#prepay-your-nodes-attestation-storage). Without a grant the submission is rejected and the node retries in a loop.
 
 #### Verifying the attestation was accepted
 
