@@ -665,20 +665,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "Metrics": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "sign_with_v1_payload_count",
-                        "u64",
-                    ),
-                    (
-                        "sign_with_v2_payload_count",
-                        "u64",
-                    ),
-                ],
-            ),
-        },
         "MpcContract": Struct {
             fields: NamedFields(
                 [
@@ -721,10 +707,6 @@ BorshSchemaContainer {
                     (
                         "node_migrations",
                         "NodeMigrations",
-                    ),
-                    (
-                        "metrics",
-                        "Metrics",
                     ),
                     (
                         "foreign_chains",

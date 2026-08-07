@@ -66,7 +66,7 @@ use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDResponse, Metrics, ProposeUpdateArgs, VerifyForeignTransactionRequest,
+    self as dtos, CKDResponse, ProposeUpdateArgs, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
@@ -177,8 +177,6 @@ pub struct MpcContract {
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
-    // TODO(#2937): Remove via state migration.
-    metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
     /// The verifier contract account trusted for DCAP verification, or [`None`]
     /// until participants vote one in. An [`Attestation::Dstack`] submission
@@ -2019,7 +2017,6 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -2106,7 +2103,6 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -2146,10 +2142,6 @@ impl MpcContract {
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
         (&self.protocol_state).into_dto_type()
-    }
-
-    pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
-        self.metrics.clone()
     }
 
     /// Returns all allowed code hashes in descending order of their expiry
@@ -5133,7 +5125,6 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                metrics: Default::default(),
                 foreign_chains: Lazy::new(
                     StorageKey::ForeignChainMetadata,
                     ForeignChainsMetadata::default(),

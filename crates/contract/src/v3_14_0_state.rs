@@ -8,7 +8,7 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
+use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 use near_sdk::{
     AccountId, env,
     store::{Lazy, LookupMap},
@@ -66,10 +66,16 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
-            metrics: old.metrics,
             foreign_chains: old.foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
         }
     }
+}
+
+/// Unused signature counters, dropped by the migration.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct Metrics {
+    sign_with_v1_payload_count: u64,
+    sign_with_v2_payload_count: u64,
 }
