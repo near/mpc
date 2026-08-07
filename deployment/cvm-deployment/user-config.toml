@@ -147,7 +147,7 @@ timeout_sec = 30
 max_retries = 3
 expected_network_fingerprint = "11124"
 
-[mpc_node_config.node.foreign_chains.abstract.providers.public]
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.testnet.abs.xyz"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
@@ -171,7 +171,7 @@ timeout_sec = 30
 max_retries = 3
 expected_network_fingerprint = "0x534e5f5345504f4c4941"  # SN_SEPOLIA
 
-[mpc_node_config.node.foreign_chains.starknet.providers.public]
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
 
 [mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
@@ -271,7 +271,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 # max_retries = 3
 # expected_network_fingerprint = "2741"
 #
-# [mpc_node_config.node.foreign_chains.abstract.providers.public]
+# [mpc_node_config.node.foreign_chains.abstract.providers.abstract-mainnet]
 # rpc_url = "https://api.mainnet.abs.xyz"
 #
 # [mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
@@ -295,7 +295,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 # max_retries = 3
 # expected_network_fingerprint = "0x534e5f4d41494e"  # SN_MAIN
 #
-# [mpc_node_config.node.foreign_chains.starknet.providers.public]
+# [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 # rpc_url = "https://starknet-rpc.publicnode.com"
 #
 # [mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
