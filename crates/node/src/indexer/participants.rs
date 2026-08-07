@@ -327,7 +327,7 @@ pub async fn monitor_contract_state(
 
             let (height, protocol_state) = match indexer_state
                 .view_client
-                .get_mpc_contract_state_dto(indexer_state.mpc_contract_id.clone())
+                .get_mpc_contract_state_dto()
                 .await
             {
                 Ok(contract_state) => contract_state,

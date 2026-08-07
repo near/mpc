@@ -4,7 +4,6 @@ use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     AllowedMpcDockerImageHash, ChainEntry, ForeignChain, NodeId,
 };
@@ -24,11 +23,10 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
     get_mpc_allowed_hashes: &Fetcher,
 ) where
     T: PartialEq,
-    Fetcher: Fn(AccountId) -> FetcherResponseFuture + Send + Sync,
+    Fetcher: Fn() -> FetcherResponseFuture + Send + Sync,
     FetcherResponseFuture: Future<Output = anyhow::Result<(u64, T)>> + Send,
 {
     let fetch_allowed_hashes = {
-        let indexer_state = indexer_state.clone();
         async move || {
             let mut backoff = ExponentialBuilder::default()
                 .with_min_delay(MIN_BACKOFF_DURATION)
@@ -38,7 +36,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
                 .build();
 
             loop {
-                match get_mpc_allowed_hashes(indexer_state.mpc_contract_id.clone()).await {
+                match get_mpc_allowed_hashes().await {
                     Ok((_block_height, allowed_hashes)) => {
                         break allowed_hashes;
                     }
@@ -81,7 +79,7 @@ pub async fn monitor_allowed_docker_images(
     indexer_state: Arc<IndexerState>,
 ) {
     let view_client = indexer_state.view_client.clone();
-    let fetcher = { |id| view_client.get_mpc_allowed_image_hashes(id) };
+    let fetcher = { || view_client.get_mpc_allowed_image_hashes() };
 
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }
@@ -95,7 +93,7 @@ pub async fn monitor_allowed_launcher_compose_hashes(
     indexer_state: Arc<IndexerState>,
 ) {
     let view_client = indexer_state.view_client.clone();
-    let fetcher = { |id| view_client.get_mpc_allowed_launcher_compose_hashes(id) };
+    let fetcher = { || view_client.get_mpc_allowed_launcher_compose_hashes() };
 
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }
@@ -110,11 +108,7 @@ async fn fetch_tee_accounts_with_retry(indexer_state: &IndexerState) -> Vec<Node
         .build();
 
     loop {
-        match indexer_state
-            .view_client
-            .get_mpc_tee_accounts(indexer_state.mpc_contract_id.clone())
-            .await
-        {
+        match indexer_state.view_client.get_mpc_tee_accounts().await {
             Ok((_block_height, tee_accounts)) => return tee_accounts,
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading TEE accounts from chain: {:?}", e);
@@ -160,7 +154,7 @@ async fn fetch_allowed_foreign_chain_providers_with_retry(
     loop {
         match indexer_state
             .view_client
-            .get_allowed_foreign_chain_providers(indexer_state.mpc_contract_id.clone())
+            .get_allowed_foreign_chain_providers()
             .await
         {
             Ok(whitelist) => return whitelist,
