@@ -68,7 +68,7 @@ impl NetworkFingerprint {
             None => Self(within_cap),
             Some(_) => {
                 let kept: String = within_cap.chars().take(KEPT_CHARS).collect();
-                Self(kept + Self::CUT_SHORT_MARKER)
+                Self(format!("{kept}{}", Self::CUT_SHORT_MARKER))
             }
         }
     }
