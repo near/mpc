@@ -782,7 +782,7 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` / `foreign_chains` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, use the full per-network provider set in [Foreign chain RPC providers](#foreign-chain-rpc-providers).
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
@@ -824,6 +824,237 @@ modify the `pccs_endpoints` array. Whatever entries you list become
 the entire fallback chain, in order — no defaults are auto-inserted.
 
 For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendix-self-hosting-a-local-pccs).
+
+### Foreign chain RPC providers
+
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+
+You need your own API keys:
+
+* **Alchemy** — https://www.alchemy.com → create an App, copy the API key
+* **QuickNode** — https://www.quicknode.com → create a Multi-chain Endpoint, copy the endpoint URL (your slug and API key are embedded in it)
+* **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
+
+> **Important:**
+>
+> * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
+> * Before deploying, verify your config with the [foreign-chain config tester](../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
+
+Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
+
+**Testnet:**
+
+```toml
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url = "https://api.testnet.abs.xyz"
+
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
+rpc_url = "https://abstract-testnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.abstract-testnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
+rpc_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.strk-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.aptos.providers.public]
+rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
+
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy]
+rpc_url = "https://aptos-testnet.g.alchemy.com/v2/{API_KEY}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.aptos-testnet.quiknode.pro/{api_key}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi]
+rpc_url = "https://api.testnet.aptoslabs.com/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_GEOMI_API_KEY" }
+
+# Sui speaks gRPC: keys go in headers, never in the URL.
+[mpc_node_config.node.foreign_chains.sui]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.sui.providers.public]
+rpc_url = "https://archive.testnet.sui.io"
+[mpc_node_config.node.foreign_chains.sui.providers.public.auth]
+kind = "none"
+
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy]
+rpc_url = "https://sui-testnet.g.alchemy.com"
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
+kind = "header"
+name = "x-token"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+```
+
+**Mainnet:**
+
+```toml
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url = "https://bitcoin-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url = "https://api.mainnet.abs.xyz"
+
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
+rpc_url = "https://abstract-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.abstract-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url = "https://starknet-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
+rpc_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.strk-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.aptos.providers.public]
+rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
+
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy]
+rpc_url = "https://aptos-mainnet.g.alchemy.com/v2/{API_KEY}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.aptos-mainnet.quiknode.pro/{api_key}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi]
+rpc_url = "https://api.mainnet.aptoslabs.com/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_GEOMI_API_KEY" }
+
+# Sui speaks gRPC: keys go in headers, never in the URL.
+[mpc_node_config.node.foreign_chains.sui]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.sui.providers.public]
+rpc_url = "https://archive.mainnet.sui.io"
+[mpc_node_config.node.foreign_chains.sui.providers.public.auth]
+kind = "none"
+
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy]
+rpc_url = "https://sui-mainnet.g.alchemy.com"
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
+kind = "header"
+name = "x-token"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+```
 
 ### Preparing a Docker Compose File
 
