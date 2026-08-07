@@ -238,15 +238,49 @@ mod tests {
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
 
-    /// Every EVM chain the probe covers: what `eth_chainId` answers on mainnet, and the decimal
-    /// chain id an operator configures.
-    const EVM_MAINNETS: [(ForeignChain, &str, &str); 6] = [
-        (ForeignChain::Abstract, "0xab5", "2741"),
-        (ForeignChain::Arbitrum, "0xa4b1", "42161"),
-        (ForeignChain::Base, "0x2105", "8453"),
-        (ForeignChain::Bnb, "0x38", "56"),
-        (ForeignChain::HyperEvm, "0x3e7", "999"),
-        (ForeignChain::Polygon, "0x89", "137"),
+    struct EvmMainnet {
+        chain: ForeignChain,
+        chain_id: u64,
+    }
+
+    impl EvmMainnet {
+        /// The form an operator configures.
+        fn expected(&self) -> String {
+            self.chain_id.to_string()
+        }
+
+        /// The form `eth_chainId` answers.
+        fn answered(&self) -> String {
+            format!("{:#x}", self.chain_id)
+        }
+    }
+
+    /// Every EVM chain the probe covers, with its mainnet chain id.
+    const EVM_MAINNETS: [EvmMainnet; 6] = [
+        EvmMainnet {
+            chain: ForeignChain::Abstract,
+            chain_id: 2741,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Arbitrum,
+            chain_id: 42161,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Base,
+            chain_id: 8453,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Bnb,
+            chain_id: 56,
+        },
+        EvmMainnet {
+            chain: ForeignChain::HyperEvm,
+            chain_id: 999,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Polygon,
+            chain_id: 137,
+        },
     ];
 
     fn provider(rpc_url: &str) -> ForeignChainProviderConfig {
@@ -736,14 +770,14 @@ mod tests {
         // Given
         let mut servers = Vec::new();
         let mut config = ForeignChainsConfig::default();
-        for (chain, answered, expected) in EVM_MAINNETS {
+        for mainnet in EVM_MAINNETS {
             let server = httpmock::MockServer::start_async().await;
-            mock_chain_id(&server, answered).await;
+            mock_chain_id(&server, &mainnet.answered()).await;
             must_put_chain(
                 &mut config,
-                chain,
+                mainnet.chain,
                 chain_config(
-                    Some(expected),
+                    Some(&mainnet.expected()),
                     one_provider("publicnode", &server.base_url()),
                 ),
             );
@@ -754,7 +788,7 @@ mod tests {
         let report = probe_all_providers(&config).await;
 
         // Then
-        for (chain, _, _) in EVM_MAINNETS {
+        for EvmMainnet { chain, .. } in EVM_MAINNETS {
             assert_eq!(
                 must_status_of(&report, chain, "publicnode"),
                 ProviderStatus::Healthy,
