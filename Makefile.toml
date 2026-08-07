@@ -165,7 +165,7 @@ args = ["scripts/check-sandbox-image-version.sh"]
 
 # These build tasks are the single source of truth for both local and CI builds.
 # CI's `mpc-e2e-tests` job invokes them via `cargo make`.
-# All three are skipped when `E2E_SKIP_BUILD` is set (used by `e2e-tests-skip-build`).
+# Each is skipped when `E2E_SKIP_BUILD` is set (used by `e2e-tests-skip-build`).
 
 [tasks.build-mpc-node-network-hardship-simulation]
 description = "Build the mpc-node binary used by the E2E tests"
@@ -203,6 +203,9 @@ args = [
 
 [tasks.build-tee-verifier-optimized]
 description = "Build the tee-verifier WASM for localnet and the E2E tests"
+# `scripts/launch-localnet.sh` tells operators to run this task by hand; with
+# `E2E_SKIP_BUILD` exported it no-ops (cargo-make logs "Skipping Task"), and the E2E
+# loader's panic names this task so a missing WASM points back here.
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 command = "cargo"
 args = [

@@ -231,6 +231,15 @@ impl MpcClusterConfig {
                 self.num_nodes,
             );
         }
+        // Startup indexes the key vectors by participant index, so an out-of-range
+        // entry here would otherwise surface as a panic mid-startup.
+        for (i, &participant_idx) in self.initial_participant_indices.iter().enumerate() {
+            anyhow::ensure!(
+                participant_idx < self.num_nodes,
+                "initial_participant_indices[{i}]: index {participant_idx} must be < num_nodes ({})",
+                self.num_nodes,
+            );
+        }
         Ok(())
     }
 }
@@ -245,7 +254,8 @@ pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
         let wasm_path = PathBuf::from(&path);
         return std::fs::read(&wasm_path).unwrap_or_else(|e| {
             panic!(
-                "failed to read tee-verifier WASM at {}: {e}",
+                "failed to read tee-verifier WASM at {}: {e}. Build it with \
+                 `cargo make build-tee-verifier-optimized` (skipped when E2E_SKIP_BUILD is set)",
                 wasm_path.display()
             )
         });
@@ -263,7 +273,8 @@ pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
     }
 
     tracing::info!(
-        "MPC_TEE_VERIFIER_WASM not set and pre-built WASM not found — building tee-verifier"
+        "MPC_TEE_VERIFIER_WASM not set and pre-built WASM not found — building tee-verifier. \
+         Build it up front with `cargo make build-tee-verifier-optimized` to skip this."
     );
     test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml").build()
 }

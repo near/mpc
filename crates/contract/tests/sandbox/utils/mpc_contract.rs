@@ -7,8 +7,8 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
-        VerifiedAttestation,
+        Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
+        ProtocolContractState, VerifiedAttestation,
     },
 };
 use near_workspaces::{
@@ -21,6 +21,10 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
         .iter()
         .map(|outcome| outcome.tokens_burnt)
         .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+}
+
+pub async fn get_config(contract: &Contract) -> anyhow::Result<Config> {
+    Ok(contract.view(method_names::CONFIG).await?.json()?)
 }
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {

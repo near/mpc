@@ -11,7 +11,7 @@
 //! Verified-path tests that store an attestation must sign as the fixture
 //! account (the quote's report_data binds the fixture account key, and the
 //! contract reads that key from the transaction signer). They are ignored
-//! until the fixture secret key asset lands; see TODO(#3787).
+//! until the fixture secret key asset lands; see #3787.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -20,7 +20,7 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         contract_build::{tee_verifier_contract, tee_verifier_contract_with_sandbox_test_hooks},
         mpc_contract::{
-            get_participant_attestation, get_tee_accounts, get_verified_attestation,
+            get_config, get_participant_attestation, get_tee_accounts, get_verified_attestation,
             submit_participant_info, tee_verifier_account_id, total_gas_fee,
             vote_add_launcher_hash, vote_add_os_measurement, vote_for_hash,
             vote_tee_verifier_change,
@@ -162,15 +162,15 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
     .unwrap()
 }
 
-/// Asserts a Dstack submission failed cleanly: a receipt failed carrying
-/// `expected_error` (`fail_attestation_submission` panics in its own receipt), no
-/// attestation was stored, and the caller spent only gas.
+/// Asserts a Dstack submission failed cleanly: a receipt failed mentioning every
+/// string in `expected_error` (`fail_attestation_submission` panics in its own
+/// receipt), no attestation was stored, and the caller spent only gas.
 async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
     contract: &Contract,
     submitter: &Account,
     balance_before: NearToken,
-    expected_error: &str,
+    expected_error: &[&str],
 ) {
     let failures = result.failures();
     assert!(
@@ -180,12 +180,16 @@ async fn assert_submission_failed_cleanly(
     // Substring-match: near-workspaces keeps `ExecutionOutcome.status`
     // `pub(crate)`, so the error is only reachable via the Debug dump.
     let rendered = format!("{failures:?}");
-    assert!(
-        rendered.contains(expected_error),
-        "expected a receipt failure containing {expected_error:?}, got: {rendered}"
-    );
+    for expected in expected_error {
+        assert!(
+            rendered.contains(expected),
+            "expected a receipt failure containing {expected:?}, got: {rendered}"
+        );
+    }
 
-    let stored = get_participant_attestation(contract, &p2p_tls_key().into())
+    // Typed as `VerifiedAttestation`: a wrongly stored Dstack entry must surface as
+    // this assertion, not as a deserialization panic in the view helper.
+    let stored = get_verified_attestation(contract, &p2p_tls_key().into())
         .await
         .unwrap();
     assert!(stored.is_none(), "nothing should be stored on failure");
@@ -291,10 +295,10 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
         &contract,
         &submitter,
         balance_before,
-        &TeeError::QuoteRejected {
+        &[&TeeError::QuoteRejected {
             reason: String::new(),
         }
-        .to_string(),
+        .to_string()],
     )
     .await;
 }
@@ -321,14 +325,10 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
         &contract,
         &submitter,
         balance_before,
-        &TeeError::VerifierUnavailable.to_string(),
+        &[&TeeError::VerifierUnavailable.to_string()],
     )
     .await;
 }
-
-/// Mirrors the contract's default `verifier_tera_gas`; the config constants are
-/// crate-private, so the production budget is pinned here by value.
-const VERIFIER_TERA_GAS_BUDGET: u64 = 200;
 
 /// Tolerance for comparing an on-chain expiry stamp against this process's
 /// wall clock (sandbox block time tracks it loosely).
@@ -354,7 +354,7 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
     // Then: the real DCAP run succeeds within the production gas budget and its
     // Verified verdict reaches the callback. The submission then fails at the
     // post-DCAP report_data binding, because the submitter does not hold the
-    // fixture account key (TODO(#3787)); that terminal error is asserted to pin
+    // fixture account key (see #3787); that terminal error is asserted to pin
     // that the verdict was Verified, not Rejected.
     let outcomes = result.outcomes();
     let verify_quote_outcome = outcomes
@@ -365,19 +365,28 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
         verify_quote_outcome.is_success(),
         "verify_quote must succeed, got: {verify_quote_outcome:#?}"
     );
+    // The receipt is created with exactly `verifier_tera_gas` of static gas, so
+    // succeeding already proves it fit the budget. Assert headroom instead, which
+    // is the regression that matters: `dcap-qvl` growing until it OOGs in
+    // production. Read the budget from the contract so it cannot drift from
+    // `DEFAULT_VERIFIER_TERA_GAS`.
+    let budget = Gas::from_tgas(get_config(&contract).await.unwrap().verifier_tera_gas);
+    let headroom = Gas::from_gas(budget.as_gas() / 10);
     assert!(
-        verify_quote_outcome.gas_burnt <= Gas::from_tgas(VERIFIER_TERA_GAS_BUDGET),
-        "verify_quote burnt {} but the production budget is {VERIFIER_TERA_GAS_BUDGET} Tgas",
+        verify_quote_outcome.gas_burnt <= budget.saturating_sub(headroom),
+        "verify_quote burnt {} of the configured {budget}, leaving less than the {headroom} \
+         headroom this test exists to protect. Raise DEFAULT_VERIFIER_TERA_GAS (config.rs) \
+         before the real cost reaches the budget",
         verify_quote_outcome.gas_burnt,
     );
-    // The receipt carries the error's Debug form, with the inner panic message
-    // quote-escaped once by the outer dump.
     assert_submission_failed_cleanly(
         &result,
         &contract,
         &submitter,
         balance_before,
-        r#"WrongHash { name: \"report_data\""#,
+        // Substrings that survive the error's Debug formatting and
+        // near-workspaces' quote escaping.
+        &["failed verification", "report_data"],
     )
     .await;
 }
@@ -412,7 +421,7 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
         &contract,
         &submitter,
         balance_before,
-        &TeeError::VerifierUnavailable.to_string(),
+        &[&TeeError::VerifierUnavailable.to_string()],
     )
     .await;
 }
@@ -494,7 +503,7 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_resolve_ver
         &contract,
         &submitter,
         balance_before,
-        "Exceeded the prepaid gas",
+        &["Exceeded the prepaid gas"],
     )
     .await;
 }
