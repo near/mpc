@@ -732,6 +732,12 @@ impl MpcContract {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
+        if let Some(expected_payload_hash) = &request.expected_payload_hash
+            && &response.payload_hash != expected_payload_hash
+        {
+            return Err(RespondError::UnexpectedPayloadHash.into());
+        }
+
         let domain = request.domain_id;
         let public_key = self.public_key_extended(domain.0.into())?;
 
@@ -2138,7 +2144,7 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequestsV2,
+                StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             proposed_updates: ProposedUpdates::default(),
             config,
@@ -2226,7 +2232,7 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequestsV2,
+                StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             proposed_updates: Default::default(),
             tee_state,
@@ -3571,6 +3577,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4023,6 +4030,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4042,21 +4050,7 @@ mod tests {
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
-        let payload_hash = payload.compute_msg_hash().unwrap().0;
-        // simulate signature with the root key (no tweak for foreign tx)
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
-        let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
-        let signature = dtos::SignatureResponse::Secp256k1(
-            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
-        );
-
-        let payload_hash = payload.compute_msg_hash().unwrap();
-        let response = VerifyForeignTransactionResponse {
-            payload_hash,
-            signature,
-        };
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
 
         with_active_participant_and_attested_context(&contract);
 
@@ -4081,6 +4075,169 @@ mod tests {
     }
 
     #[test]
+    fn respond_verify_foreign_tx__should_reject_response_with_unexpected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: request.request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let result = contract.respond_verify_foreign_tx(request.clone(), response);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::Respond(RespondError::UnexpectedPayloadHash)
+        );
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_some(),
+            "the pending request must remain unresolved",
+        );
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx__should_succeed_when_response_matches_expected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let rpc_request = dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: [7u8; 32].into(),
+            confirmations: 2.into(),
+            extractors: vec![BitcoinExtractor::BlockHash],
+        });
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: rpc_request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(payload.compute_msg_hash().unwrap()),
+            request: rpc_request,
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let result = contract.respond_verify_foreign_tx(request.clone(), response);
+
+        // Then
+        assert!(
+            result.is_ok(),
+            "response matching the expected payload hash must be accepted: {result:?}",
+        );
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx__should_reject_request_with_erased_expected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: request.request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let tampered_request = VerifyForeignTransactionRequest {
+            expected_payload_hash: None,
+            ..request.clone()
+        };
+        let result = contract.respond_verify_foreign_tx(tampered_request, response);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidParameters(InvalidParameters::RequestNotFound)
+        );
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_some(),
+            "the pending request must remain unresolved",
+        );
+    }
+
+    fn sign_foreign_tx_payload(
+        secret_key: &k256::Scalar,
+        payload: &ForeignTxSignPayload,
+    ) -> VerifyForeignTransactionResponse {
+        let payload_hash = payload.compute_msg_hash().unwrap();
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
+        let (signature, recovery_id) = secret_key
+            .sign_prehash_recoverable(&payload_hash.0)
+            .unwrap();
+        let signature = dtos::SignatureResponse::Secp256k1(
+            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
+        );
+        VerifyForeignTransactionResponse {
+            payload_hash,
+            signature,
+        }
+    }
+
+    #[test]
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -4091,6 +4248,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4154,6 +4312,7 @@ mod tests {
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4177,6 +4336,7 @@ mod tests {
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -5381,7 +5541,7 @@ mod tests {
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
                 pending_verify_foreign_tx_requests: LookupMap::new(
-                    StorageKey::PendingVerifyForeignTxRequestsV2,
+                    StorageKey::PendingVerifyForeignTxRequestsV3,
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),

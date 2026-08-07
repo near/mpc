@@ -893,6 +893,7 @@ pub fn args_into_verify_foreign_tx_request(
         domain_id: args.domain_id,
         request: args.request,
         payload_version: args.payload_version,
+        expected_payload_hash: args.expected_payload_hash,
     }
 }
 
