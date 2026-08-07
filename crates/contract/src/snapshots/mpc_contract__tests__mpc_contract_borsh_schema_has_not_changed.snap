@@ -744,7 +744,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "available_attestation_grants",
-                        "LookupMap",
+                        "IterableMap",
                     ),
                 ],
             ),
