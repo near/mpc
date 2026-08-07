@@ -30,6 +30,54 @@ resolve_dev_cluster() {
     var="NOMAD_HTTP_AUTH_DEV_${suffix}"; [[ -z "${!var+set}" ]] || export NOMAD_HTTP_AUTH="${!var}"
 }
 
+# The endpoint and its credentials are typed in per run. Exporting the matching
+# NOMAD_ADDR_DEV_<NET> / NOMAD_HTTP_AUTH_DEV_<NET> skips the corresponding prompt.
+# Asks for the bare IP; the scheme and API path are the script's business.
+prompt_nomad_ip() {
+    local label=${1:-target} input
+    while [[ -z "${NOMAD_ADDR:-}" ]]; do
+        read -rp "Nomad IP address for the ${label} dev cluster: " input
+        # Tolerate a pasted URL rather than rejecting it.
+        input="${input#http://}"; input="${input#https://}"; input="${input%%/*}"
+        if [[ ! "$input" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?$ ]]; then
+            echo "  Expected an IPv4 address, optionally with a port (e.g. 10.0.0.1 or 10.0.0.1:4646)."
+            continue
+        fi
+        NOMAD_ADDR="http://${input}"
+    done
+    export NOMAD_ADDR
+}
+
+prompt_http_auth() {
+    local user pass
+    read -rp "Nomad user for ${NOMAD_ADDR} (or user:password, blank for none): " user
+    if [[ -z "$user" ]]; then
+        NOMAD_HTTP_AUTH=""
+    elif [[ "$user" == *:* ]]; then
+        # Already joined — note this form echoes the password to the terminal.
+        NOMAD_HTTP_AUTH="$user"
+    else
+        read -rsp "Nomad password: " pass
+        echo
+        NOMAD_HTTP_AUTH="${user}:${pass}"
+    fi
+    export NOMAD_HTTP_AUTH
+}
+
+prompt_node_addrs() {
+    local input
+    [[ -z "${MPC_NODE_ADDRS+set}" ]] || return 0
+    read -rp "Node metrics addresses, space-separated (blank to skip verification): " input
+    export MPC_NODE_ADDRS="$input"
+}
+
+# Report whether a credential is configured — never the credential itself.
+nomad_auth_state() {
+    if [[ -z "${NOMAD_HTTP_AUTH+set}" ]]; then echo "(will prompt)"
+    elif [[ -n "$NOMAD_HTTP_AUTH" ]]; then echo "(set)"
+    else echo "(none)"; fi
+}
+
 # Check each node in MPC_NODE_ADDRS reports release="<version>" in build info.
 verify_nodes() {
     local version=$1

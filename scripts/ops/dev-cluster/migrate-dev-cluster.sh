@@ -4,10 +4,10 @@
 # mpc-node-* Nomad job to nearone/mpc-node-gcp:<VERSION> — plan, confirm, run.
 # Verification is the caller's job (menu.sh runs it next).
 #
-# Usage: NOMAD_ADDR=http://<host> ./scripts/ops/dev-cluster/migrate-dev-cluster.sh <VERSION>
-# Env:   NOMAD_ADDR (required); NOMAD_HTTP_AUTH="user:password" for the
-#        endpoint's basic auth (prompted when unset, set it empty to skip);
-#        NOMAD_TOKEN for an ACL token.
+# Usage: ./scripts/ops/dev-cluster/migrate-dev-cluster.sh <VERSION>
+# The Nomad IP address and its basic-auth credentials are prompted for. Exporting
+# NOMAD_ADDR / NOMAD_HTTP_AUTH="user:password" skips the matching prompt;
+# NOMAD_TOKEN adds an ACL token header.
 #
 
 set -euo pipefail
@@ -15,6 +15,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../common.sh
 source "${SCRIPT_DIR}/../common.sh"
+# shellcheck source=dev-common.sh
+source "${SCRIPT_DIR}/dev-common.sh"
 
 # Echoes the request being made and, for mutations, the response the caller
 # would otherwise swallow. Credentials are never part of what's printed.
@@ -41,19 +43,6 @@ nomad_curl() {
     printf '%s' "$response"
 }
 
-# Credentials are supplied per run rather than kept in the environment.
-prompt_http_auth() {
-    local user pass
-    read -rp "Nomad user for ${NOMAD_ADDR} (blank for none): " user
-    if [[ -z "$user" ]]; then
-        NOMAD_HTTP_AUTH=""
-        return
-    fi
-    read -rsp "Nomad password: " pass
-    echo
-    NOMAD_HTTP_AUTH="${user}:${pass}"
-}
-
 wait_for_alloc() {
     local job_id=$1 tries=36 job_version status
     job_version=$(nomad_curl GET "/job/${job_id}" | jq -r '.Version')
@@ -73,6 +62,9 @@ wait_for_alloc() {
     warn "    WARNING: allocation not running after 3m (last status: ${status}) — check the Nomad UI."
 }
 
+# One job's worth of the runbook's Definition -> Edit -> Plan -> Run, over the
+# API instead of the UI. The registration at the end is the only write; Nomad
+# reconciles the new definition by restarting the task on the new image.
 upgrade_nomad_job() {
     local job_id=$1 image=$2
     local job current updated
@@ -80,19 +72,26 @@ upgrade_nomad_job() {
     current=$(jq -r '[.TaskGroups[].Tasks[].Config.image // empty
         | select(startswith("nearone/mpc-node-gcp:"))] | unique | join(", ")' <<<"$job")
 
+    # The prefix query can match jobs that merely start with "mpc-node".
     if [[ -z "$current" ]]; then
         step "==> ${job_id}: no nearone/mpc-node-gcp task found, skipping."
         return
     fi
+    # Keeps a re-run after a partially applied rollout a no-op.
     if [[ "$current" == "$image" ]]; then
         step "==> ${job_id}: already on ${image}, skipping."
         return
     fi
     step "==> ${job_id}: ${current} -> ${image}"
 
+    # `select` confines the rewrite to the MPC task: sidecars in the same group
+    # keep their own images, and every other field is copied through untouched.
     updated=$(jq --arg img "$image" '(.TaskGroups[].Tasks[].Config
         | select(.image != null and (.image | startswith("nearone/mpc-node-gcp:")))).image = $img' <<<"$job")
 
+    # Dry run first, as the UI's Plan does. A non-empty FailedTGAllocs means
+    # Nomad could not place the new allocation, so registering would take the
+    # node down with nothing to replace it.
     local plan failed warnings
     plan=$(nomad_curl POST "/job/${job_id}/plan" \
         "$(jq -n --argjson job "$updated" '{Job: $job, Diff: true}')") \
@@ -106,6 +105,7 @@ upgrade_nomad_job() {
     nomad_curl POST "/job/${job_id}" "$(jq -n --argjson job "$updated" '{Job: $job}')" >/dev/null \
         || die "Job registration failed for ${job_id}."
     echo
+    # Confirm this node is back before the caller moves to the next one.
     wait_for_alloc "$job_id"
 }
 
@@ -113,7 +113,7 @@ upgrade_nomad_job() {
 VERSION=$1
 check_version "$VERSION"
 require_cmds curl jq
-[[ -n "${NOMAD_ADDR:-}" ]] || die "NOMAD_ADDR is not set (target dev cluster's Nomad endpoint)."
+prompt_nomad_ip
 [[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
 
 IMAGE="nearone/mpc-node-gcp:${VERSION}"

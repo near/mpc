@@ -4,8 +4,10 @@
 # version, then runs the upgrade in runbook order: nodes, verify, contract.
 #
 # Usage: ./scripts/ops/dev-cluster/dev-menu.sh [testnet|mainnet] [VERSION]
-# Env:   NOMAD_ADDR_DEV_{TESTNET,MAINNET}, MPC_NODE_ADDRS_DEV_{TESTNET,MAINNET},
-#        NOMAD_HTTP_AUTH_DEV_{TESTNET,MAINNET} — the chosen network selects one.
+# The Nomad IP address, its credentials, and the node metrics addresses are prompted
+# for. Exporting the per-network NOMAD_ADDR_DEV_{TESTNET,MAINNET},
+# NOMAD_HTTP_AUTH_DEV_{TESTNET,MAINNET}, MPC_NODE_ADDRS_DEV_{TESTNET,MAINNET}
+# skips the matching prompt.
 #
 
 set -euo pipefail
@@ -42,13 +44,17 @@ fi
 check_version "$VERSION"
 
 resolve_dev_cluster "$NETWORK"
+prompt_nomad_ip "$NETWORK"
+[[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
+prompt_node_addrs
 
 cat <<EOF
 
 Upgrading the ${NETWORK} dev cluster to ${VERSION}
-  contract:       ${CONTRACT}
-  NOMAD_ADDR:     ${NOMAD_ADDR:-(not set)}
-  MPC_NODE_ADDRS: ${MPC_NODE_ADDRS:-(not set)}
+  contract:      ${CONTRACT}
+  Nomad:         ${NOMAD_ADDR}
+  Nomad auth:    $(nomad_auth_state)
+  node metrics:  ${MPC_NODE_ADDRS:-(none — verification will be skipped)}
 EOF
 confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
@@ -58,7 +64,11 @@ run_cmd "${SCRIPT_DIR}/migrate-dev-cluster.sh" "$VERSION" \
 
 step "### Verify"
 # Subshells: a die() here must not skip the contract step below.
-( verify_nodes "$VERSION" ) || true
+if [[ -n "${MPC_NODE_ADDRS:-}" ]]; then
+    ( verify_nodes "$VERSION" ) || true
+else
+    echo "No node addresses given — skipping the build-info check."
+fi
 ( test_sign "$NETWORK" ) || true
 
 step "### Step 2 — contract"
