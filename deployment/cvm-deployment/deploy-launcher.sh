@@ -262,6 +262,21 @@ case $SEALING_KEY_TYPE in
 esac
 
 
+# Optional pre-launch script baked into the app-compose, executed inside the
+# CVM before docker compose up. It is the only way to run anything of our own
+# in a CVM, which test-asset collection needs to export the node's in-enclave
+# signer key. Attestation verification rejects an app-compose carrying one, so
+# never set this outside fixture collection.
+PRELAUNCH_ARGS=()
+if [ -n "${PRELAUNCH_SCRIPT:-}" ]; then
+  if [ ! -f "$PRELAUNCH_SCRIPT" ]; then
+    echo "Error: PRELAUNCH_SCRIPT '$PRELAUNCH_SCRIPT' does not exist"
+    exit 1
+  fi
+  echo "Including pre-launch script: $PRELAUNCH_SCRIPT"
+  PRELAUNCH_ARGS=(--prelaunch-script "$PRELAUNCH_SCRIPT")
+fi
+
 echo -e "\nCreating app-compose.json..."
 $CLI compose \
   --docker-compose "$COMPOSE_TMP" \
@@ -270,6 +285,7 @@ $CLI compose \
   --public-logs \
   --public-sysinfo \
   --no-instance-id \
+  "${PRELAUNCH_ARGS[@]}" \
   --output .app-compose.json
 
 echo "app-compose.json"
