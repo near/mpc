@@ -63,6 +63,7 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
@@ -115,7 +116,8 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
 /// is registered as a function-call access key, which cannot attach a deposit, so a leaked
 /// node key cannot invoke these methods.
-pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
+    NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR);
 
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
