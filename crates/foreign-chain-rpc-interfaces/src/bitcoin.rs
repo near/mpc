@@ -108,7 +108,7 @@ pub struct GetBlockHashResponse(pub String);
 impl GetBlockHashResponse {
     /// Lowercase, with a `0x` at the beginning stripped. Leading zeros are digits of the hash, so
     /// nothing is trimmed. Text that is not a 32 byte hash is returned unchanged.
-    pub fn canonical_text(&self) -> String {
+    pub fn canonical_text(self) -> String {
         const HASH_CHARS: usize = 64;
 
         let digits = self
@@ -121,7 +121,7 @@ impl GetBlockHashResponse {
         if is_hash {
             digits.to_ascii_lowercase()
         } else {
-            self.0.clone()
+            self.0
         }
     }
 }

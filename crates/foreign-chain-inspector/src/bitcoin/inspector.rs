@@ -41,7 +41,7 @@ where
             .request(GET_BLOCK_HASH_METHOD, &args)
             .await
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
-        Ok(Self::canonical_fingerprint(&genesis_hash.0))
+        Ok(NetworkFingerprint::new(genesis_hash.canonical_text()))
     }
 
     fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
