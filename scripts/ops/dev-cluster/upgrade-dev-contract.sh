@@ -28,7 +28,7 @@ write_u32_le() {
     done
 }
 
-# Echoes the wasm path; progress goes to stderr so it can be captured.
+# Echoes the wasm path; progress goes to stderr so it stays capturable.
 fetch_wasm() {
     local version=$1 dir=$2 source=${MPC_WASM_SOURCE:-}
     local wasm="${dir}/mpc-contract-v${version}.wasm"
@@ -61,8 +61,8 @@ fetch_wasm() {
         step "==> Building the contract from ${root} (local build — not a released artifact)..." >&2
         ( cd "$root" && run_cmd cargo near build non-reproducible-wasm --features abi \
             --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked >&2 )
-        # Naming the artifact rather than globbing: target/near also holds
-        # tee_verifier and test_parallel_contract builds.
+        # Named, not globbed: target/near also holds tee_verifier and
+        # test_parallel_contract.
         built="${root}/target/near/mpc_contract/mpc_contract.wasm"
         [[ -f "$built" ]] || die "Expected ${built} after the cargo-near build."
         cp "$built" "$wasm"
@@ -109,15 +109,13 @@ confirm "Send propose_update?" || { echo "Aborted before proposing."; exit 0; }
     || die "propose_update failed (an account low on NEAR is the usual cause — top it up)."
 
 step "==> Pending proposals:"
-run_cmd near contract call-function as-read-only "$CONTRACT" proposed_updates \
-    json-args '{}' network-config "$NEAR_NET" now || true
+near_view proposed_updates || true
 
-# near-cli's result formatting is not stable enough to parse an id out of, so
-# the operator reads it from the output above.
+# near-cli's result format is too unstable to parse an id out of.
 read -rp "UpdateId to vote on: " UPDATE_ID
 [[ "$UPDATE_ID" =~ ^[0-9]+$ ]] || die "'${UPDATE_ID}' is not a numeric UpdateId."
 
-# The vote that reaches threshold deploys + migrates inline, hence 300 Tgas.
+# The deciding vote deploys + migrates inline, hence 300 Tgas.
 for account in $MEMBER_ACCOUNTS; do
     vote_cmd=(near contract call-function as-transaction "$CONTRACT" vote_update
         json-args "{\"id\": ${UPDATE_ID}}" prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR'
@@ -128,5 +126,4 @@ for account in $MEMBER_ACCOUNTS; do
 done
 
 step "==> Contract version (expect ${VERSION} once threshold was reached):"
-run_cmd near contract call-function as-read-only "$CONTRACT" version \
-    json-args '{}' network-config "$NEAR_NET" now || true
+near_view version || true

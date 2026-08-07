@@ -10,6 +10,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${SCRIPT_DIR}/common.sh"
 
+prepare_release() {
+    local version
+    read -rp "Version to release (e.g. 3.14.0): " version
+    check_version "$version"
+    "${SCRIPT_DIR}/prepare-github-release.sh" "$version"
+}
+
 while true; do
     cat <<EOF
 
@@ -19,14 +26,9 @@ MPC ops menu
   q) quit
 EOF
     read -rp "> " choice || exit 0
-    # Subshells so a die() in a step ends the step, not the menu.
     case "$choice" in
-        1) (
-               read -rp "Version to release (e.g. 3.14.0): " version
-               check_version "$version"
-               "${SCRIPT_DIR}/prepare-github-release.sh" "$version"
-           ) || true ;;
-        2) ( "${SCRIPT_DIR}/dev-cluster/dev-menu.sh" ) || true ;;
+        1) run_step prepare_release || true ;;
+        2) run_step "${SCRIPT_DIR}/dev-cluster/dev-menu.sh" || true ;;
         q|Q) exit 0 ;;
         *) echo "Unknown choice '${choice}'." ;;
     esac

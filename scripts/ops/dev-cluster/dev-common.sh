@@ -3,16 +3,16 @@
 # dev-common.sh — helpers specific to the NEAR One dev clusters (source, don't
 # run). Generic helpers live in ../common.sh.
 #
-# MPC_SIGN_WITH overrides how near-cli signs — use sign-with-legacy-keychain
-# when the keychain can't find a key written to ~/.near-credentials.
+# MPC_SIGN_WITH: use sign-with-legacy-keychain when the keychain can't find
+# a key written to ~/.near-credentials.
 #
 
 SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
 
-# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT, PROPOSE_DEPOSIT for a
-# dev cluster, and re-points the endpoint vars at it when per-cluster ones are
-# exported (NOMAD_ADDR_DEV_TESTNET, MPC_NODE_ADDRS_DEV_MAINNET, ...) so that
-# choosing the network drives every step. Addresses stay out of this repo.
+# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT, PROPOSE_DEPOSIT, and
+# re-points the endpoint vars from any exported per-cluster ones
+# (NOMAD_ADDR_DEV_TESTNET, ...), so the network choice drives every step.
+# Addresses themselves stay out of this repo.
 resolve_dev_cluster() {
     local suffix var
     case "$1" in
@@ -26,25 +26,23 @@ resolve_dev_cluster() {
             suffix="MAINNET" ;;
         *) die "Unknown dev cluster '$1' (expected testnet|mainnet)." ;;
     esac
-    # Comfortably over ProposedUpdates::required_deposit (see
-    # propose_update_required_deposit_yoctonear); the excess is refunded.
+    # Over propose_update_required_deposit_yoctonear; excess is refunded.
     # Read by upgrade-dev-contract.sh.
     PROPOSE_DEPOSIT="16 NEAR"
 
     var="NOMAD_ADDR_DEV_${suffix}";      [[ -z "${!var:-}" ]] || export NOMAD_ADDR="${!var}"
     var="MPC_NODE_ADDRS_DEV_${suffix}";  [[ -z "${!var:-}" ]] || export MPC_NODE_ADDRS="${!var}"
-    # +set so an intentionally empty per-cluster value still disables the prompt.
+    # +set: an intentionally empty value still disables the prompt.
     var="NOMAD_HTTP_AUTH_DEV_${suffix}"; [[ -z "${!var+set}" ]] || export NOMAD_HTTP_AUTH="${!var}"
 }
 
-# The endpoint and its credentials are typed in per run. Exporting the matching
-# NOMAD_ADDR_DEV_<NET> / NOMAD_HTTP_AUTH_DEV_<NET> skips the corresponding prompt.
-# Asks for the bare IP; the scheme and API path are the script's business.
+# Typed in per run; the matching NOMAD_*_DEV_<NET> export skips the prompt.
+# Takes the bare IP — scheme and API path are the script's business.
 prompt_nomad_ip() {
     local label=${1:-target} input
     while [[ -z "${NOMAD_ADDR:-}" ]]; do
         read -rp "Nomad IP address for the ${label} dev cluster: " input
-        # Tolerate a pasted URL rather than rejecting it.
+        # Tolerate a pasted URL.
         input="${input#http://}"; input="${input#https://}"; input="${input%%/*}"
         if [[ ! "$input" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?$ ]]; then
             echo "  Expected an IPv4 address, optionally with a port (e.g. 10.0.0.1 or 10.0.0.1:4646)."
@@ -61,7 +59,7 @@ prompt_http_auth() {
     if [[ -z "$user" ]]; then
         NOMAD_HTTP_AUTH=""
     elif [[ "$user" == *:* ]]; then
-        # Already joined — note this form echoes the password to the terminal.
+        # Already joined — this form echoes the password to the terminal.
         NOMAD_HTTP_AUTH="$user"
     else
         read -rsp "Nomad password: " pass
@@ -78,14 +76,20 @@ prompt_node_addrs() {
     export MPC_NODE_ADDRS="$input"
 }
 
-# Report whether a credential is configured — never the credential itself.
+# Whether a credential is configured — never the credential itself.
 nomad_auth_state() {
     if [[ -z "${NOMAD_HTTP_AUTH+set}" ]]; then echo "(will prompt)"
     elif [[ -n "$NOMAD_HTTP_AUTH" ]]; then echo "(set)"
     else echo "(none)"; fi
 }
 
-# Check each node in MPC_NODE_ADDRS reports release="<version>" in build info.
+# Read-only contract query against the resolved cluster.
+near_view() {
+    run_cmd near contract call-function as-read-only "$CONTRACT" "$1" \
+        json-args '{}' network-config "$NEAR_NET" now
+}
+
+# Check every MPC_NODE_ADDRS node reports release="<version>".
 verify_nodes() {
     local version=$1
     require_cmds curl
@@ -93,8 +97,8 @@ verify_nodes() {
 
     local addr info ok=0 fail=0
     for addr in ${MPC_NODE_ADDRS}; do
-        # The node's debug/metrics listener is plain HTTP, reachable only from
-        # inside the cluster network; there is no TLS endpoint to point at.
+        # The metrics listener is plain HTTP, internal-only; no TLS endpoint
+        # exists to point at.
         # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
         show_cmd curl -sf "http://${addr}/metrics" '|' grep mpc_node_build_info
         # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
@@ -110,7 +114,7 @@ verify_nodes() {
     fi
 }
 
-# Submit a test signature request to the dev cluster contract (on-chain txn).
+# Test signature request against the cluster contract (on-chain txn).
 test_sign() {
     resolve_dev_cluster "$1"
     require_cmds near

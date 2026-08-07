@@ -4,8 +4,8 @@
 # Dev-cluster-specific helpers live in dev-cluster/dev-common.sh.
 #
 
-# Colour only when both streams are terminals, so redirected output stays
-# clean. NO_COLOR is honoured (https://no-color.org).
+# Only when both streams are terminals, so redirected output stays clean.
+# NO_COLOR is honoured (https://no-color.org).
 if [[ -t 1 && -t 2 && -z "${NO_COLOR:-}" ]]; then
     C_RESET=$'\033[0m' C_CMD=$'\033[36m' C_OUT=$'\033[2m'
     C_STEP=$'\033[1;34m' C_OK=$'\033[32m' C_WARN=$'\033[33m' C_ERR=$'\033[1;31m'
@@ -33,14 +33,13 @@ require_cmds() {
     [[ "$missing" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-# Mirrors the pattern .github/workflows/release.yml accepts, so a release
-# candidate can be rolled out with this tooling too.
+# Mirrors .github/workflows/release.yml, so release candidates work too.
 check_version() {
     [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] \
         || die "'$1' is not valid semver (expected MAJOR.MINOR.PATCH[-SUFFIX])."
 }
 
-# sha256sum is GNU-only; macOS ships shasum instead.
+# sha256sum is GNU-only; macOS ships shasum.
 sha256_of() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" | cut -d' ' -f1
@@ -57,8 +56,7 @@ confirm() {
     [[ "$reply" == y || "$reply" == Y ]]
 }
 
-# Render a command so the printed line stays copy-pasteable: anything outside
-# the shell-safe set gets single-quoted.
+# Keeps the printed line copy-pasteable: quote anything not shell-safe.
 fmt_cmd() {
     local out="" arg
     for arg in "$@"; do
@@ -70,14 +68,12 @@ fmt_cmd() {
     printf '%s' "${out# }"
 }
 
-# Echo a command as it runs. Goes to stderr so it stays visible even when the
-# caller captures the command's stdout.
+# To stderr, so it stays visible when the caller captures stdout.
 show_cmd() {
     printf '\n%s  $ %s%s\n' "$C_CMD" "$(fmt_cmd "$@")" "$C_RESET" >&2
 }
 
-# Echo a captured response the caller would otherwise swallow, truncating the
-# long ones (Nomad job definitions run to several KB).
+# Echoes a captured response, truncated — job definitions run to several KB.
 show_output() {
     local text=$1 limit=${2:-1500}
     if (( ${#text} > limit )); then
@@ -88,8 +84,13 @@ show_output() {
     fi
 }
 
-# Print a command, run it, and let its output through.
+# Print a command, run it, let its output through.
 run_cmd() {
     show_cmd "$@"
     "$@"
+}
+
+# Subshell, so a die() inside ends the step rather than the menu around it.
+run_step() {
+    ( "$@" )
 }

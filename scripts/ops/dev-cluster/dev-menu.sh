@@ -18,7 +18,7 @@ source "${SCRIPT_DIR}/../common.sh"
 # shellcheck source=dev-common.sh
 source "${SCRIPT_DIR}/dev-common.sh"
 
-# Validated here so a typo re-prompts instead of hitting resolve_dev_cluster's die().
+# Validated here so a typo re-prompts instead of hitting die().
 ask_network() {
     local choice
     while true; do
@@ -59,17 +59,16 @@ EOF
 confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
 step "### Step 1 — nodes"
-run_cmd "${SCRIPT_DIR}/migrate-dev-cluster.sh" "$VERSION" \
+run_cmd "${SCRIPT_DIR}/migrate-dev-nodes.sh" "$VERSION" \
     || die "Node upgrade did not complete — stopping before the contract step."
 
 step "### Verify"
-# Subshells: a die() here must not skip the contract step below.
 if [[ -n "${MPC_NODE_ADDRS:-}" ]]; then
-    ( verify_nodes "$VERSION" ) || true
+    run_step verify_nodes "$VERSION" || true
 else
     echo "No node addresses given — skipping the build-info check."
 fi
-( test_sign "$NETWORK" ) || true
+run_step test_sign "$NETWORK" || true
 
 step "### Step 2 — contract"
 echo "Only for releases that change crates/contract (diff it between the two tags)."
