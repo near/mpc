@@ -1,5 +1,8 @@
 use crate::sui::{SuiExtractedValue, SuiTransactionDigest};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    ForeignChainInspectionError, ForeignChainInspector, HexBytes, NetworkFingerprint,
+    NetworkFingerprintInspector,
+};
 use foreign_chain_rpc_interfaces::sui::proto::ExecutedTransaction;
 use foreign_chain_rpc_interfaces::sui::{Code, Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
@@ -32,6 +35,37 @@ pub enum SuiExtractor {
 /// sequence number or transaction digest, so the event array order is the certified order as
 /// served. The type name embedded in the event's BCS message is cross-checked against the
 /// event type.
+impl<Client> NetworkFingerprintInspector for SuiInspector<Client>
+where
+    Client: SuiRpcClient,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let service_info = self
+            .client
+            .get_service_info()
+            .await
+            // `NotFound` cannot mean a missing transaction here, so it stays a refusal.
+            .map_err(|status| match status.code() {
+                Code::NotFound => {
+                    ForeignChainInspectionError::RpcRequestRejected(status.to_string())
+                }
+                _ => classify_status(status),
+            })?;
+        let Some(chain_id) = service_info.chain_id else {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(
+                "service info is missing the chain id".to_string(),
+            ));
+        };
+        Ok(Self::canonical_fingerprint(&chain_id))
+    }
+
+    /// Base58 is case sensitive and carries no prefix or padding, so a digest has one spelling
+    /// and there is nothing to normalize.
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(fingerprint)
+    }
+}
+
 impl<Client> ForeignChainInspector for SuiInspector<Client>
 where
     Client: SuiRpcClient,
@@ -107,8 +141,9 @@ where
 fn classify_status(status: Status) -> ForeignChainInspectionError {
     match status.code() {
         Code::NotFound => ForeignChainInspectionError::TransactionNotFound,
-        Code::DeadlineExceeded
-        | Code::Unavailable
+        // Named so a probe can report a slow provider as timed out rather than unreachable.
+        Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
+        Code::Unavailable
         | Code::ResourceExhausted
         | Code::Internal
         | Code::Unknown
@@ -266,8 +301,17 @@ mod tests {
         assert!(!classified.is_transient());
     }
 
+    #[test]
+    fn classify_status__should_name_a_deadline_as_a_timeout() {
+        // Given / When
+        let classified = classify_status(Status::new(Code::DeadlineExceeded, "too slow"));
+
+        // Then — transient like the other hiccups, but reportable as what it was.
+        assert_matches!(classified, ForeignChainInspectionError::Timeout);
+        assert!(classified.is_transient());
+    }
+
     #[rstest]
-    #[case::deadline_exceeded(Code::DeadlineExceeded)]
     #[case::unavailable(Code::Unavailable)]
     #[case::resource_exhausted(Code::ResourceExhausted)]
     #[case::internal(Code::Internal)]

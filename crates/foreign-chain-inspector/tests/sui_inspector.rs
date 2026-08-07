@@ -2,7 +2,7 @@
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector,
+    ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     sui::{
         SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
@@ -17,21 +17,32 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
-/// A client that always returns a hard-coded [`GetTransaction`] response.
+/// A client that always returns a hard-coded [`GetTransaction`] response, and service info only
+/// where a test sets it.
 struct MockSuiClient {
     response: Result<GetTransactionResponse, Status>,
+    service_info: Result<GetServiceInfoResponse, Status>,
 }
 
 impl MockSuiClient {
     fn transaction(tx: ExecutedTransaction) -> Self {
         Self {
             response: Ok(GetTransactionResponse::default().with_transaction(tx)),
+            service_info: Err(Status::unimplemented("no service info in this test")),
         }
     }
 
     fn status(status: Status) -> Self {
         Self {
-            response: Err(status),
+            response: Err(status.clone()),
+            service_info: Err(status),
+        }
+    }
+
+    fn serving(service_info: GetServiceInfoResponse) -> Self {
+        Self {
+            service_info: Ok(service_info),
+            ..Self::status(Status::unimplemented("no transaction in this test"))
         }
     }
 }
@@ -42,7 +53,7 @@ impl SuiRpcClient for MockSuiClient {
     }
 
     async fn get_service_info(&self) -> Result<GetServiceInfoResponse, Status> {
-        unimplemented!("get_service_info() not used by the inspector")
+        self.service_info.clone()
     }
 
     async fn get_checkpoint(&self, _sequence_number: u64) -> Result<GetCheckpointResponse, Status> {
@@ -239,6 +250,7 @@ async fn extract__should_reject_response_missing_transaction_as_malformed() {
     // Given — a `GetTransactionResponse` whose transaction section is absent entirely.
     let inspector = SuiInspector::new(MockSuiClient {
         response: Ok(GetTransactionResponse::default()),
+        service_info: Err(Status::unimplemented("no service info in this test")),
     });
 
     // When
@@ -453,4 +465,56 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
     // Then
     let expected: Vec<SuiExtractedValue> = vec![];
     assert_eq!(expected, extracted_values);
+}
+
+/// Sui mainnet's genesis checkpoint digest, as shipped in `expected_network_fingerprint`.
+const MAINNET_CHAIN_ID: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
+
+#[tokio::test]
+async fn network_fingerprint__should_return_the_chain_id_the_service_reports() {
+    // Given
+    let client =
+        MockSuiClient::serving(GetServiceInfoResponse::default().with_chain_id(MAINNET_CHAIN_ID));
+    let inspector = SuiInspector::new(client);
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    assert_eq!(fingerprint.to_string(), MAINNET_CHAIN_ID);
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_report_service_info_without_a_chain_id_as_malformed() {
+    // Given
+    let client = MockSuiClient::serving(GetServiceInfoResponse::default());
+    let inspector = SuiInspector::new(client);
+
+    // When
+    let fingerprint = inspector.network_fingerprint().await;
+
+    // Then
+    assert_matches!(
+        fingerprint,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
+}
+
+/// A missing method is a refusal, not a missing transaction.
+#[tokio::test]
+async fn network_fingerprint__should_report_a_not_found_service_as_rejected() {
+    // Given
+    let inspector = SuiInspector::new(MockSuiClient::status(Status::not_found("no such service")));
+
+    // When
+    let fingerprint = inspector.network_fingerprint().await;
+
+    // Then
+    assert_matches!(
+        fingerprint,
+        Err(ForeignChainInspectionError::RpcRequestRejected(_))
+    );
 }
