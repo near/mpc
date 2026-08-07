@@ -1,7 +1,11 @@
 use crate::aptos::{AptosExtractedValue, AptosTransactionHash};
-use crate::{ForeignChainInspectionError, ForeignChainInspector, HexBytes};
+use crate::{
+    AbsenceMeaning, ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector,
+    HasAbsenceMeaning, HexBytes, NetworkFingerprint, NetworkFingerprintInspector,
+};
 use foreign_chain_rpc_interfaces::aptos::{
-    AptosRpcClient, AptosRpcError, TransactionResponse, normalize_event_data,
+    AptosRpcClient, AptosRpcError, LedgerInfoResponse, TransactionResponse,
+    canonical_chain_id_text, normalize_event_data,
 };
 use near_mpc_contract_interface::types::{AptosAddress, AptosEvent};
 use std::borrow::Cow;
@@ -28,6 +32,22 @@ pub enum AptosExtractor {
     Event { event_index: usize },
 }
 
+impl<Client> NetworkFingerprintInspector for AptosInspector<Client>
+where
+    Client: AptosRpcClient + Send + Sync,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let ledger_info = self.client.get_ledger_info().await.classified()?;
+        Ok(Self::canonical_fingerprint(
+            &ledger_info.chain_id.to_string(),
+        ))
+    }
+
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(canonical_chain_id_text(fingerprint))
+    }
+}
+
 impl<Client> ForeignChainInspector for AptosInspector<Client>
 where
     Client: AptosRpcClient + Send + Sync,
@@ -49,30 +69,7 @@ where
             .client
             .get_transaction_by_hash(&tx_hash_hex)
             .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                match e {
-                    // 404 = definitively absent → a non-transient verdict.
-                    AptosRpcError::ApiError { status: 404, .. } => {
-                        ForeignChainInspectionError::TransactionNotFound
-                    }
-                    // Rate limits and server errors are provider hiccups → transient, so the
-                    // affected provider is dropped from the quorum instead of blocking it.
-                    AptosRpcError::ApiError {
-                        status: 408 | 429, ..
-                    } => ForeignChainInspectionError::RpcRequestFailed(msg),
-                    AptosRpcError::ApiError { status, .. } if status >= 500 => {
-                        ForeignChainInspectionError::RpcRequestFailed(msg)
-                    }
-                    // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
-                    // retrying cannot change them, so they count as substantive verdicts.
-                    AptosRpcError::ApiError { .. } => {
-                        ForeignChainInspectionError::RpcRequestRejected(msg)
-                    }
-                    // Transport failures, including timeouts.
-                    AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(msg),
-                }
-            })?;
+            .classified()?;
 
         ensure_hash_matches(&tx_id, &tx.hash)?;
 
@@ -100,6 +97,61 @@ where
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(extracted_values)
+    }
+}
+
+impl HasAbsenceMeaning for TransactionResponse {
+    const ABSENCE: AbsenceMeaning = AbsenceMeaning::TransactionIsAbsent;
+}
+
+/// The ledger info is the REST API root, which every Aptos node serves.
+impl HasAbsenceMeaning for LedgerInfoResponse {
+    const ABSENCE: AbsenceMeaning = AbsenceMeaning::ApiIsNotServed;
+}
+
+impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
+    type Response = T;
+
+    fn classified(self) -> Result<T, ForeignChainInspectionError> {
+        let error = match self {
+            Ok(response) => return Ok(response),
+            Err(error) => error,
+        };
+
+        let message = error.to_string();
+        Err(match error {
+            // Aptos answers 404 both for a transaction it lacks and for a path it does not route.
+            AptosRpcError::ApiError { status: 404, .. } => match T::ABSENCE {
+                AbsenceMeaning::TransactionIsAbsent => {
+                    ForeignChainInspectionError::TransactionNotFound
+                }
+                AbsenceMeaning::ApiIsNotServed => {
+                    ForeignChainInspectionError::RpcRequestRejected(message)
+                }
+            },
+            // Rate limits and server errors are provider hiccups → transient, so the
+            // affected provider is dropped from the quorum instead of blocking it.
+            AptosRpcError::ApiError {
+                status: 408 | 429, ..
+            } => ForeignChainInspectionError::RpcRequestFailed(message),
+            AptosRpcError::ApiError { status, .. } if status >= 500 => {
+                ForeignChainInspectionError::RpcRequestFailed(message)
+            }
+            // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
+            // retrying cannot change them, so they count as substantive verdicts.
+            AptosRpcError::ApiError { .. } => {
+                ForeignChainInspectionError::RpcRequestRejected(message)
+            }
+            // Split timeout from rest of http errors for reporting.
+            AptosRpcError::Http(error) if error.is_timeout() => {
+                ForeignChainInspectionError::Timeout
+            }
+            AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
+            // A body that will not decode is not transient.
+            AptosRpcError::MalformedBody(_) => {
+                ForeignChainInspectionError::MalformedRpcResponse(message)
+            }
+        })
     }
 }
 
@@ -236,25 +288,46 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
-        AptosEventResponse, AptosRpcError, EventGuid, TransactionResponse,
+        AptosEventResponse, AptosRpcError, EventGuid, LedgerInfoResponse, TransactionResponse,
     };
     use rstest::rstest;
 
+    /// Mainnet, as the docs and the config templates ship it.
+    const MAINNET_CHAIN_ID: u64 = 1;
+
     struct MockAptosClient {
         response: Result<TransactionResponse, AptosRpcError>,
+        ledger_info: Result<LedgerInfoResponse, AptosRpcError>,
     }
 
     impl MockAptosClient {
         fn success(tx: TransactionResponse) -> Self {
-            Self { response: Ok(tx) }
+            Self {
+                response: Ok(tx),
+                ledger_info: Ok(LedgerInfoResponse {
+                    chain_id: MAINNET_CHAIN_ID,
+                }),
+            }
         }
 
         fn api_error(status: u16) -> Self {
             Self {
-                response: Err(AptosRpcError::ApiError {
-                    status,
-                    body: format!("http {status}"),
-                }),
+                response: Err(Self::error(status)),
+                ledger_info: Err(Self::error(status)),
+            }
+        }
+
+        fn on_chain(chain_id: u64) -> Self {
+            Self {
+                ledger_info: Ok(LedgerInfoResponse { chain_id }),
+                ..Self::api_error(404)
+            }
+        }
+
+        fn error(status: u16) -> AptosRpcError {
+            AptosRpcError::ApiError {
+                status,
+                body: format!("http {status}"),
             }
         }
     }
@@ -270,10 +343,21 @@ mod tests {
                     status: *status,
                     body: body.clone(),
                 }),
-                Err(other) => Err(AptosRpcError::ApiError {
-                    status: 500,
-                    body: other.to_string(),
+                Err(other) => unreachable!("MockAptosClient models only ApiError, got {other}"),
+            };
+            std::future::ready(r)
+        }
+
+        fn get_ledger_info(
+            &self,
+        ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
+            let r = match &self.ledger_info {
+                Ok(info) => Ok(info.clone()),
+                Err(AptosRpcError::ApiError { status, body }) => Err(AptosRpcError::ApiError {
+                    status: *status,
+                    body: body.clone(),
                 }),
+                Err(other) => unreachable!("MockAptosClient models only ApiError, got {other}"),
             };
             std::future::ready(r)
         }
@@ -730,6 +814,84 @@ mod tests {
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+        );
+    }
+
+    #[tokio::test]
+    async fn network_fingerprint__should_return_the_ledger_chain_id() {
+        // Given
+        const TESTNET_CHAIN_ID: u64 = 2;
+        let inspector = AptosInspector::new(MockAptosClient::on_chain(TESTNET_CHAIN_ID));
+
+        // When
+        let fingerprint = inspector
+            .network_fingerprint()
+            .await
+            .expect("network_fingerprint should succeed");
+
+        // Then
+        assert_eq!(fingerprint.to_string(), "2");
+    }
+
+    #[tokio::test]
+    async fn network_fingerprint__should_report_a_root_that_refuses_as_rejected() {
+        // Given
+        let inspector = AptosInspector::new(MockAptosClient::api_error(404));
+
+        // When
+        let fingerprint = inspector.network_fingerprint().await;
+
+        // Then
+        assert_matches!(
+            fingerprint,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
+    }
+
+    #[test]
+    fn classified__should_read_an_absent_transaction_as_the_chains_verdict() {
+        // Given
+        let answered: Result<TransactionResponse, _> = Err(MockAptosClient::error(404));
+
+        // When
+        let error = answered.classified().unwrap_err();
+
+        // Then
+        assert_matches!(error, ForeignChainInspectionError::TransactionNotFound);
+    }
+
+    #[test]
+    fn classified__should_read_an_absent_ledger_root_as_a_refusal() {
+        // Given
+        let answered: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(404));
+
+        // When
+        let error = answered.classified().unwrap_err();
+
+        // Then
+        assert_matches!(error, ForeignChainInspectionError::RpcRequestRejected(_));
+    }
+
+    #[rstest]
+    #[case::request_timeout(408)]
+    #[case::rate_limited(429)]
+    #[case::internal_error(500)]
+    #[case::bad_request(400)]
+    #[case::unauthorized(401)]
+    fn classified__should_read_every_status_but_404_alike(#[case] status: u16) {
+        // Given
+        let read_as_transaction: Result<TransactionResponse, _> =
+            Err(MockAptosClient::error(status));
+        let read_as_api_root: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(status));
+
+        // When
+        let from_transaction = read_as_transaction.classified().unwrap_err();
+        let from_api_root = read_as_api_root.classified().unwrap_err();
+
+        // Then
+        assert_eq!(
+            std::mem::discriminant(&from_transaction),
+            std::mem::discriminant(&from_api_root)
         );
     }
 }

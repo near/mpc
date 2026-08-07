@@ -470,6 +470,31 @@ fn is_retryable_status(status_code: u16) -> bool {
     matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
 }
 
+/// What a provider's "not found" answer means for the resource that was read: the one wire
+/// condition whose verdict depends on what was asked for rather than on the status itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AbsenceMeaning {
+    /// The chain may legitimately not hold it.
+    TransactionIsAbsent,
+    /// Every node serving this chain's API holds it.
+    ApiIsNotServed,
+}
+
+/// The [`AbsenceMeaning`] of the resource a response carries. Required by
+/// [`ClassifyRpcOutcome::classified`], so a response that never answered cannot be classified.
+pub(crate) trait HasAbsenceMeaning {
+    const ABSENCE: AbsenceMeaning;
+}
+
+/// Reads a chain client's outcome as an inspection outcome: the response type supplies what
+/// absence means, so the call site supplies nothing. One implementation per transport, each
+/// holding that chain's status table.
+pub(crate) trait ClassifyRpcOutcome {
+    type Response;
+
+    fn classified(self) -> Result<Self::Response, ForeignChainInspectionError>;
+}
+
 /// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
 /// on it. Says nothing about retryability: see [`ForeignChainInspectionError::is_transient`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
