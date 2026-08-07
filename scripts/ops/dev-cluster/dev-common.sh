@@ -9,7 +9,7 @@
 
 SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
 
-# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT, and
+# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT, PROPOSE_DEPOSIT, and
 # re-points the endpoint vars from any exported per-cluster ones
 # (NOMAD_ADDR_DEV_TESTNET, ...), so the network choice drives every step.
 # Addresses themselves stay out of this repo.
@@ -26,6 +26,10 @@ resolve_dev_cluster() {
             suffix="MAINNET" ;;
         *) die "Unknown dev cluster '$1' (expected testnet|mainnet)." ;;
     esac
+    # Over propose_update_required_deposit_yoctonear; excess is refunded.
+    # Read by upgrade-dev-contract.sh.
+    PROPOSE_DEPOSIT="16 NEAR"
+
     var="NOMAD_ADDR_DEV_${suffix}";      [[ -z "${!var:-}" ]] || export NOMAD_ADDR="${!var}"
     var="MPC_NODE_ADDRS_DEV_${suffix}";  [[ -z "${!var:-}" ]] || export MPC_NODE_ADDRS="${!var}"
     # +set: an intentionally empty value still disables the prompt.
@@ -77,6 +81,12 @@ nomad_auth_state() {
     if [[ -z "${NOMAD_HTTP_AUTH+set}" ]]; then echo "(will prompt)"
     elif [[ -n "$NOMAD_HTTP_AUTH" ]]; then echo "(set)"
     else echo "(none)"; fi
+}
+
+# Read-only contract query against the resolved cluster.
+near_view() {
+    run_cmd near contract call-function as-read-only "$CONTRACT" "$1" \
+        json-args '{}' network-config "$NEAR_NET" now
 }
 
 # Check every MPC_NODE_ADDRS node reports release="<version>".

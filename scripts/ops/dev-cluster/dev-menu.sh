@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # dev-menu.sh — entry point for dev-cluster work. Picks the network and
-# version, then upgrades the cluster nodes and verifies them.
+# version, then runs the upgrade in runbook order: nodes, verify, contract.
 #
 # Usage: ./scripts/ops/dev-cluster/dev-menu.sh [testnet|mainnet] [VERSION]
 # The Nomad IP address, its credentials, and the node metrics addresses are prompted
@@ -60,7 +60,7 @@ confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
 step "### Step 1 — nodes"
 run_cmd "${SCRIPT_DIR}/migrate-dev-nodes.sh" "$VERSION" \
-    || die "Node upgrade did not complete."
+    || die "Node upgrade did not complete — stopping before the contract step."
 
 step "### Verify"
 if [[ -n "${MPC_NODE_ADDRS:-}" ]]; then
@@ -70,5 +70,20 @@ else
 fi
 run_step test_sign "$NETWORK" || true
 
+step "### Step 2 — contract"
+echo "Only for releases that change crates/contract (diff it between the two tags)."
+CONTRACT_RESULT="skipped — nodes only"
+if confirm "Upgrade the contract too?"; then
+    if run_cmd "${SCRIPT_DIR}/upgrade-dev-contract.sh" "$VERSION" "$NETWORK"; then
+        CONTRACT_RESULT="upgraded"
+    else
+        CONTRACT_RESULT="FAILED — see the output above"
+    fi
+fi
+
 echo
-ok "Done. Testnet first — upgrade the mainnet dev cluster only once this one is healthy."
+if [[ "$CONTRACT_RESULT" == FAILED* ]]; then
+    warn "Nodes done; contract step ${CONTRACT_RESULT}. Do not upgrade the mainnet dev cluster yet."
+else
+    ok "Done (contract: ${CONTRACT_RESULT}). Testnet first — upgrade the mainnet dev cluster only once this one is healthy."
+fi
