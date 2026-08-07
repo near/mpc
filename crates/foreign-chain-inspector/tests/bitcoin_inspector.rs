@@ -381,7 +381,7 @@ const GENESIS_HASH: &str = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3
 async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zero() {
     // Given
     let server = MockServer::start_async().await;
-    let mock = server
+    let genesis_height_request = server
         .mock_async(|when, then| {
             when.method(POST)
                 .body_includes(r#""method":"getblockhash""#)
@@ -403,6 +403,6 @@ async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zer
         .expect("network_fingerprint should succeed");
 
     // Then
-    mock.assert_async().await;
+    genesis_height_request.assert_async().await;
     assert_eq!(fingerprint.to_string(), GENESIS_HASH);
 }
