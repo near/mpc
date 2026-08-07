@@ -12,12 +12,13 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        AccountId as ContractAccountId, Attestation, AuthScheme, CKDAppPublicKey, ChainEntry,
-        ChainRouting, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
-        ForeignChain, GovernanceThreshold, GovernanceThresholdParameters, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
-        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs,
+        AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
+        CKDAppPublicKey, ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId,
+        DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, GovernanceThreshold,
+        GovernanceThresholdParameters, MockAttestation, ParticipantId, ParticipantInfo,
+        Participants, Payload, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol,
+        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
+        SignRequestArgs,
     },
 };
 use rand::SeedableRng;
@@ -53,7 +54,6 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
         )
 }
 
-const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_yoctonear(1);
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -62,7 +62,6 @@ const NODE_MANAGEMENT_DEPOSIT: near_kit::NearToken = near_kit::NearToken::from_y
 // load. Override to 240 blocks (~30 s in sandbox) as a comfortable
 // budget over mainnet's effective headroom.
 const KEY_EVENT_TIMEOUT_BLOCKS: u64 = 240;
-const VOTE_FOREIGN_CHAIN_GAS: near_kit::Gas = near_kit::Gas::from_tgas(30);
 const CONTRACT_DEPLOY_TIMEOUT: Duration = Duration::from_secs(15);
 const PROPOSER_NODE_INDEX: usize = 0;
 
@@ -527,9 +526,34 @@ impl MpcCluster {
     /// [`Initializing`](ProtocolContractState::Initializing) state. Does NOT wait for key generation to complete —
     /// use `add_domains_and_wait` for the full flow.
     pub async fn start_add_domains(&self, domains: Vec<DomainConfig>) -> anyhow::Result<()> {
-        let args = json!({ "domains": &domains });
-        self.call_from_all_nodes_concurrently(method_names::VOTE_ADD_DOMAINS, args)
-            .await?;
+        let handles: Vec<_> = self
+            .nodes
+            .iter()
+            .zip(self.node_keys.iter())
+            .enumerate()
+            .filter(|(_, (node, _))| matches!(node, MpcNodeState::Running(_)))
+            .map(|(i, (node, key))| {
+                let client = self
+                    .blockchain
+                    .client_for(node.account_id().as_ref(), key)?;
+                Ok((
+                    i,
+                    node.account_id().clone(),
+                    self.contract.handle_for(client),
+                ))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        let votes = handles.iter().map(|(i, account, contract_handle)| {
+            let domains = domains.clone();
+            async move {
+                contract_handle
+                    .vote_add_domains(domains)
+                    .await
+                    .with_context(|| format!("node {i} ({account}) failed to vote_add_domains"))
+            }
+        });
+        futures::future::try_join_all(votes).await?;
 
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Initializing(_)),
@@ -546,13 +570,9 @@ impl MpcCluster {
         node_index: usize,
         next_domain_id: u64,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(
-                &client,
-                method_names::VOTE_CANCEL_KEYGEN,
-                json!({ "next_domain_id": next_domain_id }),
-            )
+            .handle_for(self.operator_client_for(node_index)?)
+            .vote_cancel_keygen(next_domain_id)
             .await
             .with_context(|| format!("node {node_index} failed to send cancel keygen vote"))
     }
@@ -589,8 +609,8 @@ impl MpcCluster {
         };
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
-        let args = json!({ "prospective_epoch_id": prospective_epoch_id, "proposal": proposal });
-        self.vote_resharing(current_participants, args).await?;
+        self.vote_resharing(current_participants, prospective_epoch_id, proposal)
+            .await?;
 
         self.wait_for_state(
             |s| matches!(s, ProtocolContractState::Resharing(_)),
@@ -648,7 +668,8 @@ impl MpcCluster {
     async fn vote_resharing(
         &self,
         current_participants: &Participants,
-        args: serde_json::Value,
+        prospective_epoch_id: EpochId,
+        proposal: ProposedGovernanceThresholdParameters,
     ) -> anyhow::Result<()> {
         let current_accounts: std::collections::HashSet<_> = current_participants
             .participants
@@ -671,10 +692,10 @@ impl MpcCluster {
         }
 
         for i in participants_first.iter().chain(candidates_second.iter()) {
-            let client = self.operator_client_for(*i)?;
             let outcome = self
                 .contract
-                .call_from(&client, method_names::VOTE_NEW_PARAMETERS, args.clone())
+                .handle_for(self.operator_client_for(*i)?)
+                .vote_new_parameters(prospective_epoch_id, proposal.clone())
                 .await
                 .with_context(|| format!("node {i} failed to send resharing vote"))?;
             if !outcome.is_success() {
@@ -696,9 +717,9 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(&client, method_names::VOTE_CANCEL_RESHARING, json!({}))
+            .handle_for(self.operator_client_for(node_index)?)
+            .vote_cancel_resharing()
             .await
             .with_context(|| format!("node {node_index} failed to send cancel resharing vote"))
     }
@@ -762,40 +783,6 @@ impl MpcCluster {
                 }
             }
         }
-        Ok(())
-    }
-
-    async fn call_from_all_nodes_concurrently(
-        &self,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<()> {
-        let clients: Vec<_> = self
-            .nodes
-            .iter()
-            .zip(self.node_keys.iter())
-            .enumerate()
-            .filter(|(_, (node, _))| matches!(node, MpcNodeState::Running(_)))
-            .map(|(i, (node, key))| {
-                let client = self
-                    .blockchain
-                    .client_for(node.account_id().as_ref(), key)?;
-                Ok((i, node.account_id().clone(), client))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let futures = clients.iter().map(|(i, account, client)| {
-            let args = args.clone();
-            let method = method.to_string();
-            async move {
-                self.contract
-                    .call_from(client, &method, args)
-                    .await
-                    .with_context(|| format!("node {i} ({account}) failed to call {method}"))
-            }
-        });
-
-        futures::future::try_join_all(futures).await?;
         Ok(())
     }
 
@@ -878,17 +865,13 @@ impl MpcCluster {
     pub async fn register_backup_service(
         &self,
         node_index: usize,
-        backup_service_info: serde_json::Value,
+        backup_service_info: BackupServiceInfo,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from_deposit(
-                &client,
-                method_names::REGISTER_BACKUP_SERVICE,
-                json!({ "backup_service_info": backup_service_info }),
-                NODE_MANAGEMENT_DEPOSIT,
-            )
+            .handle_for(self.operator_client_for(node_index)?)
+            .register_backup_service(backup_service_info)
             .await
+            .context("failed to register backup service")
     }
     /// View the foreign chains the contract accepts requests for.
     pub async fn view_foreign_chains_supported_by_contract(
@@ -914,19 +897,11 @@ impl MpcCluster {
         node_index: usize,
         foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let node = &self.nodes[node_index];
-        let client = self
-            .blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])?;
         self.contract
-            .call_from(
-                &client,
-                method_names::REGISTER_FOREIGN_CHAIN_SUPPORT,
-                json!({
-                    "foreign_chain_support": serde_json::to_value(foreign_chain_support)?,
-                }),
-            )
+            .handle_for(self.operator_client_for(node_index)?)
+            .register_foreign_chain_support(foreign_chain_support.clone())
             .await
+            .context("failed to register foreign chain support")
     }
 
     pub async fn view_available_foreign_chains(
@@ -1004,13 +979,8 @@ impl MpcCluster {
                 .operator_client_for(idx)
                 .with_context(|| format!("whitelist_foreign_chains: node {idx}"))?;
             self.contract
-                .call_from_borsh_with_deposit(
-                    &client,
-                    method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
-                    batch.clone(),
-                    VOTE_FOREIGN_CHAIN_GAS,
-                    near_kit::NearToken::from_yoctonear(0),
-                )
+                .handle_for(client)
+                .vote_update_foreign_chain_providers(batch.clone())
                 .await
                 .with_context(|| {
                     format!("vote_update_foreign_chain_providers from node {idx} failed")
@@ -1023,17 +993,13 @@ impl MpcCluster {
     pub async fn start_node_migration(
         &self,
         node_index: usize,
-        destination_node_info: serde_json::Value,
+        destination_node_info: DestinationNodeInfo,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from_deposit(
-                &client,
-                method_names::START_NODE_MIGRATION,
-                json!({ "destination_node_info": destination_node_info }),
-                NODE_MANAGEMENT_DEPOSIT,
-            )
+            .handle_for(self.operator_client_for(node_index)?)
+            .start_node_migration(destination_node_info)
             .await
+            .context("failed to start node migration")
     }
 
     /// Update the registered URL of a specific node, called from that node's own operator account.
@@ -1042,15 +1008,11 @@ impl MpcCluster {
         node_index: usize,
         url: String,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from_deposit(
-                &client,
-                method_names::UPDATE_PARTICIPANT_URL,
-                json!({ "url": url }),
-                NODE_MANAGEMENT_DEPOSIT,
-            )
+            .handle_for(self.operator_client_for(node_index)?)
+            .update_participant_url(url)
             .await
+            .context("failed to update participant url")
     }
 
     /// Send a verify_foreign_transaction request from the default user account.
@@ -1198,10 +1160,10 @@ impl MpcNodeState {
         }
     }
 
-    pub fn near_signer_public_key_str(&self) -> String {
+    pub fn near_signer_public_key(&self) -> Ed25519PublicKey {
         match self {
-            MpcNodeState::Running(n) => n.setup().near_signer_public_key_str(),
-            MpcNodeState::Stopped(s) => s.near_signer_public_key_str(),
+            MpcNodeState::Running(n) => n.setup().near_signer_public_key(),
+            MpcNodeState::Stopped(s) => s.near_signer_public_key(),
         }
     }
 }
@@ -1406,13 +1368,13 @@ async fn add_initial_domains(
     domains: &[DomainConfig],
 ) -> anyhow::Result<()> {
     tracing::info!(count = domains.len(), "adding domains");
-    let args = json!({ "domains": domains });
 
     for &i in participant_indices {
         let account = node_account(i);
         let client = blockchain.client_for(&account, &operator_keys[i])?;
         contract
-            .call_from(&client, method_names::VOTE_ADD_DOMAINS, args.clone())
+            .handle_for(client)
+            .vote_add_domains(domains.to_vec())
             .await
             .with_context(|| format!("node {i} failed to vote add domains"))?;
     }
