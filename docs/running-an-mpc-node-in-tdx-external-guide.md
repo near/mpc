@@ -838,7 +838,6 @@ You need your own API keys:
 > **Important:**
 >
 > * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
-> * **Sui is different from the other chains:** the node talks to Sui over gRPC, so API keys cannot go in the URL — only header auth (or none) works. Alchemy takes the key as an `Authorization: Bearer` header, QuickNode as an `x-token` header on port `9000`. Use the exact auth blocks below.
 > * Before deploying, verify your config with the [foreign-chain config tester](../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
 
 Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
@@ -857,7 +856,7 @@ rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
 timeout_sec = 30
 max_retries = 3
 
-[mpc_node_config.node.foreign_chains.abstract.providers.public]
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.testnet.abs.xyz"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
@@ -878,7 +877,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 timeout_sec = 30
 max_retries = 3
 
-[mpc_node_config.node.foreign_chains.starknet.providers.public]
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
 
 [mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
@@ -943,7 +942,7 @@ scheme = "Bearer"
 token = { val = "YOUR_ALCHEMY_API_KEY" }
 
 [mpc_node_config.node.foreign_chains.sui.providers.quicknode]
-rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro:9000"
+rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
 [mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
 kind = "header"
 name = "x-token"
@@ -964,7 +963,7 @@ rpc_url = "https://bitcoin-rpc.publicnode.com"
 timeout_sec = 30
 max_retries = 3
 
-[mpc_node_config.node.foreign_chains.abstract.providers.public]
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
 rpc_url = "https://api.mainnet.abs.xyz"
 
 [mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
@@ -985,7 +984,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 timeout_sec = 30
 max_retries = 3
 
-[mpc_node_config.node.foreign_chains.starknet.providers.public]
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-rpc.publicnode.com"
 
 [mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
@@ -1050,7 +1049,7 @@ scheme = "Bearer"
 token = { val = "YOUR_ALCHEMY_API_KEY" }
 
 [mpc_node_config.node.foreign_chains.sui.providers.quicknode]
-rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro:9000"
+rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
 [mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
 kind = "header"
 name = "x-token"

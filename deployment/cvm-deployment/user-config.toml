@@ -16,11 +16,11 @@ image_reference = "nearone/mpc-node"
 # docs/running-an-mpc-node-in-tdx-external-guide.md#required-ports
 # (80 P2P, 8080 web/metrics, 8079 migration, 3030 debug, 24567 DSS).
 port_mappings = [
-    { host = 80,    container = 80 },     # MPC P2P (port_override convention)
-    { host = 8080,  container = 8080 },   # web_ui / metrics / /public_data
-    { host = 8079,  container = 8079 },   # migration_web_ui
-    { host = 3030,  container = 3030 },   # debug / telemetry
-    { host = 24567, container = 24567 },  # decentralized state sync
+    { host = 80, container = 80 },       # MPC P2P (port_override convention)
+    { host = 8080, container = 8080 },   # web_ui / metrics / /public_data
+    { host = 8079, container = 8079 },   # migration_web_ui
+    { host = 3030, container = 3030 },   # debug / telemetry
+    { host = 24567, container = 24567 }, # decentralized state sync
 ]
 
 [mpc_node_config]
@@ -54,7 +54,7 @@ format = "plain"
 filter = "info"
 
 [mpc_node_config.near_init]
-chain_id = "testnet"  # mainnet: "mainnet"
+chain_id = "testnet" # mainnet: "mainnet"
 # Testnet boot nodes. For mainnet, replace with the mainnet boot-nodes
 # string from https://near-nodes.io/ or the official nearcore mainnet
 # config.json (rpc.mainnet.near.org).
@@ -101,7 +101,7 @@ cores = 6
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "v1.signer-prod.testnet"  # mainnet: "v1.signer"
+mpc_contract_id = "v1.signer-prod.testnet" # mainnet: "v1.signer"
 finality = "optimistic"
 # MPC P2P convention is port 80. Forces it on every peer URL (listen +
 # dial) regardless of the URL's scheme/port.
@@ -169,7 +169,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.starknet]
 timeout_sec = 30
 max_retries = 3
-expected_network_fingerprint = "0x534e5f5345504f4c4941"  # SN_SEPOLIA
+expected_network_fingerprint = "0x534e5f5345504f4c4941" # SN_SEPOLIA
 
 [mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
 rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
@@ -193,7 +193,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 [mpc_node_config.node.foreign_chains.aptos]
 timeout_sec = 30
 max_retries = 3
-expected_network_fingerprint = "2"  # Aptos ledger chain id
+expected_network_fingerprint = "2" # Aptos ledger chain id
 
 [mpc_node_config.node.foreign_chains.aptos.providers.public]
 rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
@@ -247,7 +247,7 @@ scheme = "Bearer"
 token = { val = "YOUR_ALCHEMY_API_KEY" }
 
 [mpc_node_config.node.foreign_chains.sui.providers.quicknode]
-rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro:9000"
+rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
 
 [mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
 kind = "header"
@@ -370,7 +370,7 @@ token = { val = "YOUR_QUICKNODE_API_KEY" }
 # token = { val = "YOUR_ALCHEMY_API_KEY" }
 #
 # [mpc_node_config.node.foreign_chains.sui.providers.quicknode]
-# rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro:9000"
+# rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
 #
 # [mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
 # kind = "header"
