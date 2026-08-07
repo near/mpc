@@ -47,9 +47,9 @@ fetch_wasm() {
 
     if [[ "$source" == release ]]; then
         if [[ -f "$wasm" ]]; then
-            echo "==> Reusing ${wasm}" >&2
+            step "==> Reusing ${wasm}" >&2
         else
-            echo "==> Downloading contract WASM from release ${version}..." >&2
+            step "==> Downloading contract WASM from release ${version}..." >&2
             require_cmds gh tar
             run_cmd gh release download "$version" --repo near/mpc \
                 --pattern "mpc-contract-v${version}.tar.gz" --dir "$dir" --clobber >&2
@@ -60,7 +60,7 @@ fetch_wasm() {
         require_cmds cargo git
         local root built
         root=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
-        echo "==> Building the contract from ${root} (local build — not a released artifact)..." >&2
+        step "==> Building the contract from ${root} (local build — not a released artifact)..." >&2
         ( cd "$root" && run_cmd cargo near build non-reproducible-wasm --features abi \
             --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked >&2 )
         built=$(find "${root}/target/near" -maxdepth 1 -name '*.wasm' -newermt '-10 minutes' \
@@ -94,15 +94,14 @@ WASM_SIZE=$(wc -c < "$WASM")
 } > "$SERIALIZED"
 [[ "$(wc -c < "$SERIALIZED")" -eq $((WASM_SIZE + 6)) ]] \
     || die "serialized.bin has an unexpected length."
-echo "==> ${SERIALIZED} ready ($(wc -c < "$SERIALIZED") bytes)"
+step "==> ${SERIALIZED} ready ($(wc -c < "$SERIALIZED") bytes)"
 
 PROPOSER=${MEMBER_ACCOUNTS%% *}
 PROPOSE_CMD=(near contract call-function as-transaction "$CONTRACT" propose_update
     file-args "$SERIALIZED" prepaid-gas '100.0 Tgas' attached-deposit "$PROPOSE_DEPOSIT"
     sign-as "$PROPOSER" network-config "$NEAR_NET" "$SIGN_WITH" send)
 
-echo
-echo "About to propose the ${VERSION} contract on ${CONTRACT} (${NEAR_NET})"
+step "About to propose the ${VERSION} contract on ${CONTRACT} (${NEAR_NET})"
 echo "  proposer: ${PROPOSER}, deposit ${PROPOSE_DEPOSIT}"
 show_cmd "${PROPOSE_CMD[@]}"
 confirm "Send propose_update?" || { echo "Aborted before proposing."; exit 0; }
@@ -110,8 +109,7 @@ confirm "Send propose_update?" || { echo "Aborted before proposing."; exit 0; }
 "${PROPOSE_CMD[@]}" \
     || die "propose_update failed (an account low on NEAR is the usual cause — top it up)."
 
-echo
-echo "==> Pending proposals:"
+step "==> Pending proposals:"
 run_cmd near contract call-function as-read-only "$CONTRACT" proposed_updates \
     json-args '{}' network-config "$NEAR_NET" now || true
 
@@ -122,7 +120,6 @@ read -rp "UpdateId to vote on: " UPDATE_ID
 
 # The vote that reaches threshold deploys + migrates inline, hence 300 Tgas.
 for account in $MEMBER_ACCOUNTS; do
-    echo
     vote_cmd=(near contract call-function as-transaction "$CONTRACT" vote_update
         json-args "{\"id\": ${UPDATE_ID}}" prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR'
         sign-as "$account" network-config "$NEAR_NET" "$SIGN_WITH" send)
@@ -131,7 +128,6 @@ for account in $MEMBER_ACCOUNTS; do
     "${vote_cmd[@]}" || echo "    vote failed for ${account}."
 done
 
-echo
-echo "==> Contract version (expect ${VERSION} once threshold was reached):"
+step "==> Contract version (expect ${VERSION} once threshold was reached):"
 run_cmd near contract call-function as-read-only "$CONTRACT" version \
     json-args '{}' network-config "$NEAR_NET" now || true

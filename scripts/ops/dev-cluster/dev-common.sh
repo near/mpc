@@ -45,8 +45,8 @@ verify_nodes() {
         if [[ "$info" == *"release=\"${version}\""* ]]; then ok=1; else fail=1; fi
     done
     [[ "$fail" -eq 0 && "$ok" -eq 1 ]] \
-        && echo "All nodes report release=\"${version}\"." \
-        || echo "Not all nodes are on ${version} yet."
+        && ok "All nodes report release=\"${version}\"." \
+        || warn "Not all nodes are on ${version} yet."
 }
 
 # Submit a test signature request to the dev cluster contract (on-chain txn).
@@ -64,6 +64,6 @@ test_sign() {
     show_cmd "${cmd[@]}"
     confirm "Send it?" || return 0
     "${cmd[@]}" \
-        && echo "Signature returned — the cluster is signing." \
-        || echo "Test sign failed — investigate before proceeding."
+        && ok "Signature returned — the cluster is signing." \
+        || warn "Test sign failed — investigate before proceeding."
 }

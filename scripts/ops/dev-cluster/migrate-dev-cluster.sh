@@ -63,14 +63,14 @@ wait_for_alloc() {
             | jq -r --argjson v "$job_version" \
               '[.[] | select(.JobVersion == $v)] | sort_by(.CreateIndex) | last | .ClientStatus // "pending"')
         if [[ "$status" == "running" ]]; then
-            echo "running."
+            ok "running."
             return
         fi
         printf '.'
         sleep 5
     done
     echo
-    echo "    WARNING: allocation not running after 3m (last status: ${status}) — check the Nomad UI."
+    warn "    WARNING: allocation not running after 3m (last status: ${status}) — check the Nomad UI."
 }
 
 upgrade_nomad_job() {
@@ -81,14 +81,14 @@ upgrade_nomad_job() {
         | select(startswith("nearone/mpc-node-gcp:"))] | unique | join(", ")' <<<"$job")
 
     if [[ -z "$current" ]]; then
-        echo "==> ${job_id}: no nearone/mpc-node-gcp task found, skipping."
+        step "==> ${job_id}: no nearone/mpc-node-gcp task found, skipping."
         return
     fi
     if [[ "$current" == "$image" ]]; then
-        echo "==> ${job_id}: already on ${image}, skipping."
+        step "==> ${job_id}: already on ${image}, skipping."
         return
     fi
-    echo "==> ${job_id}: ${current} -> ${image}"
+    step "==> ${job_id}: ${current} -> ${image}"
 
     updated=$(jq --arg img "$image" '(.TaskGroups[].Tasks[].Config
         | select(.image != null and (.image | startswith("nearone/mpc-node-gcp:")))).image = $img' <<<"$job")
@@ -100,7 +100,7 @@ upgrade_nomad_job() {
     failed=$(jq -r '.FailedTGAllocs // {} | keys | join(", ")' <<<"$plan")
     warnings=$(jq -r '.Warnings // empty' <<<"$plan")
     [[ -z "$failed" ]] || die "Plan reports failed allocations for: ${failed}"
-    [[ -z "$warnings" ]] || echo "    plan warnings: ${warnings}"
+    [[ -z "$warnings" ]] || warn "    plan warnings: ${warnings}"
 
     confirm "    Apply to ${job_id} on ${NOMAD_ADDR}?" || { echo "    skipped."; return; }
     nomad_curl POST "/job/${job_id}" "$(jq -n --argjson job "$updated" '{Job: $job}')" >/dev/null \
@@ -123,7 +123,7 @@ if command -v skopeo >/dev/null 2>&1; then
     skopeo inspect --no-creds --format '{{.Digest}}' "docker://${IMAGE}" >/dev/null \
         || die "${IMAGE} not found on Docker Hub — is the release published?"
 else
-    echo "WARNING: skopeo not found, skipping existence check for ${IMAGE}."
+    warn "WARNING: skopeo not found, skipping existence check for ${IMAGE}."
 fi
 
 JOB_IDS=$(nomad_curl GET "/jobs?prefix=mpc-node" | jq -r '.[].ID') \
