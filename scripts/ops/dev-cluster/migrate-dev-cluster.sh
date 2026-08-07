@@ -16,17 +16,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../common.sh
 source "${SCRIPT_DIR}/../common.sh"
 
+# Echoes the request being made and, for mutations, the response the caller
+# would otherwise swallow. Credentials are never part of what's printed.
 nomad_curl() {
     local method=$1 path=$2 data=${3:-}
-    local args=(-sf --max-time 30 -X "$method" "${NOMAD_ADDR%/}/v1${path}")
+    local url="${NOMAD_ADDR%/}/v1${path}"
+    local args=(-sf --max-time 30 -X "$method" "$url")
     [[ -z "${NOMAD_TOKEN:-}" ]] || args+=(-H "X-Nomad-Token: ${NOMAD_TOKEN}")
     [[ -z "$data" ]] || args+=(-H 'Content-Type: application/json' --data "$data")
+
+    show_cmd curl -X "$method" "$url" ${data:+--data @-}
+
+    local response
     if [[ -n "${NOMAD_HTTP_AUTH:-}" ]]; then
         # -K - keeps the credentials out of the process list.
-        printf 'user = "%s"\n' "$NOMAD_HTTP_AUTH" | curl -K - "${args[@]}"
+        response=$(printf 'user = "%s"\n' "$NOMAD_HTTP_AUTH" | curl -K - "${args[@]}") || return 1
     else
-        curl "${args[@]}"
+        response=$(curl "${args[@]}") || return 1
     fi
+
+    # GET bodies are job definitions the caller only parses; showing them buries
+    # the interesting output, so only mutations are echoed.
+    [[ "$method" == GET ]] || show_output "$response"
+    printf '%s' "$response"
 }
 
 # Credentials are supplied per run rather than kept in the environment.
@@ -93,6 +105,7 @@ upgrade_nomad_job() {
     confirm "    Apply to ${job_id} on ${NOMAD_ADDR}?" || { echo "    skipped."; return; }
     nomad_curl POST "/job/${job_id}" "$(jq -n --argjson job "$updated" '{Job: $job}')" >/dev/null \
         || die "Job registration failed for ${job_id}."
+    echo
     wait_for_alloc "$job_id"
 }
 

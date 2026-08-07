@@ -54,7 +54,7 @@ confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
 echo
 echo "### Step 1 — nodes"
-"${SCRIPT_DIR}/migrate-dev-cluster.sh" "$VERSION" \
+run_cmd "${SCRIPT_DIR}/migrate-dev-cluster.sh" "$VERSION" \
     || die "Node upgrade did not complete — stopping before the contract step."
 
 echo
@@ -67,7 +67,7 @@ echo
 echo "### Step 2 — contract"
 echo "Only for releases that change crates/contract (diff it between the two tags)."
 if confirm "Upgrade the contract too?"; then
-    "${SCRIPT_DIR}/upgrade-dev-contract.sh" "$VERSION" "$NETWORK" || true
+    run_cmd "${SCRIPT_DIR}/upgrade-dev-contract.sh" "$VERSION" "$NETWORK" || true
 else
     echo "Skipped — nodes only."
 fi

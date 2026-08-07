@@ -38,10 +38,10 @@ verify_nodes() {
 
     local addr info ok=0 fail=0
     for addr in ${MPC_NODE_ADDRS}; do
-        printf '%s: ' "$addr"
+        show_cmd curl -sf "http://${addr}/metrics" '|' grep mpc_node_build_info
         info=$(curl -sf --max-time 5 "http://${addr}/metrics" \
-            | grep -o 'mpc_node_build_info{[^}]*}') || { echo "(unreachable)"; fail=1; continue; }
-        echo "$info"
+            | grep -o 'mpc_node_build_info{[^}]*}') || { echo "  (unreachable)"; fail=1; continue; }
+        echo "  $info"
         if [[ "$info" == *"release=\"${version}\""* ]]; then ok=1; else fail=1; fi
     done
     [[ "$fail" -eq 0 && "$ok" -eq 1 ]] \
@@ -56,11 +56,14 @@ test_sign() {
 
     local signer=${MEMBER_ACCOUNTS%% *}
     local payload='[12,1,2,0,4,5,6,8,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,44]'
+    local cmd=(near call --network-id "$NEAR_NET" "$CONTRACT" sign
+        "{\"request\": {\"payload\": ${payload}, \"path\": \"test\", \"key_version\": 0}}"
+        --accountId "$signer" --gas 300000000000000 --deposit "$SIGN_DEPOSIT")
+
     echo "Test sign on ${CONTRACT} as ${signer} (deposit ${SIGN_DEPOSIT} NEAR)."
+    show_cmd "${cmd[@]}"
     confirm "Send it?" || return 0
-    near call --network-id "$NEAR_NET" "$CONTRACT" sign \
-        "{\"request\": {\"payload\": ${payload}, \"path\": \"test\", \"key_version\": 0}}" \
-        --accountId "$signer" --gas 300000000000000 --deposit "$SIGN_DEPOSIT" \
+    "${cmd[@]}" \
         && echo "Signature returned — the cluster is signing." \
         || echo "Test sign failed — investigate before proceeding."
 }
