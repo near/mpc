@@ -470,33 +470,25 @@ fn is_retryable_status(status_code: u16) -> bool {
     matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
 }
 
-/// What a provider's "not found" answer means for the resource that was read.
-///
-/// HTTP 404 and gRPC `NOT_FOUND` are the one wire condition whose verdict depends on what was
-/// asked for rather than on the status itself, so the resource answers and the chain's status
-/// table reads the answer.
+/// What a provider's "not found" answer means for the resource that was read: the one wire
+/// condition whose verdict depends on what was asked for rather than on the status itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AbsenceMeaning {
-    /// The chain may legitimately not hold it, so absence is the chain's own verdict.
+    /// The chain may legitimately not hold it.
     TransactionIsAbsent,
-    /// Every node serving this chain's API holds it, so absence says the endpoint serves a
-    /// different API.
+    /// Every node serving this chain's API holds it.
     ApiIsNotServed,
 }
 
-/// The [`AbsenceMeaning`] of the resource a response carries, stated once beside that response
-/// rather than at each call that reads it.
-///
-/// [`ClassifyRpcOutcome::classified`] requires it, so a call reading a response that has no
-/// answer to the question does not compile.
+/// The [`AbsenceMeaning`] of the resource a response carries. Required by
+/// [`ClassifyRpcOutcome::classified`], so a response that never answered cannot be classified.
 pub(crate) trait HasAbsenceMeaning {
     const ABSENCE: AbsenceMeaning;
 }
 
-/// Reads a chain client's outcome as an inspection outcome: the transport says how the call
-/// failed, the response type says what an absent resource means, and the call site says nothing.
-///
-/// One implementation per transport, each holding that chain's whole status table.
+/// Reads a chain client's outcome as an inspection outcome: the response type supplies what
+/// absence means, so the call site supplies nothing. One implementation per transport, each
+/// holding that chain's status table.
 pub(crate) trait ClassifyRpcOutcome {
     type Response;
 

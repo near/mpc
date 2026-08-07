@@ -100,7 +100,6 @@ where
     }
 }
 
-/// A transaction the chain does not have is a verdict about that transaction.
 impl HasAbsenceMeaning for TransactionResponse {
     const ABSENCE: AbsenceMeaning = AbsenceMeaning::TransactionIsAbsent;
 }
@@ -114,38 +113,45 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
     type Response = T;
 
     fn classified(self) -> Result<T, ForeignChainInspectionError> {
-        self.map_err(|error| classify_rest_error(error, T::ABSENCE))
-    }
-}
+        let error = match self {
+            Ok(response) => return Ok(response),
+            Err(error) => error,
+        };
 
-fn classify_rest_error(
-    error: AptosRpcError,
-    absence: AbsenceMeaning,
-) -> ForeignChainInspectionError {
-    let message = error.to_string();
-    match error {
-        // Aptos answers 404 both for a transaction it does not have and for a path it does not
-        // route; only the resource that was read tells the two apart.
-        AptosRpcError::ApiError { status: 404, .. } => match absence {
-            AbsenceMeaning::TransactionIsAbsent => ForeignChainInspectionError::TransactionNotFound,
-            AbsenceMeaning::ApiIsNotServed => {
+        let message = error.to_string();
+        Err(match error {
+            // Aptos answers 404 both for a transaction it lacks and for a path it does not route.
+            AptosRpcError::ApiError { status: 404, .. } => match T::ABSENCE {
+                AbsenceMeaning::TransactionIsAbsent => {
+                    ForeignChainInspectionError::TransactionNotFound
+                }
+                AbsenceMeaning::ApiIsNotServed => {
+                    ForeignChainInspectionError::RpcRequestRejected(message)
+                }
+            },
+            // Rate limits and server errors are provider hiccups → transient, so the
+            // affected provider is dropped from the quorum instead of blocking it.
+            AptosRpcError::ApiError {
+                status: 408 | 429, ..
+            } => ForeignChainInspectionError::RpcRequestFailed(message),
+            AptosRpcError::ApiError { status, .. } if status >= 500 => {
+                ForeignChainInspectionError::RpcRequestFailed(message)
+            }
+            // Remaining 4xx (400/401/403/410, …) are deterministic rejections —
+            // retrying cannot change them, so they count as substantive verdicts.
+            AptosRpcError::ApiError { .. } => {
                 ForeignChainInspectionError::RpcRequestRejected(message)
             }
-        },
-        // Rate limits and server errors are provider hiccups → transient, so the affected
-        // provider is dropped from the quorum instead of blocking it.
-        AptosRpcError::ApiError {
-            status: 408 | 429, ..
-        } => ForeignChainInspectionError::RpcRequestFailed(message),
-        AptosRpcError::ApiError { status, .. } if status >= 500 => {
-            ForeignChainInspectionError::RpcRequestFailed(message)
-        }
-        // Remaining 4xx (400/401/403/410, …) are deterministic rejections — retrying cannot
-        // change them, so they count as substantive verdicts.
-        AptosRpcError::ApiError { .. } => ForeignChainInspectionError::RpcRequestRejected(message),
-        // Named so a probe can report a slow provider as timed out rather than unreachable.
-        AptosRpcError::Http(error) if error.is_timeout() => ForeignChainInspectionError::Timeout,
-        AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
+            // Split timeout from rest of http errors for reporting.
+            AptosRpcError::Http(error) if error.is_timeout() => {
+                ForeignChainInspectionError::Timeout
+            }
+            AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
+            // A body that will not decode is not transient.
+            AptosRpcError::MalformedBody(_) => {
+                ForeignChainInspectionError::MalformedRpcResponse(message)
+            }
+        })
     }
 }
 
@@ -337,10 +343,7 @@ mod tests {
                     status: *status,
                     body: body.clone(),
                 }),
-                Err(other) => Err(AptosRpcError::ApiError {
-                    status: 500,
-                    body: other.to_string(),
-                }),
+                Err(other) => unreachable!("MockAptosClient models only ApiError, got {other}"),
             };
             std::future::ready(r)
         }
@@ -354,10 +357,7 @@ mod tests {
                     status: *status,
                     body: body.clone(),
                 }),
-                Err(other) => Err(AptosRpcError::ApiError {
-                    status: 500,
-                    body: other.to_string(),
-                }),
+                Err(other) => unreachable!("MockAptosClient models only ApiError, got {other}"),
             };
             std::future::ready(r)
         }
@@ -878,21 +878,20 @@ mod tests {
     #[case::internal_error(500)]
     #[case::bad_request(400)]
     #[case::unauthorized(401)]
-    fn classify_rest_error__should_read_every_status_but_404_alike(#[case] status: u16) {
+    fn classified__should_read_every_status_but_404_alike(#[case] status: u16) {
+        // Given
+        let read_as_transaction: Result<TransactionResponse, _> =
+            Err(MockAptosClient::error(status));
+        let read_as_api_root: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(status));
+
         // When
-        let as_transaction = classify_rest_error(
-            MockAptosClient::error(status),
-            AbsenceMeaning::TransactionIsAbsent,
-        );
-        let as_api_root = classify_rest_error(
-            MockAptosClient::error(status),
-            AbsenceMeaning::ApiIsNotServed,
-        );
+        let from_transaction = read_as_transaction.classified().unwrap_err();
+        let from_api_root = read_as_api_root.classified().unwrap_err();
 
         // Then
         assert_eq!(
-            std::mem::discriminant(&as_transaction),
-            std::mem::discriminant(&as_api_root)
+            std::mem::discriminant(&from_transaction),
+            std::mem::discriminant(&from_api_root)
         );
     }
 }
