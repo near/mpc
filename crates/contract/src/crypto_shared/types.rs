@@ -159,7 +159,10 @@ impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
 }
 
 pub mod k256_types {
-    use super::*;
+    use super::{
+        AffinePoint, BorshDeserialize, BorshSerialize, CurveArithmetic, Deserialize, PrimeField,
+        Secp256k1, Serialize,
+    };
     use k256::Scalar;
 
     pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
@@ -249,7 +252,7 @@ pub mod k256_types {
 }
 
 pub mod ed25519_types {
-    use super::*;
+    use super::{BorshDeserialize, BorshSerialize, Deserialize, PrimeField, Serialize, serde_as};
     use curve25519_dalek::Scalar;
 
     // Is there a better way to force a borsh serialization?
