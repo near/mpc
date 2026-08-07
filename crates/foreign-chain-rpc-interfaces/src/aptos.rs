@@ -356,7 +356,7 @@ mod tests {
     #[rstest]
     #[case::mainnet("1", "1")]
     #[case::padded("0002", "2")]
-    // Reported as answered.
+    // Should be reported as answered by the RPC provider.
     #[case::not_a_number("mainnet", "mainnet")]
     fn canonical_chain_id_text__should_canonicalize_what_is_configured(
         #[case] configured: &str,
