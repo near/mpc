@@ -4,10 +4,23 @@
 # Dev-cluster-specific helpers live in dev-cluster/dev-common.sh.
 #
 
+# Colour only when both streams are terminals, so redirected output stays
+# clean. NO_COLOR is honoured (https://no-color.org).
+if [[ -t 1 && -t 2 && -z "${NO_COLOR:-}" ]]; then
+    C_RESET=$'\033[0m' C_CMD=$'\033[36m' C_OUT=$'\033[2m'
+    C_STEP=$'\033[1;34m' C_OK=$'\033[32m' C_WARN=$'\033[33m' C_ERR=$'\033[1;31m'
+else
+    C_RESET="" C_CMD="" C_OUT="" C_STEP="" C_OK="" C_WARN="" C_ERR=""
+fi
+
 die() {
-    printf 'Error: %s\n' "$1" >&2
+    printf '%sError: %s%s\n' "$C_ERR" "$1" "$C_RESET" >&2
     exit 1
 }
+
+step() { printf '\n%s%s%s\n' "$C_STEP" "$*" "$C_RESET"; }
+ok()   { printf '%s%s%s\n' "$C_OK" "$*" "$C_RESET"; }
+warn() { printf '%s%s%s\n' "$C_WARN" "$*" "$C_RESET" >&2; }
 
 require_cmds() {
     local missing=0
@@ -47,7 +60,7 @@ fmt_cmd() {
 # Echo a command as it runs. Goes to stderr so it stays visible even when the
 # caller captures the command's stdout.
 show_cmd() {
-    printf '\n  $ %s\n' "$(fmt_cmd "$@")" >&2
+    printf '\n%s  $ %s%s\n' "$C_CMD" "$(fmt_cmd "$@")" "$C_RESET" >&2
 }
 
 # Echo a captured response the caller would otherwise swallow, truncating the
@@ -55,9 +68,10 @@ show_cmd() {
 show_output() {
     local text=$1 limit=${2:-1500}
     if (( ${#text} > limit )); then
-        printf '%s\n  … (%d more characters)\n' "${text:0:limit}" "$(( ${#text} - limit ))" >&2
+        printf '%s%s\n  … (%d more characters)%s\n' \
+            "$C_OUT" "${text:0:limit}" "$(( ${#text} - limit ))" "$C_RESET" >&2
     else
-        printf '%s\n' "$text" >&2
+        printf '%s%s%s\n' "$C_OUT" "$text" "$C_RESET" >&2
     fi
 }
 
