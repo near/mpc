@@ -70,6 +70,8 @@ pub struct LogConfig {
     /// Examples: `"info"`, `"mpc_node=debug,info"`, `"mpc_node::indexer=trace,warn"`
     /// Falls back to the `RUST_LOG` env var when not set.
     pub filter: Option<String>,
+    pub log_dir: Option<PathBuf>,
+    pub max_log_files: Option<usize>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum, Serialize, Deserialize)]
