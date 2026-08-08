@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+#
+# dev-menu.sh — entry point for dev-cluster work. Picks the network and
+# version, then upgrades the cluster nodes and verifies them.
+#
+# Usage: ./scripts/ops/dev-cluster/dev-menu.sh [testnet|mainnet] [VERSION]
+# The Nomad IP address, its credentials, and the node metrics addresses are prompted
+# for. Exporting the per-network NOMAD_ADDR_DEV_{TESTNET,MAINNET},
+# NOMAD_HTTP_AUTH_DEV_{TESTNET,MAINNET}, MPC_NODE_ADDRS_DEV_{TESTNET,MAINNET}
+# skips the matching prompt.
+#
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../common.sh
+source "${SCRIPT_DIR}/../common.sh"
+# shellcheck source=dev-common.sh
+source "${SCRIPT_DIR}/dev-common.sh"
+
+# Validated here so a typo re-prompts instead of hitting die().
+ask_network() {
+    local choice
+    while true; do
+        read -rp "Network (testnet|mainnet) [testnet]: " choice
+        NETWORK="${choice:-testnet}"
+        case "$NETWORK" in
+            testnet|mainnet) return 0 ;;
+            *) echo "Unknown network '${NETWORK}'." ;;
+        esac
+    done
+}
+
+NETWORK="${1:-}"
+VERSION="${2:-}"
+case "$NETWORK" in
+    testnet|mainnet) ;;
+    "") ask_network ;;
+    *) die "Unknown network '${NETWORK}' (expected testnet|mainnet)." ;;
+esac
+if [[ -z "$VERSION" ]]; then
+    read -rp "Version (e.g. 3.14.0): " VERSION
+fi
+check_version "$VERSION"
+
+resolve_dev_cluster "$NETWORK"
+prompt_nomad_ip "$NETWORK"
+[[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
+prompt_node_addrs
+
+cat <<EOF
+
+Upgrading the ${NETWORK} dev cluster to ${VERSION}
+  contract:      ${CONTRACT}
+  Nomad:         ${NOMAD_ADDR}
+  Nomad auth:    $(nomad_auth_state)
+  node metrics:  ${MPC_NODE_ADDRS:-(none — verification will be skipped)}
+EOF
+confirm "Proceed?" || { echo "Aborted."; exit 0; }
+
+step "### Step 1 — nodes"
+run_cmd "${SCRIPT_DIR}/migrate-dev-nodes.sh" "$VERSION" \
+    || die "Node upgrade did not complete."
+
+step "### Verify"
+if [[ -n "${MPC_NODE_ADDRS:-}" ]]; then
+    run_step verify_nodes "$VERSION" || true
+else
+    echo "No node addresses given — skipping the build-info check."
+fi
+run_step test_sign "$NETWORK" || true
+
+echo
+ok "Done. Testnet first — upgrade the mainnet dev cluster only once this one is healthy."
