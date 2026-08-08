@@ -1,0 +1,40 @@
+# Static analysis of this repo's own workflow files: template injection,
+# unpinned actions, over-broad permissions.
+name: Workflow Security Analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# No token scopes by default; each job opts into only what it needs.
+permissions: {}
+
+jobs:
+  zizmor:
+    name: "Audit workflows"
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      security-events: write # zizmor uploads its own SARIF
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          # A fork's pull request gets a read-only token, so uploading SARIF
+          # would fail with a 403. Turned off for those, and zizmor then prints
+          # its findings and fails the job, which still surfaces them.
+          advanced-security: ${{ !github.event.pull_request.head.repo.fork }}
