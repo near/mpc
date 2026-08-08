@@ -1,4 +1,5 @@
 use crate::config::MpcConfig;
+use crate::log_dedup::{Decision, Deduplicator};
 use crate::metrics::networking_metrics::{
     self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
 };
@@ -28,6 +29,7 @@ use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
+use std::{sync::LazyLock, time::Duration};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -37,6 +39,9 @@ use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::FutureExt;
 use tracing::info;
+
+static CONNECT_RETRY_DEDUP: LazyLock<Deduplicator<ParticipantId>> =
+    LazyLock::new(|| Deduplicator::new(Duration::from_secs(60), Duration::from_secs(300), 1024));
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
 /// This will send small packets immediately, reducing latency for node messages at
@@ -443,15 +448,21 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            tracing::info!(
-                                my_id = %my_id,
-                                target_participant_id = %target_participant_id,
-                                error = %format_args!("{e:#}"),
-                                "could not connect, retrying"
-                            );
-
+                            match CONNECT_RETRY_DEDUP.check(&target_participant_id) {
+                                Decision::Suppress => {}
+                                Decision::Emit { suppressed } => {
+                                    tracing::info!(
+                                        my_id = %my_id,
+                                        target_participant_id = %target_participant_id,
+                                        suppressed,
+                                        error = %format_args!("{e:#}"),
+                                        "could not connect",
+                                    );
+                                }
+                            }
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
+                            // TODO: Consider implementing exponential backoff here as well.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
                             continue;
                         }
