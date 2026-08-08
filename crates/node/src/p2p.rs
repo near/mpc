@@ -68,6 +68,10 @@ const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// never sends a ClientHello would hang the accept task forever.
 const TLS_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Caps how many incoming connections may be from the same participant at once.
+const MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT: usize = 4;
+const CONCURRENT_CONNECTIONS_HEADROOM: usize = 16;
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -81,6 +85,47 @@ pub struct TlsMeshSender {
 pub struct TlsMeshReceiver {
     receiver: UnboundedReceiver<PeerMessage>,
     _incoming_connections_task: AutoAbortTask<()>,
+}
+
+/// Tracks how many incoming connections are currently from each participant
+#[derive(Default)]
+struct PerParticipantConnectionSlots {
+    counts: parking_lot::Mutex<HashMap<ParticipantId, usize>>,
+}
+
+impl PerParticipantConnectionSlots {
+    fn try_reserve(self: &Arc<Self>, peer_id: ParticipantId) -> Option<ParticipantSlotGuard> {
+        let mut counts = self.counts.lock();
+        let count = counts.entry(peer_id).or_insert(0);
+        if *count >= MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT {
+            return None;
+        }
+        *count += 1;
+        Some(ParticipantSlotGuard {
+            slots: self.clone(),
+            peer_id,
+        })
+    }
+}
+
+/// Guard for a reserved slot in [`PerParticipantConnectionSlots`].
+/// Releases the slot when dropped, regardless of how the connection handler
+/// exits.
+struct ParticipantSlotGuard {
+    slots: Arc<PerParticipantConnectionSlots>,
+    peer_id: ParticipantId,
+}
+
+impl Drop for ParticipantSlotGuard {
+    fn drop(&mut self) {
+        let mut counts = self.slots.counts.lock();
+        if let Some(count) = counts.get_mut(&self.peer_id) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                counts.remove(&self.peer_id);
+            }
+        }
+    }
 }
 
 /// Maps public keys to participant IDs. Used to identify incoming connections.
@@ -573,6 +618,14 @@ where
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
+    let max_concurrent_incoming_connections = config.participants.participants.len()
+        * MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT
+        + CONCURRENT_CONNECTIONS_HEADROOM;
+    let connection_limiter = Arc::new(tokio::sync::Semaphore::new(
+        max_concurrent_incoming_connections,
+    ));
+    let participant_slots = Arc::new(PerParticipantConnectionSlots::default());
+
     let (message_sender, message_receiver) = mpsc::unbounded_channel();
     let tcp_listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0),
@@ -597,6 +650,8 @@ where
                         tls_acceptor.clone(),
                         participant_identities.clone(),
                         my_id,
+                        connection_limiter.clone(),
+                        participant_slots.clone(),
                     ),
                 );
             })
@@ -630,7 +685,16 @@ async fn incoming_connection_handler(
     tls_acceptor: TlsAcceptor,
     participant_identities: Arc<ParticipantIdentities>,
     my_id: ParticipantId,
+    connection_limiter: Arc<tokio::sync::Semaphore>,
+    participant_slots: Arc<PerParticipantConnectionSlots>,
 ) -> anyhow::Result<()> {
+    let Ok(_connection_permit) = connection_limiter.try_acquire_owned() else {
+        tracing::warn!(
+            "dropping incoming connection: at global concurrent incoming connection limit"
+        );
+        return Ok(());
+    };
+
     let tcp_stream = configure_tcp_stream(tcp_stream)?;
     let mut tls_stream = timeout(TLS_ACCEPT_TIMEOUT, tls_acceptor.accept(tcp_stream))
         .await
@@ -638,6 +702,18 @@ async fn incoming_connection_handler(
 
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
     tracking::set_progress(&format!("Authenticated as {}", peer_id));
+
+    let Some(_participant_slot) = participant_slots.try_reserve(peer_id) else {
+        tracing::warn!(
+            peer_id = %peer_id,
+            "dropping incoming connection: participant at MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT ({})",
+            MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT
+        );
+        if let Err(err) = tls_stream.shutdown().await {
+            tracing::error!(err = %err, "TLS shutdown failed");
+        }
+        return Ok(());
+    };
 
     let peer = connectivities.get(peer_id)?;
     // If we have an existing connection, we require this connection attempt to
@@ -1067,8 +1143,9 @@ pub mod testing {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        IncomingConnection, OutgoingConnection, ParticipantIdentities, PersistentConnection,
-        incoming_connection_handler,
+        CONCURRENT_CONNECTIONS_HEADROOM, IncomingConnection,
+        MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT, OutgoingConnection, ParticipantIdentities,
+        PerParticipantConnectionSlots, PersistentConnection, incoming_connection_handler,
     };
     use crate::config::MpcConfig;
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
@@ -1085,7 +1162,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use rustls::ClientConfig;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::mpsc;
@@ -1572,7 +1649,7 @@ mod tests {
         let client_config = must_make_client_config();
         let my_id = ParticipantId::from_raw(0);
         let target_id = ParticipantId::from_raw(1);
-        let resolved_address = Arc::new(Mutex::new(addr_a.clone()));
+        let resolved_address = Arc::new(parking_lot::Mutex::new(addr_a.clone()));
 
         start_root_task_with_periodic_dump(async move {
             let connectivities =
@@ -1582,7 +1659,7 @@ mod tests {
                 );
             let resolve_address = {
                 let resolved_address = resolved_address.clone();
-                move || Some(resolved_address.lock().unwrap().clone())
+                move || Some(resolved_address.lock().clone())
             };
 
             let _connection = PersistentConnection::new(
@@ -1602,7 +1679,7 @@ mod tests {
                 .unwrap();
 
             // When
-            *resolved_address.lock().unwrap() = addr_b.clone();
+            *resolved_address.lock() = addr_b.clone();
 
             // Then
             timeout(Duration::from_secs(120), accept_b.recv())
@@ -1629,6 +1706,9 @@ mod tests {
             IncomingConnection,
         >::new(my_id, &[my_id]));
 
+        let max_concurrent_incoming_connections =
+            1 * MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT + CONCURRENT_CONNECTIONS_HEADROOM;
+
         // When
         let result = timeout(
             Duration::from_secs(60),
@@ -1639,6 +1719,10 @@ mod tests {
                 tls_acceptor,
                 Arc::new(ParticipantIdentities::default()),
                 my_id,
+                Arc::new(tokio::sync::Semaphore::new(
+                    max_concurrent_incoming_connections,
+                )),
+                Arc::new(PerParticipantConnectionSlots::default()),
             ),
         )
         .await
