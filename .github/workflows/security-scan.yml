@@ -1,0 +1,67 @@
+name: Security Scan
+
+# Every branch, not just PRs: the implant this catches was force-pushed onto the
+# head branch of an open PR, and a push to a branch with no PR fires no
+# `pull_request` event.
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# No token scopes by default; each job opts into only what it needs.
+permissions: {}
+
+jobs:
+  scan-changed-files:
+    name: "Scan changed files"
+    # Skip a same-repo PR: the push to its branch already scanned these commits.
+    # Everything else runs, which leaves pushes and fork PRs, the latter having
+    # no push event of their own.
+    if: >-
+      !(github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      security-events: write # upload-sarif
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          # The scan diffs against a base commit that a shallow clone omits, and
+          # treats a missing base as a hard error rather than scanning nothing.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Installs the scanner's dependency from the inline metadata in the script,
+      # so its version lives in one place.
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      - name: Test the scanner
+        run: python3 .github/scripts/tests/test-scan-changed-files.py
+
+      - name: Scan changed files
+        env:
+          SARIF_OUT: ${{ runner.temp }}/results.sarif
+          # Fork PRs cannot upload SARIF, so the exit code carries the finding.
+          FAIL_ON_FINDINGS: ${{ github.event_name == 'pull_request' }}
+        run: uv run .github/scripts/scan-changed-files.py
+
+      # A ruleset code scanning rule blocks merges on these alerts.
+      # See .github/security-scan/README.md.
+      - name: Upload results to code scanning
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@c3400c2f38909e0dcf3c3a41f2030a8217be5d3e # v3
+        with:
+          sarif_file: ${{ runner.temp }}/results.sarif
+          category: disguised-content
