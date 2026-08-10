@@ -180,7 +180,11 @@ confirmation prompt, so a run can be stopped at any step. Nothing
 cluster-specific is stored in this repo; addresses and credentials are typed in
 per run, or supplied through the per-network `NOMAD_ADDR_DEV_*`,
 `NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*` environment variables to
-skip the matching prompt.
+skip the matching prompt. The on-chain steps sign with near-cli; the node step
+imports member-account keys it finds in the Nomad job definitions into the
+local keystore, and the test-signature step offers a manual
+`near account import-account` as fallback. Keys are masked in the echoed
+commands.
 
 ## Re-running after a failure
 

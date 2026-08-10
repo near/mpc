@@ -44,8 +44,8 @@ resolve_version() {
 
 resolve_network "${1:-}"
 resolve_version "${2:-}"
-
 resolve_dev_cluster "$NETWORK"
+
 prompt_nomad_ip "$NETWORK"
 [[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
 prompt_node_addrs
@@ -61,7 +61,7 @@ EOF
 confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
 step "### Step 1 — nodes"
-run_cmd "${SCRIPT_DIR}/migrate-dev-nodes.sh" "$VERSION" \
+run_cmd "${SCRIPT_DIR}/migrate-dev-nodes.sh" "$NETWORK" "$VERSION" \
     || die "Node upgrade did not complete."
 
 step "### Verify"

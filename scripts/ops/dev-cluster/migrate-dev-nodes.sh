@@ -4,10 +4,12 @@
 # mpc-node-* Nomad job to nearone/mpc-node-gcp:<VERSION> — plan, confirm, run.
 # Verification is the caller's job (dev-menu.sh runs it next).
 #
-# Usage: ./scripts/ops/dev-cluster/migrate-dev-nodes.sh <VERSION>
+# Usage: ./scripts/ops/dev-cluster/migrate-dev-nodes.sh <testnet|mainnet> <VERSION>
 # The Nomad IP address and its basic-auth credentials are prompted for. Exporting
 # NOMAD_ADDR / NOMAD_HTTP_AUTH="user:password" skips the matching prompt;
 # NOMAD_TOKEN adds an ACL token header; NOMAD_NAMESPACE targets that namespace.
+# Member-account keys found in the job definitions are imported into the local
+# near-cli keystore if missing, so the later signing steps can run.
 #
 
 set -euo pipefail
@@ -17,6 +19,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../common.sh"
 # shellcheck source=dev-common.sh
 source "${SCRIPT_DIR}/dev-common.sh"
+# shellcheck source=first-time-setup.sh
+source "${SCRIPT_DIR}/first-time-setup.sh"
 
 # curl -K parses values as quoted strings with backslash escapes.
 curl_cfg_escape() {
@@ -137,10 +141,12 @@ upgrade_nomad_job() {
     wait_for_alloc "$job_id"
 }
 
-[[ $# -eq 1 ]] || die "Usage: $0 <VERSION>  (e.g. 3.14.0)"
-VERSION=$1
+[[ $# -eq 2 ]] || die "Usage: $0 <testnet|mainnet> <VERSION>  (e.g. testnet 3.14.0)"
+NETWORK=$1
+VERSION=$2
 check_version "$VERSION"
-require_cmds curl jq
+require_cmds curl jq near
+resolve_dev_cluster "$NETWORK"
 prompt_nomad_ip
 [[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
 
@@ -157,6 +163,11 @@ fi
 JOB_IDS=$(nomad_curl GET "/jobs?prefix=mpc-node" | jq -r '.[].ID') \
     || die "Could not list jobs from ${NOMAD_ADDR}."
 [[ -n "$JOB_IDS" ]] || die "No mpc-node-* jobs found at ${NOMAD_ADDR}."
+
+step "==> Local signing keys"
+for job_id in $JOB_IDS; do
+    ensure_job_keys "$job_id"
+done
 
 for job_id in $JOB_IDS; do
     upgrade_nomad_job "$job_id" "$IMAGE"
