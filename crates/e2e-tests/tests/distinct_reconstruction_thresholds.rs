@@ -4,9 +4,9 @@ use crate::common::{
     must_setup_cluster,
 };
 
-use e2e_tests::CLUSTER_WAIT_TIMEOUT;
+use e2e_tests::{CLUSTER_WAIT_TIMEOUT, WithTimeout};
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold, SignRequestArgs,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -97,25 +97,25 @@ async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_whe
         outcome.failure_message()
     );
 
-    // Cait-Sith (needs all 6) is unanswerable: its yield outlives the JSON-RPC call, so
-    // we poll the tx to `Final` instead of awaiting it.
-    let user = cluster.default_user_account().clone();
-    let tx_hash = cluster
-        .send_sign_request_included(caitsith_domain.id, generate_ecdsa_payload(&mut rng), &user)
-        .await
-        .expect("failed to submit Cait-Sith sign request");
+    // Cait-Sith (needs all 6) is unanswerable, and its yield outlives the RPC's wait
+    // window, so the deadline has to cover the on-chain timeout for it to be observable.
     let outcome = cluster
-        .contract
-        .wait_tx_final(tx_hash, &user, CLUSTER_WAIT_TIMEOUT)
+        .contract_handle(cluster.default_user_account())
+        .with_timeout(CLUSTER_WAIT_TIMEOUT)
+        .sign(SignRequestArgs {
+            path: "test".to_string(),
+            payload: generate_ecdsa_payload(&mut rng),
+            domain_id: caitsith_domain.id,
+        })
         .await
-        .expect("Cait-Sith sign request did not reach a final on-chain outcome");
+        .expect("Cait-Sith sign request did not reach an on-chain outcome");
     assert!(
         outcome.is_failure(),
         "Cait-Sith sign request succeeded with only 5 of its 6 required signers alive"
     );
     let message = outcome.failure_message().unwrap_or_default();
     assert!(
-        message.contains("timed out"),
+        message.contains("Request has timed out."),
         "Cait-Sith sign request failed for an unexpected reason: {message}"
     );
 }

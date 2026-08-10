@@ -2,10 +2,11 @@ use std::time::Duration;
 
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::{AccountId, CryptoHash, Final, FinalExecutionOutcome};
+use near_kit::{CryptoHash, ExecutedOptimistic, Final, FinalExecutionOutcome, Included};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
+use tokio::time::Instant;
 
 use crate::conversions::ToNearKey;
 
@@ -24,26 +25,132 @@ pub struct NearBlockchain {
 
 /// A `near_kit::Near` client bound to a specific account: the e2e
 /// [`CallContract`] backend.
+///
+/// By default a call waits exactly as long as near-kit does: nearcore's RPC polling
+/// window, across near-kit's retries. A request that outlives that window — a `sign`
+/// whose yield is still open — reports [`CallError::Deadline`] while remaining alive on
+/// chain. Use [`WithTimeout::with_timeout`] to keep observing it instead.
 pub struct NearKitCaller {
     inner: near_kit::Near,
+    account_id: String,
+    timeout: Option<Duration>,
+}
+
+impl NearKitCaller {
+    /// Observe the outcome for up to `timeout` instead of for as long as the RPC waits.
+    pub fn with_timeout(self, timeout: Duration) -> Self {
+        Self {
+            timeout: Some(timeout),
+            ..self
+        }
+    }
+}
+
+/// Wait a caller-chosen duration for a call's on-chain outcome.
+pub trait WithTimeout: Sized {
+    fn with_timeout(self, timeout: Duration) -> Self;
+}
+
+impl WithTimeout for MpcContractHandle<NearKitCaller> {
+    fn with_timeout(self, timeout: Duration) -> Self {
+        self.map_caller(|caller| caller.with_timeout(timeout))
+    }
+}
+
+/// Failure of a call made through [`NearKitCaller`].
+#[derive(Debug, thiserror::Error)]
+pub enum CallError {
+    #[error(transparent)]
+    Rpc(near_kit::Error),
+
+    /// The transaction is on chain but its outcome was still unresolved when we stopped
+    /// waiting — typically a `sign` whose yield has not been answered. The call itself
+    /// did not fail; widen the window with [`WithTimeout::with_timeout`].
+    #[error("request still pending on chain after {after:?} (tx {tx:?})")]
+    Deadline {
+        tx: Option<CryptoHash>,
+        after: Duration,
+    },
 }
 
 impl CallContract for NearKitCaller {
     type Output = FinalExecutionOutcome;
-    type Error = near_kit::Error;
+    type Error = CallError;
 
     async fn call_contract(
         &self,
         contract_id: &near_kit::AccountId,
         call_args: FunctionCallArgs,
     ) -> Result<Self::Output, Self::Error> {
-        self.inner
+        let call = self
+            .inner
             .call(contract_id, &call_args.method_name)
             .args_raw(call_args.args)
             .gas(call_args.gas)
-            .deposit(call_args.deposit)
-            .send()
+            .deposit(call_args.deposit);
+
+        let Some(timeout) = self.timeout else {
+            let started = Instant::now();
+            return call.send().await.map_err(|e| {
+                if timed_out_waiting(&e) {
+                    CallError::Deadline {
+                        tx: None,
+                        after: started.elapsed(),
+                    }
+                } else {
+                    CallError::Rpc(e)
+                }
+            });
+        };
+
+        // Inclusion first, so the transaction is known to the RPC and the poll below
+        // cannot race a not-yet-seen hash.
+        let tx = call
+            .wait_until::<Included>()
             .await
+            .map_err(CallError::Rpc)?
+            .transaction_hash;
+
+        let poll = async {
+            loop {
+                match self
+                    .inner
+                    .tx_status(&tx, self.account_id.as_str())
+                    .wait_until::<ExecutedOptimistic>()
+                    .await
+                {
+                    Ok(outcome) => return Ok(outcome),
+                    Err(e) if !is_retryable(&e) => return Err(CallError::Rpc(e)),
+                    Err(_) => tokio::time::sleep(TX_STATUS_POLL_INTERVAL).await,
+                }
+            }
+        };
+
+        tokio::time::timeout(timeout, poll)
+            .await
+            .unwrap_or_else(|_| {
+                Err(CallError::Deadline {
+                    tx: Some(tx),
+                    after: timeout,
+                })
+            })
+    }
+}
+
+/// Transient RPC failures worth polling through. Retrying anything else would spin until
+/// the deadline and then report its cause as a timeout.
+fn is_retryable(error: &near_kit::Error) -> bool {
+    matches!(error, near_kit::Error::Rpc(rpc) if rpc.is_retryable())
+}
+
+/// Distinguishes "the RPC stopped waiting" from "the call failed".
+fn timed_out_waiting(error: &near_kit::Error) -> bool {
+    match error {
+        near_kit::Error::Rpc(rpc) => matches!(
+            **rpc,
+            near_kit::RpcError::Timeout(_) | near_kit::RpcError::RequestTimeout { .. }
+        ),
+        _ => false,
     }
 }
 
@@ -114,6 +221,8 @@ impl NearBlockchain {
     pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<NearKitCaller> {
         Ok(NearKitCaller {
             inner: self.make_client(account_id, key)?,
+            account_id: account_id.to_string(),
+            timeout: None,
         })
     }
 
@@ -225,54 +334,6 @@ impl DeployedContract {
             .map_err(|e| {
                 anyhow::anyhow!("contract call `{method}` (borsh args, with deposit) failed: {e}")
             })
-    }
-
-    /// Submit a call and return its tx hash once included. Pair with [`Self::wait_tx_final`]
-    /// for requests (e.g. a yielding `sign`) that resolve past the RPC timeout.
-    pub async fn call_from_with_deposit_included(
-        &self,
-        client: &NearKitCaller,
-        method: &str,
-        args: serde_json::Value,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<CryptoHash> {
-        let response = client
-            .inner
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(gas)
-            .deposit(deposit)
-            .wait_until::<near_kit::Included>()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (included) failed: {e}"))?;
-        Ok(response.transaction_hash)
-    }
-
-    /// Poll `tx_status` for `tx_hash` (sent by `signer_id`) until `Final` or `timeout`.
-    pub async fn wait_tx_final(
-        &self,
-        tx_hash: CryptoHash,
-        signer_id: &AccountId,
-        timeout: Duration,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            match self
-                .client
-                .tx_status(&tx_hash, signer_id.as_str())
-                .wait_until::<Final>()
-                .await
-            {
-                Ok(outcome) => return Ok(outcome),
-                Err(e) if tokio::time::Instant::now() >= deadline => {
-                    return Err(anyhow::anyhow!(
-                        "tx {tx_hash} did not reach Final within {timeout:?}: {e}"
-                    ));
-                }
-                Err(_) => tokio::time::sleep(TX_STATUS_POLL_INTERVAL).await,
-            }
-        }
     }
 
     pub async fn view<T: DeserializeOwned + Send + 'static>(
