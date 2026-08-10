@@ -185,6 +185,7 @@ impl SandboxTestSetup {
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
             with_sandbox_test_methods: false,
+            with_sandbox_test_attestation: false,
         }
     }
 
@@ -203,6 +204,7 @@ pub struct SandboxTestSetupBuilder {
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
     with_sandbox_test_methods: bool,
+    with_sandbox_test_attestation: bool,
 }
 
 impl SandboxTestSetupBuilder {
@@ -234,9 +236,23 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys the wasm built with `--features sandbox-test-attestation`, which accepts the
+    /// attestation fixture's app-compose. Required by tests that submit the Dstack fixture
+    /// and expect it to verify.
+    pub fn with_sandbox_test_attestation(mut self) -> Self {
+        self.with_sandbox_test_attestation = true;
+        self
+    }
+
     pub async fn build(self) -> SandboxTestSetup {
+        assert!(
+            !(self.with_sandbox_test_methods && self.with_sandbox_test_attestation),
+            "no wasm is built with both test feature sets; add one if a test needs it"
+        );
         let (worker, contract) = if self.with_sandbox_test_methods {
             init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
+        } else if self.with_sandbox_test_attestation {
+            init_with_wasm(contract_build::current_contract_with_sandbox_test_attestation()).await
         } else {
             init().await
         };

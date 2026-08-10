@@ -59,6 +59,9 @@ bench-contract-methods = []
 # length of a fan-out queue). Distinct from `bench-contract-methods` because these are
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
+# For the sandbox wasm of tests that submit the Dstack fixture and expect it to verify;
+# see `attestation/allow-pre-launch-script`.
+sandbox-test-attestation = ["mpc-attestation/allow-pre-launch-script"]
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 abi = [
     "borsh/unstable__schema",
