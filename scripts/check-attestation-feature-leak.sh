@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# `attestation/allow-pre-launch-script` relaxes the check that rejects arbitrary root
-# code in a CVM's app-compose. It exists only so tests can verify the committed
-# fixture, whose app-compose carries the hook that exported its signer key. If it ever
-# reached a released artifact, an operator could bake root code into a CVM and still
-# pass attestation, so fail the build if it appears in a production feature graph.
+# Fails the build if `attestation/allow-pre-launch-script` is compiled into anything we ship.
+#
+# That feature makes attestation verification accept a CVM whose app-compose declares a
+# `pre_launch_script`, which dstack runs as root before the node starts. Production rejects such an
+# app-compose; tests need to accept one because the committed fixture is a real quote whose measured
+# app-compose carries such a script, the one that exported the fixture node's signer key. A measured
+# field cannot be dropped without invalidating the quote.
+#
+# Shipping it would let an operator run arbitrary root code in a CVM and still pass attestation.
 
 FEATURE='allow-pre-launch-script'
 
