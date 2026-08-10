@@ -295,6 +295,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      - name: Build tee-verifier
+        run: nix develop --command cargo make build-tee-verifier-optimized
+
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
 
