@@ -49,12 +49,30 @@ All files will be written into the specified output directory.
 
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
-5. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
+5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,
+   `ed25519:<base58>`, matching the format of the `.pub` files). Sandbox tests sign
+   `submit_participant_info` with it, because the quote's `report_data` binds that key
+   and the contract reads it from the transaction signer. It is not part of
+   `public_data.json`: it lives in `secrets.json` inside the CVM and has to be
+   exported during collection, which is what the `PRELAUNCH_SCRIPT` in
+   [the rust-launcher README](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key)
+   is for. The fixture node is a throwaway localnet node, which is the only reason its
+   secret key may live in the repo: its account (`frodo.test.near`) exists on no
+   public network, and the quote and collateral that bind the key are public anyway.
+   Re-check that before committing a regenerated key.
+
+   Because of that export hook, the fixture's app-compose carries a
+   `pre_launch_script`, which production verification rejects as arbitrary root code.
+   Test builds accept it via `attestation/allow-pre-launch-script` (and, for the
+   sandbox wasm, `mpc-contract/sandbox-test-attestation`). Keep the hook minimal, and
+   do not treat this fixture as an example of a production-valid attestation.
+
+6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
    This is optional — the tests only verify parsing, not measurement values — but keeping it
    in sync avoids confusion.
 
-6. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
+7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
    - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
    - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
 
@@ -71,6 +89,19 @@ All files will be written into the specified output directory.
    > will be managed entirely through on-chain voting (`vote_add_os_measurement`), and these
    > files will no longer need to be kept in sync with the deployed OS image.
 
+8. Regenerate the verifier's borsh argument fixture and refresh the report values
+   the verifier test hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with
+   every new node):
+
+   ```shell
+   UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
+   cargo test -p tee-verifier --test verify_quote
+   ```
+
+   The second run fails on `verify_quote__should_return_verified_td10_report_for_valid_fixture`
+   and prints the values actually produced; copy them into
+   `crates/tee-verifier/tests/verify_quote.rs`.
+
 ## Tests that depend on these assets
 
 After updating assets, these tests should pass:
@@ -81,4 +112,12 @@ cargo test -p mpc-contract test_tee_attestation_fails_with_invalid_tls_key
 cargo test -p mpc-contract test_submit_participant_info_fails_without_approved_mpc_hash
 cargo test -p mpc-contract test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation
 cargo test -p test-utils
+```
+
+The cross-contract sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`
+also depend on these assets (including `near_account_secret_key` for the tests that
+sign as the fixture account):
+
+```shell
+cargo nextest run --cargo-profile=test-release -p mpc-contract tee_verifier
 ```

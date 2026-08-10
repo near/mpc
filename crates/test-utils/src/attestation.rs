@@ -21,10 +21,10 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
-/// Unix time as of 2026/03/29, represents a date where
+/// Unix time as of 2026/08/07, represents a date where
 /// the measurements stored in ../assets are valid. When these measurements are
 /// modified, this value should be updated as well
-pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774945717;
+pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1786103100;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
@@ -95,6 +95,18 @@ pub fn near_p2p_tls_key() -> near_sdk::PublicKey {
 pub fn near_account_key() -> near_sdk::PublicKey {
     let key_file = include_str!("../assets/near_account_public_key.pub");
     key_file.parse().expect("File contains a valid public key")
+}
+
+/// Secret counterpart of [`account_key`], the key the fixture quote's
+/// report_data binds. Lets sandbox tests sign `submit_participant_info` as the
+/// fixture node (the contract reads the account key from the transaction
+/// signer). Returned as the raw "ed25519:..." string; parse it into the key
+/// type of the calling test framework.
+///
+/// The key belongs to a throwaway localnet node with no standing on any
+/// network, which is the only reason it can live in the repo.
+pub fn account_secret_key() -> &'static str {
+    include_str!("../assets/near_account_secret_key").trim()
 }
 
 pub fn mock_dstack_attestation_inner() -> DstackAttestation {

@@ -29,6 +29,8 @@ insert_final_newline = false
 # localnet verify_quote call; the text rules do not apply.
 [crates/tee-verifier/tests/fixtures/*.borsh]
 end_of_line = unset
-insert_final_newline = false
+# `unset`, not `false`: the last byte is whatever the encoded collateral ends
+# with, so asserting either way breaks on the next fixture regeneration.
+insert_final_newline = unset
 trim_trailing_whitespace = false
 charset = unset
