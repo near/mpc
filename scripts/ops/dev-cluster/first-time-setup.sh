@@ -15,14 +15,59 @@ job_signing_creds() {
          | "\(.Env.MPC_ACCOUNT_ID // "") \(.Env.MPC_ACCOUNT_SK // "")"'
 }
 
-# near-cli offers no stdin path for the key, so it rides argv (visible in
-# /proc for its lifetime) — but it is masked in the echoed command.
+# near-cli's import is interactive (the account ID and keychain choice have no
+# CLI flags), so we write its keystore files directly. near-cli writes two: the
+# flat <account>.json and <account>/<curve>_<pubkey>.json, both holding just
+# {public_key, private_key}. An ed25519 secret key embeds its public half (last
+# 32 of 64 bytes), so no crypto is needed to derive the key or the filename. The
+# key rides the environment, never argv, and is never echoed.
 import_signing_key() {
     local account=$1 sk=$2
-    show_cmd near account import-account using-private-key '<MPC_ACCOUNT_SK>' \
-        network-config "$NEAR_NET"
-    near account import-account using-private-key "$sk" network-config "$NEAR_NET" \
-        || warn "Import did not complete — signing as ${account} may fail."
+    step "==> storing key for ${account}"
+    MPC_IMPORT_SK="$sk" MPC_IMPORT_ACCOUNT="$account" \
+    MPC_IMPORT_DIR="${HOME}/.near-credentials/${NEAR_NET}" \
+        python3 - <<'PY' || { warn "Could not store key for ${account}."; return; }
+import json, os, sys
+
+_B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+def b58decode(s):
+    n = 0
+    for c in s:
+        n = n * 58 + _B58.index(c)
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return b"\x00" * (len(s) - len(s.lstrip("1"))) + body
+
+def b58encode(b):
+    n = int.from_bytes(b, "big")
+    out = ""
+    while n:
+        n, r = divmod(n, 58)
+        out = _B58[r] + out
+    return "1" * (len(b) - len(b.lstrip(b"\x00"))) + out
+
+sk = os.environ["MPC_IMPORT_SK"]
+account = os.environ["MPC_IMPORT_ACCOUNT"]
+base = os.environ["MPC_IMPORT_DIR"]
+
+prefix, _, body = sk.partition(":")
+raw = b58decode(body)
+if len(raw) != 64:
+    sys.stderr.write("unexpected ed25519 key length: %d bytes\n" % len(raw))
+    sys.exit(1)
+pub_b58 = b58encode(raw[32:])
+record = {"public_key": "%s:%s" % (prefix, pub_b58), "private_key": sk}
+
+def write(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(record, f)
+
+write(os.path.join(base, "%s.json" % account))
+write(os.path.join(base, account, "%s_%s.json" % (prefix, pub_b58)))
+PY
+    ok "${account}: key stored in ~/.near-credentials/${NEAR_NET}."
 }
 
 # Imports any missing member-account keys found in a job's definition.

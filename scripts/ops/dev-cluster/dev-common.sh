@@ -3,11 +3,11 @@
 # dev-common.sh — helpers specific to the NEAR One dev clusters (source, don't
 # run). Generic helpers live in ../common.sh.
 #
-# MPC_SIGN_WITH: use sign-with-legacy-keychain when the keychain can't find
-# a key written to ~/.near-credentials.
+# MPC_SIGN_WITH overrides the signer (default sign-with-legacy-keychain, which
+# reads the ~/.near-credentials files first-time-setup.sh writes).
 #
 
-SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
+SIGN_WITH="${MPC_SIGN_WITH:-sign-with-legacy-keychain}"
 
 # Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT and re-points endpoint
 # vars from per-cluster exports; network choice drives every step.
@@ -80,20 +80,9 @@ nomad_auth_state() {
     else echo "(none)"; fi
 }
 
-# Probes the legacy ~/.near-credentials layout only; OS-keychain keys can't be.
+# Probes the legacy ~/.near-credentials layout; first-time-setup.sh writes here.
 have_signing_key() {
     [[ -f "${HOME}/.near-credentials/${NEAR_NET}/${1}.json" ]]
-}
-
-# Best-effort: a miss is advisory (the key may be in the OS keychain). Offers
-# near-cli's interactive import; the key is typed into near-cli's own prompt.
-ensure_signing_key() {
-    local account=$1
-    have_signing_key "$account" && return 0
-    warn "No ~/.near-credentials/${NEAR_NET}/${account}.json — fine if the key is in the OS keychain."
-    confirm "Import a key for ${account} with near-cli now?" || return 0
-    run_cmd near account import-account \
-        || warn "Import did not complete — signing as ${account} may fail."
 }
 
 # Retries per node (warm-up delay after allocation starts).
@@ -131,7 +120,6 @@ test_sign() {
     require_cmds near
 
     local signer=${MEMBER_ACCOUNTS%% *}
-    ensure_signing_key "$signer"
     local payload='[12,1,2,0,4,5,6,8,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,44]'
     local cmd=(near contract call-function as-transaction "$CONTRACT" sign
         json-args "{\"request\": {\"payload\": ${payload}, \"path\": \"test\", \"key_version\": 0}}"
