@@ -30,7 +30,7 @@ require_cmds() {
             missing=1
         }
     done
-    [[ "$missing" -eq 0 ]] || die "Please install the missing dependencies above."
+    [[ "$missing" -eq 0 ]] || die "Please install the missing dependencies above (hint: run from within 'nix develop')."
 }
 
 # Mirrors .github/workflows/release.yml, so release candidates work too.
@@ -84,7 +84,6 @@ show_output() {
     fi
 }
 
-# Print a command, run it, let its output through.
 run_cmd() {
     show_cmd "$@"
     "$@"

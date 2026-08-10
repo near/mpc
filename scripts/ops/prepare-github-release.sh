@@ -21,43 +21,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=common.sh
+source "${REPO_ROOT}/scripts/ops/common.sh"
 
 # --- Argument parsing ---
 
-usage() {
-    echo "Usage: $0 <VERSION>  (e.g. 3.6.0)"
-    exit 1
-}
-
-if [[ $# -ne 1 ]]; then
-    echo "Error: Expected exactly one argument, got $#."
-    usage
-fi
-
+[[ $# -eq 1 ]] || die "Usage: $0 <VERSION>  (e.g. 3.6.0)"
 VERSION="$1"
-
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Error: '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH)."
-    exit 1
-fi
-
-# --- Helper functions ---
-
-die() {
-    printf 'Error: %s\n' "$1" >&2
-    exit 1
-}
-
-require_cmds() {
-    local missing=0
-    for cmd in "$@"; do
-        command -v "$cmd" >/dev/null 2>&1 || {
-            printf 'Missing dependency: %s\n' "$cmd" >&2
-            missing=1
-        }
-    done
-    [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above (hint: run from within 'nix develop')."
-}
+check_version "$VERSION"
 
 # --- Dependency checks ---
 

@@ -4,10 +4,9 @@
 # version, then upgrades the cluster nodes and verifies them.
 #
 # Usage: ./scripts/ops/dev-cluster/dev-menu.sh [testnet|mainnet] [VERSION]
-# The Nomad IP address, its credentials, and the node metrics addresses are prompted
-# for. Exporting the per-network NOMAD_ADDR_DEV_{TESTNET,MAINNET},
-# NOMAD_HTTP_AUTH_DEV_{TESTNET,MAINNET}, MPC_NODE_ADDRS_DEV_{TESTNET,MAINNET}
-# skips the matching prompt.
+# Prompts for the Nomad IP, credentials, and node metrics addresses; exporting
+# NOMAD_ADDR_DEV_*, NOMAD_HTTP_AUTH_DEV_*, or MPC_NODE_ADDRS_DEV_* for the
+# network skips the matching prompt.
 #
 
 set -euo pipefail

@@ -9,10 +9,9 @@
 
 SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
 
-# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT, and
-# re-points the endpoint vars from any exported per-cluster ones
-# (NOMAD_ADDR_DEV_TESTNET, ...), so the network choice drives every step.
-# Addresses themselves stay out of this repo.
+# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT and re-points
+# endpoint vars from per-cluster exports (NOMAD_ADDR_DEV_TESTNET, ...)
+# so the network choice drives every step; addresses stay out of this repo.
 resolve_dev_cluster() {
     local suffix var
     case "$1" in
@@ -35,16 +34,17 @@ resolve_dev_cluster() {
 # Typed in per run; the matching NOMAD_*_DEV_<NET> export skips the prompt.
 # Takes the bare IP — scheme and API path are the script's business.
 prompt_nomad_ip() {
-    local label=${1:-target} input
+    local label=${1:-target} input scheme
     while [[ -z "${NOMAD_ADDR:-}" ]]; do
         read -rp "Nomad IP address for the ${label} dev cluster: " input
-        # Tolerate a pasted URL.
+        # Tolerate a pasted URL — keeping its scheme, never downgrading TLS.
+        scheme="http"; [[ "$input" != https://* ]] || scheme="https"
         input="${input#http://}"; input="${input#https://}"; input="${input%%/*}"
         if [[ ! "$input" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?$ ]]; then
             echo "  Expected an IPv4 address, optionally with a port (e.g. 10.0.0.1 or 10.0.0.1:4646)."
             continue
         fi
-        NOMAD_ADDR="http://${input}"
+        NOMAD_ADDR="${scheme}://${input}"
     done
     export NOMAD_ADDR
 }
@@ -63,6 +63,9 @@ prompt_http_auth() {
         NOMAD_HTTP_AUTH="${user}:${pass}"
     fi
     export NOMAD_HTTP_AUTH
+    # Basic auth is base64 on the wire — over http:// that is cleartext.
+    [[ -z "$NOMAD_HTTP_AUTH" || "${NOMAD_ADDR:-}" == https://* ]] \
+        || warn "Note: these credentials will be sent over plain HTTP (${NOMAD_ADDR:-})."
 }
 
 prompt_node_addrs() {
@@ -79,25 +82,30 @@ nomad_auth_state() {
     else echo "(none)"; fi
 }
 
-# Check every MPC_NODE_ADDRS node reports release="<version>".
+# Check every MPC_NODE_ADDRS node reports release="<version>". Retries per
+# node — a node can still be warming up right after its allocation starts.
 verify_nodes() {
     local version=$1
     require_cmds curl
     [[ -n "${MPC_NODE_ADDRS:-}" ]] || die "MPC_NODE_ADDRS is not set (e.g. \"host:8080 host:8080\")."
 
-    local addr info ok=0 fail=0
+    local addr info matched=0 fail=0 try fetch
     for addr in ${MPC_NODE_ADDRS}; do
-        # The metrics listener is plain HTTP, internal-only; no TLS endpoint
-        # exists to point at.
+        # Internal-only plain HTTP; no TLS endpoint exists.
         # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
-        show_cmd curl -sf "http://${addr}/metrics" '|' grep mpc_node_build_info
-        # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
-        info=$(curl -sf --max-time 5 "http://${addr}/metrics" \
-            | grep -o 'mpc_node_build_info{[^}]*}') || { echo "  (unreachable)"; fail=1; continue; }
+        fetch=(curl -sf --max-time 5 "http://${addr}/metrics")
+        show_cmd "${fetch[@]}"
+        info=""
+        for try in 1 2 3; do
+            info=$("${fetch[@]}" | grep -o 'mpc_node_build_info{[^}]*}') || info=""
+            [[ "$info" != *"release=\"${version}\""* ]] || break
+            if (( try < 3 )); then sleep 5; fi
+        done
+        if [[ -z "$info" ]]; then echo "  (unreachable)"; fail=1; continue; fi
         echo "  $info"
-        if [[ "$info" == *"release=\"${version}\""* ]]; then ok=1; else fail=1; fi
+        if [[ "$info" == *"release=\"${version}\""* ]]; then matched=1; else fail=1; fi
     done
-    if [[ "$fail" -eq 0 && "$ok" -eq 1 ]]; then
+    if [[ "$fail" -eq 0 && "$matched" -eq 1 ]]; then
         ok "All nodes report release=\"${version}\"."
     else
         warn "Not all nodes are on ${version} yet."

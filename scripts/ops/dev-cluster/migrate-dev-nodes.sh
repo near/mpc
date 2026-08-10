@@ -7,7 +7,7 @@
 # Usage: ./scripts/ops/dev-cluster/migrate-dev-nodes.sh <VERSION>
 # The Nomad IP address and its basic-auth credentials are prompted for. Exporting
 # NOMAD_ADDR / NOMAD_HTTP_AUTH="user:password" skips the matching prompt;
-# NOMAD_TOKEN adds an ACL token header.
+# NOMAD_TOKEN adds an ACL token header; NOMAD_NAMESPACE targets that namespace.
 #
 
 set -euo pipefail
@@ -18,27 +18,35 @@ source "${SCRIPT_DIR}/../common.sh"
 # shellcheck source=dev-common.sh
 source "${SCRIPT_DIR}/dev-common.sh"
 
+# curl -K parses values as quoted strings with backslash escapes.
+curl_cfg_escape() {
+    local s=${1//\\/\\\\}
+    printf '%s' "${s//\"/\\\"}"
+}
+
 # Echoes the request, and the response for mutations. Never the credentials.
 nomad_curl() {
     local method=$1 path=$2 data=${3:-}
     local url="${NOMAD_ADDR%/}/v1${path}"
+    # The API ignores the NOMAD_NAMESPACE env var (a nomad-CLI feature).
+    if [[ -n "${NOMAD_NAMESPACE:-}" ]]; then
+        local sep="?"; [[ "$url" != *\?* ]] || sep="&"
+        url+="${sep}namespace=${NOMAD_NAMESPACE}"
+    fi
     # --fail-with-body (curl >= 7.76): plain -f discards Nomad's error body.
     local args=(-sS --fail-with-body --max-time 30 -X "$method" "$url")
-    [[ -z "$data" ]] || args+=(-H 'Content-Type: application/json' --data "$data")
+    [[ -z "$data" ]] || args+=(-H 'Content-Type: application/json' --data-binary @-)
 
-    show_cmd curl -X "$method" "$url" ${data:+--data @-}
+    show_cmd curl -X "$method" "$url" ${data:+--data-binary @-}
 
-    # Via the config stream: argv is readable from ps / /proc/<pid>/cmdline.
+    # Credentials ride the config stream and the body rides stdin: argv is
+    # readable from /proc/<pid>/cmdline, and job definitions carry secrets too.
     local config=""
-    [[ -z "${NOMAD_HTTP_AUTH:-}" ]] || config+="user = \"${NOMAD_HTTP_AUTH}\""$'\n'
-    [[ -z "${NOMAD_TOKEN:-}" ]] || config+="header = \"X-Nomad-Token: ${NOMAD_TOKEN}\""$'\n'
+    [[ -z "${NOMAD_HTTP_AUTH:-}" ]] || config+="user = \"$(curl_cfg_escape "$NOMAD_HTTP_AUTH")\""$'\n'
+    [[ -z "${NOMAD_TOKEN:-}" ]] || config+="header = \"X-Nomad-Token: $(curl_cfg_escape "$NOMAD_TOKEN")\""$'\n'
 
     local response status=0
-    if [[ -n "$config" ]]; then
-        response=$(printf '%s' "$config" | curl -K - "${args[@]}") || status=$?
-    else
-        response=$(curl "${args[@]}") || status=$?
-    fi
+    response=$(printf '%s' "$data" | curl -K <(printf '%s' "$config") "${args[@]}") || status=$?
     if (( status != 0 )); then
         [[ -z "$response" ]] || show_output "$response"
         return "$status"
@@ -68,7 +76,10 @@ wait_for_alloc() {
         sleep 5
     done
     echo
-    warn "    WARNING: allocation not running after 3m (last status: ${status}) — check the Nomad UI."
+    warn "    Allocation not running after 3m (last status: ${status}) — check the Nomad UI."
+    # Continuing with this node down could drop the cluster below threshold.
+    confirm "    Continue to the next job anyway?" \
+        || die "Stopping the rollout — ${job_id} never reported running."
 }
 
 NODE_IMAGE_PREFIX="nearone/mpc-node-gcp:"
@@ -124,7 +135,7 @@ upgrade_nomad_job() {
     nomad_curl POST "/job/${job_id}" "$(jq -n --argjson job "$updated" '{Job: $job}')" >/dev/null \
         || die "Job registration failed for ${job_id}."
     echo
-    # This node must be back before the caller moves to the next.
+    # The next job waits on this node coming back, unless the operator overrides.
     wait_for_alloc "$job_id"
 }
 
