@@ -347,8 +347,9 @@ Either outcome proves the DCAP path runs: a verified report while the fixture's
 collateral is still inside its validity window (the committed one lists
 `nextUpdate: 2026-09-06`), and `TCBInfo expired` once the live block clock passes
 it. Tests do not depend on that window, since they pin the verification clock:
-see the unit test `crates/tee-verifier/tests/verify_quote.rs`. Regenerate the
-fixture (after changing the quote/collateral fixtures) with:
+see the unit test `crates/tee-verifier/tests/verify_quote.rs` and, cross-contract,
+the sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`. Regenerate
+the fixture (after changing the quote/collateral fixtures) with:
 
 ```shell
 UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
