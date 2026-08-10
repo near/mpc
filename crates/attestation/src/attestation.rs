@@ -633,17 +633,16 @@ mod tests {
             fixture.pre_launch_script.is_some(),
             "the fixture is expected to carry the export hook"
         );
-
-        // When
         let without_hook = AppCompose {
             pre_launch_script: None,
             ..fixture
         };
 
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&without_hook);
+
         // Then
-        assert!(DstackAttestation::validate_app_compose_config(
-            &without_hook
-        ));
+        assert!(result)
     }
 
     #[test]
