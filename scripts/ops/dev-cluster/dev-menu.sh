@@ -18,12 +18,17 @@ source "${SCRIPT_DIR}/../common.sh"
 # shellcheck source=dev-common.sh
 source "${SCRIPT_DIR}/dev-common.sh"
 
-# Validated here so a typo re-prompts instead of hitting die().
-ask_network() {
-    local choice
+# Sets NETWORK: a valid CLI argument passes, an invalid one dies (so scripted
+# use fails loudly), no argument prompts until valid.
+resolve_network() {
+    NETWORK="${1:-}"
+    [[ -z "$NETWORK" ]] || case "$NETWORK" in
+        testnet|mainnet) return 0 ;;
+        *) die "Unknown network '${NETWORK}' (expected testnet|mainnet)." ;;
+    esac
     while true; do
-        read -rp "Network (testnet|mainnet) [testnet]: " choice
-        NETWORK="${choice:-testnet}"
+        read -rp "Network (testnet|mainnet) [testnet]: " NETWORK
+        NETWORK="${NETWORK:-testnet}"
         case "$NETWORK" in
             testnet|mainnet) return 0 ;;
             *) echo "Unknown network '${NETWORK}'." ;;
@@ -31,17 +36,15 @@ ask_network() {
     done
 }
 
-NETWORK="${1:-}"
-VERSION="${2:-}"
-case "$NETWORK" in
-    testnet|mainnet) ;;
-    "") ask_network ;;
-    *) die "Unknown network '${NETWORK}' (expected testnet|mainnet)." ;;
-esac
-if [[ -z "$VERSION" ]]; then
-    read -rp "Version (e.g. 3.14.0): " VERSION
-fi
-check_version "$VERSION"
+# Sets VERSION from the CLI argument or a prompt, then validates it.
+resolve_version() {
+    VERSION="${1:-}"
+    [[ -n "$VERSION" ]] || read -rp "Version (e.g. 3.14.0): " VERSION
+    check_version "$VERSION"
+}
+
+resolve_network "${1:-}"
+resolve_version "${2:-}"
 
 resolve_dev_cluster "$NETWORK"
 prompt_nomad_ip "$NETWORK"
