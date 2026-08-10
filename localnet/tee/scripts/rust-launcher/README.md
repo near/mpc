@@ -57,6 +57,11 @@ reads that key from the transaction signer. That key is generated inside the
 CVM, so it has to be exported during collection or the fixture is unusable for
 those tests (this is what issue #3787 was about).
 
+Supplying the key instead of exporting it does not work: the node reuses an
+existing `secrets.json` if it finds one, but the launcher's measured compose
+mounts only the `mpc-data` volume into the node container, so the host has
+nowhere to put it.
+
 `PRELAUNCH_SCRIPT` points at a script baked into the app-compose and run inside
 the CVM before the node starts. Notes from making this work:
 

@@ -143,6 +143,7 @@ pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Atte
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     #[test]
@@ -158,6 +159,25 @@ mod tests {
     #[test]
     fn test_near_p2p_tls_key_works() {
         near_p2p_tls_key();
+    }
+
+    /// `create-assets.sh` rewrites the `.pub` files but cannot rewrite the secret, so a
+    /// stale secret beside a fresh public key is the regeneration mistake to catch. A NEAR
+    /// ed25519 secret key is base58 of `seed || public_key`, so the pair checks out
+    /// without a signing library.
+    #[test]
+    fn account_secret_key__should_pair_with_account_public_key() {
+        // Given
+        let secret = account_secret_key()
+            .strip_prefix("ed25519:")
+            .expect("secret key is ed25519-prefixed");
+
+        // When
+        let decoded = bs58::decode(secret).into_vec().expect("base58 secret key");
+
+        // Then
+        assert_eq!(decoded.len(), 64);
+        assert_eq!(decoded[32..], account_key());
     }
 
     #[test]

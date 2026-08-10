@@ -77,9 +77,8 @@ ls -la "$OUTPUT_DIR"
 # The secret counterpart of near_account_public_key.pub is not part of
 # public_data: it must be exported from the node (secrets.json in the node home
 # dir) by whoever regenerates the assets. It is committed, so it is normally
-# present but stale — hence an unconditional reminder rather than an
-# existence check. A mismatched pair fails the sandbox tests that sign as the
-# fixture account.
+# present but stale, hence an unconditional reminder rather than an existence check.
+# A mismatched pair fails the test that checks it against near_account_public_key.pub.
 echo ""
 echo "REMINDER: replace '$OUTPUT_DIR/near_account_secret_key' with the secret key of"
 echo "the node you just extracted from (ed25519:<base58>, one line). It must pair with"

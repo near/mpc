@@ -34,7 +34,12 @@ tee-verifier-interface = { workspace = true }
 [dev-dependencies]
 assert_matches = { workspace = true }
 dcap-qvl = { workspace = true }
-mpc-attestation = { path = ".", features = ["local-verify", "test-utils"] }
+mpc-attestation = { path = ".", features = [
+    "local-verify",
+    "test-utils",
+    # The fixture app-compose carries the key-export hook.
+    "allow-pre-launch-script",
+] }
 test-utils = { workspace = true }
 
 [lints]

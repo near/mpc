@@ -7,7 +7,12 @@ edition = { workspace = true }
 [dependencies]
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
-mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
+# `allow-pre-launch-script`: the fixture app-compose carries its key-export hook.
+mpc-attestation = { workspace = true, features = [
+    "test-utils",
+    "local-verify",
+    "allow-pre-launch-script",
+] }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
@@ -15,6 +20,9 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
 tee-verifier-interface = { workspace = true }
+
+[dev-dependencies]
+bs58 = { workspace = true }
 
 [lints]
 workspace = true

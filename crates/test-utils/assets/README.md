@@ -50,9 +50,10 @@ All files will be written into the specified output directory.
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
 5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,
-   `ed25519:<base58>`, matching the format of the `.pub` files). Sandbox tests sign
-   `submit_participant_info` with it, because the quote's `report_data` binds that key
-   and the contract reads it from the transaction signer. It is not part of
+   `ed25519:<base58>`, matching the format of the `.pub` files). A test can only sign
+   `submit_participant_info` as the fixture node with it, because the quote's
+   `report_data` binds that key and the contract reads it from the transaction
+   signer. It is not part of
    `public_data.json`: it lives in `secrets.json` inside the CVM and has to be
    exported during collection, which is what the `PRELAUNCH_SCRIPT` in
    [the rust-launcher README](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key)
@@ -63,9 +64,10 @@ All files will be written into the specified output directory.
 
    Because of that export hook, the fixture's app-compose carries a
    `pre_launch_script`, which production verification rejects as arbitrary root code.
-   Test builds accept it via `attestation/allow-pre-launch-script` (and, for the
-   sandbox wasm, `mpc-contract/sandbox-test-attestation`). Keep the hook minimal, and
-   do not treat this fixture as an example of a production-valid attestation.
+   Test builds accept it via `attestation/allow-pre-launch-script`, enabled only on the
+   dependency edges that build tests. Keep the hook minimal, and do not treat this
+   fixture as an example of a production-valid attestation: the committed one also
+   echoes the key to the console, unlike the example in the collection runbook.
 
 6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
@@ -115,8 +117,7 @@ cargo test -p test-utils
 ```
 
 The cross-contract sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`
-also depend on these assets (including `near_account_secret_key` for the tests that
-sign as the fixture account):
+also depend on these assets:
 
 ```shell
 cargo nextest run --cargo-profile=test-release -p mpc-contract tee_verifier

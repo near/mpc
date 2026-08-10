@@ -5,6 +5,7 @@ dependencies = [
   "kebab-file-names",
   "todo-format",
   "editorconfig",
+  "attestation-feature-leak",
   "assert-matches",
   "ast-grep-scan",
   "ast-grep-test",
@@ -99,6 +100,11 @@ args = ["scripts/check-kebab-case-files.sh"]
 [tasks.todo-format]
 command = "bash"
 args = ["scripts/check-todo-format.sh"]
+
+[tasks.attestation-feature-leak]
+description = "Fail if the app-compose script relaxation reaches a released artifact"
+command = "bash"
+args = ["scripts/check-attestation-feature-leak.sh"]
 
 [tasks.editorconfig]
 description = "Enforce .editorconfig rules across all tracked files"

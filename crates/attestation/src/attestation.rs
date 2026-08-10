@@ -643,22 +643,30 @@ mod tests {
         assert!(!result)
     }
 
+    /// Pins the committed fixture as production-valid but for its key-export hook, so the
+    /// relaxation is known to cover that one field and nothing else about real data.
     #[test]
-    fn validate_app_compose_config__should_follow_the_compiled_in_pre_launch_policy() {
-        // Covers the wired-in policy at the call site, which the tests below reach
-        // only through the helper.
-
+    fn validate_app_compose_config__should_accept_the_fixture_without_its_export_hook() {
         // Given
-        let app_compose = AppCompose {
-            pre_launch_script: Some("echo collecting fixtures".to_string()),
-            ..valid_app_compose()
-        };
+        let fixture: AppCompose =
+            serde_json::from_str(test_utils::attestation::TEST_APP_COMPOSE_STRING)
+                .expect("the fixture app-compose parses");
+        assert!(
+            fixture.pre_launch_script.is_some(),
+            "the fixture is expected to carry the export hook"
+        );
 
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let without_hook = AppCompose {
+            pre_launch_script: None,
+            ..fixture
+        };
 
         // Then
-        assert_eq!(result, cfg!(feature = "allow-pre-launch-script"));
+        assert!(DstackAttestation::scripts_absent_with(&without_hook, false));
+        assert!(DstackAttestation::validate_app_compose_config(
+            &without_hook
+        ));
     }
 
     #[test]
