@@ -164,23 +164,27 @@ Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
 ## Ops tooling
 
 [`scripts/ops/menu.sh`](./scripts/ops/menu.sh) is the entry point for the
-scripted parts of a release. It offers two things:
+scripted parts of a release:
 
 1. **release github code** — runs `prepare-github-release.sh` (step 1 above).
-2. **migrate devnet cluster** — rolls a published release out to a NEAR One dev
-   cluster via [`scripts/ops/dev-cluster/dev-menu.sh`](./scripts/ops/dev-cluster/dev-menu.sh).
+2. **migrate devnet cluster** — rolls a published release out to a NEAR One
+   dev cluster ([`dev-menu.sh`](./scripts/ops/dev-cluster/dev-menu.sh)).
 
-The dev-cluster flow asks for the network (testnet first, then mainnet), the
-version, and the cluster's Nomad IP and credentials, then swaps each
-`mpc-node-*` Nomad job to the release image (plan, confirm, run) and checks the
-nodes report the new `release=` in their build info.
+The dev-cluster flow asks for the network (testnet before mainnet), version,
+and the cluster's Nomad IP and credentials, then follows the runbook: swap
+each `mpc-node-*` Nomad job to the release image (plan, confirm, run), check
+the nodes report the new `release=`, offer a test signature — a real on-chain
+`sign` from the first member account, 1 NEAR (testnet) / 0.1 NEAR (mainnet)
+deposit, behind its own confirmation — and finally, only for releases that
+change `crates/contract`, propose and vote the contract update.
 
-Every command is printed before it runs and every write is behind a
-confirmation prompt, so a run can be stopped at any step. Nothing
-cluster-specific is stored in this repo; addresses and credentials are typed in
-per run, or supplied through the per-network `NOMAD_ADDR_DEV_*`,
-`NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*` environment variables to
-skip the matching prompt.
+Every command is printed before it runs; every write sits behind a
+confirmation prompt. Addresses and credentials are never stored in this
+repo — they are typed in per run, or supplied via the per-network
+`NOMAD_ADDR_DEV_*`, `NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*`
+variables. On-chain steps sign with near-cli (OS
+keychain by default; `MPC_SIGN_WITH=sign-with-legacy-keychain` for
+`~/.near-credentials` keys).
 
 ## Re-running after a failure
 
