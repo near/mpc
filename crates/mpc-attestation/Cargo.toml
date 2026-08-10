@@ -8,6 +8,8 @@ edition = { workspace = true }
 abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema"]
 dstack-conversions = ["attestation/dstack-conversions"]
 test-utils = ["attestation/test-utils"]
+# Forwards `attestation/allow-pre-launch-script`; see that crate for the rationale.
+allow-pre-launch-script = ["attestation/allow-pre-launch-script"]
 # Enables full local DCAP + post-DCAP verification, forwarding to
 # `attestation/local-verify` which pulls in `dcap-qvl`. Used off-chain (node,
 # tee-authority, attestation-cli) and, for now, by the contract's synchronous
