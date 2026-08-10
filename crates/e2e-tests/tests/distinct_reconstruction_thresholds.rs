@@ -97,8 +97,8 @@ async fn distinct_reconstruction_thresholds__should_use_per_domain_threshold_whe
         outcome.failure_message()
     );
 
-    // Cait-Sith (needs all 6) is unanswerable, and its yield outlives the RPC's wait
-    // window, so the deadline has to cover the on-chain timeout for it to be observable.
+    // Cait-Sith needs all 6, so its yield runs to the on-chain timeout — past the RPC's
+    // wait window, hence the deadline.
     let outcome = cluster
         .contract_handle(cluster.default_user_account())
         .with_timeout(CLUSTER_WAIT_TIMEOUT)

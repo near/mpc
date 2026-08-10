@@ -49,8 +49,7 @@ impl<C> MpcContractHandle<C> {
         }
     }
 
-    /// Swap the transport, keeping the contract account. Lets a backend be reconfigured
-    /// or wrapped once the handle already exists.
+    /// Swap the transport, keeping the contract account.
     pub fn map_caller<D>(self, f: impl FnOnce(C) -> D) -> MpcContractHandle<D> {
         MpcContractHandle {
             caller: f(self.caller),

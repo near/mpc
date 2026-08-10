@@ -32,9 +32,8 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
 
     let payload = common::must_get_payload_for_domain(domain, &mut rng);
 
-    // then — the request is unanswerable, so the contract's yield auto-timeout is its
-    // outcome. That resolves long after the RPC's wait window, so the deadline has to
-    // cover it.
+    // then — unanswerable, so the yield runs to the on-chain timeout, past the RPC's wait
+    // window; hence the deadline.
     let outcome = cluster
         .contract_handle(cluster.default_user_account())
         .with_timeout(CLUSTER_WAIT_TIMEOUT)

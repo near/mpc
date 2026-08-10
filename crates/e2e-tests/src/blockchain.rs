@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::{CryptoHash, ExecutedOptimistic, Final, FinalExecutionOutcome, Included};
+use near_kit::{
+    CallBuilder, CryptoHash, ExecutedOptimistic, Final, FinalExecutionOutcome, Included,
+};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
@@ -23,13 +25,12 @@ pub struct NearBlockchain {
     rpc_url: String,
 }
 
-/// A `near_kit::Near` client bound to a specific account: the e2e
-/// [`CallContract`] backend.
+/// A [`near_kit::Near`] client bound to a specific account: the e2e [`CallContract`]
+/// backend.
 ///
-/// By default a call waits exactly as long as near-kit does: nearcore's RPC polling
-/// window, across near-kit's retries. A request that outlives that window — a `sign`
-/// whose yield is still open — reports [`CallError::Deadline`] while remaining alive on
-/// chain. Use [`WithTimeout::with_timeout`] to keep observing it instead.
+/// Without a timeout a call is bounded by nearcore's RPC polling window, so a request
+/// outliving it — a `sign` whose yield is still open — fails with
+/// [`CallError::RpcGaveUp`]. [`Self::with_timeout`] waits for the outcome instead.
 pub struct NearKitCaller {
     inner: near_kit::Near,
     account_id: String,
@@ -44,67 +45,30 @@ impl NearKitCaller {
             ..self
         }
     }
-}
 
-/// Wait a caller-chosen duration for a call's on-chain outcome.
-pub trait WithTimeout: Sized {
-    fn with_timeout(self, timeout: Duration) -> Self;
-}
-
-impl WithTimeout for MpcContractHandle<NearKitCaller> {
-    fn with_timeout(self, timeout: Duration) -> Self {
-        self.map_caller(|caller| caller.with_timeout(timeout))
-    }
-}
-
-/// Failure of a call made through [`NearKitCaller`].
-#[derive(Debug, thiserror::Error)]
-pub enum CallError {
-    #[error(transparent)]
-    Rpc(near_kit::Error),
-
-    /// The transaction is on chain but its outcome was still unresolved when we stopped
-    /// waiting — typically a `sign` whose yield has not been answered. The call itself
-    /// did not fail; widen the window with [`WithTimeout::with_timeout`].
-    #[error("request still pending on chain after {after:?} (tx {tx:?})")]
-    Deadline {
-        tx: Option<CryptoHash>,
-        after: Duration,
-    },
-}
-
-impl CallContract for NearKitCaller {
-    type Output = FinalExecutionOutcome;
-    type Error = CallError;
-
-    async fn call_contract(
-        &self,
-        contract_id: &near_kit::AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
-        let call = self
-            .inner
-            .call(contract_id, &call_args.method_name)
-            .args_raw(call_args.args)
-            .gas(call_args.gas)
-            .deposit(call_args.deposit);
-
-        let Some(timeout) = self.timeout else {
-            let started = Instant::now();
-            return call.send().await.map_err(|e| {
-                if timed_out_waiting(&e) {
-                    CallError::Deadline {
-                        tx: None,
-                        after: started.elapsed(),
-                    }
-                } else {
-                    CallError::Rpc(e)
+    /// Bounded by nearcore's RPC polling window, across near-kit's retries.
+    async fn send(&self, call: CallBuilder) -> Result<FinalExecutionOutcome, CallError> {
+        let started = Instant::now();
+        call.send().await.map_err(|e| {
+            if timed_out_waiting(&e) {
+                CallError::RpcGaveUp {
+                    after: started.elapsed(),
+                    source: e,
                 }
-            });
-        };
+            } else {
+                CallError::Rpc(e)
+            }
+        })
+    }
 
-        // Inclusion first, so the transaction is known to the RPC and the poll below
-        // cannot race a not-yet-seen hash.
+    /// Submitted once: retrying `send_tx` would re-broadcast, so only the polling repeats.
+    async fn send_and_observe(
+        &self,
+        call: CallBuilder,
+        timeout: Duration,
+    ) -> Result<FinalExecutionOutcome, CallError> {
+        // Waiting for inclusion first stops the poll below racing a hash the RPC has
+        // not seen yet.
         let tx = call
             .wait_until::<Included>()
             .await
@@ -128,17 +92,66 @@ impl CallContract for NearKitCaller {
 
         tokio::time::timeout(timeout, poll)
             .await
-            .unwrap_or_else(|_| {
-                Err(CallError::Deadline {
-                    tx: Some(tx),
-                    after: timeout,
-                })
-            })
+            .unwrap_or_else(|_| Err(CallError::Deadline { tx, after: timeout }))
     }
 }
 
-/// Transient RPC failures worth polling through. Retrying anything else would spin until
-/// the deadline and then report its cause as a timeout.
+/// Wait a caller-chosen duration for a call's on-chain outcome.
+pub trait WithTimeout: Sized {
+    fn with_timeout(self, timeout: Duration) -> Self;
+}
+
+impl WithTimeout for MpcContractHandle<NearKitCaller> {
+    fn with_timeout(self, timeout: Duration) -> Self {
+        self.map_caller(|caller| caller.with_timeout(timeout))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CallError {
+    #[error(transparent)]
+    Rpc(near_kit::Error),
+
+    /// On chain and still unresolved — typically a `sign` whose yield has not been
+    /// answered. Widen the window with [`WithTimeout::with_timeout`].
+    #[error("tx {tx} still unresolved on chain after {after:?}")]
+    Deadline { tx: CryptoHash, after: Duration },
+
+    /// Inclusion was never confirmed, so whether the transaction reached the chain is
+    /// unknown. [`WithTimeout::with_timeout`] confirms it and waits for the outcome.
+    #[error("RPC stopped waiting after {after:?}; outcome unobserved")]
+    RpcGaveUp {
+        after: Duration,
+        #[source]
+        source: near_kit::Error,
+    },
+}
+
+impl CallContract for NearKitCaller {
+    type Output = FinalExecutionOutcome;
+    type Error = CallError;
+
+    async fn call_contract(
+        &self,
+        contract_id: &near_kit::AccountId,
+        call_args: FunctionCallArgs,
+    ) -> Result<Self::Output, Self::Error> {
+        let call = self
+            .inner
+            .call(contract_id, &call_args.method_name)
+            .args_raw(call_args.args)
+            .gas(call_args.gas)
+            .deposit(call_args.deposit);
+
+        match self.timeout {
+            None => self.send(call).await,
+            Some(timeout) => self.send_and_observe(call, timeout).await,
+        }
+    }
+}
+
+/// Polling through anything else would spin until the deadline, then report its cause as
+/// a timeout.
 fn is_retryable(error: &near_kit::Error) -> bool {
     matches!(error, near_kit::Error::Rpc(rpc) if rpc.is_retryable())
 }
