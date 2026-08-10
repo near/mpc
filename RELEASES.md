@@ -181,10 +181,10 @@ cluster-specific is stored in this repo; addresses and credentials are typed in
 per run, or supplied through the per-network `NOMAD_ADDR_DEV_*`,
 `NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*` environment variables to
 skip the matching prompt. The on-chain steps sign with near-cli; the node step
-imports member-account keys it finds in the Nomad job definitions into the
-local keystore, and the test-signature step offers a manual
-`near account import-account` as fallback. Keys are masked in the echoed
-commands.
+reads each member account's `MPC_ACCOUNT_SK` from its Nomad job definition and
+writes the near-cli keystore files directly (deriving the public key from the
+secret key), so the later signing steps can run. Keys never appear on the
+command line or in the echoed output.
 
 ## Re-running after a failure
 
