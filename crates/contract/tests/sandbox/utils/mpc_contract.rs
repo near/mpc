@@ -3,13 +3,13 @@ use std::collections::BTreeSet;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::transactions::all_receipts_successful;
-use mpc_contract::tee::tee_state::NodeId;
+use mpc_contract::tee::{measurements::ContractExpectedMeasurements, tee_state::NodeId};
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
     method_names,
     types::{
         Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
-        ProtocolContractState,
+        ProtocolContractState, VerifiedAttestation,
     },
 };
 use near_workspaces::{
@@ -22,6 +22,10 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
         .iter()
         .map(|outcome| outcome.tokens_burnt)
         .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
+}
+
+pub async fn get_config(contract: &Contract) -> anyhow::Result<Config> {
+    Ok(contract.view(method_names::CONFIG).await?.json()?)
 }
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
@@ -71,11 +75,7 @@ pub async fn prepay_attestation_grants(
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
     // The fee is read from `config()`, the way an operator reads it.
-    let config: Config = contract
-        .view(method_names::CONFIG)
-        .args_json(serde_json::json!({}))
-        .await?
-        .json()?;
+    let config = get_config(contract).await?;
     let total = NearToken::from_millinear(
         u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
     );
@@ -147,18 +147,14 @@ pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<Attestation>> {
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::GET_ATTESTATION)
+) -> anyhow::Result<Option<VerifiedAttestation>> {
+    Ok(contract
+        .view(method_names::GET_ATTESTATION)
         .args_json(serde_json::json!({
             "tls_public_key": tls_key
         }))
-        .max_gas()
-        .transact()
-        .await?;
-
-    Ok(result.json()?)
+        .await?
+        .json()?)
 }
 
 pub async fn assert_running_return_participants(
@@ -208,6 +204,20 @@ pub async fn vote_add_launcher_hash(
     let result = account
         .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
         .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn vote_add_os_measurement(
+    account: &Account,
+    contract: &Contract,
+    measurement: &ContractExpectedMeasurements,
+) -> anyhow::Result<()> {
+    let result = account
+        .call(contract.id(), method_names::VOTE_ADD_OS_MEASUREMENT)
+        .args_json(serde_json::json!({"measurement": measurement}))
         .transact()
         .await?;
     all_receipts_successful(result)?;

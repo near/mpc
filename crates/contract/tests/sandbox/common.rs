@@ -184,7 +184,7 @@ impl SandboxTestSetup {
             foreign_tx: false,
             number_of_participants: PARTICIPANT_LEN,
             init_config: None,
-            with_sandbox_test_methods: false,
+            wasm: TestWasm::Production,
         }
     }
 
@@ -197,12 +197,21 @@ impl SandboxTestSetup {
     }
 }
 
+/// Which contract wasm the setup deploys. The feature sets are mutually
+/// exclusive, so this is one choice, not independent flags.
+#[derive(Clone, Copy)]
+enum TestWasm {
+    Production,
+    SandboxTestMethods,
+    SandboxTestAttestation,
+}
+
 pub struct SandboxTestSetupBuilder {
     protocols: Vec<Protocol>,
     foreign_tx: bool,
     number_of_participants: usize,
     init_config: Option<dtos::InitConfig>,
-    with_sandbox_test_methods: bool,
+    wasm: TestWasm,
 }
 
 impl SandboxTestSetupBuilder {
@@ -230,15 +239,28 @@ impl SandboxTestSetupBuilder {
     /// introspection view methods in [`crate::sandbox_test_methods`] (e.g. fan-out queue
     /// length).
     pub fn with_sandbox_test_methods(mut self) -> Self {
-        self.with_sandbox_test_methods = true;
+        self.wasm = TestWasm::SandboxTestMethods;
+        self
+    }
+
+    /// Deploys the wasm built with `--features sandbox-test-attestation`, which accepts the
+    /// attestation fixture's app-compose. Required by tests that submit the Dstack fixture
+    /// and expect it to verify.
+    pub fn with_sandbox_test_attestation(mut self) -> Self {
+        self.wasm = TestWasm::SandboxTestAttestation;
         self
     }
 
     pub async fn build(self) -> SandboxTestSetup {
-        let (worker, contract) = if self.with_sandbox_test_methods {
-            init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
-        } else {
-            init().await
+        let (worker, contract) = match self.wasm {
+            TestWasm::SandboxTestMethods => {
+                init_with_wasm(contract_build::current_contract_with_sandbox_test_methods()).await
+            }
+            TestWasm::SandboxTestAttestation => {
+                init_with_wasm(contract_build::current_contract_with_sandbox_test_attestation())
+                    .await
+            }
+            TestWasm::Production => init().await,
         };
         let (accounts, participants) = gen_accounts(&worker, self.number_of_participants).await;
         let threshold_parameters = make_threshold_params(&participants);
