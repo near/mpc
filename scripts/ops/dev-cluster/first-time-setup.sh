@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 #
-# first-time-setup.sh — first-run helpers that copy the member accounts'
-# signing keys from the Nomad job definitions into the local near-cli
-# keystore (source, don't run). The node signs with MPC_ACCOUNT_SK already,
-# so the key is on-chain — only the operator's local copy can be missing.
+# first-time-setup.sh — copy member signing keys from the Nomad job definitions
+# into the local near-cli keystore (source, don't run). The node already signs
+# with these keys, so only the operator's local copy can be missing.
 #
 
-# "account sk" per MPC task, from a job definition on stdin. Secrets injected
-# via a template stanza instead of Env come out empty and are skipped upstream.
+# "account sk" per MPC task, from a job definition on stdin; blanks when a task
+# injects secrets via a template stanza instead of Env (skipped upstream).
 job_signing_creds() {
     jq -r --arg prefix "$NODE_IMAGE_PREFIX" \
         '.TaskGroups[].Tasks[]
@@ -15,12 +14,8 @@ job_signing_creds() {
          | "\(.Env.MPC_ACCOUNT_ID // "") \(.Env.MPC_ACCOUNT_SK // "")"'
 }
 
-# near-cli's import is interactive (the account ID and keychain choice have no
-# CLI flags), so we write its keystore files directly. near-cli writes two: the
-# flat <account>.json and <account>/<curve>_<pubkey>.json, both holding just
-# {public_key, private_key}. An ed25519 secret key embeds its public half (last
-# 32 of 64 bytes), so no crypto is needed to derive the key or the filename. The
-# key rides the environment, never argv, and is never echoed.
+# near-cli's import can't be scripted, so write its two keystore files directly.
+# An ed25519 secret key embeds its public half (last 32B) — no crypto needed.
 import_signing_key() {
     local account=$1 sk=$2
     step "==> storing key for ${account}"
