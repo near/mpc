@@ -55,6 +55,8 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
         )
 }
 
+const VOTE_TEE_VERIFIER_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
+
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -1447,10 +1449,12 @@ async fn deploy_and_trust_tee_verifier(
         let account = node_account(i);
         let client = blockchain.client_for(&account, &operator_keys[i])?;
         let outcome = contract
-            .call_from(
+            .call_from_with_deposit(
                 &client,
                 method_names::VOTE_TEE_VERIFIER_CHANGE,
                 args.clone(),
+                VOTE_TEE_VERIFIER_GAS,
+                near_kit::NearToken::from_yoctonear(0),
             )
             .await
             .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
