@@ -1,7 +1,7 @@
 use crate::common;
 
-use e2e_tests::{CLUSTER_WAIT_TIMEOUT, metrics};
-use near_mpc_contract_interface::types::DomainPurpose;
+use e2e_tests::{CLUSTER_WAIT_TIMEOUT, WithTimeout, metrics};
+use near_mpc_contract_interface::types::{DomainPurpose, SignRequestArgs};
 use rand::{SeedableRng, rngs::StdRng};
 
 /// When a sign request can't be answered (because too many participants are
@@ -32,28 +32,33 @@ async fn timeout_metric__should_increment_when_signature_times_out() {
 
     let payload = common::must_get_payload_for_domain(domain, &mut rng);
 
-    // then — node 1's indexer must observe fail_on_timeout. We can't `.await`
-    // the second sign request: the contract's yield + auto-timeout completes
-    // long after the JSON-RPC server's per-call timeout, so the user-facing
-    // future is doomed to return Err from near_kit retries before the on-chain
-    // outcome materializes. Race the call against the metric — once node 1's
-    // indexer bumps the counter the test passes; the sign-request future is
-    // cancelled (the tx is already on chain by then).
-    tokio::select! {
-        res = common::wait_metric_on_nodes(
-            &cluster,
-            &[1],
-            metrics::TIMEOUTS_INDEXED,
-            |v| v >= 1, // note: we would prefer to have strict equality, but we use inequality, in
-            // case the send below has retry mechanism. C.f.
-            // https://github.com/near/mpc/pull/3211#discussion_r3233189801
-            CLUSTER_WAIT_TIMEOUT,
-        ) => res.unwrap_or_else(|_| panic!("{} did not reach 1 on node 1", metrics::TIMEOUTS_INDEXED)),
-        _ = cluster.send_sign_request(domain.id, payload, cluster.default_user_account()) =>
-            panic!(
-                "sign request future returned before timeout metric — test wiring is wrong \
-                 (request unexpectedly succeeded or near_kit retries exhausted before \
-                 the on-chain timeout)"
-            ),
-    }
+    // then — unanswerable, so the yield runs to the on-chain timeout, past the RPC's wait
+    // window; hence the deadline.
+    let outcome = cluster
+        .contract_handle(cluster.default_user_account())
+        .with_timeout(CLUSTER_WAIT_TIMEOUT)
+        .sign(SignRequestArgs {
+            path: "test".to_string(),
+            payload,
+            domain_id: domain.id,
+        })
+        .await
+        .expect("sign request did not reach an on-chain outcome");
+    assert!(
+        outcome.is_failure(),
+        "sign request succeeded with only 1 of its 2 required signers alive"
+    );
+
+    common::wait_metric_on_nodes(
+        &cluster,
+        &[1],
+        metrics::TIMEOUTS_INDEXED,
+        // Inclusion may be re-sent by near-kit's transport retries, so a duplicate
+        // request can bump this twice. C.f.
+        // https://github.com/near/mpc/pull/3211#discussion_r3233189801
+        |v| v >= 1,
+        CLUSTER_WAIT_TIMEOUT,
+    )
+    .await
+    .unwrap_or_else(|_| panic!("{} did not reach 1 on node 1", metrics::TIMEOUTS_INDEXED));
 }

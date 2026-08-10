@@ -48,6 +48,14 @@ impl<C> MpcContractHandle<C> {
             contract_id,
         }
     }
+
+    /// Swap the transport, keeping the contract account.
+    pub fn map_caller<D>(self, f: impl FnOnce(C) -> D) -> MpcContractHandle<D> {
+        MpcContractHandle {
+            caller: f(self.caller),
+            contract_id: self.contract_id,
+        }
+    }
 }
 
 impl<C: CallContract> MpcContractHandle<C> {

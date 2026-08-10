@@ -32,6 +32,7 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 test-port-allocator = { workspace = true }
 test-utils = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }

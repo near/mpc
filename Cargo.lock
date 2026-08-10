@@ -3283,6 +3283,7 @@ dependencies = [
  "tempfile",
  "test-port-allocator",
  "test-utils",
+ "thiserror 2.0.19",
  "threshold-signatures",
  "tokio",
  "toml 1.1.4+spec-1.1.0",
