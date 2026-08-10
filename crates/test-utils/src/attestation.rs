@@ -97,14 +97,9 @@ pub fn near_account_key() -> near_sdk::PublicKey {
     key_file.parse().expect("File contains a valid public key")
 }
 
-/// Secret counterpart of [`account_key`], the key the fixture quote's
-/// report_data binds. Lets sandbox tests sign `submit_participant_info` as the
-/// fixture node (the contract reads the account key from the transaction
-/// signer). Returned as the raw "ed25519:..." string; parse it into the key
-/// type of the calling test framework.
-///
-/// The key belongs to a throwaway localnet node with no standing on any
-/// network, which is the only reason it can live in the repo.
+/// Secret counterpart of [`account_key`], the key the fixture quote's report_data binds, so tests
+/// can sign `submit_participant_info` as the fixture node. Raw "ed25519:..." string. Committable
+/// only because the node is a throwaway localnet one with no standing on any network.
 pub fn account_secret_key() -> &'static str {
     include_str!("../assets/near_account_secret_key").trim()
 }

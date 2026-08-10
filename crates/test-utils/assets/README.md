@@ -47,6 +47,10 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
+`public_data.json` is the endpoint response verbatim, so its collateral byte fields are JSON arrays,
+while `collateral.json` holds the same bytes hex-encoded, which is what the fixture parser reads. The
+two encodings are expected to differ.
+
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
 5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,

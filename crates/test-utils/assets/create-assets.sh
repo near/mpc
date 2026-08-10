@@ -36,27 +36,18 @@ jq -j '.near_signer_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_account_public
 # Extract app_compose.json. We set 4 width indentation, and remove trailing newline, so it matches the original string in tests.
 printf '%s' "$(jq -r --indent 4 '.tee_participant_info.Dstack.tcb_info.app_compose' "$INPUT_FILE")" > "$OUTPUT_DIR/app_compose.json"
 
-# Extract collateral. The node serializes the DER/signature fields as JSON byte
-# arrays, while the fixture parser (`attestation::collateral::collateral_from_json`)
-# reads them as hex strings, so hex-encode those four fields here. Fields that
-# are already hex pass through unchanged.
-# The PEM chain arrives NUL-terminated from the quote's C string; strip it so the
-# fixture stays valid PEM for consumers stricter than dcap-qvl.
+# The endpoint emits the DER/signature fields as byte arrays (serde_bytes) while the fixture parser
+# reads them as hex, and the PEM chains keep the NUL terminator from the quote's C strings. Fields
+# already in the target form pass through unchanged.
 jq -r 'def tohex:
-         if type == "array" then
-           reduce .[] as $b (""; . + ("0123456789abcdef" | .[(($b / 16) | floor):(($b / 16) | floor) + 1])
-                                  + ("0123456789abcdef" | .[($b % 16):($b % 16) + 1]))
+         if type == "array" then "0123456789abcdef" as $h
+           | map($h[(. / 16 | floor):(. / 16 | floor) + 1] + $h[(. % 16):(. % 16) + 1]) | join("")
          else . end;
-       def strip_nul: if type == "string" then until(endswith("\u0000") | not; rtrimstr("\u0000")) else . end;
+       def strip_nul: if type == "string" then split("\u0000")[0] else . end;
        .tee_participant_info.Dstack.collateral
-       | .root_ca_crl |= tohex
-       | .pck_crl |= tohex
-       | .tcb_info_signature |= tohex
-       | .qe_identity_signature |= tohex
-       | .pck_crl_issuer_chain |= strip_nul
-       | .tcb_info_issuer_chain |= strip_nul
-       | .qe_identity_issuer_chain |= strip_nul
-       | .pck_certificate_chain |= strip_nul' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
+       | (.root_ca_crl, .pck_crl, .tcb_info_signature, .qe_identity_signature) |= tohex
+       | (.pck_crl_issuer_chain, .tcb_info_issuer_chain, .qe_identity_issuer_chain,
+          .pck_certificate_chain) |= strip_nul' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
 
 # Extract quote
 jq -c '.tee_participant_info.Dstack.quote' "$INPUT_FILE" > "$OUTPUT_DIR/quote.json"
@@ -74,11 +65,9 @@ printf "%s" "$(grep 'DEFAULT_IMAGE_DIGEST' "$OUTPUT_DIR/launcher_image_compose.y
 echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
 
-# The secret counterpart of near_account_public_key.pub is not part of
-# public_data: it must be exported from the node (secrets.json in the node home
-# dir) by whoever regenerates the assets. It is committed, so it is normally
-# present but stale, hence an unconditional reminder rather than an existence check.
-# A mismatched pair fails the test that checks it against near_account_public_key.pub.
+# The secret key is not in public_data: it lives in the node's secrets.json and must be exported by
+# whoever regenerates the assets. It is committed, so it is normally present but stale, hence an
+# unconditional reminder rather than an existence check.
 echo ""
 echo "REMINDER: replace '$OUTPUT_DIR/near_account_secret_key' with the secret key of"
 echo "the node you just extracted from (ed25519:<base58>, one line). It must pair with"
