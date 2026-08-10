@@ -33,7 +33,6 @@ pub struct NearBlockchain {
 /// [`CallError::RpcGaveUp`]. [`Self::with_timeout`] waits for the outcome instead.
 pub struct NearKitCaller {
     inner: near_kit::Near,
-    account_id: String,
     timeout: Option<Duration>,
 }
 
@@ -75,11 +74,14 @@ impl NearKitCaller {
             .map_err(CallError::Rpc)?
             .transaction_hash;
 
+        // May not panic: submitting the call above already required a signer.
+        let sender = self.inner.account_id();
+
         let poll = async {
             loop {
                 match self
                     .inner
-                    .tx_status(&tx, self.account_id.as_str())
+                    .tx_status(&tx, sender)
                     .wait_until::<ExecutedOptimistic>()
                     .await
                 {
@@ -234,7 +236,6 @@ impl NearBlockchain {
     pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<NearKitCaller> {
         Ok(NearKitCaller {
             inner: self.make_client(account_id, key)?,
-            account_id: account_id.to_string(),
             timeout: None,
         })
     }
