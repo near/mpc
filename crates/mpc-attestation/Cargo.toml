@@ -5,11 +5,7 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = [
-    "borsh/unstable__schema",
-    "mpc-primitives/abi",
-    "attestation/borsh-schema",
-]
+abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/borsh-schema"]
 dstack-conversions = ["attestation/dstack-conversions"]
 test-utils = ["attestation/test-utils"]
 allow-pre-launch-script = ["attestation/allow-pre-launch-script"]
