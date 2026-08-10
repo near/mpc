@@ -9,9 +9,8 @@
 
 SIGN_WITH="${MPC_SIGN_WITH:-sign-with-keychain}"
 
-# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT and re-points
-# endpoint vars from per-cluster exports (NOMAD_ADDR_DEV_TESTNET, ...)
-# so the network choice drives every step; addresses stay out of this repo.
+# Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT and re-points endpoint
+# vars from per-cluster exports; network choice drives every step.
 resolve_dev_cluster() {
     local suffix var
     case "$1" in
@@ -31,13 +30,12 @@ resolve_dev_cluster() {
     var="NOMAD_HTTP_AUTH_DEV_${suffix}"; [[ -z "${!var+set}" ]] || export NOMAD_HTTP_AUTH="${!var}"
 }
 
-# Typed in per run; the matching NOMAD_*_DEV_<NET> export skips the prompt.
-# Takes the bare IP — scheme and API path are the script's business.
+# Prompts per run; NOMAD_ADDR_DEV_<NET> export skips it. Takes bare IP only.
 prompt_nomad_ip() {
     local label=${1:-target} input scheme
     while [[ -z "${NOMAD_ADDR:-}" ]]; do
         read -rp "Nomad IP address for the ${label} dev cluster: " input
-        # Tolerate a pasted URL — keeping its scheme, never downgrading TLS.
+        # Tolerate pasted URL; preserve HTTPS, never downgrade to HTTP.
         scheme="http"; [[ "$input" != https://* ]] || scheme="https"
         input="${input#http://}"; input="${input#https://}"; input="${input%%/*}"
         if [[ ! "$input" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?$ ]]; then
@@ -55,7 +53,7 @@ prompt_http_auth() {
     if [[ -z "$user" ]]; then
         NOMAD_HTTP_AUTH=""
     elif [[ "$user" == *:* ]]; then
-        # Already joined — this form echoes the password to the terminal.
+        # Already in user:pass format (echoes password).
         NOMAD_HTTP_AUTH="$user"
     else
         read -rsp "Nomad password: " pass
@@ -63,7 +61,7 @@ prompt_http_auth() {
         NOMAD_HTTP_AUTH="${user}:${pass}"
     fi
     export NOMAD_HTTP_AUTH
-    # Basic auth is base64 on the wire — over http:// that is cleartext.
+    # Base64 on the wire is still cleartext over plain HTTP.
     [[ -z "$NOMAD_HTTP_AUTH" || "${NOMAD_ADDR:-}" == https://* ]] \
         || warn "Note: these credentials will be sent over plain HTTP (${NOMAD_ADDR:-})."
 }
@@ -82,8 +80,7 @@ nomad_auth_state() {
     else echo "(none)"; fi
 }
 
-# Check every MPC_NODE_ADDRS node reports release="<version>". Retries per
-# node — a node can still be warming up right after its allocation starts.
+# Retries per node (warm-up delay after allocation starts).
 verify_nodes() {
     local version=$1
     require_cmds curl

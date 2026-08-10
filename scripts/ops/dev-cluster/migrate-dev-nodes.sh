@@ -39,8 +39,7 @@ nomad_curl() {
 
     show_cmd curl -X "$method" "$url" ${data:+--data-binary @-}
 
-    # Credentials ride the config stream and the body rides stdin: argv is
-    # readable from /proc/<pid>/cmdline, and job definitions carry secrets too.
+    # Secrets not on argv: credentials via config stream, body via stdin.
     local config=""
     [[ -z "${NOMAD_HTTP_AUTH:-}" ]] || config+="user = \"$(curl_cfg_escape "$NOMAD_HTTP_AUTH")\""$'\n'
     [[ -z "${NOMAD_TOKEN:-}" ]] || config+="header = \"X-Nomad-Token: $(curl_cfg_escape "$NOMAD_TOKEN")\""$'\n'
@@ -120,8 +119,7 @@ upgrade_nomad_job() {
 
     updated=$(job_with_image "$image" <<<"$job")
 
-    # As the UI's Plan does. FailedTGAllocs means Nomad cannot place the new
-    # allocation, so registering would stop the node with nothing to replace it.
+    # FailedTGAllocs means Nomad can't place the new allocation.
     local plan failed warnings
     plan=$(nomad_curl POST "/job/${job_id}/plan" \
         "$(jq -n --argjson job "$updated" '{Job: $job, Diff: true}')") \

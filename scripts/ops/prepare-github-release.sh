@@ -58,16 +58,8 @@ fi
 
 # --- Generate changelog ---
 
-# Use --prepend so the new release section is added on top of CHANGELOG.md,
-# preserving any manually authored sections (e.g. for releases whose tag does not
-# live on main, like 3.9.1 on release/v3.9.1). When new sections need to be
-# hand-written, append the relevant duplicate cherry-pick commits to .cliffignore
-# so they don't reappear in the next auto-generated release block.
-#
-# git-cliff fetches PR/author metadata for the ref at the range head. The literal
-# `HEAD` resolves to the default branch (main), missing PRs merged only into a
-# release branch, so we pass an explicit range ending at a concrete SHA. The base
-# is the latest semver tag reachable from HEAD; --match skips stray non-semver tags.
+# Use --prepend (preserves manual sections) and concrete SHA for metadata so
+# branch-only PRs appear with correct links; append cherry-picks to .cliffignore.
 echo "==> Generating changelog..."
 BASE_TAG=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' HEAD) \
     || die "Could not find a previous semver tag reachable from HEAD."
@@ -75,8 +67,7 @@ git-cliff --prepend CHANGELOG.md -t "$VERSION" "${BASE_TAG}..$(git rev-parse HEA
 
 # --- Bump workspace version in Cargo.toml ---
 
-# `grep -P` (PCRE) and `sed -i` without a suffix are GNU-only; use POSIX
-# forms so this works on both Linux and macOS (BSD userland).
+# GNU sed/grep won't work on macOS — use POSIX forms.
 
 CARGO_TOML="${REPO_ROOT}/Cargo.toml"
 OLD_VERSION=$(awk -F'"' '/^version = "[0-9]+\.[0-9]+\.[0-9]+"/ {print $2; exit}' "$CARGO_TOML")
@@ -87,8 +78,7 @@ sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/
 
 # --- Verify contract ABI has changed ---
 
-# The version bump should cause the ABI snapshot to differ. We expect
-# the test to fail — if it passes, the ABI was not affected.
+# Test fails if ABI was not affected by the version bump (the expected case).
 echo "==> Verifying contract ABI changed after version bump..."
 if cargo nextest run --cargo-profile=test-release -p mpc-contract abi_has_not_changed 2>/dev/null; then
     die "abi_has_not_changed test passed unexpectedly — ABI was not affected by version bump."
