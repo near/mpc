@@ -812,11 +812,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
     for account in &mpc_signer_accounts {
         let call_result = account
             .call_mpc(contract.id())
-            .vote_new_parameters(
-                prospective_epoch_id,
-                proposed_parameters.clone()
-            )
-            .await
+            .vote_new_parameters(prospective_epoch_id, proposed_parameters.clone()).await
             .unwrap()
             .into_result()
             .expect_err("calling `vote_new_parameters` must fail when one participant has invalid TEE status.");
