@@ -119,9 +119,14 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
     NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR);
 
-/// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
-/// callers may pick a different value; this only governs the automatic invocation.
-const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
+/// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External callers
+/// may pick a different value; this only governs the automatic invocation.
+///
+/// [`crate::config::Config::clean_invalid_attestations_tera_gas`] funds a full scan of this
+/// many entries plus ~10 removals. A sweep with substantially more removable than that
+/// exceeds the budget and, because the promise is detached, reverts silently; recovery is a
+/// direct permissionless call with a smaller `max_scan`.
+const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;
 
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
