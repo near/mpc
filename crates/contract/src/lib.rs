@@ -8847,7 +8847,7 @@ mod tests {
     const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(10);
 
     /// One `available_attestation_grants` row, for the longest possible account id. The fee
-    /// covers this on top of the entry, since a grant creates the row.
+    /// covers this on top of the entry, since the first grant for an account creates the row.
     const WORST_CASE_GRANT_ROW_BYTES: u64 = 194;
 
     fn worst_case_dstack_attestation() -> VerifiedAttestation {
@@ -8953,11 +8953,13 @@ mod tests {
     }
 
     /// The fee has to cover what one grant actually buys: the worst-case entry plus the grants
-    /// row that holding it creates. Pinning the byte counts alone would not catch a storage
-    /// price rise or a lowered default fee, which break the same guarantee.
+    /// row. Pinning the byte counts alone would not catch a lowered default fee, which breaks
+    /// the same guarantee.
     ///
-    /// Guards the shipped default only — the fee is votable, so a network can still choose a
-    /// value below the floor.
+    /// Two things it does not guard. The fee is votable, so a network can choose a value below
+    /// the floor. And `storage_byte_cost` is a near-sdk constant, not a protocol read, so a
+    /// real re-pricing moves the floor without failing here — the residual the design doc's
+    /// Security section accepts.
     #[test]
     fn attestation_storage_fee__should_cover_the_entry_and_its_grant_row() {
         // Given
