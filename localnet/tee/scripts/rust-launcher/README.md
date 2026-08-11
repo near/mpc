@@ -32,79 +32,59 @@ The node env template `../node.env.tpl` also lives here (one level up) and is sh
 
 ## Collecting Test Assets
 
-To regenerate test assets from real TDX attestation:
+To regenerate test assets from real TDX attestation, from the repo root on the TDX host:
 
 ```bash
-# Deploy single node. PRELAUNCH_SCRIPT is what makes the node's signer secret
-# key recoverable; see below.
-PRELAUNCH_SCRIPT=/path/to/prelaunch.sh bash localnet/tee/scripts/rust-launcher/single-node.sh
+export BASE_PATH=/path/to/meta-dstack/dstack
+export WORKDIR=/tmp/mpc-fixture-collection
 
-# Extract assets
-cp <WORKDIR>/public_data.json crates/test-utils/assets/public_data.json
-cd crates/test-utils/assets && bash ./create-assets.sh public_data.json .
-cp crates/test-utils/assets/tcb_info.json crates/attestation/assets/tcb_info.json
-# Update VALID_ATTESTATION_TIMESTAMP in crates/test-utils/src/attestation.rs
-# Regenerate the verifier's borsh arg fixture and the expected report:
-UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
-cargo test -p tee-verifier --test verify_quote  # update the hardcoded report values it prints
+# PRELAUNCH_SCRIPT is what makes the node's signer secret key recoverable; see below.
+PRELAUNCH_SCRIPT=localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh \
+  bash localnet/tee/scripts/rust-launcher/single-node.sh
+
+cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
 ```
+
+Then follow [the asset regeneration steps](../../../../crates/test-utils/assets/README.md#steps) from
+step 3, which own the rest of the procedure.
 
 ### Exporting the node's signer key
 
-Sandbox tests that store a Verified attestation must sign as the fixture node,
-because the quote's `report_data` binds the node's account key and the contract
-reads that key from the transaction signer. That key is generated inside the
-CVM, so it has to be exported during collection or the fixture is unusable for
-those tests (this is what issue #3787 was about).
+Sandbox tests that store a Verified attestation must sign as the fixture node: the quote's
+`report_data` binds the node's account key, and the contract reads that key from the transaction
+signer. The node generates it inside the CVM, so it has to be exported during collection.
 
-Supplying the key instead of exporting it does not work: the node reuses an
-existing `secrets.json` if it finds one, but the launcher's measured compose
-mounts only the `mpc-data` volume into the node container, so the host has
-nowhere to put it.
+Supplying the key instead does not work. The node reuses an existing `secrets.json`, but the
+launcher's measured compose mounts only the `mpc-data` volume into the node container, so the host has
+nowhere to put one.
 
-`PRELAUNCH_SCRIPT` points at a script baked into the app-compose and run inside
-the CVM before the node starts. Notes from making this work:
+[export-signer-key-prelaunch.sh](export-signer-key-prelaunch.sh) is the hook that produced the
+committed fixture; `PRELAUNCH_SCRIPT` above bakes it into the app-compose. It waits for the node to
+write `secrets.json`, then copies it into the CVM's shared dir and echoes it to the console, so
+whichever channel the host exposes is enough. Both live under the vmm's `run_path`:
 
-- The guest is BusyBox: stick to shell built-ins and globs. GNU-only options
-  such as `head -1` fail, and there is no `sshd`, no `/root`, and no
-  `/usr/local/bin`.
-- `/etc` (overlay) and `/dstack/.host-shared` are writable; `/` is not.
-- The node writes `secrets.json` only after the hook returns, so the wait must
-  run as its own systemd unit. A plain background process is reaped with
-  `app-compose.service`'s cgroup.
-- Anything echoed to `/dev/console` lands in the host's
-  `run/vm/<id>/serial.log`, which is the simplest way to read a value out.
-
-A hook that copies the key to the host-visible shared dir:
-
-```sh
-cat > /etc/fixture-exfil.sh <<'EOF'
-#!/bin/sh
-i=0
-while [ "$i" -lt 900 ]; do
-  for f in /var/lib/docker/volumes/*/_data/secrets.json; do
-    [ -f "$f" ] && { cp "$f" /dstack/.host-shared/fixture-secrets.json; exit 0; }
-  done
-  i=$((i + 1)); sleep 2
-done
-EOF
-cat > /etc/systemd/system/fixture-exfil.service <<'EOF'
-[Unit]
-Description=Export the MPC node signer key for test-asset collection
-[Service]
-Type=oneshot
-ExecStart=/bin/sh /etc/fixture-exfil.sh
-EOF
-systemctl daemon-reload && systemctl start --no-block fixture-exfil.service
+```bash
+RUN_VM="$(dirname "$BASE_PATH")/build/run/vm"    # `run_path` in the vmm config
+cat "$RUN_VM"/*/shared/fixture-secrets.json
+grep -A3 FIXTURE-SECRETS-BEGIN "$RUN_VM"/*/serial.log   # fallback if the copy failed
 ```
 
-Then put `near_signer_key` from that file into
-`crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`)
-and check that its public half equals `near_account_public_key.pub`. Only ever do
-this for a throwaway localnet node: the key ends up in the repo.
+Put `near_signer_key` from there into `crates/test-utils/assets/near_account_secret_key` (one line,
+`ed25519:<base58>`). Only ever do this for a throwaway localnet node: the key ends up in the repo.
 
-The hook is measured into the app-compose, and production verification rejects any
-app-compose carrying a script. Test builds accept this one field via
-`attestation/allow-pre-launch-script`, so keep the hook to what the export needs.
+The script is a copy of what the committed app-compose carries, which is what ties it to the committed
+key. After editing either one, this must stay empty:
+
+```bash
+diff <(jq -j '.pre_launch_script' crates/test-utils/assets/app_compose.json) \
+    localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh
+```
+
+Writing a different hook: the guest is BusyBox, so built-ins and globs only and no `sshd`; `/etc` and
+`/dstack/.host-shared` are writable but `/` is not; and the wait needs its own systemd unit, since a
+background process is reaped with `app-compose.service`'s cgroup.
+
+Any app-compose carrying a script is rejected by production verification. Test builds accept this one
+field via `attestation/allow-pre-launch-script`, so keep the hook minimal.
 
 See [single-node-readme.md](single-node-readme.md) for details.

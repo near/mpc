@@ -143,6 +143,12 @@ TEE_LAUNCHER_DIR="$REPO_ROOT/deployment/cvm-deployment"
 ENV_TPL="${ENV_TPL:-$REPO_ROOT/localnet/tee/scripts/node.env.tpl}"
 CONF_TPL="${CONF_TPL:-$REPO_ROOT/localnet/tee/scripts/rust-launcher/node.conf.localnet.toml.tpl}"
 
+# deploy-launcher.sh reads it from its own directory, so a relative path has to be
+# resolved here or it is looked up two directories away.
+if [ -n "$PRELAUNCH_SCRIPT" ] && [ "${PRELAUNCH_SCRIPT#/}" = "$PRELAUNCH_SCRIPT" ]; then
+  PRELAUNCH_SCRIPT="$REPO_ROOT/$PRELAUNCH_SCRIPT"
+fi
+
 WORKDIR="${WORKDIR:-$(mktemp -d /tmp/mpc_localnet_one_node.XXXXXX)}"
 mkdir -p "$WORKDIR"
 log "Work directory: $WORKDIR"
