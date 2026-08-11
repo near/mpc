@@ -918,7 +918,10 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     }
 
     fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface> {
-        self.connectivities.get(participant_id).unwrap().clone()
+        self.connectivities
+            .get(participant_id)
+            .expect("connectivity is only queried for other participants of our participant set")
+            .clone()
     }
 
     fn send(
