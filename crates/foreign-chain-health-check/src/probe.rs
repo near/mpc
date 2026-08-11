@@ -996,11 +996,16 @@ mod tests {
         );
     }
 
-    /// The Sui probe speaks gRPC, so the mock HTTP server the other chains use cannot serve it.
-    /// Only `GetServiceInfo` is answered; the rest keep their generated `unimplemented` default.
-    struct FakeSuiLedger {
-        chain_id: String,
+    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            sui: Some(config),
+            ..Default::default()
+        }
     }
+
+    /// The mock HTTP server the other chains use cannot speak gRPC, so a Sui provider is played by
+    /// a real one, answering whatever a test arms.
+    struct FakeSuiLedger(Result<GetServiceInfoResponse, Status>);
 
     #[tonic::async_trait]
     impl LedgerService for FakeSuiLedger {
@@ -1008,9 +1013,7 @@ mod tests {
             &self,
             _request: tonic::Request<GetServiceInfoRequest>,
         ) -> Result<tonic::Response<GetServiceInfoResponse>, Status> {
-            Ok(tonic::Response::new(
-                GetServiceInfoResponse::default().with_chain_id(&self.chain_id),
-            ))
+            self.0.clone().map(tonic::Response::new)
         }
     }
 
@@ -1026,15 +1029,12 @@ mod tests {
         }
     }
 
-    async fn sui_on_chain(chain_id: &str) -> FakeSuiServer {
-        let ledger = FakeSuiLedger {
-            chain_id: chain_id.to_string(),
-        };
+    async fn sui_answering(answer: Result<GetServiceInfoResponse, Status>) -> FakeSuiServer {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move {
             tonic::transport::Server::builder()
-                .add_service(LedgerServiceServer::new(ledger))
+                .add_service(LedgerServiceServer::new(FakeSuiLedger(answer)))
                 .serve_with_incoming(tonic::transport::server::TcpIncoming::from(listener))
                 .await
                 .expect("the fake Sui ledger should keep serving until the test drops it");
@@ -1042,11 +1042,8 @@ mod tests {
         FakeSuiServer { url, task }
     }
 
-    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
-        ForeignChainsConfig {
-            sui: Some(config),
-            ..Default::default()
-        }
+    async fn sui_on_chain(chain_id: &str) -> FakeSuiServer {
+        sui_answering(Ok(GetServiceInfoResponse::default().with_chain_id(chain_id))).await
     }
 
     #[tokio::test]
@@ -1087,6 +1084,63 @@ mod tests {
                 expected: NetworkFingerprint::new(SUI_MAINNET),
                 observed: NetworkFingerprint::new(SUI_TESTNET),
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_sui_service_info_without_a_chain_id_as_malformed() {
+        // Given
+        let server = sui_answering(Ok(GetServiceInfoResponse::default())).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider("publicnode", &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            ProviderStatus::MalformedResponse
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_a_sui_provider_not_serving_the_api_as_rejected() {
+        // Given
+        let server = sui_answering(Err(Status::not_found("no such service"))).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider("publicnode", &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            ProviderStatus::RequestRejected
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_a_slow_sui_provider_as_timed_out() {
+        // Given
+        let server = sui_answering(Err(Status::deadline_exceeded("too slow"))).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider("publicnode", &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            ProviderStatus::TimedOut
         );
     }
 

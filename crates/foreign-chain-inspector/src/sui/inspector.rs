@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn classified__should_name_a_deadline_as_a_timeout() {
+    fn classified__should_name_a_deadline_exceeded_as_a_timeout() {
         // Given / When
         let classified = read_as_transaction(Status::new(Code::DeadlineExceeded, "too slow"));
 
