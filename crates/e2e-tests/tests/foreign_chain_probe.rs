@@ -13,13 +13,13 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 const HEALTHY_PROVIDER: &str = "healthy";
 const WRONG_NETWORK_PROVIDER: &str = "wrong-network";
 /// Any chain id the mock does not serve, so the probe reads a network mismatch.
-const ANOTHER_NETWORK: &str = "1";
+const ANOTHER_NETWORK: u64 = 1;
 
-fn base_config(rpc_url: &str, expected: &str, provider: &str) -> ForeignChainConfig {
+fn base_config(rpc_url: &str, expected_network: u64, provider: &str) -> ForeignChainConfig {
     ForeignChainConfig {
         timeout_sec: NonZeroU64::new(10).unwrap(),
         max_retries: NonZeroU64::new(1).unwrap(),
-        expected_network_fingerprint: Some(expected.to_string()),
+        expected_network_fingerprint: Some(expected_network.to_string()),
         providers: NonEmptyBTreeMap::new(
             provider.to_string().into(),
             ForeignChainProviderConfig {

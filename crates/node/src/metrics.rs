@@ -490,8 +490,6 @@ pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGauge
         .unwrap()
     });
 
-/// Reads `0` for a chain the startup probe cannot identify, so it is only meaningful next to
-/// [`FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED`].
 pub static FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
         prometheus::register_int_gauge_vec!(
