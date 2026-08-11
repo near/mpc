@@ -33,7 +33,7 @@ ignore = [
   # has no patched release. Only reachable through near-vm-runner, which never
   # shares a Store across Engines.
   "RUSTSEC-2026-0222", # wasmtime stores can mix up type indices between engines
-  # `im` and its dependencies, reached only through nearcore's `near-network`.
+  # TODO(#4117): remove once nearcore moves `near-network` off `im`, whose maintained fork is `imbl`.
   "RUSTSEC-2026-0247", # bitmaps is unmaintained
   "RUSTSEC-2026-0248", # im is unmaintained
   "RUSTSEC-2026-0251", # sized-chunks is unmaintained
