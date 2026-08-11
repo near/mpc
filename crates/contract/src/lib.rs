@@ -8871,21 +8871,6 @@ mod tests {
     /// Storage the contract pays for one stored attestation entry, measured the way the runtime
     /// charges it. NEAR caps an account id at 64 bytes; every other [`NodeId`] field is fixed-size,
     /// so this is the worst case for the given attestation variant.
-    /// Charged bytes for one grants-map row, measured the same way as
-    /// [`measure_stored_entry_bytes`]: insert into the real map, flush, take the delta.
-    fn measure_grant_row_bytes() -> u64 {
-        testing_env!(VMContextBuilder::new().build());
-        let account: AccountId = "a".repeat(64).parse().unwrap();
-
-        let mut grants: IterableMap<AccountId, u32> =
-            IterableMap::new(StorageKey::AttestationGrants);
-        let before = env::storage_usage();
-        grants.insert(account, 1);
-        grants.flush();
-
-        env::storage_usage() - before
-    }
-
     fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
         let node_id = create_node_id(
@@ -8903,6 +8888,21 @@ mod tests {
             },
         );
         tee_state.stored_attestations.flush();
+
+        env::storage_usage() - before
+    }
+
+    /// Charged bytes for one grants-map row, measured the same way as
+    /// [`measure_stored_entry_bytes`]: insert into the real map, flush, take the delta.
+    fn measure_grant_row_bytes() -> u64 {
+        testing_env!(VMContextBuilder::new().build());
+        let account: AccountId = "a".repeat(64).parse().unwrap();
+
+        let mut grants: IterableMap<AccountId, u32> =
+            IterableMap::new(StorageKey::AttestationGrants);
+        let before = env::storage_usage();
+        grants.insert(account, 1);
+        grants.flush();
 
         env::storage_usage() - before
     }
@@ -8949,6 +8949,31 @@ mod tests {
         assert_eq!(
             bytes_stored, WORST_CASE_GRANT_ROW_BYTES,
             "grants row size changed; see this test's doc comment before updating the number"
+        );
+    }
+
+    /// The fee has to cover what one grant actually buys: the worst-case entry plus the grants
+    /// row that holding it creates. Pinning the byte counts alone would not catch a storage
+    /// price rise or a lowered default fee, which break the same guarantee.
+    ///
+    /// Guards the shipped default only — the fee is votable, so a network can still choose a
+    /// value below the floor.
+    #[test]
+    fn attestation_storage_fee__should_cover_the_entry_and_its_grant_row() {
+        // Given
+        let floor_bytes = WORST_CASE_ENTRY_BYTES + WORST_CASE_GRANT_ROW_BYTES;
+
+        // When
+        let floor = env::storage_byte_cost().saturating_mul(u128::from(floor_bytes));
+        let fee = NearToken::from_millinear(u128::from(
+            Config::default().attestation_storage_fee_millinear,
+        ));
+
+        // Then
+        assert!(
+            floor <= fee,
+            "attestation storage fee ({fee}) must cover the floor \
+             ({floor_bytes} bytes, {floor}) at today's storage price"
         );
     }
 

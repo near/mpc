@@ -58,7 +58,7 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 | Component | Charged bytes | Cost |
 |---|---|---|
 | Worst-case entry: a `Mock` one at 604 (`Dstack` is 599) | 604 | 0.00604 NEAR |
-| Grants-map row, worst case (64-char account; a 20-char one is 151) | 194 | 0.00194 NEAR |
+| Grants-map row, worst case (64-char account) | 194 | 0.00194 NEAR |
 | **Floor** | **798** | **~0.008 NEAR** |
 
 The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
