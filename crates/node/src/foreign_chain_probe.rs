@@ -12,9 +12,8 @@ use tracing::{debug, info, warn};
 
 use crate::metrics;
 
-/// Asks every configured provider which network it serves and logs a line per provider plus an
-/// `x/y providers healthy` summary. Diagnostic only: a provider on the wrong network keeps
-/// serving, because a boot time blip should not take a chain out of signing.
+/// Asks every configured RPC provider which network it serves and logs a line per provider plus an
+/// `x/y providers healthy` summary. Diagnostic only.
 pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     if foreign_chains.is_empty() {
         warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
@@ -27,8 +26,6 @@ pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     log_report(&report);
 }
 
-/// Whether any probe covers this provider. What none covers stays out of both the summary and the
-/// gauges: it would otherwise read as an unhealthy provider for as long as the chain has no probe.
 fn is_probed(row: &ProviderHealth) -> bool {
     row.status != ProviderStatus::ProbeNotImplemented
 }
@@ -45,8 +42,6 @@ fn summarize(rows: &[ProviderHealth]) -> Summary {
     }
 }
 
-/// A [`ProviderStatus`] carries no auth material and no rendered error text, and its one
-/// provider written field is length capped, so it is logged whole.
 fn log_report(report: &ProbeReport) {
     let rows = report.rows();
     for row in rows {
@@ -72,8 +67,10 @@ fn log_report(report: &ProbeReport) {
 
     let Summary { probed, healthy } = summarize(rows);
     if probed == 0 {
+        let chains: BTreeSet<&str> = rows.iter().map(|row| row.chain.label()).collect();
         warn!(
-            "foreign-chain RPC provider probe found nothing to probe: no configured chain supports it"
+            ?chains,
+            "no RPC provider was checked at startup: the foreign chains configured cannot be checked by the node"
         );
         return;
     }

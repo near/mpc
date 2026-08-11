@@ -708,8 +708,6 @@ ckd:
         assert!(error.contains("support only header auth"), "{error}");
     }
 
-    /// `ForeignChain::label` promises the key an operator writes, and only this crate knows those
-    /// keys.
     #[test]
     fn foreign_chains_config__should_key_every_chain_by_its_label() {
         // Given — every chain set, so a chain added later has to be listed here too.

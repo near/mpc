@@ -42,8 +42,9 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     setup_evm_mock(&server, MockAuthExpectation::None);
     let url = server.url("/");
 
-    let (cluster, _running) =
-        common::must_setup_cluster(common::FOREIGN_CHAIN_PROBE_PORT_SEED, |c| {
+    let (cluster, _running) = common::must_setup_cluster(
+        common::FOREIGN_CHAIN_PROBE_PORT_SEED,
+        |c: &mut e2e_tests::MpcClusterConfig| {
             c.num_nodes = 2;
             c.threshold = 2;
             c.foreign_chains.node_configs = vec![
@@ -56,8 +57,9 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
                     ..Default::default()
                 },
             ];
-        })
-        .await;
+        },
+    )
+    .await;
 
     // when — the probe runs detached at startup, so both gauges settle on their own.
     common::wait_metric_on_nodes(
