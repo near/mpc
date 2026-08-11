@@ -810,7 +810,8 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
 
     // Vote to transition to resharing state
     for account in &mpc_signer_accounts {
-        let call_result = account.call_mpc(contract.id())
+        let call_result = account
+            .call_mpc(contract.id())
             .vote_new_parameters(
                 prospective_epoch_id,
                 proposed_parameters.clone()
