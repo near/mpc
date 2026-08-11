@@ -21,9 +21,8 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
-/// Unix time as of 2026/08/07, represents a date where
-/// the measurements stored in ../assets are valid. When these measurements are
-/// modified, this value should be updated as well
+/// Unix time as of 2026/08/11, a date where the measurements stored in ../assets are valid. Update
+/// this whenever those measurements are regenerated.
 pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1786440300;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {

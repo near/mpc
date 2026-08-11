@@ -52,6 +52,9 @@ test-utils = [
     "near-mpc-contract-interface/blstrs",
     "near-sdk/unit-testing",
 ]
+# Lets tests verify the committed fixture, whose app-compose carries the key-export hook. Enabled only
+# where this crate builds its own tests, so no released WASM can reach it.
+allow-pre-launch-script = ["mpc-attestation/allow-pre-launch-script"]
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
 # Sandbox-only view methods that expose internal contract state for tests that need to
@@ -128,6 +131,7 @@ ecdsa = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = [
+    "allow-pre-launch-script",
     "sandbox-test-methods",
     "test-utils",
 ] }

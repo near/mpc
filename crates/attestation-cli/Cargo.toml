@@ -8,6 +8,9 @@ license = { workspace = true }
 name = "attestation-cli"
 path = "src/main.rs"
 
+[features]
+allow-pre-launch-script = ["mpc-attestation/allow-pre-launch-script"]
+
 [dependencies]
 anyhow = { workspace = true }
 attestation = { workspace = true }
@@ -24,6 +27,7 @@ tokio = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+attestation-cli = { path = ".", features = ["allow-pre-launch-script"] }
 near-mpc-crypto-types = { workspace = true }
 tempfile = { workspace = true }
 test-utils = { workspace = true }

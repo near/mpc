@@ -7,14 +7,7 @@ edition = { workspace = true }
 [dependencies]
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
-# `allow-pre-launch-script` must never reach a released artifact; acceptable here because this crate
-# is consumed only by test code. Needed to verify the committed fixture, whose measured app-compose
-# carries the hook that exported the signer key in `assets/near_account_secret_key`.
-mpc-attestation = { workspace = true, features = [
-    "test-utils",
-    "local-verify",
-    "allow-pre-launch-script",
-] }
+mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
 mpc-primitives = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }

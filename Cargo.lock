@@ -1073,6 +1073,7 @@ version = "3.14.0"
 dependencies = [
  "anyhow",
  "attestation",
+ "attestation-cli",
  "bs58 0.5.1",
  "clap",
  "mpc-attestation",
