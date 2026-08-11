@@ -42,6 +42,7 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     setup_evm_mock(&server, MockAuthExpectation::None);
     let url = server.url("/");
 
+    // when cluster probing is ran as part of start up
     let (cluster, _running) = common::must_setup_cluster(
         common::FOREIGN_CHAIN_PROBE_PORT_SEED,
         |c: &mut e2e_tests::MpcClusterConfig| {
@@ -61,7 +62,7 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     )
     .await;
 
-    // when — the probe runs detached at startup, so both gauges settle on their own.
+    // then
     common::wait_metric_on_nodes(
         &cluster,
         &[0, 1],
@@ -72,7 +73,6 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     .await
     .expect("both nodes should report one configured Base provider");
 
-    // then
     common::wait_metric_on_nodes(
         &cluster,
         &[0],
@@ -83,13 +83,13 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     .await
     .expect("the provider serving the expected network should be healthy");
 
-    let healthy = cluster
-        .get_metric_all_nodes(metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY)
-        .await
-        .expect("failed to scrape metrics");
-    assert_eq!(
-        healthy[1],
-        Some(0),
-        "the provider serving another network should not be healthy"
-    );
+    common::wait_metric_on_nodes(
+        &cluster,
+        &[1],
+        metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY,
+        |value| value == 0,
+        CLUSTER_WAIT_TIMEOUT,
+    )
+    .await
+    .expect("the provider serving another network should not be healthy");
 }

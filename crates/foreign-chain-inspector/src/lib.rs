@@ -57,8 +57,8 @@ impl NetworkFingerprint {
     pub const MAX_CHARS: usize = 96;
     const CUT_SHORT_MARKER: &str = "_TRUNCATED";
 
-    /// Text longer than [`Self::MAX_CHARS`] is cut short, a very long string answered by
-    /// faulty providers does not reach logs and metric labels in full length.
+    /// Text longer than [`Self::MAX_CHARS`] is cut short, so a very long string answered by a
+    /// faulty provider does not reach the logs in full length.
     pub fn new(fingerprint: impl Into<String>) -> Self {
         const KEPT_CHARS: usize =
             NetworkFingerprint::MAX_CHARS - NetworkFingerprint::CUT_SHORT_MARKER.len();
