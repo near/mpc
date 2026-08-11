@@ -103,6 +103,8 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 #[derive(
@@ -126,6 +128,8 @@ pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 #[derive(
@@ -1680,6 +1684,16 @@ pub struct ForeignTxSignPayloadV1 {
 }
 
 impl ForeignTxSignPayload {
+    pub fn new(
+        version: ForeignTxPayloadVersion,
+        request: ForeignChainRpcRequest,
+        values: Vec<ExtractedValue>,
+    ) -> Self {
+        match version {
+            ForeignTxPayloadVersion::V1 => Self::V1(ForeignTxSignPayloadV1 { request, values }),
+        }
+    }
+
     pub fn compute_msg_hash(&self) -> std::io::Result<Hash256> {
         let mut hasher = sha2::Sha256::new();
         borsh::BorshSerialize::serialize(self, &mut hasher)?;

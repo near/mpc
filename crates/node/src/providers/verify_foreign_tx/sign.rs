@@ -32,8 +32,15 @@ fn build_signature_request(
     request: &VerifyForeignTxRequest,
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
-    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] =
-        foreign_tx_payload.compute_msg_hash()?.into();
+    let msg_hash = foreign_tx_payload.compute_msg_hash()?;
+    if let Some(expected_payload_hash) = &request.expected_payload_hash
+        && expected_payload_hash != &msg_hash
+    {
+        bail!(
+            "computed payload hash {msg_hash:?} does not match the request's expected payload hash {expected_payload_hash:?}"
+        );
+    }
+    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] = msg_hash.into();
     let payload_bytes: BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES> =
         payload_hash.into();
 
@@ -58,6 +65,17 @@ where
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
+        let response_payload = self
+            .execute_foreign_chain_request(
+                &foreign_tx_request.request,
+                foreign_tx_request.payload_version,
+            )
+            .await?;
+
+        // Build and validate the request before the presignature is popped, so invalid/malicious
+        // requests don't cost a presignature.
+        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
+
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
@@ -70,15 +88,6 @@ where
             },
             participants,
         )?;
-
-        let response_payload = self
-            .execute_foreign_chain_request(
-                &foreign_tx_request.request,
-                foreign_tx_request.payload_version,
-            )
-            .await?;
-
-        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let response = self
             .ecdsa_signature_provider
@@ -410,24 +419,46 @@ mod tests {
     use assert_matches::assert_matches;
     use std::collections::BTreeSet;
 
-    fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
-        dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
-            tx_id: dtos::BitcoinTxId([0; 32]),
-            confirmations: dtos::BlockConfirmations(6),
-            extractors: vec![dtos::BitcoinExtractor::BlockHash],
-        })
+    #[test]
+    fn build_signature_request__should_reject_payload_not_matching_expected_hash() {
+        // Given
+        let request = verify_foreign_tx_request(Some(dtos::Hash256([1u8; 32])));
+        let payload = bitcoin_payload();
+
+        // When
+        let result = build_signature_request(&request, &payload);
+
+        // Then
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("does not match the request's expected payload hash"),
+            "expected the payload hash mismatch error, got: {error}",
+        );
     }
 
-    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
-        BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
+    #[test]
+    fn build_signature_request__should_accept_payload_matching_expected_hash() {
+        // Given
+        let payload = bitcoin_payload();
+        let request = verify_foreign_tx_request(Some(payload.compute_msg_hash().unwrap()));
+
+        // When
+        let result = build_signature_request(&request, &payload);
+
+        // Then
+        result.unwrap();
     }
 
-    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadSupportedForeignChain {
-        let mut reader = MockReadSupportedForeignChain::new();
-        reader
-            .expect_get_supported_chains()
-            .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
-        reader
+    #[test]
+    fn build_signature_request__should_accept_any_payload_without_expected_hash() {
+        // Given
+        let request = verify_foreign_tx_request(None);
+
+        // When
+        let result = build_signature_request(&request, &bitcoin_payload());
+
+        // Then
+        result.unwrap();
     }
 
     #[tokio::test]
@@ -454,5 +485,49 @@ mod tests {
                 requested: dtos::ForeignChain::Ethereum
             })
         );
+    }
+
+    fn bitcoin_payload() -> dtos::ForeignTxSignPayload {
+        dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
+            request: bitcoin_request(),
+            values: vec![dtos::ExtractedValue::BitcoinExtractedValue(
+                dtos::BitcoinExtractedValue::BlockHash(dtos::Hash256([42u8; 32])),
+            )],
+        })
+    }
+
+    fn verify_foreign_tx_request(
+        expected_payload_hash: Option<dtos::Hash256>,
+    ) -> VerifyForeignTxRequest {
+        VerifyForeignTxRequest {
+            id: near_indexer_primitives::CryptoHash([1u8; 32]),
+            receipt_id: near_indexer_primitives::CryptoHash([2u8; 32]),
+            request: bitcoin_request(),
+            payload_version: dtos::ForeignTxPayloadVersion::V1,
+            expected_payload_hash,
+            entropy: [0u8; 32],
+            timestamp_nanosec: 0,
+            domain_id: mpc_primitives::domain::DomainId(0),
+        }
+    }
+
+    fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
+        dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
+            tx_id: dtos::BitcoinTxId([0; 32]),
+            confirmations: dtos::BlockConfirmations(6),
+            extractors: vec![dtos::BitcoinExtractor::BlockHash],
+        })
+    }
+
+    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
+        BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
+    }
+
+    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadSupportedForeignChain {
+        let mut reader = MockReadSupportedForeignChain::new();
+        reader
+            .expect_get_supported_chains()
+            .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
+        reader
     }
 }

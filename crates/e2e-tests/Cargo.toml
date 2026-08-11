@@ -42,6 +42,7 @@ contract-history = { workspace = true }
 group = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
+near-mpc-sdk = { workspace = true }
 regex = { workspace = true }
 rstest = { workspace = true }
 threshold-signatures = { workspace = true }
