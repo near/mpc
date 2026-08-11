@@ -1390,8 +1390,6 @@ pub enum ForeignChain {
 }
 
 impl ForeignChain {
-    /// The chain's snake case name, as an operator writes it as a config key. Kept here so a
-    /// metric label and a config key cannot drift apart.
     pub fn label(&self) -> &'static str {
         match self {
             Self::Solana => "solana",
