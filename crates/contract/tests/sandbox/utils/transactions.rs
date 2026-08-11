@@ -55,6 +55,8 @@ impl CallContract for SandboxCaller<'_> {
     }
 }
 
+/// Different to [`SandboxCaller`], in that it doesn't wait for the transaction to complete, but
+/// returns a [`TransactionStatus`] which can be awaited.
 pub struct AsyncSandboxCaller<'a>(pub &'a Account);
 
 impl CallContract for AsyncSandboxCaller<'_> {
