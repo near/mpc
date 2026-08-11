@@ -8,7 +8,7 @@ use foreign_chain_health_check::probe::{
 };
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::types as dtos;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::metrics;
 
@@ -46,18 +46,18 @@ fn log_report(report: &ProbeReport) {
     let rows = report.rows();
     for row in rows {
         match &row.status {
-            ProviderStatus::Healthy => debug!(
-                chain = ?row.chain,
+            ProviderStatus::Healthy => info!(
+                chain = %row.chain.label(),
                 provider = %row.provider,
                 "foreign-chain RPC provider serves the expected network",
             ),
-            ProviderStatus::ProbeNotImplemented => debug!(
-                chain = ?row.chain,
+            ProviderStatus::ProbeNotImplemented => info!(
+                chain = %row.chain.label(),
                 provider = %row.provider,
-                "foreign-chain RPC provider cannot be probed",
+                "foreign-chain RPC provider cannot be checked",
             ),
             unhealthy => warn!(
-                chain = ?row.chain,
+                chain = %row.chain.label(),
                 provider = %row.provider,
                 status = ?unhealthy,
                 "foreign-chain RPC provider is unhealthy",
@@ -102,28 +102,7 @@ fn publish_metrics(report: &ProbeReport) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use mpc_node_config::{AuthConfig, ForeignChainConfig, ForeignChainProviderConfig};
-    use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use prometheus::core::Collector as _;
-    use std::num::NonZeroU64;
-
-    const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
-    const ANY_FINGERPRINT: &str = "any-fingerprint";
-
-    fn chain_config(expected: &str, rpc_url: &str) -> ForeignChainConfig {
-        ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(1).unwrap(),
-            max_retries: NonZeroU64::new(1).unwrap(),
-            expected_network_fingerprint: Some(expected.to_string()),
-            providers: NonEmptyBTreeMap::new(
-                "only".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: rpc_url.to_string(),
-                    auth: AuthConfig::None,
-                },
-            ),
-        }
-    }
 
     /// The chains a gauge holds a series for.
     fn labelled_chains(gauge: &prometheus::IntGaugeVec) -> Vec<String> {
@@ -136,10 +115,21 @@ mod tests {
             .collect()
     }
 
-    fn row(chain: dtos::ForeignChain, status: ProviderStatus) -> ProviderHealth {
+    fn counts(chain: &str) -> (i64, i64) {
+        (
+            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
+                .with_label_values(&[chain])
+                .get(),
+            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
+                .with_label_values(&[chain])
+                .get(),
+        )
+    }
+
+    fn row(chain: dtos::ForeignChain, provider: &str, status: ProviderStatus) -> ProviderHealth {
         ProviderHealth {
             chain,
-            provider: dtos::ProviderId("only".to_string()),
+            provider: dtos::ProviderId(provider.to_string()),
             status,
         }
     }
@@ -149,10 +139,11 @@ mod tests {
     fn summarize__should_count_only_the_providers_a_probe_covers() {
         // Given
         let rows = [
-            row(dtos::ForeignChain::Base, ProviderStatus::Healthy),
-            row(dtos::ForeignChain::Bnb, ProviderStatus::Unreachable),
+            row(dtos::ForeignChain::Base, "only", ProviderStatus::Healthy),
+            row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Unreachable),
             row(
                 dtos::ForeignChain::Solana,
+                "only",
                 ProviderStatus::ProbeNotImplemented,
             ),
         ];
@@ -169,6 +160,7 @@ mod tests {
         // Given
         let rows = [row(
             dtos::ForeignChain::Solana,
+            "only",
             ProviderStatus::ProbeNotImplemented,
         )];
 
@@ -179,35 +171,48 @@ mod tests {
         assert_eq!(summary.probed, 0);
     }
 
-    #[tokio::test]
-    async fn run_startup_probe__should_publish_the_provider_counts_per_chain() {
+    /// `HyperEvm` is labelled `hyper_evm`, so the series is keyed by the config key rather than the
+    /// variant name.
+    #[test]
+    fn publish_metrics__should_count_the_providers_of_each_chain() {
         // Given
-        let foreign_chains = ForeignChainsConfig {
-            aptos: Some(chain_config(ANY_FINGERPRINT, CLOSED_PORT_URL)),
-            ..Default::default()
-        };
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::HyperEvm,
+                "alchemy",
+                ProviderStatus::Healthy,
+            ),
+            row(
+                dtos::ForeignChain::HyperEvm,
+                "quicknode",
+                ProviderStatus::Unreachable,
+            ),
+            row(dtos::ForeignChain::Aptos, "only", ProviderStatus::TimedOut),
+        ]);
 
         // When
-        run_startup_probe(foreign_chains).await;
+        publish_metrics(&report);
 
-        // Then — unreachable, so configured counts it and healthy does not.
-        let counts = |gauge: &prometheus::IntGaugeVec| gauge.with_label_values(&["aptos"]).get();
-        assert_eq!(counts(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED), 1);
-        assert_eq!(counts(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY), 0);
+        // Then
+        assert_eq!(counts("hyper_evm"), (2, 1));
+        assert_eq!(counts("aptos"), (1, 0));
     }
 
     /// A `0` healthy for a chain no probe covers would read as every provider failing.
-    #[tokio::test]
-    async fn run_startup_probe__should_publish_no_counts_for_an_unprobeable_chain() {
+    #[test]
+    fn publish_metrics__should_publish_no_counts_for_an_unprobeable_chain() {
         // Given
-        let foreign_chains = ForeignChainsConfig {
-            bnb: Some(chain_config(ANY_FINGERPRINT, CLOSED_PORT_URL)),
-            solana: Some(chain_config(ANY_FINGERPRINT, CLOSED_PORT_URL)),
-            ..Default::default()
-        };
+        let report = ProbeReport::from(vec![
+            row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Healthy),
+            row(
+                dtos::ForeignChain::Solana,
+                "only",
+                ProviderStatus::ProbeNotImplemented,
+            ),
+        ]);
 
         // When
-        run_startup_probe(foreign_chains).await;
+        publish_metrics(&report);
 
         // Then
         let chains = labelled_chains(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED);

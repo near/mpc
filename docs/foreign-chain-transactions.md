@@ -583,7 +583,7 @@ Every chain with an inspector is probed, each by the RPC below. `solana` has non
 
 The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing, and Sui's base58 digest has a single spelling with nothing to normalize.
 
-An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
+An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into the logs.
 
 #### Why drop-and-log on local-config mismatch, not hard-crash
 

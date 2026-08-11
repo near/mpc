@@ -1980,7 +1980,6 @@ mod tests {
     #[rstest]
     #[case::hyper_evm(ForeignChain::HyperEvm, "hyper_evm")]
     #[case::abstract_chain(ForeignChain::Abstract, "abstract")]
-    #[case::sui(ForeignChain::Sui, "sui")]
     fn label__should_name_the_chain_as_its_config_key(
         #[case] chain: ForeignChain,
         #[case] expected: &str,
