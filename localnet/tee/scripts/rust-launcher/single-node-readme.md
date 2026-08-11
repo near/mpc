@@ -46,7 +46,7 @@ export NODE_ACCOUNT=frodo.test.near
 export CONTRACT_ACCOUNT=mpc-contract.test.near
 
 # Exports the node's in-enclave signer key; needed when collecting test assets.
-export PRELAUNCH_SCRIPT=localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh
+export PRELAUNCH_SCRIPT=$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh
 ```
 
 ## Run

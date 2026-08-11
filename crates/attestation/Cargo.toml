@@ -13,9 +13,6 @@ test-utils = []
 # key in `crates/test-utils/assets/near_account_secret_key`. Never implied by another feature, so
 # every enablement stays explicit and must stay on dependency edges that only tests build.
 allow-pre-launch-script = []
-# Pulls in `dcap-qvl` for full local DCAP + post-DCAP verification. Off-chain callers only: the
-# node, the attestation CLI and the TEE authority. The contract verifies through the verifier
-# contract instead.
 local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]
 
 [dependencies]

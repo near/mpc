@@ -41,7 +41,7 @@ export BASE_PATH=/path/to/meta-dstack/dstack
 export WORKDIR=/tmp/mpc-fixture-collection
 
 # Reuse the fixture's current image digests unless changing images: steps 6-7 below then stay no-ops.
-PRELAUNCH_SCRIPT=localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh \
+PRELAUNCH_SCRIPT="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh" \
   bash localnet/tee/scripts/rust-launcher/single-node.sh
 
 cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
