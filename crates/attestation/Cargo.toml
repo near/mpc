@@ -11,12 +11,11 @@ test-utils = []
 # Accepts an app-compose carrying a `pre_launch_script`, which production rejects. Tests need it to
 # verify the committed fixture, whose measured app-compose carries the hook that exported the signer
 # key in `crates/test-utils/assets/near_account_secret_key`. Never implied by another feature, so
-# every enablement stays explicit, and `scripts/check-attestation-feature-leak.sh` keeps it out of
-# released artifacts.
+# every enablement stays explicit and must stay on dependency edges that only tests build.
 allow-pre-launch-script = []
-# Pulls in `dcap-qvl` for full local DCAP + post-DCAP verification. Meant for
-# off-chain callers; `mpc-contract` enables it today.
-# TODO(#3264): contract drops this once DCAP moves to the verifier contract.
+# Pulls in `dcap-qvl` for full local DCAP + post-DCAP verification. Off-chain callers only: the
+# node, the attestation CLI and the TEE authority. The contract verifies through the verifier
+# contract instead.
 local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]
 
 [dependencies]

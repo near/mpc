@@ -36,8 +36,8 @@ const RTMR3_INDEX: u32 = 3;
 
 /// Whether an app-compose may carry a `pre_launch_script`. False in production; test builds allow
 /// it so they can verify the committed fixture, whose measured app-compose carries the hook that
-/// exported the signer key in `crates/test-utils/assets/near_account_secret_key`. Kept out of
-/// released artifacts by `scripts/check-attestation-feature-leak.sh` (`cargo make check-all-fast`).
+/// exported the signer key in `crates/test-utils/assets/near_account_secret_key`. Enabled only on
+/// dependency edges that no released artifact builds.
 const PRE_LAUNCH_SCRIPT_ALLOWED: bool = cfg!(feature = "allow-pre-launch-script");
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
