@@ -65,10 +65,7 @@ printf "%s" "$(grep 'DEFAULT_IMAGE_DIGEST' "$OUTPUT_DIR/launcher_image_compose.y
 echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
 
-# The secret key is not in public_data: it lives in the node's secrets.json and must be exported by
-# whoever regenerates the assets. It is committed, so it is normally present but stale, hence an
-# unconditional reminder rather than an existence check.
 echo ""
 echo "REMINDER: replace '$OUTPUT_DIR/near_account_secret_key' with the secret key of"
 echo "the node you just extracted from (ed25519:<base58>, one line). It must pair with"
-echo "the freshly written near_account_public_key.pub. See README.md."
+echo "the freshly written near_account_public_key.pub."

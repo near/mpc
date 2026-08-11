@@ -47,32 +47,25 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
-`public_data.json` is the endpoint response verbatim, so its collateral byte fields are JSON arrays,
-while `collateral.json` holds the same bytes hex-encoded, which is what the fixture parser reads. The
-two encodings are expected to differ.
+`public_data.json` is the endpoint response verbatim, so its collateral byte fields are JSON arrays;
+`collateral.json` holds the same bytes hex-encoded, which is what the fixture parser reads.
 
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
 5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,
-   `ed25519:<base58>`, matching the format of the `.pub` files). Tests sign
-   `submit_participant_info` as the fixture node with it, since the quote's `report_data`
-   binds that key and the contract reads it from the transaction signer. It is not in
-   `public_data.json`: it lives in `secrets.json` inside the CVM, exported by
+   `ed25519:<base58>`). Tests sign as the fixture node with it, since the quote's
+   `report_data` binds it. It is not in `public_data.json`: it lives in `secrets.json`
+   inside the CVM, exported by
    [the key-export hook](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key).
-   It may live in the repo only because the fixture node is a throwaway localnet one: its
-   account (`frodo.test.near`) exists on no public network, and the quote and collateral
-   binding the key are public anyway. Re-check that before committing a regenerated key.
-
-   A stale secret beside a fresh public key is the mistake to catch here:
+   Only a throwaway localnet key may be committed — check that before you do.
 
    ```shell
    cargo nextest run -p test-utils account_secret_key
    ```
 
    That hook makes the fixture's app-compose carry a `pre_launch_script`, which production
-   verification rejects as arbitrary root code. Test builds accept it via
-   `attestation/allow-pre-launch-script`, enabled only on dependency edges that build
-   tests. Do not treat this fixture as an example of a production-valid attestation.
+   rejects, so tests need `attestation/allow-pre-launch-script`. This fixture is not an
+   example of a production-valid attestation.
 
 6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.

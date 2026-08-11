@@ -1,3 +1,5 @@
+//! Verifies the committed fixture, so it requires `allow-pre-launch-script`.
+
 use std::path::PathBuf;
 
 use attestation_cli::cli::Cli;

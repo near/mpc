@@ -1,5 +1,5 @@
 //! Exercises the full local DCAP + post-DCAP path (`verify_locally`), so it
-//! requires the off-chain `local-verify` feature.
+//! requires the off-chain `local-verify` feature and `allow-pre-launch-script`.
 #![cfg(feature = "local-verify")]
 
 use assert_matches::assert_matches;

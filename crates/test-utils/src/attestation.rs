@@ -156,10 +156,6 @@ mod tests {
         near_p2p_tls_key();
     }
 
-    /// `create-assets.sh` rewrites the `.pub` files but cannot rewrite the secret, so a
-    /// stale secret beside a fresh public key is the regeneration mistake to catch. A NEAR
-    /// ed25519 secret key is base58 of `seed || public_key`, so the pair checks out
-    /// without a signing library.
     #[test]
     fn account_secret_key__should_pair_with_account_public_key() {
         // Given

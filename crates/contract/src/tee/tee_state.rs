@@ -1592,6 +1592,7 @@ mod tests {
         assert!(tee_state.stored_attestations.is_empty());
     }
 
+    /// Needs `allow-pre-launch-script`.
     #[test]
     fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
         // Given

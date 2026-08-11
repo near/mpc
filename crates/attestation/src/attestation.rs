@@ -34,10 +34,9 @@ pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
 
-/// Whether an app-compose may carry a `pre_launch_script`. False in production; test builds allow
-/// it so they can verify the committed fixture, whose measured app-compose carries the hook that
-/// exported the signer key in `crates/test-utils/assets/near_account_secret_key`. Enabled only on
-/// dependency edges that no released artifact builds.
+/// Whether an app-compose may carry a `pre_launch_script`. False in production; test builds allow it
+/// to verify the committed fixture, whose app-compose carries the hook that exported
+/// `crates/test-utils/assets/near_account_secret_key`.
 const PRE_LAUNCH_SCRIPT_ALLOWED: bool = cfg!(feature = "allow-pre-launch-script");
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
@@ -621,10 +620,8 @@ mod tests {
         assert!(result)
     }
 
-    /// Pins the committed fixture as production-valid but for its key-export hook, so the
-    /// relaxation is known to cover that one field and nothing else about real data.
     #[test]
-    fn validate_app_compose_config__should_accept_the_fixture_without_its_export_hook() {
+    fn validate_app_compose_config__should_accept_the_committed_fixture_with_its_hook_cleared() {
         // Given
         let fixture: AppCompose =
             serde_json::from_str(test_utils::attestation::TEST_APP_COMPOSE_STRING)

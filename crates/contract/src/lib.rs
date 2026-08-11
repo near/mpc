@@ -5007,6 +5007,7 @@ mod tests {
             .expect("Expected panic if predecessor != signer");
     }
 
+    /// Callers that reach a Verified verdict need `allow-pre-launch-script`.
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
         let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
         let contract_account_id = env::current_account_id();

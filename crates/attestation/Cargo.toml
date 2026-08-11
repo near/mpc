@@ -9,9 +9,9 @@ borsh-schema = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
 dstack-conversions = ["dep:dstack-sdk-types"]
 test-utils = []
 # Accepts an app-compose carrying a `pre_launch_script`, which production rejects. Tests need it to
-# verify the committed fixture, whose measured app-compose carries the hook that exported the signer
-# key in `crates/test-utils/assets/near_account_secret_key`. Never implied by another feature, so
-# every enablement stays explicit and must stay on dependency edges that only tests build.
+# verify the committed fixture, whose app-compose carries the hook that exported
+# `crates/test-utils/assets/near_account_secret_key`. Never implied by another feature, so every
+# enablement is explicit: only test code may turn it on.
 allow-pre-launch-script = []
 local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]
 
