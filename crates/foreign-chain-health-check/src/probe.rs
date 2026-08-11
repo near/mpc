@@ -2,7 +2,6 @@
 //! operator's `expected_network_fingerprint`.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::adi::inspector::Adi;
@@ -25,7 +24,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
-use crate::{prepare_aptos, prepare_jsonrpc, prepare_sui};
+use crate::{prepare_aptos, prepare_jsonrpc, prepare_sui, timeout_of};
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +123,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 ForeignChain::Aptos => {
-                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
+                    let timeout = timeout_of(chain_config);
                     probe_chain(chain, chain_config, move |provider| {
                         let (url, auth_header) = prepare_aptos(provider)?;
                         Ok(AptosInspector::new(ReqwestAptosClient::new(
@@ -136,14 +135,13 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 ForeignChain::Sui => {
-                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
+                    let timeout = timeout_of(chain_config);
                     probe_chain(chain, chain_config, move |provider| {
                         Ok(SuiInspector::new(prepare_sui(provider, timeout)?))
                     })
                     .await
                 }
-                // Ethereum, Solana and Ton have no inspector, so there is nothing to probe them
-                // with.
+                // Ethereum, Solana and Ton have no inspector to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -193,9 +191,8 @@ where
         return rows;
     };
 
-    let timeout = Duration::from_secs(config.timeout_sec.get());
     let fingerprints = FanOut::new(inspectors)
-        .network_fingerprints(timeout, config.max_retries)
+        .network_fingerprints(timeout_of(config), config.max_retries)
         .await;
     for (provider, reported) in fingerprints {
         rows.push(ProviderHealth {
@@ -259,10 +256,12 @@ fn classify(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::fake_sui_ledger::{SUI_MAINNET, SUI_TESTNET, sui_on_chain};
     use assert_matches::assert_matches;
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
+    use std::time::Duration;
 
     /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
     const MAINNET: &str = "0x534e5f4d41494e";
@@ -272,8 +271,6 @@ mod tests {
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
-    /// Sui's genesis checkpoint digest, base58.
-    const SUI_MAINNET: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
     /// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
     /// the same number as text.
     const APTOS_MAINNET: u64 = 1;
@@ -992,18 +989,61 @@ mod tests {
         );
     }
 
-    /// gRPC cannot be answered by the mock server the other chains use, so this pins the one
-    /// thing a unit test can: Sui reaches the probing path instead of reporting no probe.
-    #[tokio::test]
-    async fn probe_all_providers__should_probe_sui_rather_than_report_no_probe() {
-        // Given
-        let config = ForeignChainsConfig {
-            sui: Some(chain_config(
-                Some(SUI_MAINNET),
-                one_provider("publicnode", CLOSED_PORT_URL),
-            )),
+    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            sui: Some(config),
             ..Default::default()
-        };
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_sui_on_its_genesis_digest_as_healthy() {
+        // Given
+        let server = sui_on_chain(SUI_MAINNET).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider("publicnode", &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            ProviderStatus::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_sui_on_another_network_as_wrong_network() {
+        // Given
+        let server = sui_on_chain(SUI_TESTNET).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider("publicnode", &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new(SUI_MAINNET),
+                observed: NetworkFingerprint::new(SUI_TESTNET),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_unreachable_sui_provider() {
+        // Given
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider("publicnode", CLOSED_PORT_URL),
+        ));
 
         // When
         let report = probe_all_providers(&config).await;

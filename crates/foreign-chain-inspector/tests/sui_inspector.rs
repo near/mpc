@@ -17,8 +17,7 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
-/// A client that always returns a hard-coded [`GetTransaction`] response, and service info only
-/// where a test sets it.
+/// A client answering the one call a test arms, and refusing the other.
 struct MockSuiClient {
     response: Result<GetTransactionResponse, Status>,
     service_info: Result<GetServiceInfoResponse, Status>,
@@ -41,8 +40,8 @@ impl MockSuiClient {
 
     fn serving(service_info: GetServiceInfoResponse) -> Self {
         Self {
+            response: Err(Status::unimplemented("no transaction in this test")),
             service_info: Ok(service_info),
-            ..Self::status(Status::unimplemented("no transaction in this test"))
         }
     }
 }
@@ -467,7 +466,7 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
     assert_eq!(expected, extracted_values);
 }
 
-/// Sui mainnet's genesis checkpoint digest, as shipped in `expected_network_fingerprint`.
+/// Sui mainnet's genesis checkpoint digest.
 const MAINNET_CHAIN_ID: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
 
 #[tokio::test]
