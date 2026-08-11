@@ -1,18 +1,18 @@
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     bnb::{
         BnbBlockHash, BnbTransactionHash,
         inspector::{BnbExtractedValue, BnbExtractor, BnbInspector},
     },
 };
 
+const BNB_RPC_URL: &str = "https://bsc-rpc.publicnode.com";
+
 #[tokio::test]
 #[ignore = "manual test to sanity check against live BNB RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    const BNB_RPC_URL: &str = "https://bsc-rpc.publicnode.com";
-
     let threshold = EthereumFinality::Finalized;
 
     // Example DEX swap transaction on BNB with 3 logs
@@ -57,4 +57,28 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     assert_matches!(extracted_values[1], BnbExtractedValue::Log(_));
     assert_matches!(extracted_values[2], BnbExtractedValue::Log(_));
     assert_matches!(extracted_values[3], BnbExtractedValue::Log(_));
+}
+
+/// BNB mainnet's chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "56";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live BNB RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        BNB_RPC_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = BnbInspector::new(http_client);
+
+    // when
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

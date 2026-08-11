@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 pub use ethereum_types::{H160, H256, U64};
 
+use ethereum_types::U256;
+
 /// Partial RPC response for `eth_getTransactionReceipt`.
 /// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -100,10 +102,79 @@ pub struct Log {
     pub topics: Vec<H256>,
 }
 
+/// RPC response for `eth_chainId`: the EIP-155 chain id as a hex quantity.
+/// <https://ethereum.org/developers/docs/apis/json-rpc/#eth_chainid>
+///
+/// Kept as text rather than parsed into a [`U64`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct ChainIdResponse(pub String);
+
+impl ChainIdResponse {
+    /// Decimal, the form EIP-155 chain ids are published in. A `0x` prefix reads as hex, anything
+    /// else as decimal; text that is neither is returned unchanged.
+    pub fn canonical_text(self) -> String {
+        let hex = self
+            .0
+            .strip_prefix("0x")
+            .or_else(|| self.0.strip_prefix("0X"));
+        let (digits, radix) = match hex {
+            Some(digits) => (digits, 16),
+            None => (self.0.as_str(), 10),
+        };
+        // Empty digits parse as zero, which would report a bare `0x` as chain 0.
+        if digits.is_empty() {
+            return self.0;
+        }
+        match U256::from_str_radix(digits, radix) {
+            Ok(chain_id) => chain_id.to_string(),
+            Err(_) => self.0,
+        }
+    }
+}
+
 impl ToRpcParams for &GetTransactionReceiptARgs {
     to_rpc_params_impl!();
 }
 
 impl ToRpcParams for &GetBlockByNumberArgs {
     to_rpc_params_impl!();
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::ChainIdResponse;
+    use rstest::rstest;
+
+    /// Base mainnet.
+    const CHAIN_ID_8453: &str = "0x2105";
+
+    #[rstest]
+    #[case::hex(CHAIN_ID_8453, "8453")]
+    // Padded and upper-cased, as a provider may send it. Arbitrum, whose id has hex letters.
+    #[case::padded("0x002105", "8453")]
+    #[case::upper_cased_digits("0xA4B1", "42161")]
+    // Spellings only an operator writes: the published decimal, and an upper-cased prefix.
+    #[case::decimal("8453", "8453")]
+    #[case::upper_cased_prefix("0X2105", "8453")]
+    #[case::zero("0x0", "0")]
+    // Wider than a u64, which EIP-155 permits.
+    #[case::wider_than_a_u64("0x1ffffffffffffffff", "36893488147419103231")]
+    // Reported as answered by the provider.
+    #[case::not_a_number("mainnet", "mainnet")]
+    #[case::empty_hex("0x", "0x")]
+    fn chain_id_response__should_canonicalize_what_a_provider_answers(
+        #[case] answered: &str,
+        #[case] expected: &str,
+    ) {
+        // Given
+        let json = serde_json::json!(answered);
+
+        // When
+        let response: ChainIdResponse = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(response.canonical_text(), expected);
+    }
 }

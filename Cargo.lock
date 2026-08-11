@@ -3298,6 +3298,7 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
+ "near-mpc-sdk",
  "near-sandbox",
  "rand 0.8.6",
  "regex",

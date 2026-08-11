@@ -7,7 +7,8 @@ use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
-        Attestation, Ed25519PublicKey, GovernanceThreshold, Participants, ProtocolContractState,
+        Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
+        ProtocolContractState,
     },
 };
 use near_workspaces::{
@@ -62,6 +63,44 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
         .collect())
 }
 
+pub async fn prepay_attestation_grants(
+    payer: &Account,
+    contract: &Contract,
+    beneficiary: &AccountId,
+    grants: u32,
+) -> anyhow::Result<ExecutionFinalResult> {
+    // The fee is read from `config()`, the way an operator reads it.
+    let config: Config = contract
+        .view(method_names::CONFIG)
+        .args_json(serde_json::json!({}))
+        .await?
+        .json()?;
+    let total = NearToken::from_millinear(
+        u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
+    );
+    Ok(payer
+        .call(contract.id(), method_names::PREPAY_ATTESTATION_STORAGE)
+        .args_json(serde_json::json!({ "account_id": beneficiary, "grants": grants }))
+        .deposit(total)
+        .max_gas()
+        .transact()
+        .await?)
+}
+
+/// Prepays one grant, then submits. For a first submission; a re-attestation of a key the
+/// account already owns consumes no grant and should use [`submit_participant_info`].
+pub async fn prepay_and_submit_participant_info(
+    account: &Account,
+    contract: &Contract,
+    attestation: &Attestation,
+    tls_key: &Ed25519PublicKey,
+) -> anyhow::Result<ExecutionFinalResult> {
+    let prepayment = prepay_attestation_grants(account, contract, account.id(), 1).await?;
+    anyhow::ensure!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+    submit_participant_info(account, contract, attestation, tls_key).await
+}
+
+/// Submits without prepaying anything.
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,

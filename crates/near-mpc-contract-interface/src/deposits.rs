@@ -7,6 +7,8 @@ pub const STORAGE_BYTE_COST_YOCTONEAR: u128 = 10_000_000_000_000_000_000;
 
 pub const PROPOSE_UPDATE_ENTRY_OVERHEAD_BYTES: u128 = 32_768;
 
+pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR: u128 = 1;
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 #[error("the required deposit exceeds u128::MAX yoctoNEAR")]
 pub struct DepositOverflowError;

@@ -3,16 +3,20 @@ use std::hash::Hash;
 
 use jsonrpsee::core::client::ClientT;
 
-use crate::{EthereumFinality, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS,
+    NetworkFingerprint, NetworkFingerprintInspector,
+};
 
 use foreign_chain_rpc_interfaces::evm::{
-    BlockNumberOrTag, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
+    BlockNumberOrTag, ChainIdResponse, FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse,
     GetTransactionReceiptARgs, GetTransactionReceiptResponse, H256, Log,
     ReturnFullTransactionObjects, U64,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
 const GET_BLOCK_BY_NUMBER_METHOD: &str = "eth_getBlockByNumber";
+const CHAIN_ID_METHOD: &str = "eth_chainId";
 
 /// Marker trait for EVM-compatible chain type parameters.
 ///
@@ -35,6 +39,25 @@ pub trait EvmChain {
 pub struct EvmInspector<Client, Chain> {
     client: Client,
     _chain: std::marker::PhantomData<Chain>,
+}
+
+impl<Client, Chain> NetworkFingerprintInspector for EvmInspector<Client, Chain>
+where
+    Client: ClientT + Send + Sync,
+    Chain: Send + Sync,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let chain_id: ChainIdResponse = self
+            .client
+            .request(CHAIN_ID_METHOD, NO_PARAMS)
+            .await
+            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+        Ok(NetworkFingerprint::new(chain_id.canonical_text()))
+    }
+
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(ChainIdResponse(fingerprint.to_owned()).canonical_text())
+    }
 }
 
 impl<Client, Chain> ForeignChainInspector for EvmInspector<Client, Chain>

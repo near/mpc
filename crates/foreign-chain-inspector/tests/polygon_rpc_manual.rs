@@ -1,18 +1,18 @@
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     polygon::{
         PolygonBlockHash, PolygonTransactionHash,
         inspector::{PolygonExtractedValue, PolygonExtractor, PolygonInspector},
     },
 };
 
+const POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
+
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Polygon RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    const POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
-
     let threshold = EthereumFinality::Finalized;
 
     // Example transaction on Polygon (block 0x5276e5d) with 8 logs;
@@ -57,4 +57,28 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     assert_matches!(extracted_values[1], PolygonExtractedValue::Log(_));
     assert_matches!(extracted_values[2], PolygonExtractedValue::Log(_));
     assert_matches!(extracted_values[3], PolygonExtractedValue::Log(_));
+}
+
+/// Polygon mainnet's chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "137";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Polygon RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        POLYGON_RPC_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = PolygonInspector::new(http_client);
+
+    // when
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }
