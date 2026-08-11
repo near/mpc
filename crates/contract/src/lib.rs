@@ -8846,6 +8846,10 @@ mod tests {
     /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
     const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(10);
 
+    /// One `available_attestation_grants` row, for the longest possible account id. The fee
+    /// covers this on top of the entry, since a grant creates the row.
+    const WORST_CASE_GRANT_ROW_BYTES: u64 = 194;
+
     fn worst_case_dstack_attestation() -> VerifiedAttestation {
         VerifiedAttestation::Dstack(ValidatedDstackAttestation {
             mpc_image_hash: MAX_HASH.into(),
@@ -8867,6 +8871,21 @@ mod tests {
     /// Storage the contract pays for one stored attestation entry, measured the way the runtime
     /// charges it. NEAR caps an account id at 64 bytes; every other [`NodeId`] field is fixed-size,
     /// so this is the worst case for the given attestation variant.
+    /// Charged bytes for one grants-map row, measured the same way as
+    /// [`measure_stored_entry_bytes`]: insert into the real map, flush, take the delta.
+    fn measure_grant_row_bytes() -> u64 {
+        testing_env!(VMContextBuilder::new().build());
+        let account: AccountId = "a".repeat(64).parse().unwrap();
+
+        let mut grants: IterableMap<AccountId, u32> =
+            IterableMap::new(StorageKey::AttestationGrants);
+        let before = env::storage_usage();
+        grants.insert(account, 1);
+        grants.flush();
+
+        env::storage_usage() - before
+    }
+
     fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
         let node_id = create_node_id(
@@ -8915,6 +8934,21 @@ mod tests {
             bytes_stored <= WORST_CASE_ENTRY_BYTES,
             "entry ({bytes_stored} bytes) exceeds the pinned worst case \
              ({WORST_CASE_ENTRY_BYTES} bytes)"
+        );
+    }
+
+    /// Pinned for the same reason as [`stored_attestation_entry__should_have_the_pinned_size`]:
+    /// the prepaid-storage fee is sized from this number plus the entry, so a layout change
+    /// that grows the row must be seen and the fee revisited.
+    #[test]
+    fn grant_row__should_have_the_pinned_size() {
+        // Given / When
+        let bytes_stored = measure_grant_row_bytes();
+
+        // Then
+        assert_eq!(
+            bytes_stored, WORST_CASE_GRANT_ROW_BYTES,
+            "grants row size changed; see this test's doc comment before updating the number"
         );
     }
 
