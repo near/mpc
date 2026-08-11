@@ -162,7 +162,7 @@ impl ParticipantId {
         self.0
     }
 
-    pub fn from_raw(raw: u32) -> Self {
+    pub const fn from_raw(raw: u32) -> Self {
         ParticipantId(raw)
     }
 }

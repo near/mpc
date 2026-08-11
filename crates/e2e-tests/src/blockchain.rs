@@ -155,20 +155,20 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
-    pub async fn call_from(
+    /// Like [`Self::call`], but waits for the block to be final, so a `view` issued
+    /// afterwards sees the state this call wrote.
+    pub async fn call_final(
         &self,
-        client: &NearKitCaller,
         method: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
+        self.client
             .call(&self.contract_id, method)
             .args(args)
             .gas(MAX_GAS)
-            .send()
+            .wait_until::<Final>()
             .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` (external signer) failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
     pub async fn call_from_with_deposit(
@@ -188,40 +188,6 @@ impl DeployedContract {
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
-    }
-
-    /// Like [`Self::call_from`], but with an attached `deposit`.
-    pub async fn call_from_deposit(
-        &self,
-        client: &NearKitCaller,
-        method: &str,
-        args: serde_json::Value,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.call_from_with_deposit(client, method, args, MAX_GAS, deposit)
-            .await
-    }
-
-    /// Call a method whose arguments are borsh-serialized (e.g. `propose_update`).
-    pub async fn call_from_borsh_with_deposit<A: borsh::BorshSerialize>(
-        &self,
-        client: &NearKitCaller,
-        method: &str,
-        args: A,
-        gas: near_kit::Gas,
-        deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        client
-            .inner
-            .call(&self.contract_id, method)
-            .args_borsh(args)
-            .gas(gas)
-            .deposit(deposit)
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("contract call `{method}` (borsh args, with deposit) failed: {e}")
-            })
     }
 
     pub async fn view<T: DeserializeOwned + Send + 'static>(

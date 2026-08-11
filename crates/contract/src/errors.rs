@@ -64,6 +64,8 @@ pub enum RespondError {
     DomainNotFound,
     #[error("The provided tweak is not on the curve of the public key.")]
     TweakNotOnCurve,
+    #[error("The response payload hash does not match the hash expected by the request.")]
+    UnexpectedPayloadHash,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -129,6 +131,14 @@ pub enum InvalidParameters {
     MalformedPayload { reason: String },
     #[error("Attached deposit is lower than required. Attached: {attached}, required: {required}")]
     InsufficientDeposit { attached: u128, required: u128 },
+    #[error(
+        "attached deposit {attached} must be exactly the attestation storage fee times the requested grants, {required}"
+    )]
+    UnexpectedDeposit { attached: u128, required: u128 },
+    #[error(
+        "no attestation storage grant available for {account_id}; prepay one with prepay_attestation_storage"
+    )]
+    NoAttestationStorageGrant { account_id: String },
     #[error("Provided gas is lower than required. Provided: {provided}, required: {required}")]
     InsufficientGas { provided: u64, required: u64 },
     #[error("This sign request has timed out, was completed, or never existed.")]

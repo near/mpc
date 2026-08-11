@@ -48,7 +48,7 @@ use crate::{
         votes::ProposalHash,
     },
     storage_keys::StorageKey,
-    tee::tee_state::{TeeQuoteStatus, TeeState},
+    tee::tee_state::{AttestationSubmissionError, ParticipantInsertion, TeeQuoteStatus, TeeState},
     tee::verification_context::VerificationContext,
     tee::verifier_votes::{TeeVerifierVotes, VerifierChangeProposal},
     update::{ProposedUpdates, Update, UpdateId},
@@ -63,10 +63,11 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDResponse, Metrics, ProposeUpdateArgs, VerifyForeignTransactionRequest,
+    self as dtos, CKDResponse, ProposeUpdateArgs, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
@@ -115,7 +116,8 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
 /// is registered as a function-call access key, which cannot attach a deposit, so a leaked
 /// node key cannot invoke these methods.
-pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
+    NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR);
 
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
@@ -177,8 +179,6 @@ pub struct MpcContract {
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
-    // TODO(#2937): Remove via state migration.
-    metrics: Metrics,
     foreign_chains: Lazy<ForeignChainsMetadata>,
     /// The verifier contract account trusted for DCAP verification, or [`None`]
     /// until participants vote one in. An [`Attestation::Dstack`] submission
@@ -188,6 +188,8 @@ pub struct MpcContract {
     // non-optional via a migration that requires it be set.
     tee_verifier_account_id: Option<AccountId>,
     tee_verifier_votes: TeeVerifierVotes,
+    /// A row is removed at zero, so the map holds no entry for an account with none.
+    available_attestation_grants: IterableMap<AccountId, u32>,
 }
 
 #[near(serializers=[borsh])]
@@ -732,6 +734,12 @@ impl MpcContract {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
+        if let Some(expected_payload_hash) = &request.expected_payload_hash
+            && &response.payload_hash != expected_payload_hash
+        {
+            return Err(RespondError::UnexpectedPayloadHash.into());
+        }
+
         let domain = request.domain_id;
         let public_key = self.public_key_extended(domain.0.into())?;
 
@@ -773,6 +781,61 @@ impl MpcContract {
         )
     }
 
+    pub fn available_attestation_grants(&self, account_id: AccountId) -> u32 {
+        self.grants_for(&account_id)
+    }
+
+    fn grants_for(&self, account_id: &AccountId) -> u32 {
+        self.available_attestation_grants
+            .get(account_id)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Buys `grants` attestation-storage grants for `account_id`.
+    ///
+    /// Permissionless, which is what lets an operator fund a node whose function-call key
+    /// cannot attach a deposit. Requires exactly the fee times `grants`; no refunds, no
+    /// withdrawal.
+    #[payable]
+    #[handle_result]
+    pub fn prepay_attestation_storage(
+        &mut self,
+        account_id: AccountId,
+        grants: u32,
+    ) -> Result<(), Error> {
+        if grants == 0 {
+            return Err(InvalidParameters::MalformedPayload {
+                reason: "grants must be greater than zero".to_string(),
+            }
+            .into());
+        }
+
+        let required = self
+            .attestation_storage_fee()
+            .as_yoctonear()
+            .checked_mul(u128::from(grants))
+            .ok_or(InvalidParameters::MalformedPayload {
+                reason: "requested grants overflow the fee calculation".to_string(),
+            })?;
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached != required {
+            return Err(InvalidParameters::UnexpectedDeposit { attached, required }.into());
+        }
+
+        let available = self.grants_for(&account_id);
+        let credited =
+            available
+                .checked_add(grants)
+                .ok_or(InvalidParameters::MalformedPayload {
+                    reason: "grant counter would overflow".to_string(),
+                })?;
+        self.available_attestation_grants
+            .insert(account_id.clone(), credited);
+
+        Ok(())
+    }
+
     /// Submit a TEE attestation for a current or prospective participant.
     ///
     /// - [`Attestation::Mock`] is verified synchronously.
@@ -780,8 +843,9 @@ impl MpcContract {
     ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
     ///   callback to run the post-DCAP checks and store the attestation.
     ///
-    /// Storage is funded by the contract's own balance, so a node submits with no deposit via its
-    /// function-call access key, for its first attestation and re-attestations alike.
+    /// A node submits with no deposit via its function-call access key. Storing a *new* entry
+    /// consumes one attestation-storage grant, prepaid for the node's account by whoever
+    /// onboards it; a re-attestation under a key the account already owns consumes none.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -817,18 +881,24 @@ impl MpcContract {
             account_public_key,
         };
 
+        // Before any verification: an ungranted or unauthorised submission stops here.
+        self.assert_attestation_storage_grant_available(
+            &node_id.account_id,
+            &node_id.tls_public_key,
+        )?;
+
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                // Cloned before `node_id` is moved into `verify_and_store_mock` below.
-                let tls_public_key_for_refresh = node_id.tls_public_key.clone();
-
-                self.tee_state.verify_and_store_mock(
-                    node_id,
+                let insertion = self.tee_state.verify_and_store_mock(
+                    node_id.clone(),
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
+                if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+                    self.consume_attestation_storage_grant(&node_id.account_id);
+                }
 
                 // A `WithConstraints` mock may reference a launcher hash; refresh-on-use keeps
                 // it alive, matching the dstack path. No-op for mocks without a launcher.
@@ -842,7 +912,7 @@ impl MpcContract {
                     let launcher_unused_ttl =
                         Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
                     self.tee_state.refresh_launcher_usage(
-                        &tls_public_key_for_refresh,
+                        &node_id.tls_public_key,
                         authenticated_participant,
                         launcher_unused_ttl,
                     );
@@ -854,6 +924,64 @@ impl MpcContract {
                 self.submit_dstack_attestation(node_id, attestation)?,
             )),
         }
+    }
+
+    /// Read from `config()` by operators; deliberately not its own view.
+    fn attestation_storage_fee(&self) -> NearToken {
+        NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
+    }
+
+    fn attestation_submission_needs_grant(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> Result<bool, Error> {
+        match self.tee_state.attestation_owner(tls_public_key) {
+            Some(owner) if &owner == account_id => Ok(false),
+            Some(_) => Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into()),
+            None => Ok(true),
+        }
+    }
+
+    fn assert_attestation_storage_grant_available(
+        &self,
+        account_id: &AccountId,
+        tls_public_key: &dtos::Ed25519PublicKey,
+    ) -> Result<(), Error> {
+        if self.attestation_submission_needs_grant(account_id, tls_public_key)?
+            && self.grants_for(account_id) == 0
+        {
+            return Err(InvalidParameters::NoAttestationStorageGrant {
+                account_id: account_id.to_string(),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Consumes one grant for `account_id`.
+    fn consume_attestation_storage_grant(&mut self, account_id: &AccountId) {
+        let remaining = self
+            .grants_for(account_id)
+            .checked_sub(1)
+            .expect("caller must establish an available grant before consuming one");
+        if remaining == 0 {
+            self.available_attestation_grants.remove(account_id);
+        } else {
+            self.available_attestation_grants
+                .insert(account_id.clone(), remaining);
+        }
+    }
+
+    fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
+        let available = self.grants_for(account_id);
+        // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
+        let Some(returned) = available.checked_add(1) else {
+            log!("grant counter for {account_id} is saturated; not returning a grant");
+            return;
+        };
+        self.available_attestation_grants
+            .insert(account_id.clone(), returned);
     }
 
     /// Async [`Attestation::Dstack`] submission: spawns a promise calling
@@ -1872,8 +2000,9 @@ impl MpcContract {
     }
 
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
-    /// referencing stale whitelists). Returns the number of entries removed. Callable by
-    /// anyone while the protocol is in [`Running`](ProtocolContractState::Running).
+    /// referencing stale whitelists), returning one attestation-storage grant to the owner of
+    /// each entry removed. Returns the number of entries removed. Callable by anyone while the
+    /// protocol is in [`Running`](ProtocolContractState::Running).
     #[handle_result]
     pub fn clean_invalid_attestations(&mut self, max_scan: u32) -> Result<u32, Error> {
         log!(
@@ -1888,9 +2017,14 @@ impl MpcContract {
         }
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        Ok(self
+        let removed_entry_owners = self
             .tee_state
-            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize))
+            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize);
+        for account_id in &removed_entry_owners {
+            self.return_attestation_storage_grant(account_id);
+        }
+        Ok(u32::try_from(removed_entry_owners.len())
+            .expect("u32 should always be convertible from usize on wasm32"))
     }
 
     /// Private endpoint to clean up foreign chain policy votes and node configurations
@@ -2012,14 +2146,13 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequestsV2,
+                StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             proposed_updates: ProposedUpdates::default(),
             config,
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -2027,6 +2160,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         })
     }
 
@@ -2100,13 +2234,12 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
-                StorageKey::PendingVerifyForeignTxRequestsV2,
+                StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             proposed_updates: Default::default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            metrics: Default::default(),
             node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -2114,6 +2247,7 @@ impl MpcContract {
             ),
             tee_verifier_account_id: None,
             tee_verifier_votes: TeeVerifierVotes::default(),
+            available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         })
     }
 
@@ -2146,10 +2280,6 @@ impl MpcContract {
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
         (&self.protocol_state).into_dto_type()
-    }
-
-    pub fn metrics(&self) -> near_mpc_contract_interface::types::Metrics {
-        self.metrics.clone()
     }
 
     /// Returns all allowed code hashes in descending order of their expiry
@@ -2343,8 +2473,8 @@ impl MpcContract {
     }
 
     /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the
-    /// attestation (storage funded by the contract's balance). On any failure it fails the
-    /// submitter's transaction.
+    /// attestation, consuming one attestation-storage grant if the entry is new. On any failure
+    /// it fails the submitter's transaction.
     #[private]
     pub fn resolve_verification(
         &mut self,
@@ -2392,13 +2522,14 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. Storage is funded by the contract's balance.
+    /// [`VerificationResult::Verified`] response. Re-checks that a grant is available before
+    /// storing, since this runs a receipt later than the submission that reserved it.
     fn verify_post_dcap_and_store(
         &mut self,
         context: &VerificationContext,
         report: &VerifiedReport,
     ) -> Result<(), Error> {
-        let account_id = &context.node_id.account_id;
+        let account_id = context.node_id.account_id.clone();
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
@@ -2413,14 +2544,25 @@ impl MpcContract {
             .and_then(|params| AuthenticatedParticipantId::new(params.participants()).ok());
         let tls_public_key_for_refresh = context.node_id.tls_public_key.clone();
 
-        if let Err(err) = self.tee_state.verify_and_store_dstack(
+        self.assert_attestation_storage_grant_available(
+            &account_id,
+            &context.node_id.tls_public_key,
+        )?;
+
+        let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
         ) {
-            log!("post-DCAP check failed for {account_id}: {err}");
-            return Err(err.into());
+            Ok(insertion) => insertion,
+            Err(err) => {
+                log!("post-DCAP check failed for {account_id}: {err}");
+                return Err(err.into());
+            }
+        };
+        if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+            self.consume_attestation_storage_grant(&account_id);
         }
 
         // Refresh-on-use: a current participant's successful submission keeps the launcher
@@ -3437,6 +3579,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -3889,6 +4032,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -3908,21 +4052,7 @@ mod tests {
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
-        let payload_hash = payload.compute_msg_hash().unwrap().0;
-        // simulate signature with the root key (no tweak for foreign tx)
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
-        let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
-        let signature = dtos::SignatureResponse::Secp256k1(
-            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
-        );
-
-        let payload_hash = payload.compute_msg_hash().unwrap();
-        let response = VerifyForeignTransactionResponse {
-            payload_hash,
-            signature,
-        };
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
 
         with_active_participant_and_attested_context(&contract);
 
@@ -3947,6 +4077,169 @@ mod tests {
     }
 
     #[test]
+    fn respond_verify_foreign_tx__should_reject_response_with_unexpected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: request.request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let result = contract.respond_verify_foreign_tx(request.clone(), response);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::Respond(RespondError::UnexpectedPayloadHash)
+        );
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_some(),
+            "the pending request must remain unresolved",
+        );
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx__should_succeed_when_response_matches_expected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let rpc_request = dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: [7u8; 32].into(),
+            confirmations: 2.into(),
+            extractors: vec![BitcoinExtractor::BlockHash],
+        });
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: rpc_request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(payload.compute_msg_hash().unwrap()),
+            request: rpc_request,
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let result = contract.respond_verify_foreign_tx(request.clone(), response);
+
+        // Then
+        assert!(
+            result.is_ok(),
+            "response matching the expected payload hash must be accepted: {result:?}",
+        );
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx__should_reject_request_with_erased_expected_payload_hash() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        register_supported_chains(&mut contract, [dtos::ForeignChain::Bitcoin]);
+        testing_env!(context.clone());
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let request_args = VerifyForeignTransactionRequestArgs {
+            domain_id: DomainId::default().0.into(),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let request = args_into_verify_foreign_tx_request(request_args.clone());
+        contract.verify_foreign_transaction(request_args);
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: request.request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+        let response = sign_foreign_tx_payload(&secret_key, &payload);
+        with_active_participant_and_attested_context(&contract);
+
+        // When
+        let tampered_request = VerifyForeignTransactionRequest {
+            expected_payload_hash: None,
+            ..request.clone()
+        };
+        let result = contract.respond_verify_foreign_tx(tampered_request, response);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidParameters(InvalidParameters::RequestNotFound)
+        );
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_some(),
+            "the pending request must remain unresolved",
+        );
+    }
+
+    fn sign_foreign_tx_payload(
+        secret_key: &k256::Scalar,
+        payload: &ForeignTxSignPayload,
+    ) -> VerifyForeignTransactionResponse {
+        let payload_hash = payload.compute_msg_hash().unwrap();
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let secret_key = SigningKey::from_bytes(&secret_key_ec.to_bytes()).unwrap();
+        let (signature, recovery_id) = secret_key
+            .sign_prehash_recoverable(&payload_hash.0)
+            .unwrap();
+        let signature = dtos::SignatureResponse::Secp256k1(
+            dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
+        );
+        VerifyForeignTransactionResponse {
+            payload_hash,
+            signature,
+        }
+    }
+
+    #[test]
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
@@ -3957,6 +4250,7 @@ mod tests {
         let request_args = VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4020,6 +4314,7 @@ mod tests {
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4043,6 +4338,7 @@ mod tests {
         contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
@@ -4728,6 +5024,11 @@ mod tests {
             launcher_image_hash(),
         );
 
+        // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
+        contract
+            .available_attestation_grants
+            .insert("alice.near".parse().unwrap(), 1);
+
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
@@ -4741,6 +5042,108 @@ mod tests {
                 attestation,
             },
         )
+    }
+
+    /// The deposit must be exactly `fee × grants`, which is what makes a remainder — and so a
+    /// refund path — impossible.
+    #[rstest]
+    #[case::one_yocto_short(-1)]
+    #[case::one_yocto_over(1)]
+    fn prepay_attestation_storage__should_reject_a_deposit_that_is_not_an_exact_multiple(
+        #[case] offset: i128,
+    ) {
+        // Given
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let node: AccountId = "newcomer.near".parse().unwrap();
+        let fee = u128::from(contract.config().attestation_storage_fee_millinear);
+        let exact = NearToken::from_millinear(fee * 2).as_yoctonear();
+        let attached = NearToken::from_yoctonear((exact as i128 + offset) as u128);
+        testing_env!(
+            VMContextBuilder::new()
+                .predecessor_account_id("operator.near".parse().unwrap())
+                .attached_deposit(attached)
+                .build()
+        );
+
+        // When
+        let result = contract.prepay_attestation_storage(node.clone(), 2);
+
+        // Then
+        assert_matches!(
+            &result,
+            Err(Error::InvalidParameters(InvalidParameters::UnexpectedDeposit {
+                attached: a,
+                required
+            })) if *a == attached.as_yoctonear() && *required == exact
+        );
+        assert_eq!(contract.available_attestation_grants(node), 0);
+    }
+
+    #[test]
+    fn prepay_attestation_storage__should_reject_zero_grants() {
+        // Given
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let node: AccountId = "newcomer.near".parse().unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .predecessor_account_id("operator.near".parse().unwrap())
+                .attached_deposit(NearToken::from_yoctonear(0))
+                .build()
+        );
+
+        // When
+        let result = contract.prepay_attestation_storage(node.clone(), 0);
+
+        // Then
+        assert_matches!(
+            &result,
+            Err(Error::InvalidParameters(
+                InvalidParameters::MalformedPayload { .. }
+            ))
+        );
+        assert_eq!(contract.available_attestation_grants(node), 0);
+    }
+
+    /// Without this the async path would store for free while the synchronous one charged.
+    #[test]
+    fn resolve_verification__should_consume_one_grant_when_the_entry_is_new() {
+        // Given: the setup prepays one grant for alice.near.
+        let (mut contract, context) = dstack_verification_setup();
+        let account_id = context.node_id.account_id.clone();
+        assert_eq!(contract.available_attestation_grants(account_id.clone()), 1);
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert_eq!(
+            contract.available_attestation_grants(account_id),
+            0,
+            "storing a new entry should consume the grant"
+        );
+    }
+
+    /// The callback runs a receipt later than the submission that reserved the grant, so it
+    /// re-checks availability: another submission from the same account may have spent it in
+    /// between. Without the re-check this would store an entry no grant paid for.
+    #[test]
+    fn resolve_verification__should_store_nothing_when_the_grant_was_spent_before_the_callback() {
+        // Given: the grant reserved at submit time is gone by the time the callback runs.
+        let (mut contract, context) = dstack_verification_setup();
+        let account_id = context.node_id.account_id.clone();
+        contract.available_attestation_grants.remove(&account_id);
+
+        // When
+        let result = contract
+            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+
+        // Then: the submitter's transaction is failed from its own receipt, and nothing is stored.
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Promise(_)));
+        assert!(contract.tee_state.stored_attestations.is_empty());
     }
 
     #[test]
@@ -4925,6 +5328,11 @@ mod tests {
         // launcher later (submit_at_seconds > STAMPED_AT_SECONDS). The submission stores, but
         // the participant-gated refresh must not run.
         let non_participant: AccountId = "non-participant.near".parse().unwrap();
+        // Storing a new entry consumes an attestation-storage grant; this test is about the
+        // launcher refresh gate, so fund the submission rather than have it rejected earlier.
+        contract
+            .available_attestation_grants
+            .insert(non_participant.clone(), 1);
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(non_participant.clone())
@@ -4990,6 +5398,11 @@ mod tests {
 
         let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
+        // A new entry consumes a grant; stand in for the operator's prepayment.
+        contract
+            .available_attestation_grants
+            .insert(outsider_id.clone(), 1);
+
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
             .signer_account_id(outsider_id.clone())
@@ -5050,6 +5463,11 @@ mod tests {
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
         let tls_key = bogus_ed25519_near_public_key();
         let dto_public_key = dtos::Ed25519PublicKey::try_from(&tls_key).unwrap();
+
+        // A new entry consumes a grant; stand in for the operator's prepayment.
+        contract
+            .available_attestation_grants
+            .insert(outsider_id.clone(), 1);
 
         testing_env!(
             VMContextBuilder::new()
@@ -5125,7 +5543,7 @@ mod tests {
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
                 pending_verify_foreign_tx_requests: LookupMap::new(
-                    StorageKey::PendingVerifyForeignTxRequestsV2,
+                    StorageKey::PendingVerifyForeignTxRequestsV3,
                 ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
@@ -5133,13 +5551,13 @@ mod tests {
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
-                metrics: Default::default(),
                 foreign_chains: Lazy::new(
                     StorageKey::ForeignChainMetadata,
                     ForeignChainsMetadata::default(),
                 ),
                 tee_verifier_account_id: None,
                 tee_verifier_votes: Default::default(),
+                available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             }
         }
     }
@@ -8477,7 +8895,7 @@ mod tests {
     /// everything derived from it must be revisited in the same change — today
     /// [`WORST_CASE_ENTRY_BYTES`] and [`WORST_CASE_ENTRY_COST_CEILING`].
     ///
-    /// TODO(#4015): the prepaid-storage fee is sized from these numbers.
+    /// The prepaid-storage fee is sized from these numbers.
     #[rstest]
     #[case::dstack(599, worst_case_dstack_attestation())]
     #[case::mock(604, worst_case_mock_attestation())]

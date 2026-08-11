@@ -408,6 +408,30 @@ expression: abi
         }
       },
       {
+        "name": "available_attestation_grants",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
         "name": "clean_foreign_chain_data",
         "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
@@ -423,7 +447,7 @@ expression: abi
       },
       {
         "name": "clean_invalid_attestations",
-        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists). Returns the number of entries removed. Callable by\n anyone while the protocol is in [`Running`](ProtocolContractState::Running).",
+        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists), returning one attestation-storage grant to the owner of\n each entry removed. Returns the number of entries removed. Callable by anyone while the\n protocol is in [`Running`](ProtocolContractState::Running).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -906,16 +930,6 @@ expression: abi
         }
       },
       {
-        "name": "metrics",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "$ref": "#/definitions/Metrics"
-          }
-        }
-      },
-      {
         "name": "migrate",
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
         "kind": "call",
@@ -969,6 +983,40 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/MeasurementVotes"
+          }
+        }
+      },
+      {
+        "name": "prepay_attestation_storage",
+        "doc": " Buys `grants` attestation-storage grants for `account_id`.\n\n Permissionless, which is what lets an operator fund a node whose function-call key\n cannot attach a deposit. Requires exactly the fee times `grants`; no refunds, no\n withdrawal.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
+            {
+              "name": "grants",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
           }
         }
       },
@@ -1062,6 +1110,10 @@ expression: abi
                       ],
                       [
                         "launcher_hash_unused_ttl_seconds",
+                        "u64"
+                      ],
+                      [
+                        "attestation_storage_fee_millinear",
                         "u64"
                       ]
                     ]
@@ -1321,7 +1373,7 @@ expression: abi
       },
       {
         "name": "resolve_verification",
-        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the\n attestation (storage funded by the contract's balance). On any failure it fails the\n submitter's transaction.",
+        "doc": " Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the\n attestation, consuming one attestation-storage grant if the entry is new. On any failure\n it fails the submitter's transaction.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -2345,7 +2397,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n Storage is funded by the contract's own balance, so a node submits with no deposit via its\n function-call access key, for its first attestation and re-attestations alike.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3582,6 +3634,7 @@ expression: abi
           "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
+            "attestation_storage_fee_millinear",
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_foreign_chain_data_tera_gas",
             "clean_invalid_attestations_tera_gas",
@@ -3602,6 +3655,12 @@ expression: abi
             "verifier_tera_gas"
           ],
           "properties": {
+            "attestation_storage_fee_millinear": {
+              "description": "Fee, in milliNEAR, for one attestation-storage grant.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": "integer",
@@ -4272,6 +4331,15 @@ expression: abi
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
+            "attestation_storage_fee_millinear": {
+              "description": "Fee, in milliNEAR, for one attestation-storage grant.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": [
@@ -4803,25 +4871,6 @@ expression: abi
               "additionalProperties": {
                 "$ref": "#/definitions/MeasurementVoteAction"
               }
-            }
-          }
-        },
-        "Metrics": {
-          "type": "object",
-          "required": [
-            "sign_with_v1_payload_count",
-            "sign_with_v2_payload_count"
-          ],
-          "properties": {
-            "sign_with_v1_payload_count": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "sign_with_v2_payload_count": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
             }
           }
         },
@@ -6157,6 +6206,16 @@ expression: abi
             "domain_id": {
               "$ref": "#/definitions/DomainId"
             },
+            "expected_payload_hash": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Hash256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "payload_version": {
               "type": "integer",
               "format": "uint8",
@@ -6177,6 +6236,16 @@ expression: abi
           "properties": {
             "domain_id": {
               "$ref": "#/definitions/DomainId"
+            },
+            "expected_payload_hash": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Hash256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "payload_version": {
               "type": "integer",
