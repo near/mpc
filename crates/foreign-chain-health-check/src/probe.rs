@@ -256,8 +256,12 @@ fn classify(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::fake_sui_ledger::{SUI_MAINNET, SUI_TESTNET, sui_on_chain};
     use assert_matches::assert_matches;
+    use foreign_chain_rpc_interfaces::sui::Status;
+    use foreign_chain_rpc_interfaces::sui::proto::ledger_service_server::{
+        LedgerService, LedgerServiceServer,
+    };
+    use foreign_chain_rpc_interfaces::sui::proto::{GetServiceInfoRequest, GetServiceInfoResponse};
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
@@ -271,6 +275,9 @@ mod tests {
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
+    /// Sui's genesis checkpoint digest, base58.
+    const SUI_MAINNET: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
+    const SUI_TESTNET: &str = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD";
     /// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
     /// the same number as text.
     const APTOS_MAINNET: u64 = 1;
@@ -987,6 +994,52 @@ mod tests {
                 observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
             }
         );
+    }
+
+    /// The Sui probe speaks gRPC, so the mock HTTP server the other chains use cannot serve it.
+    /// Only `GetServiceInfo` is answered; the rest keep their generated `unimplemented` default.
+    struct FakeSuiLedger {
+        chain_id: String,
+    }
+
+    #[tonic::async_trait]
+    impl LedgerService for FakeSuiLedger {
+        async fn get_service_info(
+            &self,
+            _request: tonic::Request<GetServiceInfoRequest>,
+        ) -> Result<tonic::Response<GetServiceInfoResponse>, Status> {
+            Ok(tonic::Response::new(
+                GetServiceInfoResponse::default().with_chain_id(&self.chain_id),
+            ))
+        }
+    }
+
+    /// Serves a [`FakeSuiLedger`] on a loopback port until dropped.
+    struct FakeSuiServer {
+        url: String,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for FakeSuiServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn sui_on_chain(chain_id: &str) -> FakeSuiServer {
+        let ledger = FakeSuiLedger {
+            chain_id: chain_id.to_string(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(LedgerServiceServer::new(ledger))
+                .serve_with_incoming(tonic::transport::server::TcpIncoming::from(listener))
+                .await
+                .expect("the fake Sui ledger should keep serving until the test drops it");
+        });
+        FakeSuiServer { url, task }
     }
 
     fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {

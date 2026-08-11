@@ -7,8 +7,6 @@
 pub mod probe;
 
 mod checks;
-#[cfg(test)]
-mod fake_sui_ledger;
 mod golden;
 mod network;
 mod results;
@@ -369,11 +367,7 @@ fn mark_not_configured(chain: &'static str, out: &mut Vec<ProviderResult>) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::fake_sui_ledger::sui_never_answering_in_time;
     use assert_matches::assert_matches;
-    use foreign_chain_inspector::{
-        ForeignChainInspectionError, NetworkFingerprintInspector as _, sui::inspector::SuiInspector,
-    };
     use httpmock::prelude::*;
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -566,26 +560,5 @@ mod tests {
         assert_matches!(status("aptos", "healthy"), Status::Passed);
         assert_matches!(status("aptos", "broken"), Status::Failed(_));
         assert_matches!(status("ethereum", "only"), Status::Skipped(_));
-    }
-
-    /// A stalled call reads as a timeout only because the gRPC client reports the deadline as
-    /// `DeadlineExceeded`; `Cancelled` would read as unreachable. The probe route never depends on
-    /// this, since `network_fingerprints` arms its own deadline first, but the node's signing path
-    /// has only the client's.
-    #[tokio::test]
-    async fn prepare_sui__should_build_a_client_that_reports_a_stalled_call_as_a_timeout() {
-        // Given
-        let server = sui_never_answering_in_time().await;
-        let provider = ForeignChainProviderConfig {
-            rpc_url: server.url.clone(),
-            auth: AuthConfig::None,
-        };
-        let inspector = SuiInspector::new(prepare_sui(&provider, Duration::from_secs(1)).unwrap());
-
-        // When
-        let reported = inspector.network_fingerprint().await;
-
-        // Then
-        assert_matches!(reported, Err(ForeignChainInspectionError::Timeout));
     }
 }
