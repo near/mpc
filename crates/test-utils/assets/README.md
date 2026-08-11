@@ -79,7 +79,8 @@ two encodings are expected to differ.
    This is optional — the tests only verify parsing, not measurement values — but keeping it
    in sync avoids confusion.
 
-7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
+7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`. Skippable when only the
+   app-compose changed: these cover `mrtd` and `rtmr0`-`rtmr2`, while the app-compose feeds `rtmr3`.
    - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
    - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
 

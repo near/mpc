@@ -32,13 +32,15 @@ The node env template `../node.env.tpl` also lives here (one level up) and is sh
 
 ## Collecting Test Assets
 
-To regenerate test assets from real TDX attestation, from the repo root on the TDX host:
+To regenerate test assets from real TDX attestation, from the repo root on the TDX host. Set up the
+prerequisites and required variables from [single-node-readme.md](single-node-readme.md) first: a
+running localnet in `~/.near/mpc-localnet`, `MACHINE_IP`, and the two image digests.
 
 ```bash
 export BASE_PATH=/path/to/meta-dstack/dstack
 export WORKDIR=/tmp/mpc-fixture-collection
 
-# PRELAUNCH_SCRIPT is what makes the node's signer secret key recoverable; see below.
+# Reuse the fixture's current image digests unless changing images: steps 6-7 below then stay no-ops.
 PRELAUNCH_SCRIPT=localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh \
   bash localnet/tee/scripts/rust-launcher/single-node.sh
 
@@ -50,41 +52,26 @@ step 3, which own the rest of the procedure.
 
 ### Exporting the node's signer key
 
-Sandbox tests that store a Verified attestation must sign as the fixture node: the quote's
-`report_data` binds the node's account key, and the contract reads that key from the transaction
-signer. The node generates it inside the CVM, so it has to be exported during collection.
+The node generates its NEAR signer key inside the CVM, and sandbox tests need it to sign as the fixture
+node. Handing the node a key instead does not work: the measured compose mounts only `mpc-data`.
 
-Supplying the key instead does not work. The node reuses an existing `secrets.json`, but the
-launcher's measured compose mounts only the `mpc-data` volume into the node container, so the host has
-nowhere to put one.
-
-[export-signer-key-prelaunch.sh](export-signer-key-prelaunch.sh) is the hook that produced the
-committed fixture; `PRELAUNCH_SCRIPT` above bakes it into the app-compose. It waits for the node to
-write `secrets.json`, then copies it into the CVM's shared dir and echoes it to the console, so
-whichever channel the host exposes is enough. Both live under the vmm's `run_path`:
+[export-signer-key-prelaunch.sh](export-signer-key-prelaunch.sh) waits for `secrets.json` and echoes it
+to the console, the guest's only way out — the shared dir is mounted read-only. Read it from the new
+VM's log under the vmm's `run_path`:
 
 ```bash
-RUN_VM="$(dirname "$BASE_PATH")/build/run/vm"    # `run_path` in the vmm config
-cat "$RUN_VM"/*/shared/fixture-secrets.json
-grep -A3 FIXTURE-SECRETS-BEGIN "$RUN_VM"/*/serial.log   # fallback if the copy failed
+grep -o '"near_signer_key":"[^"]*"' "$(dirname "$BASE_PATH")/build/run/vm"/*/serial.log
 ```
 
-Put `near_signer_key` from there into `crates/test-utils/assets/near_account_secret_key` (one line,
-`ed25519:<base58>`). Only ever do this for a throwaway localnet node: the key ends up in the repo.
+Put that value into `crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`).
+Only ever do this for a throwaway localnet node: the key ends up in the repo.
 
-The script is a copy of what the committed app-compose carries, which is what ties it to the committed
-key. After editing either one, this must stay empty:
+The script is a copy of what the committed app-compose carries, so after editing either one:
 
 ```bash
 diff <(jq -j '.pre_launch_script' crates/test-utils/assets/app_compose.json) \
     localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh
 ```
 
-Writing a different hook: the guest is BusyBox, so built-ins and globs only and no `sshd`; `/etc` and
-`/dstack/.host-shared` are writable but `/` is not; and the wait needs its own systemd unit, since a
-background process is reaped with `app-compose.service`'s cgroup.
-
-Any app-compose carrying a script is rejected by production verification. Test builds accept this one
-field via `attestation/allow-pre-launch-script`, so keep the hook minimal.
-
-See [single-node-readme.md](single-node-readme.md) for details.
+Replacing it with a different hook: BusyBox guest, built-ins and globs only, `/etc` the writable path,
+and the wait needs its own systemd unit or it is reaped with `app-compose.service`'s cgroup.

@@ -24,7 +24,7 @@ pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
 /// Unix time as of 2026/08/07, represents a date where
 /// the measurements stored in ../assets are valid. When these measurements are
 /// modified, this value should be updated as well
-pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1786103100;
+pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1786440300;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
