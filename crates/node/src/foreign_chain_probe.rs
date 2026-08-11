@@ -8,6 +8,8 @@ use futures::FutureExt as _;
 use mpc_node_config::ForeignChainsConfig;
 use tracing::{debug, error, info, warn};
 
+use crate::metrics;
+
 /// Asks every configured provider which network it serves and logs a line per provider plus an
 /// `x/y providers healthy` summary. Diagnostic only: a provider on the wrong network keeps
 /// serving, because a boot time blip should not take a chain out of signing.
@@ -16,7 +18,9 @@ use tracing::{debug, error, info, warn};
 pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     let probe = async move {
         info!("probing foreign-chain RPC providers");
-        log_report(&probe_all_providers(&foreign_chains).await);
+        let report = probe_all_providers(&foreign_chains).await;
+        publish_metrics(&report);
+        log_report(&report);
     };
 
     if AssertUnwindSafe(probe).catch_unwind().await.is_err() {
@@ -48,14 +52,34 @@ fn log_report(report: &ProbeReport) {
         }
     }
 
-    let counts = report.counts_per_chain();
-    let configured: usize = counts.values().map(|count| count.configured).sum();
-    if configured == 0 {
-        warn!("foreign-chain RPC provider probe found nothing to probe: no chain is configured");
+    // A provider no probe can reach counts in neither total: it would otherwise hold the summary
+    // below full forever on a node that configures a chain the probe cannot identify.
+    let rows = report.rows();
+    let probed = rows
+        .iter()
+        .filter(|row| row.status != ProviderStatus::ProbeNotImplemented)
+        .count();
+    if probed == 0 {
+        warn!(
+            "foreign-chain RPC provider probe found nothing to probe: no configured chain supports it"
+        );
         return;
     }
-    let healthy: usize = counts.values().map(|count| count.healthy).sum();
-    info!("foreign-chain RPC provider probe complete: {healthy}/{configured} providers healthy");
+    let healthy = rows.iter().filter(|row| row.status.is_healthy()).count();
+    info!("foreign-chain RPC provider probe complete: {healthy}/{probed} providers healthy");
+}
+
+/// Per chain rather than per provider: a provider id is operator chosen, so it would put an
+/// unbounded label on a time series.
+fn publish_metrics(report: &ProbeReport) {
+    for (chain, counts) in report.counts_per_chain() {
+        metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
+            .with_label_values(&[chain.label()])
+            .set(counts.configured as i64);
+        metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
+            .with_label_values(&[chain.label()])
+            .set(counts.healthy as i64);
+    }
 }
 
 #[cfg(test)]
@@ -69,6 +93,8 @@ mod tests {
 
     /// Reserved as "discard", so nothing listens there.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
+    /// For a chain with no probe: the value is never read, only whether it is set at all.
+    const ANY_FINGERPRINT: &str = "any-fingerprint";
 
     fn chain_config(expected: &str, rpc_url: &str) -> ForeignChainConfig {
         ForeignChainConfig {
@@ -114,7 +140,58 @@ mod tests {
         run_startup_probe(foreign_chains).await;
 
         // Then
-        assert!(logs_contain("no chain is configured"));
+        assert!(logs_contain("found nothing to probe"));
+    }
+
+    /// Solana has no probe, so its providers belong in neither side of the summary.
+    #[tokio::test]
+    #[traced_test]
+    async fn run_startup_probe__should_leave_an_unprobeable_chain_out_of_the_summary() {
+        // Given — two configured providers, only one of them probeable.
+        let foreign_chains = ForeignChainsConfig {
+            base: Some(chain_config("8453", CLOSED_PORT_URL)),
+            solana: Some(chain_config(ANY_FINGERPRINT, CLOSED_PORT_URL)),
+            ..Default::default()
+        };
+
+        // When
+        run_startup_probe(foreign_chains).await;
+
+        // Then
+        assert!(logs_contain("probe complete: 0/1 providers healthy"));
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn run_startup_probe__should_warn_when_no_configured_chain_can_be_probed() {
+        // Given
+        let foreign_chains = ForeignChainsConfig {
+            solana: Some(chain_config(ANY_FINGERPRINT, CLOSED_PORT_URL)),
+            ..Default::default()
+        };
+
+        // When
+        run_startup_probe(foreign_chains).await;
+
+        // Then
+        assert!(logs_contain("found nothing to probe"));
+    }
+
+    #[tokio::test]
+    async fn run_startup_probe__should_publish_the_provider_counts_per_chain() {
+        // Given
+        let foreign_chains = ForeignChainsConfig {
+            aptos: Some(chain_config("1", CLOSED_PORT_URL)),
+            ..Default::default()
+        };
+
+        // When
+        run_startup_probe(foreign_chains).await;
+
+        // Then — unreachable, so configured counts it and healthy does not.
+        let counts = |gauge: &prometheus::IntGaugeVec| gauge.with_label_values(&["aptos"]).get();
+        assert_eq!(counts(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED), 1);
+        assert_eq!(counts(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY), 0);
     }
 
     #[tokio::test]

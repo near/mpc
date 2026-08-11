@@ -75,6 +75,10 @@ impl MockServerExt {
     }
 }
 
+/// The network every EVM mock claims to serve, in the decimal form an operator configures as
+/// `expected_network_fingerprint`. Base's real chain id, so a config pairing the two reads true.
+pub const MOCK_EVM_CHAIN_ID: &str = "8453";
+
 pub const MOCK_BLOCK_HASH: &str =
     "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -146,6 +150,12 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
             let method = body["method"].as_str().expect("method field");
 
             let result = match method {
+                // Answers the startup identity probe. `eth_chainId` returns a hex quantity, while
+                // an operator configures the decimal `MOCK_EVM_CHAIN_ID`.
+                "eth_chainId" => serde_json::json!(format!(
+                    "{:#x}",
+                    MOCK_EVM_CHAIN_ID.parse::<u64>().expect("decimal chain id")
+                )),
                 "eth_getBlockByNumber" => {
                     // First param is either a finality tag (e.g. "finalized") for the
                     // finality-head lookup, or a `0x`-prefixed block number for the
