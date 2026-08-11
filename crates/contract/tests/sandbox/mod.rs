@@ -1,3 +1,4 @@
+pub mod clean_invalid_attestations_gas;
 pub mod contract_configuration;
 pub mod duplicate_requests_fan_out;
 pub mod foreign_chain_configuration;
@@ -12,6 +13,7 @@ pub mod upgrade_from_current_contract;
 pub mod upgrade_to_current_contract;
 pub mod user_views;
 pub mod vote;
+pub mod vote_reshared_gas;
 
 pub mod common;
 pub mod utils;
