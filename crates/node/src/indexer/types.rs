@@ -240,6 +240,7 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
                 request: request.request,
                 domain_id: request.domain_id,
                 payload_version: request.payload_version,
+                expected_payload_hash: request.expected_payload_hash,
             },
             dtos::VerifyForeignTransactionResponse {
                 payload_hash,

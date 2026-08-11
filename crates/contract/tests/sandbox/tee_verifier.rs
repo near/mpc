@@ -14,7 +14,8 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         contract_build::tee_verifier_contract,
         mpc_contract::{
-            get_participant_attestation, submit_participant_info, tee_verifier_account_id,
+            get_participant_attestation, prepay_and_submit_participant_info,
+            prepay_attestation_grants, submit_participant_info, tee_verifier_account_id,
             total_gas_fee, vote_tee_verifier_change,
         },
     },
@@ -118,7 +119,7 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
     } = setup().await;
 
     // When
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &mock_dto_dstack_attestation(),
@@ -176,6 +177,14 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
     } = setup().await;
     deploy_and_trust_verifier(&worker, &contract, &mpc_signer_accounts).await;
     let submitter = mpc_signer_accounts[0].clone();
+    // A separate account funds the grant, exactly as an operator does for a node. Keeping the
+    // payer distinct leaves the submitter's balance untouched by the prepayment, so the
+    // assertion below is about the failed submission alone: it must cost nothing but gas.
+    let payer = worker.dev_create_account().await.unwrap();
+    let prepayment = prepay_attestation_grants(&payer, &contract, submitter.id(), 1)
+        .await
+        .unwrap();
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
     let balance_before = submitter.view_account().await.unwrap().balance;
     let mut attestation = mock_dto_dstack_attestation();
     let dtos::Attestation::Dstack(dstack) = &mut attestation else {
@@ -206,6 +215,7 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
 async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_unreachable() {
     // Given: a verifier account that was never deployed, so the verify_quote promise fails.
     let SandboxTestSetup {
+        worker,
         mpc_signer_accounts,
         contract,
         ..
@@ -213,6 +223,14 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
     let missing_verifier: AccountId = "nonexistent-verifier.near".parse().unwrap();
     trust_verifier(&contract, &mpc_signer_accounts, &missing_verifier).await;
     let submitter = mpc_signer_accounts[0].clone();
+    // A separate account funds the grant, exactly as an operator does for a node. Keeping the
+    // payer distinct leaves the submitter's balance untouched by the prepayment, so the
+    // assertion below is about the failed submission alone: it must cost nothing but gas.
+    let payer = worker.dev_create_account().await.unwrap();
+    let prepayment = prepay_attestation_grants(&payer, &contract, submitter.id(), 1)
+        .await
+        .unwrap();
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
     let balance_before = submitter.view_account().await.unwrap().balance;
 
     // When

@@ -116,7 +116,10 @@ impl ForeignChainRequestBuilder<BuildableBitcoinRequest, NotSet> {
 mod test {
     use near_mpc_contract_interface::types::{DomainId, VerifyForeignTransactionRequestArgs};
 
-    use crate::foreign_chain::{DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier};
+    use crate::foreign_chain::{
+        DEFAULT_PAYLOAD_VERSION, ForeignChainSignatureVerifier, ForeignTxSignPayload,
+        ForeignTxSignPayloadV1,
+    };
 
     use super::*;
 
@@ -178,18 +181,28 @@ mod test {
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(domain_id)
-            .build();
+            .build()
+            .unwrap();
 
         // then
+        let expected_request = ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id,
+            confirmations: BlockConfirmations::from(10),
+            extractors: vec![BitcoinExtractor::BlockHash],
+        });
+        let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: expected_request.clone(),
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash(expected_hash.into()),
+            )],
+        })
+        .compute_msg_hash()
+        .unwrap();
         let expected = VerifyForeignTransactionRequestArgs {
-            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id,
-                confirmations: BlockConfirmations::from(10),
-                extractors: vec![BitcoinExtractor::BlockHash],
-            }),
-
+            request: expected_request,
             domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
         assert_eq!(request_args, expected);
@@ -207,7 +220,8 @@ mod test {
             .with_block_confirmations(10)
             .with_expected_block_hash(expected_hash)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         let expected_verifier = ForeignChainSignatureVerifier {
@@ -232,7 +246,8 @@ mod test {
             .with_block_confirmations(10)
             .with_domain_id(DomainId::from(1))
             // when
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_eq!(verifier.request, request_args.request);

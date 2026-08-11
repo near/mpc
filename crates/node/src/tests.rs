@@ -501,6 +501,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
             }),
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
         },
     };
     tracing::info!(

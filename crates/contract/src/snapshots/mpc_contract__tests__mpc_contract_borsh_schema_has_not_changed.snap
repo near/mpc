@@ -254,6 +254,10 @@ BorshSchemaContainer {
                         "launcher_hash_unused_ttl_seconds",
                         "u64",
                     ),
+                    (
+                        "attestation_storage_fee_millinear",
+                        "u64",
+                    ),
                 ],
             ),
         },
@@ -665,20 +669,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "Metrics": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "sign_with_v1_payload_count",
-                        "u64",
-                    ),
-                    (
-                        "sign_with_v2_payload_count",
-                        "u64",
-                    ),
-                ],
-            ),
-        },
         "MpcContract": Struct {
             fields: NamedFields(
                 [
@@ -723,10 +713,6 @@ BorshSchemaContainer {
                         "NodeMigrations",
                     ),
                     (
-                        "metrics",
-                        "Metrics",
-                    ),
-                    (
                         "foreign_chains",
                         "Lazy",
                     ),
@@ -737,6 +723,10 @@ BorshSchemaContainer {
                     (
                         "tee_verifier_votes",
                         "TeeVerifierVotes",
+                    ),
+                    (
+                        "available_attestation_grants",
+                        "IterableMap",
                     ),
                 ],
             ),
