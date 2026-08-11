@@ -43,6 +43,15 @@ pub const CKD_PV_GAS: NearGas = NearGas::from_tgas(100);
 
 pub const VOTE_FOREIGN_CHAIN_GAS: NearGas = NearGas::from_tgas(30);
 
+pub const VOTE_ADD_DOMAINS_GAS: NearGas = NearGas::from_tgas(22);
+pub const VOTE_NEW_PARAMETERS_GAS: NearGas = NearGas::from_tgas(22);
+pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
+pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
+/// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
+/// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
+/// room for further optimization.
+pub const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
+
 /// Typed interface to the MPC signer contract at a fixed account, generic over
 /// the transport backend `C`.
 #[derive(Clone)]
@@ -131,8 +140,12 @@ impl<C: CallContract> MpcContractHandle<C> {
         id: u64,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
-        self.call(FunctionCallArgs::no_deposit(VOTE_UPDATE, args, MAX_GAS))
-            .await
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_UPDATE,
+            args,
+            VOTE_UPDATE_GAS,
+        ))
+        .await
     }
 
     pub async fn vote_add_domains(
@@ -143,7 +156,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::no_deposit(
             VOTE_ADD_DOMAINS,
             args,
-            MAX_GAS,
+            VOTE_ADD_DOMAINS_GAS,
         ))
         .await
     }
@@ -157,7 +170,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::no_deposit(
             VOTE_NEW_PARAMETERS,
             args,
-            MAX_GAS,
+            VOTE_NEW_PARAMETERS_GAS,
         ))
         .await
     }
@@ -170,7 +183,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::no_deposit(
             VOTE_CANCEL_KEYGEN,
             args,
-            MAX_GAS,
+            VOTE_CANCEL_KEYGEN_GAS,
         ))
         .await
     }
@@ -181,7 +194,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::no_deposit(
             VOTE_CANCEL_RESHARING,
             b"{}".to_vec(),
-            MAX_GAS,
+            VOTE_CANCEL_RESHARING_GAS,
         ))
         .await
     }

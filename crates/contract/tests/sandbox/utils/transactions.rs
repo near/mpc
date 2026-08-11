@@ -8,27 +8,28 @@ use serde::Serialize;
 use std::future::Future;
 
 pub(crate) trait CallMpcContract {
-    fn call_mpc_async<'a>(
-        &'a self,
+    fn call_mpc(
+        &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<AsyncSandboxCaller<'a>>;
-    fn call_mpc<'a>(
-        &'a self,
+    ) -> MpcContractHandle<SandboxCaller<'_>>;
+    fn call_mpc_async(
+        &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<SandboxCaller<'a>>;
+    ) -> MpcContractHandle<AsyncSandboxCaller<'_>>;
 }
 
 impl CallMpcContract for Account {
-    fn call_mpc<'a>(
-        &'a self,
+    fn call_mpc(
+        &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<SandboxCaller<'a>> {
+    ) -> MpcContractHandle<SandboxCaller<'_>> {
         MpcContractHandle::new(SandboxCaller(self), contract_id.clone())
     }
-    fn call_mpc_async<'a>(
-        &'a self,
+
+    fn call_mpc_async(
+        &self,
         contract_id: &near_account_id::AccountId,
-    ) -> MpcContractHandle<AsyncSandboxCaller<'a>> {
+    ) -> MpcContractHandle<AsyncSandboxCaller<'_>> {
         MpcContractHandle::new(AsyncSandboxCaller(self), contract_id.clone())
     }
 }
@@ -99,7 +100,14 @@ pub async fn execute_async_transactions(
     Ok(())
 }
 
-/// Executes parallel contract calls on [`Contract`].
+/// Issues `call` once per account against `contract`, keeping every transaction in flight
+/// before awaiting any of them, then fails if any receipt failed.
+///
+/// ```ignore
+/// execute_async_handle_calls(&accounts, &contract, |handle| async move {
+///     handle.vote_update(id).await
+/// })
+/// ```
 pub async fn execute_async_handle_calls<'a, F, Fut>(
     accounts: &'a [Account],
     contract: &Contract,
