@@ -2,10 +2,14 @@
 
 pub mod common;
 
-use crate::common::{FixedResponseRpcClient, SequentialResponseMockClientBuilder};
+use crate::common::{
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
+};
 
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
+    NetworkFingerprintInspector, RpcAuthentication,
+    base::inspector::Base,
     build_http_client,
     evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
 };
@@ -716,3 +720,51 @@ evm_inspector_tests!(
     foreign_chain_inspector::polygon::inspector::Polygon,
     polygon
 );
+
+// Base mainnet, standing in for every EVM chain: the fingerprint call has no chain-specific parts.
+const CHAIN_ID_8453: &str = "0x2105";
+const PADDED_CHAIN_ID_8453: &str = "0x002105";
+
+#[tokio::test]
+async fn network_fingerprint__should_return_the_chain_id_in_decimal() {
+    // Given
+    let inspector =
+        EvmInspector::<_, Base>::new(mock_client_from_fixed_response(PADDED_CHAIN_ID_8453));
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    assert_eq!(fingerprint.to_string(), "8453");
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_ask_the_provider_for_its_chain_id() {
+    // Given
+    let server = MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(POST).body_includes(r#""method":"eth_chainId""#);
+            then.status(200).json_body(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "result": CHAIN_ID_8453,
+            }));
+        })
+        .await;
+    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let inspector = EvmInspector::<_, Base>::new(client);
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    mock.assert_async().await;
+    assert_eq!(fingerprint.to_string(), "8453");
+}

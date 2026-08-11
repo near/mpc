@@ -3,13 +3,13 @@
 use crate::sandbox::{
     common::{
         SandboxTestSetup, account_ed25519_public_key, build_sandbox_node_ids, gen_accounts,
-        submit_tee_attestations,
+        prepay_and_submit_tee_attestations,
     },
     utils::{
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
-            submit_participant_info,
+            prepay_and_submit_participant_info,
         },
         resharing_utils::do_resharing,
     },
@@ -67,7 +67,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids =
         build_sandbox_node_ids(&non_participants, &env_non_participant_accounts);
-    submit_tee_attestations(
+    prepay_and_submit_tee_attestations(
         &contract,
         &mut env_non_participant_accounts,
         &non_participant_uids,
@@ -86,7 +86,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
         account_public_key: account_ed25519_public_key(&mpc_signer_accounts[0]),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &attestation,
@@ -195,7 +195,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
         expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
         expected_measurements: None,
     });
-    let submit_result = submit_participant_info(
+    let submit_result = prepay_and_submit_participant_info(
         stale_account,
         &contract,
         &expiring_attestation,

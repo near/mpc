@@ -56,7 +56,7 @@ REVIEW STYLE:
 - Flag code-comment quality issues per [engineering-standards.md]. The goal is to avoid comments that may become stale or add little value to the reader.
 - Do NOT comment on style, formatting, or naming unless it causes a bug.
 - Do NOT restate what the diff already shows
-- Do NOT ask for `third-party-licenses/licenses.html` to be regenerated on a dependency or lockfile change. Those notices are refreshed during release preparation by [prepare-release.sh]; drift between releases is expected and no CI job gates it. Stale notices are only a finding on a release PR, where that script should already have refreshed them.
+- Do NOT ask for `third-party-licenses/licenses.html` to be regenerated on a dependency or lockfile change. Those notices are refreshed during release preparation by [prepare-github-release.sh]; drift between releases is expected and no CI job gates it. Stale notices are only a finding on a release PR, where that script should already have refreshed them.
 - If no critical issues found: approve with a one-line summary
 - Sign off with: ✅ (approved) or ⚠️ (issues found)
 
@@ -109,4 +109,4 @@ Please always use `gh pr comment` to post your review instead.
 [AGENTS.md]: ../../AGENTS.md
 [CONTRIBUTING.md]: ../../CONTRIBUTING.md
 [engineering-standards.md]: ../../docs/engineering-standards.md
-[prepare-release.sh]: ../../scripts/ops/prepare-release.sh
+[prepare-github-release.sh]: ../../scripts/ops/prepare-github-release.sh

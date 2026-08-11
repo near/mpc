@@ -141,7 +141,7 @@ Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
 - **The submitter's `Attestation::Dstack` payload** — the RTMR3 event log, app-compose, and report-data the post-DCAP checks consume.
 - **The submitter's TLS public key** — the callback hashes it with the submitter's account public key and compares to the quote's `report_data` field, proving the enclave produced the quote for this specific submitter.
-- No deposit is stashed: attestation storage is funded by the contract's own balance, so `submit_participant_info` attaches nothing and there is no deposit to forward to the callback or refund.
+- No deposit is stashed: `submit_participant_info` attaches nothing, so there is none to forward to the callback or refund. Storing a new entry instead consumes a prepaid attestation-storage grant — see `docs/design/operator-prepaid-attestation-storage.md`.
 - **`data_id: CryptoHash`** — the yield handle returned by [`env::promise_yield_create`][promise-yield-create]. The intermediate `.then` callback (`resolve_verification`) reads this back to call [`env::promise_yield_resume`][promise-yield-resume] with a `FinalOutcome` after the post-DCAP checks have run.
 
 Entries are removed by `resolve_verification` on every branch where the verifier returned an answer — `Verified` (post-DCAP success or failure) and `Rejected`; only when the verifier gave no verdict (`Err(PromiseError::Failed)` — unreachable or crashed) does it return early and leave the entry in place. `on_attestation_verified` then removes the entry on its `Err(PromiseError::Failed)` branch, which covers that unreachable case and the no-response timeout.
