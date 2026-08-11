@@ -141,7 +141,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // Ethereum, Solana and Ton have no inspector to probe them with.
+                // Ethereum and Solana have no inspector to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });

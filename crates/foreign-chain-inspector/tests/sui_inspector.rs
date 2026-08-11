@@ -17,41 +17,51 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
+/// An RPC a test leaves unarmed panics when called, so a test that reaches the wrong one fails
+/// loudly instead of on an assertion about a plausible looking status.
 struct MockSuiClient {
-    response: Result<GetTransactionResponse, Status>,
-    service_info: Result<GetServiceInfoResponse, Status>,
+    response: Option<Result<GetTransactionResponse, Status>>,
+    service_info: Option<Result<GetServiceInfoResponse, Status>>,
 }
 
 impl MockSuiClient {
-    fn transaction(tx: ExecutedTransaction) -> Self {
+    fn answering(response: GetTransactionResponse) -> Self {
         Self {
-            response: Ok(GetTransactionResponse::default().with_transaction(tx)),
-            service_info: Err(Status::unimplemented("no service info in this test")),
+            response: Some(Ok(response)),
+            service_info: None,
         }
+    }
+
+    fn transaction(tx: ExecutedTransaction) -> Self {
+        Self::answering(GetTransactionResponse::default().with_transaction(tx))
     }
 
     fn status(status: Status) -> Self {
         Self {
-            response: Err(status.clone()),
-            service_info: Err(status),
+            response: Some(Err(status.clone())),
+            service_info: Some(Err(status)),
         }
     }
 
     fn serving(service_info: GetServiceInfoResponse) -> Self {
         Self {
-            response: Err(Status::unimplemented("no transaction in this test")),
-            service_info: Ok(service_info),
+            response: None,
+            service_info: Some(Ok(service_info)),
         }
     }
 }
 
 impl SuiRpcClient for MockSuiClient {
     async fn get_transaction(&self, _digest: &str) -> Result<GetTransactionResponse, Status> {
-        self.response.clone()
+        self.response
+            .clone()
+            .expect("test did not arm get_transaction")
     }
 
     async fn get_service_info(&self) -> Result<GetServiceInfoResponse, Status> {
-        self.service_info.clone()
+        self.service_info
+            .clone()
+            .expect("test did not arm get_service_info")
     }
 
     async fn get_checkpoint(&self, _sequence_number: u64) -> Result<GetCheckpointResponse, Status> {
@@ -246,10 +256,7 @@ async fn extract__should_reject_status_without_success_flag_as_malformed() {
 #[tokio::test]
 async fn extract__should_reject_response_missing_transaction_as_malformed() {
     // Given — a `GetTransactionResponse` whose transaction section is absent entirely.
-    let inspector = SuiInspector::new(MockSuiClient {
-        response: Ok(GetTransactionResponse::default()),
-        service_info: Err(Status::unimplemented("no service info in this test")),
-    });
+    let inspector = SuiInspector::new(MockSuiClient::answering(GetTransactionResponse::default()));
 
     // When
     let response = inspector
