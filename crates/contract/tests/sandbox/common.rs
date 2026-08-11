@@ -2,7 +2,10 @@ use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-    mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
+    mpc_contract::{
+        assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
+        submit_participant_info,
+    },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
 };
@@ -475,6 +478,29 @@ pub async fn submit_tee_attestations(
     Ok(())
 }
 
+/// Like [`submit_tee_attestations`], for accounts whose entry does not exist yet: each
+/// submission stores a new entry, so each needs a grant.
+pub async fn prepay_and_submit_tee_attestations(
+    contract: &Contract,
+    env_accounts: &mut [Account],
+    node_ids: &BTreeSet<NodeId>,
+) -> anyhow::Result<()> {
+    env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
+    for (account, node_id) in env_accounts.iter().zip(node_ids) {
+        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+        let result = prepay_and_submit_participant_info(
+            account,
+            contract,
+            &attestation,
+            &node_id.tls_public_key,
+        )
+        .await?;
+        assert!(result.is_success());
+    }
+    Ok(())
+}
+
 /// Submit mock attestations for all participants in parallel.
 pub async fn submit_attestations(
     contract: &Contract,
@@ -748,7 +774,7 @@ pub async fn generate_participant_and_submit_attestation(
 
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),

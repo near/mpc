@@ -44,6 +44,9 @@ const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
 /// Default TTL after which a launcher image hash unused by any participant is evicted.
 pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
 
+/// One attestation-storage grant, in milliNEAR.
+const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
+
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +90,8 @@ pub(crate) struct Config {
     /// Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on
     /// use), not retroactively — changing it does not re-date existing entries.
     pub(crate) launcher_hash_unused_ttl_seconds: u64,
+    /// Fee, in milliNEAR, charged for one attestation-storage grant.
+    pub(crate) attestation_storage_fee_millinear: u64,
 }
 
 impl Default for Config {
@@ -117,6 +122,7 @@ impl Default for Config {
             verifier_tera_gas: DEFAULT_VERIFIER_TERA_GAS,
             resolve_verification_tera_gas: DEFAULT_RESOLVE_VERIFICATION_TERA_GAS,
             launcher_hash_unused_ttl_seconds: DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS,
+            attestation_storage_fee_millinear: DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR,
         }
     }
 }

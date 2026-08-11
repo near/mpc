@@ -57,6 +57,8 @@ pub struct InitConfig {
     pub resolve_verification_tera_gas: Option<u64>,
     /// TTL after which a launcher image hash unused by any participant is evicted.
     pub launcher_hash_unused_ttl_seconds: Option<u64>,
+    /// Fee, in milliNEAR, for one attestation-storage grant.
+    pub attestation_storage_fee_millinear: Option<u64>,
 }
 
 /// Configuration parameters of the contract.
@@ -117,6 +119,8 @@ pub struct Config {
     /// Applied when an entry's expiry is next stamped (vote-in, re-vote, or a refresh on
     /// use), not retroactively — changing it does not re-date existing entries.
     pub launcher_hash_unused_ttl_seconds: u64,
+    /// Fee, in milliNEAR, for one attestation-storage grant.
+    pub attestation_storage_fee_millinear: u64,
 }
 
 #[cfg(test)]
@@ -144,6 +148,7 @@ mod tests {
             remove_non_participant_tee_verifier_votes_tera_gas: Some(5),
             verifier_tera_gas: Some(100),
             resolve_verification_tera_gas: Some(60),
+            attestation_storage_fee_millinear: Some(20),
             launcher_hash_unused_ttl_seconds: Some(1_209_600),
         };
         let json = serde_json::to_string(&original_config).unwrap();
@@ -198,6 +203,7 @@ mod tests {
             remove_non_participant_tee_verifier_votes_tera_gas: None,
             verifier_tera_gas: None,
             resolve_verification_tera_gas: None,
+            attestation_storage_fee_millinear: None,
             launcher_hash_unused_ttl_seconds: None,
         };
 

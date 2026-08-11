@@ -45,14 +45,9 @@ impl ForeignChainSignatureVerifier {
         // TODO(#2232): don't use interface API types for public keys
         public_key: &PublicKey,
     ) -> Result<(), VerifyForeignChainError> {
-        let expected_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: self.request,
-            values: self.expected_extracted_values,
-        });
-
-        let expected_payload_hash = expected_payload
-            .compute_msg_hash()
-            .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
+        let expected_payload_hash =
+            expected_payload_hash(self.request, self.expected_extracted_values)
+                .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
 
         let payload_is_correct = expected_payload_hash == response.payload_hash;
 
@@ -114,12 +109,14 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
 impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
     ForeignChainRequestBuilder<Request, DomainId>
 {
+    /// Errors if borsh-serializing the expected payload for hashing fails; this is not
+    /// expected to happen for any current payload type.
     pub fn build(
         self,
-    ) -> (
+    ) -> std::io::Result<(
         ForeignChainSignatureVerifier,
         VerifyForeignTransactionRequestArgs,
-    ) {
+    )> {
         let ForeignChainRpcRequestWithExpectations {
             request,
             expected_values,
@@ -130,14 +127,27 @@ impl<Request: Into<ForeignChainRpcRequestWithExpectations>>
             request: request.clone(),
         };
 
+        let expected_payload_hash = expected_payload_hash(
+            verifier.request.clone(),
+            verifier.expected_extracted_values.clone(),
+        )?;
+
         let request_args = VerifyForeignTransactionRequestArgs {
             request,
             domain_id: self.domain_id,
             payload_version: DEFAULT_PAYLOAD_VERSION,
+            expected_payload_hash: Some(expected_payload_hash),
         };
 
-        (verifier, request_args)
+        Ok((verifier, request_args))
     }
+}
+
+fn expected_payload_hash(
+    request: ForeignChainRpcRequest,
+    expected_values: Vec<ExtractedValue>,
+) -> std::io::Result<Hash256> {
+    ForeignTxSignPayload::new(DEFAULT_PAYLOAD_VERSION, request, expected_values).compute_msg_hash()
 }
 
 pub struct ForeignChainRpcRequestWithExpectations {
