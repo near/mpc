@@ -17,7 +17,7 @@ use crate::metrics;
 /// serving, because a boot time blip should not take a chain out of signing.
 pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     if foreign_chains.is_empty() {
-        debug!("no foreign chain is configured, skipping the RPC provider probe");
+        warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
         return;
     }
 
@@ -80,7 +80,6 @@ fn log_report(report: &ProbeReport) {
     info!("foreign-chain RPC provider probe complete: {healthy}/{probed} providers healthy");
 }
 
-/// Publish healthy/Configured counts per chain
 fn publish_metrics(report: &ProbeReport) {
     let probed_chains: BTreeSet<dtos::ForeignChain> = report
         .rows()
