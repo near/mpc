@@ -57,6 +57,21 @@ jobs:
           echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
           sudo install -m755 repro-env -t /usr/bin
 
+      - name: Provide catatonit for repro-env
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y catatonit
+          # repro-env bind-mounts /usr/bin/catatonit as the container entrypoint, but the
+          # Ubuntu 24.04 package installs the binary elsewhere (e.g. /usr/libexec), so link
+          # it into place (this job relies on the runner's podman; only catatonit is missing).
+          if [ ! -e /usr/bin/catatonit ]; then
+            src="$(dpkg -L catatonit 2>/dev/null | grep -m1 '/catatonit$')"
+            : "${src:=/usr/libexec/podman/catatonit}"
+            sudo ln -s "$src" /usr/bin/catatonit
+          fi
+          echo "catatonit -> $(readlink -f /usr/bin/catatonit || echo MISSING)"
+          test -e /usr/bin/catatonit
+
       - name: Build MPC Node binary and image
         run: |
           export NODE_IMAGE_NAME=test_image_tag_ci
