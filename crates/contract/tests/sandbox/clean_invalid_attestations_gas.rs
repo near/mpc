@@ -80,7 +80,7 @@ const MAX_PREPAID_TGAS: f64 = 300.0;
 /// what it would cost so the gap stays visible.
 #[tokio::test]
 async fn clean_invalid_attestations__budget_covers_max_scan() {
-    // given: a map holding exactly `RESHARE_MAX_SCAN` entries, `REMOVALS_COVERED` of them
+    // Given: a map holding exactly `RESHARE_MAX_SCAN` entries, `REMOVALS_COVERED` of them
     // removable. The participant entries count toward the scan limit — they are inserted
     // first and survive re-verification — so the seeded count is the remainder.
     let (contract, caller) = setup().await;
@@ -90,7 +90,7 @@ async fn clean_invalid_attestations__budget_covers_max_scan() {
     seed_attestations_from(&contract, seeded_kept, REMOVALS_COVERED, true).await;
     let budget_tgas = configured_budget_tgas(&contract).await;
 
-    // when: the sweep runs with exactly the scan limit and gas the reshare promise uses.
+    // When: the sweep runs with exactly the scan limit and gas the reshare promise uses.
     let burnt = try_sweep_receipt_tgas(&contract, &caller, RESHARE_MAX_SCAN, budget_tgas as f64)
         .await
         .unwrap_or_else(|| {
@@ -101,7 +101,7 @@ async fn clean_invalid_attestations__budget_covers_max_scan() {
             )
         });
 
-    // then: it completes within budget once scaled to production cost.
+    // Then: it completes within budget once scaled to production cost.
     let projected = burnt * PRODUCTION_CALIBRATION;
     assert!(
         projected <= budget_tgas as f64,
