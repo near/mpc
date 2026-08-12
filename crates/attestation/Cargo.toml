@@ -8,11 +8,6 @@ edition = { workspace = true }
 borsh-schema = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
 dstack-conversions = ["dep:dstack-sdk-types"]
 test-utils = []
-# Accepts an app-compose carrying a `pre_launch_script`, which production rejects. Tests need it to
-# verify the committed fixture, whose app-compose carries the hook that exported
-# `crates/test-utils/assets/near_account_secret_key`. Never implied by another feature, so every
-# enablement is explicit: only test code may turn it on.
-allow-pre-launch-script = []
 # Pulls in `dcap-qvl` for full local DCAP + post-DCAP verification. Off-chain callers only: the node,
 # the attestation CLI and the TEE authority. The contract verifies through the verifier contract.
 local-verify = ["dep:dcap-qvl", "dep:tee-verifier-conversions"]

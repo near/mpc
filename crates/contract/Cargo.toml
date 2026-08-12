@@ -52,9 +52,10 @@ test-utils = [
     "near-mpc-contract-interface/blstrs",
     "near-sdk/unit-testing",
 ]
-# Lets tests verify the committed fixture, whose app-compose carries the key-export hook. Enabled only
-# where this crate builds its own tests, so no released WASM can reach it.
-allow-pre-launch-script = ["mpc-attestation/allow-pre-launch-script"]
+# Relaxes the app compose script check for the sandbox test wasm, which submits the committed
+# fixture through the real entry point. Takes effect only together with `--cfg mpc_sandbox_wasm`,
+# so a released WASM cannot reach it. See `APP_COMPOSE_POLICY`.
+allow-pre-launch-script = []
 # WASM-compatible benchmark endpoints for sandbox gas testing
 bench-contract-methods = []
 # Sandbox-only view methods that expose internal contract state for tests that need to

@@ -1,9 +1,12 @@
-//! Verifies the committed fixture, so it requires `allow-pre-launch-script`.
+//! Verifies the committed fixture, whose measured app compose carries the key export hook, so
+//! these tests pass [`AppComposePolicy::AllowPreLaunchScriptForFixtures`]. The binary itself only
+//! ever reaches `run_verification`, which pins [`AppComposePolicy::RejectScripts`].
 
 use std::path::PathBuf;
 
 use attestation_cli::cli::Cli;
 use attestation_cli::verify;
+use mpc_attestation::attestation::AppComposePolicy;
 use mpc_attestation::attestation::{Attestation, DEFAULT_EXPIRATION_DURATION_SECONDS};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
@@ -47,7 +50,12 @@ fn full_verification_succeeds_with_valid_attestation() {
 
     let cli = make_cli(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(
+        &static_data,
+        &cli,
+        VALID_ATTESTATION_TIMESTAMP,
+        AppComposePolicy::AllowPreLaunchScriptForFixtures,
+    );
 
     assert!(
         result.is_ok(),
@@ -74,7 +82,12 @@ fn verification_fails_with_wrong_image_hash() {
     let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
     let cli = make_cli(&compose_path, wrong_hash, None);
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(
+        &static_data,
+        &cli,
+        VALID_ATTESTATION_TIMESTAMP,
+        AppComposePolicy::AllowPreLaunchScriptForFixtures,
+    );
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -95,7 +108,12 @@ fn verification_fails_with_wrong_compose_file() {
 
     let cli = make_cli(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(
+        &static_data,
+        &cli,
+        VALID_ATTESTATION_TIMESTAMP,
+        AppComposePolicy::AllowPreLaunchScriptForFixtures,
+    );
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -183,7 +201,12 @@ fn verification_with_custom_measurements_file() {
         Some(measurements_path),
     );
 
-    let result = verify::verify_at_timestamp(&static_data, &cli, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(
+        &static_data,
+        &cli,
+        VALID_ATTESTATION_TIMESTAMP,
+        AppComposePolicy::AllowPreLaunchScriptForFixtures,
+    );
 
     assert!(
         result.is_ok(),

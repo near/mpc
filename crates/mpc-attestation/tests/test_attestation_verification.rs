@@ -1,6 +1,14 @@
-//! Exercises the full local DCAP + post-DCAP path (`verify_locally`), so it
-//! requires the off-chain `local-verify` feature and `allow-pre-launch-script`.
+//! Exercises the full local DCAP + post-DCAP path (`verify_locally`), so it requires the
+//! off-chain `local-verify` feature. The committed fixture carries the key export hook, so these
+//! tests judge it under [`AppComposePolicy::AllowPreLaunchScriptForFixtures`]; production callers
+//! pass [`AppComposePolicy::RejectScripts`].
 #![cfg(feature = "local-verify")]
+
+use mpc_attestation::attestation::AppComposePolicy;
+
+/// The committed fixture's measured app compose carries the export hook, so these tests cannot use
+/// the production policy.
+const FIXTURE_POLICY: AppComposePolicy = AppComposePolicy::AllowPreLaunchScriptForFixtures;
 
 use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
@@ -27,7 +35,7 @@ fn valid_mock_attestation_succeeds_verification() {
     // A `Valid` mock is accepted as an expiring `WithConstraints` mock so the
     // stored attestation can later be cleaned up (#3293).
     assert_matches!(
-        valid_attestation.verify_locally(report_data.into(), timestamp_s, &[], &[], &[]),
+        valid_attestation.verify_locally(report_data.into(), timestamp_s, &[], &[], &[], FIXTURE_POLICY),
         Ok(AcceptedAttestation {
             attestation: VerifiedAttestation::Mock(MockAttestation::WithConstraints {
                 mpc_docker_image_hash: None,
@@ -50,7 +58,14 @@ fn invalid_mock_attestation_fails_verification() {
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
-        valid_attestation.verify_locally(report_data.into(), timestamp_s, &[], &[], &[]),
+        valid_attestation.verify_locally(
+            report_data.into(),
+            timestamp_s,
+            &[],
+            &[],
+            &[],
+            FIXTURE_POLICY
+        ),
         Err(VerificationError::InvalidMockAttestation)
     );
 }
@@ -73,6 +88,7 @@ fn validated_dstack_attestation_can_be_reverified() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            FIXTURE_POLICY,
         )
         .expect("Initial verification failed")
         .attestation;
@@ -107,6 +123,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            FIXTURE_POLICY,
         )
         .expect("Initial verification failed")
         .attestation;
@@ -134,7 +151,7 @@ fn validated_mock_attestation_passes_reverification() {
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
     let validated = valid_attestation
-        .verify_locally(report_data.into(), 0, &[], &[], &[])
+        .verify_locally(report_data.into(), 0, &[], &[], &[], FIXTURE_POLICY)
         .expect("Initial verification failed")
         .attestation;
 
@@ -161,6 +178,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            FIXTURE_POLICY,
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -200,6 +218,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            FIXTURE_POLICY,
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -244,6 +263,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            FIXTURE_POLICY,
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -278,6 +298,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
             default_measurements(),
+            FIXTURE_POLICY,
         )
         .expect("Initial verification should succeed")
         .attestation;

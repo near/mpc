@@ -737,6 +737,7 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use mpc_attestation::attestation::AppComposePolicy;
     use mpc_attestation::report_data::ReportDataV1;
     use rstest::rstest;
     use std::{
@@ -773,7 +774,14 @@ mod tests {
         let timestamp_s = 0u64;
         assert_eq!(
             attestation
-                .verify_locally(report_data.into(), timestamp_s, &[], &[], &[])
+                .verify_locally(
+                    report_data.into(),
+                    timestamp_s,
+                    &[],
+                    &[],
+                    &[],
+                    AppComposePolicy::RejectScripts,
+                )
                 .is_ok(),
             quote_verification_result
         );
