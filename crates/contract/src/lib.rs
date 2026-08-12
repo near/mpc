@@ -8892,15 +8892,16 @@ mod tests {
         env::storage_usage() - before
     }
 
+    /// Measured through the contract's own map, so that changing its declaration moves this
+    /// number rather than leaving the fee sized on a stale one.
     fn measure_grant_row_bytes() -> u64 {
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
         testing_env!(VMContextBuilder::new().build());
         let account: AccountId = "a".repeat(64).parse().unwrap();
 
-        let mut grants: IterableMap<AccountId, u32> =
-            IterableMap::new(StorageKey::AttestationGrants);
         let before = env::storage_usage();
-        grants.insert(account, 1);
-        grants.flush();
+        contract.available_attestation_grants.insert(account, 1);
+        contract.available_attestation_grants.flush();
 
         env::storage_usage() - before
     }
