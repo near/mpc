@@ -56,22 +56,12 @@ struct OldConfig {
 
 impl From<OldConfig> for Config {
     fn from(old: OldConfig) -> Self {
-        // Carry the deployed values; the attestation-storage fee is new in this release, so
-        // it takes its default.
+        // Deployed values carry forward, except `clean_invalid_attestations_tera_gas`: the
+        // deployed 10 TGas is consumed by the scan itself, so the first eviction overruns it
+        // and the detached sweep rolls back unnoticed. Taking the new default applies the fix
+        // without a governance vote.
         //
-        // `clean_invalid_attestations_tera_gas` is the deliberate exception: it is raised to
-        // the new default. The deployed 10 TGas is consumed almost entirely by the 30-entry
-        // scan itself, leaving nothing for evictions; the first removal exceeds it and,
-        // because the promise is detached, every removal rolls back unnoticed. Carrying the
-        // deployed value forward would leave the fix unreachable without a governance config
-        // vote.
-        //
-        // Raising rather than overwriting, so a deployment that already voted its budget
-        // above the default — the documented recovery path — is not regressed by upgrading.
-        //
-        // TODO(#4121): one-shot for this upgrade only. These modules are seeded by copying
-        // the previous release's, and carried forward this line would clobber an
-        // operator-voted value on every future upgrade.
+        // TODO(#4121): one-shot; drop after the next release.
         Config {
             key_event_timeout_blocks: old.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
@@ -87,9 +77,8 @@ impl From<OldConfig> for Config {
             fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
             fail_attestation_submission_tera_gas: old.fail_attestation_submission_tera_gas,
             clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
-            clean_invalid_attestations_tera_gas: old
-                .clean_invalid_attestations_tera_gas
-                .max(Config::default().clean_invalid_attestations_tera_gas),
+            clean_invalid_attestations_tera_gas: Config::default()
+                .clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: old
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: old
@@ -178,7 +167,7 @@ mod tests {
 
     /// Every field distinguishable from its own [`Config::default()`] counterpart, so a
     /// carried-forward value can never be mistaken for a defaulted one.
-    fn deployed_config(clean_invalid_attestations_tera_gas: u64) -> OldConfig {
+    fn deployed_config() -> OldConfig {
         OldConfig {
             key_event_timeout_blocks: 1001,
             tee_upgrade_deadline_duration_seconds: 1002,
@@ -190,7 +179,7 @@ mod tests {
             fail_on_timeout_tera_gas: 1008,
             fail_attestation_submission_tera_gas: 1009,
             clean_tee_status_tera_gas: 1010,
-            clean_invalid_attestations_tera_gas,
+            clean_invalid_attestations_tera_gas: 1011,
             cleanup_orphaned_node_migrations_tera_gas: 1012,
             remove_non_participant_update_votes_tera_gas: 1013,
             clean_foreign_chain_data_tera_gas: 1014,
@@ -201,17 +190,20 @@ mod tests {
         }
     }
 
-    /// The deployed budget is consumed almost entirely by the scan itself, so the first
-    /// eviction exceeds it and the detached sweep rolls back unnoticed. Migration raises it
-    /// so the fix lands on upgrade rather than needing a governance vote.
+    /// The deployed budget is consumed by the scan itself, so the first eviction overruns it
+    /// and the detached sweep rolls back unnoticed. Migration takes the new default so the fix
+    /// lands on upgrade rather than needing a governance vote.
     #[test]
-    fn config_migration__should_raise_a_clean_invalid_attestations_gas_below_the_new_default() {
+    fn config_migration__should_reset_clean_invalid_attestations_gas_to_the_new_default() {
         // given
-        let deployed = 10;
-        assert!(deployed < Config::default().clean_invalid_attestations_tera_gas);
+        let old = deployed_config();
+        assert_ne!(
+            old.clean_invalid_attestations_tera_gas,
+            Config::default().clean_invalid_attestations_tera_gas
+        );
 
         // when
-        let migrated = Config::from(deployed_config(deployed));
+        let migrated = Config::from(old);
 
         // then
         assert_eq!(
@@ -220,31 +212,17 @@ mod tests {
         );
     }
 
-    /// Voting the budget up is the documented recovery path for an undersized sweep, so
-    /// upgrading must not undo it.
-    #[test]
-    fn config_migration__should_preserve_a_clean_invalid_attestations_gas_above_the_new_default() {
-        // given
-        let voted_up = Config::default().clean_invalid_attestations_tera_gas + 10;
-
-        // when
-        let migrated = Config::from(deployed_config(voted_up));
-
-        // then
-        assert_eq!(migrated.clean_invalid_attestations_tera_gas, voted_up);
-    }
-
-    /// Raising that one field must not leak into any other an operator may have voted in.
+    /// Resetting that one field must not leak into any other an operator may have voted in.
     ///
     /// Compares the whole struct rather than field by field, so adding a field to [`Config`]
     /// fails to compile here until this test says whether it carries forward or defaults.
     #[test]
     fn config_migration__should_carry_every_other_deployed_value_forward() {
         // given
-        let old = deployed_config(10);
+        let old = deployed_config();
 
         // when
-        let migrated = Config::from(deployed_config(10));
+        let migrated = Config::from(deployed_config());
 
         // then
         assert_eq!(
@@ -274,7 +252,7 @@ mod tests {
                 verifier_tera_gas: old.verifier_tera_gas,
                 resolve_verification_tera_gas: old.resolve_verification_tera_gas,
                 launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
-                // Raised, not carried; covered by the tests above.
+                // Reset, not carried; covered by the test above.
                 clean_invalid_attestations_tera_gas: Config::default()
                     .clean_invalid_attestations_tera_gas,
                 // New in this release, so it takes its default.
