@@ -288,7 +288,9 @@ fn compare_auth(
                 scheme: contract_scheme,
             },
         ) => {
-            if local_h.as_str() != contract_h {
+            // Field names are case insensitive: `HeaderName` lowercases the local name,
+            // while the contract stores the string the vote carried verbatim.
+            if !local_h.as_str().eq_ignore_ascii_case(contract_h) {
                 out.push(Diagnostic {
                     chain,
                     provider: Some(name.clone()),
@@ -834,6 +836,39 @@ mod tests {
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
+    fn compare__should_accept_header_names_differing_only_in_case() {
+        // Given: the same header, voted in capitalised and configured lowercase.
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("Authorization", Some("Bearer"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
+    fn compare__should_emit_header_name_mismatch_when_names_differ_beyond_case() {
+        // Given
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("X-Api-Key", Some("Bearer"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags.len(), 1);
+        assert_matches!(
+            diags[0].kind,
+            DiagnosticKind::AuthSchemeNameMismatch {
+                variant: "Header",
+                ..
+            }
+        );
     }
 
     #[test]
