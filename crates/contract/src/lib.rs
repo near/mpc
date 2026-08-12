@@ -125,7 +125,7 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
 /// [`crate::config::Config::clean_invalid_attestations_tera_gas`] funds a full scan of this
 /// many entries plus ~10 removals. The eleventh removal exceeds the budget and, because the
 /// promise is detached, reverts every one of them silently; recovery is a direct
-/// permissionless call with a smaller `max_scan`.
+/// permissionless call, which attaches the caller's own gas rather than this budget.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;
 
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.

@@ -195,17 +195,17 @@ mod tests {
     /// lands on upgrade rather than needing a governance vote.
     #[test]
     fn config_migration__should_reset_clean_invalid_attestations_gas_to_the_new_default() {
-        // given
+        // Given
         let old = deployed_config();
         assert_ne!(
             old.clean_invalid_attestations_tera_gas,
             Config::default().clean_invalid_attestations_tera_gas
         );
 
-        // when
+        // When
         let migrated = Config::from(old);
 
-        // then
+        // Then
         assert_eq!(
             migrated.clean_invalid_attestations_tera_gas,
             Config::default().clean_invalid_attestations_tera_gas
@@ -218,13 +218,13 @@ mod tests {
     /// fails to compile here until this test says whether it carries forward or defaults.
     #[test]
     fn config_migration__should_carry_every_other_deployed_value_forward() {
-        // given
+        // Given
         let old = deployed_config();
 
-        // when
+        // When
         let migrated = Config::from(deployed_config());
 
-        // then
+        // Then
         assert_eq!(
             migrated,
             Config {

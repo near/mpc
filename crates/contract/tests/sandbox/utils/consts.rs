@@ -18,10 +18,10 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
 ///
-/// Sized with ~10 TGas of margin over what the concluding `vote_reshared` needs: the sum of
-/// the cleanup-promise budgets it reserves out of its own prepaid gas, plus its own ~5 TGas
-/// burn. Below that, promise creation fails and takes the deciding reshare vote with it, so
-/// the margin absorbs a cleanup budget changing without this constant being revisited.
+/// Sized over what the concluding `vote_reshared` needs: the sum of the cleanup-promise
+/// budgets it reserves out of its own prepaid gas, plus its own ~5 TGas burn. Below that,
+/// promise creation fails and takes the deciding reshare vote with it, so the margin is wide
+/// enough that ordinary variance does not make the reshare suite flaky.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(60);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
