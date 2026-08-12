@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # dev-common.sh — helpers specific to the NEAR One dev clusters (source, don't
-# run). Generic helpers live in ../common.sh.
+# run). Generic helpers live in ../../common.sh.
 #
 # MPC_SIGN_WITH overrides the signer (default sign-with-legacy-keychain, which
 # reads the ~/.near-credentials files first-time-setup.sh writes).

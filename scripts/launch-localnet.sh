@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
+source "${SCRIPT_DIR}/common.sh"
+
 MPC_CONTRACT_PATH="./target/near/mpc_contract/mpc_contract.wasm"
 
 # TEE verifier contract, deployed to tee-verifier.test.near and voted in as the
@@ -290,22 +294,6 @@ EOF
   done
 
   read -rp "Press Enter to finish the script and run clean-up steps..."
-}
-
-die() {
-  printf 'ERROR: %s\n' "$*" >&2
-  exit 1
-}
-
-require_cmds() {
-  local missing=0
-  for cmd in "$@"; do
-    command -v "$cmd" >/dev/null 2>&1 || {
-      printf 'Missing dependency: %s\n' "$cmd" >&2
-      missing=1
-    }
-  done
-  [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
 # Send SIGTERM, wait up to GRACE seconds, then escalate to SIGKILL. mpc-node
