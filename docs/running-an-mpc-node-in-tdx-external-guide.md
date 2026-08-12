@@ -1849,8 +1849,8 @@ git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
 * Compile it using the reproduce build script. For this you need to install
-  `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon
-  running.
+  `repro-env`, `podman`, `catatonit`, `docker-buildx`, and `skopeo`, and have
+  the `docker` daemon running.
 
 ```bash
 $ ./deployment/build-images.sh --node
@@ -1955,7 +1955,7 @@ cd mpc/
 git checkout <commit-hash>
 ```
 
-* Compile it using the reproducible build script. For this you need to install `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon running.
+* Compile it using the reproducible build script. For this you need to install `repro-env`, `podman`, `catatonit`, `docker-buildx`, and `skopeo`, and have the `docker` daemon running.
 
 ```bash
 $ ./deployment/build-images.sh --rust-launcher

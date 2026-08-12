@@ -12,11 +12,13 @@ security and verification purposes.
 - `docker` with buildx support
 - `jq`
 - `git`
+- `skopeo`
 
-**Additional requirements for building the node image**:
+**Additional requirements for building the node or launcher image**:
 
 - `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
 - `podman`
+- `catatonit` - podman's container entrypoint, which `repro-env` requires
 
 **Requirements for building the MPC contract** (either path works):
 
