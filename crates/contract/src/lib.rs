@@ -8846,8 +8846,8 @@ mod tests {
     /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
     const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(10);
 
-    /// One `available_attestation_grants` row, for the longest possible account id. The fee
-    /// covers this on top of the entry, since the first grant for an account creates the row.
+    /// Worst case is the longest possible account id. The fee covers this row on top of the
+    /// entry; an account's first grant creates it.
     const WORST_CASE_GRANT_ROW_BYTES: u64 = 194;
 
     fn worst_case_dstack_attestation() -> VerifiedAttestation {
@@ -8892,8 +8892,6 @@ mod tests {
         env::storage_usage() - before
     }
 
-    /// Charged bytes for one grants-map row, measured the same way as
-    /// [`measure_stored_entry_bytes`]: insert into the real map, flush, take the delta.
     fn measure_grant_row_bytes() -> u64 {
         testing_env!(VMContextBuilder::new().build());
         let account: AccountId = "a".repeat(64).parse().unwrap();
@@ -8937,8 +8935,7 @@ mod tests {
         );
     }
 
-    /// Pinned for the same reason as [`stored_attestation_entry__should_have_the_pinned_size`]:
-    /// the prepaid-storage fee is sized from this number plus the entry, so a layout change
+    /// The prepaid-storage fee is sized from this number plus the entry, so a layout change
     /// that grows the row must be seen and the fee revisited.
     #[test]
     fn grant_row__should_have_the_pinned_size() {
@@ -8956,10 +8953,8 @@ mod tests {
     /// row. Pinning the byte counts alone would not catch a lowered default fee, which breaks
     /// the same guarantee.
     ///
-    /// Two things it does not guard. The fee is votable, so a network can choose a value below
-    /// the floor. And `storage_byte_cost` is a near-sdk constant, not a protocol read, so a
-    /// real re-pricing moves the floor without failing here — the residual the design doc's
-    /// Security section accepts.
+    /// Does not guard a votable fee set below the floor, nor a real storage re-pricing —
+    /// `storage_byte_cost` is a near-sdk constant, not a protocol read.
     #[test]
     fn attestation_storage_fee__should_cover_the_entry_and_its_grant_row() {
         // Given
