@@ -89,6 +89,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo liblzma-dev podman catatonit
+          # repro-env bind-mounts /usr/bin/catatonit as the container entrypoint, but the
+          # Ubuntu 24.04 package installs the binary elsewhere (e.g. /usr/libexec), so link
+          # it into place if the runner does not already provide it there.
+          if [ ! -e /usr/bin/catatonit ]; then
+            src="$(dpkg -L catatonit 2>/dev/null | grep -m1 '/catatonit$')"
+            : "${src:=/usr/libexec/podman/catatonit}"
+            sudo ln -s "$src" /usr/bin/catatonit
+          fi
+          test -e /usr/bin/catatonit
 
       - name: Install repro-env
         run: |
