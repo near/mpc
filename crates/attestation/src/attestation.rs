@@ -36,8 +36,23 @@ const RTMR3_INDEX: u32 = 3;
 
 /// Whether an app-compose may carry a `pre_launch_script`. False in production; test builds allow it
 /// to verify the committed fixture, whose app-compose carries the hook that exported
-/// `crates/test-utils/assets/near_account_secret_key`.
+/// `crates/test-utils/assets/near_account_secret_key`. A shipped wasm cannot enable it: see the
+/// guard below.
 const PRE_LAUNCH_SCRIPT_ALLOWED: bool = cfg!(feature = "allow-pre-launch-script");
+
+// A wasm build is a contract build, and the only wasm the relaxation is wanted in is one a test
+// harness produced. `ContractBuilder` marks those with `--cfg mpc_sandbox_wasm`; nothing else sets
+// it, so enabling the feature for a shipped wasm fails here rather than shipping a contract that
+// accepts an app-compose whose `pre_launch_script` runs as root before the node starts.
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "allow-pre-launch-script",
+    not(mpc_sandbox_wasm)
+))]
+compile_error!(
+    "allow-pre-launch-script must not be enabled in a shipped wasm build; test contract builds go \
+     through test_utils::contract_build::ContractBuilder, which sets --cfg mpc_sandbox_wasm"
+);
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
