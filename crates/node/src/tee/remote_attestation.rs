@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Context;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use mpc_attestation::{
-    attestation::{Attestation, VerificationError},
+    attestation::{AppComposePolicy, Attestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
 use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, Ed25519PublicKey};
@@ -128,6 +128,7 @@ fn validate_remote_attestation(
             allowed_docker_image_hashes,
             allowed_launcher_compose_hashes,
             mpc_attestation::attestation::default_measurements(),
+            AppComposePolicy::RejectScripts,
         )
         .map(|_| ())
 }

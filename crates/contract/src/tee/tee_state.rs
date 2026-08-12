@@ -12,8 +12,8 @@ use crate::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
     attestation::{
-        self, AcceptedAttestation, DstackAttestation, DstackVerify, MockAttestation,
-        VerifiedAttestation,
+        self, AcceptedAttestation, AppComposePolicy, DstackAttestation, DstackVerify,
+        MockAttestation, VerifiedAttestation,
     },
     report_data::{ReportData, ReportDataV1},
 };
@@ -181,6 +181,7 @@ impl TeeState {
         dstack: &DstackAttestation,
         report: &VerifiedReport,
         tee_upgrade_deadline_duration: Duration,
+        app_compose_policy: AppComposePolicy,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
         let expected_report_data = Self::expected_report_data(&node_id);
         let accepted_measurements = self.get_accepted_measurements();
@@ -194,6 +195,7 @@ impl TeeState {
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.get_allowed_launcher_compose_hashes(),
             &accepted_measurements,
+            app_compose_policy,
         )?;
 
         log_informational_advisory_ids(&advisory_ids);
@@ -1581,8 +1583,13 @@ mod tests {
         let node_id = node_id_for(&"alice.near".parse().unwrap());
 
         // When
-        let result =
-            tee_state.verify_and_store_dstack(node_id, &dstack, &verified_report(), Duration::MAX);
+        let result = tee_state.verify_and_store_dstack(
+            node_id,
+            &dstack,
+            &verified_report(),
+            Duration::MAX,
+            AppComposePolicy::AllowPreLaunchScriptForFixtures,
+        );
 
         // Then
         assert_matches!(
@@ -1592,7 +1599,8 @@ mod tests {
         assert!(tee_state.stored_attestations.is_empty());
     }
 
-    /// Needs `allow-pre-launch-script`.
+    /// The committed fixture carries the key export hook, so it only passes under
+    /// [`AppComposePolicy::AllowPreLaunchScriptForFixtures`].
     #[test]
     fn verify_and_store_dstack__should_store_when_all_post_dcap_checks_pass() {
         // Given
@@ -1613,6 +1621,7 @@ mod tests {
             &dstack,
             &verified_report(),
             Duration::MAX,
+            AppComposePolicy::AllowPreLaunchScriptForFixtures,
         );
 
         // Then

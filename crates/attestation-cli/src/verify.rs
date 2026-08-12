@@ -7,7 +7,7 @@ use attestation::{
     tcb_info::TcbInfo,
 };
 use mpc_attestation::attestation::{
-    AcceptedAttestation, ValidatedDstackAttestation, VerifiedAttestation,
+    AcceptedAttestation, AppComposePolicy, ValidatedDstackAttestation, VerifiedAttestation,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use node_types::http_server::StaticWebData;
@@ -38,13 +38,21 @@ pub fn run_verification(
         .expect("system clock before UNIX epoch")
         .as_secs();
 
-    verify_at_timestamp(static_data, cli, current_timestamp)
+    verify_at_timestamp(
+        static_data,
+        cli,
+        current_timestamp,
+        AppComposePolicy::RejectScripts,
+    )
 }
 
+/// `app_compose_policy` is a parameter only so tests can verify the committed fixture. Every
+/// caller reachable from the binary passes [`AppComposePolicy::RejectScripts`].
 pub fn verify_at_timestamp(
     static_data: &StaticWebData,
     cli: &Cli,
     timestamp_seconds: u64,
+    app_compose_policy: AppComposePolicy,
 ) -> Result<VerificationResult, VerificationError> {
     let attestation = static_data.tee_participant_info.as_ref().ok_or_else(|| {
         VerificationError::Custom(
@@ -80,6 +88,7 @@ pub fn verify_at_timestamp(
         &cli.allowed_image_hashes,
         &[allowed_compose_hash],
         &measurements,
+        app_compose_policy,
     )?;
 
     // Extract results from the verified attestation

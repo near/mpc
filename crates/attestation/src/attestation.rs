@@ -1,5 +1,5 @@
 use crate::{
-    app_compose::AppCompose,
+    app_compose::{AppCompose, AppComposePolicy},
     collateral::Collateral,
     measurements::{ExpectedMeasurements, MeasurementsError},
     quote::QuoteBytes,
@@ -33,11 +33,6 @@ const COMPOSE_HASH_EVENT: &str = "compose-hash";
 pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
-
-/// Whether an app-compose may carry a `pre_launch_script`. False in production; test builds allow it
-/// to verify the committed fixture, whose app-compose carries the hook that exported
-/// `crates/test-utils/assets/near_account_secret_key`.
-const PRE_LAUNCH_SCRIPT_ALLOWED: bool = cfg!(feature = "allow-pre-launch-script");
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
@@ -140,6 +135,7 @@ impl DstackAttestation {
         report: &VerifiedReport,
         expected_report_data: ReportData,
         accepted_measurements: &[ExpectedMeasurements],
+        app_compose_policy: AppComposePolicy,
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
         let report_data = report
             .report
@@ -151,7 +147,7 @@ impl DstackAttestation {
         self.verify_report_data(&expected_report_data, report_data)?;
 
         self.verify_rtmr3(report_data, &self.tcb_info)?;
-        self.verify_app_compose(&self.tcb_info)?;
+        self.verify_app_compose(&self.tcb_info, app_compose_policy)?;
 
         let measurements =
             self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)?;
@@ -169,9 +165,15 @@ impl DstackAttestation {
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
+        app_compose_policy: AppComposePolicy,
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
         let report = self.verify_dcap_quote(timestamp_seconds)?;
-        self.verify_with_report(&report, expected_report_data, accepted_measurements)
+        self.verify_with_report(
+            &report,
+            expected_report_data,
+            accepted_measurements,
+            app_compose_policy,
+        )
     }
 
     /// Runs only the DCAP step ([`dcap_qvl::verify::verify`]) and returns the
@@ -381,11 +383,15 @@ impl DstackAttestation {
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
-    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> Result<(), VerificationError> {
+    fn verify_app_compose(
+        &self,
+        tcb_info: &TcbInfo,
+        policy: AppComposePolicy,
+    ) -> Result<(), VerificationError> {
         let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
             .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
 
-        Self::validate_app_compose_config(&app_compose).or_err(|| {
+        Self::validate_app_compose_config(&app_compose, policy).or_err(|| {
             VerificationError::InvalidAppComposeConfig(tcb_info.app_compose.to_string())
         })?;
 
@@ -401,7 +407,7 @@ impl DstackAttestation {
     }
 
     /// Validates app compose configuration against expected security requirements.
-    fn validate_app_compose_config(app_compose: &AppCompose) -> bool {
+    fn validate_app_compose_config(app_compose: &AppCompose, policy: AppComposePolicy) -> bool {
         app_compose.manifest_version == 2
             && app_compose.runner == "docker-compose"
             && !app_compose.kms_enabled
@@ -414,7 +420,11 @@ impl DstackAttestation {
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            && (PRE_LAUNCH_SCRIPT_ALLOWED || app_compose.pre_launch_script.is_none())
+            // Reject all three arbitrary root code fields. `pre_launch_script` and `init_script`
+            // run unconditionally; `bash_script` only runs when `runner == "bash"` (so the runner
+            // pin above already neutralizes it), but we reject it explicitly so the guarantee does
+            // not silently depend on that pin.
+            && (policy.allows_pre_launch_script() || app_compose.pre_launch_script.is_none())
             && app_compose.init_script.is_none()
             && app_compose.bash_script.is_none()
     }
@@ -614,14 +624,34 @@ mod tests {
         // Given
         let app_compose = valid_app_compose();
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(
+            &app_compose,
+            AppComposePolicy::RejectScripts,
+        );
 
         // Then
         assert!(result)
     }
 
     #[test]
-    fn validate_app_compose_config__should_accept_the_committed_fixture_with_its_hook_cleared() {
+    fn validate_app_compose_config__rejects_present_pre_launch_script() {
+        // Given
+        let app_compose = AppCompose {
+            pre_launch_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+        // When
+        let result = DstackAttestation::validate_app_compose_config(
+            &app_compose,
+            AppComposePolicy::RejectScripts,
+        );
+
+        // Then
+        assert!(!result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__should_accept_the_committed_fixture_under_the_fixture_policy() {
         // Given
         let fixture: AppCompose =
             serde_json::from_str(test_utils::attestation::TEST_APP_COMPOSE_STRING)
@@ -630,16 +660,20 @@ mod tests {
             fixture.pre_launch_script.is_some(),
             "the fixture is expected to carry the export hook"
         );
-        let without_hook = AppCompose {
-            pre_launch_script: None,
-            ..fixture
-        };
 
         // When
-        let result = DstackAttestation::validate_app_compose_config(&without_hook);
+        let under_fixture_policy = DstackAttestation::validate_app_compose_config(
+            &fixture,
+            AppComposePolicy::AllowPreLaunchScriptForFixtures,
+        );
+        let under_production_policy = DstackAttestation::validate_app_compose_config(
+            &fixture,
+            AppComposePolicy::RejectScripts,
+        );
 
         // Then
-        assert!(result)
+        assert!(under_fixture_policy);
+        assert!(!under_production_policy);
     }
 
     #[test]
@@ -654,7 +688,10 @@ mod tests {
             ..valid_app_compose()
         };
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(
+            &app_compose,
+            AppComposePolicy::RejectScripts,
+        );
 
         // Then
         assert!(!result)
@@ -671,7 +708,10 @@ mod tests {
             ..valid_app_compose()
         };
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(
+            &app_compose,
+            AppComposePolicy::RejectScripts,
+        );
 
         // Then
         assert!(!result)
@@ -688,7 +728,10 @@ mod tests {
             ..valid_app_compose()
         };
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(
+            &app_compose,
+            AppComposePolicy::RejectScripts,
+        );
 
         // Then
         assert!(!result)
@@ -725,7 +768,10 @@ mod tests {
             ..valid_app_compose()
         };
         // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(
+            &app_compose,
+            AppComposePolicy::RejectScripts,
+        );
 
         // Then
         assert!(result)

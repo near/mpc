@@ -73,7 +73,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
 use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
-use mpc_attestation::attestation::{Attestation, DstackAttestation};
+use mpc_attestation::attestation::{AppComposePolicy, Attestation, DstackAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
@@ -122,6 +122,36 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
 /// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
 /// callers may pick a different value; this only governs the automatic invocation.
 const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
+
+/// The policy [`MpcContract::submit_participant_info`] judges a dstack app compose by. The
+/// committed fixture carries the key export hook, so the tests that submit it through the real
+/// entry point need the relaxed one; everything else must reject it.
+///
+/// Relaxed in exactly two places, neither of which a released artifact can be: this crate's own
+/// unit tests, and a contract wasm built by `test_utils::contract_build::ContractBuilder`, which is
+/// the only thing that sets `mpc_sandbox_wasm`. The feature alone deliberately does nothing, so
+/// adding it to a release build cannot relax anything.
+const APP_COMPOSE_POLICY: AppComposePolicy = if cfg!(any(
+    test,
+    all(feature = "allow-pre-launch-script", mpc_sandbox_wasm)
+)) {
+    AppComposePolicy::AllowPreLaunchScriptForFixtures
+} else {
+    AppComposePolicy::RejectScripts
+};
+
+// Catches the misconfiguration loudly rather than silently rejecting the fixture: a wasm build that
+// asks for the relaxation without the harness marker is either a shipped artifact that must not
+// have it, or a test build that will not get it.
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "allow-pre-launch-script",
+    not(mpc_sandbox_wasm)
+))]
+compile_error!(
+    "allow-pre-launch-script has no effect without --cfg mpc_sandbox_wasm, which only \
+     test_utils::contract_build::ContractBuilder sets; a shipped wasm must not enable it"
+);
 
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
@@ -2554,6 +2584,7 @@ impl MpcContract {
             &context.attestation,
             report,
             tee_upgrade_deadline_duration,
+            APP_COMPOSE_POLICY,
         ) {
             Ok(insertion) => insertion,
             Err(err) => {

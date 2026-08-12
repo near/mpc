@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+pub use attestation::app_compose::AppComposePolicy;
 pub use attestation::attestation::{
     AcceptedDstackAttestation, DstackAttestation, VerificationError,
 };
@@ -342,6 +343,11 @@ pub trait DstackVerify {
     /// Runs the MPC-hash allowlist checks and the post-DCAP checks against an
     /// already-DCAP-verified [`VerifiedReport`], returning the
     /// [`AcceptedAttestation`].
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the allowlists and the app compose policy travel together; folding them \
+into one input struct is the tidier fix and is left for review"
+    )]
     fn verify(
         &self,
         report: &VerifiedReport,
@@ -350,6 +356,7 @@ pub trait DstackVerify {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
+        app_compose_policy: AppComposePolicy,
     ) -> Result<AcceptedAttestation, VerificationError>;
 }
 
@@ -362,6 +369,7 @@ impl DstackVerify for DstackAttestation {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
+        app_compose_policy: AppComposePolicy,
     ) -> Result<AcceptedAttestation, VerificationError> {
         let (mpc_image_hash, launcher_compose_hash) = verify_dstack_mpc_hashes(
             self,
@@ -372,7 +380,12 @@ impl DstackVerify for DstackAttestation {
         let AcceptedDstackAttestation {
             measurements,
             advisory_ids,
-        } = self.verify_with_report(report, expected_report_data, accepted_measurements)?;
+        } = self.verify_with_report(
+            report,
+            expected_report_data,
+            accepted_measurements,
+            app_compose_policy,
+        )?;
 
         Ok(AcceptedAttestation::dstack(
             mpc_image_hash,
@@ -386,6 +399,11 @@ impl DstackVerify for DstackAttestation {
 
 impl Attestation {
     /// Verifies the attestation given an already-DCAP-verified report.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the allowlists and the app compose policy travel together; folding them \
+into one input struct is the tidier fix and is left for review"
+    )]
     pub fn verify_with_report(
         &self,
         report: &VerifiedReport,
@@ -394,6 +412,7 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
+        app_compose_policy: AppComposePolicy,
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => dstack_attestation.verify(
@@ -403,6 +422,7 @@ impl Attestation {
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
                 accepted_measurements,
+                app_compose_policy,
             ),
             Self::Mock(mock_attestation) => mock_attestation.verify(
                 current_timestamp_seconds,
@@ -424,6 +444,7 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[NodeImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
         accepted_measurements: &[ExpectedMeasurements],
+        app_compose_policy: AppComposePolicy,
     ) -> Result<AcceptedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
@@ -435,6 +456,7 @@ impl Attestation {
                     allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
                     accepted_measurements,
+                    app_compose_policy,
                 )
             }
             Self::Mock(mock_attestation) => mock_attestation.verify(

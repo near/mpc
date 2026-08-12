@@ -56,6 +56,29 @@ pub struct AppCompose {
     pub docker_config: Option<IgnoredAny>,
 }
 
+/// How strictly an [`AppCompose`] is judged. Every production caller passes
+/// [`AppComposePolicy::RejectScripts`]; the relaxed variant exists so tests can verify the
+/// committed fixture, whose measured app compose carries the hook that exported
+/// `crates/test-utils/assets/near_account_secret_key`.
+///
+/// This is a parameter rather than a cargo feature so that no build of a released binary can
+/// enable it: a feature is unified across the whole build graph, an argument is visible at the
+/// call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppComposePolicy {
+    /// Refuses an app compose carrying any of the three script fields. The only policy a
+    /// released binary may use.
+    RejectScripts,
+    /// Tolerates `pre_launch_script`, and nothing else. Test code only.
+    AllowPreLaunchScriptForFixtures,
+}
+
+impl AppComposePolicy {
+    pub fn allows_pre_launch_script(self) -> bool {
+        matches!(self, Self::AllowPreLaunchScriptForFixtures)
+    }
+}
+
 /// A type that contains a docker compose the contents of a docker compose file as
 /// a string. For example the docker compose file below can be read as a string and initialize this type.
 ///
