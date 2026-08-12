@@ -8957,7 +8957,8 @@ mod tests {
     #[test]
     fn attestation_storage_fee__should_cover_the_entry_and_its_grant_row() {
         // Given
-        let floor_bytes = WORST_CASE_ENTRY_BYTES + WORST_CASE_GRANT_ROW_BYTES;
+        let floor_bytes =
+            measure_stored_entry_bytes(worst_case_mock_attestation()) + measure_grant_row_bytes();
 
         // When
         let floor = env::storage_byte_cost().saturating_mul(u128::from(floor_bytes));
