@@ -63,7 +63,8 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     assert_eq!(nodes_with_tees, expected_node_ids);
 
     // Add two prospective Participants
-    // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
+    // Note: this test fails if `vote_reshared` needs to clean up more attestations than
+    // `clean_invalid_attestations_tera_gas` funds within its scan limit.
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids =
         build_sandbox_node_ids(&non_participants, &env_non_participant_accounts);
