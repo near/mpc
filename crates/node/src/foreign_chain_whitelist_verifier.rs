@@ -288,9 +288,7 @@ fn compare_auth(
                 scheme: contract_scheme,
             },
         ) => {
-            // Field names are case insensitive: `HeaderName` lowercases the local name,
-            // while the contract stores the string the vote carried verbatim.
-            if !local_h.as_str().eq_ignore_ascii_case(contract_h) {
+            if !header_name_matches(local_h, contract_h) {
                 out.push(Diagnostic {
                     chain,
                     provider: Some(name.clone()),
@@ -336,6 +334,12 @@ fn compare_auth(
             });
         }
     }
+}
+
+/// Header names are case insensitive: local is lowercased when [`AuthConfig::Header`] parses it
+/// into an [`http::HeaderName`], while the contract keeps the casing the vote carried.
+fn header_name_matches(local: &http::HeaderName, contract: &str) -> bool {
+    local.as_str().eq_ignore_ascii_case(contract)
 }
 
 fn log_diagnostic(d: &Diagnostic) {
