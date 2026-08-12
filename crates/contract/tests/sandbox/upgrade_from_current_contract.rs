@@ -16,7 +16,6 @@ use crate::sandbox::{
         transactions::CallMpcContract,
     },
 };
-use mpc_contract::update::UpdateId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractState};
 use rand_core::OsRng;
@@ -138,7 +137,7 @@ async fn test_propose_update_config() {
             .unwrap();
         dbg!(&propose_execution);
         assert!(propose_execution.is_success());
-        let proposal_id: UpdateId = propose_execution.json().unwrap();
+        let proposal_id: u64 = propose_execution.json().unwrap();
         dbg!(&proposal_id);
         proposals.push(proposal_id);
     }
@@ -157,7 +156,7 @@ async fn test_propose_update_config() {
         dbg!(voter.id());
         let execution = voter
             .call_mpc(contract.id())
-            .vote_update(**first_proposal)
+            .vote_update(*first_proposal)
             .await
             .unwrap();
 
@@ -220,8 +219,8 @@ async fn test_invalid_contract_deploy() {
         .unwrap();
     dbg!(&execution);
     assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(&contract, &mpc_signer_accounts, &proposal_id).await;
+    let proposal_id: u64 = execution.json().unwrap();
+    vote_update_till_completion(&contract, &mpc_signer_accounts, proposal_id).await;
 
     // Try calling into state and see if it works after the contract updates with an invalid
     // contract. It will fail in `migrate` so a state rollback on the contract code should have
@@ -265,19 +264,21 @@ async fn test_propose_update_contract_many() {
             execution.is_success(),
             "failed to propose update [i={i}]; {execution:#?}"
         );
-        let proposal_id = execution.json().expect("unable to convert into UpdateId");
+        let proposal_id: u64 = execution
+            .json()
+            .expect("unable to convert into an update id");
         proposals.push(proposal_id);
     }
 
     // Vote for the last proposal
-    vote_update_till_completion(&contract, &mpc_signer_accounts, proposals.last().unwrap()).await;
+    vote_update_till_completion(&contract, &mpc_signer_accounts, *proposals.last().unwrap()).await;
 
     // Ensure all proposals are removed after update
     for proposal in proposals {
         let voter = mpc_signer_accounts.first().unwrap();
         let execution = voter
             .call_mpc(contract.id())
-            .vote_update(*proposal)
+            .vote_update(proposal)
             .await
             .unwrap();
         dbg!(&execution);
@@ -310,7 +311,7 @@ async fn test_vote_update_gas_before_threshold() {
         .unwrap();
 
     assert!(execution.is_success(), "failed to propose update");
-    let proposal_id: UpdateId = execution.json().unwrap();
+    let proposal_id: u64 = execution.json().unwrap();
 
     // Cast votes until threshold is reached (need 6 total votes)
     for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
@@ -455,7 +456,7 @@ async fn only_one_vote_from_participant() {
         .unwrap();
     dbg!(&execution);
     assert!(execution.is_success());
-    let proposal_a: UpdateId = execution.json().unwrap();
+    let proposal_a: u64 = execution.json().unwrap();
 
     let execution = contract_handle
         .propose_update(current_contract_proposal())
@@ -463,11 +464,11 @@ async fn only_one_vote_from_participant() {
         .unwrap();
     dbg!(&execution);
     assert!(execution.is_success());
-    let proposal_b: UpdateId = execution.json().unwrap();
+    let proposal_b: u64 = execution.json().unwrap();
 
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
-        .vote_update(*proposal_a)
+        .vote_update(proposal_a)
         .await
         .unwrap();
     dbg!(&execution);
@@ -477,7 +478,7 @@ async fn only_one_vote_from_participant() {
 
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
-        .vote_update(*proposal_b)
+        .vote_update(proposal_b)
         .await
         .unwrap();
     dbg!(&execution);
@@ -487,7 +488,7 @@ async fn only_one_vote_from_participant() {
 
     let execution = mpc_signer_accounts[1]
         .call_mpc(contract.id())
-        .vote_update(*proposal_a)
+        .vote_update(proposal_a)
         .await
         .unwrap();
     dbg!(&execution);
@@ -497,7 +498,7 @@ async fn only_one_vote_from_participant() {
 
     let execution = mpc_signer_accounts[1]
         .call_mpc(contract.id())
-        .vote_update(*proposal_b)
+        .vote_update(proposal_b)
         .await
         .unwrap();
     dbg!(&execution);

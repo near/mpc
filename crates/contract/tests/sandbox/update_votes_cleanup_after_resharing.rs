@@ -9,9 +9,8 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use mpc_contract::{
-    primitives::{participants::Participants, thresholds::GovernanceThresholdParameters},
-    update::UpdateId,
+use mpc_contract::primitives::{
+    participants::Participants, thresholds::GovernanceThresholdParameters,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
@@ -41,7 +40,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // Propose update and have first 2 participants vote on it
     let code = vec![1u8; 1000];
-    let update_id: UpdateId = mpc_signer_accounts[0]
+    let update_id: u64 = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .propose_update(ProposeUpdateArgs {
             code: Some(code.clone()),
@@ -51,7 +50,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .json()?;
 
     execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| async move {
-        handle.vote_update(*update_id).await
+        handle.vote_update(update_id).await
     })
     .await?;
 
@@ -62,7 +61,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     assert_expected_proposed_update(
         &proposals_before,
-        &update_id,
+        update_id,
         &code,
         &mpc_signer_accounts[0..2],
     );
@@ -113,7 +112,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     assert_expected_proposed_update(
         &proposals_after,
-        &update_id,
+        update_id,
         &code,
         &mpc_signer_accounts[1..2],
     );
@@ -122,7 +121,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let votes_for_update: Vec<_> = proposals_after
         .votes
         .iter()
-        .filter(|(_, uid)| **uid == *update_id)
+        .filter(|(_, uid)| **uid == update_id)
         .map(|(account, _)| account)
         .collect();
     assert_eq!(votes_for_update.len(), 1);
@@ -237,7 +236,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
 
 pub fn assert_expected_proposed_update(
     actual_proposed_updates: &dtos::ProposedUpdates,
-    expected_update_id: &UpdateId,
+    expected_update_id: u64,
     expected_update_code: &[u8],
     expected_voter_accounts: &[Account],
 ) {
@@ -250,13 +249,13 @@ pub fn assert_expected_proposed_update(
     // Build expected votes map
     let expected_votes_map: BTreeMap<dtos::AccountId, u64> = expected_votes
         .into_iter()
-        .map(|account_id| (account_id, **expected_update_id))
+        .map(|account_id| (account_id, expected_update_id))
         .collect();
 
     // Build expected updates map
     let mut expected_updates_map = BTreeMap::new();
     expected_updates_map.insert(
-        **expected_update_id,
+        expected_update_id,
         dtos::UpdateHash::Code(sha2::Sha256::digest(expected_update_code).into()),
     );
 

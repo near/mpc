@@ -25,7 +25,6 @@ use mpc_contract::{
         },
     },
     tee::tee_state::NodeId,
-    update::UpdateId,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
@@ -368,7 +367,7 @@ pub async fn propose_and_vote_contract_binary(
         "propose update call failed"
     );
 
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+    let proposal_id: u64 = propose_update_execution.json().unwrap();
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -381,7 +380,7 @@ pub async fn propose_and_vote_contract_binary(
         .json()
         .expect("state is deserializable.");
 
-    vote_update_till_completion(contract, accounts, &proposal_id).await;
+    vote_update_till_completion(contract, accounts, proposal_id).await;
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
@@ -394,12 +393,12 @@ pub async fn propose_and_vote_contract_binary(
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: &UpdateId,
+    proposal_id: u64,
 ) {
     for voter in accounts {
         let execution = voter
             .call_mpc(contract.id())
-            .vote_update(**proposal_id)
+            .vote_update(proposal_id)
             .await
             .unwrap();
 

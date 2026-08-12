@@ -2,7 +2,6 @@ use crate::sandbox::utils::transactions::CallMpcContract;
 use crate::sandbox::{
     common::SandboxTestSetup, upgrade_from_current_contract::current_contract_proposal,
 };
-use mpc_contract::update::UpdateId;
 use near_mpc_contract_interface::method_names;
 
 #[tokio::test]
@@ -50,7 +49,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .unwrap();
 
     assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
+    let proposal_id: u64 = execution.json().unwrap();
 
     let mut saw_completion = false;
     let mut saw_failure = false;
@@ -58,7 +57,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
     for voter in mpc_signer_accounts {
         let execution = voter
             .call_mpc(contract.id())
-            .vote_update(*proposal_id)
+            .vote_update(proposal_id)
             .await
             .unwrap();
 
