@@ -8848,8 +8848,6 @@ mod tests {
 
     /// Worst case is the longest possible account id. The fee covers this row on top of the
     /// entry; an account's first grant creates it.
-    const WORST_CASE_GRANT_ROW_BYTES: u64 = 194;
-
     fn worst_case_dstack_attestation() -> VerifiedAttestation {
         VerifiedAttestation::Dstack(ValidatedDstackAttestation {
             mpc_image_hash: MAX_HASH.into(),
@@ -8934,29 +8932,16 @@ mod tests {
         );
     }
 
-    /// The prepaid-storage fee is sized from this number plus the entry, so a layout change
-    /// that grows the row must be seen and the fee revisited.
-    #[test]
-    fn grant_row__should_have_the_pinned_size() {
-        // Given / When
-        let bytes_stored = measure_grant_row_bytes();
-
-        // Then
-        assert_eq!(
-            bytes_stored, WORST_CASE_GRANT_ROW_BYTES,
-            "grants row size changed; see this test's doc comment before updating the number"
-        );
-    }
-
-    /// The fee has to cover what one grant actually buys: the worst-case entry plus the grants
-    /// row. Pinning the byte counts alone would not catch a lowered default fee, which breaks
-    /// the same guarantee.
+    /// The fee covers the worst-case entry plus the grants row, and is held to twice that, so
+    /// growth is caught while there is still room rather than once the fee is already breached.
+    /// A failure here is a prompt to re-price, not a broken test.
     ///
     /// Does not guard a votable fee set below the floor, nor a real storage re-pricing —
     /// `storage_byte_cost` is a near-sdk constant, not a protocol read.
     #[test]
-    fn attestation_storage_fee__should_cover_the_entry_and_its_grant_row() {
+    fn attestation_storage_fee__should_keep_double_the_floor() {
         // Given
+        const BUFFER: u128 = 2;
         let floor_bytes =
             measure_stored_entry_bytes(worst_case_mock_attestation()) + measure_grant_row_bytes();
 
@@ -8968,8 +8953,8 @@ mod tests {
 
         // Then
         assert!(
-            floor <= fee,
-            "attestation storage fee ({fee}) must cover the floor \
+            floor.saturating_mul(BUFFER) <= fee,
+            "attestation storage fee ({fee}) must be at least {BUFFER}x the floor \
              ({floor_bytes} bytes, {floor}) at today's storage price"
         );
     }

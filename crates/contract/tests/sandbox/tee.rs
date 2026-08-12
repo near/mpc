@@ -21,9 +21,10 @@ use crate::sandbox::{
 use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Protocol;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_contract_interface::types::{self as dtos, Attestation, Config, MockAttestation};
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
@@ -1058,6 +1059,62 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 /// A new entry is stored by a submission that attaches no deposit, spending a grant prepaid by
 /// an earlier call. "Zero deposit" is about the submitting node, whose function-call key cannot
 /// attach one, not about the storage being free.
+/// Two grants, not one: consuming a single grant deletes the row, so only the entry would be
+/// measured. Charged against the deposit sent rather than the contract's balance growth, which
+/// also includes its share of the gas burnt.
+#[tokio::test]
+async fn prepay_and_submit__should_not_cost_more_storage_than_the_deposit_paid() -> Result<()> {
+    // Given
+    const GRANTS: u32 = 2;
+    const BUFFER: u128 = 2;
+    let SandboxTestSetup {
+        worker, contract, ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let node = worker.dev_create_account().await?;
+    let tls_key = bogus_ed25519_public_key();
+    let config: Config = contract
+        .view(method_names::CONFIG)
+        .args_json(serde_json::json!({}))
+        .await?
+        .json()?;
+    let before = contract.as_account().view_account().await?;
+
+    // When
+    let prepayment = prepay_attestation_grants(&node, &contract, node.id(), GRANTS).await?;
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+    let submission = submit_participant_info(
+        &node,
+        &contract,
+        &Attestation::Mock(MockAttestation::Valid),
+        &tls_key,
+    )
+    .await?;
+    assert!(submission.is_success(), "submission failed: {submission:?}");
+
+    // Then
+    let remaining: u32 = contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": node.id() }))
+        .await?
+        .json()?;
+    assert_eq!(remaining, GRANTS - 1, "the row must outlive the submission");
+
+    let after = contract.as_account().view_account().await?;
+    let grown = after.storage_usage - before.storage_usage;
+    let charged = STORAGE_BYTE_COST_YOCTONEAR.saturating_mul(u128::from(grown));
+    let fee = NearToken::from_millinear(u128::from(config.attestation_storage_fee_millinear))
+        .as_yoctonear();
+    assert!(
+        charged.saturating_mul(BUFFER) <= fee,
+        "one grant's storage grew to {grown} bytes ({charged} yocto); the fee ({fee} yocto) \
+         must stay at least {BUFFER}x that, so growth is caught before it breaches"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_grant() -> Result<()> {
     // Given
