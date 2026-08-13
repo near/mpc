@@ -3841,6 +3841,7 @@ name = "foreign-chain-inspector"
 version = "3.14.0"
 dependencies = [
  "assert_matches",
+ "base64 0.23.0",
  "bs58 0.5.1",
  "derive_more 2.1.1",
  "ethereum-types",
@@ -3878,6 +3879,7 @@ dependencies = [
 name = "foreign-chain-rpc-interfaces"
 version = "3.14.0"
 dependencies = [
+ "base64 0.23.0",
  "derive_more 2.1.1",
  "ethereum-types",
  "http",

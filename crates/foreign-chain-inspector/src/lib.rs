@@ -27,6 +27,7 @@ pub mod hyperevm;
 pub mod polygon;
 pub mod starknet;
 pub mod sui;
+pub mod svm;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -370,6 +371,8 @@ pub enum ForeignChainInspectionError {
     TransactionFailed,
     #[error("transaction not found")]
     TransactionNotFound,
+    #[error("account not found")]
+    AccountNotFound,
     #[error("provided log index is out of bounds")]
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
@@ -448,6 +451,7 @@ impl ForeignChainInspectionError {
             | Self::NonCanonicalBlock { .. }
             | Self::TransactionFailed
             | Self::TransactionNotFound
+            | Self::AccountNotFound
             | Self::LogIndexOutOfBounds => None,
         }
     }
@@ -697,6 +701,7 @@ mod tests {
     )]
     // The transaction's own state is an answer, not a fault of the provider that reported it.
     #[case(ForeignChainInspectionError::TransactionNotFound, None)]
+    #[case(ForeignChainInspectionError::AccountNotFound, None)]
     #[case(ForeignChainInspectionError::TransactionFailed, None)]
     #[case(ForeignChainInspectionError::NotFinalized, None)]
     #[case(ForeignChainInspectionError::NotEnoughBlockConfirmations {
