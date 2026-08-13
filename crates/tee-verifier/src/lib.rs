@@ -67,10 +67,9 @@ impl TeeVerifier {
 }
 
 /// The timestamp quotes are verified against: block time, unless a sandbox test
-/// pinned one under [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`]
-/// (spelled in full because the import is feature-gated). The pin exists
-/// because sandbox chain time is wall-clock and forward-only, so it can never
-/// fall inside the validity window of a checked-in collateral fixture.
+/// pinned one under [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`].
+/// The pin exists because sandbox chain time is wall-clock and forward-only, so it
+/// can never fall inside the validity window of a checked-in collateral fixture.
 fn now_seconds() -> u64 {
     #[cfg(feature = "sandbox-test-hooks")]
     if let Some(bytes) = env::storage_read(SANDBOX_TEST_PINNED_NOW_STORAGE_KEY) {

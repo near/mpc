@@ -203,9 +203,6 @@ args = [
 
 [tasks.build-tee-verifier-optimized]
 description = "Build the tee-verifier WASM for localnet and the E2E tests"
-# `scripts/launch-localnet.sh` tells operators to run this task by hand; with
-# `E2E_SKIP_BUILD` exported it no-ops (cargo-make logs "Skipping Task"), and the E2E
-# loader's panic names this task so a missing WASM points back here.
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
 command = "cargo"
 args = [

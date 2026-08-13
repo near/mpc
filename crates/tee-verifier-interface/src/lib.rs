@@ -194,9 +194,9 @@ pub enum VerificationResult {
 /// verifies against, as u64 little-endian seconds since the Unix epoch.
 ///
 /// Honored only by verifier builds with the `sandbox-test-hooks` feature;
-/// production builds read no storage at all. Tests write it from outside the
-/// contract (state patching), which is why the key must be shared between the
-/// verifier and its callers' test suites rather than staying private.
+/// production builds never read it. Tests write it from outside the contract
+/// (state patching), which is why the key must be shared between the verifier
+/// and its callers' test suites rather than staying private.
 pub const SANDBOX_TEST_PINNED_NOW_STORAGE_KEY: &[u8] = b"sandbox_test_pinned_now_seconds";
 
 #[cfg(test)]
