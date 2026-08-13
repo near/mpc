@@ -47,8 +47,8 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
-`public_data.json` is the endpoint response verbatim, so its collateral byte fields are JSON arrays;
-`collateral.json` holds the same bytes hex-encoded, which is what the fixture parser reads.
+`public_data.json` is the endpoint response verbatim, so its collateral byte fields are arrays, while
+`collateral.json` holds the same bytes hex-encoded for the parser.
 
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
@@ -57,15 +57,12 @@ All files will be written into the specified output directory.
    `report_data` binds it. It is not in `public_data.json`: it lives in `secrets.json`
    inside the CVM, exported by
    [the collection compose](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key).
-   Only a throwaway localnet key may be committed — check that before you do. Secret scanners might
-   flag the file; it is test-only and worthless outside localnet.
+   Only a throwaway localnet key may be committed — check that before you do. Scanners might flag
+   it; it is worthless outside localnet.
 
    ```shell
    cargo nextest run -p test-utils account_secret_key
    ```
-
-   The fixture's `launcher_image_compose.yaml` carries that extra service. Only its hash is
-   verified, so nothing in the verification path is relaxed for it.
 
 6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
@@ -109,5 +106,6 @@ After updating assets, run the crates that consume them:
 
 ```shell
 cargo nextest run --cargo-profile=test-release \
-  -p attestation -p mpc-attestation -p test-utils -p attestation-cli -p tee-verifier -p mpc-contract
+  -p attestation -p mpc-attestation -p test-utils -p attestation-cli -p tee-verifier \
+  -p tee-authority -p mpc-contract
 ```

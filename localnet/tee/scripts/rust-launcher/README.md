@@ -32,23 +32,22 @@ The node env template `../node.env.tpl` also lives here (one level up) and is sh
 
 ## Collecting Test Assets
 
-To regenerate test assets from real TDX attestation, from the repo root on the TDX host. Set up the
-prerequisites and required variables from [single-node-readme.md](single-node-readme.md) first: a
-running localnet in `~/.near/mpc-localnet`, `MACHINE_IP`, and the two image digests.
+To regenerate test assets from real TDX attestation, from the repo root on the TDX host, with the
+prerequisites and required variables from [single-node-readme.md](single-node-readme.md) set up.
 
 ```bash
 export BASE_PATH=/path/to/meta-dstack/dstack
 export WORKDIR=/tmp/mpc-fixture-collection
 
-# Reuse the fixture's current image digests unless changing images: steps 6-7 then stay no-ops.
+# Reuse the fixture's current image digests unless changing images: measurements then stay put.
 COMPOSE_TEMPLATE="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template" \
   bash localnet/tee/scripts/rust-launcher/single-node.sh
 
 cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
 ```
 
-Then follow [the asset regeneration steps](../../../../crates/test-utils/assets/README.md#steps) from
-step 3, which own the rest of the procedure.
+Then follow [the asset regeneration steps](../../../../crates/test-utils/assets/README.md#steps),
+which own the rest of the procedure.
 
 ### Exporting the node's signer key
 
@@ -56,12 +55,11 @@ The node generates its NEAR signer key inside the CVM, and sandbox tests need it
 node. Handing the node a key instead does not work: the measured compose mounts only `mpc-data`.
 
 [export-signer-key-compose.yaml.template](export-signer-key-compose.yaml.template) is the production
-launcher compose plus one service that prints the node's `secrets.json`. Verification only hashes the
-compose, never reads its contents, so exporting this way needs nothing relaxed. Read the key from that
+launcher compose plus one service that prints the node's `secrets.json`. Read the key from that
 service's log, on the agent port `single-node.sh` prints:
 
 ```bash
-curl -s "http://127.0.0.1:$AGENT_PORT/logs/signer-key-export?text&bare" \
+curl -s "http://127.0.0.1:<AGENT_PORT>/logs/signer-key-export?text&bare" \
   | grep -o '"near_signer_key":"[^"]*"'
 ```
 
