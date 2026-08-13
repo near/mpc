@@ -47,41 +47,52 @@ wait_for_alloc() {
         || die "Stopping the rollout — ${job_id} never reported running."
 }
 
-NODE_IMAGE_PREFIX="nearone/mpc-node-gcp:"
+# The MPC node task is the one holding MPC_ACCOUNT_SK — the image repository
+# varies by cluster (mpc-node vs mpc-node-gcp), so never match on its name.
+JQ_MPC_TASKS='.TaskGroups[]?.Tasks[]?
+    | select((((.Env // .Config.env // {}).MPC_ACCOUNT_SK) // "") != "")'
+# Drop a trailing :tag, leaving any registry:port/path prefix intact.
+JQ_REPO_OF='def repo_of: if test(":[^:/]+$") then sub(":[^:/]+$"; "") else . end;'
 
 # The MPC image(s) a job runs; empty for an unrelated job.
 image_in_job() {
-    jq -r --arg prefix "$NODE_IMAGE_PREFIX" \
-        '[.TaskGroups[].Tasks[].Config.image // empty
-         | select(startswith($prefix))] | unique | join(", ")'
+    jq -r "[${JQ_MPC_TASKS} | .Config.image // empty] | unique | join(\", \")"
+}
+
+# Same repository the task already runs, retagged to <version>.
+target_image_for_job() {
+    jq -r "${JQ_REPO_OF} [${JQ_MPC_TASKS} | .Config.image // empty | repo_of]
+        | unique | .[0] // empty" \
+        | sed "s|\$|:$1|"
 }
 
 # Retargets only the MPC task; sidecars and every other field pass through.
 job_with_image() {
-    jq --arg img "$1" --arg prefix "$NODE_IMAGE_PREFIX" \
-        '(.TaskGroups[].Tasks[].Config
-         | select(.image != null and (.image | startswith($prefix)))).image = $img'
+    jq --arg img "$1" "(${JQ_MPC_TASKS} | .Config.image) = \$img"
 }
 
 # The runbook's Definition -> Edit -> Plan -> Run for one job, over the API.
 # Registering is the only write; Nomad then restarts the task on the new image.
 upgrade_nomad_job() {
-    local job_id=$1 image=$2
-    local job current updated
+    local job_id=$1 version=$2
+    local job current image updated
     job=$(nomad_curl GET "/job/${job_id}") || die "Could not fetch job ${job_id}."
     current=$(image_in_job <<<"$job")
 
     # The prefix query also matches unrelated jobs.
     if [[ -z "$current" ]]; then
-        step "==> ${job_id}: no ${NODE_IMAGE_PREFIX}* task found, skipping."
+        step "==> ${job_id}: no MPC node task found, skipping."
         return
     fi
+    image=$(target_image_for_job "$version" <<<"$job")
+    [[ -n "$image" ]] || die "Could not derive the target image for ${job_id}."
     # Makes a re-run after a partial rollout a no-op.
     if [[ "$current" == "$image" ]]; then
         step "==> ${job_id}: already on ${image}, skipping."
         return
     fi
     step "==> ${job_id}: ${current} -> ${image}"
+    check_image_exists "$image"
 
     updated=$(job_with_image "$image" <<<"$job")
 
@@ -123,8 +134,6 @@ resolve_dev_cluster "$NETWORK"
 prompt_nomad_ip
 [[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
 
-IMAGE="nearone/mpc-node-gcp:${VERSION}"
-check_image_exists "$IMAGE"
 JOB_IDS=$(discover_job_ids)
 
 step "==> Local signing keys"
@@ -133,5 +142,5 @@ for job_id in $JOB_IDS; do
 done
 
 for job_id in $JOB_IDS; do
-    upgrade_nomad_job "$job_id" "$IMAGE"
+    upgrade_nomad_job "$job_id" "$VERSION"
 done
