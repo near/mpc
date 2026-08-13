@@ -110,6 +110,8 @@ prompt_http_auth() {
 
 # host:port of a job's running allocation, for MPC_NODE_ADDRS. Static port
 # (NODE_HTTP_PORT) — only the host varies by where Nomad scheduled the job.
+# Prefers the platform's external IP: the client's own address is private, so
+# it only resolves from inside the VPC. Export MPC_NODE_ADDRS to override.
 discover_node_addr() {
     local job_id=$1 alloc_id node_id ip
     alloc_id=$(nomad_curl GET "/job/${job_id}/allocations" \
@@ -118,8 +120,12 @@ discover_node_addr() {
     [[ -n "$alloc_id" ]] || return 1
     node_id=$(nomad_curl GET "/allocation/${alloc_id}" | jq -r '.NodeID // empty') || return 1
     [[ -n "$node_id" ]] || return 1
-    ip=$(nomad_curl GET "/node/${node_id}" \
-        | jq -r '.Attributes["unique.network.ip-address"] // (.HTTPAddr // "" | split(":")[0])') || return 1
+    ip=$(nomad_curl GET "/node/${node_id}" | jq -r '
+        ([(.Attributes // {}) | to_entries[]
+          | select(.key | test("external-ip")) | .value] | first)
+        // (.Attributes // {})["unique.network.ip-address"]
+        // (.HTTPAddr // "" | split(":")[0])
+        // empty') || return 1
     [[ -n "$ip" ]] || return 1
     printf '%s:%s' "$ip" "$NODE_HTTP_PORT"
 }
