@@ -2449,7 +2449,7 @@ expression: abi
             "additionalProperties": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/AuthenticatedParticipantId2"
+                "$ref": "#/definitions/AuthenticatedParticipantId"
               },
               "uniqueItems": true
             }
@@ -3374,14 +3374,6 @@ expression: abi
         },
         "AuthenticatedParticipantId": {
           "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
-          "allOf": [
-            {
-              "$ref": "#/definitions/ParticipantId"
-            }
-          ]
-        },
-        "AuthenticatedParticipantId2": {
-          "description": "This struct is supposed to contain the participant id associated to the account [`env::signer_account_id()`], but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
           "allOf": [
             {
               "$ref": "#/definitions/ParticipantId"
