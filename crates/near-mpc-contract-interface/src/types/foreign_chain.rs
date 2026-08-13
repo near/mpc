@@ -1663,18 +1663,18 @@ pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct SvmTxId(
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        // Schemars has no impl for arrays this long, so `Hex`'s own schema — a hex
-        // string, as for the shorter ids — is named here instead of derived.
         schemars(with = "Hex64Schema")
     )]
     #[serde_as(as = "Hex")]
     pub [u8; 64],
 );
 
-/// The schema `Hex` gives a 64-byte array: a hex string, with the exact length that
-/// schemars cannot express for an array this long.
+/// Hex-string schema for a 64-byte array, which schemars has no
+/// [`JsonSchema`](schemars::JsonSchema) impl for. The `{64}` in the pattern restates the length of
+/// [`SvmTxId`]'s array and has to be kept in step with it by hand: overriding the schema also
+/// overrides the ABI snapshot's view of it, so nothing catches the two disagreeing.
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-pub struct Hex64Schema;
+struct Hex64Schema;
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Hex64Schema {

@@ -248,6 +248,10 @@ instruction data. `instruction_index` addresses the top-level instruction (the `
 flattened inner-instruction list. The extracted value is
 `SvmInnerInstruction { program_id, accounts, data }`, self-contained and provider-independent.
 
+Message-level instructions are not addressable: the initial set covers CPI instructions only. It
+replaces the previously defined `SolanaProgramIdIndex` / `SolanaDataHash`, which no inspector ever
+implemented. `SvmExtractor` is `#[non_exhaustive]`, so a message-level variant can be added later.
+
 `AccountState` reads the account at `pubkey` via `getAccountInfo` at the request's commitment and
 extracts `SvmAccount { owner, data }`. The lamport balance is deliberately left out: anyone can
 credit any account with a bare transfer, so binding the balance in would let a third party
