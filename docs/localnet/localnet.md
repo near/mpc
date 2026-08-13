@@ -504,12 +504,11 @@ n = 0
 for c in sys.argv[1]:
     n = n * 58 + alphabet.index(c)
 print(n.to_bytes(64, "big").hex())' "$SIG")
-jq --arg tx "$TX_HEX" '.request.request.Solana.tx_id = $tx' docs/localnet/args/verify_foreign_tx_solana.json > /tmp/verify_foreign_tx_solana.json \
-  && mv /tmp/verify_foreign_tx_solana.json docs/localnet/args/verify_foreign_tx_solana.json
+jq --arg tx "$TX_HEX" '.request.request.Solana.tx_id = $tx' docs/localnet/args/verify_foreign_tx_solana.json > /tmp/verify_foreign_tx_solana.json
 ```
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_solana.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args /tmp/verify_foreign_tx_solana.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 8. Clean Up

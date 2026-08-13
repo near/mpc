@@ -417,6 +417,63 @@ mod tests {
         }
     }
 
+    fn config_at(rpc_url: &str) -> ForeignChainConfig {
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(5).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            expected_network_fingerprint: None,
+            providers: NonEmptyBTreeMap::new(
+                "only".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: rpc_url.to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        }
+    }
+
+    /// A `getGenesisHash` responder: the method answers a bare base58 string.
+    async fn mock_genesis_hash<'a>(
+        server: &'a MockServer,
+        genesis_hash: &str,
+    ) -> httpmock::Mock<'a> {
+        let body = serde_json::json!({"jsonrpc": "2.0", "result": genesis_hash, "id": 0});
+        server
+            .mock_async(|when, then| {
+                when.method(POST);
+                then.status(200).json_body(body);
+            })
+            .await
+    }
+
+    #[tokio::test]
+    async fn check_all_providers__should_check_each_svm_chain_against_its_own_genesis_hash() {
+        // Given — each provider answers its own chain's genesis hash, so a crossed vector
+        // binding would check solana against fogo's and fail both.
+        let golden = golden::golden_set(Network::Mainnet);
+        let solana_server = MockServer::start_async().await;
+        mock_genesis_hash(&solana_server, golden.solana.unwrap().genesis_hash).await;
+        let fogo_server = MockServer::start_async().await;
+        mock_genesis_hash(&fogo_server, golden.fogo.unwrap().genesis_hash).await;
+        let fc = ForeignChainsConfig {
+            solana: Some(config_at(&solana_server.base_url())),
+            fogo: Some(config_at(&fogo_server.base_url())),
+            ..Default::default()
+        };
+
+        // When
+        let results = check_all_providers(&fc, Network::Mainnet).await;
+
+        // Then
+        for chain in ["solana", "fogo"] {
+            let row = results
+                .iter()
+                .find(|r| r.chain == chain)
+                .unwrap_or_else(|| panic!("missing row for {chain}"));
+            assert_matches!(&row.status, Status::Passed, "{chain}");
+        }
+    }
+
     #[tokio::test]
     async fn check_all_providers__should_skip_configured_but_unsupported_chains() {
         // Given a configured but not-yet-supported chain

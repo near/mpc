@@ -237,6 +237,8 @@ fn classify(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::golden;
+    use crate::network::Network;
     use assert_matches::assert_matches;
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -361,6 +363,8 @@ mod tests {
             ForeignChain::Bnb => &mut chains.bnb,
             ForeignChain::HyperEvm => &mut chains.hyper_evm,
             ForeignChain::Polygon => &mut chains.polygon,
+            ForeignChain::Solana => &mut chains.solana,
+            ForeignChain::Fogo => &mut chains.fogo,
             other => panic!("no config slot wired for `{other:?}`"),
         };
         *slot = Some(config);
@@ -808,6 +812,76 @@ mod tests {
                 "{chain:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_every_svm_chain_on_its_expected_network_as_healthy()
+    {
+        // Given — each chain answers its own genesis hash, so a cross-wired arm would
+        // compare Solana's against Fogo's.
+        let golden = golden::golden_set(Network::Mainnet);
+        let expected = [
+            (ForeignChain::Solana, golden.solana.unwrap().genesis_hash),
+            (ForeignChain::Fogo, golden.fogo.unwrap().genesis_hash),
+        ];
+        let mut servers = Vec::new();
+        let mut config = ForeignChainsConfig::default();
+        for (chain, genesis_hash) in expected {
+            let server = httpmock::MockServer::start_async().await;
+            mock_chain_id(&server, genesis_hash).await;
+            must_put_chain(
+                &mut config,
+                chain,
+                chain_config(
+                    Some(genesis_hash),
+                    one_provider("publicnode", &server.base_url()),
+                ),
+            );
+            servers.push(server);
+        }
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        for (chain, _) in expected {
+            assert_eq!(
+                must_status_of(&report, chain, "publicnode"),
+                ProviderStatus::Healthy,
+                "{chain:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_svm_provider_on_another_network_as_wrong_network()
+     {
+        // Given — a provider on Solana devnet against a mainnet expectation.
+        let mainnet = golden::golden_set(Network::Mainnet).solana.unwrap();
+        let devnet = golden::golden_set(Network::Testnet).solana.unwrap();
+        let server = httpmock::MockServer::start_async().await;
+        mock_chain_id(&server, devnet.genesis_hash).await;
+        let mut config = ForeignChainsConfig::default();
+        must_put_chain(
+            &mut config,
+            ForeignChain::Solana,
+            chain_config(
+                Some(mainnet.genesis_hash),
+                one_provider("publicnode", &server.base_url()),
+            ),
+        );
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Solana, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new(mainnet.genesis_hash),
+                observed: NetworkFingerprint::new(devnet.genesis_hash),
+            }
+        );
     }
 
     #[tokio::test]
