@@ -24,7 +24,9 @@ use foreign_chain_inspector::{
         SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
+    svm::inspector::{SvmChain, SvmInspector},
 };
+use foreign_chain_inspector::{NetworkFingerprint, NetworkFingerprintInspector};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use http::{HeaderName, HeaderValue};
@@ -208,6 +210,30 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
         | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => Ok(()),
         Err(e) => Err(e).context("failed to inspect a transaction from the latest checkpoint"),
     }
+}
+
+/// SVM providers prune historical transactions, so there is no long-lived
+/// reference transaction to pin extracted values against. The check verifies the
+/// provider's chain identity instead: the genesis hash never changes.
+pub async fn check_svm<Chain>(client: HttpClient, expected_genesis_hash: &str) -> anyhow::Result<()>
+where
+    Chain: SvmChain + Send + Sync,
+{
+    let expected: NetworkFingerprint =
+        SvmInspector::<HttpClient, Chain>::canonical_fingerprint(expected_genesis_hash);
+    let inspector = SvmInspector::<HttpClient, Chain>::new(client);
+    let got = inspector
+        .network_fingerprint()
+        .await
+        .context("failed to fetch the genesis hash")?;
+    if got != expected {
+        return Err(Mismatch::ChainId {
+            expected: expected.to_string(),
+            got: got.to_string(),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 pub async fn check_aptos(

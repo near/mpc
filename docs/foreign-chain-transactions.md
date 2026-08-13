@@ -577,8 +577,9 @@ Not every chain has a fingerprint probe. The table lists the ones that do, with 
 |---|---|
 | starknet | `starknet_chainId` |
 | base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` |
+| solana, fogo | `getGenesisHash` |
 
-The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity.
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. An SVM genesis hash is decoded from base58 and re-encoded, which absorbs surrounding whitespace; a value that is not 32 base58 bytes is compared as the provider spelled it.
 
 An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
 
@@ -720,6 +721,8 @@ checkpoint digest — hence the neutral name.
 | bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
 | aptos | ledger chain id, decimal | `"1"` | `"2"` |
 | sui | genesis checkpoint digest, base58 | `"4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S"` | `"69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD"` |
+| solana | genesis hash, base58 | `"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"` | `"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"` (devnet) |
+| fogo | genesis hash, base58 | `"CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"` | `"9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"` |
 
 Every value above was read back from a live provider on that network.
 
@@ -737,8 +740,8 @@ The fingerprint is set per chain rather than once per deployment, so a config ca
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
 
-Only the chains with a fingerprint probe read the field at all — starknet and the EVM chains today,
-the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
+Only the chains with a fingerprint probe read the field at all — starknet, the EVM chains and the
+SVM chains today, the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
 provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads as healthy
 on a dashboard. A chain with no probe yet reports `ProbeNotImplemented` whether the field is set or
 not.

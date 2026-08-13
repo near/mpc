@@ -12,6 +12,7 @@ use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::svm::inspector::{FogoInspector, SolanaInspector};
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
 };
@@ -107,8 +108,20 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                 ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
                 ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
                 ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
-                // TODO(#4003): probe Bitcoin, Aptos, Sui, Solana and Fogo. Ethereum and Ton have
-                // no inspector, so there is nothing to probe them with.
+                ForeignChain::Solana => {
+                    probe_chain(chain, chain_config, |provider| {
+                        Ok(SolanaInspector::new(prepare_jsonrpc(provider)?))
+                    })
+                    .await
+                }
+                ForeignChain::Fogo => {
+                    probe_chain(chain, chain_config, |provider| {
+                        Ok(FogoInspector::new(prepare_jsonrpc(provider)?))
+                    })
+                    .await
+                }
+                // TODO(#4003): probe Bitcoin, Aptos and Sui. Ethereum and Ton have no
+                // inspector, so there is nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });

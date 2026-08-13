@@ -481,6 +481,37 @@ near contract call-function as-transaction mpc-contract.test.near verify_foreign
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
+#### Solana
+
+Solana providers prune historical transactions, so `verify_foreign_tx_solana.json` carries a
+placeholder `tx_id` instead of a pinned one (this is also why the launch script's smoke loop skips
+Solana). Patch in a fresh finalized signature first — the extractor reads an account, not the
+transaction's contents, so any recent successful transaction works as the anchor.
+
+The account it reads is the rent sysvar, chosen because its data never changes. `AccountState`
+observes an account at query time, so every node must see the same bytes: point it at an account
+that mutates and the nodes derive different payload hashes and the request simply times out.
+
+```shell
+# The mint sees a steady stream of *failing* transactions, so filter on `err` rather than
+# taking the most recent signature: a failed anchor makes the node answer TransactionFailed.
+SIG=$(curl -s https://api.mainnet-beta.solana.com -X POST -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress","params":["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",{"limit":50,"commitment":"finalized"}]}' \
+  | jq -r 'first(.result[] | select(.err == null) | .signature)')
+TX_HEX=$(python3 -c 'import sys
+alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+n = 0
+for c in sys.argv[1]:
+    n = n * 58 + alphabet.index(c)
+print(n.to_bytes(64, "big").hex())' "$SIG")
+jq --arg tx "$TX_HEX" '.request.request.Solana.tx_id = $tx' docs/localnet/args/verify_foreign_tx_solana.json > /tmp/verify_foreign_tx_solana.json \
+  && mv /tmp/verify_foreign_tx_solana.json docs/localnet/args/verify_foreign_tx_solana.json
+```
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_solana.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
 ## 8. Clean Up
 Once you're done testing your local MPC network, you may want to clean up the environment to avoid stale data or conflicts during the next run.
 

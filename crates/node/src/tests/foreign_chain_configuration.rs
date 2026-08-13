@@ -60,6 +60,7 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         polygon: None,
         aptos: None,
         sui: None,
+        fogo: None,
     };
     for config in &mut setup.configs {
         config.config.foreign_chains = foreign_chains.clone();

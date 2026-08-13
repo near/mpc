@@ -5,11 +5,13 @@ use foreign_chain_inspector::arbitrum::inspector::ArbitrumExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
+use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
 use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
-use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
+use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
+use foreign_chain_inspector::{EthereumFinality, FanOut, ForeignChainInspector};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
@@ -135,8 +137,21 @@ where
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
                 bail!("ForeignChainRpcRequest::Ethereum is unsupported")
             }
-            dtos::ForeignChainRpcRequest::Solana(_request) => {
-                bail!("ForeignChainRpcRequest::Solana is unsupported")
+            dtos::ForeignChainRpcRequest::Solana(request) => {
+                let inspector = self
+                    .inspectors
+                    .solana
+                    .as_ref()
+                    .context("no inspector configured for Solana")?;
+                execute_svm_request(inspector, request).await?
+            }
+            dtos::ForeignChainRpcRequest::Fogo(request) => {
+                let inspector = self
+                    .inspectors
+                    .fogo
+                    .as_ref()
+                    .context("no inspector configured for Fogo")?;
+                execute_svm_request(inspector, request).await?
             }
             dtos::ForeignChainRpcRequest::Bitcoin(request) => {
                 let inspector = self
@@ -379,6 +394,31 @@ where
         };
         Ok(payload)
     }
+}
+
+async fn execute_svm_request<Chain>(
+    inspector: &FanOut<SvmInspector<HttpClient, Chain>>,
+    request: &dtos::SvmRpcRequest,
+) -> anyhow::Result<Vec<dtos::ExtractedValue>>
+where
+    Chain: SvmChain + Clone + Send + Sync + 'static,
+{
+    let tx_id = request.tx_id.0.into();
+    let finality: SvmFinality = request.finality.clone().try_into()?;
+    let extractors: Vec<SvmExtractor> = request
+        .extractors
+        .iter()
+        .cloned()
+        .map(TryInto::try_into)
+        .collect::<Result<_, _>>()?;
+
+    let extracted_values = inspector
+        .extract(tx_id, finality, extractors)
+        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+        .await
+        .context("timed out during execution of foreign chain request")??;
+
+    Ok(extracted_values.into_iter().map(Into::into).collect())
 }
 
 #[derive(Debug, thiserror::Error)]

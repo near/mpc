@@ -40,6 +40,8 @@ pub struct ForeignChainsConfig {
     pub aptos: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sui: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fogo: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -175,6 +177,7 @@ impl ForeignChainsConfig {
             (self.polygon.as_ref(), dtos::ForeignChain::Polygon),
             (self.aptos.as_ref(), dtos::ForeignChain::Aptos),
             (self.sui.as_ref(), dtos::ForeignChain::Sui),
+            (self.fogo.as_ref(), dtos::ForeignChain::Fogo),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
@@ -626,6 +629,33 @@ ckd:
             .validate()
             .expect("config with sui section should be valid");
         assert!(config.foreign_chains.sui.is_some());
+    }
+
+    #[test]
+    fn config_parsing__should_succeed_with_fogo_section() {
+        // Given
+        let yaml = config_with_chains(
+            r#"
+  fogo:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://testnet.fogo.io"
+        auth:
+          kind: none
+"#,
+        );
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with fogo section should be valid");
+        assert!(config.foreign_chains.fogo.is_some());
     }
 
     #[test]

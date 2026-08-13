@@ -22,6 +22,7 @@ use foreign_chain_inspector::evm::inspector::EvmChain;
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
+use foreign_chain_inspector::svm::inspector::{Fogo, Solana, SvmChain};
 use foreign_chain_inspector::{RpcAuthentication, build_http_client};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
@@ -32,7 +33,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 pub use network::Network;
 pub use results::{ProviderResult, Status};
 
-use crate::golden::{AptosVector, BlockHashVector, SuiVector};
+use crate::golden::{AptosVector, BlockHashVector, SuiVector, SvmVector};
 
 /// Probe every configured provider against `network`'s golden reference
 /// transaction, one [`ProviderResult`] per provider, each checked independently.
@@ -98,17 +99,22 @@ pub async fn check_all_providers(
     } else {
         mark_not_configured("sui", &mut out);
     }
+    if let Some(cfg) = &fc.solana {
+        run_svm::<Solana>("solana", cfg, golden.solana, network, &mut out).await;
+    } else {
+        mark_not_configured("solana", &mut out);
+    }
+    if let Some(cfg) = &fc.fogo {
+        run_svm::<Fogo>("fogo", cfg, golden.fogo, network, &mut out).await;
+    } else {
+        mark_not_configured("fogo", &mut out);
+    }
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
     if let Some(cfg) = &fc.ethereum {
         mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
     } else {
         mark_not_configured("ethereum", &mut out);
-    }
-    if let Some(cfg) = &fc.solana {
-        mark_skipped("solana", cfg, "not yet supported by the node", &mut out);
-    } else {
-        mark_not_configured("solana", &mut out);
     }
 
     out
@@ -313,6 +319,41 @@ async fn run_sui(
     }
 }
 
+/// Like Sui, SVM providers prune historical transactions; the golden check verifies the
+/// provider's chain identity — see [`checks::check_svm`].
+async fn run_svm<Chain>(
+    chain: &'static str,
+    cfg: &ForeignChainConfig,
+    vector: Option<SvmVector>,
+    network: Network,
+    out: &mut Vec<ProviderResult>,
+) where
+    Chain: SvmChain + Send + Sync,
+{
+    let Some(vector) = vector else {
+        mark_skipped(chain, cfg, &no_reference_reason(network), out);
+        return;
+    };
+    let timeout = timeout_of(cfg);
+    for (name, provider) in cfg.providers.iter() {
+        let status = match prepare_jsonrpc(provider) {
+            Err(e) => Status::Failed(format!("{e:#}")),
+            Ok(client) => {
+                run_check(
+                    timeout,
+                    checks::check_svm::<Chain>(client, vector.genesis_hash),
+                )
+                .await
+            }
+        };
+        out.push(ProviderResult {
+            chain,
+            provider: provider_name(name),
+            status,
+        });
+    }
+}
+
 fn prepare_sui(
     provider: &ForeignChainProviderConfig,
     timeout: Duration,
@@ -418,8 +459,9 @@ mod tests {
             "starknet",
             "aptos",
             "sui",
-            "ethereum",
             "solana",
+            "fogo",
+            "ethereum",
         ];
         for chain in expected {
             let row = results
