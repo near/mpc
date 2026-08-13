@@ -19,15 +19,7 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
 /// increases unexpectedly in the future.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(50);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
-pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
-pub const GAS_FOR_VOTE_CANCEL_RESHARING: Gas = Gas::from_tgas(5);
-pub const GAS_FOR_VOTE_NEW_DOMAIN: Gas = Gas::from_tgas(22);
-pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
-/// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
-/// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
-/// room for further optimization.
-pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(260);
 /// Gas required for votes cast before the threshold is reached (votes 1 through N-1).
 /// These votes are cheap because they only record the vote without triggering the actual
 /// contract update deployment and migration.
