@@ -165,7 +165,8 @@ verify_nodes() {
     require_cmds curl
     [[ -n "${MPC_NODE_ADDRS:-}" ]] || die "MPC_NODE_ADDRS is not set (e.g. \"host:8080 host:8080\")."
 
-    local addr info matched=0 fail=0 try fetch
+    local addr info try fetch
+    local -a upgraded=() stale=() unreachable=()
     for addr in ${MPC_NODE_ADDRS}; do
         # Internal-only plain HTTP; no TLS endpoint exists.
         # nosemgrep: trailofbits.generic.curl-unencrypted-url.curl-unencrypted-url
@@ -177,14 +178,24 @@ verify_nodes() {
             [[ "$info" != *"release=\"${version}\""* ]] || break
             if (( try < 3 )); then sleep 5; fi
         done
-        if [[ -z "$info" ]]; then echo "  (unreachable)"; fail=1; continue; fi
+        if [[ -z "$info" ]]; then echo "  (unreachable)"; unreachable+=("$addr"); continue; fi
         echo "  $info"
-        if [[ "$info" == *"release=\"${version}\""* ]]; then matched=1; else fail=1; fi
+        if [[ "$info" == *"release=\"${version}\""* ]]; then
+            upgraded+=("$addr")
+        else
+            stale+=("$addr")
+        fi
     done
-    if [[ "$fail" -eq 0 && "$matched" -eq 1 ]]; then
+
+    # Unreachable is a visibility problem, not an upgrade failure — the dev
+    # nodes sit on internal IPs, so report it separately from a version miss.
+    (( ! ${#stale[@]} )) || warn "Not yet on ${version}: ${stale[*]}"
+    (( ! ${#unreachable[@]} )) || \
+        warn "Could not reach (upgrade state unknown): ${unreachable[*]}"
+    if (( ${#upgraded[@]} && ! ${#stale[@]} && ! ${#unreachable[@]} )); then
         ok "All nodes report release=\"${version}\"."
-    else
-        warn "Not all nodes are on ${version} yet."
+    elif (( ${#upgraded[@]} )); then
+        ok "${#upgraded[@]} node(s) report release=\"${version}\"."
     fi
 }
 
