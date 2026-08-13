@@ -141,6 +141,26 @@ upgrade_nomad_job() {
     wait_for_alloc "$job_id"
 }
 
+# An unpublished tag would leave the swapped jobs unable to start.
+check_image_exists() {
+    local image=$1
+    if ! command -v skopeo >/dev/null 2>&1; then
+        warn "WARNING: skopeo not found, skipping existence check for ${image}."
+        return 0
+    fi
+    skopeo inspect --no-creds --format '{{.Digest}}' "docker://${image}" >/dev/null \
+        || die "${image} not found on Docker Hub — is the release published?"
+}
+
+# IDs of every mpc-node-* job on the cluster.
+discover_job_ids() {
+    local ids
+    ids=$(nomad_curl GET "/jobs?prefix=mpc-node" | jq -r '.[].ID') \
+        || die "Could not list jobs from ${NOMAD_ADDR}."
+    [[ -n "$ids" ]] || die "No mpc-node-* jobs found at ${NOMAD_ADDR}."
+    printf '%s' "$ids"
+}
+
 [[ $# -eq 2 ]] || die "Usage: $0 <testnet|mainnet> <VERSION>  (e.g. testnet 3.14.0)"
 NETWORK=$1
 VERSION=$2
@@ -151,18 +171,8 @@ prompt_nomad_ip
 [[ -n "${NOMAD_HTTP_AUTH+set}" ]] || prompt_http_auth
 
 IMAGE="nearone/mpc-node-gcp:${VERSION}"
-
-# An unpublished tag would leave the swapped jobs unable to start.
-if command -v skopeo >/dev/null 2>&1; then
-    skopeo inspect --no-creds --format '{{.Digest}}' "docker://${IMAGE}" >/dev/null \
-        || die "${IMAGE} not found on Docker Hub — is the release published?"
-else
-    warn "WARNING: skopeo not found, skipping existence check for ${IMAGE}."
-fi
-
-JOB_IDS=$(nomad_curl GET "/jobs?prefix=mpc-node" | jq -r '.[].ID') \
-    || die "Could not list jobs from ${NOMAD_ADDR}."
-[[ -n "$JOB_IDS" ]] || die "No mpc-node-* jobs found at ${NOMAD_ADDR}."
+check_image_exists "$IMAGE"
+JOB_IDS=$(discover_job_ids)
 
 step "==> Local signing keys"
 for job_id in $JOB_IDS; do
