@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# common.sh — generic helpers shared by the ops scripts (source, don't run).
-# Dev-cluster-specific helpers live in dev-cluster/dev-common.sh.
+# common.sh — generic helpers shared by the release/ops scripts and
+# launch-localnet (source, don't run). Dev-cluster helpers live in
+# ops/dev-cluster/dev-common.sh.
 #
 
 # Only when both streams are terminals, so redirected output stays clean.
