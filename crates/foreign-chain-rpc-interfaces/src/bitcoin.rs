@@ -100,7 +100,8 @@ impl ToRpcParams for &GetBlockHashArgs {
 /// RPC response for `getblockhash`: a block hash in the byte order block explorers render.
 /// <https://developer.bitcoin.org/reference/rpc/getblockhash.html>
 ///
-/// Kept as text rather than parsed into a [`TransportBitcoinBlockHash`].
+/// Kept as text since we need to preserve the exact provider response, which might not be a
+/// [`TransportBitcoinBlockHash`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(transparent)]
 pub struct GetBlockHashResponse(pub String);

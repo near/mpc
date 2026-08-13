@@ -119,7 +119,8 @@ struct GetBlockVerbosityOneResponse {
     tx: Vec<String>,
 }
 
-/// Bitcoin mainnet's genesis block hash, as shipped in `expected_network_fingerprint`.
+/// Bitcoin mainnet's genesis block hash, as shipped in the node config file
+/// `foreign_chains.bitcoin.expected_network_fingerprint`.
 const EXPECTED_NETWORK_FINGERPRINT: &str =
     "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
 
