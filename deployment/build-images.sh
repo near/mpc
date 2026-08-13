@@ -101,9 +101,12 @@ find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
 
 buildkit_version="0.27.1"
 buildkit_image_name="buildkit_${buildkit_version}"
+# Digest of moby/buildkit:v${buildkit_version}; a re-pushed tag would change the
+# build output, so the builder is pinned by digest like the skopeo image below.
+buildkit_digest="sha256:1e110c71d389d6d24f67b9438e2f7b8da749a6ff407b22a1631e025c95599368"
 
 if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
-    docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
+    docker buildx create --use --driver-opt image=moby/buildkit@${buildkit_digest} --name ${buildkit_image_name}
 else
     # A reused builder may hold a stale local-context cache: buildkit keys
     # context changes on (size, mtime), but the touch above resets mtime, so a
@@ -135,8 +138,7 @@ build_reproducible_image() {
 # skopeo re-gzips every layer here, so the manifest digest depends on the
 # deflate library its binary was linked against rather than on its version
 # string: Ubuntu 26.04's package (klauspost/compress 1.18.1) emits different
-# bytes than 24.04's (1.17.7) for identical input. Pin the whole build by
-# digest, like the buildkit image above.
+# bytes than 24.04's (1.17.7) for identical input. Pin the build by digest.
 skopeo_image="quay.io/skopeo/stable:v1.22.2@sha256:c7d3c512612f52805023cd38351081dad7e2729fc13d14b701e47c7c8bdd6615"
 
 # Compress a built image tar via skopeo to a temp directory.
@@ -149,7 +151,7 @@ skopeo_compress() {
     # Compress the image to a local directory, which implicitly computes
     # the manifest digest in $td/manifest.json
     podman run --rm \
-      -v "${tar_path}:/image.tar:ro" -v "${td}:/out" \
+      -v "${tar_path}:/image.tar:ro,z" -v "${td}:/out:z" \
       "${skopeo_image}" \
       copy --all --dest-compress docker-archive:/image.tar dir:/out >&2
     echo "$td"

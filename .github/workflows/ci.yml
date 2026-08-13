@@ -89,10 +89,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y liblzma-dev repro-env
 
-      - name: Build Rust launcher docker image and verify its hash
+      - name: Build Rust launcher docker image
         shell: bash
         run: |
-          ./scripts/build-and-verify-rust-launcher-docker-image.sh
+          ./deployment/build-images.sh --rust-launcher
 
       - name: Run Rust launcher non-TEE runtime check
         shell: bash
