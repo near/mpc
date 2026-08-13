@@ -170,21 +170,19 @@ scripted parts of a release. It offers two things:
 2. **migrate devnet cluster** — rolls a published release out to a NEAR One dev
    cluster via [`scripts/ops/dev-cluster/dev-menu.sh`](./scripts/ops/dev-cluster/dev-menu.sh).
 
-The dev-cluster flow asks for the network (testnet first, then mainnet), the
-version, and the cluster's Nomad IP and credentials, then swaps each
-`mpc-node-*` Nomad job to the release image (plan, confirm, run) and checks the
-nodes report the new `release=` in their build info.
+Given a network and release version, the dev-cluster flow retags every
+`mpc-node-*` Nomad job (plan, confirm, run), checks the nodes report the new
+`release=`, and offers a test signature. Each job keeps its own image
+repository; the MPC task is found by the `MPC_ACCOUNT_SK` it carries, never by
+its image name.
 
 Every command is printed before it runs and every write is behind a
-confirmation prompt, so a run can be stopped at any step. Nothing
-cluster-specific is stored in this repo; addresses and credentials are typed in
-per run, or supplied through the per-network `NOMAD_ADDR_DEV_*`,
-`NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*` environment variables to
-skip the matching prompt. The on-chain steps sign with near-cli; the node step
-reads each member account's `MPC_ACCOUNT_SK` from its Nomad job definition and
-writes the near-cli keystore files directly (deriving the public key from the
-secret key), so the later signing steps can run. Keys never appear on the
-command line or in the echoed output.
+confirmation prompt. Addresses and credentials stay out of this repo: the Nomad
+URL and credentials are typed in per run, node addresses come from Nomad, and
+the member keys are read from the job definitions into the near-cli keystore —
+never reaching the command line or the echoed output. The per-network
+`NOMAD_ADDR_DEV_*`, `NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*`
+variables skip the matching step.
 
 ## Re-running after a failure
 

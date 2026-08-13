@@ -108,10 +108,8 @@ prompt_http_auth() {
         || warn "Note: these credentials will be sent over plain HTTP (${NOMAD_ADDR:-})."
 }
 
-# host:port of a job's running allocation, for MPC_NODE_ADDRS. Static port
-# (NODE_HTTP_PORT) — only the host varies by where Nomad scheduled the job.
-# Prefers the platform's external IP: the client's own address is private, so
-# it only resolves from inside the VPC. Export MPC_NODE_ADDRS to override.
+# host:port of a job's running allocation, for MPC_NODE_ADDRS. Prefers the
+# platform's external IP — the client's own address only resolves inside the VPC.
 discover_node_addr() {
     local job_id=$1 alloc_id node_id ip
     alloc_id=$(nomad_curl GET "/job/${job_id}/allocations" \
@@ -155,9 +153,7 @@ prompt_node_addrs() {
 
 # Whether a credential is configured — never the credential itself.
 nomad_auth_state() {
-    if [[ -z "${NOMAD_HTTP_AUTH+set}" ]]; then echo "(will prompt)"
-    elif [[ -n "$NOMAD_HTTP_AUTH" ]]; then echo "(set)"
-    else echo "(none)"; fi
+    if [[ -n "${NOMAD_HTTP_AUTH:-}" ]]; then echo "(set)"; else echo "(none)"; fi
 }
 
 # Probes the legacy ~/.near-credentials layout; first-time-setup.sh writes here.

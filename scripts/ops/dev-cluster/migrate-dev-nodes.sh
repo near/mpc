@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# migrate-dev-nodes.sh — Step 1 of a dev-cluster upgrade: swap every
-# mpc-node-* Nomad job to nearone/mpc-node-gcp:<VERSION> — plan, confirm, run.
-# Verification is the caller's job (dev-menu.sh runs it next).
+# migrate-dev-nodes.sh — Step 1 of a dev-cluster upgrade: retag every
+# mpc-node-* Nomad job to <VERSION> — plan, confirm, run. Each job keeps its
+# own image repository. Verification is the caller's job (dev-menu.sh does it).
 #
 # Usage: ./scripts/ops/dev-cluster/migrate-dev-nodes.sh <testnet|mainnet> <VERSION>
-# The Nomad IP address and its basic-auth credentials are prompted for. Exporting
+# The Nomad URL and its basic-auth credentials are prompted for. Exporting
 # NOMAD_ADDR / NOMAD_HTTP_AUTH="user:password" skips the matching prompt;
 # NOMAD_TOKEN adds an ACL token header; NOMAD_NAMESPACE targets that namespace.
 # Member-account keys found in the job definitions are imported into the local
@@ -79,7 +79,7 @@ upgrade_nomad_job() {
     job=$(nomad_curl GET "/job/${job_id}") || die "Could not fetch job ${job_id}."
     current=$(image_in_job <<<"$job")
 
-    # The prefix query also matches unrelated jobs.
+    # The mpc-node prefix search also matches jobs that run no MPC task.
     if [[ -z "$current" ]]; then
         step "==> ${job_id}: no MPC node task found, skipping."
         return
