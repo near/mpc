@@ -56,24 +56,23 @@ All files will be written into the specified output directory.
    `ed25519:<base58>`). Tests sign as the fixture node with it, since the quote's
    `report_data` binds it. It is not in `public_data.json`: it lives in `secrets.json`
    inside the CVM, exported by
-   [the key-export hook](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key).
+   [the collection compose](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key).
    Only a throwaway localnet key may be committed — check that before you do.
 
    ```shell
    cargo nextest run -p test-utils account_secret_key
    ```
 
-   That hook makes the fixture's app-compose carry a `pre_launch_script`, which production
-   rejects, so tests need `attestation/allow-pre-launch-script`. This fixture is not an
-   example of a production-valid attestation.
+   The fixture's `launcher_image_compose.yaml` carries that extra service. Only its hash is
+   verified, so nothing in the verification path is relaxed for it.
 
 6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
    This is optional — the tests only verify parsing, not measurement values — but keeping it
    in sync avoids confusion.
 
-7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`. Skippable when only the
-   app-compose changed: these cover `mrtd` and `rtmr0`-`rtmr2`, while the app-compose feeds `rtmr3`.
+7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`. Skippable unless the OS
+   image changed: these cover `mrtd` and `rtmr0`-`rtmr2`, none of which the compose files affect.
    - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
    - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
 
@@ -105,19 +104,9 @@ All files will be written into the specified output directory.
 
 ## Tests that depend on these assets
 
-After updating assets, these tests should pass:
+After updating assets, run the crates that consume them:
 
 ```shell
-cargo test -p mpc-contract test_submit_participant_info_succeeds_with_valid_dstack_attestation
-cargo test -p mpc-contract test_tee_attestation_fails_with_invalid_tls_key
-cargo test -p mpc-contract test_submit_participant_info_fails_without_approved_mpc_hash
-cargo test -p mpc-contract test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation
-cargo test -p test-utils
-```
-
-The cross-contract sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`
-also depend on these assets:
-
-```shell
-cargo nextest run --cargo-profile=test-release -p mpc-contract tee_verifier
+cargo nextest run --cargo-profile=test-release \
+  -p attestation -p mpc-attestation -p test-utils -p attestation-cli -p tee-verifier -p mpc-contract
 ```

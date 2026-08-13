@@ -40,8 +40,8 @@ running localnet in `~/.near/mpc-localnet`, `MACHINE_IP`, and the two image dige
 export BASE_PATH=/path/to/meta-dstack/dstack
 export WORKDIR=/tmp/mpc-fixture-collection
 
-# Reuse the fixture's current image digests unless changing images: steps 6-7 below then stay no-ops.
-PRELAUNCH_SCRIPT="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh" \
+# Reuse the fixture's current image digests unless changing images: steps 6-7 then stay no-ops.
+COMPOSE_TEMPLATE="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template" \
   bash localnet/tee/scripts/rust-launcher/single-node.sh
 
 cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
@@ -55,23 +55,15 @@ step 3, which own the rest of the procedure.
 The node generates its NEAR signer key inside the CVM, and sandbox tests need it to sign as the fixture
 node. Handing the node a key instead does not work: the measured compose mounts only `mpc-data`.
 
-[export-signer-key-prelaunch.sh](export-signer-key-prelaunch.sh) waits for `secrets.json` and echoes it
-to the console, the guest's only way out — the shared dir is mounted read-only. Read it from the new
-VM's log under the vmm's `run_path`:
+[export-signer-key-compose.yaml.template](export-signer-key-compose.yaml.template) is the production
+launcher compose plus one service that prints the node's `secrets.json`. Verification only hashes the
+compose, never reads its contents, so exporting this way needs nothing relaxed. Read the key from that
+service's log, on the agent port `single-node.sh` prints:
 
 ```bash
-grep -o '"near_signer_key":"[^"]*"' "$(dirname "$BASE_PATH")/build/run/vm"/*/serial.log
+curl -s "http://127.0.0.1:$AGENT_PORT/logs/signer-key-export?text&bare" \
+  | grep -o '"near_signer_key":"[^"]*"'
 ```
 
-Put that value into `crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`).
+Put the value into `crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`).
 Only ever do this for a throwaway localnet node: the key ends up in the repo.
-
-The script is a copy of what the committed app-compose carries, so after editing either one:
-
-```bash
-diff <(jq -j '.pre_launch_script' crates/test-utils/assets/app_compose.json) \
-    localnet/tee/scripts/rust-launcher/export-signer-key-prelaunch.sh
-```
-
-Replacing it with a different hook: BusyBox guest, built-ins and globs only, `/etc` the writable path,
-and the wait needs its own systemd unit or it is reaped with `app-compose.service`'s cgroup.

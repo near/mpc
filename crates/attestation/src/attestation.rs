@@ -34,11 +34,6 @@ pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
 
-/// Whether an app-compose may carry a `pre_launch_script`. False in production; test builds allow it
-/// to verify the committed fixture, whose app-compose carries the hook that exported
-/// `crates/test-utils/assets/near_account_secret_key`.
-const PRE_LAUNCH_SCRIPT_ALLOWED: bool = cfg!(feature = "allow-pre-launch-script");
-
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct DstackAttestation {
@@ -414,7 +409,11 @@ impl DstackAttestation {
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            && (PRE_LAUNCH_SCRIPT_ALLOWED || app_compose.pre_launch_script.is_none())
+            // Reject all three arbitrary-root-code fields. `pre_launch_script` and `init_script` run
+            // unconditionally; `bash_script` only runs when `runner == "bash"` (so the runner pin
+            // above already neutralizes it), but we reject it explicitly so the guarantee does not
+            // silently depend on that pin.
+            && app_compose.pre_launch_script.is_none()
             && app_compose.init_script.is_none()
             && app_compose.bash_script.is_none()
     }
@@ -621,25 +620,32 @@ mod tests {
     }
 
     #[test]
-    fn validate_app_compose_config__should_accept_the_committed_fixture_with_its_hook_cleared() {
+    fn validate_app_compose_config__should_accept_the_committed_fixture() {
         // Given
         let fixture: AppCompose =
             serde_json::from_str(test_utils::attestation::TEST_APP_COMPOSE_STRING)
                 .expect("the fixture app-compose parses");
-        assert!(
-            fixture.pre_launch_script.is_some(),
-            "the fixture is expected to carry the export hook"
-        );
-        let without_hook = AppCompose {
-            pre_launch_script: None,
-            ..fixture
-        };
 
         // When
-        let result = DstackAttestation::validate_app_compose_config(&without_hook);
+        let result = DstackAttestation::validate_app_compose_config(&fixture);
 
         // Then
         assert!(result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__rejects_present_pre_launch_script() {
+        // Given
+        let app_compose = AppCompose {
+            pre_launch_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        };
+
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(!result)
     }
 
     #[test]

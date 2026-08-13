@@ -14,7 +14,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMPOSE_TEMPLATE="$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template"
+COMPOSE_TEMPLATE="${COMPOSE_TEMPLATE:-$REPO_ROOT/crates/contract/assets/launcher_docker_compose.yaml.template}"
 
 check_ports_in_use() {
     PORT_VARS="
@@ -262,18 +262,6 @@ case $SEALING_KEY_TYPE in
 esac
 
 
-# Optional script baked into the app-compose and run as root in the CVM before docker compose up.
-# Only fixture collection sets it: attestation rejects an app-compose carrying a script.
-PRELAUNCH_ARGS=()
-if [ -n "${PRELAUNCH_SCRIPT:-}" ]; then
-  if [ ! -f "$PRELAUNCH_SCRIPT" ]; then
-    echo "Error: PRELAUNCH_SCRIPT '$PRELAUNCH_SCRIPT' does not exist"
-    exit 1
-  fi
-  echo "WARNING: baking '$PRELAUNCH_SCRIPT' into the app-compose; this CVM will FAIL attestation."
-  PRELAUNCH_ARGS=(--prelaunch-script "$PRELAUNCH_SCRIPT")
-fi
-
 echo -e "\nCreating app-compose.json..."
 $CLI compose \
   --docker-compose "$COMPOSE_TMP" \
@@ -282,7 +270,6 @@ $CLI compose \
   --public-logs \
   --public-sysinfo \
   --no-instance-id \
-  "${PRELAUNCH_ARGS[@]}" \
   --output .app-compose.json
 
 echo "app-compose.json"

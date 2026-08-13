@@ -90,7 +90,7 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
                 "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
             ),
             mr_config_id: hex_arr(
-                "0104bd0ce0eed233aec7ab0b5f004d5171cd2d3145aff14a4786dfc2f73fa77ca4000000000000000000000000000000",
+                "012911e1f733466216dedb862d6d669e11256ee7a34ce4dbc66c4b807ba7a9c895000000000000000000000000000000",
             ),
             mr_owner: hex_arr(
                 "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -108,10 +108,10 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
                 "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93",
             ),
             rt_mr3: hex_arr(
-                "3d8dbe8355221951144991ec9772dd8a21f302aa356d60a2a5c9e1d44b074414b0fbcc86eb031029dc7a9375add104bc",
+                "86f1808cffc050f3c0c09d29da2bfcec7eba3e8fa52016a7341f28884230f9ca8b56400413d57bce00b578e36790b555",
             ),
             report_data: hex_arr(
-                "000166f20e6af9185da5035d6c9eeebf6469b32996180043fa551a962f0c28683630a795791cbdebd82b205290f8e03df1c70000000000000000000000000000",
+                "0001e4faaedae8199148eb0fe1cc9a52ecbb09045014a11342b85ed8bd727a03ceb03ccb16857e2ba693145050f84cb2f7580000000000000000000000000000",
             ),
         }),
         ppid: hex::decode("d208dfb1002346ae1bb4ef2a3c055292").unwrap(),

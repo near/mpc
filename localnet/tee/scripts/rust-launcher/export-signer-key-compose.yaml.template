@@ -2,14 +2,14 @@ version: '3.8'
 
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:5618a93a78c9ac9173e7ebf7c8af173bd675be6832a2f8c2a9a7149ac2678f54
+    image: nearone/mpc-launcher@sha256:{{LAUNCHER_IMAGE_HASH}}
 
     container_name: launcher
 
     environment:
       - PLATFORM=TEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:564a5aebc33495d5610626d23cb9e3da8e9d531d0edff9e38aa1ccaf059c15d3
+      - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -28,7 +28,7 @@ services:
   # Prints the node's in-enclave signer key so fixture collection can commit it. Reuses the launcher
   # image to avoid pulling anything unpinned.
   signer-key-export:
-    image: nearone/mpc-launcher@sha256:5618a93a78c9ac9173e7ebf7c8af173bd675be6832a2f8c2a9a7149ac2678f54
+    image: nearone/mpc-launcher@sha256:{{LAUNCHER_IMAGE_HASH}}
 
     container_name: signer-key-export
 
