@@ -2317,8 +2317,17 @@ impl MpcContract {
     /// Returns the pending TEE verifier-change votes, keyed by proposal.
     pub fn tee_verifier_votes(
         &self,
-    ) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
-        self.tee_verifier_votes.pending()
+    ) -> BTreeMap<ProposalHash, BTreeSet<dtos::AuthenticatedParticipantId>> {
+        self.tee_verifier_votes
+            .pending()
+            .iter()
+            .map(|(proposal, voters)| {
+                (
+                    *proposal,
+                    voters.iter().map(|v| v.into_dto_type()).collect(),
+                )
+            })
+            .collect()
     }
 
     /// Returns the trusted TEE verifier contract account, or [`None`] until
@@ -4514,7 +4523,7 @@ mod tests {
             };
             (
                 ProposalHash::from(proposal),
-                BTreeSet::from([voter.clone()]),
+                BTreeSet::from([voter.into_dto_type()]),
             )
         };
 
