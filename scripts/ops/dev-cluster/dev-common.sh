@@ -1,13 +1,63 @@
 #!/usr/bin/env bash
 #
-# dev-common.sh — helpers specific to the NEAR One dev clusters (source, don't
-# run). Generic helpers live in ../common.sh.
+# dev-common.sh — helpers specific to the NEAR One dev clusters, including the
+# Nomad HTTP client (source, don't run). Generic helpers live in ../common.sh.
 #
 # MPC_SIGN_WITH overrides the signer (default sign-with-legacy-keychain, which
 # reads the ~/.near-credentials files first-time-setup.sh writes).
 #
 
 SIGN_WITH="${MPC_SIGN_WITH:-sign-with-legacy-keychain}"
+# The node's web server (routes /metrics and /public_data) — static port in
+# every mpc-node-* job spec, so it never needs discovering, only the host.
+NODE_HTTP_PORT="${MPC_NODE_HTTP_PORT:-8080}"
+
+# curl -K parses values as quoted strings with backslash escapes.
+curl_cfg_escape() {
+    local s=${1//\\/\\\\}
+    printf '%s' "${s//\"/\\\"}"
+}
+
+# Echoes the request, and the response for mutations. Never the credentials.
+nomad_curl() {
+    local method=$1 path=$2 data=${3:-}
+    local url="${NOMAD_ADDR%/}/v1${path}"
+    # The API ignores the NOMAD_NAMESPACE env var (a nomad-CLI feature).
+    if [[ -n "${NOMAD_NAMESPACE:-}" ]]; then
+        local sep="?"; [[ "$url" != *\?* ]] || sep="&"
+        url+="${sep}namespace=${NOMAD_NAMESPACE}"
+    fi
+    # --fail-with-body (curl >= 7.76): plain -f discards Nomad's error body.
+    local args=(-sS --fail-with-body --max-time 30 -X "$method" "$url")
+    [[ -z "$data" ]] || args+=(-H 'Content-Type: application/json' --data-binary @-)
+
+    show_cmd curl -X "$method" "$url" ${data:+--data-binary @-}
+
+    # Secrets not on argv: credentials via config stream, body via stdin.
+    local config=""
+    [[ -z "${NOMAD_HTTP_AUTH:-}" ]] || config+="user = \"$(curl_cfg_escape "$NOMAD_HTTP_AUTH")\""$'\n'
+    [[ -z "${NOMAD_TOKEN:-}" ]] || config+="header = \"X-Nomad-Token: $(curl_cfg_escape "$NOMAD_TOKEN")\""$'\n'
+
+    local response status=0
+    response=$(printf '%s' "$data" | curl -K <(printf '%s' "$config") "${args[@]}") || status=$?
+    if (( status != 0 )); then
+        [[ -z "$response" ]] || show_output "$response"
+        return "$status"
+    fi
+
+    # GET bodies are whole job definitions — too noisy to echo.
+    [[ "$method" == GET ]] || show_output "$response"
+    printf '%s' "$response"
+}
+
+# IDs of every mpc-node-* job on the cluster.
+discover_job_ids() {
+    local ids
+    ids=$(nomad_curl GET "/jobs?prefix=mpc-node" | jq -r '.[].ID') \
+        || die "Could not list jobs from ${NOMAD_ADDR}."
+    [[ -n "$ids" ]] || die "No mpc-node-* jobs found at ${NOMAD_ADDR}."
+    printf '%s' "$ids"
+}
 
 # Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT and re-points endpoint
 # vars from per-cluster exports; network choice drives every step.
@@ -32,12 +82,12 @@ resolve_dev_cluster() {
 prompt_nomad_ip() {
     local label=${1:-target} input scheme
     while [[ -z "${NOMAD_ADDR:-}" ]]; do
-        read -rp "Nomad IP address for the ${label} dev cluster: " input
+        read -rp "Nomad URL for the ${label} dev cluster: " input
         # Tolerate pasted URL; preserve HTTPS, never downgrade to HTTP.
         scheme="http"; [[ "$input" != https://* ]] || scheme="https"
         input="${input#http://}"; input="${input#https://}"; input="${input%%/*}"
         if [[ ! "$input" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?$ ]]; then
-            echo "  Expected an IPv4 address, optionally with a port (e.g. 10.0.0.1 or 10.0.0.1:4646)."
+            echo "  Expected an IPv4 address or URL (e.g. 10.0.0.1, 10.0.0.1:4646, http://10.0.0.1:4646)."
             continue
         fi
         NOMAD_ADDR="${scheme}://${input}"
@@ -47,7 +97,7 @@ prompt_nomad_ip() {
 
 prompt_http_auth() {
     local user pass
-    read -rp "Nomad user for ${NOMAD_ADDR} (or user:password, blank for none): " user
+    read -rp "Nomad credentials for ${NOMAD_ADDR} (user or user:password, blank for none): " user
     if [[ -z "$user" ]]; then
         NOMAD_HTTP_AUTH=""
     elif [[ "$user" == *:* ]]; then
@@ -64,9 +114,41 @@ prompt_http_auth() {
         || warn "Note: these credentials will be sent over plain HTTP (${NOMAD_ADDR:-})."
 }
 
+# host:port of a job's running allocation, for MPC_NODE_ADDRS. Static port
+# (NODE_HTTP_PORT) — only the host varies by where Nomad scheduled the job.
+discover_node_addr() {
+    local job_id=$1 alloc_id node_id ip
+    alloc_id=$(nomad_curl GET "/job/${job_id}/allocations" \
+        | jq -r '[.[] | select(.ClientStatus == "running")] | sort_by(.CreateIndex) | last | .ID // empty') \
+        || return 1
+    [[ -n "$alloc_id" ]] || return 1
+    node_id=$(nomad_curl GET "/allocation/${alloc_id}" | jq -r '.NodeID // empty') || return 1
+    [[ -n "$node_id" ]] || return 1
+    ip=$(nomad_curl GET "/node/${node_id}" \
+        | jq -r '.Attributes["unique.network.ip-address"] // (.HTTPAddr // "" | split(":")[0])') || return 1
+    [[ -n "$ip" ]] || return 1
+    printf '%s:%s' "$ip" "$NODE_HTTP_PORT"
+}
+
+# Tries Nomad auto-discovery first; only prompts if that finds nothing.
+# MPC_NODE_ADDRS export (or MPC_NODE_ADDRS_DEV_<NET>) skips both.
 prompt_node_addrs() {
-    local input
+    local input job_ids job_id addr addrs=()
     [[ -z "${MPC_NODE_ADDRS+set}" ]] || return 0
+
+    if job_ids=$(discover_job_ids); then
+        for job_id in $job_ids; do
+            addr=$(discover_node_addr "$job_id") && addrs+=("$addr")
+        done
+    fi
+
+    if [[ ${#addrs[@]} -gt 0 ]]; then
+        export MPC_NODE_ADDRS="${addrs[*]}"
+        ok "Discovered node metrics addresses: ${MPC_NODE_ADDRS}"
+        return 0
+    fi
+
+    warn "Could not auto-discover node addresses from Nomad."
     read -rp "Node metrics addresses, space-separated (blank to skip verification): " input
     export MPC_NODE_ADDRS="$input"
 }

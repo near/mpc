@@ -5,13 +5,22 @@
 # with these keys, so only the operator's local copy can be missing.
 #
 
-# "account sk" per MPC task, from a job definition on stdin; blanks when a task
-# injects secrets via a template stanza instead of Env (skipped upstream).
+# "account sk" per task carrying an MPC_ACCOUNT_SK, from a job definition on
+# stdin. Keyed on the secret itself, not the image, so it survives job-spec
+# changes; tasks that inject it via a template stanza have no Env and drop out.
 job_signing_creds() {
-    jq -r --arg prefix "$NODE_IMAGE_PREFIX" \
-        '.TaskGroups[].Tasks[]
-         | select(.Config.image // "" | startswith($prefix))
-         | "\(.Env.MPC_ACCOUNT_ID // "") \(.Env.MPC_ACCOUNT_SK // "")"'
+    jq -r '.TaskGroups[]?.Tasks[]?
+         | (.Env // .Config.env // {}) as $env
+         | select(($env.MPC_ACCOUNT_SK // "") != "")
+         | "\($env.MPC_ACCOUNT_ID // "") \($env.MPC_ACCOUNT_SK)"'
+}
+
+# Task names and their env var *names* (never values), to show where the key
+# lives when the selector above comes up empty.
+job_env_summary() {
+    jq -r '.TaskGroups[]?.Tasks[]?
+         | "    \(.Name // "?") [\(.Driver // "?")]: \(
+             (.Env // .Config.env // {}) | keys | join(",") // "no env")"'
 }
 
 # near-cli's import can't be scripted, so write its two keystore files directly.
@@ -67,14 +76,26 @@ PY
 
 # Imports any missing member-account keys found in a job's definition.
 ensure_job_keys() {
-    local job_id=$1 job account sk
+    local job_id=$1 job creds account sk found=0
     job=$(nomad_curl GET "/job/${job_id}") || { warn "Could not fetch ${job_id}."; return; }
+    # Capture rather than pipe into the loop: a jq failure there is invisible.
+    creds=$(job_signing_creds <<<"$job") \
+        || { warn "${job_id}: could not read task env (unexpected job JSON)."; return; }
+
     while read -r account sk; do
-        [[ -n "$account" && -n "$sk" ]] || continue
-        if have_signing_key "$account"; then
+        [[ -n "$sk" ]] || continue
+        found=1
+        if [[ -z "$account" ]]; then
+            warn "${job_id}: a task has MPC_ACCOUNT_SK but no MPC_ACCOUNT_ID — skipping."
+        elif have_signing_key "$account"; then
             ok "${account}: key already in ~/.near-credentials."
         else
             import_signing_key "$account" "$sk"
         fi
-    done < <(job_signing_creds <<<"$job")
+    done <<<"$creds"
+
+    if (( ! found )); then
+        warn "${job_id}: no MPC_ACCOUNT_SK in the job definition. Tasks (env var names only):"
+        job_env_summary <<<"$job" >&2 || true
+    fi
 }

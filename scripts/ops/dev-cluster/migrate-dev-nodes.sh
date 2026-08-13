@@ -22,44 +22,6 @@ source "${SCRIPT_DIR}/dev-common.sh"
 # shellcheck source=first-time-setup.sh
 source "${SCRIPT_DIR}/first-time-setup.sh"
 
-# curl -K parses values as quoted strings with backslash escapes.
-curl_cfg_escape() {
-    local s=${1//\\/\\\\}
-    printf '%s' "${s//\"/\\\"}"
-}
-
-# Echoes the request, and the response for mutations. Never the credentials.
-nomad_curl() {
-    local method=$1 path=$2 data=${3:-}
-    local url="${NOMAD_ADDR%/}/v1${path}"
-    # The API ignores the NOMAD_NAMESPACE env var (a nomad-CLI feature).
-    if [[ -n "${NOMAD_NAMESPACE:-}" ]]; then
-        local sep="?"; [[ "$url" != *\?* ]] || sep="&"
-        url+="${sep}namespace=${NOMAD_NAMESPACE}"
-    fi
-    # --fail-with-body (curl >= 7.76): plain -f discards Nomad's error body.
-    local args=(-sS --fail-with-body --max-time 30 -X "$method" "$url")
-    [[ -z "$data" ]] || args+=(-H 'Content-Type: application/json' --data-binary @-)
-
-    show_cmd curl -X "$method" "$url" ${data:+--data-binary @-}
-
-    # Secrets not on argv: credentials via config stream, body via stdin.
-    local config=""
-    [[ -z "${NOMAD_HTTP_AUTH:-}" ]] || config+="user = \"$(curl_cfg_escape "$NOMAD_HTTP_AUTH")\""$'\n'
-    [[ -z "${NOMAD_TOKEN:-}" ]] || config+="header = \"X-Nomad-Token: $(curl_cfg_escape "$NOMAD_TOKEN")\""$'\n'
-
-    local response status=0
-    response=$(printf '%s' "$data" | curl -K <(printf '%s' "$config") "${args[@]}") || status=$?
-    if (( status != 0 )); then
-        [[ -z "$response" ]] || show_output "$response"
-        return "$status"
-    fi
-
-    # GET bodies are whole job definitions — too noisy to echo.
-    [[ "$method" == GET ]] || show_output "$response"
-    printf '%s' "$response"
-}
-
 wait_for_alloc() {
     local job_id=$1 tries=36 job_version status
     job_version=$(nomad_curl GET "/job/${job_id}" | jq -r '.Version') \
@@ -150,15 +112,6 @@ check_image_exists() {
     fi
     skopeo inspect --no-creds --format '{{.Digest}}' "docker://${image}" >/dev/null \
         || die "${image} not found on Docker Hub — is the release published?"
-}
-
-# IDs of every mpc-node-* job on the cluster.
-discover_job_ids() {
-    local ids
-    ids=$(nomad_curl GET "/jobs?prefix=mpc-node" | jq -r '.[].ID') \
-        || die "Could not list jobs from ${NOMAD_ADDR}."
-    [[ -n "$ids" ]] || die "No mpc-node-* jobs found at ${NOMAD_ADDR}."
-    printf '%s' "$ids"
 }
 
 [[ $# -eq 2 ]] || die "Usage: $0 <testnet|mainnet> <VERSION>  (e.g. testnet 3.14.0)"

@@ -38,7 +38,7 @@ resolve_network() {
 # Sets VERSION from the CLI argument or a prompt, then validates it.
 resolve_version() {
     VERSION="${1:-}"
-    [[ -n "$VERSION" ]] || read -rp "Version (e.g. 3.14.0): " VERSION
+    [[ -n "$VERSION" ]] || read -rp "Release version (e.g. 3.14.0): " VERSION
     check_version "$VERSION"
 }
 
