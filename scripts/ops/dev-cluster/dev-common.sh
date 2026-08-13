@@ -96,21 +96,15 @@ prompt_nomad_ip() {
 }
 
 prompt_http_auth() {
-    local user pass
-    read -rp "Nomad credentials for ${NOMAD_ADDR} (user or user:password, blank for none): " user
-    if [[ -z "$user" ]]; then
-        NOMAD_HTTP_AUTH=""
-    elif [[ "$user" == *:* ]]; then
-        # Already in user:pass format (echoes password).
-        NOMAD_HTTP_AUTH="$user"
-    else
-        read -rsp "Nomad password: " pass
-        echo
-        NOMAD_HTTP_AUTH="${user}:${pass}"
-    fi
-    export NOMAD_HTTP_AUTH
+    local input
+    while true; do
+        read -rp "Nomad credentials for ${NOMAD_ADDR} (user:password): " input
+        [[ "$input" != *:* ]] || break
+        echo "  Expected user:password."
+    done
+    export NOMAD_HTTP_AUTH="$input"
     # Base64 on the wire is still cleartext over plain HTTP.
-    [[ -z "$NOMAD_HTTP_AUTH" || "${NOMAD_ADDR:-}" == https://* ]] \
+    [[ "${NOMAD_ADDR:-}" == https://* ]] \
         || warn "Note: these credentials will be sent over plain HTTP (${NOMAD_ADDR:-})."
 }
 

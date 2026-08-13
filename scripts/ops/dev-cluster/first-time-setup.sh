@@ -6,8 +6,7 @@
 #
 
 # "account sk" per task carrying an MPC_ACCOUNT_SK, from a job definition on
-# stdin. Keyed on the secret itself, not the image, so it survives job-spec
-# changes; tasks that inject it via a template stanza have no Env and drop out.
+# stdin. Keyed on the secret, not the image, which varies by cluster.
 job_signing_creds() {
     jq -r '.TaskGroups[]?.Tasks[]?
          | (.Env // .Config.env // {}) as $env
