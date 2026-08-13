@@ -16,6 +16,7 @@ use crate::sandbox::{
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
+        transactions::CallMpcContract,
     },
 };
 use anyhow::Result;
@@ -23,8 +24,9 @@ use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed2
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Protocol;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, Config, MockAttestation};
+use near_mpc_contract_interface::types::{
+    self as dtos, Attestation, Config, MockAttestation, Protocol,
+};
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
@@ -872,10 +874,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Call verify_tee() to trigger resharing
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VERIFY_TEE)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .verify_tee()
         .await?;
     dbg!(&verify_result);
     assert!(
@@ -999,10 +999,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     // When: a participant calls verify_tee while too few valid attestations remain.
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VERIFY_TEE)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .verify_tee()
         .await?;
     assert!(
         verify_result.is_success(),
@@ -1037,13 +1035,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     ) else {
         panic!("CaitSith domain must yield a sign request");
     };
-    let sign_result = requester
-        .call(contract.id(), method_names::SIGN)
-        .args_json(sign_request.request_json_args())
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
-        .await?;
+    let contract_handle = requester.call_mpc(contract.id());
+    let sign_result = contract_handle.sign(sign_request.args).await?;
     let Err(sign_err) = sign_result.into_result() else {
         panic!("sign request must be refused while the network is not accepting requests");
     };
