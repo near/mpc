@@ -243,9 +243,9 @@ impl SandboxTestSetupBuilder {
         self
     }
 
-    /// Deploys the wasm built with `--features sandbox-test-attestation`, which accepts the
-    /// attestation fixture's app-compose. Required by tests that submit the Dstack fixture
-    /// and expect it to verify.
+    /// Deploys the wasm built with `--features sandbox-test-attestation`, which can whitelist
+    /// the attestation fixture's launcher compose hash. Required by tests that submit the
+    /// Dstack fixture and expect it to verify.
     pub fn with_sandbox_test_attestation(mut self) -> Self {
         self.wasm = TestWasm::SandboxTestAttestation;
         self

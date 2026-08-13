@@ -491,7 +491,7 @@ impl AllowedLauncherImages {
     /// Test-only: allows one more compose hash for an already-allowed launcher. The attestation
     /// fixture is captured from a CVM whose launcher compose carries a key-export service, so
     /// [`get_docker_compose_hash`] cannot derive its hash.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "sandbox-test-attestation"))]
     pub(crate) fn allow_compose_hash(
         &mut self,
         launcher_hash: &LauncherImageHash,

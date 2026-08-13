@@ -53,10 +53,9 @@ pub fn current_contract_with_sandbox_test_methods() -> &'static [u8] {
     })
 }
 
-/// Returns the current contract WASM that accepts the attestation fixture's app-compose.
-/// Use this only for tests that submit the Dstack fixture and need it to verify: the
-/// fixture carries the `pre_launch_script` that exported its signer key, which the
-/// production policy rejects.
+/// Returns the current contract WASM that can whitelist the fixture's launcher compose hash.
+/// Use this only for tests that submit the Dstack fixture and need it to verify: that compose
+/// hash is not derivable from the compiled-in template, so no vote can allow it.
 pub fn current_contract_with_sandbox_test_attestation() -> &'static [u8] {
     CONTRACT_WITH_SANDBOX_TEST_ATTESTATION.get_or_init(|| {
         ContractBuilder::new(MPC_CONTRACT_MANIFEST)

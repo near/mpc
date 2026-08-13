@@ -6,7 +6,9 @@
 //!   time pinned to the fixture's validity window. The pin is needed because
 //!   real `verify_quote` checks the quote against block time: the fixture
 //!   collateral is valid only inside a fixed window, while sandbox time is
-//!   wall-clock and forward-only.
+//!   wall-clock and forward-only. These tests also deploy the contract built
+//!   with `sandbox-test-attestation`, since the compose that exported the
+//!   fixture key hashes outside the derivable set.
 //!
 //! Verified-path tests that store an attestation sign as the fixture account:
 //! the quote's report_data binds the fixture account key, and the contract
@@ -20,9 +22,10 @@ use crate::sandbox::{
         contract_build::{tee_verifier_contract, tee_verifier_contract_with_sandbox_test_hooks},
         mpc_contract::{
             get_config, get_participant_attestation, get_tee_accounts,
-            prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
-            tee_verifier_account_id, total_gas_fee, vote_add_launcher_hash,
-            vote_add_os_measurement, vote_for_hash, vote_tee_verifier_change,
+            prepay_and_submit_participant_info, prepay_attestation_grants,
+            sandbox_allow_launcher_compose_hash, submit_participant_info, tee_verifier_account_id,
+            total_gas_fee, vote_add_launcher_hash, vote_add_os_measurement, vote_for_hash,
+            vote_tee_verifier_change,
         },
     },
 };
@@ -55,7 +58,7 @@ async fn setup() -> SandboxTestSetup {
 }
 
 /// Setup for tests that expect the fixture to pass the post-DCAP checks, which needs the
-/// wasm that accepts its app-compose.
+/// wasm that can whitelist its launcher compose hash.
 async fn setup_accepting_fixture_attestation() -> SandboxTestSetup {
     SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
@@ -109,10 +112,13 @@ async fn deploy_and_trust_pinned_verifier(
     verifier
 }
 
-/// Votes the fixture's image and launcher hashes into the on-chain allowlists.
-/// The image hash must be voted in before the launcher hash: allowed compose
-/// hashes are derived from the currently allowed image hashes. Within a round
-/// the voters are distinct accounts, so the votes run concurrently.
+/// Votes the fixture's image and launcher hashes into the on-chain allowlists, then
+/// whitelists the fixture's compose hash, which derivation cannot produce. The image hash
+/// must be voted in before the launcher hash: allowed compose hashes are derived from the
+/// currently allowed image hashes. Within a round the voters are distinct accounts, so the
+/// votes run concurrently.
+///
+/// Requires the `sandbox-test-attestation` wasm.
 async fn whitelist_fixture_dstack_hashes(contract: &Contract, participants: &[Account]) {
     let image = image_digest();
     for result in join_all(
@@ -134,6 +140,14 @@ async fn whitelist_fixture_dstack_hashes(contract: &Contract, participants: &[Ac
     {
         result.unwrap();
     }
+    sandbox_allow_launcher_compose_hash(
+        &participants[0],
+        contract,
+        &launcher,
+        &launcher_compose_digest(),
+    )
+    .await
+    .unwrap();
 }
 
 /// Adds the OS measurements on top of the hash allowlists, the sandbox
@@ -405,7 +419,7 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
         mpc_signer_accounts,
         contract,
         ..
-    } = setup().await;
+    } = setup_accepting_fixture_attestation().await;
     let verifier = deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
     // Only the hash allowlists gate this test's outcome: the plain dev-account
     // submitter fails at report_data, which runs before the measurements check.

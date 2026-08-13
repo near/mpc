@@ -22,6 +22,8 @@ pub mod v3_14_0_state;
 mod bench;
 mod dto_mapping;
 mod pending_requests;
+#[cfg(feature = "sandbox-test-attestation")]
+mod sandbox_test_attestation;
 #[cfg(feature = "sandbox-test-methods")]
 mod sandbox_test_methods;
 
