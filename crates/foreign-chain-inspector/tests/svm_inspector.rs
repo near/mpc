@@ -129,8 +129,12 @@ fn confirmed_tx() -> serde_json::Value {
 }
 
 fn account_info(owner_byte: u8, data: &[u8]) -> serde_json::Value {
+    account_info_at_slot(owner_byte, data, TX_SLOT + 10)
+}
+
+fn account_info_at_slot(owner_byte: u8, data: &[u8], slot: u64) -> serde_json::Value {
     json!({
-        "context": { "apiVersion": "2.0.15", "slot": TX_SLOT + 10 },
+        "context": { "apiVersion": "2.0.15", "slot": slot },
         "value": {
             // Served by the RPC but deliberately not extracted: see `SvmAccount`.
             "lamports": 1_000_000u64,
@@ -239,6 +243,135 @@ async fn extract__should_return_account_state() {
             data: b"bridge message".to_vec(),
         })]
     );
+}
+
+#[tokio::test]
+async fn extract__should_reject_an_account_read_answered_before_the_transaction_slot() {
+    // Given — a backend that has not yet seen the transaction.
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(confirmed_tx())
+        .with_response(account_info_at_slot(8, b"stale", TX_SLOT - 1))
+        .build();
+    let inspector = SolanaInspector::new(mock_client);
+
+    // When
+    let error = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Confirmed,
+            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+        )
+        .await
+        .unwrap_err();
+
+    // Then — transient, so the lagging provider is dropped from the quorum rather than
+    // its pre-transaction answer standing as a verdict.
+    assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
+    assert!(error.is_transient());
+}
+
+#[tokio::test]
+async fn extract__should_accept_an_account_read_answered_at_the_transaction_slot() {
+    // Given — the boundary: the transaction's own slot is fresh enough.
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(confirmed_tx())
+        .with_response(account_info_at_slot(8, b"fresh", TX_SLOT))
+        .build();
+    let inspector = SolanaInspector::new(mock_client);
+
+    // When
+    let values = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Confirmed,
+            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+        )
+        .await
+        .unwrap();
+
+    // Then
+    assert_eq!(
+        values,
+        vec![SvmExtractedValue::AccountState(SvmAccount {
+            owner: SvmAddress([8; 32]),
+            data: b"fresh".to_vec(),
+        })]
+    );
+}
+
+#[tokio::test]
+async fn extract__should_read_a_repeated_account_once() {
+    // Given — one response per distinct account, so a second read would exhaust the mock.
+    let mock_client = RecordingClient::new(vec![confirmed_tx(), account_info(8, b"once")]);
+    let inspector = SolanaInspector::new(mock_client.clone());
+
+    // When
+    let values = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Confirmed,
+            vec![
+                SvmExtractor::AccountState { pubkey: [6; 32] },
+                SvmExtractor::AccountState { pubkey: [6; 32] },
+            ],
+        )
+        .await
+        .unwrap();
+
+    // Then — both extractors resolve, from a single round trip, to the same state.
+    let expected = SvmExtractedValue::AccountState(SvmAccount {
+        owner: SvmAddress([8; 32]),
+        data: b"once".to_vec(),
+    });
+    assert_eq!(values, vec![expected.clone(), expected]);
+    let account_reads = mock_client
+        .requests()
+        .into_iter()
+        .filter(|(method, _)| method == "getAccountInfo")
+        .count();
+    assert_eq!(account_reads, 1);
+}
+
+#[tokio::test]
+async fn extract__should_read_distinct_accounts_separately() {
+    // Given
+    let mock_client = RecordingClient::new(vec![
+        confirmed_tx(),
+        account_info(8, b"first"),
+        account_info(9, b"second"),
+    ]);
+    let inspector = SolanaInspector::new(mock_client.clone());
+
+    // When
+    let values = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Confirmed,
+            vec![
+                SvmExtractor::AccountState { pubkey: [6; 32] },
+                SvmExtractor::AccountState { pubkey: [7; 32] },
+            ],
+        )
+        .await
+        .unwrap();
+
+    // Then — deduplication keys on the pubkey, so distinct accounts are both read, in order.
+    assert_eq!(
+        values,
+        vec![
+            SvmExtractedValue::AccountState(SvmAccount {
+                owner: SvmAddress([8; 32]),
+                data: b"first".to_vec(),
+            }),
+            SvmExtractedValue::AccountState(SvmAccount {
+                owner: SvmAddress([9; 32]),
+                data: b"second".to_vec(),
+            }),
+        ]
+    );
+    let requests = mock_client.requests();
+    assert_eq!(requests[1].1[0], bs58::encode([6; 32]).into_string());
+    assert_eq!(requests[2].1[0], bs58::encode([7; 32]).into_string());
 }
 
 #[tokio::test]

@@ -10,6 +10,7 @@ use foreign_chain_rpc_interfaces::svm::{
     GetTransactionResponse, TransactionMeta,
 };
 use near_mpc_contract_interface::types::{SvmAccount, SvmAddress, SvmInnerInstruction};
+use std::collections::BTreeMap;
 
 const GET_TRANSACTION_METHOD: &str = "getTransaction";
 const GET_ACCOUNT_INFO_METHOD: &str = "getAccountInfo";
@@ -132,6 +133,9 @@ where
 
         let account_keys = account_key_list(&tx.transaction.message.account_keys, meta);
 
+        // One read per distinct account: repeated pubkeys in one request would otherwise cost a
+        // round trip each and could observe different states within a single payload.
+        let mut accounts: BTreeMap<[u8; 32], SvmAccount> = BTreeMap::new();
         let mut extracted_values = Vec::with_capacity(extractors.len());
         for extractor in &extractors {
             let value = match extractor {
@@ -145,7 +149,17 @@ where
                     *inner_instruction_index,
                 )?,
                 SvmExtractor::AccountState { pubkey } => {
-                    self.fetch_account_state(pubkey, commitment).await?
+                    let account = match accounts.get(pubkey) {
+                        Some(account) => account.clone(),
+                        None => {
+                            let account = self
+                                .fetch_account_state(pubkey, commitment, tx.slot)
+                                .await?;
+                            accounts.insert(*pubkey, account.clone());
+                            account
+                        }
+                    };
+                    SvmExtractedValue::AccountState(account)
                 }
             };
             extracted_values.push(value);
@@ -183,7 +197,8 @@ where
         &self,
         pubkey: &[u8; 32],
         commitment: Commitment,
-    ) -> Result<SvmExtractedValue, ForeignChainInspectionError> {
+        tx_slot: u64,
+    ) -> Result<SvmAccount, ForeignChainInspectionError> {
         let args = GetAccountInfoArgs {
             pubkey: bs58::encode(pubkey).into_string(),
             commitment,
@@ -193,6 +208,15 @@ where
             .request(GET_ACCOUNT_INFO_METHOD, &args)
             .await
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+        // A load-balanced endpoint can route this read to a backend that has not seen the
+        // transaction, whose pre-transaction answer would otherwise be taken as a verdict.
+        // Transient, so that backend is dropped from the quorum rather than failing the request.
+        if response.context.slot < tx_slot {
+            return Err(ForeignChainInspectionError::RpcRequestFailed(format!(
+                "account read answered at slot {}, before the transaction's slot {tx_slot}",
+                response.context.slot
+            )));
+        }
         let account = response
             .value
             .ok_or(ForeignChainInspectionError::AccountNotFound)?;
@@ -207,7 +231,7 @@ where
             .decode()
             .map_err(ForeignChainInspectionError::MalformedRpcResponse)?;
 
-        Ok(SvmExtractedValue::AccountState(SvmAccount { owner, data }))
+        Ok(SvmAccount { owner, data })
     }
 }
 
@@ -355,7 +379,6 @@ fn parse_svm_pubkey(s: &str) -> Result<SvmAddress, String> {
 }
 
 fn decode_base58_32(s: &str) -> Result<[u8; 32], String> {
-    // Report the length, not the provider-controlled string: the message is logged in full.
     if s.len() > MAX_PUBKEY_BASE58_CHARS {
         return Err(format!(
             "base58 string of {} characters is too long for 32 bytes",

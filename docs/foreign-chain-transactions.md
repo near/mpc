@@ -259,7 +259,9 @@ permanently break verification of a chosen account for one lamport. SVM RPC has 
 account reads, so the
 value reflects the state at query time, which makes it the one extractor whose result is not a
 function of `(tx_id, finality, extractors)` alone. It therefore only suits accounts that no longer
-change. If an account does change, two failure modes follow and only the first is diagnosed: one
+change. There is a floor but no ceiling: a provider answering at a slot before the transaction's is
+rejected as a transient failure, so a backend that has not yet seen the transaction cannot supply
+pre-transaction state. If an account does change, two failure modes follow and only the first is diagnosed: one
 node's own providers disagreeing is caught by the fan-out as a response mismatch, whereas two
 *nodes* observing different states is caught by nothing — they derive different payload hashes and
 the signing session dies, surfacing to the caller as a timeout.
@@ -728,8 +730,8 @@ separates the test networks from each other where a network *name* would not: te
 `"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`. Aptos's one-byte id space
 separates mainnet from testnet, but two devnets can collide.
 
-`solana` and `ethereum` are configurable but absent from the table: neither has an inspector, so
-there is nothing about them to verify in the first place.
+`ethereum` is configurable but absent from the table: it has no inspector, so there is nothing
+about it to verify in the first place.
 
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,

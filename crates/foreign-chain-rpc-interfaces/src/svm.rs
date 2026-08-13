@@ -118,8 +118,17 @@ impl ToRpcParams for &GetTransactionArgs {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetAccountInfoResponse {
+    pub context: ResponseContext,
     /// `None` when no account exists at the queried address.
     pub value: Option<AccountInfo>,
+}
+
+/// The slot an `RpcResponse` was served at. Required, so that a provider omitting it cannot
+/// pass a freshness check a provider reporting a stale slot would fail.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponseContext {
+    pub slot: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
