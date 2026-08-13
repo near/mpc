@@ -53,7 +53,7 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 ### Fee
 
-0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.7× the floor. The entry figure is **charged** bytes, not a borsh size: `measure_stored_entry_bytes` (`crates/contract/src/lib.rs`) inserts into the real map, flushes, and takes the `env::storage_usage()` delta, so `IterableMap` record and key overhead are measured rather than estimated, and a test pins 604/599 and forbids updating them to make a failure pass. The grants-map row is an estimate, which the headroom covers.
+0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.7× the floor. The entry figure is **charged** bytes, not a borsh size: `measure_stored_entry_bytes` (`crates/contract/src/api/attestation.rs`) inserts into the real map, flushes, and takes the `env::storage_usage()` delta, so `IterableMap` record and key overhead are measured rather than estimated, and a test pins 604/599 and forbids updating them to make a failure pass. The grants-map row is an estimate, which the headroom covers.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
