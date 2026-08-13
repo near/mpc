@@ -1114,12 +1114,12 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
     let charged = STORAGE_BYTE_COST_YOCTONEAR.saturating_mul(u128::from(grown));
     let fee = NearToken::from_millinear(u128::from(config.attestation_storage_fee_millinear))
         .as_yoctonear();
-    let deposited = NearToken::from_yoctonear(fee.saturating_mul(u128::from(GRANTS)));
+    let expected_deposit = NearToken::from_yoctonear(fee.saturating_mul(u128::from(GRANTS)));
     let balance_growth = after.balance.saturating_sub(before.balance);
     assert!(
-        balance_growth >= deposited,
+        balance_growth >= expected_deposit,
         "the prepayment must reach the contract's balance: grew {balance_growth}, \
-         deposited {deposited}"
+         deposited {expected_deposit}"
     );
     assert!(
         charged.saturating_mul(BUFFER) <= fee,
