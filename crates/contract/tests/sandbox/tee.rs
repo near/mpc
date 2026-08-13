@@ -1107,6 +1107,13 @@ async fn prepay_and_submit__should_not_cost_more_storage_than_the_deposit_paid()
     let charged = STORAGE_BYTE_COST_YOCTONEAR.saturating_mul(u128::from(grown));
     let fee = NearToken::from_millinear(u128::from(config.attestation_storage_fee_millinear))
         .as_yoctonear();
+    let deposited = NearToken::from_yoctonear(fee.saturating_mul(u128::from(GRANTS)));
+    let balance_growth = after.balance.saturating_sub(before.balance);
+    assert!(
+        balance_growth >= deposited,
+        "the prepayment must reach the contract's balance: grew {balance_growth}, \
+         deposited {deposited}"
+    );
     assert!(
         charged.saturating_mul(BUFFER) <= fee,
         "one grant's storage grew to {grown} bytes ({charged} yocto); the fee ({fee} yocto) \
