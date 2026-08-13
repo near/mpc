@@ -8846,8 +8846,6 @@ mod tests {
     /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
     const WORST_CASE_ENTRY_COST_CEILING: NearToken = NearToken::from_millinear(10);
 
-    /// Worst case is the longest possible account id. The fee covers this row on top of the
-    /// entry; an account's first grant creates it.
     fn worst_case_dstack_attestation() -> VerifiedAttestation {
         VerifiedAttestation::Dstack(ValidatedDstackAttestation {
             mpc_image_hash: MAX_HASH.into(),
@@ -8936,16 +8934,17 @@ mod tests {
     /// growth is caught while there is still room rather than once the fee is already breached.
     /// A failure here is a prompt to re-price, not a broken test.
     ///
-    /// Does not guard a real storage re-pricing: `storage_byte_cost` is a near-sdk constant,
-    /// not a protocol read.
+    /// Does not guard a real storage re-pricing: [`env::storage_byte_cost`] is a near-sdk
+    /// constant, not a protocol read.
     ///
     /// TODO(#4123): a fee voted below the floor is not caught here either.
     #[test]
     fn attestation_storage_fee__should_keep_double_the_floor() {
         // Given
         const BUFFER: u128 = 2;
-        let floor_bytes =
-            measure_stored_entry_bytes(worst_case_mock_attestation()) + measure_grant_row_bytes();
+        let worst_case_entry_bytes = measure_stored_entry_bytes(worst_case_mock_attestation())
+            .max(measure_stored_entry_bytes(worst_case_dstack_attestation()));
+        let floor_bytes = worst_case_entry_bytes + measure_grant_row_bytes();
 
         // When
         let floor = env::storage_byte_cost().saturating_mul(u128::from(floor_bytes));

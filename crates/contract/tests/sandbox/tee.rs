@@ -1054,9 +1054,9 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 /// also includes its share of the gas burnt.
 ///
 /// TODO(#4135): the mock carries every constraint but `expected_measurements`, which no sandbox
-/// helper can get voted in — 240 of the 304 bytes between this entry and the worst case.
+/// helper can get voted in.
 #[tokio::test]
-async fn prepay_and_submit_a_constrained_mock__should_not_cost_more_storage_than_the_deposit_paid()
+async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_fee_of_storage()
 -> Result<()> {
     // Given
     const GRANTS: u32 = 2;
