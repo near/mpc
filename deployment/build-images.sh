@@ -62,8 +62,8 @@ require_cmds() {
 
 require_cmds docker git find touch skopeo
 
-if $USE_NODE || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env podman
+if $USE_NODE || $USE_NODE_GCP || $USE_RUST_LAUNCHER; then
+    require_cmds repro-env podman catatonit
 fi
 
 if ! docker buildx &>/dev/null; then
