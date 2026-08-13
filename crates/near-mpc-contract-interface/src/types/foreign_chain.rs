@@ -1175,7 +1175,7 @@ pub struct SvmAccount {
 #[non_exhaustive]
 pub enum SvmExtractedValue {
     InnerInstruction(SvmInnerInstruction),
-    Account(SvmAccount),
+    AccountState(SvmAccount),
 }
 
 #[derive(
@@ -1663,13 +1663,41 @@ pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct SvmTxId(
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        // Schemars has no impl for arrays longer than 32, so the schema is written by
-        // hand.
-        schemars(with = "String")
+        // Schemars has no impl for arrays this long, so `Hex`'s own schema — a hex
+        // string, as for the shorter ids — is named here instead of derived.
+        schemars(with = "Hex64Schema")
     )]
     #[serde_as(as = "Hex")]
     pub [u8; 64],
 );
+
+/// The schema `Hex` gives a 64-byte array: a hex string, with the exact length that
+/// schemars cannot express for an array this long.
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+pub struct Hex64Schema;
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Hex64Schema {
+    fn schema_name() -> String {
+        "Hex64".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            string: Some(Box::new(schemars::schema::StringValidation {
+                pattern: Some(r"^(?:[0-9A-Fa-f]{2}){64}$".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
 
 #[serde_as]
 #[derive(
@@ -1967,7 +1995,7 @@ mod tests {
                         data: vec![0xde, 0xad, 0xbe, 0xef],
                     },
                 )),
-                ExtractedValue::SvmExtractedValue(SvmExtractedValue::Account(SvmAccount {
+                ExtractedValue::SvmExtractedValue(SvmExtractedValue::AccountState(SvmAccount {
                     owner: SvmAddress([0x66; 32]),
                     data: vec![0xca, 0xfe],
                 })),

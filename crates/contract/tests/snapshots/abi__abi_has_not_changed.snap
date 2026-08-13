@@ -5917,7 +5917,8 @@ expression: abi
           }
         },
         "SvmTxId": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2}){64}$"
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",
