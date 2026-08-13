@@ -55,13 +55,13 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/lib.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
 
-The table below is a measurement, not a pin. A unit test rebuilds the floor from those two helpers and requires the fee to be at least twice it, and a sandbox test bounds the real prepay-and-submit flow the same way — so both fail when the fee stops covering the layout, not when these numbers move.
-
 | Component | Charged bytes | Cost |
 |---|---|---|
 | Worst-case entry: a `Mock` one at 604 (`Dstack` is 599) | 604 | 0.00604 NEAR |
 | Grants-map row, worst case (64-char account) | 194 | 0.00194 NEAR |
 | **Floor** | **798** | **0.00798 NEAR** |
+
+Measured at the time of writing; the tests hold the fee to twice the floor rather than pinning these numbers, so they fail when the fee stops covering the layout.
 
 The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
 
