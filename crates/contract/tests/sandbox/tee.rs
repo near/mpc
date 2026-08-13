@@ -1049,23 +1049,43 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// A new entry is stored by a submission that attaches no deposit, spending a grant prepaid by
-/// an earlier call. "Zero deposit" is about the submitting node, whose function-call key cannot
-/// attach one, not about the storage being free.
 /// Two grants, not one: consuming a single grant deletes the row, so only the entry would be
 /// measured. Charged against the deposit sent rather than the contract's balance growth, which
 /// also includes its share of the gas burnt.
+///
+/// TODO(#4135): the mock carries every constraint but `expected_measurements`, which no sandbox
+/// helper can get voted in — 240 of the 304 bytes between this entry and the worst case.
 #[tokio::test]
-async fn prepay_and_submit__should_not_cost_more_storage_than_the_deposit_paid() -> Result<()> {
+async fn prepay_and_submit_a_constrained_mock__should_not_cost_more_storage_than_the_deposit_paid()
+-> Result<()> {
     // Given
     const GRANTS: u32 = 2;
     const BUFFER: u128 = 2;
+    const EXPIRY_SECONDS: u64 = 1_000;
     let SandboxTestSetup {
-        worker, contract, ..
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let image_hash = image_digest();
+    for account in &mpc_signer_accounts {
+        vote_for_hash(account, &contract, &image_hash).await?;
+        vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
+    }
+    let [compose_hash] = get_allowed_launcher_compose_hashes(&contract).await?[..] else {
+        panic!("the launcher and image hashes must derive exactly one compose hash");
+    };
+    let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
+    let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: Some(image_hash),
+        launcher_docker_compose_hash: Some(compose_hash),
+        expiry_timestamp_seconds: Some(now_seconds + EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
     let node = worker.dev_create_account().await?;
     let tls_key = bogus_ed25519_public_key();
     let config: Config = contract
@@ -1078,13 +1098,7 @@ async fn prepay_and_submit__should_not_cost_more_storage_than_the_deposit_paid()
     // When
     let prepayment = prepay_attestation_grants(&node, &contract, node.id(), GRANTS).await?;
     assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
-    let submission = submit_participant_info(
-        &node,
-        &contract,
-        &Attestation::Mock(MockAttestation::Valid),
-        &tls_key,
-    )
-    .await?;
+    let submission = submit_participant_info(&node, &contract, &attestation, &tls_key).await?;
     assert!(submission.is_success(), "submission failed: {submission:?}");
 
     // Then
@@ -1115,6 +1129,9 @@ async fn prepay_and_submit__should_not_cost_more_storage_than_the_deposit_paid()
     Ok(())
 }
 
+/// A new entry is stored by a submission that attaches no deposit, spending a grant prepaid by
+/// an earlier call. "Zero deposit" is about the submitting node, whose function-call key cannot
+/// attach one, not about the storage being free.
 #[tokio::test]
 async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_grant() -> Result<()> {
     // Given
