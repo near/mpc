@@ -8936,8 +8936,10 @@ mod tests {
     /// growth is caught while there is still room rather than once the fee is already breached.
     /// A failure here is a prompt to re-price, not a broken test.
     ///
-    /// Does not guard a votable fee set below the floor, nor a real storage re-pricing —
-    /// `storage_byte_cost` is a near-sdk constant, not a protocol read.
+    /// Does not guard a real storage re-pricing: `storage_byte_cost` is a near-sdk constant,
+    /// not a protocol read.
+    ///
+    /// TODO(#4123): a fee voted below the floor is not caught here either.
     #[test]
     fn attestation_storage_fee__should_keep_double_the_floor() {
         // Given
