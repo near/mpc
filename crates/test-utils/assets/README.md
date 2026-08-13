@@ -39,7 +39,6 @@ This will regenerate the following files:
 - `near_p2p_public_key.pub`
 - `near_account_public_key.pub`
 - `app_compose.json`
-- `collateral.json`
 - `quote.json`
 - `tcb_info.json`
 - `launcher_image_compose.yaml`
@@ -48,7 +47,7 @@ This will regenerate the following files:
 All files will be written into the specified output directory.
 
 `public_data.json` is the endpoint response verbatim, so its collateral byte fields are arrays, while
-`collateral.json` holds the same bytes hex-encoded for the parser.
+`collateral.json` holds the same bytes hex-encoded for the contract DTO.
 
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
@@ -87,16 +86,17 @@ All files will be written into the specified output directory.
    > will be managed entirely through on-chain voting (`vote_add_os_measurement`), and these
    > files will no longer need to be kept in sync with the deployed OS image.
 
-8. Regenerate the verifier's borsh argument fixture and refresh the report values
-   the verifier test hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with
-   every new node):
+8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
+   contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test
+   hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with every new node):
 
    ```shell
+   UPDATE_FIXTURES=1 cargo test -p test-utils collateral_fixture
    UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
    cargo test -p tee-verifier --test verify_quote
    ```
 
-   The second run fails on `verify_quote__should_return_verified_td10_report_for_valid_fixture`
+   The last run fails on `verify_quote__should_return_verified_td10_report_for_valid_fixture`
    and prints the values actually produced; copy them into
    `crates/tee-verifier/tests/verify_quote.rs`.
 
