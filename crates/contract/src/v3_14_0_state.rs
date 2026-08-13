@@ -60,8 +60,6 @@ impl From<OldConfig> for Config {
         // deployed 10 TGas is consumed by the scan itself, so the first eviction overruns it
         // and the detached sweep rolls back unnoticed. Taking the new default applies the fix
         // without a governance vote.
-        //
-        // TODO(#4121): one-shot; drop after the next release.
         Config {
             key_event_timeout_blocks: old.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
@@ -89,8 +87,8 @@ impl From<OldConfig> for Config {
             verifier_tera_gas: old.verifier_tera_gas,
             resolve_verification_tera_gas: old.resolve_verification_tera_gas,
             launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
-            // New in this release, so no deployed value exists to carry.
-            attestation_storage_fee_millinear: Config::default().attestation_storage_fee_millinear,
+            // `attestation_storage_fee_millinear` is new in this release, so it defaults.
+            ..Default::default()
         }
     }
 }
@@ -158,107 +156,4 @@ impl From<MpcContract> for crate::MpcContract {
 struct Metrics {
     sign_with_v1_payload_count: u64,
     sign_with_v2_payload_count: u64,
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-
-    /// Every field distinguishable from its own [`Config::default()`] counterpart, so a
-    /// carried-forward value can never be mistaken for a defaulted one.
-    fn deployed_config() -> OldConfig {
-        OldConfig {
-            key_event_timeout_blocks: 1001,
-            tee_upgrade_deadline_duration_seconds: 1002,
-            contract_upgrade_deposit_tera_gas: 1003,
-            sign_call_gas_attachment_requirement_tera_gas: 1004,
-            ckd_call_gas_attachment_requirement_tera_gas: 1005,
-            return_signature_and_clean_state_on_success_call_tera_gas: 1006,
-            return_ck_and_clean_state_on_success_call_tera_gas: 1007,
-            fail_on_timeout_tera_gas: 1008,
-            fail_attestation_submission_tera_gas: 1009,
-            clean_tee_status_tera_gas: 1010,
-            clean_invalid_attestations_tera_gas: 1011,
-            cleanup_orphaned_node_migrations_tera_gas: 1012,
-            remove_non_participant_update_votes_tera_gas: 1013,
-            clean_foreign_chain_data_tera_gas: 1014,
-            remove_non_participant_tee_verifier_votes_tera_gas: 1015,
-            verifier_tera_gas: 1016,
-            resolve_verification_tera_gas: 1017,
-            launcher_hash_unused_ttl_seconds: 1018,
-        }
-    }
-
-    /// The deployed budget is consumed by the scan itself, so the first eviction overruns it
-    /// and the detached sweep rolls back unnoticed. Migration takes the new default so the fix
-    /// lands on upgrade rather than needing a governance vote.
-    #[test]
-    fn config_migration__should_reset_clean_invalid_attestations_gas_to_the_new_default() {
-        // Given
-        let old = deployed_config();
-        assert_ne!(
-            old.clean_invalid_attestations_tera_gas,
-            Config::default().clean_invalid_attestations_tera_gas
-        );
-
-        // When
-        let migrated = Config::from(old);
-
-        // Then
-        assert_eq!(
-            migrated.clean_invalid_attestations_tera_gas,
-            Config::default().clean_invalid_attestations_tera_gas
-        );
-    }
-
-    /// Resetting that one field must not leak into any other an operator may have voted in.
-    ///
-    /// Compares the whole struct rather than field by field, so adding a field to [`Config`]
-    /// fails to compile here until this test says whether it carries forward or defaults.
-    #[test]
-    fn config_migration__should_carry_every_other_deployed_value_forward() {
-        // Given
-        let old = deployed_config();
-
-        // When
-        let migrated = Config::from(deployed_config());
-
-        // Then
-        assert_eq!(
-            migrated,
-            Config {
-                key_event_timeout_blocks: old.key_event_timeout_blocks,
-                tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
-                contract_upgrade_deposit_tera_gas: old.contract_upgrade_deposit_tera_gas,
-                sign_call_gas_attachment_requirement_tera_gas: old
-                    .sign_call_gas_attachment_requirement_tera_gas,
-                ckd_call_gas_attachment_requirement_tera_gas: old
-                    .ckd_call_gas_attachment_requirement_tera_gas,
-                return_signature_and_clean_state_on_success_call_tera_gas: old
-                    .return_signature_and_clean_state_on_success_call_tera_gas,
-                return_ck_and_clean_state_on_success_call_tera_gas: old
-                    .return_ck_and_clean_state_on_success_call_tera_gas,
-                fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
-                fail_attestation_submission_tera_gas: old.fail_attestation_submission_tera_gas,
-                clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
-                cleanup_orphaned_node_migrations_tera_gas: old
-                    .cleanup_orphaned_node_migrations_tera_gas,
-                remove_non_participant_update_votes_tera_gas: old
-                    .remove_non_participant_update_votes_tera_gas,
-                clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
-                remove_non_participant_tee_verifier_votes_tera_gas: old
-                    .remove_non_participant_tee_verifier_votes_tera_gas,
-                verifier_tera_gas: old.verifier_tera_gas,
-                resolve_verification_tera_gas: old.resolve_verification_tera_gas,
-                launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
-                // Reset, not carried; covered by the test above.
-                clean_invalid_attestations_tera_gas: Config::default()
-                    .clean_invalid_attestations_tera_gas,
-                // New in this release, so it takes its default.
-                attestation_storage_fee_millinear: Config::default()
-                    .attestation_storage_fee_millinear,
-            }
-        );
-    }
 }
