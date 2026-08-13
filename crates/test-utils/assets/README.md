@@ -57,7 +57,8 @@ All files will be written into the specified output directory.
    `report_data` binds it. It is not in `public_data.json`: it lives in `secrets.json`
    inside the CVM, exported by
    [the collection compose](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key).
-   Only a throwaway localnet key may be committed — check that before you do.
+   Only a throwaway localnet key may be committed — check that before you do. Secret scanners might
+   flag the file; it is test-only and worthless outside localnet.
 
    ```shell
    cargo nextest run -p test-utils account_secret_key

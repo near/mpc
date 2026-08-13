@@ -157,16 +157,20 @@ mod tests {
 
     #[test]
     fn account_secret_key__should_pair_with_account_public_key() {
-        // Given
+        // Given: a NEAR ed25519 secret key is base58 of `seed || public_key`.
         let secret = account_secret_key()
             .strip_prefix("ed25519:")
             .expect("secret key is ed25519-prefixed");
+        let decoded = bs58::decode(secret).into_vec().expect("base58 secret key");
+        let seed: [u8; 32] = decoded[..32]
+            .try_into()
+            .expect("secret key holds a 32-byte seed");
 
         // When
-        let decoded = bs58::decode(secret).into_vec().expect("base58 secret key");
+        let derived = ed25519_dalek::SigningKey::from_bytes(&seed).verifying_key();
 
         // Then
-        assert_eq!(decoded.len(), 64);
+        assert_eq!(derived.to_bytes(), account_key());
         assert_eq!(decoded[32..], account_key());
     }
 
