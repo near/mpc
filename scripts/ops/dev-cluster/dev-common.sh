@@ -12,16 +12,14 @@ SIGN_WITH="${MPC_SIGN_WITH:-sign-with-legacy-keychain}"
 # Sets CONTRACT, NEAR_NET, MEMBER_ACCOUNTS, SIGN_DEPOSIT and re-points endpoint
 # vars from per-cluster exports; network choice drives every step.
 resolve_dev_cluster() {
-    local suffix var
+    local suffix="${1^^}" var
     case "$1" in
         testnet)
             CONTRACT="mpc-dev-contract.testnet" NEAR_NET="testnet" SIGN_DEPOSIT="1 NEAR"
-            MEMBER_ACCOUNTS="mpc-node-0-mpc-dev.testnet mpc-node-1-mpc-dev.testnet"
-            suffix="TESTNET" ;;
+            MEMBER_ACCOUNTS="mpc-node-0-mpc-dev.testnet mpc-node-1-mpc-dev.testnet" ;;
         mainnet)
             CONTRACT="dev-contract.near" NEAR_NET="mainnet" SIGN_DEPOSIT="0.1 NEAR"
-            MEMBER_ACCOUNTS="mpc-0-dev-mainnet.dev-signer.near mpc-1-dev-mainnet.dev-signer.near"
-            suffix="MAINNET" ;;
+            MEMBER_ACCOUNTS="mpc-0-dev-mainnet.dev-signer.near mpc-1-dev-mainnet.dev-signer.near" ;;
         *) die "Unknown dev cluster '$1' (expected testnet|mainnet)." ;;
     esac
     var="NOMAD_ADDR_DEV_${suffix}";      [[ -z "${!var:-}" ]] || export NOMAD_ADDR="${!var}"
