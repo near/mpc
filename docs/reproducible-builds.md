@@ -12,11 +12,13 @@ security and verification purposes.
 - `docker` with buildx support
 - `jq`
 - `git`
+- `podman` - runs the pinned `skopeo` image that compresses the layers; its
+  gzip output determines the manifest digest, so the pin (not a host `skopeo`)
+  is what makes that digest reproducible
 
 **Additional requirements for building the node image**:
 
 - `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
-- `podman`
 
 **Requirements for building the MPC contract** (either path works):
 

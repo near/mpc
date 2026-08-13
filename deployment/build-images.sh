@@ -1,14 +1,14 @@
 #! /usr/bin/env bash
 # Script to reproducibly build the docker images for the node and launcher
 #
-# Requirements: docker, docker-buildx, git, find, touch, skopeo
-# Extra requirements if using --node or --rust-launcher: repro-env, podman
-# Extra requirements if using --push: docker must be logged in to registry
+# Requirements: docker, docker-buildx, git, find, touch, podman
+# Extra requirements if using --node or --rust-launcher: repro-env
+# Extra requirements if using --push: skopeo, docker must be logged in to registry
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
 # If no image flags are used, all images are built
-# Manifest digests are always computed and printed (skopeo required)
+# Manifest digests are always computed and printed (via a pinned skopeo image)
 
 
 set -euo pipefail
@@ -60,10 +60,14 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-require_cmds docker git find touch skopeo
+require_cmds docker git find touch podman
 
-if $USE_NODE || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env podman
+if $USE_NODE || $USE_NODE_GCP || $USE_RUST_LAUNCHER; then
+    require_cmds repro-env
+fi
+
+if $USE_PUSH; then
+    require_cmds skopeo
 fi
 
 if ! docker buildx &>/dev/null; then
@@ -128,6 +132,13 @@ build_reproducible_image() {
   docker load -i "$tar_path"
 }
 
+# skopeo re-gzips every layer here, so the manifest digest depends on the
+# deflate library its binary was linked against rather than on its version
+# string: Ubuntu 26.04's package (klauspost/compress 1.18.1) emits different
+# bytes than 24.04's (1.17.7) for identical input. Pin the whole build by
+# digest, like the buildkit image above.
+skopeo_image="quay.io/skopeo/stable:v1.22.2@sha256:c7d3c512612f52805023cd38351081dad7e2729fc13d14b701e47c7c8bdd6615"
+
 # Compress a built image tar via skopeo to a temp directory.
 # Prints the temp dir path to stdout. The manifest digest can be
 # computed from $dir/manifest.json.
@@ -137,7 +148,10 @@ skopeo_compress() {
     td=$(mktemp -d)
     # Compress the image to a local directory, which implicitly computes
     # the manifest digest in $td/manifest.json
-    skopeo copy --all --dest-compress "docker-archive:${tar_path}" "dir:$td" >&2
+    podman run --rm \
+      -v "${tar_path}:/image.tar:ro" -v "${td}:/out" \
+      "${skopeo_image}" \
+      copy --all --dest-compress docker-archive:/image.tar dir:/out >&2
     echo "$td"
 }
 
