@@ -21,7 +21,7 @@ pub enum Commitment {
 pub struct GetTransactionResponse {
     pub slot: u64,
     pub transaction: TransactionJson,
-    /// `None` when the node has no status metadata for the transaction.
+    /// [`None`] when the node has no status metadata for the transaction.
     pub meta: Option<TransactionMeta>,
 }
 
@@ -43,10 +43,10 @@ pub struct TransactionMessage {
 #[serde(rename_all = "camelCase")]
 pub struct TransactionMeta {
     /// [`Null`](serde_json::Value::Null) iff the transaction succeeded. Deliberately not
-    /// an [`Option`]: serde maps an *absent* field to `None`, which would read a provider
+    /// an [`Option`]: serde maps an *absent* field to [`None`], which would read a provider
     /// that omits the field as reporting success.
     pub err: serde_json::Value,
-    /// `None` when inner instruction recording was disabled on the serving node.
+    /// [`None`] when inner instruction recording was disabled on the serving node.
     #[serde(default)]
     pub inner_instructions: Option<Vec<InnerInstructionsEntry>>,
     /// Addresses loaded from lookup tables (v0 transactions); absent for legacy ones.
@@ -119,7 +119,10 @@ impl ToRpcParams for &GetTransactionArgs {
 #[serde(rename_all = "camelCase")]
 pub struct GetAccountInfoResponse {
     pub context: ResponseContext,
-    /// `None` when no account exists at the queried address.
+    /// [`None`] when no account exists at the queried address. `deserialize_with`
+    /// makes the field required: serde maps an *absent* field to [`None`], which would read a
+    /// provider that omits the field as reporting an absent account.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub value: Option<AccountInfo>,
 }
 

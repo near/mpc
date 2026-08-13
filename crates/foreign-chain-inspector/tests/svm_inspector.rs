@@ -8,6 +8,7 @@ use assert_matches::assert_matches;
 use base64::Engine as _;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
+    ProviderFailure,
     svm::{
         SvmExtractedValue, SvmTransactionSignature,
         inspector::{SolanaInspector, SvmExtractor, SvmFinality},
@@ -780,6 +781,35 @@ async fn extract__should_return_account_not_found_for_null_account_value() {
     // Then — the account's absence is a substantive verdict.
     assert_matches!(response, Err(ForeignChainInspectionError::AccountNotFound));
     assert!(!response.unwrap_err().is_transient());
+}
+
+#[tokio::test]
+async fn extract__should_reject_an_account_response_omitting_value_as_malformed() {
+    // Given — a provider that omits `value` rather than answering `null`.
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(confirmed_tx())
+        .with_response(json!({ "context": { "slot": TX_SLOT } }))
+        .build();
+    let inspector = SolanaInspector::new(mock_client);
+
+    // When
+    let response = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Confirmed,
+            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+        )
+        .await;
+
+    // Then — the provider is at fault, not the chain: an omitted field must not read as an
+    // absent account, which would blame nobody for a broken response.
+    let error = response.unwrap_err();
+    assert_matches!(
+        error,
+        ForeignChainInspectionError::MalformedRpcResponse(_),
+        "an omitted `value` must not be indistinguishable from an absent account"
+    );
+    assert_eq!(error.provider_failure(), Some(ProviderFailure::Malformed));
 }
 
 #[tokio::test]

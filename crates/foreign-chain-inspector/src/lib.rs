@@ -373,7 +373,7 @@ pub enum ForeignChainInspectionError {
     TransactionNotFound,
     #[error("account not found")]
     AccountNotFound,
-    #[error("provided log index is out of bounds")]
+    #[error("no value at the requested index in the transaction")]
     LogIndexOutOfBounds,
     #[error("failed to borsh serialize log event")]
     EventLogFailedBorshSerialization(std::io::Error),
