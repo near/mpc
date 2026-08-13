@@ -37,7 +37,7 @@ jobs:
     name: "Build MPC Node TEE Docker image"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -48,19 +48,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+      - name: Allow unprivileged user namespaces (needed by repro-env)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install repro-env
         run: |
-          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
-          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
-          sudo install -m755 repro-env -t /usr/bin
-
-      - name: Install catatonit for repro-env
-        run: |
           sudo apt-get update
-          sudo apt-get install -y catatonit
+          sudo apt-get install -y repro-env
 
       - name: Build MPC Node binary and image
         run: |
@@ -76,7 +70,7 @@ jobs:
     name: "Build Rust Launcher Docker image and verify"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-8x
+    runs-on: warp-ubuntu-2604-x64-8x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -87,19 +81,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Allow unprivileged user namespaces (needed by repro-env/podman on Ubuntu 24.04)
+      - name: Allow unprivileged user namespaces (needed by repro-env)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo liblzma-dev podman catatonit
-
-      - name: Install repro-env
-        run: |
-          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
-          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
-          sudo install -m755 repro-env -t /usr/bin
+          sudo apt-get install -y liblzma-dev repro-env
 
       - name: Build Rust launcher docker image and verify its hash
         shell: bash
@@ -119,7 +107,7 @@ jobs:
     # Skipping at the job level only registers unexpanded template name and
     # required checks will be stuck.
     if: ${{ !cancelled() }}
-    runs-on: ${{ matrix.runner || 'warp-ubuntu-2404-x64-16x' }}
+    runs-on: ${{ matrix.runner || 'warp-ubuntu-2604-x64-16x' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -132,7 +120,7 @@ jobs:
           - group: "contract"
             nextest-args: "--profile=ci-contract -p mpc-contract"
             extra-tools: true
-            runner: warp-ubuntu-2404-x64-32x
+            runner: warp-ubuntu-2604-x64-32x
           - group: "other"
             nextest-args: "--profile=ci-other"
             extra-tools: true
@@ -171,7 +159,7 @@ jobs:
     name: "MPC contract reproducible build"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -206,7 +194,7 @@ jobs:
     name: "Nix build mpc-contract"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-16x
+    runs-on: warp-ubuntu-2604-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -236,7 +224,7 @@ jobs:
 
   fast-ci-checks:
     name: "Fast CI checks"
-    runs-on: warp-ubuntu-2404-x64-8x
+    runs-on: warp-ubuntu-2604-x64-8x
     permissions:
       contents: read
     steps:
@@ -267,7 +255,7 @@ jobs:
     name: "MPC E2E tests"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-32x
+    runs-on: warp-ubuntu-2604-x64-32x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -322,7 +310,7 @@ jobs:
     name: "Extra CI checks"
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
     steps:
@@ -343,7 +331,7 @@ jobs:
   check-todo-closed-issues:
     name: "Check TODOs for issues closed by this PR"
     if: github.event_name == 'pull_request'
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     permissions:
       contents: read
       pull-requests: read
