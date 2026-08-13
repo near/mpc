@@ -53,7 +53,9 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 ### Fee
 
-0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/lib.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated. A test pins each and forbids updating the numbers to make a failure pass.
+0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/lib.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
+
+The table below is a measurement, not a pin. A unit test rebuilds the floor from those two helpers and requires the fee to be at least twice it, and a sandbox test bounds the real prepay-and-submit flow the same way — so both fail when the fee stops covering the layout, not when these numbers move.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
