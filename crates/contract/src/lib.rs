@@ -8901,6 +8901,18 @@ mod tests {
         env::storage_usage() - before
     }
 
+    fn measure_grant_row_bytes() -> u64 {
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        testing_env!(VMContextBuilder::new().build());
+        let account: AccountId = "a".repeat(64).parse().unwrap();
+
+        let before = env::storage_usage();
+        contract.available_attestation_grants.insert(account, 1);
+        contract.available_attestation_grants.flush();
+
+        env::storage_usage() - before
+    }
+
     /// Pins the exact stored size of the largest variant of each attestation kind.
     ///
     /// Do not update these numbers just to make a failing case pass. The contract funds every
@@ -8928,6 +8940,36 @@ mod tests {
             bytes_stored <= WORST_CASE_ENTRY_BYTES,
             "entry ({bytes_stored} bytes) exceeds the pinned worst case \
              ({WORST_CASE_ENTRY_BYTES} bytes)"
+        );
+    }
+
+    /// The fee covers the worst-case entry plus the grants row, and is held to twice that, so
+    /// growth is caught while there is still room rather than once the fee is already breached.
+    /// A failure here is a prompt to re-price, not a broken test.
+    ///
+    /// Does not guard a real storage re-pricing: [`env::storage_byte_cost`] is a near-sdk
+    /// constant, not a protocol read.
+    ///
+    /// TODO(#4123): a fee voted below the floor is not caught here either.
+    #[test]
+    fn attestation_storage_fee__should_keep_double_the_floor() {
+        // Given
+        const BUFFER: u128 = 2;
+        let worst_case_entry_bytes = measure_stored_entry_bytes(worst_case_mock_attestation())
+            .max(measure_stored_entry_bytes(worst_case_dstack_attestation()));
+        let floor_bytes = worst_case_entry_bytes + measure_grant_row_bytes();
+
+        // When
+        let floor = env::storage_byte_cost().saturating_mul(u128::from(floor_bytes));
+        let fee = NearToken::from_millinear(u128::from(
+            Config::default().attestation_storage_fee_millinear,
+        ));
+
+        // Then
+        assert!(
+            floor.saturating_mul(BUFFER) <= fee,
+            "attestation storage fee ({fee}) must be at least {BUFFER}x the floor \
+             ({floor_bytes} bytes, {floor}) at today's storage price"
         );
     }
 

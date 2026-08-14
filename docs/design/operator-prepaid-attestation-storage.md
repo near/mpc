@@ -19,7 +19,7 @@ Payment and submission must be **separate transactions**, because neither party 
 
 ### Grants
 
-`available_attestation_grants: LookupMap<AccountId, u32>` — a count (not an amount). Prepay `+1`, new entry `−1`, reclaimed entry `+1`, row deleted at zero. The invariant, enforced by refusing to go below zero:
+`available_attestation_grants: IterableMap<AccountId, u32>` — a count (not an amount). Prepay `+1`, new entry `−1`, reclaimed entry `+1`, row deleted at zero. The invariant, enforced by refusing to go below zero:
 
 ```text
 entries an account holds  ≤  grants it has bought
@@ -53,13 +53,15 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 ### Fee
 
-0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.7× the floor. The entry figure is **charged** bytes, not a borsh size: `measure_stored_entry_bytes` (`crates/contract/src/lib.rs`) inserts into the real map, flushes, and takes the `env::storage_usage()` delta, so `IterableMap` record and key overhead are measured rather than estimated, and a test pins 604/599 and forbids updating them to make a failure pass. The grants-map row is an estimate, which the headroom covers.
+0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/lib.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
 | Worst-case entry: a `Mock` one at 604 (`Dstack` is 599) | 604 | 0.00604 NEAR |
-| Grants-map row | ~130 | ~0.0013 NEAR |
-| **Floor** | **~734** | **~0.0073 NEAR** |
+| Grants-map row, worst case (64-char account) | 194 | 0.00194 NEAR |
+| **Floor** | **798** | **0.00798 NEAR** |
+
+Entry sizes are pinned by `stored_attestation_entry__should_have_the_pinned_size`; the grants row is measured at the time of writing. Either way the fee is held to twice the floor, so a test fails when it stops covering the layout.
 
 The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
 
