@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
+use foreign_chain_inspector::adi::inspector::Adi;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
+use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
@@ -103,7 +105,9 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 ForeignChain::Abstract => probe_evm::<Abstract>(chain, chain_config).await,
+                ForeignChain::Adi => probe_evm::<Adi>(chain, chain_config).await,
                 ForeignChain::Arbitrum => probe_evm::<Arbitrum>(chain, chain_config).await,
+                ForeignChain::Avalanche => probe_evm::<Avalanche>(chain, chain_config).await,
                 ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
                 ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
                 ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
@@ -268,14 +272,22 @@ mod tests {
     }
 
     /// Every EVM chain the probe covers, with its mainnet chain id.
-    const EVM_MAINNETS: [EvmMainnet; 6] = [
+    const EVM_MAINNETS: [EvmMainnet; 8] = [
         EvmMainnet {
             chain: ForeignChain::Abstract,
             chain_id: 2741,
         },
         EvmMainnet {
+            chain: ForeignChain::Adi,
+            chain_id: 36900,
+        },
+        EvmMainnet {
             chain: ForeignChain::Arbitrum,
             chain_id: 42161,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Avalanche,
+            chain_id: 43114,
         },
         EvmMainnet {
             chain: ForeignChain::Base,
@@ -362,7 +374,9 @@ mod tests {
     ) {
         let slot = match chain {
             ForeignChain::Abstract => &mut chains.abstract_chain,
+            ForeignChain::Adi => &mut chains.adi,
             ForeignChain::Arbitrum => &mut chains.arbitrum,
+            ForeignChain::Avalanche => &mut chains.avalanche,
             ForeignChain::Base => &mut chains.base,
             ForeignChain::Bnb => &mut chains.bnb,
             ForeignChain::HyperEvm => &mut chains.hyper_evm,

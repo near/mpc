@@ -7,8 +7,10 @@ use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::adi::inspector::AdiInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
+use foreign_chain_inspector::avalanche::inspector::AvalancheInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
@@ -40,6 +42,8 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
+    pub avalanche: Option<FanOut<AvalancheInspector<Client>>>,
+    pub adi: Option<FanOut<AdiInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
     pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
 }
@@ -140,6 +144,11 @@ impl ForeignChainInspectors<HttpClient> {
                 config.polygon.as_ref(),
                 with_http_client(PolygonInspector::new),
             )?,
+            avalanche: build_fanout(
+                config.avalanche.as_ref(),
+                with_http_client(AvalancheInspector::new),
+            )?,
+            adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
             aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
             sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
         })
