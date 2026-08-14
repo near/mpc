@@ -3,8 +3,8 @@
 use crate::types::{
     Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, DestinationNodeInfo,
     DomainConfig, Ed25519PublicKey, EpochId, GovernanceThresholdParameters, InitConfig, KeyEventId,
-    Keyset, ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, SupportedForeignChains, VerifyForeignTransactionRequest,
+    Keyset, NodeImageHash, ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs,
+    SignatureRequest, SignatureResponse, SupportedForeignChains, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,11 @@ pub struct VoteNewParametersArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteCancelKeygenArgs {
     pub next_domain_id: u64,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteCodeHashArgs {
+    pub code_hash: NodeImageHash,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

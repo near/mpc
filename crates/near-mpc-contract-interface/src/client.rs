@@ -9,8 +9,8 @@ use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken
 use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs,
     SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
-    VoteUpdateArgs,
+    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteCodeHashArgs,
+    VoteNewParametersArgs, VoteUpdateArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -20,13 +20,13 @@ use crate::method_names::{
     INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
     REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
     UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
-    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
+    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CODE_HASH, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
     VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, PayloadBytesError, ProposeUpdateArgs,
+    GovernanceThresholdParameters, InitConfig, NodeImageHash, PayloadBytesError, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, SignRequestArgs, SupportedForeignChains,
     VerifyForeignTransactionRequestArgs,
 };
@@ -218,6 +218,15 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn vote_code_hash(
+        &self,
+        code_hash: NodeImageHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteCodeHashArgs::new(code_hash))?;
+        self.call(FunctionCallArgs::no_deposit(VOTE_CODE_HASH, args, MAX_GAS))
+            .await
+    }
+
     pub async fn update_participant_url(
         &self,
         url: String,
@@ -357,7 +366,7 @@ mod tests {
         ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose,
         Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion,
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        NodeImageHash, ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
         ReconstructionThreshold, SignRequestArgs, VerifyForeignTransactionRequestArgs,
     };
@@ -539,6 +548,10 @@ mod tests {
         handle.vote_cancel_keygen(7).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
         handle
+            .vote_code_hash(NodeImageHash::from([7u8; 32]))
+            .await
+            .unwrap();
+        handle
             .update_participant_url("http://localhost:7".to_string())
             .await
             .unwrap();
@@ -590,7 +603,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 19);
+        assert_eq!(calls.len(), 20);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
