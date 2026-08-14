@@ -102,7 +102,7 @@ All files will be written into the specified output directory.
 
 ## Tests that depend on these assets
 
-After updating assets, run the crates that consume them:
+After updating assets, run the tests in the crates that consume them:
 
 ```shell
 cargo nextest run --cargo-profile=test-release \

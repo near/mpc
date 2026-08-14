@@ -45,7 +45,7 @@ export OS_IMAGE=dstack-0.5.8
 export NODE_ACCOUNT=frodo.test.near
 export CONTRACT_ACCOUNT=mpc-contract.test.near
 
-# Launcher compose to deploy. The collection variant exports the node's in-enclave signer key.
+# Launcher compose to deploy. This variant exports the node's in-enclave signer key.
 export COMPOSE_TEMPLATE=$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template
 ```
 
