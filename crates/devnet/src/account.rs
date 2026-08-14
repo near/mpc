@@ -472,13 +472,7 @@ impl OperatingAccount {
         Ok(res.code)
     }
 
-    /// Returns the first access key, for transactions that don't need parallelism.
-    pub async fn any_access_key(&self) -> OwnedMutexGuard<OperatingAccessKey> {
-        self.keys[0].clone().lock_owned().await
-    }
-
-    /// The first access key as a shareable handle, for callers that lock per
-    /// transaction (see [`crate::caller::DevnetCaller`]).
+    /// The first access key, for transactions that don't need parallelism.
     pub fn any_access_key_arc(&self) -> Arc<Mutex<OperatingAccessKey>> {
         self.keys[0].clone()
     }
