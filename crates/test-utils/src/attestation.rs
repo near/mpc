@@ -7,10 +7,11 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::types::HexVec;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tee_verifier_interface::VerifiedReport;
+use tee_verifier_interface::{Collateral, VerifiedReport};
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 pub const TEST_COLLATERAL_STRING: &str = include_str!("../assets/collateral.json");
+pub const TEST_PUBLIC_DATA_STRING: &str = include_str!("../assets/public_data.json");
 pub const TEST_APP_COMPOSE_STRING: &str = include_str!("../assets/app_compose.json");
 pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
     include_str!("../assets/app_compose_with_services.json");
@@ -58,10 +59,27 @@ pub fn image_digest() -> NodeImageHash {
     NodeImageHash::from(digest)
 }
 
-pub fn collateral() -> Value {
-    TEST_COLLATERAL_STRING
+/// The captured collateral, with the NUL terminators the quote's C strings carry stripped.
+fn captured_collateral() -> Value {
+    let public_data: Value = TEST_PUBLIC_DATA_STRING
         .parse()
-        .expect("Quote collateral file is a valid json.")
+        .expect("public_data.json is valid json");
+    let mut collateral = public_data["tee_participant_info"]["Dstack"]["collateral"].clone();
+    for field in collateral
+        .as_object_mut()
+        .expect("collateral is a json object")
+        .values_mut()
+    {
+        if let Some(text) = field.as_str() {
+            *field = Value::from(text.trim_end_matches('\0'));
+        }
+    }
+    collateral
+}
+
+/// Collateral in the shape `/public_data` returns, so plain serde is enough to read it.
+pub fn collateral() -> Collateral {
+    serde_json::from_value(captured_collateral()).expect("captured collateral deserializes")
 }
 
 pub fn quote() -> QuoteBytes {
@@ -104,11 +122,8 @@ pub fn account_secret_key() -> &'static str {
 }
 
 pub fn mock_dstack_attestation_inner() -> DstackAttestation {
-    let quote = quote();
-    let collateral = mpc_attestation::collateral::collateral_from_str(TEST_COLLATERAL_STRING)
-        .expect("collateral.json is valid collateral");
     let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
-    DstackAttestation::new(quote, collateral, tcb_info)
+    DstackAttestation::new(quote(), collateral(), tcb_info)
 }
 
 pub fn mock_dstack_attestation() -> Attestation {
@@ -153,6 +168,43 @@ mod tests {
     #[test]
     fn test_near_p2p_tls_key_works() {
         near_p2p_tls_key();
+    }
+
+    /// `collateral.json` is the captured collateral with its byte fields hex-encoded, which is the
+    /// shape the contract DTO reads. Regenerate with:
+    ///
+    ///   UPDATE_FIXTURES=1 cargo test -p test-utils collateral_fixture
+    #[test]
+    fn collateral_fixture__should_match_the_captured_public_data() {
+        // Given
+        const BYTE_FIELDS: [&str; 4] = [
+            "root_ca_crl",
+            "pck_crl",
+            "tcb_info_signature",
+            "qe_identity_signature",
+        ];
+        let mut collateral = captured_collateral();
+        for name in BYTE_FIELDS {
+            let bytes: Vec<u8> = serde_json::from_value(collateral[name].clone())
+                .unwrap_or_else(|_| panic!("{name} is a byte array"));
+            collateral[name] = Value::from(hex::encode(bytes));
+        }
+
+        // When
+        let expected = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&collateral).expect("collateral serializes")
+        );
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/collateral.json");
+        if std::env::var_os("UPDATE_FIXTURES").is_some() {
+            std::fs::write(path, &expected).expect("collateral.json is writable");
+        }
+
+        // Then
+        assert_eq!(
+            expected, TEST_COLLATERAL_STRING,
+            "collateral.json is stale; regenerate with UPDATE_FIXTURES=1"
+        );
     }
 
     #[test]
