@@ -30,10 +30,7 @@ fn base_config(rpc_url: &str, expected_network: u64, provider: &str) -> ForeignC
     }
 }
 
-/// The startup probe asks each configured provider for its chain id and publishes the per-chain
-/// counts. Node 0 is pointed at a mock serving [`MOCK_EVM_CHAIN_ID`] and told to expect it, so its
-/// provider is healthy; node 1 is told to expect a different network, so its provider is not.
-/// Both configure one provider, so `configured` is 1 either way and only `healthy` separates them.
+/// Both nodes configure one provider, so only `healthy` separates them.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
@@ -42,7 +39,7 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     setup_evm_mock(&server, MockAuthExpectation::None);
     let url = server.url("/");
 
-    // when cluster probing is ran as part of start up
+    // when
     let (cluster, _running) = common::must_setup_cluster(
         common::FOREIGN_CHAIN_PROBE_PORT_SEED,
         |c: &mut e2e_tests::MpcClusterConfig| {
