@@ -130,10 +130,6 @@ impl HasAbsenceMeaning for GetServiceInfoResponse {
     const ABSENCE: AbsenceMeaning = AbsenceMeaning::ApiIsNotServed;
 }
 
-/// gRPC status codes carry the verdict semantics directly: deterministic rejections (bad request,
-/// auth, unimplemented method) must count as substantive verdicts in the fan-out, and only genuine
-/// provider hiccups stay transient. [`NotFound`](Code::NotFound) is the one code whose meaning
-/// depends on what was asked for, so it reads off the response type.
 impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
     type Response = T;
 
@@ -145,6 +141,7 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
 
         let message = status.to_string();
         Err(match status.code() {
+            // Sui nodes answer NotFound both for an absent transaction and for an unserved method.
             Code::NotFound => match T::ABSENCE {
                 AbsenceMeaning::TransactionIsAbsent => {
                     ForeignChainInspectionError::TransactionNotFound
@@ -153,7 +150,7 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
                     ForeignChainInspectionError::RpcRequestRejected(message)
                 }
             },
-            // Named so a probe can report a slow provider as timed out rather than unreachable.
+            // Split from the other transient failures so a slow provider reads as timed out.
             Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
             Code::Unavailable
             | Code::ResourceExhausted

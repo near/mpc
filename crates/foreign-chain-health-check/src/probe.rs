@@ -141,7 +141,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // Ethereum and Solana have no inspector to probe them with.
+                // Ethereum, Solana and Ton have no inspector to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -1003,8 +1003,7 @@ mod tests {
         }
     }
 
-    /// The mock HTTP server the other chains use cannot speak gRPC, so a Sui provider is played by
-    /// a real one, answering whatever a test arms.
+    /// A gRPC ledger service answering whatever a test arms.
     struct FakeSuiLedger(Result<GetServiceInfoResponse, Status>);
 
     #[tonic::async_trait]

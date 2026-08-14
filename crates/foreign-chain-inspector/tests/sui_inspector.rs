@@ -17,8 +17,7 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
-/// An RPC a test leaves unarmed panics when called, so a test that reaches the wrong one fails
-/// loudly instead of on an assertion about a plausible looking status.
+/// An RPC a test leaves unarmed panics when called.
 struct MockSuiClient {
     response: Option<Result<GetTransactionResponse, Status>>,
     service_info: Option<Result<GetServiceInfoResponse, Status>>,
