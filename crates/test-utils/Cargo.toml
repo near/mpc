@@ -16,5 +16,9 @@ serde_yaml = { workspace = true }
 sha2 = { workspace = true }
 tee-verifier-interface = { workspace = true }
 
+[dev-dependencies]
+bs58 = { workspace = true }
+ed25519-dalek = { workspace = true }
+
 [lints]
 workspace = true

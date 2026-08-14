@@ -11585,7 +11585,9 @@ dependencies = [
 name = "test-utils"
 version = "3.14.0"
 dependencies = [
+ "bs58 0.5.1",
  "cargo-near-build",
+ "ed25519-dalek",
  "hex",
  "mpc-attestation",
  "mpc-primitives",

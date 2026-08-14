@@ -36,8 +36,18 @@ jq -j '.near_signer_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_account_public
 # Extract app_compose.json. We set 4 width indentation, and remove trailing newline, so it matches the original string in tests.
 printf '%s' "$(jq -r --indent 4 '.tee_participant_info.Dstack.tcb_info.app_compose' "$INPUT_FILE")" > "$OUTPUT_DIR/app_compose.json"
 
-# Extract collateral
-jq -r '.tee_participant_info.Dstack.collateral' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
+# The endpoint emits the DER/signature fields as byte arrays (serde_bytes) while the fixture parser
+# reads them as hex, and the PEM chains keep the NUL terminator from the quote's C strings. Fields
+# already in the target form pass through unchanged.
+jq -r 'def tohex:
+         if type == "array" then "0123456789abcdef" as $h
+           | map($h[(. / 16 | floor):(. / 16 | floor) + 1] + $h[(. % 16):(. % 16) + 1]) | join("")
+         else . end;
+       def strip_nul: if type == "string" then split("\u0000")[0] else . end;
+       .tee_participant_info.Dstack.collateral
+       | (.root_ca_crl, .pck_crl, .tcb_info_signature, .qe_identity_signature) |= tohex
+       | (.pck_crl_issuer_chain, .tcb_info_issuer_chain, .qe_identity_issuer_chain,
+          .pck_certificate_chain) |= strip_nul' "$INPUT_FILE" > "$OUTPUT_DIR/collateral.json"
 
 # Extract quote
 jq -c '.tee_participant_info.Dstack.quote' "$INPUT_FILE" > "$OUTPUT_DIR/quote.json"
@@ -54,3 +64,8 @@ printf "%s" "$(grep 'DEFAULT_IMAGE_DIGEST' "$OUTPUT_DIR/launcher_image_compose.y
 
 echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
+
+echo ""
+echo "REMINDER: replace '$OUTPUT_DIR/near_account_secret_key' with the secret key of"
+echo "the node you just extracted from (ed25519:<base58>, one line). It must pair with"
+echo "the freshly written near_account_public_key.pub."

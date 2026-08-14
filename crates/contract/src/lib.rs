@@ -3093,8 +3093,8 @@ mod tests {
         test_utils::whitelist_dstack_measurements, verification_context::VerificationContext,
     };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
-        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
+        launcher_image_hash, mock_dstack_attestation_inner, p2p_tls_key, verified_report,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -5036,6 +5036,11 @@ mod tests {
             image_digest(),
             launcher_image_hash(),
         );
+        // The fixture's launcher compose carries the key-export service, so its hash is not derivable.
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .allow_compose_hash(&launcher_image_hash(), launcher_compose_digest());
 
         // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
         contract
