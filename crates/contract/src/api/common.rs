@@ -203,6 +203,9 @@ impl MpcContract {
 /// Note: This is an implementation constant, not a configurable policy value.
 const DATA_ID_REGISTER: u64 = 0;
 
+/// Minimum deposit required for sign requests, also charged for foreign-transaction verification
+pub(crate) const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
 /// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
 ///
 /// A non-zero deposit is required so that the transaction must be signed by a

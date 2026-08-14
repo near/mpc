@@ -17,7 +17,7 @@ use crate::primitives::{key_state::AuthenticatedParticipantId, signature::YieldI
 use dtos::DomainPurpose;
 use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
 
-use crate::api::sign::MINIMUM_SIGN_REQUEST_DEPOSIT;
+use crate::api::common::MINIMUM_SIGN_REQUEST_DEPOSIT;
 use crate::pending_requests;
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};

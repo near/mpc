@@ -1,6 +1,7 @@
 //! Signature request entrypoints: submitting a `sign` request, the node's `respond`,
 //! and the yield-resume callback that returns the signature to the original caller.
 
+use crate::api::common::MINIMUM_SIGN_REQUEST_DEPOSIT;
 use crate::crypto_shared::derive_key_secp256k1;
 use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
 use crate::crypto_shared::types::PublicKeyExtended;
@@ -224,9 +225,6 @@ impl MpcContract {
         }
     }
 }
-
-/// Minimum deposit required for sign requests
-pub(crate) const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
