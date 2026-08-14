@@ -15,33 +15,10 @@ use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use std::time::Duration;
 use tee_verifier::TeeVerifier;
 use tee_verifier_interface::{
-    Collateral, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory,
-    VerificationResult, VerifiedReport, VerifierError,
+    QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory, VerificationResult,
+    VerifiedReport, VerifierError,
 };
-use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral as collateral_json, quote};
-
-fn make_collateral() -> Collateral {
-    // `test_utils::attestation::collateral()` returns a `serde_json::Value`
-    // matching `attestation::Collateral`'s JSON shape. We re-parse it
-    // into the interface crate's mirror type by extracting the same
-    // field names that `dcap_qvl::QuoteCollateralV3` uses.
-    let v = collateral_json();
-    Collateral {
-        pck_crl_issuer_chain: v["pck_crl_issuer_chain"].as_str().unwrap().to_string(),
-        root_ca_crl: hex::decode(v["root_ca_crl"].as_str().unwrap()).unwrap(),
-        pck_crl: hex::decode(v["pck_crl"].as_str().unwrap()).unwrap(),
-        tcb_info_issuer_chain: v["tcb_info_issuer_chain"].as_str().unwrap().to_string(),
-        tcb_info: v["tcb_info"].as_str().unwrap().to_string(),
-        tcb_info_signature: hex::decode(v["tcb_info_signature"].as_str().unwrap()).unwrap(),
-        qe_identity_issuer_chain: v["qe_identity_issuer_chain"].as_str().unwrap().to_string(),
-        qe_identity: v["qe_identity"].as_str().unwrap().to_string(),
-        qe_identity_signature: hex::decode(v["qe_identity_signature"].as_str().unwrap()).unwrap(),
-        pck_certificate_chain: v
-            .get("pck_certificate_chain")
-            .and_then(|s| s.as_str())
-            .map(str::to_string),
-    }
-}
+use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral, quote};
 
 fn make_quote_bytes() -> QuoteBytes {
     QuoteBytes(Vec::from(quote()))
@@ -66,7 +43,7 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let quote = make_quote_bytes();
-    let collateral = make_collateral();
+    let collateral = collateral();
 
     // When
     let result = contract.verify_quote(quote, collateral);
@@ -133,7 +110,7 @@ fn verify_quote__should_reject_without_panicking_for_invalid_quote() {
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let invalid_quote = QuoteBytes(vec![0u8; 16]);
-    let collateral = make_collateral();
+    let collateral = collateral();
 
     // When
     let result = contract.verify_quote(invalid_quote, collateral);
@@ -155,7 +132,7 @@ fn verify_quote__should_reject_valid_quote_with_mismatched_collateral() {
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let quote = make_quote_bytes();
-    let mut collateral = make_collateral();
+    let mut collateral = collateral();
     collateral.tcb_info = String::from("{}");
 
     // When
@@ -191,7 +168,7 @@ fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
 #[test]
 fn verify_quote_args_fixture__should_match_committed_file() {
     let mut expected = borsh::to_vec(&make_quote_bytes()).unwrap();
-    expected.extend(borsh::to_vec(&make_collateral()).unwrap());
+    expected.extend(borsh::to_vec(&collateral()).unwrap());
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/verify_quote_args.borsh"

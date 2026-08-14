@@ -27,7 +27,6 @@ tee-verifier-interface = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 attestation = { path = ".", features = [
     "local-verify",
     "test-utils",
@@ -40,10 +39,6 @@ test-utils = { workspace = true }
 [[test]]
 name = "app_compose"
 required-features = ["dstack-conversions"]
-
-[[test]]
-name = "collateral"
-required-features = ["test-utils"]
 
 [lints]
 workspace = true

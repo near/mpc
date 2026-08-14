@@ -14,7 +14,7 @@ near-sdk = { workspace = true, features = ["non-contract-usage"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
-tee-verifier-interface = { workspace = true }
+tee-verifier-interface = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 bs58 = { workspace = true }
