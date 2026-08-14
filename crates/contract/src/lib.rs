@@ -36,7 +36,7 @@ use std::{
     time::Duration,
 };
 
-use crate::api::common::{MINIMUM_SIGN_REQUEST_DEPOSIT, refund_to, require_deposit};
+use crate::api::common::{refund_to, require_deposit};
 use crate::{
     dto_mapping::{
         IntoContractType, IntoInterfaceType, TryIntoContractType,
@@ -65,7 +65,9 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
-use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
+use near_mpc_contract_interface::deposits::{
+    MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
+};
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
@@ -241,7 +243,7 @@ impl MpcContract {
             request.domain_id,
             DomainPurpose::Sign,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
-            MINIMUM_SIGN_REQUEST_DEPOSIT,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
 
         // ensure the signer sent a valid signature request
@@ -417,7 +419,7 @@ impl MpcContract {
             request.domain_id,
             DomainPurpose::ForeignTx,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
-            MINIMUM_SIGN_REQUEST_DEPOSIT,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
 
         let requested_chain = request.request.chain();
