@@ -147,7 +147,6 @@ impl AptosRpcClient for ReqwestAptosClient {
     fn get_ledger_info(
         &self,
     ) -> impl Future<Output = Result<LedgerInfoResponse, AptosRpcError>> + Send {
-        // The ledger info lives at the API root.
         self.get_json(self.base.clone())
     }
 }

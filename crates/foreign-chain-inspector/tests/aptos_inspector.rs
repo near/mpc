@@ -261,7 +261,6 @@ async fn extract__should_reject_response_with_mismatched_hash() {
     );
 }
 
-/// Aptos mainnet, as the docs table and the config templates ship it.
 const MAINNET_CHAIN_ID: u64 = 1;
 
 #[tokio::test]

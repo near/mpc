@@ -477,8 +477,6 @@ pub(crate) enum AbsenceMeaning {
     ApiIsNotServed,
 }
 
-/// The [`AbsenceMeaning`] of the resource a response carries. Required by
-/// [`ClassifyRpcOutcome::classified`], so an undeclared response type cannot be classified.
 pub(crate) trait HasAbsenceMeaning {
     const ABSENCE: AbsenceMeaning;
 }

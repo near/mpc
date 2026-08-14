@@ -141,7 +141,6 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
             AptosRpcError::ApiError { .. } => {
                 ForeignChainInspectionError::RpcRequestRejected(message)
             }
-            // Split timeout from rest of http errors for reporting.
             AptosRpcError::Http(error) if error.is_timeout() => {
                 ForeignChainInspectionError::Timeout
             }

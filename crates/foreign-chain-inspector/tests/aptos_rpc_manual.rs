@@ -61,7 +61,8 @@ fn parse_tx_hash(hash: &str) -> AptosTransactionHash {
     AptosTransactionHash::from(array)
 }
 
-/// Aptos mainnet's ledger chain id, as shipped in `expected_network_fingerprint`.
+/// Aptos mainnet's ledger chain id, as shipped in the node config file
+/// `foreign_chains.aptos.expected_network_fingerprint`.
 const EXPECTED_NETWORK_FINGERPRINT: &str = "1";
 
 #[tokio::test]
