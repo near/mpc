@@ -41,7 +41,7 @@ use rand::rngs::OsRng;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::OwnedMutexGuard;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 /// Current state of an account while the CLI is running.
 pub struct OperatingAccount {
@@ -475,6 +475,12 @@ impl OperatingAccount {
     /// Returns the first access key, for transactions that don't need parallelism.
     pub async fn any_access_key(&self) -> OwnedMutexGuard<OperatingAccessKey> {
         self.keys[0].clone().lock_owned().await
+    }
+
+    /// The first access key as a shareable handle, for callers that lock per
+    /// transaction (see [`crate::caller::DevnetCaller`]).
+    pub fn any_access_key_arc(&self) -> Arc<Mutex<OperatingAccessKey>> {
+        self.keys[0].clone()
     }
 
     /// Returns all access keys, for transactions that need full parallelism.
