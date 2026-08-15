@@ -6,6 +6,10 @@
 
 use crate::MpcContract;
 use crate::primitives::participants::ParticipantInfo;
+use crate::tee::tee_state::{NodeAttestation, NodeId};
+use mpc_attestation::attestation::{
+    MockAttestation, ValidatedDstackAttestation, VerifiedAttestation, default_measurements,
+};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
@@ -122,5 +126,54 @@ impl MpcContract {
             .active_participants_mut()
             .update_info(account_id, new_info)
             .is_ok()
+    }
+
+    /// Benchmark: seeds `count` attestations keyed by a synthetic TLS key derived from
+    /// `offset + i`, so successive calls with disjoint offsets accumulate. Returns the
+    /// resulting map size.
+    ///
+    /// Bypasses `add_participant`, and so DCAP verification, which is what makes seeding a
+    /// backlog of arbitrary size affordable.
+    /// `expired` picks an entry [`crate::tee::tee_state::TeeState::clean_invalid_attestations`]
+    /// removes over one it keeps, isolating the per-entry scan cost from the removal cost.
+    pub fn bench_seed_attestations(&mut self, offset: u32, count: u32, expired: bool) -> u32 {
+        let end = offset
+            .checked_add(count)
+            .expect("bench seeding range must not overflow");
+        let measurements = default_measurements()[0];
+        let verified_attestation = if expired {
+            VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                mpc_image_hash: [7u8; 32].into(),
+                launcher_compose_hash: [8u8; 32].into(),
+                expiry_timestamp_seconds: 1,
+                measurements,
+            })
+        } else {
+            VerifiedAttestation::Mock(MockAttestation::WithConstraints {
+                mpc_docker_image_hash: None,
+                launcher_docker_compose_hash: None,
+                expiry_timestamp_seconds: Some(u64::MAX),
+                expected_measurements: None,
+            })
+        };
+
+        for i in offset..end {
+            let mut key_bytes = [0u8; 32];
+            key_bytes[..4].copy_from_slice(&i.to_le_bytes());
+            let tls_public_key: dtos::Ed25519PublicKey = key_bytes.into();
+            let account_id: AccountId = format!("bench-attested-{i}.near").parse().unwrap();
+            self.tee_state.stored_attestations.insert(
+                tls_public_key.clone(),
+                NodeAttestation {
+                    node_id: NodeId {
+                        account_id,
+                        tls_public_key: tls_public_key.clone(),
+                        account_public_key: tls_public_key,
+                    },
+                    verified_attestation: verified_attestation.clone(),
+                },
+            );
+        }
+        self.tee_state.stored_attestations.len()
     }
 }
