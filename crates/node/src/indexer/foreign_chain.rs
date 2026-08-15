@@ -46,12 +46,8 @@ pub async fn monitor_foreign_chain_supporters(
 /// a transiently inconsistent snapshot, corrected on the next poll.
 async fn read_supporters(indexer_state: &IndexerState) -> anyhow::Result<ForeignChainSupporters> {
     let ((_, available_chains), (_, configs)) = tokio::try_join!(
-        indexer_state
-            .view_client
-            .get_available_chains(&indexer_state.mpc_contract_id),
-        indexer_state
-            .view_client
-            .get_foreign_chains_configs(&indexer_state.mpc_contract_id)
+        indexer_state.view_client.get_available_chains(),
+        indexer_state.view_client.get_foreign_chains_configs()
     )?;
     Ok(supporters_by_available_chain(&available_chains, &configs))
 }
