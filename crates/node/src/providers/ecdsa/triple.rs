@@ -94,10 +94,12 @@ impl EcdsaSignatureProvider {
             let mut offline: i64 = 0;
             let mut available: i64 = 0;
             for store in &triple_stores {
-                online += i64::try_from(store.num_owned_ready()).expect("triple count fits in i64");
-                offline +=
-                    i64::try_from(store.num_owned_offline()).expect("triple count fits in i64");
-                available += i64::try_from(store.num_owned()).expect("triple count fits in i64");
+                online += i64::try_from(store.num_owned_ready().unwrap())
+                    .expect("triple count fits in i64");
+                offline += i64::try_from(store.num_owned_offline().unwrap())
+                    .expect("triple count fits in i64");
+                available +=
+                    i64::try_from(store.num_owned().unwrap()).expect("triple count fits in i64");
             }
             metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(online);
             metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(offline);
@@ -132,7 +134,7 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
-            let my_triples_count = triple_store.num_owned();
+            let my_triples_count = triple_store.num_owned().unwrap(); // Since return is !
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 
@@ -159,7 +161,8 @@ impl EcdsaSignatureProvider {
                 };
 
                 let id_start = triple_store
-                    .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
+                    .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32)
+                    .unwrap(); // Since return is !
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
                     count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
@@ -199,10 +202,12 @@ impl EcdsaSignatureProvider {
                             .await?;
 
                             for (i, paired_triple) in triples.into_iter().enumerate() {
-                                triple_store.add_owned(
-                                    id_start.add_to_counter(i.try_into()?)?,
-                                    paired_triple,
-                                );
+                                triple_store
+                                    .add_owned(
+                                        id_start.add_to_counter(i.try_into()?)?,
+                                        paired_triple,
+                                    )
+                                    .unwrap();
                             }
 
                             anyhow::Ok(())
@@ -212,7 +217,7 @@ impl EcdsaSignatureProvider {
                 // improve throughput by avoiding thundering herd situations.
                 // Further optimization can be done to avoid thundering herd
                 // situations in the first place.
-                tokio::time::sleep(std::time::Duration::from_secs(
+                tokio::time::sleep(Duration::from_secs(
                     config.parallel_triple_generation_stagger_time_sec,
                 ))
                 .await;
@@ -221,10 +226,10 @@ impl EcdsaSignatureProvider {
 
             // If the store is full, try to discard some triples which cannot be used right now
             if my_triples_count >= config.desired_triples_to_buffer {
-                triple_store.maybe_discard_owned(32).await;
+                triple_store.maybe_discard_owned(32).await.unwrap();
             }
 
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
@@ -352,7 +357,7 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
             self.out_triple_store.add_unowned(
                 self.out_triple_id_start.add_to_counter(i.try_into()?)?,
                 paired_triple,
-            );
+            )?;
         }
         Ok(())
     }
@@ -559,10 +564,7 @@ mod tests {
             .flatten()
             .collect::<Vec<_>>();
 
-        Ok(triples
-            .into_iter()
-            .chain(passive_triples.await.unwrap())
-            .collect())
+        Ok(triples.into_iter().chain(passive_triples.await?).collect())
     }
 
     fn new_triple_store(
@@ -623,18 +625,18 @@ mod tests {
             participants.clone(),
         );
 
-        let id_a = store_a.generate_and_reserve_id();
-        store_a.add_owned(id_a, make_triple(&participants));
-        let id_b = store_b.generate_and_reserve_id();
-        store_b.add_owned(id_b, make_triple(&participants));
+        let id_a = store_a.generate_and_reserve_id().unwrap();
+        store_a.add_owned(id_a, make_triple(&participants)).unwrap();
+        let id_b = store_b.generate_and_reserve_id().unwrap();
+        store_b.add_owned(id_b, make_triple(&participants)).unwrap();
 
         // When taking from `t = 3`.
-        let (taken_id, _) = store_a.take_owned().now_or_never().unwrap();
+        let (taken_id, _) = store_a.take_owned().now_or_never().unwrap().unwrap();
 
         // Then `t = 7`'s store is unaffected.
         assert_eq!(taken_id, id_a);
-        assert_eq!(store_a.num_owned(), 0);
-        assert_eq!(store_b.num_owned(), 1);
+        assert_eq!(store_a.num_owned().unwrap(), 0);
+        assert_eq!(store_b.num_owned().unwrap(), 1);
     }
 
     #[test]
@@ -647,10 +649,10 @@ mod tests {
         let participants = vec![me];
         let t = ReconstructionThreshold::new(3);
         let store = new_triple_store(db.clone(), me, t, participants.clone());
-        let id = store.generate_and_reserve_id();
+        let id = store.generate_and_reserve_id().unwrap();
 
         // When adding an owned triple.
-        store.add_owned(id, make_triple(&participants));
+        store.add_owned(id, make_triple(&participants)).unwrap();
 
         // Then it is persisted under the per-`t` TripleV2 key.
         assert!(
@@ -670,8 +672,8 @@ mod tests {
         let participants = vec![me];
         let t = ReconstructionThreshold::new(3);
         let store = new_triple_store(db.clone(), me, t, participants.clone());
-        let id = store.generate_and_reserve_id();
-        store.add_owned(id, make_triple(&participants));
+        let id = store.generate_and_reserve_id().unwrap();
+        store.add_owned(id, make_triple(&participants)).unwrap();
 
         // When the triple is consumed.
         let _ = store.take_owned().now_or_never().unwrap();

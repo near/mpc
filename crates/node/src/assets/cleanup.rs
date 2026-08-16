@@ -255,8 +255,10 @@ mod tests {
             reconstruction_threshold,
         )
         .unwrap();
-        let id = triple_store.generate_and_reserve_id();
-        triple_store.add_owned(id, make_triple(&all_participants));
+        let id = triple_store.generate_and_reserve_id().unwrap();
+        triple_store
+            .add_owned(id, make_triple(&all_participants))
+            .unwrap();
         let v2_key = triple_v2_key(reconstruction_threshold, id);
         // Sanity: the row really is in the TripleV2 column.
         assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
@@ -324,8 +326,10 @@ mod tests {
             reconstruction_threshold,
         )
         .unwrap();
-        let id = triple_store.generate_and_reserve_id();
-        triple_store.add_owned(id, make_triple(&active_subset));
+        let id = triple_store.generate_and_reserve_id().unwrap();
+        triple_store
+            .add_owned(id, make_triple(&active_subset))
+            .unwrap();
         let v2_key = triple_v2_key(reconstruction_threshold, id);
 
         // Seed epoch_data, then run cleanup with one participant's TLS rotated
@@ -386,7 +390,9 @@ mod tests {
         // Even an outright-stale peer-owned triple stays put — the peer cleans
         // its own.
         let peer_id = UniqueId::new(peer, 100, 0);
-        triple_store.add_unowned(peer_id, make_triple(&all_participants));
+        triple_store
+            .add_unowned(peer_id, make_triple(&all_participants))
+            .unwrap();
         let v2_key = triple_v2_key(reconstruction_threshold, peer_id);
 
         delete_stale_triples_and_presignatures(

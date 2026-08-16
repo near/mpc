@@ -28,7 +28,7 @@ impl RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
         let keyshare = self.keyshare(sign_request.domain)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
+        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await?;
         let participants = presignature.participants.clone();
         let channel = self.client.new_channel_for_task(
             RobustEcdsaTaskId::Signature {

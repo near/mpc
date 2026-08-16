@@ -79,7 +79,7 @@ where
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
+        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await?;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {

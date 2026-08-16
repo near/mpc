@@ -12,30 +12,23 @@ pub struct SignRequestStorage {
 
 impl SignRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = tokio::sync::broadcast::channel(500);
+        let (tx, _) = broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &SignatureRequest) -> bool {
-        let key = borsh::to_vec(&request.id).unwrap();
-        if self
-            .db
-            .get(DBCol::SignRequest, &key)
-            .expect("Unrecoverable error reading from database")
-            .is_some()
-        {
-            return false;
+    pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<bool> {
+        let key = borsh::to_vec(&request.id)?;
+        if self.db.get(DBCol::SignRequest, &key)?.is_some() {
+            return Ok(false);
         }
-        let value_ser = serde_json::to_vec(&request).unwrap();
+        let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::SignRequest, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
+        update.commit()?;
         let _ = self.add_sender.send(request.id);
-        true
+        Ok(true)
     }
 
     /// Returns when a signature request with given id is present, then returns it.
@@ -78,30 +71,23 @@ pub struct CKDRequestStorage {
 
 impl CKDRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = tokio::sync::broadcast::channel(500);
+        let (tx, _) = broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &CKDRequest) -> bool {
-        let key = borsh::to_vec(&request.id).unwrap();
-        if self
-            .db
-            .get(DBCol::CKDRequest, &key)
-            .expect("Unrecoverable error reading from database")
-            .is_some()
-        {
-            return false;
+    pub fn add(&self, request: &CKDRequest) -> anyhow::Result<bool> {
+        let key = borsh::to_vec(&request.id)?;
+        if self.db.get(DBCol::CKDRequest, &key)?.is_some() {
+            return Ok(false);
         }
-        let value_ser = serde_json::to_vec(&request).unwrap();
+        let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::CKDRequest, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
+        update.commit()?;
         let _ = self.add_sender.send(request.id);
-        true
+        Ok(true)
     }
 
     /// Returns when a ckd request with given id is present, then returns it.
@@ -144,30 +130,23 @@ pub struct VerifyForeignTransactionRequestStorage {
 
 impl VerifyForeignTransactionRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = tokio::sync::broadcast::channel(500);
+        let (tx, _) = broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &VerifyForeignTxRequest) -> bool {
-        let key = borsh::to_vec(&request.id).unwrap();
-        if self
-            .db
-            .get(DBCol::VerifyForeignTxRequest, &key)
-            .expect("Unrecoverable error reading from database")
-            .is_some()
-        {
-            return false;
+    pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<bool> {
+        let key = borsh::to_vec(&request.id)?;
+        if self.db.get(DBCol::VerifyForeignTxRequest, &key)?.is_some() {
+            return Ok(false);
         }
-        let value_ser = serde_json::to_vec(&request).unwrap();
+        let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::VerifyForeignTxRequest, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
+        update.commit()?;
         let _ = self.add_sender.send(request.id);
-        true
+        Ok(true)
     }
 
     /// Returns when a verify foreign tx request with given id is present, then returns it.
@@ -223,39 +202,52 @@ mod tests {
         types::SignatureRequest,
     };
 
+    fn signature_request() -> SignatureRequest {
+        // TODO: move this to common test function module since there are more duplicates elsewhere
+        SignatureRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            entropy: [0; 32],
+            payload: Payload::from_legacy_ecdsa([0; 32]),
+            timestamp_nanosec: 0,
+            tweak: Tweak::new([0; 32]),
+            domain: DomainId::legacy_ecdsa_id(),
+        }
+    }
+
+    fn cdk_request() -> CKDRequest {
+        CKDRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
+                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                    .parse()
+                    .unwrap(),
+            ),
+            app_id: [1u8; 32].into(),
+            entropy: [0; 32],
+            timestamp_nanosec: 0,
+            domain_id: DomainId::legacy_ecdsa_id(),
+        }
+    }
+
     #[tokio::test]
     async fn test_sig_request_storage() {
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let storage = SignRequestStorage::new(db).unwrap();
 
-        let req1 = SignatureRequest {
-            id: CryptoHash(rand::random()),
-            // All other fields are irrelevant for the test.
-            receipt_id: CryptoHash([0; 32]),
-            entropy: [0; 32],
-            payload: Payload::from_legacy_ecdsa([0; 32]),
-            timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
-            domain: DomainId::legacy_ecdsa_id(),
-        };
-        assert!(storage.add(&req1));
-        assert!(!storage.add(&req1));
+        let req1 = signature_request();
+        assert!(storage.add(&req1).unwrap());
+        assert!(!storage.add(&req1).unwrap());
         let _ = storage
             .get(req1.id)
             .await
             .expect("Stored signature request should be retrievable");
-        let req2 = SignatureRequest {
-            id: CryptoHash(rand::random()),
-            // All other fields are irrelevant for the test.
-            receipt_id: CryptoHash([0; 32]),
-            entropy: [0; 32],
-            payload: Payload::from_legacy_ecdsa([0; 32]),
-            timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
-            domain: DomainId::legacy_ecdsa_id(),
-        };
-        storage.add(&req2);
+        let req2 = signature_request();
+        storage.add(&req2).unwrap();
         let _ = storage
             .get(req1.id)
             .await
@@ -272,41 +264,15 @@ mod tests {
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let storage = CKDRequestStorage::new(db).unwrap();
 
-        let req1 = CKDRequest {
-            id: CryptoHash(rand::random()),
-            // All other fields are irrelevant for the test.
-            receipt_id: CryptoHash([0; 32]),
-            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
-                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                    .parse()
-                    .unwrap(),
-            ),
-            app_id: [1u8; 32].into(),
-            entropy: [0; 32],
-            timestamp_nanosec: 0,
-            domain_id: DomainId::legacy_ecdsa_id(),
-        };
-        assert!(storage.add(&req1));
-        assert!(!storage.add(&req1));
+        let req1 = cdk_request();
+        assert!(storage.add(&req1).unwrap());
+        assert!(!storage.add(&req1).unwrap());
         let _ = storage
             .get(req1.id)
             .await
             .expect("Stored CKD request should be retrievable");
-        let req2 = CKDRequest {
-            id: CryptoHash(rand::random()),
-            // All other fields are irrelevant for the test.
-            receipt_id: CryptoHash([0; 32]),
-            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
-                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                    .parse()
-                    .unwrap(),
-            ),
-            app_id: [1u8; 32].into(),
-            entropy: [0; 32],
-            timestamp_nanosec: 0,
-            domain_id: DomainId::legacy_ecdsa_id(),
-        };
-        storage.add(&req2);
+        let req2 = cdk_request();
+        storage.add(&req2).unwrap();
         let _ = storage
             .get(req1.id)
             .await
