@@ -202,6 +202,12 @@ async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFin
     .unwrap()
 }
 
+async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::VerifiedAttestation> {
+    get_participant_attestation(contract, &p2p_tls_key().into())
+        .await
+        .unwrap()
+}
+
 /// Asserts a Dstack submission failed cleanly: a receipt failed mentioning every
 /// string in `expected_error` (`fail_attestation_submission` panics in its own
 /// receipt), no attestation was stored, and the caller spent only gas.
@@ -227,9 +233,7 @@ async fn assert_submission_failed_cleanly(
         );
     }
 
-    let stored = get_participant_attestation(contract, &p2p_tls_key().into())
-        .await
-        .unwrap();
+    let stored = stored_fixture_attestation(contract).await;
     assert!(stored.is_none(), "nothing should be stored on failure");
     assert_only_gas_spent(submitter, balance_before, result).await;
 }
@@ -293,9 +297,7 @@ async fn submit_participant_info__should_reject_dstack_when_verifier_not_configu
         err.contains(&expected_panic),
         "expected {expected_panic:?}, got: {err}"
     );
-    let stored = get_participant_attestation(&contract, &p2p_tls_key().into())
-        .await
-        .unwrap();
+    let stored = stored_fixture_attestation(&contract).await;
     assert!(stored.is_none(), "no attestation should be stored");
 }
 
@@ -478,9 +480,8 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
         result.failures().is_empty(),
         "expected every receipt to succeed, got: {result:#?}"
     );
-    let stored = get_participant_attestation(contract, &p2p_tls_key().into())
+    let stored = stored_fixture_attestation(contract)
         .await
-        .unwrap()
         .expect("a Verified submission must store an attestation");
     let dtos::VerifiedAttestation::Dstack(stored) = stored else {
         panic!("expected a stored Dstack attestation, got: {stored:?}");
@@ -529,9 +530,8 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
     let (worker, contract, owner) = setup_verified_fixture().await;
     let contract = &contract;
     submit_dstack(&owner, contract).await.into_result().unwrap();
-    let stored_before = get_participant_attestation(contract, &p2p_tls_key().into())
+    let stored_before = stored_fixture_attestation(contract)
         .await
-        .unwrap()
         .expect("the owner's submission must store an attestation");
     let attacker = create_fixture_account(&worker, "fixture-node-b").await;
     let balance_before = attacker.view_account().await.unwrap().balance;
@@ -551,9 +551,8 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
         rendered.contains(&expected),
         "expected a failure containing {expected:?}, got: {rendered}"
     );
-    let stored_after = get_participant_attestation(contract, &p2p_tls_key().into())
+    let stored_after = stored_fixture_attestation(contract)
         .await
-        .unwrap()
         .expect("the owner's attestation must survive the attack");
     assert_eq!(
         stored_after, stored_before,
