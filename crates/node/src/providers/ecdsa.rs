@@ -257,9 +257,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
             let reconstruction_threshold_usize: usize = t.inner().try_into()?;
             let reconstruction_threshold_bound =
                 TSReconstructionThreshold::from(reconstruction_threshold_usize);
-            let description = format!("generate triples for t={}", t.inner());
-            let task = tracking::spawn(
-                &description,
+            background_tasks.push(tracking::spawn_described(
+                format!("generate triples for t={}", t.inner()),
                 Self::run_background_triple_generation(
                     self.client.clone(),
                     self.mpc_config.clone(),
@@ -267,22 +266,18 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     triple_store.clone(),
                     reconstruction_threshold_bound,
                 ),
-            );
-            background_tasks.push((description, task));
+            ));
         }
 
-        let description = "report triple metrics".to_string();
-        let task = tracking::spawn(
-            &description,
+        background_tasks.push(tracking::spawn_described(
+            "report triple metrics".to_string(),
             Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
-        );
-        background_tasks.push((description, task));
+        ));
 
         for (domain_id, data) in &self.keyshares {
             let triple_store = self.triple_store_for_t(data.reconstruction_threshold)?;
-            let description = format!("generate presignatures for domain {}", domain_id.0);
-            let task = tracking::spawn(
-                &description,
+            background_tasks.push(tracking::spawn_described(
+                format!("generate presignatures for domain {}", domain_id.0),
                 Self::run_background_presignature_generation(
                     self.client.clone(),
                     self.config.presignature.clone().into(),
@@ -290,8 +285,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     *domain_id,
                     data.clone(),
                 ),
-            );
-            background_tasks.push((description, task));
+            ));
         }
 
         let Some((description, outcome)) = tracking::first_task_exit(background_tasks).await else {

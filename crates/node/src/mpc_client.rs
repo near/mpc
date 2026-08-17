@@ -156,12 +156,13 @@ where
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
-        let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
-            loop {
-                client.emit_metrics();
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        });
+        let metrics_emitter: AutoAbortTask<anyhow::Result<()>> =
+            tracking::spawn("periodically emits metrics", async move {
+                loop {
+                    client.emit_metrics();
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
 
         let monitor_passive_channels = {
             tracking::spawn(
@@ -234,7 +235,7 @@ where
         // `try_join!` surfaces the failure and aborts the rest on drop.
         futures::try_join!(
             async move { monitor_passive_channels.await? },
-            async move { metrics_emitter.await.map_err(anyhow::Error::from) },
+            async move { metrics_emitter.await? },
             async move { monitor_chain.await? },
             async move { robust_ecdsa_background_tasks.await? },
             async move { ecdsa_background_tasks.await? },

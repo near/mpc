@@ -188,9 +188,8 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             .keyshares
             .iter()
             .map(|(domain_id, data)| {
-                let description = format!("generate presignatures for domain {}", domain_id.0);
-                let task = tracking::spawn(
-                    &description,
+                tracking::spawn_described(
+                    format!("generate presignatures for domain {}", domain_id.0),
                     presign::run_background_presignature_generation(
                         self.client.clone(),
                         self.mpc_config.clone(),
@@ -198,8 +197,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                         *domain_id,
                         data.clone(),
                     ),
-                );
-                (description, task)
+                )
             })
             .collect::<Vec<_>>();
 

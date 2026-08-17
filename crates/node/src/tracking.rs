@@ -91,9 +91,18 @@ where
         .into()
 }
 
-/// Resolves when the first of `tasks` exits, yielding its description and outcome
-/// and aborting the rest. `None` if `tasks` is empty. Unlike joining, an exit is
-/// observed without waiting on siblings that may never return.
+/// Like [`spawn`], but pairs the task with its description for [`first_task_exit`].
+pub fn spawn_described<F, R>(description: String, f: F) -> (String, AutoAbortTask<R>)
+where
+    F: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    let task = spawn(&description, f);
+    (description, task)
+}
+
+/// Resolves when the first of `tasks` exits, yielding its description and outcome and
+/// aborting the rest. `None` if `tasks` is empty.
 pub async fn first_task_exit<R>(
     tasks: Vec<(String, AutoAbortTask<R>)>,
 ) -> Option<(String, Result<R, JoinError>)> {
