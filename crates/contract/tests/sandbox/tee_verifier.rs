@@ -33,8 +33,10 @@ use futures::future::join_all;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
     errors::TeeError,
-    tee::{measurements::ContractExpectedMeasurements, tee_state::AttestationSubmissionError},
-    test_utils_state::allow_launcher_compose_hash_in_state,
+    tee::{
+        measurements::ContractExpectedMeasurements, tee_state::AttestationSubmissionError,
+        test_utils::allow_launcher_compose_hash_in_state,
+    },
 };
 use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{

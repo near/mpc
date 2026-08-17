@@ -13,8 +13,6 @@ pub mod primitives;
 pub mod state;
 pub mod storage_keys;
 pub mod tee;
-#[cfg(feature = "test-utils")]
-pub mod test_utils_state;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
