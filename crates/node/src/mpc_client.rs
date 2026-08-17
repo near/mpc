@@ -235,8 +235,7 @@ where
             self.ckd_provider.clone().spawn_background_tasks(),
         );
 
-        // Awaiting in sequence would park a failure behind the tasks that never
-        // return; `try_join!` surfaces it and aborts the rest on drop.
+        // `try_join!` surfaces the failure and aborts the rest on drop.
         futures::try_join!(
             async move { monitor_passive_channels.await? },
             async move { metrics_emitter.await.map_err(anyhow::Error::from) },
