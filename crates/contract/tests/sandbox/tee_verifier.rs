@@ -6,9 +6,9 @@
 //!   time pinned to the fixture's validity window. The pin is needed because
 //!   real `verify_quote` checks the quote against block time: the fixture
 //!   collateral is valid only inside a fixed window, while sandbox time is
-//!   wall-clock and forward-only. These tests also deploy the contract built
-//!   with `sandbox-test-attestation`, since the compose that exported the
-//!   fixture key hashes outside the derivable set.
+//!   wall-clock and forward-only. The fixture's compose hash is patched straight
+//!   into contract state, since the compose that exported the fixture key hashes
+//!   outside the derivable set.
 //!
 //! Verified-path tests that store an attestation sign as the fixture account:
 //! the quote's report_data binds the fixture account key, and the contract
@@ -22,10 +22,9 @@ use crate::sandbox::{
         contract_build::{tee_verifier_contract, tee_verifier_contract_with_sandbox_test_hooks},
         mpc_contract::{
             get_config, get_participant_attestation, get_tee_accounts,
-            prepay_and_submit_participant_info, prepay_attestation_grants,
-            sandbox_allow_launcher_compose_hash, submit_participant_info, tee_verifier_account_id,
-            total_gas_fee, vote_add_launcher_hash, vote_add_os_measurement, vote_for_hash,
-            vote_tee_verifier_change,
+            prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
+            tee_verifier_account_id, total_gas_fee, vote_add_launcher_hash,
+            vote_add_os_measurement, vote_for_hash, vote_tee_verifier_change,
         },
     },
 };
@@ -35,8 +34,9 @@ use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_
 use mpc_contract::{
     errors::TeeError,
     tee::{measurements::ContractExpectedMeasurements, tee_state::AttestationSubmissionError},
+    test_utils_state::allow_launcher_compose_hash_in_state,
 };
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{
     Account, AccountId, Contract, Worker,
     network::Sandbox,
@@ -53,16 +53,6 @@ use test_utils::attestation::{
 async fn setup() -> SandboxTestSetup {
     SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await
-}
-
-/// Setup for tests that expect the fixture to pass the post-DCAP checks, which needs the
-/// wasm that can whitelist its launcher compose hash.
-async fn setup_accepting_fixture_attestation() -> SandboxTestSetup {
-    SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .with_sandbox_test_attestation()
         .build()
         .await
 }
@@ -112,12 +102,9 @@ async fn deploy_and_trust_pinned_verifier(
     verifier
 }
 
-/// Votes the fixture's image and launcher hashes into the on-chain allowlists, then
-/// whitelists the fixture's compose hash, which derivation cannot produce. Within a
+/// Votes the fixture's image and launcher hashes into the on-chain allowlists. Within a
 /// round the voters are distinct accounts, so the votes run concurrently.
-///
-/// Requires the `sandbox-test-attestation` wasm.
-async fn whitelist_fixture_dstack_hashes(contract: &Contract, participants: &[Account]) {
+async fn vote_fixture_image_and_launcher(contract: &Contract, participants: &[Account]) {
     let image = image_digest();
     for result in join_all(
         participants
@@ -138,20 +125,43 @@ async fn whitelist_fixture_dstack_hashes(contract: &Contract, participants: &[Ac
     {
         result.unwrap();
     }
-    sandbox_allow_launcher_compose_hash(
-        &participants[0],
-        contract,
-        &launcher,
-        &launcher_compose_digest(),
-    )
-    .await
-    .unwrap();
+}
+
+/// Votes the fixture's hashes in, then patches its compose hash into the allowlist,
+/// which derivation cannot produce.
+async fn whitelist_fixture_dstack_hashes(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    participants: &[Account],
+) {
+    vote_fixture_image_and_launcher(contract, participants).await;
+    let mut entries = worker
+        .view_state(contract.id())
+        .prefix(b"STATE")
+        .await
+        .unwrap();
+    let state = entries
+        .remove(b"STATE".as_slice())
+        .expect("the contract must have a STATE entry");
+    let patched = allow_launcher_compose_hash_in_state(
+        &state,
+        &launcher_image_hash(),
+        launcher_compose_digest(),
+    );
+    worker
+        .patch_state(contract.id(), b"STATE", &patched)
+        .await
+        .unwrap();
 }
 
 /// Adds the OS measurements on top of the hash allowlists, the sandbox
 /// analogue of the in-process `whitelist_dstack_measurements` helper.
-async fn whitelist_fixture_dstack_measurements(contract: &Contract, participants: &[Account]) {
-    whitelist_fixture_dstack_hashes(contract, participants).await;
+async fn whitelist_fixture_dstack_measurements(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    participants: &[Account],
+) {
+    whitelist_fixture_dstack_hashes(worker, contract, participants).await;
     for &measurements in default_measurements() {
         let measurements = ContractExpectedMeasurements::from(measurements);
         for result in join_all(
@@ -207,10 +217,15 @@ async fn prepay_grant_from_separate_payer(
 /// measurements whitelisted, plus a prepaid fixture account whose submissions
 /// pass the report_data binding.
 async fn setup_verified_fixture() -> (SandboxTestSetup, Account) {
-    let setup = setup_accepting_fixture_attestation().await;
+    let setup = setup().await;
     deploy_and_trust_pinned_verifier(&setup.worker, &setup.contract, &setup.mpc_signer_accounts)
         .await;
-    whitelist_fixture_dstack_measurements(&setup.contract, &setup.mpc_signer_accounts).await;
+    whitelist_fixture_dstack_measurements(
+        &setup.worker,
+        &setup.contract,
+        &setup.mpc_signer_accounts,
+    )
+    .await;
     let submitter = create_fixture_account(&setup.worker, "fixture-node-a").await;
     prepay_grant_from_separate_payer(&setup.worker, &setup.contract, submitter.id()).await;
     (setup, submitter)
@@ -257,6 +272,20 @@ async fn assert_submission_failed_cleanly(
         .unwrap();
     assert!(stored.is_none(), "nothing should be stored on failure");
     assert_only_gas_spent(submitter, balance_before, result).await;
+}
+
+/// Calls `verify_quote` with the committed borsh argument fixture and returns the raw
+/// borsh return value, asserting the call itself succeeded.
+async fn call_verify_quote(verifier: &Contract, args: &[u8]) -> Vec<u8> {
+    let result = verifier
+        .call(method_names::VERIFY_QUOTE)
+        .args(args.to_vec())
+        .max_gas()
+        .transact()
+        .await
+        .unwrap();
+    assert!(result.is_success(), "verify_quote failed: {result:#?}");
+    result.raw_bytes().unwrap()
 }
 
 /// Asserts the caller spent only gas: no deposit is attached, so a failed submission costs nothing
@@ -417,11 +446,11 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
         mpc_signer_accounts,
         contract,
         ..
-    } = setup_accepting_fixture_attestation().await;
+    } = setup().await;
     let verifier = deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
     // Only the hash allowlists gate this test's outcome: the plain dev-account
     // submitter fails at report_data, which runs before the measurements check.
-    whitelist_fixture_dstack_hashes(&contract, &mpc_signer_accounts).await;
+    whitelist_fixture_dstack_hashes(&worker, &contract, &mpc_signer_accounts).await;
     let submitter = mpc_signer_accounts[0].clone();
     prepay_grant_from_separate_payer(&worker, &contract, submitter.id()).await;
     let balance_before = submitter.view_account().await.unwrap().balance;
@@ -611,4 +640,80 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
         "the fixture TLS key must still belong to the owner, got: {tee_accounts:?}"
     );
     assert_only_gas_spent(&attacker, balance_before, &result).await;
+}
+
+#[tokio::test]
+async fn submit_participant_info__should_reject_verified_quote_when_compose_hash_not_allowed() {
+    // Given: hashes voted in but the fixture's compose hash never patched, so the
+    // allowlist holds only the derived compose hash.
+    let SandboxTestSetup {
+        worker,
+        mpc_signer_accounts,
+        contract,
+        ..
+    } = setup().await;
+    deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
+    vote_fixture_image_and_launcher(&contract, &mpc_signer_accounts).await;
+    let submitter = create_fixture_account(&worker, "fixture-node-a").await;
+    prepay_grant_from_separate_payer(&worker, &contract, submitter.id()).await;
+    let balance_before = submitter.view_account().await.unwrap().balance;
+
+    // When
+    let result = submit_dstack(&submitter, &contract).await;
+
+    // Then
+    assert_submission_failed_cleanly(
+        &result,
+        &contract,
+        &submitter,
+        balance_before,
+        &[
+            "failed verification",
+            "launcher compose hash",
+            "is not in the allowed hashes list",
+        ],
+    )
+    .await;
+    let remaining: u32 = contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": submitter.id() }))
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(
+        remaining, 1,
+        "a failed submission must not consume the grant"
+    );
+}
+
+#[tokio::test]
+async fn verify_quote__should_ignore_pinned_timestamp_on_production_build() {
+    // Given
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let verifier = worker.dev_deploy(tee_verifier_contract()).await.unwrap();
+    let args = include_bytes!("../../../tee-verifier/tests/fixtures/verify_quote_args.borsh");
+    let unpinned = call_verify_quote(&verifier, args).await;
+
+    // When: pin timestamps whose verdicts differ from block time in either direction,
+    // so honoring the pin would flip the outcome whichever side of the collateral
+    // window the wall clock is on.
+    let far_future = wall_clock_seconds() + 100 * 365 * 24 * 3600;
+    let mut pinned = Vec::new();
+    for pin in [VALID_ATTESTATION_TIMESTAMP, far_future] {
+        worker
+            .patch_state(
+                verifier.id(),
+                SANDBOX_TEST_PINNED_NOW_STORAGE_KEY,
+                &pin.to_le_bytes(),
+            )
+            .await
+            .unwrap();
+        pinned.push(call_verify_quote(&verifier, args).await);
+    }
+
+    // Then
+    for result in pinned {
+        assert_eq!(result, unpinned, "the production build must ignore the pin");
+    }
 }

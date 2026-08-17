@@ -4,9 +4,7 @@ use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::{measurements::ContractExpectedMeasurements, tee_state::NodeId};
-use mpc_primitives::hash::{
-    LauncherDockerComposeHash, LauncherImageHash, NodeImageHash, TeeVerifierCodeHash,
-};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -206,27 +204,6 @@ pub async fn vote_add_launcher_hash(
     let result = account
         .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
         .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
-        .transact()
-        .await?;
-    all_receipts_successful(result)?;
-    Ok(())
-}
-
-/// Whitelists `compose_hash` for `launcher_hash` through the contract method of the same
-/// name, which the `sandbox-test-attestation` feature gates out of the production wasm.
-/// Vote the launcher hash in first.
-pub async fn sandbox_allow_launcher_compose_hash(
-    account: &Account,
-    contract: &Contract,
-    launcher_hash: &LauncherImageHash,
-    compose_hash: &LauncherDockerComposeHash,
-) -> anyhow::Result<()> {
-    let result = account
-        .call(contract.id(), "sandbox_allow_launcher_compose_hash")
-        .args_json(serde_json::json!({
-            "launcher_hash": launcher_hash,
-            "compose_hash": compose_hash,
-        }))
         .transact()
         .await?;
     all_receipts_successful(result)?;

@@ -35,8 +35,8 @@ abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
 # dependency no longer turns on `unit-testing` by default.
 test-utils = ["near-sdk/unit-testing"]
 # Lets sandbox tests pin the timestamp quotes are verified against, so the
-# time-expired fixture collateral can still verify. Never enabled in the
-# reproducible production build (which passes only `--features abi`).
+# fixture collateral verifies regardless of the wall clock. Takes effect only
+# together with `--cfg mpc_sandbox_wasm`, which only the test harness sets.
 sandbox-test-hooks = []
 
 [dependencies]

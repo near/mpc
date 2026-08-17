@@ -75,12 +75,21 @@ impl ContractBuilder {
                 .expect("path must be valid UTF-8")
         };
 
+        // Marks the artifact as test-built; sandbox-only code compiles in only under this cfg.
+        let rustflags = match std::env::var("RUSTFLAGS") {
+            Ok(inherited) if !inherited.is_empty() => {
+                format!("{inherited} --cfg mpc_sandbox_wasm")
+            }
+            _ => "--cfg mpc_sandbox_wasm".to_string(),
+        };
+
         let opts = cargo_near_build::BuildOpts {
             manifest_path: Some(to_utf8(abs_manifest)),
             out_dir: Some(to_utf8(workspace_root().join(out_dir))),
             profile: Some("release-contract".to_string()),
             no_abi: true,
             no_embed_abi: true,
+            env: vec![("RUSTFLAGS".to_string(), rustflags)],
             features: if self.features.is_empty() {
                 None
             } else {

@@ -13,6 +13,8 @@ pub mod primitives;
 pub mod state;
 pub mod storage_keys;
 pub mod tee;
+#[cfg(feature = "test-utils")]
+pub mod test_utils_state;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
@@ -23,20 +25,8 @@ pub mod v3_14_0_state;
 mod bench;
 mod dto_mapping;
 mod pending_requests;
-#[cfg(feature = "sandbox-test-attestation")]
-mod sandbox_test_attestation;
 #[cfg(feature = "sandbox-test-methods")]
 mod sandbox_test_methods;
-
-// The released wasm is the only build that passes `abi` (the reproducible build
-// command); sandbox test builds are wasm32 without it, and `--all-features`
-// checks run on the host.
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "abi",
-    feature = "sandbox-test-attestation"
-))]
-compile_error!("sandbox-test-attestation must never be enabled in a released wasm build");
 
 /// Re-export of the fan-out cap so sandbox tests can lock against the same source of
 /// truth as the contract rather than duplicating the literal.

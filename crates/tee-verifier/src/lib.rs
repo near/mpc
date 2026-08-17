@@ -9,21 +9,20 @@
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
 use near_sdk::{env, near};
-#[cfg(feature = "sandbox-test-hooks")]
+#[cfg(all(feature = "sandbox-test-hooks", mpc_sandbox_wasm))]
 use tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY;
 use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
 
 use tee_verifier_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 
-// The released wasm is the only build that passes `abi` (the reproducible build
-// command); sandbox test builds are wasm32 without it, and `--all-features`
-// checks run on the host.
+// Only the test-built wasm (marked with `--cfg mpc_sandbox_wasm` by
+// `test_utils::contract_build::ContractBuilder`) may carry the pinned clock.
 #[cfg(all(
     target_arch = "wasm32",
-    feature = "abi",
-    feature = "sandbox-test-hooks"
+    feature = "sandbox-test-hooks",
+    not(mpc_sandbox_wasm)
 ))]
-compile_error!("sandbox-test-hooks must never be enabled in a released wasm build");
+compile_error!("sandbox-test-hooks must not be enabled in a shipped wasm build");
 
 // `dcap-qvl`'s `contract` feature pulls in `getrandom` but doesn't enable
 // any backend. On `wasm32-unknown-unknown` we register a custom impl that
@@ -82,7 +81,7 @@ impl TeeVerifier {
 /// passes the fixed validity window of a checked-in collateral fixture it never
 /// returns, so unpinned runs would start failing on that date.
 fn now_seconds() -> u64 {
-    #[cfg(feature = "sandbox-test-hooks")]
+    #[cfg(all(feature = "sandbox-test-hooks", mpc_sandbox_wasm))]
     if let Some(bytes) = env::storage_read(SANDBOX_TEST_PINNED_NOW_STORAGE_KEY) {
         let bytes: [u8; 8] = bytes
             .try_into()

@@ -59,9 +59,6 @@ bench-contract-methods = []
 # length of a fan-out queue). Distinct from `bench-contract-methods` because these are
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
-# Sandbox-only method that whitelists one launcher compose hash directly, for the attestation
-# fixture, whose compose hash is not derivable from the compiled-in template.
-sandbox-test-attestation = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 abi = [
     "borsh/unstable__schema",
