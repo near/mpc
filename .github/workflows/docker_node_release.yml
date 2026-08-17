@@ -36,7 +36,7 @@ on:
 jobs:
   retag-node-image:
     name: "Retag node image for release"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     environment: production
     permissions:
       contents: read
@@ -47,11 +47,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PAT }}
-
-      - name: Install skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
 
       - name: Verify source image exists
         env:

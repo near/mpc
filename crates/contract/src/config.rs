@@ -26,7 +26,7 @@ const DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS: u64 = 2;
 /// Prepaid gas for a `clean_tee_status` call
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
-const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 10;
+const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;

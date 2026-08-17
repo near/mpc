@@ -1049,7 +1049,6 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "attestation"
 version = "3.14.0"
 dependencies = [
- "assert_matches",
  "attestation",
  "borsh",
  "dcap-qvl",
@@ -6091,6 +6090,7 @@ dependencies = [
  "hex",
  "http",
  "http-body-util",
+ "httpmock",
  "humantime",
  "hyper",
  "hyper-util",
@@ -11585,7 +11585,9 @@ dependencies = [
 name = "test-utils"
 version = "3.14.0"
 dependencies = [
+ "bs58 0.5.1",
  "cargo-near-build",
+ "ed25519-dalek",
  "hex",
  "mpc-attestation",
  "mpc-primitives",

@@ -39,7 +39,6 @@ This will regenerate the following files:
 - `near_p2p_public_key.pub`
 - `near_account_public_key.pub`
 - `app_compose.json`
-- `collateral.json`
 - `quote.json`
 - `tcb_info.json`
 - `launcher_image_compose.yaml`
@@ -47,14 +46,30 @@ This will regenerate the following files:
 
 All files will be written into the specified output directory.
 
+`public_data.json` is the endpoint response verbatim, so its collateral byte fields are arrays, while
+`collateral.json` holds the same bytes hex-encoded for the contract DTO.
+
 4. Update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs` to a Unix timestamp after the date when the measurements were taken. This ensures that the tests will consider the measurements valid.
 
-5. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
+5. Copy the node's NEAR signer secret key into `near_account_secret_key` (one line,
+   `ed25519:<base58>`). Tests sign as the fixture node with it, since the quote's
+   `report_data` binds it. It is not in `public_data.json`: it lives in `secrets.json`
+   inside the CVM, exported by
+   [the collection compose](../../../localnet/tee/scripts/rust-launcher/README.md#exporting-the-nodes-signer-key).
+   Only a throwaway localnet key may be committed — check that before you do. Scanners might flag
+   it; it is worthless outside localnet.
+
+   ```shell
+   cargo nextest run -p test-utils account_secret_key
+   ```
+
+6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
    This is optional — the tests only verify parsing, not measurement values — but keeping it
    in sync avoids confusion.
 
-6. Update the compiled-in measurements in `crates/mpc-attestation/assets/`:
+7. Update the compiled-in measurements in `crates/mpc-attestation/assets/`. Skippable unless the OS
+   image changed: these cover `mrtd` and `rtmr0`-`rtmr2`, none of which the compose files affect.
    - `tcb_info_dev.json` — replace with the `tcb_info.json` from a **dev** image attestation
    - `tcb_info.json` — replace with the `tcb_info.json` from a **release** (non-dev) image attestation
 
@@ -71,14 +86,26 @@ All files will be written into the specified output directory.
    > will be managed entirely through on-chain voting (`vote_add_os_measurement`), and these
    > files will no longer need to be kept in sync with the deployed OS image.
 
+8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
+   contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test
+   hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with every new node):
+
+   ```shell
+   UPDATE_FIXTURES=1 cargo test -p test-utils collateral_fixture
+   UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
+   cargo test -p tee-verifier --test verify_quote
+   ```
+
+   The last run fails on `verify_quote__should_return_verified_td10_report_for_valid_fixture`
+   and prints the values actually produced; copy them into
+   `crates/tee-verifier/tests/verify_quote.rs`.
+
 ## Tests that depend on these assets
 
-After updating assets, these tests should pass:
+After updating assets, run the tests in the crates that consume them:
 
 ```shell
-cargo test -p mpc-contract test_submit_participant_info_succeeds_with_valid_dstack_attestation
-cargo test -p mpc-contract test_tee_attestation_fails_with_invalid_tls_key
-cargo test -p mpc-contract test_submit_participant_info_fails_without_approved_mpc_hash
-cargo test -p mpc-contract test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation
-cargo test -p test-utils
+cargo nextest run --cargo-profile=test-release \
+  -p attestation -p mpc-attestation -p test-utils -p attestation-cli -p tee-verifier \
+  -p tee-authority -p mpc-contract
 ```

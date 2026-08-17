@@ -2,6 +2,7 @@
 #![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 #![doc = include_str!("../README.md")]
 
+pub mod api;
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
@@ -35,18 +36,15 @@ use std::{
     time::Duration,
 };
 
+use crate::api::common::{refund_to, require_deposit};
 use crate::{
     dto_mapping::{
         IntoContractType, IntoInterfaceType, TryIntoContractType,
         args_into_verify_foreign_tx_request,
     },
-    errors::{Error, RequestError},
+    errors::Error,
     foreign_chains_metadata::ForeignChainsMetadata,
-    primitives::{
-        ckd::{CKDRequest, app_public_key_check, ckd_output_check},
-        domain::AddDomainsVotes,
-        votes::ProposalHash,
-    },
+    primitives::{ckd::CKDRequest, domain::AddDomainsVotes, votes::ProposalHash},
     storage_keys::StorageKey,
     tee::tee_state::{AttestationSubmissionError, ParticipantInsertion, TeeQuoteStatus, TeeState},
     tee::verification_context::VerificationContext,
@@ -54,30 +52,23 @@ use crate::{
     update::{ProposedUpdates, Update, UpdateId},
 };
 use config::Config;
-use crypto_shared::{
-    derive_key_secp256k1,
-    kdf::derive_public_key_edwards_point_ed25519,
-    types::{PublicKeyExtended, PublicKeyExtendedConversionError},
+use crypto_shared::types::{PublicKeyExtended, PublicKeyExtendedConversionError};
+use errors::{DomainError, InvalidParameters, InvalidState, RespondError, TeeError};
+use near_mpc_contract_interface::deposits::{
+    MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
 };
-use errors::{
-    DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
-};
-use k256::elliptic_curve::PrimeField;
-use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
+use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
-use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDResponse, ProposeUpdateArgs, VerifyForeignTransactionRequest,
+    self as dtos, ProposeUpdateArgs, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
-use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
 
-use dtos::{Curve, DomainConfig, DomainId, DomainPurpose, Protocol};
+use dtos::{DomainConfig, DomainPurpose};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, TeeVerifierCodeHash};
 use near_sdk::{
-    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue, env,
-    log, near,
+    AccountId, CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near,
     store::{IterableMap, Lazy, LookupMap},
 };
 use node_migrations::NodeMigrations;
@@ -85,7 +76,7 @@ use primitives::{
     domain::{DomainRegistry, max_reconstruction_threshold},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     participants::ParticipantInfo,
-    signature::{SignRequestArgs, SignatureRequest, YieldIndex},
+    signature::{SignatureRequest, YieldIndex},
     thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     },
@@ -100,16 +91,6 @@ use tee::{
     tee_state::{NodeId, TeeValidationResult},
 };
 
-/// Register used to receive data id from `promise_await_data`.
-/// Note: This is an implementation constant, not a configurable policy value.
-const DATA_ID_REGISTER: u64 = 0;
-
-/// Minimum deposit required for sign requests
-const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
-
-/// Minimum deposit required for CKD requests
-const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
-
 /// Minimum deposit required for the operator-authenticated node-management methods
 /// (`register_backup_service`, `start_node_migration`, `update_participant_url`).
 ///
@@ -119,44 +100,13 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
     NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR);
 
-/// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External
-/// callers may pick a different value; this only governs the automatic invocation.
-const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 100;
-
-/// Checks that the caller attached at least `minimum_deposit` and refunds any excess.
+/// Entries to scan in the post-reshare `clean_invalid_attestations` sweep. External callers
+/// may pick a different value; this only governs the automatic invocation.
 ///
-/// A non-zero deposit is required so that the transaction must be signed by a
-/// full-access key: function-call access keys cannot attach a deposit (their
-/// allowance covers gas only). This prevents a **malicious frontend** from silently
-/// submitting signature requests on behalf of a user via a restricted
-/// function-call access key. In other words, requiring a deposit ensures the user
-/// (or their full-access key) explicitly authorised the call.
-///
-/// See the "Deposit requirement" section in the contract README for more
-/// details.
-fn require_deposit(minimum_deposit: NearToken, predecessor: &AccountId) {
-    let deposit = env::attached_deposit();
-    match deposit.checked_sub(minimum_deposit) {
-        None => {
-            env::panic_str(
-                &InvalidParameters::InsufficientDeposit {
-                    attached: deposit.as_yoctonear(),
-                    required: minimum_deposit.as_yoctonear(),
-                }
-                .to_string(),
-            );
-        }
-        Some(diff) => refund_to(predecessor, diff),
-    }
-}
-
-/// Transfers `amount` to `account_id` via a detached promise; no-op when zero.
-fn refund_to(account_id: &AccountId, amount: NearToken) {
-    if amount > NearToken::from_near(0) {
-        log!("refund {amount} to {account_id}");
-        Promise::new(account_id.clone()).transfer(amount).detach();
-    }
-}
+/// Sized against [`crate::config::Config::clean_invalid_attestations_tera_gas`]: scanning an
+/// entry costs gas whether or not it is removed, so raising this without raising that
+/// overruns the budget.
+const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;
 
 impl Default for MpcContract {
     fn default() -> Self {
@@ -223,27 +173,8 @@ impl SupportedForeignChainsByNode {
 }
 
 impl MpcContract {
-    pub(crate) fn public_key_extended(
-        &self,
-        domain_id: DomainId,
-    ) -> Result<PublicKeyExtended, Error> {
-        self.protocol_state.public_key(domain_id)
-    }
-
     fn threshold(&self) -> Result<GovernanceThreshold, Error> {
         self.protocol_state.threshold()
-    }
-
-    fn add_signature_request(&mut self, request: SignatureRequest, data_id: CryptoHash) {
-        pending_requests::push_pending_yield(
-            &mut self.pending_signature_requests,
-            request,
-            data_id,
-        );
-    }
-
-    fn add_ckd_request(&mut self, request: CKDRequest, data_id: CryptoHash) {
-        pending_requests::push_pending_yield(&mut self.pending_ckd_requests, request, data_id);
     }
 
     fn add_verify_foreign_tx_request(
@@ -257,282 +188,11 @@ impl MpcContract {
             data_id,
         );
     }
-
-    /// Common preconditions enforced on every user-facing request method (`sign`,
-    /// `request_app_private_key`, `verify_foreign_transaction`):
-    ///
-    /// 1. The target domain exists and its purpose matches `expected_purpose`.
-    /// 2. The caller attached enough prepaid gas to perform the yield/resume flow.
-    /// 3. The caller attached at least `minimum_deposit` (excess is refunded).
-    /// 4. The contract is currently accepting user requests.
-    ///
-    /// Returns the validated domain config and the caller's account id.
-    fn check_request_preconditions(
-        &self,
-        domain_id: DomainId,
-        expected_purpose: DomainPurpose,
-        minimum_gas: Gas,
-        minimum_deposit: NearToken,
-    ) -> (DomainConfig, AccountId) {
-        // 1. Look up the domain and check its purpose.
-        let domains = match self.protocol_state.domain_registry() {
-            Ok(domains) => domains,
-            Err(err) => env::panic_str(&err.to_string()),
-        };
-        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
-            env::panic_str(
-                &InvalidParameters::DomainNotFound {
-                    provided: domain_id,
-                }
-                .to_string(),
-            );
-        };
-        if domain_config.purpose != expected_purpose {
-            env::panic_str(
-                &InvalidParameters::WrongDomainPurpose {
-                    domain_id: domain_config.id,
-                    expected: expected_purpose,
-                    actual: domain_config.purpose,
-                }
-                .to_string(),
-            );
-        }
-        let domain_config = domain_config.clone();
-
-        // 2. Make sure the call will not run out of gas doing yield/resume logic.
-        let prepaid_gas = env::prepaid_gas();
-        if prepaid_gas < minimum_gas {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas {
-                    provided: prepaid_gas.as_gas(),
-                    required: minimum_gas.as_gas(),
-                }
-                .to_string(),
-            );
-        }
-
-        // 3. Require the minimum deposit and refund any excess.
-        let predecessor = env::predecessor_account_id();
-        require_deposit(minimum_deposit, &predecessor);
-
-        // 4. Refuse the request if the contract is not currently accepting requests
-        //    (e.g. because TEE validation has failed).
-        if !self.accept_requests {
-            env::panic_str(&TeeError::TeeValidationFailed.to_string())
-        }
-
-        (domain_config, predecessor)
-    }
-
-    /// Creates a yield-resume promise that calls back into `callback_method` with the
-    /// pre-serialized `callback_args`, and stores the resulting yield id via `insert`.
-    ///
-    /// This function calls [`env::promise_return`] and so must be the last operation performed
-    /// in the enclosing contract method.
-    fn enqueue_yield_request(
-        &mut self,
-        callback_method: &str,
-        callback_args: Vec<u8>,
-        callback_gas: Gas,
-        insert: impl FnOnce(&mut Self, CryptoHash),
-    ) {
-        let promise_index = env::promise_yield_create(
-            callback_method,
-            callback_args,
-            callback_gas,
-            GasWeight(0),
-            DATA_ID_REGISTER,
-        );
-
-        let return_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
-            .expect("read_register failed")
-            .try_into()
-            .expect("conversion to CryptoHash failed");
-        insert(self, return_id);
-
-        env::promise_return(promise_index);
-    }
 }
 
 // User contract API
 #[near]
 impl MpcContract {
-    /// `key_version` must be less than or equal to the value at `latest_key_version`
-    /// To avoid overloading the network with too many requests,
-    /// we ask for a small deposit for each signature request.
-    #[handle_result]
-    #[payable]
-    pub fn sign(&mut self, request: SignRequestArgs) {
-        log!(
-            "sign: predecessor={:?}, request={:?}",
-            env::predecessor_account_id(),
-            request
-        );
-
-        let (domain_config, predecessor) = self.check_request_preconditions(
-            request.domain_id,
-            DomainPurpose::Sign,
-            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
-            MINIMUM_SIGN_REQUEST_DEPOSIT,
-        );
-
-        // ensure the signer sent a valid signature request
-        // It's important we fail here because the MPC nodes will fail in an identical way.
-        // This allows users to get the error message
-        match domain_config.protocol {
-            Protocol::CaitSith | Protocol::DamgardEtAl => {
-                let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
-                k256::Scalar::from_repr(hash.into())
-                    .into_option()
-                    .expect("Ecdsa payload cannot be converted to Scalar");
-            }
-            Protocol::Frost => {
-                request.payload.as_eddsa().expect("Payload is not EdDSA");
-            }
-            Protocol::ConfidentialKeyDerivation => {
-                env::panic_str(
-                    "ConfidentialKeyDerivation is not supported for signature responses",
-                );
-            }
-        }
-
-        let request = SignatureRequest::new(
-            request.domain_id,
-            request.payload,
-            &predecessor,
-            &request.path,
-        );
-
-        let callback_gas = Gas::from_tgas(
-            self.config
-                .return_signature_and_clean_state_on_success_call_tera_gas,
-        );
-
-        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
-        self.enqueue_yield_request(
-            method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-            callback_args,
-            callback_gas,
-            move |this, id| this.add_signature_request(request, id),
-        );
-    }
-
-    /// This is the root public key combined from all the public keys of the participants.
-    /// The domain parameter specifies which domain we're querying the public key for;
-    /// the default is the first domain.
-    #[handle_result]
-    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<dtos::PublicKey, Error> {
-        let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        self.public_key_extended(domain_id).map(Into::into)
-    }
-
-    /// This is the derived public key of the caller given path and predecessor
-    /// if predecessor is not provided, it will be the caller of the contract.
-    ///
-    /// The domain parameter specifies which domain we're deriving the public key for;
-    /// the default is the first domain.
-    #[handle_result]
-    pub fn derived_public_key(
-        &self,
-        path: String,
-        predecessor: Option<AccountId>,
-        domain_id: Option<DomainId>,
-    ) -> Result<dtos::PublicKey, Error> {
-        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
-        let tweak = derive_tweak(&predecessor, &path);
-
-        let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        let public_key = self.public_key_extended(domain)?;
-
-        let derived_public_key: dtos::PublicKey = match public_key {
-            PublicKeyExtended::Secp256k1 { near_public_key } => {
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
-                    .expect("stored key is always valid")
-                    .as_affine();
-                let derived_public_key =
-                    derive_key_secp256k1(&affine, &tweak).map_err(PublicKeyError::from)?;
-                derived_public_key.into()
-            }
-            PublicKeyExtended::Ed25519 { edwards_point, .. } => {
-                let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
-                dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
-            }
-            PublicKeyExtended::Bls12381 { public_key } => public_key,
-        };
-
-        Ok(derived_public_key)
-    }
-
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort
-    /// changes. Older key versions will always work but newer key versions were never held by
-    /// older signers. Newer key versions may also add new security features, like only existing
-    /// within a secure enclave. The signature_scheme parameter specifies which protocol
-    /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
-    /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> u32 {
-        self.protocol_state
-            .most_recent_domain_for_curve(signature_scheme.unwrap_or_default())
-            .unwrap()
-            .0 as u32
-    }
-
-    /// To avoid overloading the network with too many requests,
-    /// we ask for a small deposit for each ckd request.
-    ///
-    /// Note: identity points are accepted in
-    /// [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)
-    /// to support use cases
-    /// where the derived key is intentionally public (no encryption).
-    #[handle_result]
-    #[payable]
-    pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
-        log!(
-            "request_app_private_key: predecessor={:?}, request={:?}",
-            env::predecessor_account_id(),
-            request
-        );
-
-        let domain_id: DomainId = request.domain_id;
-        let (_, predecessor) = self.check_request_preconditions(
-            domain_id,
-            DomainPurpose::CKD,
-            Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas),
-            MINIMUM_CKD_REQUEST_DEPOSIT,
-        );
-
-        match &request.app_public_key {
-            dtos::CKDAppPublicKey::AppPublicKey(_) => {}
-            dtos::CKDAppPublicKey::AppPublicKeyPV(pk) => {
-                if !app_public_key_check(pk) {
-                    env::panic_str("app public key check failed")
-                }
-            }
-        }
-
-        let request = CKDRequest::new(
-            request.app_public_key,
-            domain_id,
-            &predecessor,
-            &request.derivation_path,
-        );
-
-        let callback_gas = Gas::from_tgas(
-            self.config
-                .return_ck_and_clean_state_on_success_call_tera_gas,
-        );
-
-        let callback_args = serde_json::to_vec(&(&request,)).unwrap();
-        self.enqueue_yield_request(
-            method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
-            callback_args,
-            callback_gas,
-            move |this, id| this.add_ckd_request(request, id),
-        );
-    }
-
     /// Submit a verification + signing request for a foreign chain transaction.
     /// MPC nodes will verify the transaction on the foreign chain before signing.
     /// The signed payload is derived from the transaction ID (hash of tx_id).
@@ -549,7 +209,7 @@ impl MpcContract {
             request.domain_id,
             DomainPurpose::ForeignTx,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
-            MINIMUM_SIGN_REQUEST_DEPOSIT,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
 
         let requested_chain = request.request.chain();
@@ -582,134 +242,6 @@ impl MpcContract {
 // Node API
 #[near]
 impl MpcContract {
-    #[handle_result]
-    pub fn respond(
-        &mut self,
-        request: SignatureRequest,
-        response: dtos::SignatureResponse,
-    ) -> Result<(), Error> {
-        let signer = Self::assert_caller_is_signer();
-
-        log!("respond: signer={}, request={:?}", &signer, &request);
-
-        self.assert_caller_is_attested_participant_and_protocol_active();
-
-        if !self.protocol_state.is_running_or_resharing() {
-            return Err(InvalidState::ProtocolStateNotRunning.into());
-        }
-
-        if !self.accept_requests {
-            return Err(TeeError::TeeValidationFailed.into());
-        }
-
-        let domain = request.domain_id;
-        let public_key = self.public_key_extended(domain)?;
-
-        let signature_is_valid = match (&response, public_key) {
-            (
-                dtos::SignatureResponse::Secp256k1(signature_response),
-                PublicKeyExtended::Secp256k1 { near_public_key },
-            ) => {
-                // generate the expected public key
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
-                    .expect("stored key is always valid")
-                    .as_affine();
-                let expected_public_key =
-                    derive_key_secp256k1(&affine, &request.tweak).map_err(RespondError::from)?;
-
-                let payload_hash = request.payload.as_ecdsa().expect("Payload is not ECDSA");
-
-                // Check the signature is correct
-                near_mpc_signature_verifier::verify_ecdsa_signature(
-                    signature_response,
-                    payload_hash,
-                    &expected_public_key,
-                )
-                .is_ok()
-            }
-            (
-                dtos::SignatureResponse::Ed25519 { signature },
-                PublicKeyExtended::Ed25519 {
-                    edwards_point: public_key_edwards_point,
-                    ..
-                },
-            ) => {
-                let derived_public_key_edwards_point = derive_public_key_edwards_point_ed25519(
-                    &public_key_edwards_point,
-                    &request.tweak,
-                );
-                let derived_public_key_32_bytes =
-                    dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress());
-
-                let message = request.payload.as_eddsa().expect("Payload is not EdDSA");
-
-                near_mpc_signature_verifier::verify_eddsa_signature(
-                    signature,
-                    message,
-                    &derived_public_key_32_bytes,
-                )
-                .is_ok()
-            }
-            (signature_response, public_key_requested) => {
-                return Err(RespondError::SignatureSchemeMismatch {
-                    mpc_scheme: Box::new(signature_response.clone()),
-                    user_scheme: Box::new(public_key_requested),
-                }
-                .into());
-            }
-        };
-
-        if !signature_is_valid {
-            return Err(RespondError::InvalidSignature.into());
-        }
-
-        pending_requests::resolve_yields_for(
-            &mut self.pending_signature_requests,
-            &request,
-            serde_json::to_vec(&response).unwrap(),
-        )
-    }
-
-    #[handle_result]
-    pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
-        let signer = Self::assert_caller_is_signer();
-        log!("respond_ckd: signer={}, request={:?}", &signer, &request);
-
-        if !self.protocol_state.is_running_or_resharing() {
-            return Err(InvalidState::ProtocolStateNotRunning.into());
-        }
-
-        if !self.accept_requests {
-            return Err(TeeError::TeeValidationFailed.into());
-        }
-
-        self.assert_caller_is_attested_participant_and_protocol_active();
-
-        let PublicKeyExtended::Bls12381 {
-            public_key: dtos::PublicKey::Bls12381(public_key),
-        } = self.public_key_extended(request.domain_id)?
-        else {
-            env::panic_str("Domain is not compatible with CKD (expected Bls12381 curve)");
-        };
-
-        match &request.app_public_key {
-            dtos::CKDAppPublicKey::AppPublicKey(_) => {}
-            dtos::CKDAppPublicKey::AppPublicKeyPV(app_pk) => {
-                if !ckd_output_check(&request.app_id, &response, app_pk, &public_key) {
-                    env::panic_str("CKD output check failed");
-                }
-            }
-        }
-
-        pending_requests::resolve_yields_for(
-            &mut self.pending_ckd_requests,
-            &request,
-            serde_json::to_vec(&response).unwrap(),
-        )
-    }
-
     #[handle_result]
     pub fn respond_verify_foreign_tx(
         &mut self,
@@ -2317,42 +1849,23 @@ impl MpcContract {
     /// Returns the pending TEE verifier-change votes, keyed by proposal.
     pub fn tee_verifier_votes(
         &self,
-    ) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
-        self.tee_verifier_votes.pending()
+    ) -> BTreeMap<ProposalHash, BTreeSet<dtos::AuthenticatedParticipantId>> {
+        self.tee_verifier_votes
+            .pending()
+            .iter()
+            .map(|(proposal, voters)| {
+                (
+                    *proposal,
+                    voters.iter().map(|v| v.into_dto_type()).collect(),
+                )
+            })
+            .collect()
     }
 
     /// Returns the trusted TEE verifier contract account, or [`None`] until
     /// participants vote one in via [`Self::vote_tee_verifier_change`].
     pub fn tee_verifier_account_id(&self) -> Option<AccountId> {
         self.tee_verifier_account_id.clone()
-    }
-
-    /// Presence check for a pending signature request, exposed as a view call.
-    ///
-    /// **The returned [`YieldIndex`] is an arbitrary representative, not "the" yield
-    /// for this request.** Since the duplicate-request fan-out feature (PR #3187),
-    /// a single request key can have N queued yields; this method returns the head of the
-    /// queue. Callers that need to act on the full set are wrong to use this. The
-    /// only correct interpretation is presence: `Some(_)` vs `None`.
-    ///
-    /// The `Option<YieldIndex>` shape is retained for JSON wire compatibility with
-    /// out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)
-    /// only matches on presence. Prefer a `bool`-shaped accessor if one is added.
-    pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
-        self.pending_signature_requests
-            .get(request)
-            .and_then(|q| q.first().cloned())
-    }
-
-    /// Presence check for a pending CKD request, exposed as a view call.
-    ///
-    /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
-    /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
-    /// `Some`/`None` distinction is meaningful.
-    pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
-        self.pending_ckd_requests
-            .get(request)
-            .and_then(|q| q.first().cloned())
     }
 
     /// Presence check for a pending foreign-tx verification request, exposed as a
@@ -2437,39 +1950,6 @@ impl MpcContract {
     // contract version
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
-    }
-
-    /// Yield-resume callback for a single queued `sign` request.
-    ///
-    /// On success, returns the signature to the original caller. On timeout, pops this
-    /// yield's slot (the head of the FIFO fan-out queue) from the pending-request map
-    /// and fires `fail_on_timeout` to fail the original transaction. Sibling yields
-    /// queued under the same request key remain pending and are cleaned up by their
-    /// own timeouts (or drained together by a subsequent `respond`).
-    #[private]
-    pub fn return_signature_and_clean_state_on_success(
-        &mut self,
-        request: SignatureRequest,
-        #[callback_result] signature: Result<dtos::SignatureResponse, PromiseError>,
-    ) -> PromiseOrValue<dtos::SignatureResponse> {
-        match signature {
-            Ok(signature) => PromiseOrValue::Value(signature),
-            Err(_) => {
-                pending_requests::pop_oldest_pending_yield(
-                    &mut self.pending_signature_requests,
-                    &request,
-                );
-
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
-            }
-        }
     }
 
     /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the
@@ -2578,39 +2058,6 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Yield-resume callback for a single queued CKD request.
-    ///
-    /// On success, returns the confidential key to the original caller. On timeout,
-    /// pops this yield's slot (the head of the FIFO fan-out queue) from the
-    /// pending-request map and fires `fail_on_timeout` to fail the original
-    /// transaction. Sibling yields queued under the same request key remain pending
-    /// and are cleaned up by their own timeouts (or drained together by a subsequent
-    /// `respond_ckd`).
-    #[private]
-    pub fn return_ck_and_clean_state_on_success(
-        &mut self,
-        request: CKDRequest,
-        #[callback_result] ck: Result<CKDResponse, PromiseError>,
-    ) -> PromiseOrValue<CKDResponse> {
-        match ck {
-            Ok(ck) => PromiseOrValue::Value(ck),
-            Err(_) => {
-                pending_requests::pop_oldest_pending_yield(
-                    &mut self.pending_ckd_requests,
-                    &request,
-                );
-                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ON_TIMEOUT.to_string(),
-                    vec![],
-                    NearToken::from_near(0),
-                    fail_on_timeout_gas,
-                );
-                near_sdk::PromiseOrValue::Promise(promise.as_return())
-            }
-        }
-    }
-
     /// Yield-resume callback for a single queued foreign-tx verification request.
     ///
     /// On success, returns the verification response to the original caller. On
@@ -2651,101 +2098,10 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn fail_on_timeout() {
-        // To stay consistent with the old version of the timeout error
-        env::panic_str(&RequestError::Timeout.to_string());
-    }
-
-    #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
         let new_config: Config =
             Config::try_from(config).unwrap_or_else(|e| env::panic_str(&e.to_string()));
         self.config = new_config;
-    }
-
-    /// Get our own account id as a voter. Returns an error if we are not a participant.
-    fn voter_account(&self) -> Result<AccountId, Error> {
-        if !Self::caller_is_signer() {
-            return Err(InvalidParameters::CallerNotSigner.into());
-        }
-        let voter = env::signer_account_id();
-        self.protocol_state.authenticate_update_vote()?;
-        Ok(voter)
-    }
-
-    /// Returns true if the caller is the signer account.
-    fn caller_is_signer() -> bool {
-        let signer = env::signer_account_id();
-        let predecessor = env::predecessor_account_id();
-        signer == predecessor
-    }
-
-    /// Get our own account id as a voter. If we are not a participant, panic.
-    /// also ensures that the caller is the signer account.
-    fn voter_or_panic(&self) -> AccountId {
-        Self::assert_caller_is_signer();
-        match self.voter_account() {
-            Ok(voter) => voter,
-            Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
-        }
-    }
-    /// Ensures that the caller is an attested participant
-    /// in the currently active protocol phase.
-    ///
-    /// Active phases:
-    /// - [`Initializing`](ProtocolContractState::Initializing) → uses proposed participants from generating_key
-    /// - [`Running`](ProtocolContractState::Running) → uses current active participants
-    /// - [`Resharing`](ProtocolContractState::Resharing) → uses new participants from resharing proposal
-    ///
-    /// Panics if:
-    /// - The protocol is not active (e.g., NotInitialized)
-    /// - The caller is not attested or not in the relevant participants set
-    /// - The caller is not the signer account
-    fn assert_caller_is_attested_participant_and_protocol_active(&self) {
-        let participants = self.protocol_state.active_participants();
-
-        Self::assert_caller_is_signer();
-
-        let attestation_check = self
-            .tee_state
-            .is_caller_an_attested_participant(participants);
-
-        assert_matches::assert_matches!(
-            attestation_check,
-            Ok(()),
-            "Caller must be an attested participant"
-        );
-    }
-
-    /// Ensures the current call originates from the signer account itself.
-    /// Panics if `signer_account_id` and `predecessor_account_id` differ.
-    ///
-    /// This enforces the network-wide policy that **all governance methods must be called
-    /// directly from the participant's own NEAR account**, never forwarded through another
-    /// contract such as a multisig.
-    ///
-    /// This check reaches every signer-authenticated mutating method through one of three
-    /// paths (the list below is illustrative, not exhaustive):
-    /// - Called directly: `vote_new_parameters`, `vote_add_domains`, `vote_cancel_resharing`,
-    ///   `vote_cancel_keygen`, `register_foreign_chain_support`, `submit_participant_info`,
-    ///   and the node-migration methods.
-    /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
-    ///   `vote_code_hash`, the launcher/OS-measurement votes,
-    ///   `vote_update_foreign_chain_providers`, and `verify_tee`.
-    /// - Via [`Self::assert_caller_is_attested_participant_and_protocol_active`]: the key-event
-    ///   votes `vote_pk`, `vote_reshared`, `vote_abort_key_event_instance`, and the leader-only
-    ///   `start_keygen_instance` / `start_reshare_instance`, plus the `respond*` callbacks.
-    fn assert_caller_is_signer() -> AccountId {
-        let signer_id = env::signer_account_id();
-        let predecessor_id = env::predecessor_account_id();
-
-        assert_eq!(
-            signer_id, predecessor_id,
-            "Caller must be the signer account (signer: {}, predecessor: {})",
-            signer_id, predecessor_id
-        );
-
-        signer_id
     }
 }
 
@@ -3056,12 +2412,13 @@ mod tests {
     };
 
     use super::*;
+    use crate::api::test_utils::*;
     use crate::errors::{InvalidCandidateSet, InvalidThreshold, NodeMigrationError};
-    use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
+
     use crate::primitives::participants::{ParticipantId, ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
-        gen_account_id, gen_participant, gen_participants, infer_purpose_from_protocol,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id, gen_account_id,
+        gen_participant, gen_participants,
     };
     use crate::state::key_event::KeyEvent;
     use crate::state::key_event::tests::Environment;
@@ -3077,9 +2434,8 @@ mod tests {
     use crate::tee::tee_state::{NodeAttestation, NodeId, ParticipantInsertion};
     use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
-    use dtos::{Curve, DomainConfig, DomainId, Payload, Protocol, ReconstructionThreshold, Tweak};
-    use elliptic_curve::Field as _;
-    use elliptic_curve::Group;
+    use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
+
     use k256::{self, Secp256k1, ecdsa::SigningKey, elliptic_curve};
     use mpc_attestation::attestation::{
         MockAttestation as MpcMockAttestation, ValidatedDstackAttestation, VerifiedAttestation,
@@ -3087,18 +2443,18 @@ mod tests {
     };
     use near_mpc_bounded_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
     use near_mpc_contract_interface::types::BackupServiceInfo;
-    use near_mpc_contract_interface::types::CKDAppPublicKey;
+
     use near_mpc_contract_interface::types::DestinationNodeInfo;
     use near_mpc_contract_interface::types::{
         BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
         ForeignTxPayloadVersion, ForeignTxSignPayloadV1,
     };
-    use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
+    use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::SeedableRng;
+    use rand::rngs::OsRng;
     use rand::seq::SliceRandom;
-    use rand::{RngCore, rngs::OsRng};
-    use rand_core::CryptoRngCore;
+
     use rstest::rstest;
     use sha2::{Digest, Sha256};
 
@@ -3106,14 +2462,10 @@ mod tests {
         test_utils::whitelist_dstack_measurements, verification_context::VerificationContext,
     };
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
-        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
+        launcher_image_hash, mock_dstack_attestation_inner, p2p_tls_key, verified_report,
     };
     use test_utils::contract_types::dummy_config;
-    use threshold_signatures::confidential_key_derivation as ckd;
-    use threshold_signatures::frost_core::Group as _;
-    use threshold_signatures::frost_ed25519::Ed25519Group;
-    use threshold_signatures::frost_secp256k1::Secp256K1Group;
 
     pub fn migration_info(
         contract_state: &MpcContract,
@@ -3124,153 +2476,6 @@ mod tests {
         Option<DestinationNodeInfo>,
     ) {
         contract_state.node_migrations.get_for_account(account_id)
-    }
-
-    #[derive(Debug)]
-    pub enum SharedSecretKey {
-        Secp256k1(k256::Scalar),
-        #[expect(dead_code)]
-        Ed25519(curve25519_dalek::Scalar),
-        Bls12381(ckd::Scalar),
-    }
-
-    pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
-        let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
-        k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
-    }
-
-    pub fn new_secp256k1(rng: &mut impl CryptoRngCore) -> (dtos::Secp256k1PublicKey, k256::Scalar) {
-        let scalar = k256::Scalar::random(rng);
-        let public_key_element = Secp256K1Group::generator() * scalar;
-
-        let pk = dtos::Secp256k1PublicKey::try_from(public_key_element.to_affine())
-            .expect("non-identity group element is a valid public key");
-
-        (pk, scalar)
-    }
-
-    pub fn new_ed25519(
-        rng: &mut impl CryptoRngCore,
-    ) -> (dtos::Ed25519PublicKey, curve25519_dalek::Scalar) {
-        let scalar = curve25519_dalek::Scalar::random(rng);
-        let public_key_element = Ed25519Group::generator() * scalar;
-
-        let pk = dtos::Ed25519PublicKey::from(public_key_element.compress());
-
-        (pk, scalar)
-    }
-
-    pub fn new_bls12381g2(
-        rng: &mut impl CryptoRngCore,
-    ) -> (dtos::Bls12381G2PublicKey, ckd::Scalar) {
-        let scalar = ckd::Scalar::random(rng);
-        let public_key_element = ckd::ElementG2::generator() * scalar;
-
-        let pk = dtos::Bls12381G2PublicKey::from(&public_key_element);
-
-        (pk, scalar)
-    }
-
-    pub fn new_ckd_pv_app_pk(
-        rng: &mut impl CryptoRngCore,
-    ) -> (ckd::Scalar, dtos::CKDAppPublicKeyPV) {
-        let scalar = ckd::Scalar::random(rng);
-        let pk2 = ckd::ElementG2::generator() * scalar;
-        let pk1 = ckd::ElementG1::generator() * scalar;
-
-        let pk2 = dtos::Bls12381G2PublicKey::from(&pk2);
-        let pk1 = dtos::Bls12381G1PublicKey::from(&pk1);
-
-        (scalar, dtos::CKDAppPublicKeyPV { pk1, pk2 })
-    }
-
-    pub fn compute_ckd_pv_response(msk: &ckd::Scalar, request: &CKDRequest) -> CKDResponse {
-        let public_key = ckd::ElementG2::generator() * msk;
-        let public_key = ckd::VerifyingKey::new(public_key);
-        let app_pk = ckd::ElementG1::try_from(request.app_public_key.g1_public_key()).unwrap();
-        let big_s = ckd::hash_app_id_with_pk(&public_key, request.app_id.as_ref()) * msk;
-        let y = ckd::Scalar::random(OsRng);
-        let big_y = ckd::ElementG1::generator() * y;
-        let big_c = big_s + app_pk * y;
-
-        CKDResponse {
-            big_y: (&big_y).into(),
-            big_c: (&big_c).into(),
-        }
-    }
-
-    pub fn make_public_key_for_curve(
-        curve: Curve,
-        rng: &mut impl CryptoRngCore,
-    ) -> (dtos::PublicKey, SharedSecretKey) {
-        match curve {
-            Curve::Secp256k1 => {
-                let (pk, sk) = new_secp256k1(rng);
-                (pk.into(), SharedSecretKey::Secp256k1(sk))
-            }
-            Curve::Edwards25519 => {
-                let (pk, sk) = new_ed25519(rng);
-                (pk.into(), SharedSecretKey::Ed25519(sk))
-            }
-            Curve::Bls12381 => {
-                let (pk, sk) = new_bls12381g2(rng);
-                (pk.into(), SharedSecretKey::Bls12381(sk))
-            }
-        }
-    }
-
-    fn basic_setup(
-        curve: Curve,
-        rng: &mut impl CryptoRngCore,
-    ) -> (VMContext, MpcContract, SharedSecretKey) {
-        let protocol = match curve {
-            Curve::Secp256k1 => Protocol::CaitSith,
-            Curve::Edwards25519 => Protocol::Frost,
-            Curve::Bls12381 => Protocol::ConfidentialKeyDerivation,
-        };
-        basic_setup_with_protocol(protocol, infer_purpose_from_protocol(protocol), rng)
-    }
-
-    fn basic_setup_with_protocol(
-        protocol: Protocol,
-        purpose: DomainPurpose,
-        rng: &mut impl CryptoRngCore,
-    ) -> (VMContext, MpcContract, SharedSecretKey) {
-        let curve = Curve::from(protocol);
-        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-        let context = VMContextBuilder::new()
-            .attached_deposit(NearToken::from_yoctonear(1))
-            .predecessor_account_id(contract_account_id.clone())
-            .current_account_id(contract_account_id)
-            .build();
-        testing_env!(context.clone());
-        let domain_id = DomainId::default();
-        // DamgardEtAl requires 2t - 1 <= n; with n=4, the max valid t is 2.
-        let reconstruction_threshold = match protocol {
-            Protocol::DamgardEtAl => ReconstructionThreshold::new(2),
-            _ => ReconstructionThreshold::new(3),
-        };
-        let domains = vec![DomainConfig {
-            id: domain_id,
-            protocol,
-            reconstruction_threshold,
-            purpose,
-        }];
-        let epoch_id = EpochId::new(0);
-        let (pk, sk) = make_public_key_for_curve(curve, rng);
-        let key_for_domain = KeyForDomain {
-            domain_id,
-            key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
-        };
-        let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
-        let parameters =
-            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
-                .unwrap();
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
-        (context, contract, sk)
     }
 
     /// Register the given foreign chains as supported by all active participants.
@@ -3306,289 +2511,6 @@ mod tests {
                 .register_foreign_chain_config(foreign_chain_configuration.clone())
                 .expect("register should succeed");
         }
-    }
-
-    /// Temporarily sets the testing environment so that calls appear
-    /// to come from an attested MPC node registered in the contract's `tee_state`.
-    /// Returns the [`AccountId`] of the node used.
-    pub fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
-        let active_participant_pks: Vec<dtos::Ed25519PublicKey> = contract
-            .protocol_state
-            .active_participants()
-            .participants()
-            .iter()
-            .map(|(_, _, participant_info)| participant_info.tls_public_key.clone())
-            .collect();
-
-        let node_id = contract
-            .tee_state
-            .stored_attestations
-            .iter()
-            .find(|(public_key, _)| active_participant_pks.contains(public_key))
-            .expect("No attested participants in tee_state")
-            .1
-            .node_id
-            .clone();
-
-        // Build a new simulated environment with this node as caller.
-        // Set signer_account_pk to match the mock attestation (account_public_key == tls_public_key).
-        let mut ctx_builder = VMContextBuilder::new();
-        ctx_builder
-            .signer_account_id(node_id.account_id.clone())
-            .predecessor_account_id(node_id.account_id.clone())
-            .signer_account_pk(near_sdk::PublicKey::from(
-                node_id.account_public_key.clone(),
-            ))
-            .attached_deposit(NearToken::from_yoctonear(1));
-
-        testing_env!(ctx_builder.build());
-        node_id.account_id.clone()
-    }
-
-    /// Builds the valid secp256k1 signature for `payload` under the domain key derived
-    /// from `(predecessor, path)`. Shared between `test_signature_common` and
-    /// `sign__should_queue_duplicate_requests_and_drain_all_on_respond` because both
-    /// need an honestly-produced response to feed into `respond`.
-    fn secp256k1_signature_for_test(
-        secret_key: &k256::Scalar,
-        predecessor: &AccountId,
-        path: &str,
-        payload: &Payload,
-    ) -> dtos::K256Signature {
-        let derivation_path = derive_tweak(predecessor, path);
-        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
-            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
-        let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
-        let signing_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
-        let (signature, recovery_id) = signing_key
-            .sign_prehash_recoverable(payload.as_ecdsa().unwrap())
-            .unwrap();
-        dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id)
-    }
-
-    fn test_signature_common(success: bool, legacy_v1_api: bool, protocol: Protocol) {
-        let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(protocol, DomainPurpose::Sign, &mut OsRng);
-        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
-            unreachable!();
-        };
-        let mut payload_hash = [0u8; 32];
-        OsRng.fill_bytes(&mut payload_hash);
-        let payload = Payload::from_legacy_ecdsa(payload_hash);
-        let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
-
-        let request: SignRequestArgs = if legacy_v1_api {
-            serde_json::from_value(serde_json::json!({
-                "payload": payload_hash,
-                "key_version": 0,
-                "path": key_path,
-            }))
-            .unwrap()
-        } else {
-            SignRequestArgs {
-                payload: payload.clone(),
-                path: key_path.clone(),
-                domain_id: DomainId::legacy_ecdsa_id(),
-            }
-        };
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            payload.clone(),
-            &context.predecessor_account_id,
-            &request.path,
-        );
-        contract.sign(request);
-        contract.get_pending_request(&signature_request).unwrap();
-
-        let valid_signature = secp256k1_signature_for_test(
-            &secret_key,
-            &context.predecessor_account_id,
-            &key_path,
-            &payload,
-        );
-        let signature_response = if success {
-            dtos::SignatureResponse::Secp256k1(valid_signature)
-        } else {
-            // submit an incorrect signature to make the respond call fail
-            let mut bad_sig = valid_signature;
-            bad_sig.s = dtos::K256Scalar::from([2; 32]);
-            dtos::SignatureResponse::Secp256k1(bad_sig)
-        };
-
-        with_active_participant_and_attested_context(&contract);
-
-        match contract.respond(signature_request.clone(), signature_response.clone()) {
-            Ok(_) => {
-                assert!(success);
-                contract
-                    .return_signature_and_clean_state_on_success(
-                        signature_request.clone(),
-                        Ok(signature_response),
-                    )
-                    .detach();
-
-                assert!(contract.get_pending_request(&signature_request).is_none(),);
-            }
-            Err(_) => assert!(!success),
-        }
-    }
-
-    #[test]
-    fn respond__should_succeed_when_response_is_valid_and_request_exists() {
-        for protocol in [Protocol::CaitSith, Protocol::DamgardEtAl] {
-            test_signature_common(true, false, protocol);
-            test_signature_common(false, false, protocol);
-        }
-    }
-
-    #[test]
-    fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
-        for protocol in [Protocol::CaitSith, Protocol::DamgardEtAl] {
-            test_signature_common(true, true, protocol);
-            test_signature_common(false, true, protocol);
-        }
-    }
-
-    #[test]
-    fn test_signature_timeout() {
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let payload = Payload::from_legacy_ecdsa([0u8; 32]);
-        let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
-
-        let request = SignRequestArgs {
-            payload: payload.clone(),
-            path: key_path.clone(),
-            domain_id: DomainId::legacy_ecdsa_id(),
-        };
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            payload,
-            &context.predecessor_account_id,
-            &request.path,
-        );
-        contract.sign(request);
-        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
-        assert!(matches!(
-            contract.return_signature_and_clean_state_on_success(
-                signature_request.clone(),
-                Err(PromiseError::Failed)
-            ),
-            PromiseOrValue::Promise(_)
-        ));
-        assert!(contract.get_pending_request(&signature_request).is_none());
-    }
-
-    #[test]
-    fn test_signature_timeout__request_in_neither_map_still_schedules_fail() {
-        // given
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        assert_matches!(contract.get_pending_request(&signature_request), None);
-
-        // when
-        let result = contract.return_signature_and_clean_state_on_success(
-            signature_request,
-            Err(PromiseError::Failed),
-        );
-
-        // then
-        // We can't assert_matches! on [near_sdk::PromiseOrValue] it is not Debug
-        match result {
-            PromiseOrValue::Promise(_promise) => {}
-            PromiseOrValue::Value(_) => panic!("result should be a promise"),
-        }
-    }
-
-    #[test]
-    fn test_signature_success__returns_value_directly() {
-        // given
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        let signature_response = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
-            big_r: dtos::K256AffinePoint::from(k256::AffinePoint::GENERATOR),
-            s: dtos::K256Scalar::from(k256::Scalar::ONE),
-            recovery_id: 0,
-        });
-
-        // when
-        let result = contract.return_signature_and_clean_state_on_success(
-            signature_request,
-            Ok(signature_response.clone()),
-        );
-
-        // then
-        match result {
-            PromiseOrValue::Value(resp) => assert_eq!(resp, signature_response),
-            PromiseOrValue::Promise(_) => panic!("Expected Value, got Promise"),
-        }
-    }
-
-    #[test]
-    fn sign__should_queue_duplicate_requests_and_drain_all_on_respond() {
-        // Given
-        let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::Sign, &mut OsRng);
-        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
-            unreachable!();
-        };
-        let payload = Payload::from_legacy_ecdsa([7u8; 32]);
-        let path = "duplicate_requests_test".to_string();
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            payload.clone(),
-            &context.predecessor_account_id,
-            &path,
-        );
-        let request_args = SignRequestArgs {
-            payload: payload.clone(),
-            path: path.clone(),
-            domain_id: DomainId::legacy_ecdsa_id(),
-        };
-
-        // When: same caller submits the same request twice in close succession.
-        contract.sign(request_args.clone());
-        contract.sign(request_args);
-
-        // Then: both yields are queued under one map entry.
-        assert_eq!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .map(|q| q.len()),
-            Some(2),
-            "duplicate sign requests should fan out into a queue of two",
-        );
-
-        // When: a single valid response is delivered.
-        let signature_response = dtos::SignatureResponse::Secp256k1(secp256k1_signature_for_test(
-            &secret_key,
-            &context.predecessor_account_id,
-            &path,
-            &payload,
-        ));
-
-        with_active_participant_and_attested_context(&contract);
-        contract
-            .respond(signature_request.clone(), signature_response)
-            .expect("respond should succeed");
-
-        // Then: the entire queue is drained — both queued yields received the response.
-        assert!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .is_none()
-        );
     }
 
     #[test]
@@ -3682,366 +2604,6 @@ mod tests {
                 .get(&request)
                 .is_none()
         );
-    }
-
-    #[test]
-    fn add_signature_request__should_panic_when_pending_queue_is_full() {
-        // Given: a contract with a queue already at the fan-out cap for some request key.
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([3u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        for i in 0..MAX_PENDING_REQUEST_FAN_OUT {
-            contract.add_signature_request(signature_request.clone(), [i; 32]);
-        }
-        assert_eq!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .map(|q| q.len()),
-            Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
-        );
-
-        // When: one more append is attempted.
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            contract.add_signature_request(signature_request.clone(), [0xff; 32]);
-        }));
-
-        // Then: it panics with the typed cap-exceeded error and leaves the queue untouched.
-        let err = result.expect_err("appending past the cap should panic");
-        let msg = err
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| err.downcast_ref::<&str>().copied())
-            .unwrap_or_default();
-        assert!(
-            msg.contains("Pending-request queue is full"),
-            "unexpected panic message: {msg}",
-        );
-        assert_eq!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .map(|q| q.len()),
-            Some(usize::from(MAX_PENDING_REQUEST_FAN_OUT)),
-            "queue should not have grown past the cap",
-        );
-    }
-
-    #[test]
-    fn return_signature_and_clean_state_on_success__should_pop_only_oldest_yield_on_timeout() {
-        // Given: three duplicate sign requests queued for the same key.
-        let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
-            DomainId::default(),
-            Payload::from_legacy_ecdsa([0u8; 32]),
-            &context.predecessor_account_id,
-            "m/44'\''/60'\''/0'\''/0/0",
-        );
-        for i in 0..3u8 {
-            contract.add_signature_request(signature_request.clone(), [i; 32]);
-        }
-        assert_eq!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .map(|q| q.len()),
-            Some(3),
-        );
-
-        // When: the oldest yield times out.
-        let _ = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-
-        // Then: the queue still contains the two remaining yields, oldest-first.
-        let remaining = contract
-            .pending_signature_requests
-            .get(&signature_request)
-            .cloned()
-            .expect("entry must remain while sibling yields are still pending");
-        assert_eq!(remaining.len(), 2);
-        assert_eq!(remaining[0].data_id, [1u8; 32]);
-        assert_eq!(remaining[1].data_id, [2u8; 32]);
-
-        // When: the last two yields time out, the map entry is fully cleaned up.
-        let _ = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-        let _ = contract.return_signature_and_clean_state_on_success(
-            signature_request.clone(),
-            Err(PromiseError::Failed),
-        );
-
-        // Then: the entry is gone.
-        assert!(
-            contract
-                .pending_signature_requests
-                .get(&signature_request)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
-        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
-        let app_public_key: dtos::Bls12381G1PublicKey =
-            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                .parse()
-                .unwrap();
-        let request = CKDRequestArgs {
-            derivation_path: "".to_string(),
-            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
-            domain_id: dtos::DomainId::default(),
-        };
-        let ckd_request = CKDRequest::new(
-            CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id,
-            &context.predecessor_account_id,
-            &request.derivation_path,
-        );
-        contract.request_app_private_key(request);
-        contract.get_pending_ckd_request(&ckd_request).unwrap();
-
-        let response = CKDResponse {
-            big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
-            big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
-        };
-
-        with_active_participant_and_attested_context(&contract);
-
-        match contract.respond_ckd(ckd_request.clone(), response.clone()) {
-            Ok(_) => {
-                contract
-                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response))
-                    .detach();
-
-                assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
-            }
-            Err(_) => panic!("respond_ckd should not fail"),
-        }
-    }
-
-    #[test]
-    fn respond_ckd_pv__should_succeed_when_response_is_valid_and_request_exists() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
-        let SharedSecretKey::Bls12381(secret_key) = secret_key else {
-            unreachable!();
-        };
-        let (_, app_public_key) = new_ckd_pv_app_pk(&mut rng);
-        let app_public_key = CKDAppPublicKey::AppPublicKeyPV(app_public_key);
-        let derivation_path = "my derivation path".to_string();
-        let request = CKDRequestArgs {
-            derivation_path,
-            app_public_key: app_public_key.clone(),
-            domain_id: dtos::DomainId::default(),
-        };
-        let ckd_request = CKDRequest::new(
-            app_public_key,
-            request.domain_id,
-            &context.predecessor_account_id,
-            &request.derivation_path,
-        );
-        contract.request_app_private_key(request);
-        contract.get_pending_ckd_request(&ckd_request).unwrap();
-
-        let response = compute_ckd_pv_response(&secret_key, &ckd_request);
-
-        with_active_participant_and_attested_context(&contract);
-
-        match contract.respond_ckd(ckd_request.clone(), response.clone()) {
-            Ok(_) => {
-                contract
-                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response))
-                    .detach();
-
-                assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
-            }
-            Err(_) => panic!("respond_ckd should not fail"),
-        }
-    }
-
-    fn override_context_for_preconditions(deposit: NearToken, prepaid_gas: Gas) {
-        let predecessor: AccountId = "contract_account.near".parse().unwrap();
-        let context = VMContextBuilder::new()
-            .predecessor_account_id(predecessor.clone())
-            .current_account_id(predecessor)
-            .attached_deposit(deposit)
-            .prepaid_gas(prepaid_gas)
-            .build();
-        testing_env!(context);
-    }
-
-    #[test]
-    fn check_request_preconditions__returns_domain_config_and_predecessor_on_valid_call() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
-        let (config, predecessor) = contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
-            Gas::from_tgas(1),
-            NearToken::from_yoctonear(1),
-        );
-        assert_eq!(config.id, DomainId::default());
-        assert_eq!(Curve::from(config.protocol), Curve::Secp256k1);
-        assert_eq!(config.purpose, DomainPurpose::Sign);
-        assert_eq!(predecessor.as_str(), "contract_account.near");
-    }
-
-    #[test]
-    #[should_panic(expected = "was not found")]
-    fn check_request_preconditions__panics_when_domain_does_not_exist() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
-        contract.check_request_preconditions(
-            DomainId(999),
-            DomainPurpose::Sign,
-            Gas::from_tgas(1),
-            NearToken::from_yoctonear(1),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "purpose")]
-    fn check_request_preconditions__panics_when_domain_purpose_does_not_match() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
-        contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::CKD,
-            Gas::from_tgas(1),
-            NearToken::from_yoctonear(1),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Provided gas is lower than required")]
-    fn check_request_preconditions__panics_when_prepaid_gas_is_insufficient() {
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        override_context_for_preconditions(NearToken::from_yoctonear(1), Gas::from_tgas(1));
-        contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
-            Gas::from_tgas(100),
-            NearToken::from_yoctonear(1),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Attached deposit is lower than required")]
-    fn check_request_preconditions__panics_when_attached_deposit_is_insufficient() {
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        override_context_for_preconditions(NearToken::from_near(0), Gas::from_tgas(300));
-        contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
-            Gas::from_tgas(1),
-            NearToken::from_yoctonear(1),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "TEE validation")]
-    fn check_request_preconditions__panics_when_contract_is_not_accepting_requests() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
-        contract.accept_requests = false;
-        contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
-            Gas::from_tgas(1),
-            NearToken::from_yoctonear(1),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "app public key check failed")]
-    fn request_ckd_pv__should_reject_mismatched_app_public_key() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut rng);
-
-        // Generate pk1 and pk2 from different scalars so the pairing check fails
-        let scalar1 = ckd::Scalar::random(&mut rng);
-        let scalar2 = ckd::Scalar::random(&mut rng);
-        let pk1 = dtos::Bls12381G1PublicKey::from(&(ckd::ElementG1::generator() * scalar1));
-        let pk2 = dtos::Bls12381G2PublicKey::from(&(ckd::ElementG2::generator() * scalar2));
-
-        let request = CKDRequestArgs {
-            derivation_path: "test".to_string(),
-            app_public_key: CKDAppPublicKey::AppPublicKeyPV(dtos::CKDAppPublicKeyPV { pk1, pk2 }),
-            domain_id: dtos::DomainId::default(),
-        };
-        contract.request_app_private_key(request);
-    }
-
-    #[test]
-    #[should_panic(expected = "CKD output check failed")]
-    fn respond_ckd_pv__should_reject_invalid_response() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(Curve::Bls12381, &mut rng);
-        let SharedSecretKey::Bls12381(secret_key) = secret_key else {
-            unreachable!();
-        };
-
-        let (_, app_public_key) = new_ckd_pv_app_pk(&mut rng);
-        let app_public_key = CKDAppPublicKey::AppPublicKeyPV(app_public_key);
-        let request = CKDRequestArgs {
-            derivation_path: "test".to_string(),
-            app_public_key: app_public_key.clone(),
-            domain_id: dtos::DomainId::default(),
-        };
-        let ckd_request = CKDRequest::new(
-            app_public_key,
-            request.domain_id,
-            &context.predecessor_account_id,
-            &request.derivation_path,
-        );
-        contract.request_app_private_key(request);
-
-        // Compute a valid response then tamper with big_c
-        let mut response = compute_ckd_pv_response(&secret_key, &ckd_request);
-        response.big_c = dtos::Bls12381G1PublicKey::from(
-            &(ckd::ElementG1::generator() * ckd::Scalar::random(&mut rng)),
-        );
-
-        with_active_participant_and_attested_context(&contract);
-        let _ = contract.respond_ckd(ckd_request, response);
-    }
-
-    #[test]
-    fn test_ckd_timeout() {
-        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
-        let app_public_key: dtos::Bls12381G1PublicKey =
-            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                .parse()
-                .unwrap();
-        let request = CKDRequestArgs {
-            derivation_path: "".to_string(),
-            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
-            domain_id: dtos::DomainId::default(),
-        };
-        let ckd_request = CKDRequest::new(
-            CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id,
-            &context.predecessor_account_id,
-            &request.derivation_path,
-        );
-        contract.request_app_private_key(request);
-        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
-        assert!(matches!(
-            contract.return_ck_and_clean_state_on_success(
-                ckd_request.clone(),
-                Err(PromiseError::Failed)
-            ),
-            PromiseOrValue::Promise(_)
-        ));
-        assert!(contract.get_pending_ckd_request(&ckd_request).is_none());
     }
 
     #[test]
@@ -4305,26 +2867,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Protocol::CaitSith, DomainPurpose::ForeignTx)]
-    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
-    #[should_panic(expected = "this method requires Sign")]
-    fn sign__should_reject_non_sign_domain(
-        #[case] protocol: Protocol,
-        #[case] purpose: DomainPurpose,
-    ) {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) = basic_setup_with_protocol(protocol, purpose, &mut rng);
-
-        // When
-        contract.sign(SignRequestArgs {
-            payload: Payload::from_legacy_ecdsa([7u8; 32]),
-            path: "test".to_string(),
-            domain_id: DomainId::default(),
-        });
-    }
-
-    #[rstest]
     #[case(Protocol::CaitSith, DomainPurpose::Sign)]
     #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires ForeignTx")]
@@ -4371,48 +2913,6 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
         });
-    }
-
-    #[rstest]
-    #[case(DomainPurpose::Sign)]
-    #[case(DomainPurpose::ForeignTx)]
-    #[should_panic(expected = "this method requires CKD")]
-    fn ckd__should_reject_non_ckd_domain(#[case] purpose: DomainPurpose) {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, purpose, &mut rng);
-
-        // When
-        contract.request_app_private_key(CKDRequestArgs {
-            domain_id: dtos::DomainId::default(),
-            derivation_path: "test".to_string(),
-            app_public_key: CKDAppPublicKey::AppPublicKey(dtos::Bls12381G1PublicKey::from(
-                [0u8; 48],
-            )),
-        });
-    }
-
-    fn setup_tee_test_contract(
-        num_participants: usize,
-        threshold_value: u64,
-    ) -> (MpcContract, Participants, AccountId) {
-        let participants = primitives::test_utils::gen_participants(num_participants);
-        let first_participant_id = participants.participants()[0].0.clone();
-
-        let context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone())
-            .predecessor_account_id(first_participant_id.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .build();
-        testing_env!(context);
-
-        let threshold = GovernanceThreshold::new(threshold_value);
-        let parameters =
-            GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-        let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
-
-        (contract, participants, first_participant_id)
     }
 
     #[test]
@@ -4540,7 +3040,7 @@ mod tests {
             };
             (
                 ProposalHash::from(proposal),
-                BTreeSet::from([voter.clone()]),
+                BTreeSet::from([voter.into_dto_type()]),
             )
         };
 
@@ -4576,48 +3076,6 @@ mod tests {
             contract.tee_verifier_votes(),
             BTreeMap::from([bucket(&candidate_b, &auth_b)]),
         );
-    }
-
-    fn submit_attestation(
-        contract: &mut MpcContract,
-        participants: &Participants,
-        participant_index: usize,
-        is_valid: bool,
-    ) -> Result<(), Error> {
-        let participants_list = participants.participants();
-        let (account_id, _, participant_info) = &participants_list[participant_index];
-        let attestation = if is_valid {
-            MockAttestation::Valid
-        } else {
-            MockAttestation::Invalid
-        };
-
-        let dto_public_key = participant_info.tls_public_key.clone();
-
-        let participant_context = VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
-            .build();
-        testing_env!(participant_context);
-
-        contract
-            .submit_participant_info(Attestation::Mock(attestation), dto_public_key)
-            .map(|_| ())
-    }
-
-    fn submit_valid_attestations(
-        contract: &mut MpcContract,
-        participants: &Participants,
-        participant_indices: &[usize],
-    ) {
-        for &participant_index in participant_indices {
-            let result = submit_attestation(contract, participants, participant_index, true);
-            assert!(
-                result.is_ok(),
-                "submit_participant_info should succeed with valid attestation for participant {}",
-                participant_index
-            );
-        }
     }
 
     /// Sets up the voting context and calls [`VersionedMpcContract::vote_new_parameters`] with the
@@ -4949,27 +3407,6 @@ mod tests {
             .expect("expected panic when predecessor != signer");
     }
 
-    /// Builds a Running-state contract and installs a VM context where the participant is the
-    /// signer but the call is forwarded through another contract (`predecessor != signer`).
-    /// All governance methods gated by [`assert_caller_is_signer()`] run that check before any
-    /// protocol-state logic, so Running state is sufficient to exercise the guard for every one.
-    fn forwarded_participant_call_contract() -> MpcContract {
-        let running_state = gen_running_state(1);
-        let participant = running_state.parameters.participants().participants()[0]
-            .0
-            .clone();
-        let contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        let ctx = VMContextBuilder::new()
-            .signer_account_id(participant)
-            .predecessor_account_id("forwarder.near".parse().unwrap())
-            .build();
-        testing_env!(ctx);
-
-        contract
-    }
-
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_add_domains__should_panic_when_predecessor_differs_from_signer() {
@@ -5049,6 +3486,11 @@ mod tests {
             image_digest(),
             launcher_image_hash(),
         );
+        // The fixture's launcher compose carries the key-export service, so its hash is not derivable.
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .allow_compose_hash(&launcher_image_hash(), launcher_compose_digest());
 
         // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
         contract
@@ -5443,153 +3885,6 @@ mod tests {
         contract.assert_caller_is_attested_participant_and_protocol_active();
     }
 
-    #[test]
-    fn test_respond_ckd_fails_for_attested_non_participant() {
-        // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
-        let (context, mut contract, _secret_key) = basic_setup(Curve::Bls12381, &mut OsRng);
-
-        // Submit valid attestations for all participants (so contract is in Running state)
-        // 2. Extract participants list (we have 4 by default)
-        let participants = match &contract.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants().clone(),
-            _ => panic!("Contract should be in Running state"),
-        };
-
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-
-        // --- Step 2: Create a valid CKD request by a legitimate participant ---
-        let app_public_key: dtos::Bls12381G1PublicKey =
-            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                .parse()
-                .unwrap();
-        let request = CKDRequestArgs {
-            derivation_path: "".to_string(),
-            app_public_key: CKDAppPublicKey::AppPublicKey(app_public_key.clone()),
-            domain_id: dtos::DomainId::default(),
-        };
-        let ckd_request = CKDRequest::new(
-            CKDAppPublicKey::AppPublicKey(app_public_key),
-            request.domain_id,
-            &context.predecessor_account_id.clone(),
-            &request.derivation_path,
-        );
-
-        // Legit participant makes the CKD request
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(context.predecessor_account_id.clone())
-                .predecessor_account_id(context.predecessor_account_id.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
-        contract.request_app_private_key(request);
-        assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
-
-        // --- Step 3: Attested outsider (not a participant) joins ---
-        let outsider_id: AccountId = "outsider.near".parse().unwrap();
-        let tls_key = bogus_ed25519_near_public_key();
-        let dto_public_key = dtos::Ed25519PublicKey::try_from(&tls_key).unwrap();
-
-        // A new entry consumes a grant; stand in for the operator's prepayment.
-        contract
-            .available_attestation_grants
-            .insert(outsider_id.clone(), 1);
-
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(outsider_id.clone())
-                .predecessor_account_id(outsider_id.clone())
-                .build()
-        );
-
-        let _ = contract
-            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
-            .unwrap();
-
-        // --- Step 4: Verify that a participant can still respond successfully ---
-        with_active_participant_and_attested_context(&contract); // sets env to a real attested participant
-
-        let valid_response = CKDResponse {
-            big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
-            big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
-        };
-
-        // This should succeed (attested participant)
-        contract
-            .respond_ckd(ckd_request.clone(), valid_response.clone())
-            .expect("Participant should be allowed to respond_ckd");
-
-        // --- Step 5: Now switch to attested outsider and verify it panics ---
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(outsider_id.clone())
-                .predecessor_account_id(outsider_id.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
-
-        let outsider_response = CKDResponse {
-            big_y: dtos::Bls12381G1PublicKey([3u8; 48]),
-            big_c: dtos::Bls12381G1PublicKey([4u8; 48]),
-        };
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract
-                .respond_ckd(ckd_request.clone(), outsider_response)
-                .unwrap();
-        }));
-
-        assert!(
-            result.is_err(),
-            "Expected panic from attested non-participant"
-        );
-
-        if let Err(err) = result {
-            if let Some(msg) = err.downcast_ref::<&str>() {
-                assert!(
-                    msg.contains("Caller must be an attested participant"),
-                    "Unexpected panic message: {}",
-                    msg
-                );
-            } else if let Some(msg) = err.downcast_ref::<String>() {
-                assert!(
-                    msg.contains("Caller must be an attested participant"),
-                    "Unexpected panic message: {}",
-                    msg
-                );
-            } else {
-                panic!("Unexpected panic payload type");
-            }
-        }
-    }
-
-    impl MpcContract {
-        pub fn new_from_protocol_state(protocol_state: ProtocolContractState) -> Self {
-            MpcContract {
-                protocol_state,
-                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV4),
-                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
-                pending_verify_foreign_tx_requests: LookupMap::new(
-                    StorageKey::PendingVerifyForeignTxRequestsV3,
-                ),
-                accept_requests: true,
-                proposed_updates: Default::default(),
-                node_foreign_chain_support: Default::default(),
-                config: Default::default(),
-                tee_state: Default::default(),
-                node_migrations: Default::default(),
-                foreign_chains: Lazy::new(
-                    StorageKey::ForeignChainMetadata,
-                    ForeignChainsMetadata::default(),
-                ),
-                tee_verifier_account_id: None,
-                tee_verifier_votes: Default::default(),
-                available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
-            }
-        }
-    }
-
-    const NUM_GENERATED_DOMAINS: usize = 1;
-    const NUM_DOMAINS: usize = 2 * NUM_PROTOCOLS;
     #[test]
     fn test_start_node_migration_failure_not_participant() {
         let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
@@ -8110,18 +6405,6 @@ mod tests {
         let _ = contract.vote_update_foreign_chain_providers(batch);
     }
 
-    fn participant_account_ids(contract: &MpcContract) -> Vec<AccountId> {
-        contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect()
-    }
-
     /// Votes `chain` into the on-chain RPC whitelist using the signing threshold of
     /// participants (so the chain becomes whitelisted).
     fn whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
@@ -8914,6 +7197,18 @@ mod tests {
         env::storage_usage() - before
     }
 
+    fn measure_grant_row_bytes() -> u64 {
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        testing_env!(VMContextBuilder::new().build());
+        let account: AccountId = "a".repeat(64).parse().unwrap();
+
+        let before = env::storage_usage();
+        contract.available_attestation_grants.insert(account, 1);
+        contract.available_attestation_grants.flush();
+
+        env::storage_usage() - before
+    }
+
     /// Pins the exact stored size of the largest variant of each attestation kind.
     ///
     /// Do not update these numbers just to make a failing case pass. The contract funds every
@@ -8941,6 +7236,36 @@ mod tests {
             bytes_stored <= WORST_CASE_ENTRY_BYTES,
             "entry ({bytes_stored} bytes) exceeds the pinned worst case \
              ({WORST_CASE_ENTRY_BYTES} bytes)"
+        );
+    }
+
+    /// The fee covers the worst-case entry plus the grants row, and is held to twice that, so
+    /// growth is caught while there is still room rather than once the fee is already breached.
+    /// A failure here is a prompt to re-price, not a broken test.
+    ///
+    /// Does not guard a real storage re-pricing: [`env::storage_byte_cost`] is a near-sdk
+    /// constant, not a protocol read.
+    ///
+    /// TODO(#4123): a fee voted below the floor is not caught here either.
+    #[test]
+    fn attestation_storage_fee__should_keep_double_the_floor() {
+        // Given
+        const BUFFER: u128 = 2;
+        let worst_case_entry_bytes = measure_stored_entry_bytes(worst_case_mock_attestation())
+            .max(measure_stored_entry_bytes(worst_case_dstack_attestation()));
+        let floor_bytes = worst_case_entry_bytes + measure_grant_row_bytes();
+
+        // When
+        let floor = env::storage_byte_cost().saturating_mul(u128::from(floor_bytes));
+        let fee = NearToken::from_millinear(u128::from(
+            Config::default().attestation_storage_fee_millinear,
+        ));
+
+        // Then
+        assert!(
+            floor.saturating_mul(BUFFER) <= fee,
+            "attestation storage fee ({fee}) must be at least {BUFFER}x the floor \
+             ({floor_bytes} bytes, {floor}) at today's storage price"
         );
     }
 
