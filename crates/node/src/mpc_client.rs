@@ -235,14 +235,18 @@ where
             self.ckd_provider.clone().spawn_background_tasks(),
         );
 
-        let _ = monitor_passive_channels.await?;
-        metrics_emitter.await?;
-        monitor_chain.await?;
-        let _ = robust_ecdsa_background_tasks.await?;
-        let _ = ecdsa_background_tasks.await?;
-        let _ = eddsa_background_tasks.await?;
-        let _ = ckd_background_tasks.await?;
-        tee_verification_handle.await?;
+        // Awaiting in sequence would park a failure behind the tasks that never
+        // return; `try_join!` surfaces it and aborts the rest on drop.
+        futures::try_join!(
+            async move { monitor_passive_channels.await? },
+            async move { metrics_emitter.await.map_err(anyhow::Error::from) },
+            async move { monitor_chain.await.map_err(anyhow::Error::from) },
+            async move { robust_ecdsa_background_tasks.await? },
+            async move { ecdsa_background_tasks.await? },
+            async move { eddsa_background_tasks.await? },
+            async move { ckd_background_tasks.await? },
+            async move { tee_verification_handle.await.map_err(anyhow::Error::from) },
+        )?;
 
         Ok(())
     }
