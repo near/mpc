@@ -82,7 +82,6 @@ impl VerifyForeignTxProvider {
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
-
         let requested_chain = foreign_tx_request.request.chain();
 
         // Also checked in `execute_foreign_chain_request`; resolved early here
