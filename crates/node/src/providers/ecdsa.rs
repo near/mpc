@@ -252,15 +252,14 @@ impl SignatureProvider for EcdsaSignatureProvider {
         // One triple generator per distinct `t` this node serves; cait-sith
         // triples are generated with exactly `t` parties, so each store is fed
         // by a generator running at its own threshold.
-        let mut generate_triples = Vec::new();
-        let mut task_labels: Vec<String> = Vec::new();
+        let mut background_tasks = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
             let reconstruction_threshold_usize: usize = t.inner().try_into()?;
             let reconstruction_threshold_bound =
                 TSReconstructionThreshold::from(reconstruction_threshold_usize);
-            task_labels.push(format!("triple generation (t={})", t.inner()));
-            generate_triples.push(tracking::spawn(
-                &format!("generate triples for t={}", t.inner()),
+            let description = format!("generate triples for t={}", t.inner());
+            let task = tracking::spawn(
+                &description,
                 Self::run_background_triple_generation(
                     self.client.clone(),
                     self.mpc_config.clone(),
@@ -268,21 +267,21 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     triple_store.clone(),
                     reconstruction_threshold_bound,
                 ),
-            ));
+            );
+            background_tasks.push((description, task));
         }
 
-        // Held outside the select group below: it never completes. Aborted on drop.
+        // Kept out of the group below: it never completes. Aborted on drop.
         let _metrics_task = tracking::spawn(
             "report triple metrics",
             Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
         );
 
-        let mut generate_presignatures = Vec::new();
         for (domain_id, data) in &self.keyshares {
             let triple_store = self.triple_store_for_t(data.reconstruction_threshold)?;
-            task_labels.push(format!("presignature generation (domain {})", domain_id.0));
-            generate_presignatures.push(tracking::spawn(
-                &format!("generate presignatures for domain {}", domain_id.0),
+            let description = format!("generate presignatures for domain {}", domain_id.0);
+            let task = tracking::spawn(
+                &description,
                 Self::run_background_presignature_generation(
                     self.client.clone(),
                     self.config.presignature.clone().into(),
@@ -290,21 +289,15 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     *domain_id,
                     data.clone(),
                 ),
-            ));
+            );
+            background_tasks.push((description, task));
         }
 
-        let mut background_tasks = generate_triples;
-        background_tasks.extend(generate_presignatures);
-
-        // Generators never return, so any exit is a failure.
-        if background_tasks.is_empty() {
+        let Some((description, outcome)) = tracking::first_task_exit(background_tasks).await else {
             return Ok(());
-        }
-        let (Err(join_error), index, _remaining) =
-            futures::future::select_all(background_tasks).await;
-        anyhow::bail!(
-            "ecdsa background {} task ended unexpectedly: {join_error}",
-            task_labels[index]
-        )
+        };
+        // Generators never return, so any exit is a failure.
+        let Err(join_error) = outcome;
+        anyhow::bail!("ecdsa background task \"{description}\" ended unexpectedly: {join_error}")
     }
 }

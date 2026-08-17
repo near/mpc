@@ -184,14 +184,13 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let mut task_labels: Vec<String> = Vec::new();
-        let generate_presignatures = self
+        let background_tasks = self
             .keyshares
             .iter()
             .map(|(domain_id, data)| {
-                task_labels.push(format!("presignature generation (domain {})", domain_id.0));
-                tracking::spawn(
-                    &format!("generate presignatures for domain {}", domain_id.0),
+                let description = format!("generate presignatures for domain {}", domain_id.0);
+                let task = tracking::spawn(
+                    &description,
                     presign::run_background_presignature_generation(
                         self.client.clone(),
                         self.mpc_config.clone(),
@@ -199,19 +198,18 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                         *domain_id,
                         data.clone(),
                     ),
-                )
+                );
+                (description, task)
             })
             .collect::<Vec<_>>();
 
-        // Generators never return, so any exit is a failure.
-        if generate_presignatures.is_empty() {
+        let Some((description, outcome)) = tracking::first_task_exit(background_tasks).await else {
             return Ok(());
-        }
-        let (Err(join_error), index, _remaining) =
-            futures::future::select_all(generate_presignatures).await;
+        };
+        // Generators never return, so any exit is a failure.
+        let Err(join_error) = outcome;
         anyhow::bail!(
-            "Damgard et al background {} task ended unexpectedly: {join_error}",
-            task_labels[index]
+            "Damgard et al background task \"{description}\" ended unexpectedly: {join_error}"
         )
     }
 }
