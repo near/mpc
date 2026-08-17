@@ -2,7 +2,7 @@
 //! on-chain whitelist (`allowed_foreign_chain_providers`).
 //!
 //! On a fresh deployment with an unvoted whitelist, the verifier emits one
-//! `ChainNotInWhitelist` info per configured chain — expected during rollout,
+//! [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist) info per configured chain — expected during rollout,
 //! clears once the whitelist is populated and the watch channel updates.
 
 use std::collections::BTreeMap;
@@ -17,12 +17,12 @@ use near_mpc_contract_interface::types::{
 use tokio::sync::watch;
 
 /// Subscribes to the contract's `allowed_foreign_chain_providers` whitelist (published by
-/// `monitor_allowed_foreign_chain_providers` in `crate::indexer::tee`) and logs any divergence
+/// `monitor_allowed_foreign_chain_providers` in [`crate::indexer::tee`]) and logs any divergence
 /// from the local config. Processes the current value immediately, then reacts to each change.
 ///
 /// `run` owns no I/O: the polling and retry live in the monitor adapter, so when the chain gateway
 /// exposes a native subscription only the adapter changes, and `run` can be driven from an
-/// in-memory `watch::channel` in tests.
+/// in-memory [`watch::channel`] in tests.
 pub(crate) async fn run(
     mut whitelist_rx: watch::Receiver<BTreeMap<dtos::ForeignChain, ChainEntry>>,
     local: ForeignChainsConfig,
@@ -91,7 +91,7 @@ enum DiagnosticKind {
     },
 }
 
-/// Advisory diagnostics (logged at info rather than warn). Only `ChainNotInWhitelist`
+/// Advisory diagnostics (logged at info rather than warn). Only [`ChainNotInWhitelist`](DiagnosticKind::ChainNotInWhitelist)
 /// qualifies — it's the bootstrap case where a chain isn't yet voted in.
 fn is_informational(kind: &DiagnosticKind) -> bool {
     matches!(kind, DiagnosticKind::ChainNotInWhitelist)
@@ -206,7 +206,7 @@ enum RoutingCheck {
 
 /// Substring-based (not a strict parse): `?xnetwork=ethereum` will satisfy
 /// `QueryParam { name: "network", value: "ethereum" }`. Acceptable for advisory
-/// diagnostics; tighten with `url::parse` if this ever drives enforcement.
+/// diagnostics; tighten with [`Url::parse`](url::Url::parse) if this ever drives enforcement.
 fn chain_routing_satisfied(local_url: &str, routing: &ChainRouting) -> RoutingCheck {
     match routing {
         ChainRouting::Embedded => RoutingCheck::Ok,
@@ -288,7 +288,7 @@ fn compare_auth(
                 scheme: contract_scheme,
             },
         ) => {
-            if local_h.as_str() != contract_h {
+            if !header_name_matches(local_h, contract_h) {
                 out.push(Diagnostic {
                     chain,
                     provider: Some(name.clone()),
@@ -334,6 +334,12 @@ fn compare_auth(
             });
         }
     }
+}
+
+/// Header names are case insensitive: local is lowercased when [`AuthConfig::Header`] parses it
+/// into an [`http::HeaderName`], while the contract keeps the casing the vote carried.
+fn header_name_matches(local: &http::HeaderName, contract: &str) -> bool {
+    local.as_str().eq_ignore_ascii_case(contract)
 }
 
 fn log_diagnostic(d: &Diagnostic) {
@@ -715,7 +721,7 @@ mod tests {
         );
     }
 
-    /// Build a single-ethereum-chain `ForeignChainsConfig` with one alchemy
+    /// Build a single-ethereum-chain [`ForeignChainsConfig`] with one alchemy
     /// provider whose `auth` is a Header with the given (name, scheme).
     fn local_header_eth(header_name: &str, scheme: Option<&str>) -> ForeignChainsConfig {
         ForeignChainsConfig {
@@ -834,6 +840,39 @@ mod tests {
 
         // Then
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
+    fn compare__should_accept_header_names_differing_only_in_case() {
+        // Given: the same header, voted in capitalised and configured lowercase.
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("Authorization", Some("Bearer"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
+    fn compare__should_emit_header_name_mismatch_when_names_differ_beyond_case() {
+        // Given
+        let local = local_header_eth("authorization", Some("Bearer"));
+        let whitelist = contract_header_eth("X-Api-Key", Some("Bearer"));
+
+        // When
+        let diags = compare(&local, &whitelist);
+
+        // Then
+        assert_eq!(diags.len(), 1);
+        assert_matches!(
+            diags[0].kind,
+            DiagnosticKind::AuthSchemeNameMismatch {
+                variant: "Header",
+                ..
+            }
+        );
     }
 
     #[test]

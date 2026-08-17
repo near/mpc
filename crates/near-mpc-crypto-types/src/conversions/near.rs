@@ -240,7 +240,7 @@ mod tests {
         assert_matches!(result, Err(CryptoConversionError::UnsupportedCurve));
     }
 
-    /// The `[1..]` slicing in the conversions above relies on `as_bytes()` being
+    /// The `[1..]` slicing in the conversions above relies on [`as_bytes()`] being
     /// the raw key prefixed with a single curve-type byte.
     #[rstest]
     #[case::secp256k1_1(

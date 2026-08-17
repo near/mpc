@@ -682,6 +682,46 @@ near account create-account sponsor-by-faucet-service <ACCOUNT_NAME> use-manuall
 
 For more details, please refer to the NEAR account documentation.
 
+### Prepay Your Node's Attestation Storage
+
+The contract charges a one-time fee for the storage your node's attestation occupies. One prepayment buys one **grant**: permission for the node account to hold one stored attestation.
+
+**The fee is currently 20 milliNEAR (0.02 NEAR) per grant**, so a typical operator running one node pays 0.04 NEAR — one grant for the node, one spare (see below). The fee is a votable contract parameter rather than a constant, so read the current value before paying rather than trusting this number; the steps below show how.
+
+The node cannot pay for this itself. Its access key is a function-call key, and the NEAR protocol forbids those from attaching a deposit — so the operator prepays, using the full-access key of the account you just created.
+
+Do this now, before the CVM is started. `prepay_attestation_storage` needs only the account id, so nothing waits on the node's keys, and the node will not start up into a state where its attestation submissions are rejected.
+
+First read the current fee, `attestation_storage_fee_millinear`, in milliNEAR:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer config json-args '{}' network-config mainnet now \
+  | jq .attestation_storage_fee_millinear
+```
+
+Then prepay that many multiples of it. Ask for one grant per node you run plus one spare, so you can re-provision or migrate without waiting for the old attestation to expire. At the current 20 milliNEAR fee, the two grants below cost 0.04 NEAR:
+
+```bash
+near contract call-function as-transaction \
+  v1.signer prepay_attestation_storage \
+  json-args '{"account_id":"<YOUR_NODE_ACCOUNT>","grants":2}' \
+  prepaid-gas '30.0 Tgas' attached-deposit '0.04 NEAR' \
+  sign-as <YOUR_OPERATOR_ACCOUNT> network-config mainnet sign-with-keychain send
+```
+
+The attached deposit must equal the fee times `grants` exactly; anything else is rejected. Nothing is refunded, and there is no withdrawal — so **check the account id carefully**: a grant prepaid to a mistyped or non-existent account cannot be recovered or redirected, and the fee is lost.
+
+Confirm it landed:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer available_attestation_grants \
+  json-args '{"account_id":"<YOUR_NODE_ACCOUNT>"}' network-config mainnet now
+```
+
+A node that is already attested needs no action here: re-attesting an existing entry consumes no grant.
+
 ### Prepare MPC Node Configuration
 
 Create a `user-config.toml` file based on the [user-config.toml](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template.
@@ -742,7 +782,7 @@ format = "plain"
 filter = "mpc=debug,info"
 ```
 
-The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` / `foreign_chains` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone.
+The snippet above shows only the fields you are likely to change. Required fields not shown (e.g. `number_of_responder_keys`, `web_ui`, and the `triple` / `presignature` / `signature` / `ckd` blocks) and inline `# mainnet: …` swap hints are inherited from the [`user-config.toml`](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml) template — always start from that file and edit the highlighted fields rather than building a config from this snippet alone. For the `foreign_chains` block, use the full per-network provider set in [Foreign chain RPC providers](#foreign-chain-rpc-providers).
 
 > **⚠️ Set `tier3_public_addr` before first start.** State sync is decentralized (peer-to-peer) and requires the node to advertise a **publicly reachable** `IP:24567`. The template ships `tier3_public_addr` as a `REPLACE_WITH_…` placeholder and the node **fails to start if it's left unset or left as the placeholder** — replace it with the IP your dstack port-forward exposes for `:24567`. This matters most on hosts with more than one external IP or running multiple nodes, where auto-discovery would advertise an unreachable address and state sync would stall. It is applied at first init only, so getting it right up front avoids a CVM redeploy later.
 
@@ -784,6 +824,237 @@ modify the `pccs_endpoints` array. Whatever entries you list become
 the entire fallback chain, in order — no defaults are auto-inserted.
 
 For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendix-self-hosting-a-local-pccs).
+
+### Foreign chain RPC providers
+
+MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Your `user-config.toml` must include a `foreign_chains` block listing, per chain, `timeout_sec`, `max_retries`, and one entry per provider. Configure **all** chains below with **all** listed providers — redundant providers keep a chain available when one provider fails, and a node that cannot cover a chain is treated as down for it.
+
+You need your own API keys:
+
+* **Alchemy** — https://www.alchemy.com → create an App, copy the API key
+* **QuickNode** — https://www.quicknode.com → create a Multi-chain Endpoint, copy the endpoint URL (your slug and API key are embedded in it)
+* **Geomi** (Aptos only) — https://geomi.dev/login → create a project, generate a Server API key (`aptoslabs_…`)
+
+> **Important:**
+>
+> * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
+> * Before deploying, verify your config with the [foreign-chain config tester](../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
+
+Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
+
+**Testnet:**
+
+```toml
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url = "https://bitcoin-testnet-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url = "https://api.testnet.abs.xyz"
+
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
+rpc_url = "https://abstract-testnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.abstract-testnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
+rpc_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.strk-sepolia.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.aptos.providers.public]
+rpc_url = "https://fullnode.testnet.aptoslabs.com/v1"
+
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy]
+rpc_url = "https://aptos-testnet.g.alchemy.com/v2/{API_KEY}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.aptos-testnet.quiknode.pro/{api_key}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi]
+rpc_url = "https://api.testnet.aptoslabs.com/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_GEOMI_API_KEY" }
+
+# Sui speaks gRPC: keys go in headers, never in the URL.
+[mpc_node_config.node.foreign_chains.sui]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.sui.providers.public]
+rpc_url = "https://archive.testnet.sui.io"
+[mpc_node_config.node.foreign_chains.sui.providers.public.auth]
+kind = "none"
+
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy]
+rpc_url = "https://sui-testnet.g.alchemy.com"
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
+kind = "header"
+name = "x-token"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+```
+
+**Mainnet:**
+
+```toml
+[mpc_node_config.node.foreign_chains.bitcoin]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.bitcoin.providers.public]
+rpc_url = "https://bitcoin-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.abstract]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.abstract.providers.abstract-testnet]
+rpc_url = "https://api.mainnet.abs.xyz"
+
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy]
+rpc_url = "https://abstract-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.abstract.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.abstract-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.abstract.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.starknet.providers.publicnode]
+rpc_url = "https://starknet-rpc.publicnode.com"
+
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy]
+rpc_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/{API_KEY}"
+[mpc_node_config.node.foreign_chains.starknet.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.strk-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.starknet.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.aptos.providers.public]
+rpc_url = "https://fullnode.mainnet.aptoslabs.com/v1"
+
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy]
+rpc_url = "https://aptos-mainnet.g.alchemy.com/v2/{API_KEY}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.aptos-mainnet.quiknode.pro/{api_key}/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi]
+rpc_url = "https://api.mainnet.aptoslabs.com/v1"
+[mpc_node_config.node.foreign_chains.aptos.providers.geomi.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_GEOMI_API_KEY" }
+
+# Sui speaks gRPC: keys go in headers, never in the URL.
+[mpc_node_config.node.foreign_chains.sui]
+timeout_sec = 30
+max_retries = 3
+
+[mpc_node_config.node.foreign_chains.sui.providers.public]
+rpc_url = "https://archive.mainnet.sui.io"
+[mpc_node_config.node.foreign_chains.sui.providers.public.auth]
+kind = "none"
+
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy]
+rpc_url = "https://sui-mainnet.g.alchemy.com"
+[mpc_node_config.node.foreign_chains.sui.providers.alchemy.auth]
+kind = "header"
+name = "Authorization"
+scheme = "Bearer"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
+[mpc_node_config.node.foreign_chains.sui.providers.quicknode.auth]
+kind = "header"
+name = "x-token"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+```
 
 ### Preparing a Docker Compose File
 
@@ -1282,8 +1553,7 @@ Once the MPC node is fully synced, it will call `submit_participant_info` to sub
 
 If the node’s key has not been added to the account, this operation will fail. In that case, the node will retry the operation in a loop.
 
-> **Note:** Calling this method will incur a cost (TBD, XXX NEAR). Ensure this amount is available in your account.
-> _(TBD [#903](https://github.com/near/mpc/issues/903) – confirm exact cost)_
+> **Note:** The node attaches no deposit. The storage it needs must already have been prepaid by the operator — see [Prepay Your Node's Attestation Storage](#prepay-your-nodes-attestation-storage). Without a grant the submission is rejected and the node retries in a loop.
 
 #### Verifying the attestation was accepted
 
@@ -1579,7 +1849,7 @@ git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
 * Compile it using the reproduce build script. For this you need to install
-  `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon
+  `repro-env`, `docker-buildx`, and `podman`, and have the `docker` daemon
   running.
 
 ```bash
@@ -1667,7 +1937,7 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](se
 2. Participants vote to approve the new launcher manifest digest and/or OS measurements.
 3. Operator deploys a new CVM with the new launcher image and/or OS.
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](node-migration-guide.md).
-5. After all operators have migrated, participants vote to remove the old launcher manifest digest and/or OS measurements.
+5. The old launcher manifest digest auto-expires after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once unused; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
 ### Launcher Image Voting
 
@@ -1685,7 +1955,7 @@ cd mpc/
 git checkout <commit-hash>
 ```
 
-* Compile it using the reproducible build script. For this you need to install `repro-env`, `docker-buildx`, and `skopeo`, and have the `docker` daemon running.
+* Compile it using the reproducible build script. For this you need to install `repro-env`, `docker-buildx`, and `podman`, and have the `docker` daemon running.
 
 ```bash
 $ ./deployment/build-images.sh --rust-launcher
@@ -1736,7 +2006,7 @@ near contract call-function as-transaction \
 
 #### Query allowed launcher manifest digests
 
-The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests.
+The contract method is named `allowed_launcher_image_hashes` for historical reasons, but the values returned are manifest digests. The query returns only non-expired digests; digests that have aged out past their TTL are hidden from this view (and physically removed later, during routine `verify_tee` housekeeping).
 
 ```bash
 near contract call-function as-read-only \
@@ -1826,7 +2096,9 @@ For the migration procedure, see the [node migration guide](node-migration-guide
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
-After all operators have migrated to the new CVM, participants should vote to remove the old launcher manifest digest using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration.
+An unused launcher manifest digest now auto-expires after the configured TTL (`launcher_hash_unused_ttl_seconds`, default 14 days): once no node has attested with it for that window it stops being accepted, and it is physically removed during the next routine `verify_tee`, so no vote is needed for routine rotation. The unanimous `vote_remove_launcher_hash` is only needed to remove a still-valid digest *immediately* (before its TTL lapses), for example a compromised launcher.
+
+After all operators have migrated to the new CVM, participants may vote to remove the old launcher manifest digest immediately using `vote_remove_launcher_hash` and/or old OS measurements using `vote_remove_os_measurement`. This requires **all** participants to vote, ensuring no node is still running with the old configuration. (Old OS measurements do not auto-expire and still require this vote.)
 
 ## CVM management
 

@@ -27,11 +27,11 @@ pub struct ParticipantInfo {
     pub tls_public_key: Ed25519PublicKey,
 }
 
-/// DTO representation of the contract-internal `Participants` type.
+/// DTO representation of the contract-internal [`Participants`] type.
 ///
 /// It decouples the JSON wire format (used in view methods like `state()` via
 /// [`GovernanceThresholdParameters`](crate::types::state::GovernanceThresholdParameters) from the
-/// internal `Participants` representation, allowing internal changes (e.g.,
+/// internal [`Participants`] representation, allowing internal changes (e.g.,
 /// migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861))
 /// without breaking the public API.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

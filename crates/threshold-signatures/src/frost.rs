@@ -1,6 +1,7 @@
 pub mod eddsa;
-mod presign;
 pub mod redjubjub;
+
+mod presign;
 mod sign_utils;
 
 pub(crate) use presign::{PresignArguments, PresignOutput, presign};

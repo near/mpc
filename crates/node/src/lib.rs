@@ -20,12 +20,25 @@ pub static MPC_VERSION_STRING: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
+pub mod cli;
+pub mod config;
+pub mod keyshare;
+pub mod metrics;
+pub mod migration_service;
+pub mod p2p;
+pub mod primitives;
+pub mod requests;
+pub mod tracing;
+pub mod types;
+pub mod web;
+
+pub(crate) mod profiler;
+pub(crate) mod trait_extensions;
+
 mod assets;
 #[cfg(test)]
 mod async_testing;
 mod background;
-pub mod cli;
-pub mod config;
 mod coordinator;
 mod db;
 mod foreign_chain_policy;
@@ -33,28 +46,15 @@ mod foreign_chain_whitelist_verifier;
 mod home_paths;
 mod indexer;
 mod key_events;
-pub mod keyshare;
-pub mod metrics;
-pub mod migration_service;
 mod mpc_client;
 mod network;
-pub mod p2p;
-pub mod primitives;
-pub(crate) mod profiler;
 mod protocol;
 mod protocol_version;
 mod providers;
-pub mod requests;
 mod run;
 mod runtime;
 mod storage;
-pub mod tracing;
-mod tracking;
-pub mod types;
-pub mod web;
-
-pub(crate) mod trait_extensions;
-
 mod tee;
 #[cfg(test)]
 mod tests;
+mod tracking;

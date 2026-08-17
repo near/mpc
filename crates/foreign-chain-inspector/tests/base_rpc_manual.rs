@@ -1,18 +1,18 @@
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     base::{
         BaseBlockHash, BaseTransactionHash,
         inspector::{BaseExtractedValue, BaseExtractor, BaseInspector},
     },
 };
 
+const BASE_RPC_URL: &str = "https://mainnet.base.org";
+
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Base RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    const BASE_RPC_URL: &str = "https://mainnet.base.org";
-
     let threshold = EthereumFinality::Finalized;
 
     // Example transaction on Base mainnet (block 33554432) with 16 logs;
@@ -57,4 +57,28 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     assert_matches!(extracted_values[1], BaseExtractedValue::Log(_));
     assert_matches!(extracted_values[2], BaseExtractedValue::Log(_));
     assert_matches!(extracted_values[3], BaseExtractedValue::Log(_));
+}
+
+/// Base mainnet's chain id, as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "8453";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Base RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        BASE_RPC_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = BaseInspector::new(http_client);
+
+    // when
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

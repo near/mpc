@@ -1,7 +1,7 @@
 //! This module abstracts the Signature Schema,
 //! i.e., we might want to use ECDSA over the Secp256k1 curve, EdDSA over Ed25519, or something else.
-//! `SignatureProvider` exposes an interface for such add-ons. Alongside it, helper functions
-//! (like `RegisterMpcTask`) are exposed, which somewhat guarantees that if the code compiles,
+//! [`SignatureProvider`] exposes an interface for such add-ons. Alongside it, helper traits
+//! (like [`HasParticipants`]) are exposed, which somewhat guarantees that if the code compiles,
 //! you don’t need to add anything more internally for it to work.
 //!
 //! As a reference, check the existing implementations.
@@ -53,7 +53,7 @@ pub trait SignatureProvider {
     type Signature;
 
     /// Trait bound `Into<MpcTaskId>` serves as a way to see what logic needs to be added,
-    /// when introducing new `TaskId`. Implementation of the trait should be trivial.
+    /// when introducing new [`TaskId`](SignatureProvider::TaskId). Implementation of the trait should be trivial.
     type TaskId: Into<MpcTaskId>;
 
     /// Generates a signature.
@@ -89,7 +89,7 @@ pub trait SignatureProvider {
     ) -> anyhow::Result<Self::KeygenOutput>;
 
     /// Expected to be called in a common loop that handles received channels and redirects them
-    /// to the respective `SignatureProvider`.
+    /// to the respective [`SignatureProvider`].
     /// This function is called during the "normal MPC run",
     /// i.e., it should fail if it receives messages from the `KeyGeneration` or `KeyResharing` stage.
     async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()>;

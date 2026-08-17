@@ -421,6 +421,7 @@ fn try_get_verify_foreign_tx_args(
             request: verify_foreign_tx_args.request.request,
             domain_id: verify_foreign_tx_args.request.domain_id,
             payload_version: verify_foreign_tx_args.request.payload_version,
+            expected_payload_hash: verify_foreign_tx_args.request.expected_payload_hash,
         },
     ))
 }

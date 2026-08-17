@@ -28,7 +28,7 @@
 //! idles instead.
 //!
 //! The fix runs asset generation on a separate, lower-OS-priority tokio runtime
-//! (`ConfigFile::separate_asset_generation_runtime`, on by default) so the OS
+//! ([`ConfigFile::separate_asset_generation_runtime`], on by default) so the OS
 //! preempts it whenever signing is ready. This module has two tests that run the
 //! same load at the same `CORES_PER_NODE`, differing only in whether the fix is
 //! enabled: `signing_latency__should_degrade_under_concurrent_asset_generation`

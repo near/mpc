@@ -1,6 +1,6 @@
 //! Integration test for the stateless `tee-verifier` contract.
 //!
-//! Calls `TeeVerifier::verify_quote` directly (no Promise round-trip)
+//! Calls [`TeeVerifier::verify_quote`] directly (no Promise round-trip)
 //! with a real Dstack quote+collateral fixture taken from `test-utils`,
 //! and asserts the returned [`VerificationResult`]:
 //!
@@ -15,33 +15,10 @@ use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use std::time::Duration;
 use tee_verifier::TeeVerifier;
 use tee_verifier_interface::{
-    Collateral, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory,
-    VerificationResult, VerifiedReport, VerifierError,
+    QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory, VerificationResult,
+    VerifiedReport, VerifierError,
 };
-use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral as collateral_json, quote};
-
-fn make_collateral() -> Collateral {
-    // `test_utils::attestation::collateral()` returns a `serde_json::Value`
-    // matching `attestation::Collateral`'s JSON shape. We re-parse it
-    // into the interface crate's mirror type by extracting the same
-    // field names that `dcap_qvl::QuoteCollateralV3` uses.
-    let v = collateral_json();
-    Collateral {
-        pck_crl_issuer_chain: v["pck_crl_issuer_chain"].as_str().unwrap().to_string(),
-        root_ca_crl: hex::decode(v["root_ca_crl"].as_str().unwrap()).unwrap(),
-        pck_crl: hex::decode(v["pck_crl"].as_str().unwrap()).unwrap(),
-        tcb_info_issuer_chain: v["tcb_info_issuer_chain"].as_str().unwrap().to_string(),
-        tcb_info: v["tcb_info"].as_str().unwrap().to_string(),
-        tcb_info_signature: hex::decode(v["tcb_info_signature"].as_str().unwrap()).unwrap(),
-        qe_identity_issuer_chain: v["qe_identity_issuer_chain"].as_str().unwrap().to_string(),
-        qe_identity: v["qe_identity"].as_str().unwrap().to_string(),
-        qe_identity_signature: hex::decode(v["qe_identity_signature"].as_str().unwrap()).unwrap(),
-        pck_certificate_chain: v
-            .get("pck_certificate_chain")
-            .and_then(|s| s.as_str())
-            .map(str::to_string),
-    }
-}
+use test_utils::attestation::{VALID_ATTESTATION_TIMESTAMP, collateral, quote};
 
 fn make_quote_bytes() -> QuoteBytes {
     QuoteBytes(Vec::from(quote()))
@@ -66,7 +43,7 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let quote = make_quote_bytes();
-    let collateral = make_collateral();
+    let collateral = collateral();
 
     // When
     let result = contract.verify_quote(quote, collateral);
@@ -90,7 +67,7 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
                 "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
             ),
             mr_config_id: hex_arr(
-                "01cb9b2d6204f5e44238b75f69e3a3069550734c0d99ebdd3be507c238a261d8fa000000000000000000000000000000",
+                "012911e1f733466216dedb862d6d669e11256ee7a34ce4dbc66c4b807ba7a9c895000000000000000000000000000000",
             ),
             mr_owner: hex_arr(
                 "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -108,10 +85,10 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
                 "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93",
             ),
             rt_mr3: hex_arr(
-                "b7662ac19c27af648a939be042684bbdb43bb3dddf4cd17bb21f4d455ab1926c6ee57038152fc46ddea392c47eb2af27",
+                "86f1808cffc050f3c0c09d29da2bfcec7eba3e8fa52016a7341f28884230f9ca8b56400413d57bce00b578e36790b555",
             ),
             report_data: hex_arr(
-                "00014ee5e70e861db29a95224e48a47c016ab03c61238333319af7614593cd155ba531073edd69921742beb1c510ff4339480000000000000000000000000000",
+                "0001e4faaedae8199148eb0fe1cc9a52ecbb09045014a11342b85ed8bd727a03ceb03ccb16857e2ba693145050f84cb2f7580000000000000000000000000000",
             ),
         }),
         ppid: hex::decode("d208dfb1002346ae1bb4ef2a3c055292").unwrap(),
@@ -133,7 +110,7 @@ fn verify_quote__should_reject_without_panicking_for_invalid_quote() {
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let invalid_quote = QuoteBytes(vec![0u8; 16]);
-    let collateral = make_collateral();
+    let collateral = collateral();
 
     // When
     let result = contract.verify_quote(invalid_quote, collateral);
@@ -155,7 +132,7 @@ fn verify_quote__should_reject_valid_quote_with_mismatched_collateral() {
     set_valid_timestamp_context();
     let contract = TeeVerifier::default();
     let quote = make_quote_bytes();
-    let mut collateral = make_collateral();
+    let mut collateral = collateral();
     collateral.tcb_info = String::from("{}");
 
     // When
@@ -191,7 +168,7 @@ fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
 #[test]
 fn verify_quote_args_fixture__should_match_committed_file() {
     let mut expected = borsh::to_vec(&make_quote_bytes()).unwrap();
-    expected.extend(borsh::to_vec(&make_collateral()).unwrap());
+    expected.extend(borsh::to_vec(&collateral()).unwrap());
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/verify_quote_args.borsh"

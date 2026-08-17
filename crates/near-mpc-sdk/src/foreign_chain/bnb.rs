@@ -54,7 +54,8 @@ mod test {
             .with_tx_id(EvmTxId::from([1; 32]))
             .with_finality(EvmFinality::Finalized)
             .with_domain_id(DomainId::from(1))
-            .build();
+            .build()
+            .unwrap();
 
         // then
         assert_matches!(request_args.request, ForeignChainRpcRequest::Bnb(_));

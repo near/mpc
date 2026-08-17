@@ -163,6 +163,7 @@ pub struct VerifyForeignTxRequest {
     pub receipt_id: CryptoHash,
     pub request: dtos::ForeignChainRpcRequest,
     pub payload_version: dtos::ForeignTxPayloadVersion,
+    pub expected_payload_hash: Option<dtos::Hash256>,
     pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain_id: DomainId,
@@ -181,6 +182,7 @@ impl FromChain<VerifyForeignTxRequestFromChain> for VerifyForeignTxRequest {
             domain_id: request.domain_id,
             entropy: block.entropy.clone().into(),
             payload_version: request.payload_version,
+            expected_payload_hash: request.expected_payload_hash,
             request: request.request,
             timestamp_nanosec: block.timestamp_nanosec,
         }
@@ -320,8 +322,9 @@ pub struct SignerContext {
     pub method: &'static str,
 }
 
+#[expect(rustdoc::private_intra_doc_links)]
 /// The metadata of a successfully built-and-submitted transaction, captured in
-/// `crate::indexer::tx_sender`.
+/// [`crate::indexer::tx_sender`].
 #[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
 #[display("txid={tx_hash}  nonce={nonce}  block={block_height}  sig={signature}")]
 pub struct SubmittedTxMetadata {
@@ -392,7 +395,7 @@ mod tests {
     use std::str::FromStr;
 
     /// A submitted (Executed) transaction whose hash is fixed
-    /// (`CryptoHash::default()`). Used by the `Display` tests, which pin the
+    /// ([`CryptoHash::default()`]). Used by the [`Display`] tests, which pin the
     /// exact rendered txid.
     fn test_transaction(method: &'static str) -> SubmittedTransaction {
         SubmittedTransaction {

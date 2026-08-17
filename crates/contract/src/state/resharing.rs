@@ -32,7 +32,7 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
-    /// Per-domain `ReconstructionThreshold` updates carried from the accepted
+    /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
     /// when resharing completes; empty means "keep current per-domain thresholds".
     pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
@@ -497,9 +497,9 @@ pub mod tests {
 
     /// On successful resharing transition, the proposal's
     /// `per_domain_thresholds` updates must be applied to the new
-    /// `DomainRegistry`. The updates live only on the proposal /
+    /// [`DomainRegistry`]. The updates live only on the proposal /
     /// resharing state, so the stored `RunningContractState.parameters`
-    /// (a plain `GovernanceThresholdParameters`) cannot carry them at all.
+    /// (a plain [`GovernanceThresholdParameters`]) cannot carry them at all.
     ///
     /// Pins a participant set with GovernanceThreshold >= 3 (unchanged across the
     /// resharing) and moves the domain to that threshold — the max reconstruction the

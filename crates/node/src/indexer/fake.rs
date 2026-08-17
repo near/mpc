@@ -862,32 +862,32 @@ pub struct FakeIndexerManager {
     _core_task: AutoAbortTask<()>,
 
     /// Collects signature responses from the core. When the core processes signature
-    /// response transactions, it sends them to this receiver. See `next_response()`.
+    /// response transactions, it sends them to this receiver. See [`next_response()`].
     signature_response_receiver: mpsc::UnboundedReceiver<contract_args::SignatureRespondArgs>,
     /// Used to send signature requests to the core.
     signature_request_sender: mpsc::UnboundedSender<SignatureRequestFromChain>,
 
     /// Collects ckd responses from the core. When the core processes ckd
-    /// response transactions, it sends them to this receiver. See `next_response_ckd()`.
+    /// response transactions, it sends them to this receiver. See [`next_response_ckd()`].
     ckd_response_receiver: mpsc::UnboundedReceiver<contract_args::CKDRespondArgs>,
     /// Used to send ckd requests to the core.
     ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
 
     /// Collects verify foreign tx responses from the core. When the core processes verify foreign tx
-    /// response transactions, it sends them to this receiver. See `next_response_verify_foreign_tx()`.
+    /// response transactions, it sends them to this receiver. See [`next_response_verify_foreign_tx()`].
     verify_foreign_tx_response_receiver:
         mpsc::UnboundedReceiver<contract_args::VerifyForeignTransactionRespondArgs>,
     /// Used to send verify foreign tx requests to the core.
     verify_foreign_tx_request_sender: mpsc::UnboundedSender<VerifyForeignTxRequestFromChain>,
 
-    /// Allows nodes to be disabled during tests. See `disable()`.
+    /// Allows nodes to be disabled during tests. See [`disable()`].
     node_disabler: HashMap<TestNodeUid, NodeDisabler>,
     /// Allows nodes' indexers to be paused during tests.
     indexer_pauser: HashMap<TestNodeUid, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
 
-    /// Cloned into each node's `IndexerAPI`; tracks the fake contract's
+    /// Cloned into each node's [`IndexerAPI`]; tracks the fake contract's
     /// foreign-chain supporters.
     foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
 

@@ -6,7 +6,8 @@ use crate::common;
 use anyhow::{Context, bail};
 use e2e_tests::cluster::placeholder_chain_entry;
 use e2e_tests::foreign_chain_mock::{
-    MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock, setup_starknet_mock,
+    MOCK_BLOCK_HASH, MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock,
+    setup_starknet_mock,
 };
 use httpmock::prelude::*;
 use mpc_node_config::{
@@ -19,8 +20,9 @@ use near_mpc_contract_interface::types::{
     DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, ReconstructionThreshold,
     StarknetExtractor, StarknetFelt, StarknetFinality, StarknetRpcRequest, StarknetTxId,
-    VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
+use near_mpc_sdk::foreign_chain::ForeignChainRequestBuilder;
 
 /// One chain per credential-carrying [`AuthConfig`] kind: Bitcoin uses `path`,
 /// Base `header`, BNB `query`; the remaining chains use `None`.
@@ -37,7 +39,7 @@ struct ForeignTxTestEnv {
     foreign_tx_domain_id: DomainId,
     _mock_servers: Vec<MockServer>,
     /// Polygon is configured with multiple RPC providers so the test can verify
-    /// that `FanOut` queries every one of them.
+    /// that [`FanOut`] queries every one of them.
     polygon_mocks: Vec<MockServerExt>,
     bitcoin_mock: MockServerExt,
     base_mock: MockServerExt,
@@ -320,6 +322,7 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -327,6 +330,47 @@ async fn verify_bitcoin(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         .await
         .context("verify_foreign_transaction (Bitcoin) failed")?;
     verify_foreign_tx_response(&outcome)
+}
+
+/// Submits a request built by the SDK, bound to the payload hash the SDK derives
+/// from the expected extracted values. The nodes derive the payload independently
+/// and the contract rejects a response whose hash differs from the request's
+/// expectation, so this passing proves the SDK and the node agree on the payload
+/// encoding.
+async fn verify_bitcoin_bound_to_expected_payload_hash(
+    env: &ForeignTxTestEnv,
+) -> anyhow::Result<()> {
+    let mock_block_hash: [u8; 32] = hex::decode(MOCK_BLOCK_HASH)
+        .context("MOCK_BLOCK_HASH must be valid hex")?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("MOCK_BLOCK_HASH must be 32 bytes"))?;
+    let (_verifier, request) = ForeignChainRequestBuilder::new_bitcoin()
+        .with_tx_id(BitcoinTxId([0xbb; 32]))
+        .with_block_confirmations(1)
+        .with_expected_block_hash(mock_block_hash)
+        .with_domain_id(env.foreign_tx_domain_id)
+        .build()
+        .context("SDK request builder failed")?;
+    anyhow::ensure!(
+        request.expected_payload_hash.is_some(),
+        "the SDK builder must bind the request to an expected payload hash"
+    );
+
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (Bitcoin, hash-bound) failed")?;
+    verify_foreign_tx_response(&outcome)?;
+
+    let response: VerifyForeignTransactionResponse = outcome
+        .json()
+        .context("failed to parse verify_foreign_transaction response")?;
+    anyhow::ensure!(
+        Some(&response.payload_hash) == request.expected_payload_hash.as_ref(),
+        "response payload hash must equal the SDK-computed expectation"
+    );
+    Ok(())
 }
 
 async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
@@ -338,6 +382,7 @@ async fn verify_abstract(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -356,6 +401,7 @@ async fn verify_bnb(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -374,6 +420,7 @@ async fn verify_base(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -392,6 +439,7 @@ async fn verify_starknet(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -410,6 +458,7 @@ async fn verify_arbitrum(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -428,6 +477,7 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -451,7 +501,7 @@ fn assert_authenticated_provider_was_queried(mock: &MockServerExt, provider: &st
 /// Verifies that every Polygon RPC provider configured in the fan-out received
 /// at least one HTTP request during the preceding `verify_polygon` call.
 ///
-/// A regression in `FanOut` (e.g. routing each verify request to a single
+/// A regression in [`FanOut`] (e.g. routing each verify request to a single
 /// provider instead of fanning out to all of them) would leave at least one
 /// mock untouched and this assertion would fail.
 fn assert_fan_out_queried_every_polygon_provider(env: &ForeignTxTestEnv) {
@@ -473,6 +523,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -500,6 +551,9 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         .await
         .expect("bitcoin verification failed");
     assert_authenticated_provider_was_queried(&env.bitcoin_mock, "bitcoin (path auth)");
+    verify_bitcoin_bound_to_expected_payload_hash(&env)
+        .await
+        .expect("hash-bound bitcoin verification failed");
     verify_abstract(&env)
         .await
         .expect("abstract verification failed");
@@ -530,6 +584,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         }),
         domain_id: env.foreign_tx_domain_id,
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster
@@ -557,6 +612,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         }),
         domain_id: DomainId(999),
         payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
     };
     let outcome = env
         .cluster

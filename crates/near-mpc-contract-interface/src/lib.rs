@@ -21,7 +21,6 @@ pub mod types {
     pub use near_mpc_crypto_types::CKDResponse;
     pub use near_mpc_crypto_types::ckd::CKDRequest;
 
-    pub use metrics::Metrics;
     pub use near_mpc_crypto_types::kdf;
     pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo};
     pub use primitives::{AccountId, DomainId, Tweak};
@@ -53,7 +52,6 @@ pub mod types {
     mod ckd;
     mod config;
     mod foreign_chain;
-    mod metrics;
     mod node_migrations;
     mod participants;
     mod primitives;

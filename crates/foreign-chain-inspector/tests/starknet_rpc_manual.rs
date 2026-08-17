@@ -108,3 +108,27 @@ fn parse_starknet_felt_hash<T: core::str::FromStr<Err = mpc_primitives::hash::Ha
         .parse()
         .map_err(|e| format!("invalid felt hash {value}: {e}"))
 }
+
+/// Starknet mainnet's chain id (`SN_MAIN`), as shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = "0x534e5f4d41494e";
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Starknet RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let http_client = foreign_chain_inspector::build_http_client(
+        PUBLIC_NODE_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let inspector = StarknetInspector::new(http_client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
+}

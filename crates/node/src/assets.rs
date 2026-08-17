@@ -407,7 +407,7 @@ where
 {
     db: Arc<SecretDB>,
     col: DBCol,
-    /// Byte prefix prepended to every key written under `col`. Empty `Vec` means
+    /// Byte prefix prepended to every key written under `col`. Empty [`Vec`] means
     /// no prefix (i.e. the original layout where keys were just
     /// `borsh(UniqueId)`).
     prefix: Vec<u8>,
@@ -677,7 +677,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     /// Adapter used by tests that previously took `Option<DomainId>` to compose
-    /// the equivalent prefix bytes for the generalized `DistributedAssetStorage`.
+    /// the equivalent prefix bytes for the generalized [`DistributedAssetStorage`].
     fn domain_id_to_prefix(domain_id: Option<DomainId>) -> Vec<u8> {
         match domain_id {
             Some(d) => d.0.to_be_bytes().to_vec(),

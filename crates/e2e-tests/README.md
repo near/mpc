@@ -123,13 +123,16 @@ impl NearBlockchain {
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
-client. It exposes `call` (from the contract account), `call_from`/
-`call_from_with_deposit` (from an arbitrary `NearKitCaller`), `view`, and
+client. It exposes `call`/`call_final` (from the contract account, used only
+for `init`), `handle_for` (a typed `MpcContractHandle` calling as a given
+`NearKitCaller`), `call_from_with_deposit` (untyped escape hatch for
+`prepay_attestation_storage`, which has no typed method yet), `view`, and
 `state()` (parsed `ProtocolContractState`).
 
 `NearKitCaller` binds a signer to a non-contract account (nodes voting, users
 submitting sign requests) and implements the `CallContract` transport trait,
-so typed calls can go through `MpcContractHandle`.
+so typed calls go through `MpcContractHandle` — the single source of each
+method's wire format, gas, and deposit.
 
 ### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 
@@ -314,11 +317,18 @@ cargo make e2e-tests
 ## Running the tests
 
 ```bash
-cargo make e2e-tests                       # Build required binaries and run all tests
-cargo make e2e-tests-skip-build            # Reuse binaries from a previous run
-cargo make e2e-tests-skip-build -- <name>  # Run a single test (filter passed to nextest)
-cargo make kill-orphan-mpc-nodes           # Recover from ports held by crashed runs
+cargo make e2e-tests                            # Build required binaries and run all tests
+cargo make e2e-tests-skip-build                 # Reuse binaries from a previous run
+cargo make e2e-tests-skip-build <name>          # Run tests matching a substring filter
+cargo make e2e-tests-skip-build -E 'test(request_lifecycle)' --no-capture  # Forward nextest flags
+cargo make kill-orphan-mpc-nodes                # Recover from ports held by crashed runs
 ```
+
+Everything after the task name is forwarded to `cargo nextest run` unchanged,
+so any nextest filter or flag works (substring filters, `-E` expressions,
+`--no-capture`, `--retries`, `-j`, etc.). With no arguments, the whole suite
+runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
+forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
 The task runner builds three things before tests run: the mpc-node binary
 with the `network-hardship-simulation` feature, the MPC contract WASM, and

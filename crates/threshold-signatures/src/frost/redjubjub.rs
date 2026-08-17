@@ -2,8 +2,9 @@
 //!
 //! Check <https://zips.z.cash/zip-0312> or <https://zips.z.cash/protocol/protocol.pdf#concretespendauthsig>
 
-mod presign;
 pub mod sign;
+
+mod presign;
 #[cfg(test)]
 mod test;
 

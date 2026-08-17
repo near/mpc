@@ -7,11 +7,11 @@
 //! y-coordinate is irrelevant — `verify` only reads `x_coordinate(big_r)`), then
 //! map results, mirroring the malleability policy `verify` enforces (rejects
 //! high-S, `r = 0`, `s = 0`):
-//!   * `Invalid`        -> rejected,
-//!   * `Valid` + low-S  -> accepted,
-//!   * `Valid` + high-S -> rejected, accepted once `s` is normalized.
+//!   * [`Invalid`]        -> rejected,
+//!   * [`Valid`] + low-S  -> accepted,
+//!   * [`Valid`] + high-S -> rejected, accepted once `s` is normalized.
 //!
-//! `Acceptable` vectors are spec-optional and left unasserted.
+//! [`Acceptable`] vectors are spec-optional and left unasserted.
 
 #![allow(non_snake_case)]
 

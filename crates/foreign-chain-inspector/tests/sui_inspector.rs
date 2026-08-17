@@ -17,7 +17,7 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
-/// A client that always returns a hard-coded `GetTransaction` response.
+/// A client that always returns a hard-coded [`GetTransaction`] response.
 struct MockSuiClient {
     response: Result<GetTransactionResponse, Status>,
 }

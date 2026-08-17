@@ -1,25 +1,32 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
-    common::{SandboxTestSetup, build_sandbox_node_ids, gen_accounts, submit_tee_attestations},
+    common::{
+        SandboxTestSetup, build_sandbox_node_ids, gen_accounts, prepay_and_submit_tee_attestations,
+        submit_tee_attestations,
+    },
     utils::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
-            get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
+            get_participant_attestation, get_state, get_tee_accounts,
+            prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
             vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
+        transactions::CallMpcContract,
     },
 };
 use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Protocol;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_contract_interface::types::{
+    self as dtos, Attestation, Config, MockAttestation, Protocol,
+};
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
@@ -267,7 +274,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let success = submit_participant_info(
+    let success = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -388,7 +395,8 @@ async fn clean_tee_status__should_succeed_when_contract_calls_itself_and_leave_a
     let (mut additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
     let additional_uids = build_sandbox_node_ids(&additional_participants, &additional_accounts);
-    submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
+    prepay_and_submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids)
+        .await?;
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
@@ -455,7 +463,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
         expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
         expected_measurements: None,
     });
-    let submit_result = submit_participant_info(
+    let submit_result = prepay_and_submit_participant_info(
         stale_account,
         &contract,
         &expiring_attestation,
@@ -519,6 +527,16 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
         let previous_and_current_approved_hashes = &hashes[..=i];
 
+        // One grant covers the whole loop: every iteration re-submits the same TLS key, so only
+        // the first stores a new entry.
+        let prepayment = prepay_attestation_grants(
+            participant_account_1,
+            &contract,
+            participant_account_1.id(),
+            1,
+        )
+        .await?;
+        assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
         for approved_hash in previous_and_current_approved_hashes {
             let mock_attestation = MockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some((*approved_hash).into()),
@@ -565,7 +583,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 
     let tls_key_2 = bogus_ed25519_public_key();
 
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account_1,
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
@@ -631,7 +649,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         "Sanity check failed. Participants can not be equal for this test."
     );
 
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account_1,
         &contract,
         &participant_1_attestation,
@@ -642,7 +660,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     .is_success();
     assert!(validation_success, "Submitting attestation failed.");
 
-    let validation_success = submit_participant_info(
+    let validation_success = prepay_and_submit_participant_info(
         participant_account_2,
         &contract,
         &participant_2_attestation,
@@ -700,11 +718,15 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     );
 
     // Submit the first attestation
-    let validation_success =
-        submit_participant_info(participant_account, &contract, &first_attestation, &tls_key)
-            .await
-            .unwrap()
-            .is_success();
+    let validation_success = prepay_and_submit_participant_info(
+        participant_account,
+        &contract,
+        &first_attestation,
+        &tls_key,
+    )
+    .await
+    .unwrap()
+    .is_success();
     assert!(validation_success, "First attestation submission failed");
 
     // Submit the second attestation with the same TLS key (overwrites the first)
@@ -775,14 +797,14 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that when a participant's TEE attestation expires and `verify_tee()` is called,
+/// Tests that when a participant's TEE attestation expires and [`verify_tee()`] is called,
 /// the contract transitions to Resharing state and eventually removes that participant.
 ///
 /// Steps:
 /// 1. Initialize contract with 3 participants
 /// 2. Submit an expiring attestation for the last participant
 /// 3. Fast-forward blocks past the attestation expiry
-/// 4. Call `verify_tee()` which detects the expired attestation and triggers resharing
+/// 4. Call [`verify_tee()`] which detects the expired attestation and triggers resharing
 /// 5. Complete resharing with remaining 2 participants
 /// 6. Verify participant count reduced from 3 to 2
 #[tokio::test]
@@ -852,10 +874,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Call verify_tee() to trigger resharing
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VERIFY_TEE)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .verify_tee()
         .await?;
     dbg!(&verify_result);
     assert!(
@@ -904,7 +924,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 /// 1. Initialize contract with 3 participants (threshold 2).
 /// 2. Expire the attestations of 2 of the 3 participants, leaving only 1 valid (< threshold).
 /// 3. Fast-forward blocks past the attestation expiry.
-/// 4. Call `verify_tee()`, which returns `false` and does NOT enter resharing.
+/// 4. Call [`verify_tee()`], which returns `false` and does NOT enter resharing.
 /// 5. Verify the contract stays Running with all 3 participants (no kickout).
 /// 6. Verify a `sign` request is now refused with the TEE-validation-failed error.
 #[tokio::test]
@@ -979,10 +999,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     // When: a participant calls verify_tee while too few valid attestations remain.
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VERIFY_TEE)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .verify_tee()
         .await?;
     assert!(
         verify_result.is_success(),
@@ -1017,13 +1035,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     ) else {
         panic!("CaitSith domain must yield a sign request");
     };
-    let sign_result = requester
-        .call(contract.id(), method_names::SIGN)
-        .args_json(sign_request.request_json_args())
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
-        .await?;
+    let contract_handle = requester.call_mpc(contract.id());
+    let sign_result = contract_handle.sign(sign_request.args).await?;
     let Err(sign_err) = sign_result.into_result() else {
         panic!("sign request must be refused while the network is not accepting requests");
     };
@@ -1036,10 +1049,91 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     Ok(())
 }
 
-/// A new attestation entry is stored with no attached deposit; the contract's own balance funds
-/// the storage.
+/// Two grants, not one: consuming a single grant deletes the row, so only the entry would be
+/// measured. Charged against the deposit sent rather than the contract's balance growth, which
+/// also includes its share of the gas burnt.
+///
+/// TODO(#4135): the mock carries every constraint but `expected_measurements`, which no sandbox
+/// helper can get voted in.
 #[tokio::test]
-async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> Result<()> {
+async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_fee_of_storage()
+-> Result<()> {
+    // Given
+    const GRANTS: u32 = 2;
+    const BUFFER: u128 = 2;
+    const EXPIRY_SECONDS: u64 = 1_000;
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let image_hash = image_digest();
+    for account in &mpc_signer_accounts {
+        vote_for_hash(account, &contract, &image_hash).await?;
+        vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
+    }
+    let [compose_hash] = get_allowed_launcher_compose_hashes(&contract).await?[..] else {
+        panic!("the launcher and image hashes must derive exactly one compose hash");
+    };
+    let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
+    let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: Some(image_hash),
+        launcher_docker_compose_hash: Some(compose_hash),
+        expiry_timestamp_seconds: Some(now_seconds + EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+    let node = worker.dev_create_account().await?;
+    let tls_key = bogus_ed25519_public_key();
+    let config: Config = contract
+        .view(method_names::CONFIG)
+        .args_json(serde_json::json!({}))
+        .await?
+        .json()?;
+    let before = contract.as_account().view_account().await?;
+
+    // When
+    let prepayment = prepay_attestation_grants(&node, &contract, node.id(), GRANTS).await?;
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+    let submission = submit_participant_info(&node, &contract, &attestation, &tls_key).await?;
+    assert!(submission.is_success(), "submission failed: {submission:?}");
+
+    // Then
+    let remaining: u32 = contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": node.id() }))
+        .await?
+        .json()?;
+    assert_eq!(remaining, GRANTS - 1, "the row must outlive the submission");
+
+    let after = contract.as_account().view_account().await?;
+    let grown = after.storage_usage - before.storage_usage;
+    let charged = STORAGE_BYTE_COST_YOCTONEAR.saturating_mul(u128::from(grown));
+    let fee = NearToken::from_millinear(u128::from(config.attestation_storage_fee_millinear))
+        .as_yoctonear();
+    let expected_deposit = NearToken::from_yoctonear(fee.saturating_mul(u128::from(GRANTS)));
+    let balance_growth = after.balance.saturating_sub(before.balance);
+    assert!(
+        balance_growth >= expected_deposit,
+        "the prepayment must reach the contract's balance: grew {balance_growth}, \
+         deposited {expected_deposit}"
+    );
+    assert!(
+        charged.saturating_mul(BUFFER) <= fee,
+        "one grant's storage grew to {grown} bytes ({charged} yocto); the fee ({fee} yocto) \
+         must stay at least {BUFFER}x that, so growth is caught before it breaches"
+    );
+    Ok(())
+}
+
+/// A new entry is stored by a submission that attaches no deposit, spending a grant prepaid by
+/// an earlier call. "Zero deposit" is about the submitting node, whose function-call key cannot
+/// attach one, not about the storage being free.
+#[tokio::test]
+async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_grant() -> Result<()> {
     // Given
     let SandboxTestSetup {
         worker, contract, ..
@@ -1051,6 +1145,9 @@ async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> 
     let fresh_tls_key = bogus_ed25519_public_key();
 
     // When
+    let prepayment = prepay_attestation_grants(&outsider, &contract, outsider.id(), 1).await?;
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+
     let result = submit_participant_info(
         &outsider,
         &contract,
@@ -1066,6 +1163,12 @@ async fn submit_participant_info__should_store_new_entry_with_zero_deposit() -> 
     );
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
     assert!(stored.is_some(), "the entry should be stored on-chain");
+    let remaining: u32 = contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": outsider.id() }))
+        .await?
+        .json()?;
+    assert_eq!(remaining, 0, "storing a new entry should consume the grant");
     Ok(())
 }
 

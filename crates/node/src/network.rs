@@ -11,6 +11,7 @@ use crate::primitives::{
 };
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
+use anyhow::Context as _;
 use conn::{ConnectionVersion, NodeConnectivityInterface};
 use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
@@ -33,6 +34,9 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     /// Returns the participant IDs of all nodes in the network, including the current node.
     fn all_participant_ids(&self) -> Vec<ParticipantId>;
     /// Returns a connectivity interface for the given other participant.
+    ///
+    /// `participant_id` must be one of [`Self::all_participant_ids`] and not our own; the
+    /// implementation only tracks connectivity for those, and may panic for any other id.
     fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface>;
     /// Sends a message to the specified recipient.
     ///
@@ -75,7 +79,7 @@ pub struct MeshNetworkClient {
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     channels: Arc<Mutex<NetworkTaskChannelManager>>,
     indexer_heights: Arc<IndexerHeightTracker>,
-    /// Helper data to ensure `ChannelId` uniqueness.
+    /// Helper data to ensure [`ChannelId`] uniqueness.
     last_id: Arc<Mutex<UniqueId>>,
 }
 
@@ -133,7 +137,7 @@ impl MeshNetworkClient {
 
     /// Primary functionality for the MeshNetworkClient: returns a channel for the given
     /// new MPC task. It is expected that the caller is the leader of this MPC task.
-    /// There may be two tasks with the same `MpcTaskId` (e.g. EdDSA retry computation),
+    /// There may be two tasks with the same [`MpcTaskId`] (e.g. EdDSA retry computation),
     /// but they would have different channel ids.
     pub fn new_channel_for_task(
         &self,
@@ -153,7 +157,7 @@ impl MeshNetworkClient {
             participants: participants.clone(),
         };
         let SenderOrNewChannel::NewChannel(channel) =
-            self.sender_for(channel_id, Some(&start_message), self.my_participant_id())
+            self.sender_for(channel_id, Some(&start_message), self.my_participant_id())?
         else {
             anyhow::bail!("Channel already exists");
         };
@@ -254,12 +258,18 @@ impl MeshNetworkClient {
     /// Otherwise, returns a Sender that'll send to the existing channel, or, if we receive
     /// a message for a task before its Start message, we'll still return a Sender that will
     /// buffer the messages and deliver them to the channel, once a Start message is received.
+    ///
+    /// Fails with [`InvalidStartMessage`] if the Start message describes a participant set we
+    /// cannot take part in; no channel state is created in that case.
     fn sender_for(
         &self,
         channel_id: ChannelId,
         start: Option<&MpcStartMessage>,
         originator: ParticipantId,
-    ) -> SenderOrNewChannel {
+    ) -> anyhow::Result<SenderOrNewChannel> {
+        if let Some(start) = start {
+            self.validate_start_participants(&start.participants, originator)?;
+        }
         // INVARIANT: For each key in the `senders` map, exactly one of the following is true:
         //  - It is in the channels_waiting_for_start LruCache.
         //    - This is maintained when we insert an entry into the LruCache, where if an
@@ -327,10 +337,37 @@ impl MeshNetworkClient {
                     receiver: incomplete_channel.receiver,
                     drop: Some(Box::new(drop_fn)),
                 };
-                return SenderOrNewChannel::NewChannel(channel);
+                return Ok(SenderOrNewChannel::NewChannel(channel));
             }
         }
-        SenderOrNewChannel::Sender(sender)
+        Ok(SenderOrNewChannel::Sender(sender))
+    }
+
+    /// Validates the participant set of a Start message, which is chosen by the originator of the
+    /// computation and therefore untrusted. The transport layer only knows the local participant
+    /// set, so a participant outside it has no connectivity to look up.
+    fn validate_start_participants(
+        &self,
+        participants: &[ParticipantId],
+        originator: ParticipantId,
+    ) -> Result<(), InvalidStartMessage> {
+        let known = self.all_participant_ids();
+        let mut unique = HashSet::new();
+        for &participant in participants {
+            if !known.contains(&participant) {
+                return Err(InvalidStartMessage::UnknownParticipant(participant));
+            }
+            if !unique.insert(participant) {
+                return Err(InvalidStartMessage::DuplicateParticipant(participant));
+            }
+        }
+        if !unique.contains(&self.my_participant_id()) {
+            return Err(InvalidStartMessage::SelfNotIncluded);
+        }
+        if !unique.contains(&originator) {
+            return Err(InvalidStartMessage::OriginatorNotIncluded(originator));
+        }
+        Ok(())
     }
 
     /// Emit network metrics through Prometheus counters
@@ -374,6 +411,19 @@ enum SenderOrNewChannel {
     NewChannel(NetworkTaskChannel),
 }
 
+/// Reason why the participant set of an [`MpcStartMessage`] was rejected.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum InvalidStartMessage {
+    #[error("participant {0} is not in our participant set")]
+    UnknownParticipant(ParticipantId),
+    #[error("participant {0} is listed more than once")]
+    DuplicateParticipant(ParticipantId),
+    #[error("we are not among the participants")]
+    SelfNotIncluded,
+    #[error("the originator {0} is not among the participants")]
+    OriginatorNotIncluded(ParticipantId),
+}
+
 async fn run_receive_message(
     client: Arc<MeshNetworkClient>,
     receiver: &mut Box<dyn MeshNetworkTransportReceiver>,
@@ -383,12 +433,16 @@ async fn run_receive_message(
     let message = receiver.receive().await?;
     match message {
         PeerMessage::Mpc(message) => {
+            let from = message.from;
             let channel_id = message.message.channel_id;
             let start_msg = match &message.message.kind {
                 MpcMessageKind::Start(start_msg) => Some(start_msg),
                 _ => None,
             };
-            match client.sender_for(channel_id, start_msg, message.from) {
+            match client
+                .sender_for(channel_id, start_msg, from)
+                .with_context(|| format!("Rejecting message from participant {from}"))?
+            {
                 SenderOrNewChannel::Sender(sender) => {
                     sender.send(message)?;
                 }
@@ -422,7 +476,7 @@ async fn run_receive_messages_loop(
         )
         .await
         {
-            tracing::warn!("run_receive_message failed with error: {err}");
+            tracing::warn!("run_receive_message failed with error: {err:#}");
         }
     }
 }
@@ -949,7 +1003,7 @@ pub mod testing {
     }
 
     /// Builds a channel over the given participant set, returning the raw inbound sender so
-    /// tests can inject arbitrary `MpcPeerMessage`s, including ones from outside the set.
+    /// tests can inject arbitrary [`MpcPeerMessage`]s, including ones from outside the set.
     pub fn new_task_channel_for_test(
         task_id: MpcTaskId,
         leader: ParticipantId,
@@ -1021,17 +1075,26 @@ pub mod testing {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::computation::MpcLeaderCentricComputation;
-    use super::{MeshNetworkClient, NetworkTaskChannel, NetworkTaskChannelManager};
+    use super::conn::ConnectionVersion;
+    use super::{
+        InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
+        MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
+        run_receive_message,
+    };
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{new_test_transports, run_test_clients};
-    use crate::primitives::{MpcTaskId, UniqueId};
+    use crate::primitives::{
+        ChannelId, MpcMessage, MpcMessageKind, MpcStartMessage, MpcTaskId, ParticipantId, UniqueId,
+    };
     use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
+    use rstest::rstest;
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
@@ -1219,6 +1282,105 @@ mod tests {
             "unexpected error message: {}",
             err_msg
         );
+    }
+
+    #[rstest]
+    #[case::unknown_participant(
+        vec![ME, ORIGINATOR, ParticipantId::from_raw(42)],
+        InvalidStartMessage::UnknownParticipant(ParticipantId::from_raw(42))
+    )]
+    #[case::duplicate_participant(
+        vec![ME, ORIGINATOR, ORIGINATOR],
+        InvalidStartMessage::DuplicateParticipant(ORIGINATOR)
+    )]
+    #[case::without_us(vec![ORIGINATOR, THIRD_PARTY], InvalidStartMessage::SelfNotIncluded)]
+    #[case::empty(vec![], InvalidStartMessage::SelfNotIncluded)]
+    #[case::without_the_originator(
+        vec![ME, THIRD_PARTY],
+        InvalidStartMessage::OriginatorNotIncluded(ORIGINATOR)
+    )]
+    #[tokio::test]
+    async fn run_receive_message__should_reject_start_message_with_invalid_participant_set(
+        #[case] start_participants: Vec<ParticipantId>,
+        #[case] expected_error: InvalidStartMessage,
+    ) {
+        // Given
+        let start_message = start_message_with(start_participants);
+
+        // When
+        let (result, new_channel) = receive_message_from_originator(start_message).await;
+
+        // Then
+        let error = result.expect_err("the Start message should be rejected");
+        assert_eq!(
+            error.downcast_ref::<InvalidStartMessage>(),
+            Some(&expected_error)
+        );
+        assert!(new_channel.is_none());
+    }
+
+    #[tokio::test]
+    async fn run_receive_message__should_create_channel_for_start_message_with_known_participants()
+    {
+        // Given
+        let start_message = start_message_with(vec![ME, ORIGINATOR]);
+
+        // When
+        let (result, new_channel) = receive_message_from_originator(start_message).await;
+
+        // Then
+        result.unwrap();
+        let channel = new_channel.expect("a channel should have been created");
+        assert_eq!(channel.participants(), [ME, ORIGINATOR].as_slice());
+        assert_eq!(channel.sender().get_leader(), ORIGINATOR);
+    }
+
+    const ME: ParticipantId = ParticipantId::from_raw(0);
+    const ORIGINATOR: ParticipantId = ParticipantId::from_raw(1);
+    const THIRD_PARTY: ParticipantId = ParticipantId::from_raw(2);
+
+    fn start_message_with(participants: Vec<ParticipantId>) -> MpcMessage {
+        MpcMessage {
+            channel_id: ChannelId(UniqueId::new(ORIGINATOR, 1, 0)),
+            kind: MpcMessageKind::Start(MpcStartMessage {
+                task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
+                    start: UniqueId::new(ORIGINATOR, 1, 0),
+                    count: 1,
+                }),
+                participants,
+            }),
+        }
+    }
+
+    /// Drives a single message from `ORIGINATOR` through the inbound message handling of the node
+    /// `ME`, whose participant set is `ME`, `ORIGINATOR` and `THIRD_PARTY`.
+    async fn receive_message_from_originator(
+        message: MpcMessage,
+    ) -> (anyhow::Result<()>, Option<NetworkTaskChannel>) {
+        let mut transports = new_test_transports(vec![ME, ORIGINATOR, THIRD_PARTY]);
+        let (my_transport_sender, my_receiver) = transports.remove(0);
+        let (originator_transport_sender, _) = transports.remove(0);
+        let indexer_heights = Arc::new(IndexerHeightTracker::new(&[ME, ORIGINATOR, THIRD_PARTY]));
+        let client = Arc::new(MeshNetworkClient::new(
+            my_transport_sender,
+            Arc::new(Mutex::new(NetworkTaskChannelManager::new())),
+            indexer_heights.clone(),
+        ));
+        originator_transport_sender
+            .send(ME, message, ConnectionVersion::default())
+            .unwrap();
+        let mut my_receiver: Box<dyn MeshNetworkTransportReceiver> = my_receiver;
+        let (new_channel_sender, mut new_channel_receiver) = mpsc::unbounded_channel();
+
+        let result = run_receive_message(
+            client,
+            &mut my_receiver,
+            &new_channel_sender,
+            indexer_heights,
+        )
+        .await;
+
+        (result, new_channel_receiver.try_recv().ok())
     }
 }
 

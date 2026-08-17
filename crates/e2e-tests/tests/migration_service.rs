@@ -1,6 +1,6 @@
 use crate::common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -9,12 +9,15 @@ use std::collections::BTreeMap;
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
+use e2e_tests::metrics as node_metrics;
+use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ProtocolContractState,
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
+    ProtocolContractState,
 };
 use rand::SeedableRng;
 
-/// Mirror of the production `node::indexer::migrations::ContractMigrationInfo`
+/// Mirror of the production [`node::indexer::migrations::ContractMigrationInfo`]
 /// type. Used to deserialize the `/debug/migrations` response strictly so the
 /// readiness asserts compare typed fields rather than substring-match the
 /// JSON body.
@@ -24,6 +27,7 @@ type ContractMigrationInfo =
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_secs(60);
+const BACKUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct BackupService {
     home_dir: tempfile::TempDir,
@@ -109,6 +113,44 @@ impl BackupService {
         Ok(())
     }
 
+    /// Starts `backup-cli run` and leaves it polling until the returned handle is dropped.
+    fn run(&self, args: RunArgs<'_>) -> anyhow::Result<RunningBackupService> {
+        let child = Command::new(&self.binary_path)
+            .args([
+                "--home-dir",
+                self.must_get_home_dir_str(),
+                "run",
+                "--rpc-url",
+                args.rpc_url,
+                "--near-chain-id",
+                args.chain_id,
+                "--mpc-contract-account-id",
+                args.contract_account_id,
+                "--mpc-node-address",
+                args.node_migration_address,
+                "--mpc-node-p2p-key",
+                args.node_p2p_key,
+                "--backup-encryption-key-hex",
+                args.backup_encryption_key_hex,
+                "--poll-interval-seconds",
+                "1",
+            ])
+            .spawn()
+            .context("failed to spawn backup-cli run")?;
+        Ok(RunningBackupService {
+            _process: ProcessGuard(child),
+        })
+    }
+
+    /// Keyshare files the service has written, named `epoch_<n>_with_<m>_domains` by
+    /// [`PermanentKeyStorage`].
+    fn stored_keyshare_files(&self) -> Vec<String> {
+        list_permanent_keys(self.home_dir.path())
+            .into_iter()
+            .map(|(name, _size)| name)
+            .collect()
+    }
+
     fn put_keyshares(
         &self,
         node_migration_address: &str,
@@ -136,6 +178,19 @@ impl BackupService {
         );
         Ok(())
     }
+}
+
+struct RunningBackupService {
+    _process: ProcessGuard,
+}
+
+struct RunArgs<'a> {
+    rpc_url: &'a str,
+    chain_id: &'a str,
+    contract_account_id: &'a str,
+    node_migration_address: &'a str,
+    node_p2p_key: &'a str,
+    backup_encryption_key_hex: &'a str,
 }
 
 /// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
@@ -173,7 +228,7 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
 }
 
 /// Fetch one node's `/debug/migrations` endpoint and deserialize the body
-/// into the typed `ContractMigrationInfo` map (the second element of the
+/// into the typed [`ContractMigrationInfo`] map (the second element of the
 /// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
 async fn fetch_debug_migration_info(
     http_client: &reqwest::Client,
@@ -191,7 +246,7 @@ async fn fetch_debug_migration_info(
 }
 
 /// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
-/// re-running `check` against the typed `ContractMigrationInfo` until it
+/// re-running `check` against the typed [`ContractMigrationInfo`] until it
 /// returns `Ok` (or the timeout elapses). `description` is interpolated
 /// into the timeout error.
 async fn wait_for_debug_migration<F>(
@@ -250,7 +305,9 @@ async fn register_backup_service_and_wait(
     let outcome = cluster
         .register_backup_service(
             source_idx,
-            serde_json::json!({ "public_key": backup_public_key }),
+            BackupServiceInfo {
+                public_key: backup_public_key.clone(),
+            },
         )
         .await
         .context("failed to register backup service")?;
@@ -343,15 +400,15 @@ async fn start_migration_and_wait(
     let source_account_id = cluster.nodes[source_idx].account_id().to_string();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
-    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key_str();
+    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
 
-    let destination_node_info = serde_json::json!({
-        "signer_account_pk": target_signer_pk,
-        "destination_node_info": {
-            "url": target_p2p_url,
-            "tls_public_key": target_p2p_key,
+    let destination_node_info = DestinationNodeInfo {
+        signer_account_pk: target_signer_pk,
+        destination_node_info: ParticipantInfo {
+            url: target_p2p_url,
+            tls_public_key: target_p2p_key.clone(),
         },
-    });
+    };
     let outcome = cluster
         .start_node_migration(source_idx, destination_node_info)
         .await
@@ -518,16 +575,20 @@ fn snapshot_permanent_keys(cluster: &e2e_tests::MpcCluster, idx: usize) -> Vec<(
         MpcNodeState::Running(n) => n.setup().home_dir().to_path_buf(),
         MpcNodeState::Stopped(s) => s.home_dir().to_path_buf(),
     };
-    let keys_dir = home_dir.join("permanent_keys");
-    let Ok(read_dir) = std::fs::read_dir(&keys_dir) else {
+    list_permanent_keys(&home_dir)
+}
+
+fn list_permanent_keys(home_dir: &Path) -> Vec<(String, u64)> {
+    let Ok(read_dir) = std::fs::read_dir(home_dir.join("permanent_keys")) else {
         return Vec::new();
     };
     let mut entries: Vec<(String, u64)> = read_dir
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().into_string().ok()?;
-            let len = e.metadata().ok()?.len();
-            Some((name, len))
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            Some((
+                entry.file_name().into_string().ok()?,
+                entry.metadata().ok()?.len(),
+            ))
         })
         .collect();
     entries.sort();
@@ -652,6 +713,139 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
             .expect("ckd request failed");
 
         tracing::info!(source_idx, target_idx, "migration completed successfully");
+    }
+}
+
+/// Poll the backup service's storage until it holds a keyshare file for `epoch_id`.
+async fn wait_for_backed_up_epoch(
+    backup_service: &BackupService,
+    epoch_id: u64,
+    num_domains: usize,
+) -> anyhow::Result<()> {
+    let expected = format!("epoch_{epoch_id}_with_{num_domains}_domains");
+    (|| async {
+        let stored = backup_service.stored_keyshare_files();
+        anyhow::ensure!(
+            stored.contains(&expected),
+            "backup service has not stored {expected} yet, found {stored:?}"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(common::POLL_INTERVAL)
+            .with_max_times(
+                (BACKUP_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .with_context(|| format!("timed out waiting for the backup service to store epoch {epoch_id}"))
+}
+
+fn must_get_running_epoch_and_domains(state: &ProtocolContractState) -> (u64, usize) {
+    let ProtocolContractState::Running(running) = state else {
+        panic!("expected Running state, got {state:?}");
+    };
+    (running.keyset.epoch_id.get(), running.keyset.domains.len())
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resharing() {
+    let backup_cli = must_get_backup_cli_path();
+
+    // Given
+    let source_idx = 0;
+    let (cluster, _running) =
+        common::must_setup_cluster(common::BACKUP_SERVICE_RUN_PORT_SEED, |c| {
+            c.num_nodes = 2;
+            c.threshold = 2;
+        })
+        .await;
+
+    let backup_service = BackupService::must_get_new(backup_cli);
+    backup_service.must_generate_keys();
+    register_backup_service_and_wait(&cluster, source_idx, &backup_service)
+        .await
+        .expect("register_backup_service_and_wait failed");
+
+    let source_migration_addr = match &cluster.nodes[source_idx] {
+        MpcNodeState::Running(n) => n.migration_web_ui_address(),
+        _ => panic!("source node not running"),
+    };
+    wait_for_migration_port(&source_migration_addr)
+        .await
+        .expect("migration port never became reachable");
+
+    let (initial_epoch_id, num_domains) =
+        must_get_running_epoch_and_domains(&cluster.get_contract_state().await.unwrap());
+
+    // When
+    assert!(
+        backup_service.stored_keyshare_files().is_empty(),
+        "backup service should start with no keyshares"
+    );
+    let _service = backup_service
+        .run(RunArgs {
+            rpc_url: &cluster.sandbox.rpc_url(),
+            chain_id: &cluster.sandbox.chain_id().expect("sandbox chain id"),
+            contract_account_id: &cluster.contract.contract_id(),
+            node_migration_address: &source_migration_addr,
+            node_p2p_key: &cluster.nodes[source_idx].p2p_public_key_str(),
+            backup_encryption_key_hex: cluster.nodes[source_idx].backup_encryption_key_hex(),
+        })
+        .expect("failed to start backup-cli run");
+
+    // Then
+    wait_for_backed_up_epoch(&backup_service, initial_epoch_id, num_domains)
+        .await
+        .expect("service did not back up the initial epoch");
+    // Epoch 0 is indistinguishable from an unset gauge, so this only proves the metric is
+    // registered; the assert after the resharing pins the value.
+    assert_eq!(
+        last_backup_served_epoch(&cluster, source_idx).await,
+        Some(i64::try_from(initial_epoch_id).unwrap()),
+        "node should report having served epoch {initial_epoch_id}"
+    );
+
+    // When
+    cluster
+        .start_resharing_and_wait(&[0, 1], 2)
+        .await
+        .expect("resharing failed");
+    let (resharing_epoch_id, resharing_num_domains) =
+        must_get_running_epoch_and_domains(&cluster.get_contract_state().await.unwrap());
+    assert!(
+        resharing_epoch_id > initial_epoch_id,
+        "resharing should advance the epoch, got {resharing_epoch_id} after {initial_epoch_id}"
+    );
+
+    // Then
+    wait_for_backed_up_epoch(&backup_service, resharing_epoch_id, resharing_num_domains)
+        .await
+        .expect("service did not back up the epoch produced by the resharing");
+    assert_eq!(
+        last_backup_served_epoch(&cluster, source_idx).await,
+        Some(i64::try_from(resharing_epoch_id).unwrap()),
+        "node should report having served epoch {resharing_epoch_id}"
+    );
+    let stored = backup_service.stored_keyshare_files();
+    assert!(
+        stored.contains(&format!(
+            "epoch_{initial_epoch_id}_with_{num_domains}_domains"
+        )),
+        "the pre-resharing backup should be kept, found {stored:?}"
+    );
+}
+
+/// Reads the node's `mpc_last_backup_served_epoch` gauge, `None` until it serves a backup.
+async fn last_backup_served_epoch(cluster: &e2e_tests::MpcCluster, node_idx: usize) -> Option<i64> {
+    match &cluster.nodes[node_idx] {
+        MpcNodeState::Running(node) => node
+            .get_metric(node_metrics::LAST_BACKUP_SERVED_EPOCH)
+            .await
+            .expect("failed to read last-backup-served metric"),
+        _ => panic!("node {node_idx} not running"),
     }
 }
 

@@ -45,7 +45,7 @@ pub enum AttestationError {
 /// Wraps a single PCCS endpoint attempt's failure with the URL of the
 /// endpoint that failed. Each variant carries a `url` field so that
 /// per-endpoint log/error output can name which endpoint it's about
-/// without the inner error types (e.g. `FreshnessError`) needing to
+/// without the inner error types (e.g. [`FreshnessError`]) needing to
 /// know about URLs themselves.
 #[derive(Debug, Error)]
 pub enum PccsEndpointError {
@@ -127,7 +127,7 @@ pub enum FreshnessError {
     },
 
     /// Defensive: would only fire if `issued_at` and `now` are both at
-    /// the extreme ends of `OffsetDateTime`'s range. Cannot occur for
+    /// the extreme ends of [`OffsetDateTime`](time::OffsetDateTime)'s range. Cannot occur for
     /// any realistic Intel collateral or system clock, but the typed
     /// branch keeps the arithmetic total — no panicking subtraction.
     #[error(
@@ -146,7 +146,7 @@ pub enum FreshnessError {
 /// `pccs_url`). Fires at the [`TeeAuthority::fetch_collateral_from`] layer where the
 /// URL is known; the inner check is intentionally pure-logic and
 /// returns a typed [`FreshnessError`] which this function decomposes
-/// into separate structured fields rather than logging via `Debug`.
+/// into separate structured fields rather than logging via [`Debug`].
 fn log_freshness_failure(pccs_url: &Url, error: &FreshnessError) {
     match error {
         FreshnessError::TooStale {
@@ -297,7 +297,7 @@ impl Default for DstackTeeAuthorityConfig {
 /// conversion to fail fast on a typo'd `ca_cert_pem` (so the operator
 /// gets a clear message at startup rather than at first attestation).
 ///
-/// Also emits one WARN per `Insecure` endpoint at startup so operators
+/// Also emits one WARN per [`Insecure`](PccsTlsTrust::Insecure) endpoint at startup so operators
 /// see the security signal up front instead of buried in fetch logs.
 pub fn validate_pccs_endpoints(
     pccs_endpoints: &NonEmptyVec<PccsEndpointConfig>,
@@ -321,8 +321,8 @@ pub fn validate_pccs_endpoints(
     Ok(())
 }
 
-/// `dcap_qvl::http::HttpClient` adapter over a `reqwest::Client`.
-/// `dcap-qvl` keeps `reqwest::Client` out of its public API
+/// [`dcap_qvl::http::HttpClient`] adapter over a [`reqwest::Client`].
+/// `dcap-qvl` keeps [`reqwest::Client`] out of its public API
 /// ([Phala-Network/dcap-qvl#156](https://github.com/Phala-Network/dcap-qvl/pull/156)),
 /// so callers using a custom client must implement this trait themselves.
 struct PccsHttpClient(reqwest::Client);
@@ -343,7 +343,7 @@ impl HttpClient for PccsHttpClient {
 }
 
 /// Build the per-endpoint HTTP client that's handed to
-/// `dcap_qvl::collateral::CollateralClient::new`. Used for every
+/// [`dcap_qvl::collateral::CollateralClient::new`]. Used for every
 /// endpoint regardless of `tls` setting — the builder applies any
 /// per-endpoint trust override on top of the default reqwest+rustls
 /// trust roots.
@@ -586,7 +586,7 @@ fn parse_pck_crl_thisupdate(pck_crl_der: &[u8]) -> Result<time::OffsetDateTime, 
 
 /// Checks that `issued_at` is neither past `MAX_COLLATERAL_AGE` in the
 /// past nor more than `FUTURE_TIMESTAMP_GRACE` in the future.
-/// Subtraction goes through unix-timestamp `i64::checked_sub` so the
+/// Subtraction goes through unix-timestamp [`i64::checked_sub`] so the
 /// arithmetic stays total even in pathological cases.
 fn check_age_within_window(
     field: &'static str,
@@ -921,7 +921,7 @@ mod tests {
         assert!(elapsed >= Duration::from_secs(total_expected_secs));
     }
 
-    /// Build a minimal `Collateral` for tests. None of the fields are
+    /// Build a minimal [`Collateral`] for tests. None of the fields are
     /// inspected — it just needs to be a valid value that round-trips through
     /// the fetch path.
     fn dummy_collateral(tag: &str) -> Collateral {
@@ -1074,7 +1074,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    /// `Display` renders one line per failure for log/ticket pastes.
+    /// [`Display`] renders one line per failure for log/ticket pastes.
     #[tokio::test]
     async fn all_pccs_endpoints_failed__should_render_each_failure_on_its_own_line() {
         // Given
@@ -1117,15 +1117,10 @@ mod tests {
     /// fresh for the JSON-field tests; the dedicated CRL-staleness tests
     /// drive their own `now` past the window.
     fn fixture_pck_crl() -> Vec<u8> {
-        let collateral_json = test_utils::attestation::collateral();
-        let hex_str = collateral_json
-            .get("pck_crl")
-            .and_then(|v| v.as_str())
-            .expect("test fixture has pck_crl");
-        hex::decode(hex_str).expect("test fixture pck_crl is valid hex")
+        test_utils::attestation::collateral().pck_crl
     }
 
-    /// Build a `Collateral` with synthetic `tcb_info` / `qe_identity` JSON
+    /// Build a [`Collateral`] with synthetic `tcb_info` / `qe_identity` JSON
     /// blobs containing only `issueDate`, plus a real PCK CRL from the
     /// fixture so the X.509 freshness check has parseable bytes. Tests
     /// that want to exercise the CRL path drive [`test_now`] (or pass a
@@ -1147,7 +1142,7 @@ mod tests {
         })
     }
 
-    /// Format an `OffsetDateTime` as RFC3339 (UTC) the way Intel PCS would
+    /// Format an [`OffsetDateTime`] as RFC3339 (UTC) the way Intel PCS would
     /// emit it, so test fixtures stay close to real-world inputs.
     fn rfc3339(t: time::OffsetDateTime) -> String {
         t.format(&Rfc3339)
@@ -1185,7 +1180,7 @@ mod tests {
     }
 
     /// A stale `tcb_info` is rejected even when `qe_identity` is fresh.
-    /// Typed `TooStale` variant identifies which field tripped the check.
+    /// Typed [`TooStale`] variant identifies which field tripped the check.
     #[test]
     fn check_collateral_freshness__should_reject_when_tcb_info_too_old() {
         let stale_tcb = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::days(1));
@@ -1301,7 +1296,7 @@ mod tests {
         );
     }
 
-    /// Malformed JSON in `tcb_info` surfaces a typed `JsonParseFailed`
+    /// Malformed JSON in `tcb_info` surfaces a typed [`JsonParseFailed`]
     /// variant tagged with the field name, rather than slipping through
     /// the freshness check.
     #[test]
@@ -1318,7 +1313,7 @@ mod tests {
     }
 
     /// Well-formed JSON but a non-RFC3339 `issueDate` surfaces a typed
-    /// `IssueDateRfc3339Failed` variant carrying the raw value, so
+    /// [`IssueDateRfc3339Failed`] variant carrying the raw value, so
     /// operators can see exactly what couldn't be parsed.
     #[test]
     fn parse_issue_date_json__should_error_on_invalid_rfc3339() {
@@ -1334,7 +1329,7 @@ mod tests {
         );
     }
 
-    /// Unparseable PCK CRL bytes surface a typed `CrlParseFailed`
+    /// Unparseable PCK CRL bytes surface a typed [`CrlParseFailed`]
     /// variant rather than silently passing — protects against a buggy
     /// or hostile PCCS returning garbage in this field.
     #[test]

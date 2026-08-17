@@ -1,12 +1,13 @@
 pub mod key_generation;
+pub mod key_resharing;
 pub mod presign;
+pub mod triple;
+
 mod sign;
 
 use near_mpc_contract_interface::types::KeyEventId;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
-pub mod key_resharing;
-pub mod triple;
 
 pub use triple::TripleStorage;
 

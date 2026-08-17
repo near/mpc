@@ -42,7 +42,7 @@ impl MpcNode {
     /// Send SIGTERM and wait up to `grace` for the node to exit. If grace
     /// expires before the process exits on its own, send SIGKILL and wait
     /// for it explicitly (instead of relying on `ProcessGuard::Drop` to do
-    /// the same). Either way, returns the child's `ExitStatus`:
+    /// the same). Either way, returns the child's [`ExitStatus`](std::process::ExitStatus):
     /// `status.success()` ⇒ graceful exit via mpc-node's SIGTERM handler;
     /// `status.signal() == Some(9)` ⇒ SIGKILL fallback fired. Used to
     /// exercise the production SIGTERM handler.
@@ -153,7 +153,7 @@ impl MpcNode {
 pub const STDERR_LOG: &str = "stderr.log";
 
 /// Guard that kills the child process on drop.
-struct ProcessGuard(Child);
+pub struct ProcessGuard(pub Child);
 
 impl ProcessGuard {
     fn has_exited(&mut self) -> bool {
@@ -164,10 +164,10 @@ impl ProcessGuard {
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
         if let Err(e) = self.0.kill() {
-            tracing::error!(error = %e, "failed to kill mpc-node process");
+            tracing::error!(error = %e, "failed to kill child process");
         }
         if let Err(e) = self.0.wait() {
-            tracing::error!(error = %e, "failed to wait on mpc-node process");
+            tracing::error!(error = %e, "failed to wait on child process");
         }
     }
 }
@@ -283,11 +283,8 @@ impl MpcNodeSetup {
         &self.near_signer_key
     }
 
-    /// The NEAR signer public key formatted as `"ed25519:<base58>"`.
-    pub fn near_signer_public_key_str(&self) -> String {
-        String::from(&Ed25519PublicKey::from(
-            &self.near_signer_key.verifying_key(),
-        ))
+    pub fn near_signer_public_key(&self) -> Ed25519PublicKey {
+        Ed25519PublicKey::from(&self.near_signer_key.verifying_key())
     }
 
     /// Path to the mpc-node binary.
