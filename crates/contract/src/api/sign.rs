@@ -7,13 +7,11 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState, RespondError, TeeError};
 use crate::primitives::signature::{SignRequestArgs, SignatureRequest, YieldIndex};
 use crate::{MpcContract, MpcContractExt, pending_requests};
+use dtos::{DomainPurpose, Protocol};
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
-use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::{method_names, types as dtos};
 use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
-
-use dtos::{DomainPurpose, Protocol};
 
 #[near]
 impl MpcContract {
@@ -230,8 +228,6 @@ impl MpcContract {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use std::panic;
-
     use super::*;
     use crate::api::test_utils::{
         SharedSecretKey, basic_setup, basic_setup_with_protocol,
@@ -239,13 +235,15 @@ mod tests {
     };
     use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
     use assert_matches::assert_matches;
-    use k256::{Secp256k1, ecdsa::SigningKey, elliptic_curve};
+    use dtos::{Curve, DomainId, Payload, Tweak};
+    use k256::ecdsa::SigningKey;
+    use k256::{Secp256k1, elliptic_curve};
     use near_mpc_contract_interface::types::kdf::derive_tweak;
     use near_sdk::AccountId;
-    use rand::{RngCore, SeedableRng, rngs::OsRng};
+    use rand::rngs::OsRng;
+    use rand::{RngCore, SeedableRng};
     use rstest::rstest;
-
-    use dtos::{Curve, DomainId, Payload, Tweak};
+    use std::panic;
 
     pub fn derive_secret_key(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
         let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();

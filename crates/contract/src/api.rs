@@ -3,6 +3,8 @@
 pub mod authorization;
 pub mod ckd;
 pub mod common;
+pub mod governance;
+pub mod key_events;
 pub mod keys;
 pub mod lifecycle;
 pub mod sign;
