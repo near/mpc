@@ -472,14 +472,10 @@ impl OperatingAccount {
         Ok(res.code)
     }
 
-    /// The first access key, for transactions that don't need parallelism.
-    /// Shared rather than locked: a caller locks it per transaction, so no
-    /// lock is held across unrelated work.
     pub fn any_access_key_handle(&self) -> Arc<Mutex<OperatingAccessKey>> {
         self.keys[0].clone()
     }
 
-    /// All access keys, for transactions that need full parallelism.
     pub fn all_access_key_handles(&self) -> Vec<Arc<Mutex<OperatingAccessKey>>> {
         self.keys.clone()
     }
