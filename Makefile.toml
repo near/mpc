@@ -276,7 +276,7 @@ MPC_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/mpc_contract/mp
 MPC_PARALLEL_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/test_parallel_contract/test_parallel_contract.wasm"
 MPC_TEE_VERIFIER_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/tee_verifier/tee_verifier.wasm"
 
-# Build the mpc-node binary and both contract WASMs, then run the E2E tests.
+# Build the mpc-node binary, the contract WASMs, and the backup CLI, then run the E2E tests.
 [tasks.e2e-tests]
 description = "Build required binaries and run the E2E tests"
 run_task = "_run-e2e-logic"

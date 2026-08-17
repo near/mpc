@@ -113,10 +113,8 @@ async fn deploy_and_trust_pinned_verifier(
 }
 
 /// Votes the fixture's image and launcher hashes into the on-chain allowlists, then
-/// whitelists the fixture's compose hash, which derivation cannot produce. The image hash
-/// must be voted in before the launcher hash: allowed compose hashes are derived from the
-/// currently allowed image hashes. Within a round the voters are distinct accounts, so the
-/// votes run concurrently.
+/// whitelists the fixture's compose hash, which derivation cannot produce. Within a
+/// round the voters are distinct accounts, so the votes run concurrently.
 ///
 /// Requires the `sandbox-test-attestation` wasm.
 async fn whitelist_fixture_dstack_hashes(contract: &Contract, participants: &[Account]) {

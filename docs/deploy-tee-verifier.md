@@ -66,7 +66,7 @@ near account create-account sponsor-by-faucet-service "$VERIFIER_ACCOUNT" autoge
 
 On `mainnet` there is no faucet; create and fund the account from an existing one. The
 balance only needs to cover storage staking for the deployed WASM (about 1 NEAR per
-100 KB); 5 NEAR comfortably covers the ~360 KB verifier:
+100 KB); 5 NEAR covers the ~430 KB verifier:
 
 ```shell
 near account create-account fund-myself "$VERIFIER_ACCOUNT" '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as <funding-account> network-config "$NETWORK" sign-with-keychain send

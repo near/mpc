@@ -197,8 +197,8 @@ impl SandboxTestSetup {
     }
 }
 
-/// Which contract wasm the setup deploys. The feature sets are mutually
-/// exclusive, so this is one choice, not independent flags.
+/// Which contract wasm the setup deploys. Exactly one wasm is deployed, so this
+/// is one choice, not independent flags.
 #[derive(Clone, Copy)]
 enum TestWasm {
     Production,

@@ -488,7 +488,8 @@ impl AllowedLauncherImages {
             .map(|e| e.expires_at.as_secs())
     }
 
-    /// Test-only: allows one more compose hash for an already-allowed launcher. The attestation
+    /// Test-only, also compiled into the `sandbox-test-attestation` wasm: allows one more
+    /// compose hash for an already-allowed launcher. The attestation
     /// fixture is captured from a CVM whose launcher compose carries a key-export service, so
     /// [`get_docker_compose_hash`] cannot derive its hash.
     #[cfg(any(test, feature = "sandbox-test-attestation"))]

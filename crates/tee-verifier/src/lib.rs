@@ -46,7 +46,7 @@ impl TeeVerifier {
     ///
     /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp
     /// (pinnable by sandbox tests in builds with the `sandbox-test-hooks`
-    /// feature) and returns `VerificationResult::Verified(report)` on success.
+    /// feature) and returns [`VerificationResult::Verified`] with the report on success.
     /// The caller is responsible for any post-DCAP policy (RTMR3 replay,
     /// report-data binding, measurement allowlist matching, etc.).
     ///
@@ -78,8 +78,9 @@ impl TeeVerifier {
 
 /// The timestamp quotes are verified against: block time, unless a sandbox test
 /// pinned one under [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`].
-/// The pin exists because sandbox chain time is wall-clock and forward-only, so it
-/// can never fall inside the validity window of a checked-in collateral fixture.
+/// The pin exists because sandbox chain time is wall-clock and forward-only: once it
+/// passes the fixed validity window of a checked-in collateral fixture it never
+/// returns, so unpinned runs would start failing on that date.
 fn now_seconds() -> u64 {
     #[cfg(feature = "sandbox-test-hooks")]
     if let Some(bytes) = env::storage_read(SANDBOX_TEST_PINNED_NOW_STORAGE_KEY) {

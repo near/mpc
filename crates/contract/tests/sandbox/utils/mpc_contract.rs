@@ -212,8 +212,9 @@ pub async fn vote_add_launcher_hash(
     Ok(())
 }
 
-/// Whitelists `compose_hash` for `launcher_hash` through the `sandbox-test-attestation`
-/// method, which is absent from the production wasm. Vote the launcher hash in first.
+/// Whitelists `compose_hash` for `launcher_hash` through the contract method of the same
+/// name, which the `sandbox-test-attestation` feature gates out of the production wasm.
+/// Vote the launcher hash in first.
 pub async fn sandbox_allow_launcher_compose_hash(
     account: &Account,
     contract: &Contract,

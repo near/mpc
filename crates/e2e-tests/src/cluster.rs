@@ -1465,8 +1465,8 @@ async fn deploy_and_trust_tee_verifier(
         );
     }
 
-    // The votes are final, but views can briefly lag them; poll like the
-    // post-init state waits do.
+    // The votes are not awaited to finality, so views can lag them; poll like
+    // the post-init state waits do.
     let timeout = Duration::from_secs(30);
     let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
