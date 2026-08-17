@@ -151,6 +151,17 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED: LazyLock<prometheus::IntC
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_num_verify_foreign_tx_unavailable_chain_rejections",
+        "Number of gate rejections of verify foreign tx attempts, at most one per node per \
+         attempt: the requested chain is not available"
+    )
+    .unwrap()
+});
+
 pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_responses_indexed",
