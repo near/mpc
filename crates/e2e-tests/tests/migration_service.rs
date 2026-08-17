@@ -997,8 +997,6 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
         .expect("ckd request failed after back-migration");
 }
 
-/// Test to ensure `cancel_node_migration` removes a pending migration for the
-/// calling account.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__cancel_node_migration_clears_ongoing_migration_info() {

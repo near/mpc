@@ -2202,16 +2202,6 @@ impl MpcContract {
     }
 
     /// Cancels a previously started node migration for the calling account.
-    ///
-    /// Removes the caller's pending `DestinationNodeInfo` record. This is useful if the new node
-    /// is not functioning correctly or the wrong information was provided when calling
-    /// [`Self::start_node_migration`].
-    ///
-    /// This function is callable regardless of whether the protocol is in a `Running` state or
-    /// whether the signer is a current participant.
-    ///
-    /// # Errors
-    /// - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller
     #[handle_result]
     pub fn cancel_node_migration(&mut self) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
