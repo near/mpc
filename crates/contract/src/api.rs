@@ -1,6 +1,7 @@
 //! The contract's entrypoint surface, one module per feature.
 
 pub mod authorization;
+pub mod ckd;
 pub mod common;
 pub mod keys;
 pub mod sign;
