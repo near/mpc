@@ -271,11 +271,12 @@ impl SignatureProvider for EcdsaSignatureProvider {
             background_tasks.push((description, task));
         }
 
-        // Kept out of the group below: it never completes. Aborted on drop.
-        let _metrics_task = tracking::spawn(
-            "report triple metrics",
+        let description = "report triple metrics".to_string();
+        let task = tracking::spawn(
+            &description,
             Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
         );
+        background_tasks.push((description, task));
 
         for (domain_id, data) in &self.keyshares {
             let triple_store = self.triple_store_for_t(data.reconstruction_threshold)?;
@@ -296,7 +297,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
         let Some((description, outcome)) = tracking::first_task_exit(background_tasks).await else {
             return Ok(());
         };
-        // Generators never return, so any exit is a failure.
+        // These tasks never return, so any exit is a failure.
         let Err(join_error) = outcome;
         anyhow::bail!("ecdsa background task \"{description}\" ended unexpectedly: {join_error}")
     }

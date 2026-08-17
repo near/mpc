@@ -19,7 +19,7 @@ use crate::requests::queue::{
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
-use crate::tracking::{self, AutoAbortTaskCollection};
+use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
@@ -182,7 +182,7 @@ where
             )
         };
 
-        let tee_verification_handle = {
+        let tee_verification_handle: AutoAbortTask<anyhow::Result<()>> = {
             let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn("tee_verification", async move {
                 loop {
@@ -190,11 +190,7 @@ where
                         .send(ChainSendTransactionRequest::VerifyTee())
                         .await
                     {
-                        tracing::error!(
-                            "Receiver dropped, error sending VerifyTee request: {:?}",
-                            e
-                        );
-                        return;
+                        anyhow::bail!("receiver dropped, cannot send VerifyTee request: {e:?}");
                     }
                     metrics::VERIFY_TEE_REQUESTS_SENT.inc();
                     sleep(TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION).await;
@@ -239,12 +235,12 @@ where
         futures::try_join!(
             async move { monitor_passive_channels.await? },
             async move { metrics_emitter.await.map_err(anyhow::Error::from) },
-            async move { monitor_chain.await.map_err(anyhow::Error::from) },
+            async move { monitor_chain.await? },
             async move { robust_ecdsa_background_tasks.await? },
             async move { ecdsa_background_tasks.await? },
             async move { eddsa_background_tasks.await? },
             async move { ckd_background_tasks.await? },
-            async move { tee_verification_handle.await.map_err(anyhow::Error::from) },
+            async move { tee_verification_handle.await? },
         )?;
 
         Ok(())
@@ -257,7 +253,7 @@ where
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -290,9 +286,7 @@ where
                 }
                 block_update = block_update_receiver.recv() => {
                     let Some(block_update) = block_update else {
-                        // If this branch hits, it means the channel is closed, meaning the
-                        // indexer is being shutdown. So just quit this task.
-                        break;
+                        anyhow::bail!("block update channel closed, the indexer is shutting down");
                     };
 
                     self.client.update_indexer_height(block_update.block.height.into());

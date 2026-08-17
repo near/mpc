@@ -95,8 +95,8 @@ pub trait SignatureProvider {
     async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()>;
 
     /// Spawns any auxiliary logic that performs pre-computation (typically meant to optimize signature delay).
-    /// Returning ends the provider's participation in the current MPC job, so return `Ok` only
-    /// once nothing is left running, and report an unexpected stop as `Err`.
+    /// Any task owned by the returned future is aborted when this returns, so return `Ok` only
+    /// once nothing is left running, and `Err` if a spawned task stops unexpectedly.
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()>;
 }
 
