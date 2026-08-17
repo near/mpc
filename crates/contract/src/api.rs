@@ -4,6 +4,7 @@ pub mod authorization;
 pub mod ckd;
 pub mod common;
 pub mod keys;
+pub mod lifecycle;
 pub mod sign;
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
