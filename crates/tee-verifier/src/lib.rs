@@ -15,6 +15,16 @@ use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, Verifie
 
 use tee_verifier_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 
+// The released wasm is the only build that passes `abi` (the reproducible build
+// command); sandbox test builds are wasm32 without it, and `--all-features`
+// checks run on the host.
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "abi",
+    feature = "sandbox-test-hooks"
+))]
+compile_error!("sandbox-test-hooks must never be enabled in a released wasm build");
+
 // `dcap-qvl`'s `contract` feature pulls in `getrandom` but doesn't enable
 // any backend. On `wasm32-unknown-unknown` we register a custom impl that
 // returns `UNSUPPORTED`. Quote verification should not draw any randomness;
