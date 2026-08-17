@@ -17,7 +17,7 @@ use crate::deposits::{
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
+    CANCEL_NODE_MIGRATION, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
     REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
     UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
     VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
@@ -237,6 +237,17 @@ impl<C: CallContract> MpcContractHandle<C> {
             args,
             MAX_GAS,
             NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
+        ))
+        .await
+    }
+
+    pub async fn cancel_node_migration(
+        &self,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::no_deposit(
+            CANCEL_NODE_MIGRATION,
+            b"{}".to_vec(),
+            MAX_GAS,
         ))
         .await
     }

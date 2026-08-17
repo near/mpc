@@ -1003,10 +1003,11 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        let client = self.operator_client_for(node_index)?;
         self.contract
-            .call_from(&client, method_names::CANCEL_NODE_MIGRATION, json!({}))
+            .handle_for(self.operator_client_for(node_index)?)
+            .cancel_node_migration()
             .await
+            .context("failed to cancel node migration")
     }
 
     /// Update the registered URL of a specific node, called from that node's own operator account.
