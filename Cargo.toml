@@ -308,6 +308,7 @@ time = "0.3.45"
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = [
     'cfg(feature, values("abi"))',
+    'cfg(mpc_sandbox_wasm)',
 ] }
 
 [workspace.lints.clippy]

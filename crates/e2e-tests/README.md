@@ -125,9 +125,10 @@ impl NearBlockchain {
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `call`/`call_final` (from the contract account, used only
 for `init`), `handle_for` (a typed `MpcContractHandle` calling as a given
-`NearKitCaller`), `call_from_with_deposit` (untyped escape hatch for
-`prepay_attestation_storage`, which has no typed method yet), `view`, and
-`state()` (parsed `ProtocolContractState`).
+`NearKitCaller`), `call_from_with_deposit` (untyped escape hatch for methods
+without a typed wrapper yet: `prepay_attestation_storage`,
+`vote_tee_verifier_change`), `view`, and `state()` (parsed
+`ProtocolContractState`).
 
 `NearKitCaller` binds a signer to a non-contract account (nodes voting, users
 submitting sign requests) and implements the `CallContract` transport trait,
@@ -171,12 +172,16 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 8. Call `init()` on the contract with the initial participants.
 9. Call `submit_participant_info` for each initial participant (with a
    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
-10. Spawn the `mpc-node` binaries (start *before* adding domains so key
+10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
+    every participant, for topology parity with production. Mock attestations
+    are verified without calling it, so the verifier stays idle; the
+    cross-contract flow is covered by the mpc-contract sandbox tests.
+11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
-11. Sleep briefly and assert no node exited early.
-12. If `config.domains` is non-empty, vote `add_domains` from each participant
+12. Sleep briefly and assert no node exited early.
+13. If `config.domains` is non-empty, vote `add_domains` from each participant
     and wait for `Running` state.
-13. Create user accounts for signing/CKD/verify requests.
+14. Create user accounts for signing/CKD/verify requests.
 
 The returned cluster exposes:
 
@@ -207,6 +212,7 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     pub binary_paths: Vec<PathBuf>,             // one or num_nodes
     pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
+    pub tee_verifier_wasm: Vec<u8>,             // loaded via MPC_TEE_VERIFIER_WASM
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
@@ -330,12 +336,13 @@ so any nextest filter or flag works (substring filters, `-E` expressions,
 runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
 forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
-The task runner builds three things before tests run: the mpc-node binary
-with the `network-hardship-simulation` feature, the MPC contract WASM, and
-the test parallel contract WASM. Paths are passed to tests via the
-`MPC_CONTRACT_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment variables
-read by `must_load_contract_wasm` / `must_load_parallel_contract_wasm` in
-`tests/common.rs`; if the env var is unset and no pre-built WASM is found,
+The task runner builds five things before tests run: the mpc-node binary with
+the `network-hardship-simulation` feature, the MPC contract WASM, the
+tee-verifier WASM, the test parallel contract WASM, and the backup CLI. WASM
+paths are passed to tests via the `MPC_CONTRACT_WASM`,
+`MPC_TEE_VERIFIER_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment
+variables, read by the `must_load_*` helpers in `tests/common.rs` and
+`src/cluster.rs`; if the env var is unset and no pre-built WASM is found,
 `test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
 local iteration).
 

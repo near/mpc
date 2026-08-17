@@ -66,7 +66,7 @@ near account create-account sponsor-by-faucet-service "$VERIFIER_ACCOUNT" autoge
 
 On `mainnet` there is no faucet; create and fund the account from an existing one. The
 balance only needs to cover storage staking for the deployed WASM (about 1 NEAR per
-100 KB); 5 NEAR comfortably covers the ~360 KB verifier:
+100 KB); 5 NEAR covers the ~430 KB verifier:
 
 ```shell
 near account create-account fund-myself "$VERIFIER_ACCOUNT" '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as <funding-account> network-config "$NETWORK" sign-with-keychain send
@@ -106,7 +106,8 @@ Optionally confirm the contract executes by calling `verify_quote` read-only wit
 committed fixture. Either outcome proves the DCAP path runs: a verified report while
 the fixture's collateral is inside its validity window, or `TCBInfo expired` once the
 live clock passes it. Tests pin the verification clock instead of relying on that
-window (`crates/tee-verifier/tests/verify_quote.rs`):
+window (`crates/tee-verifier/tests/verify_quote.rs` and, cross-contract, the sandbox
+tests in `crates/contract/tests/sandbox/tee_verifier.rs`):
 
 ```shell
 near contract call-function as-read-only "$VERIFIER_ACCOUNT" verify_quote file-args crates/tee-verifier/tests/fixtures/verify_quote_args.borsh network-config "$NETWORK" now

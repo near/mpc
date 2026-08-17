@@ -9,7 +9,7 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold,
+            assert_running_return_participants, assert_running_return_threshold, get_config,
             get_participant_attestation, get_state, get_tee_accounts,
             prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
             vote_add_launcher_hash, vote_for_hash,
@@ -25,7 +25,7 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    self as dtos, Attestation, Config, MockAttestation, Protocol,
+    self as dtos, Attestation, MockAttestation, Protocol, VerifiedAttestation,
 };
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
@@ -595,10 +595,9 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 
     assert!(validation_success);
 
-    let attestation_for_tls_key_2: Option<Attestation> =
-        get_participant_attestation(&contract, &tls_key_2)
-            .await
-            .unwrap();
+    let attestation_for_tls_key_2 = get_participant_attestation(&contract, &tls_key_2)
+        .await
+        .unwrap();
 
     assert_eq!(attestation_for_tls_key_2, None);
 }
@@ -637,12 +636,13 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         expected_measurements: None,
     });
 
-    let participant_2_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+    let participant_2_mock = MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(now_seconds + 2_000),
         expected_measurements: None,
-    });
+    };
+    let participant_2_attestation = Attestation::Mock(participant_2_mock.clone());
 
     assert_ne!(
         participant_1_attestation, participant_2_attestation,
@@ -671,12 +671,14 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     .is_success();
     assert!(validation_success, "Submitting attestation failed.");
 
-    let attestation_for_tls_key_2: Option<Attestation> =
-        get_participant_attestation(&contract, &tls_key_2)
-            .await
-            .unwrap();
+    let attestation_for_tls_key_2 = get_participant_attestation(&contract, &tls_key_2)
+        .await
+        .unwrap();
 
-    assert_eq!(attestation_for_tls_key_2, Some(participant_2_attestation));
+    assert_eq!(
+        attestation_for_tls_key_2,
+        Some(VerifiedAttestation::Mock(participant_2_mock))
+    );
 }
 
 #[tokio::test]
@@ -705,12 +707,13 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         expected_measurements: None,
     });
 
-    let second_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+    let second_mock = MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_timestamp_seconds: Some(now_seconds + 2_000),
         expected_measurements: None,
-    });
+    };
+    let second_attestation = Attestation::Mock(second_mock.clone());
 
     assert_ne!(
         first_attestation, second_attestation,
@@ -742,14 +745,13 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     assert!(validation_success, "Second attestation submission failed");
 
     // Now the latest attestation should be returned
-    let attestation_for_tls_key: Option<Attestation> =
-        get_participant_attestation(&contract, &tls_key)
-            .await
-            .unwrap();
+    let attestation_for_tls_key = get_participant_attestation(&contract, &tls_key)
+        .await
+        .unwrap();
 
     assert_eq!(
         attestation_for_tls_key,
-        Some(second_attestation),
+        Some(VerifiedAttestation::Mock(second_mock)),
         "Expected the second attestation to overwrite the first for the same TLS key"
     );
 }
@@ -1088,11 +1090,7 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
     });
     let node = worker.dev_create_account().await?;
     let tls_key = bogus_ed25519_public_key();
-    let config: Config = contract
-        .view(method_names::CONFIG)
-        .args_json(serde_json::json!({}))
-        .await?
-        .json()?;
+    let config = get_config(&contract).await?;
     let before = contract.as_account().view_account().await?;
 
     // When
