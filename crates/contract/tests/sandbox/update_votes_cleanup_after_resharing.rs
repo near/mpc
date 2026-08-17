@@ -1,18 +1,16 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
-        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_UPDATE},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_state,
         },
         resharing_utils::do_resharing,
-        transactions::execute_async_transactions,
+        transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
 use anyhow::Result;
-use mpc_contract::{
-    primitives::{participants::Participants, thresholds::GovernanceThresholdParameters},
-    update::UpdateId,
+use mpc_contract::primitives::{
+    participants::Participants, thresholds::GovernanceThresholdParameters,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
@@ -21,7 +19,6 @@ use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol, ReconstructionThreshold,
 };
 use near_workspaces::Account;
-use serde_json::json;
 use sha2::Digest;
 use std::collections::BTreeMap;
 
@@ -43,24 +40,18 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // Propose update and have first 2 participants vote on it
     let code = vec![1u8; 1000];
-    let update_id: UpdateId = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
+    let update_id: u64 = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
             code: Some(code.clone()),
             config: None,
         })
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
         .await?
         .json()?;
 
-    execute_async_transactions(
-        &mpc_signer_accounts[0..2],
-        &contract,
-        method_names::VOTE_UPDATE,
-        &json!({"id": update_id}),
-        GAS_FOR_VOTE_UPDATE,
-    )
+    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| async move {
+        handle.vote_update(update_id).await
+    })
     .await?;
 
     let proposals_before: dtos::ProposedUpdates = contract
@@ -70,7 +61,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     assert_expected_proposed_update(
         &proposals_before,
-        &update_id,
+        update_id,
         &code,
         &mpc_signer_accounts[0..2],
     );
@@ -121,7 +112,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     assert_expected_proposed_update(
         &proposals_after,
-        &update_id,
+        update_id,
         &code,
         &mpc_signer_accounts[1..2],
     );
@@ -130,7 +121,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let votes_for_update: Vec<_> = proposals_after
         .votes
         .iter()
-        .filter(|(_, uid)| **uid == *update_id)
+        .filter(|(_, uid)| **uid == update_id)
         .map(|(account, _)| account)
         .collect();
     assert_eq!(votes_for_update.len(), 1);
@@ -175,13 +166,10 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
     }];
-    execute_async_transactions(
-        &mpc_signer_accounts[0..2],
-        &contract,
-        method_names::VOTE_ADD_DOMAINS,
-        &json!({"domains": domains_to_add}),
-        GAS_FOR_VOTE_NEW_DOMAIN,
-    )
+    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| {
+        let domains_to_add = domains_to_add.clone();
+        async move { handle.vote_add_domains(domains_to_add).await }
+    })
     .await?;
 
     let state: dtos::ProtocolContractState = get_state(&contract).await;
@@ -248,7 +236,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
 
 pub fn assert_expected_proposed_update(
     actual_proposed_updates: &dtos::ProposedUpdates,
-    expected_update_id: &UpdateId,
+    expected_update_id: u64,
     expected_update_code: &[u8],
     expected_voter_accounts: &[Account],
 ) {
@@ -261,13 +249,13 @@ pub fn assert_expected_proposed_update(
     // Build expected votes map
     let expected_votes_map: BTreeMap<dtos::AccountId, u64> = expected_votes
         .into_iter()
-        .map(|account_id| (account_id, **expected_update_id))
+        .map(|account_id| (account_id, expected_update_id))
         .collect();
 
     // Build expected updates map
     let mut expected_updates_map = BTreeMap::new();
     expected_updates_map.insert(
-        **expected_update_id,
+        expected_update_id,
         dtos::UpdateHash::Code(sha2::Sha256::digest(expected_update_code).into()),
     );
 

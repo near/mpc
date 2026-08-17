@@ -68,9 +68,12 @@ pub enum Command {
     /// Print the NEAR CLI command to register the backup service on the MPC contract.
     Register(RegisterArgs),
     /// Get keyshares from an MPC node and save them locally.
-    GetKeyshares(GetKeysharesArgs),
+    GetKeyshares(NodeConnectionArgs),
     /// Put keyshares to an MPC node from local storage.
-    PutKeyshares(PutKeysharesArgs),
+    PutKeyshares(NodeConnectionArgs),
+    /// Run the automatic backup service: watch the MPC contract and back up keyshares whenever
+    /// the stored ones no longer cover its keyset.
+    Run(RunArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -93,38 +96,52 @@ pub struct RegisterArgs {
     pub signer_account_id: AccountId,
 }
 
+/// How to reach an MPC node. Shared by every subcommand that talks to one.
 #[derive(clap::Args, Debug)]
-pub struct GetKeysharesArgs {
-    /// host address of the MPC node to retrieve keyshares from (`host:port`).
+pub struct NodeConnectionArgs {
+    /// host address of the MPC node to exchange keyshares with (`host:port`).
     #[arg(long, env)]
     pub mpc_node_address: NodeAddress,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
-    /// hex encryption key
-    #[arg(long, env)]
+    /// hex encryption key. Prefer passing this via the environment
+    /// (`BACKUP_ENCRYPTION_KEY_HEX`) rather than on the command line.
+    #[arg(long, env, hide_env_values = true)]
     pub backup_encryption_key_hex: String,
+    /// Deadline for a single network request
+    #[arg(long, env, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..))]
+    pub request_timeout_seconds: u64,
 }
 
 #[derive(clap::Args, Debug)]
-pub struct PutKeysharesArgs {
-    /// host address of the MPC node to retrieve keyshares from (`host:port`).
+pub struct RunArgs {
+    /// NEAR JSON-RPC endpoint used to poll the contract state. A provider api key, if any, is
+    /// passed as a query parameter of this URL; only the scheme and host ever reach the logs.
+    #[arg(long, env("BACKUP_RPC_URL"), hide_env_values = true)]
+    pub rpc_url: String,
+    /// NEAR chain id (e.g. mainnet, testnet). Required by the RPC client; the contract state
+    /// is read with a view call, which does not consume it.
+    #[arg(long, env, default_value = "mainnet")]
+    pub near_chain_id: String,
+    /// MPC contract account ID whose state is polled.
     #[arg(long, env)]
-    pub mpc_node_address: NodeAddress,
-    /// P2P public key of the MPC node for authentication.
-    #[arg(long, env)]
-    pub mpc_node_p2p_key: String,
-    /// hex encryption key
-    #[arg(long, env)]
-    pub backup_encryption_key_hex: String,
+    pub mpc_contract_account_id: AccountId,
+    #[command(flatten)]
+    pub node: NodeConnectionArgs,
+    /// How often to poll the contract state, in seconds.
+    #[arg(long, env, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
+    pub poll_interval_seconds: u64,
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
     use std::net::SocketAddrV4;
 
+    use clap::{CommandFactory as _, Parser as _};
     use rstest::rstest;
 
     use super::*;
@@ -156,5 +173,66 @@ mod tests {
             .parse::<NodeAddress>()
             .expect_err(&format!("expected error for: {input}"));
         assert_eq!(err, want_err);
+    }
+
+    #[rstest]
+    #[case::run("run", "BACKUP_ENCRYPTION_KEY_HEX")]
+    #[case::run_rpc_url("run", "BACKUP_RPC_URL")]
+    #[case::get_keyshares("get-keyshares", "BACKUP_ENCRYPTION_KEY_HEX")]
+    #[case::put_keyshares("put-keyshares", "BACKUP_ENCRYPTION_KEY_HEX")]
+    fn help__should_not_render_values_of_secret_env_vars(
+        #[case] subcommand: &str,
+        #[case] env_var: &str,
+    ) {
+        // Given
+        let mut command = Args::command();
+        let subcommand = command
+            .find_subcommand_mut(subcommand)
+            .expect("subcommand should exist");
+
+        // When
+        let help = subcommand.render_long_help().to_string();
+
+        // Then
+        assert!(
+            help.contains(&format!("[env: {env_var}]")),
+            "{env_var} should be documented without its value:\n{help}"
+        );
+        assert!(
+            !help.contains(&format!("[env: {env_var}=")),
+            "{env_var} value must not be rendered:\n{help}"
+        );
+    }
+
+    #[rstest]
+    #[case::poll_interval("--poll-interval-seconds")]
+    #[case::request_timeout("--request-timeout-seconds")]
+    fn run_args__should_reject_a_zero_duration(#[case] flag: &str) {
+        // Given
+        let args = [
+            "backup-cli",
+            "--home-dir",
+            "/tmp/backup",
+            "run",
+            "--rpc-url",
+            "https://rpc.example.com",
+            "--mpc-contract-account-id",
+            "v1.signer",
+            "--mpc-node-address",
+            "node.example.com:8079",
+            "--mpc-node-p2p-key",
+            "ed25519:11111111111111111111111111111111",
+            "--backup-encryption-key-hex",
+            "00",
+            flag,
+            "0",
+        ];
+
+        // When
+        let result = Args::try_parse_from(args);
+
+        // Then
+        let err = result.expect_err(&format!("expected {flag} 0 to be rejected"));
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
     }
 }

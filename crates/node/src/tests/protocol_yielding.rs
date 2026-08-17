@@ -3,7 +3,7 @@
 //!
 //! Runs a triple generation batch on a single-threaded runtime next to a
 //! "canary" task that measures how long it goes unscheduled. Without the
-//! yield points inside `threshold-signatures` (surfaced as `Action::Yield`),
+//! yield points inside `threshold-signatures` (surfaced as [`Action::Yield`]),
 //! a single poke burst hogs the thread for the whole batch and the canary
 //! gap explodes.
 //!

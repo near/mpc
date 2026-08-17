@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(entries, expected);
     }
 
-    /// Helper: parse `NearInitConfig` from a TOML fragment that only sets
+    /// Helper: parse [`NearInitConfig`] from a TOML fragment that only sets
     /// `chain_id` and the field under test. Reduces noise in the address
     /// validation tests.
     fn parse_near_init_with_addr_field(field: &str, value: &str) -> Result<NearInitConfig, String> {

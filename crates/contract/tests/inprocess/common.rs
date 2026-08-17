@@ -34,7 +34,7 @@ pub fn participant_context_with_deposit(account_id: &AccountId, deposit: NearTok
     }
 }
 
-/// Initializes a `Running` contract with a single Sign domain from `parameters`.
+/// Initializes a [`Running`] contract with a single Sign domain from `parameters`.
 pub fn init_contract(
     parameters: &GovernanceThresholdParameters,
     init_config: Option<InitConfig>,
@@ -67,7 +67,7 @@ pub fn init_contract(
     MpcContract::init_running(domains, 1, keyset, parameters.clone().into(), init_config).unwrap()
 }
 
-/// Drives `contract` out of `Running` into `Initializing` by having every participant vote to
+/// Drives `contract` out of [`Running`] into [`Initializing`] by having every participant vote to
 /// add a new domain.
 pub fn transition_to_initializing(
     contract: &mut MpcContract,

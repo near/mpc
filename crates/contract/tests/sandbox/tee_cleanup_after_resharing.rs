@@ -3,13 +3,13 @@
 use crate::sandbox::{
     common::{
         SandboxTestSetup, account_ed25519_public_key, build_sandbox_node_ids, gen_accounts,
-        submit_tee_attestations,
+        prepay_and_submit_tee_attestations,
     },
     utils::{
         interface::IntoContractType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
-            submit_participant_info,
+            prepay_and_submit_participant_info,
         },
         resharing_utils::do_resharing,
     },
@@ -34,10 +34,10 @@ use test_utils::attestation::p2p_tls_key;
 /// 2. Adds additional TEE attestations that do not belong to any participant
 /// 3. Initiates a new resharing with a subset of the original participants
 /// 4. Completes the resharing process by voting
-/// 5. Verifies that after `vote_reshared` the contract returns to `Running` with the reduced set
+/// 5. Verifies that after `vote_reshared` the contract returns to [`Running`] with the reduced set
 /// 6. Confirms valid non-participant attestations remain in TEE storage: the post-resharing
 ///    `clean_invalid_attestations` sweep only evicts entries failing re-verification
-///    (expired, stale docker/launcher/measurement whitelists), and mock `Valid`
+///    (expired, stale docker/launcher/measurement whitelists), and mock [`Valid`]
 ///    attestations never fail re-verification.
 #[tokio::test]
 async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -> Result<()> {
@@ -63,11 +63,10 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
     assert_eq!(nodes_with_tees, expected_node_ids);
 
     // Add two prospective Participants
-    // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids =
         build_sandbox_node_ids(&non_participants, &env_non_participant_accounts);
-    submit_tee_attestations(
+    prepay_and_submit_tee_attestations(
         &contract,
         &mut env_non_participant_accounts,
         &non_participant_uids,
@@ -86,7 +85,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
         account_public_key: account_ed25519_public_key(&mpc_signer_accounts[0]),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &attestation,
@@ -160,7 +159,7 @@ async fn reshare__should_leave_valid_non_participant_attestations_in_storage() -
 
 /// Companion to the test above: verifies that the post-resharing promise chain actually
 /// invokes `clean_invalid_attestations` and evicts entries that fail re-verification.
-/// `verify()` rejects attestations that are already expired at insert time, so this test
+/// [`verify()`] rejects attestations that are already expired at insert time, so this test
 /// submits an attestation with an expiry a few seconds in the future and then fast-forwards
 /// past it before triggering the reshare.
 #[tokio::test]
@@ -195,7 +194,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
         expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
         expected_measurements: None,
     });
-    let submit_result = submit_participant_info(
+    let submit_result = prepay_and_submit_participant_info(
         stale_account,
         &contract,
         &expiring_attestation,

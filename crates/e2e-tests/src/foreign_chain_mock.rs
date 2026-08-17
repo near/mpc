@@ -57,7 +57,7 @@ fn register_unauthorized_catch_all(server: &MockServer, auth: &MockAuthExpectati
 
 /// A [`MockServer`] paired with the id of a registered [`httpmock::Mock`], so
 /// tests can recover the `Mock<'_>` (which borrows from the server) on demand
-/// and read its hit count. Storing the `Mock` directly would make this struct
+/// and read its hit count. Storing the [`Mock`](httpmock::Mock) directly would make this struct
 /// self-referential.
 pub struct MockServerExt {
     pub server: MockServer,
@@ -76,7 +76,7 @@ impl MockServerExt {
 }
 
 pub const MOCK_BLOCK_HASH: &str =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 pub const MOCK_STARKNET_BLOCK_NUMBER: u64 = 6_868_546;
 pub const MOCK_BLOCK_HEIGHT: u64 = 800_000;

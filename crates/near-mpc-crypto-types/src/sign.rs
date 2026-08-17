@@ -9,6 +9,7 @@
 //! containing the derived tweak, payload, and domain ID.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use derive_more::Constructor;
 use near_account_id::AccountId;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -21,7 +22,7 @@ use mpc_primitives::domain::DomainId;
 /// for compatibility with existing consumers. Deserialization accepts both
 /// `payload_v2` and the deprecated `payload` (as raw `[u8; 32]`) plus
 /// `key_version` as an alias for `domain_id`.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Constructor)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -36,10 +37,10 @@ pub struct SignRequestArgs {
 /// Compat layer: all fields optional so both old and new wire formats parse.
 ///
 /// The `payload` field is the legacy *untagged* representation — a raw 32-byte
-/// array with no `Ecdsa` / `Eddsa` enum tag, used by clients predating EdDSA
+/// array with no [`Ecdsa`](crate::Payload::Ecdsa) / [`Eddsa`](crate::Payload::Eddsa) enum tag, used by clients predating EdDSA
 /// support. It is intentionally converted to [`Payload::Ecdsa`] via
 /// [`Payload::from_legacy_ecdsa`] below; **defaulting untagged payloads to
-/// `Ecdsa` is required for backward compatibility**
+/// [`Ecdsa`](crate::Payload::Ecdsa) is required for backward compatibility**
 #[derive(Deserialize)]
 struct SignRequestArgsCompat {
     path: String,
@@ -203,10 +204,10 @@ mod tests {
         assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
     }
 
-    /// A a sign request whose `payload` field is
-    /// a raw 32-byte array (no `Ecdsa` / `Eddsa` tag) — the legacy on-chain
+    /// A sign request whose `payload` field is
+    /// a raw 32-byte array (no [`Ecdsa`] / [`Eddsa`] tag) — the legacy on-chain
     /// wire format predating EdDSA support — must be deserialized as
-    /// `Payload::Ecdsa`
+    /// [`Payload::Ecdsa`]
     #[test]
     fn deserialize__should_default_untagged_payload_to_ecdsa() {
         // Given — the exact legacy wire shape: raw bytes under `payload`, no

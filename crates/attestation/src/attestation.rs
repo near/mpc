@@ -48,8 +48,8 @@ pub struct AcceptedDstackAttestation {
     /// The accepted measurement set this attestation matched.
     pub measurements: ExpectedMeasurements,
     /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
-    /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
-    /// failure — `UpToDate` is the sole security gate; these advisories convey
+    /// Intel's PCS alongside an [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) TCB status. They are not a security
+    /// failure — [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) is the sole security gate; these advisories convey
     /// platform lifecycle information.
     pub advisory_ids: Vec<String>,
 }
@@ -156,7 +156,7 @@ impl DstackAttestation {
         })
     }
 
-    /// Full local verification: runs `dcap_qvl::verify::verify` and then the
+    /// Full local verification: runs [`dcap_qvl::verify::verify`] and then the
     /// post-DCAP checks via [`Self::verify_with_report`].
     #[cfg(feature = "local-verify")]
     pub fn verify_locally(
@@ -169,7 +169,7 @@ impl DstackAttestation {
         self.verify_with_report(&report, expected_report_data, accepted_measurements)
     }
 
-    /// Runs only the DCAP step (`dcap_qvl::verify::verify`) and returns the
+    /// Runs only the DCAP step ([`dcap_qvl::verify::verify`]) and returns the
     /// resulting report as the `tee-verifier-interface` mirror — the same value
     /// the `tee-verifier` contract returns on-chain.
     #[cfg(feature = "local-verify")]
@@ -261,7 +261,7 @@ impl DstackAttestation {
     ///      check below.
     ///   2. `INTEL-DOC-NNNNN`: informational lifecycle markers (e.g. `INTEL-DOC-10000`
     ///      after a product's Extended Servicing Updates date). These may appear with
-    ///      `UpToDate` and do not indicate a vulnerability; they are returned so the
+    ///      [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) and do not indicate a vulnerability; they are returned so the
     ///      caller can log/expose them.
     fn verify_tcb_status(report: &VerifiedReport) -> Result<Vec<String>, VerificationError> {
         (report.status == EXPECTED_QUOTE_STATUS)
@@ -620,12 +620,27 @@ mod tests {
     }
 
     #[test]
+    fn validate_app_compose_config__should_accept_the_committed_fixture() {
+        // Given
+        let fixture: AppCompose =
+            serde_json::from_str(test_utils::attestation::TEST_APP_COMPOSE_STRING)
+                .expect("the fixture app-compose parses");
+
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&fixture);
+
+        // Then
+        assert!(result)
+    }
+
+    #[test]
     fn validate_app_compose_config__rejects_present_pre_launch_script() {
         // Given
         let app_compose = AppCompose {
             pre_launch_script: Some("echo pwn".to_string()),
             ..valid_app_compose()
         };
+
         // When
         let result = DstackAttestation::validate_app_compose_config(&app_compose);
 

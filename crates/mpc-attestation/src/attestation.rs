@@ -54,14 +54,14 @@ pub struct AcceptedAttestation {
     /// later re-verification against the then-current allowed set.
     pub attestation: VerifiedAttestation,
     /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
-    /// Intel's PCS alongside an `UpToDate` TCB status. They are not a security
-    /// failure — `UpToDate` is the sole security gate; these advisories convey
+    /// Intel's PCS alongside an [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) TCB status. They are not a security
+    /// failure — [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) is the sole security gate; these advisories convey
     /// platform lifecycle information.
     pub advisory_ids: Vec<String>,
 }
 
 impl AcceptedAttestation {
-    /// Assembles the acceptance for a verified `Dstack` attestation, stamping the
+    /// Assembles the acceptance for a verified [`Dstack`](crate::attestation::Attestation::Dstack) attestation, stamping the
     /// expiry.
     fn dstack(
         mpc_image_hash: NodeImageHash,
@@ -84,7 +84,7 @@ impl AcceptedAttestation {
         }
     }
 
-    /// Assembles the acceptance for a verified `Mock` attestation. Stamps a
+    /// Assembles the acceptance for a verified [`Mock`](crate::attestation::Attestation::Mock) attestation. Stamps a
     /// [`DEFAULT_EXPIRATION_DURATION_SECONDS`] expiry (via [`MockAttestation::with_expiry_capped_at`]),
     /// mirroring [`AcceptedAttestation::dstack`], so a [`MockAttestation::Valid`] mock
     /// does not pass re-verification forever and can be cleaned up.
@@ -267,6 +267,18 @@ pub struct ValidatedDstackAttestation {
 }
 
 impl VerifiedAttestation {
+    /// The launcher compose hash this attestation was validated against, if it carries one.
+    pub fn launcher_compose_hash(&self) -> Option<LauncherDockerComposeHash> {
+        match self {
+            Self::Dstack(attestation) => Some(attestation.launcher_compose_hash),
+            Self::Mock(MockAttestation::WithConstraints {
+                launcher_docker_compose_hash,
+                ..
+            }) => *launcher_docker_compose_hash,
+            Self::Mock(_) => None,
+        }
+    }
+
     pub fn re_verify(
         &self,
         timestamp_seconds: u64,

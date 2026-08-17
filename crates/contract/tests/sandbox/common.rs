@@ -1,10 +1,14 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+    consts::{GAS_FOR_INIT, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-    mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
+    mpc_contract::{
+        assert_running_return_threshold, get_state, prepay_and_submit_participant_info,
+        submit_participant_info,
+    },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
+    transactions::CallMpcContract,
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -21,7 +25,6 @@ use mpc_contract::{
         },
     },
     tee::tee_state::NodeId,
-    update::UpdateId,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
@@ -185,7 +188,7 @@ impl SandboxTestSetup {
         }
     }
 
-    /// Returns the first key with `ForeignTx` purpose.
+    /// Returns the first key with [`ForeignTx`] purpose.
     pub fn foreign_tx_key(&self) -> &DomainKey {
         self.keys
             .iter()
@@ -224,7 +227,7 @@ impl SandboxTestSetupBuilder {
     }
 
     /// Deploys the wasm built with `--features sandbox-test-methods`, exposing the
-    /// introspection view methods in `crate::sandbox_test_methods` (e.g. fan-out queue
+    /// introspection view methods in [`crate::sandbox_test_methods`] (e.g. fan-out queue
     /// length).
     pub fn with_sandbox_test_methods(mut self) -> Self {
         self.with_sandbox_test_methods = true;
@@ -351,14 +354,11 @@ pub async fn propose_and_vote_contract_binary(
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
             code: Some(new_contract_binary.to_vec()),
             config: None,
         })
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
         .await
         .expect("propose update call succeeds");
 
@@ -367,7 +367,7 @@ pub async fn propose_and_vote_contract_binary(
         "propose update call failed"
     );
 
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+    let proposal_id: u64 = propose_update_execution.json().unwrap();
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -380,7 +380,7 @@ pub async fn propose_and_vote_contract_binary(
         .json()
         .expect("state is deserializable.");
 
-    vote_update_till_completion(contract, accounts, &proposal_id).await;
+    vote_update_till_completion(contract, accounts, proposal_id).await;
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
@@ -393,16 +393,12 @@ pub async fn propose_and_vote_contract_binary(
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: &UpdateId,
+    proposal_id: u64,
 ) {
     for voter in accounts {
         let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": proposal_id,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
             .await
             .unwrap();
 
@@ -417,8 +413,8 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the `Account`'s
-/// signer. Mirrors what the contract reads via `env::signer_account_pk()` when
+/// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s
+/// signer. Mirrors what the contract reads via [`env::signer_account_pk()`] when
 /// the account submits a transaction.
 pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
     let bytes: [u8; 32] = account
@@ -433,10 +429,10 @@ pub fn account_ed25519_public_key(account: &Account) -> dtos::Ed25519PublicKey {
 /// Builds the set of [`NodeId`]s that a sandbox contract will store after
 /// each participant has submitted its attestation. Both the TLS key (from the
 /// participant's `tls_public_key`) and the account public key (read from the
-/// matching `Account`'s signer) must line up with what `submit_participant_info`
-/// will persist on-chain — it stores `env::signer_account_pk()` alongside the
-/// TLS key. Keep this in sync with `MpcContract::submit_participant_info` so
-/// that test-side `NodeId` comparisons against `get_tee_accounts()` stay valid.
+/// matching [`Account`]'s signer) must line up with what `submit_participant_info`
+/// will persist on-chain — it stores [`env::signer_account_pk()`] alongside the
+/// TLS key. Keep this in sync with [`MpcContract::submit_participant_info`] so
+/// that test-side [`NodeId`] comparisons against [`get_tee_accounts()`] stay valid.
 pub fn build_sandbox_node_ids(
     participants: &Participants,
     accounts: &[Account],
@@ -470,6 +466,29 @@ pub async fn submit_tee_attestations(
         let result =
             submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
                 .await?;
+        assert!(result.is_success());
+    }
+    Ok(())
+}
+
+/// Like [`submit_tee_attestations`], for accounts whose entry does not exist yet: each
+/// submission stores a new entry, so each needs a grant.
+pub async fn prepay_and_submit_tee_attestations(
+    contract: &Contract,
+    env_accounts: &mut [Account],
+    node_ids: &BTreeSet<NodeId>,
+) -> anyhow::Result<()> {
+    env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
+    for (account, node_id) in env_accounts.iter().zip(node_ids) {
+        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+        let result = prepay_and_submit_participant_info(
+            account,
+            contract,
+            &attestation,
+            &node_id.tls_public_key,
+        )
+        .await?;
         assert!(result.is_success());
     }
     Ok(())
@@ -597,18 +616,11 @@ pub async fn execute_key_generation_and_add_random_state(
     let dummy_threshold_parameters =
         GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(threshold.0 + 1))
             .unwrap();
-    let dummy_proposal = json!({
-        "prospective_epoch_id": 1,
-        "proposal": ProposedGovernanceThresholdParameters::new(
-            dummy_threshold_parameters,
-            BTreeMap::new(),
-        ),
-    });
+    let dummy_proposal =
+        ProposedGovernanceThresholdParameters::new(dummy_threshold_parameters, BTreeMap::new());
     accounts[0]
-        .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-        .args_json(dummy_proposal)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .vote_new_parameters(dtos::EpochId::new(1), dummy_proposal.into())
         .await
         .unwrap()
         .unwrap();
@@ -662,9 +674,8 @@ pub async fn register_foreign_chain_configuration(
     let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
     for account in accounts {
         let result = account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_SUPPORT)
-            .args_json(json!({ "foreign_chain_support": node_foreign_chain_support }))
-            .transact()
+            .call_mpc(contract.id())
+            .register_foreign_chain_support(node_foreign_chain_support.clone())
             .await
             .unwrap()
             .into_result();
@@ -748,7 +759,7 @@ pub async fn generate_participant_and_submit_attestation(
 
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
-    let result = submit_participant_info(
+    let result = prepay_and_submit_participant_info(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),

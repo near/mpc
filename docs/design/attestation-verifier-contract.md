@@ -141,7 +141,7 @@ Each [`PendingAttestation`](#mpc-contractsubmit_participant_info) holds:
 
 - **The submitter's `Attestation::Dstack` payload** — the RTMR3 event log, app-compose, and report-data the post-DCAP checks consume.
 - **The submitter's TLS public key** — the callback hashes it with the submitter's account public key and compares to the quote's `report_data` field, proving the enclave produced the quote for this specific submitter.
-- No deposit is stashed: attestation storage is funded by the contract's own balance, so `submit_participant_info` attaches nothing and there is no deposit to forward to the callback or refund.
+- No deposit is stashed: `submit_participant_info` attaches nothing, so there is none to forward to the callback or refund. Storing a new entry instead consumes a prepaid attestation-storage grant — see `docs/design/operator-prepaid-attestation-storage.md`.
 - **`data_id: CryptoHash`** — the yield handle returned by [`env::promise_yield_create`][promise-yield-create]. The intermediate `.then` callback (`resolve_verification`) reads this back to call [`env::promise_yield_resume`][promise-yield-resume] with a `FinalOutcome` after the post-DCAP checks have run.
 
 Entries are removed by `resolve_verification` on every branch where the verifier returned an answer — `Verified` (post-DCAP success or failure) and `Rejected`; only when the verifier gave no verdict (`Err(PromiseError::Failed)` — unreachable or crashed) does it return early and leave the entry in place. `on_attestation_verified` then removes the entry on its `Err(PromiseError::Failed)` branch, which covers that unreachable case and the no-response timeout.
@@ -217,7 +217,7 @@ The window must stay well above the honest-node resubmit cadence so nobody is ev
 
 Note what this does *not* do: it bounds future trust in entries the old verifier produced, but does not undo whatever MPC operations a node holding such an entry already participated in. This is containment of future trust, not remediation of past damage, which is out of scope here.
 
-Verifier rotation is also not the right response when the fault is not in the verifier. If the bad behavior can be pinned to a specific image or launcher hash, operators can leave the verifier alone and drop the affected hash from the post-DCAP allowlist; any subsequent [`verify_tee`][verify-tee] or [`clean_invalid_attestations`][clean-invalid-attestations] sweep then evicts the matching entries through the existing allowlist-mismatch path. That path is unchanged by this design and remains available as a faster, targeted response when the offending measurement is known.
+Verifier rotation is also not the right response when the fault is not in the verifier. If the bad behavior can be pinned to a specific image or launcher hash, operators can leave the verifier alone and drop the affected hash from the post-DCAP allowlist. A subsequent [`verify_tee`][verify-tee] then demotes the affected nodes out of the participant set through the existing allowlist-mismatch path, and a [`clean_invalid_attestations`][clean-invalid-attestations] sweep evicts their stored entries — only the latter reclaims storage; `verify_tee` leaves `stored_attestations` untouched. That path is unchanged by this design and remains available as a faster, targeted response when the offending measurement is known.
 
 ### Requirements on the verifier account
 

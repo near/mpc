@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# prepare-release.sh — Apply the local file changes for a release.
+# prepare-github-release.sh — Apply the local file changes for a release.
 #
 # Run this on a working branch off the release-source branch (e.g. off
 # `main` for a minor release, off `release/vX.Y` for a patch). The script
@@ -14,8 +14,8 @@
 #   4. Regenerate third-party licenses
 #   5. Commit the release changes
 #
-# Usage:  ./scripts/ops/prepare-release.sh <VERSION>
-# Example: ./scripts/ops/prepare-release.sh 3.6.0
+# Usage:  ./scripts/ops/prepare-github-release.sh <VERSION>
+# Example: ./scripts/ops/prepare-github-release.sh 3.6.0
 #
 
 set -euo pipefail

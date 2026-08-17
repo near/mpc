@@ -1,6 +1,7 @@
 //! This module serves as a wrapper for Ed25519 scheme.
-mod presign;
 pub mod sign;
+
+mod presign;
 #[cfg(test)]
 mod test;
 

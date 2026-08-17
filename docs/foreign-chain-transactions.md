@@ -97,18 +97,37 @@ pub enum ForeignTxPayloadVersion {
 
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub derivation_path: String, // Key derivation path
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    // Optional opt-in binding of the response to this request, see below.
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
-    pub tweak: Tweak,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    pub expected_payload_hash: Option<Hash256>,
 }
 ```
+
+#### Binding the response to the request (`expected_payload_hash`)
+
+A response's signature is verified against the network's root key, so without further
+checks any previously signed `(payload_hash, signature)` pair would satisfy
+`respond_verify_foreign_tx` and could resolve a pending request with a stale or
+unrelated observation (a replay DoS; callers detect the mismatch client-side, so funds
+are not at risk).
+
+Callers that can predict the signed payload — i.e. that know which extracted values they
+expect — can compute `msg_hash` (see [Sign Payload Serialization](#sign-payload-serialization))
+and submit it as `expected_payload_hash`. The contract then rejects any response whose
+`payload_hash` differs, and nodes refuse to sign a payload whose hash differs from the
+expectation. A request with an expectation that does not match on-chain reality therefore
+times out rather than receiving a mismatching response. The `near-mpc-sdk` request builder
+populates this field automatically from the caller's expected values.
+
+Omitting the field preserves the old unbound behavior.
 
 ### Chain Query DTOs
 
@@ -354,7 +373,7 @@ Relevant contract methods:
 ## On-chain RPC Provider Whitelist
 
 > Tracked under issue [#3208](https://github.com/near/mpc/issues/3208). Landing in stacked PRs:
-> PR 1 (contract storage types) → PR 2 (vote endpoints) → PR 3 (node-side wiring + chain-identity probe).
+> PR 1 (contract storage types) → PR 2 (vote endpoints) → PR 3 (node-side wiring + network fingerprint probe).
 > The text below describes the end-state design; sections call out per-PR scope where relevant.
 
 The per-participant registration model above leaves the network with no shared notion of *which RPC providers it trusts* — a TEE-attested node binary still pulls URLs from its own config file. To close that gap the contract carries a per-chain whitelist of providers, voted in by participants. Operators reference providers from the whitelist by `provider_id` in their local `foreign_chains.yaml`; the node assembles the final URL from `base_url` + `chain_routing` + the operator-supplied token (placed per `auth_scheme`).
@@ -369,7 +388,7 @@ The per-participant registration model above leaves the network with no shared n
 | What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference                                                                                                                                                        |
 | Adding a new provider                  | Every operator updates their yaml; the network effectively supports a chain once enough do  | Threshold of participants vote in `(chain, ProviderEntry)`; operators reference it by `provider_id` only                                                                                       |
 | Removing a compromised provider        | Every operator manually edits their yaml; coordination problem                              | Threshold of participants vote remove; nodes pick up the change via the indexer and drop the provider on next reconfigure                                                                       |
-| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a startup *chain-identity probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_network_fingerprint` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
+| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a startup *network fingerprint probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_network_fingerprint` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
 
 ### Whitelist storage shape
 
@@ -521,13 +540,25 @@ Two reasons together drove the snapshot model over an Add/Remove diff-ops endpoi
 
 Voting uses the protocol's existing signing threshold (`self.threshold()?.value()`), the same gate as `verify_tee` and `vote_add_os_measurement`. An earlier design proposed a separate per-chain *voting* threshold so mainnet and testnet could be voted in under different agreement requirements; that was dropped because (a) there's no setter that could safely populate it without itself being voted in, leaving a hardcoded default that's strictly weaker than the protocol threshold, and (b) the per-chain numeric on `ChainVote.quorum` already covers the *runtime* security knob — how many of N whitelisted providers must agree for a node to accept a response — which is what operators actually need to tune per chain.
 
-#### Why the chain-identity probe in addition to per-chain keying (PR 3)
+#### Why the network fingerprint probe in addition to per-chain keying (PR 3)
 
-The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the fan-out across a chain's providers is the structural one. The chain-identity probe is a per-node diagnostic on top of both.
+The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the fan-out across a chain's providers is the structural one. The network fingerprint probe is a per-node diagnostic on top of both.
 
-At startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
+Once wired into node startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
+
+Not every chain has a fingerprint probe. The table lists the ones that do, with the RPC each probes. A chain absent from it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
+
+| chain | probe |
+|---|---|
+| starknet | `starknet_chainId` |
+| base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` |
+| bitcoin | `getblockhash` at height 0 |
+
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash.
+
+An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
 
 #### Why drop-and-log on local-config mismatch, not hard-crash
 
@@ -556,7 +587,8 @@ This ensures different nodes query different providers for the same request whil
 
 ## Failure and Timeout Behavior
 
-* Nodes **do not participate** if RPC queries fail or extraction fails.
+* Nodes **do not participate** if RPC queries fail, extraction fails, or the computed
+  payload hash does not match the request's `expected_payload_hash`.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
 * *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (RPC sub-quorum, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
@@ -677,11 +709,17 @@ separates the test networks from each other where a network *name* would not: te
 separates mainnet from testnet, but two devnets can collide.
 
 `solana` and `ethereum` are configurable but absent from the table: neither has an inspector, so
-setting `expected_network_fingerprint` for them has no effect.
+there is nothing about them to verify in the first place.
 
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
+
+Only the chains with a fingerprint probe read the field at all — starknet, bitcoin and the EVM
+chains today, the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
+provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads as healthy
+on a dashboard. A chain with no probe yet reports `ProbeNotImplemented` whether the field is set or
+not.
 
 ## Risks
 

@@ -18,7 +18,7 @@ impl IndexerStats {
 
 /// Periodically logs indexer progress stats.
 /// Based on [`indexer_logger`](../../node/src/indexer/stats.rs) in the `mpc-node` crate,
-/// but uses a `watch` channel instead of a `Mutex` to read stats, since blocks are no longer
+/// but uses a `watch` channel instead of a [`Mutex`](tokio::sync::Mutex) to read stats, since blocks are no longer
 /// processed by multiple threads.
 pub async fn indexer_logger(
     stats_rx: tokio::sync::watch::Receiver<IndexerStats>,
