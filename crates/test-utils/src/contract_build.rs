@@ -76,12 +76,8 @@ impl ContractBuilder {
         };
 
         // Marks the artifact as test-built; sandbox-only code compiles in only under this cfg.
-        let rustflags = match std::env::var("RUSTFLAGS") {
-            Ok(inherited) if !inherited.is_empty() => {
-                format!("{inherited} --cfg mpc_sandbox_wasm")
-            }
-            _ => "--cfg mpc_sandbox_wasm".to_string(),
-        };
+        let inherited = std::env::var("RUSTFLAGS").unwrap_or_default();
+        let rustflags = format!("{inherited} --cfg mpc_sandbox_wasm");
 
         let opts = cargo_near_build::BuildOpts {
             manifest_path: Some(to_utf8(abs_manifest)),

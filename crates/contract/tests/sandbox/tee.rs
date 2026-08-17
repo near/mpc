@@ -9,7 +9,7 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold,
+            assert_running_return_participants, assert_running_return_threshold, get_config,
             get_participant_attestation, get_state, get_tee_accounts,
             prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
             vote_add_launcher_hash, vote_for_hash,
@@ -25,7 +25,7 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    self as dtos, Attestation, Config, MockAttestation, Protocol, VerifiedAttestation,
+    self as dtos, Attestation, MockAttestation, Protocol, VerifiedAttestation,
 };
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
@@ -1090,11 +1090,7 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
     });
     let node = worker.dev_create_account().await?;
     let tls_key = bogus_ed25519_public_key();
-    let config: Config = contract
-        .view(method_names::CONFIG)
-        .args_json(serde_json::json!({}))
-        .await?
-        .json()?;
+    let config = get_config(&contract).await?;
     let before = contract.as_account().view_account().await?;
 
     // When

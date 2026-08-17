@@ -24,7 +24,6 @@ use near_mpc_contract_interface::{
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use crate::blockchain::{DeployedContract, NearBlockchain, NearKitCaller};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
@@ -256,37 +255,33 @@ fn default_mpc_binary_path() -> PathBuf {
 
 /// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
 pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
-    if let Ok(path) = std::env::var("MPC_TEE_VERIFIER_WASM") {
-        let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read tee-verifier WASM at {}: {e}. Build it with \
-                 `cargo make build-tee-verifier-optimized` (skipped when E2E_SKIP_BUILD is set)",
-                wasm_path.display()
-            )
-        });
-    }
-
     let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/near/tee_verifier/tee_verifier.wasm");
-    if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read tee-verifier WASM at {}: {e}",
-                default_path.display()
+    let wasm_path = match std::env::var("MPC_TEE_VERIFIER_WASM") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) if default_path.exists() => default_path,
+        Err(_) => {
+            tracing::info!(
+                "MPC_TEE_VERIFIER_WASM not set and pre-built WASM not found; building \
+                 tee-verifier. Build it up front with `cargo make build-tee-verifier-optimized` \
+                 to skip this."
+            );
+            // Same out dir the probe above checks, so this build is found and reused
+            // by later test processes instead of rebuilding each time.
+            return test_utils::contract_build::ContractBuilder::new(
+                "crates/tee-verifier/Cargo.toml",
             )
-        });
-    }
-
-    tracing::info!(
-        "MPC_TEE_VERIFIER_WASM not set and pre-built WASM not found; building tee-verifier. \
-         Build it up front with `cargo make build-tee-verifier-optimized` to skip this."
-    );
-    // Same out dir the probe above checks, so this build is found and reused
-    // by later test processes instead of rebuilding each time.
-    test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml")
-        .out_dir("target/near/tee_verifier")
-        .build()
+            .out_dir("target/near/tee_verifier")
+            .build();
+        }
+    };
+    std::fs::read(&wasm_path).unwrap_or_else(|e| {
+        panic!(
+            "failed to read tee-verifier WASM at {}: {e}. Build it with \
+             `cargo make build-tee-verifier-optimized` (skipped when E2E_SKIP_BUILD is set)",
+            wasm_path.display()
+        )
+    })
 }
 
 /// A running MPC test cluster with a deployed contract and N mpc-node processes.
@@ -1440,7 +1435,7 @@ async fn deploy_and_trust_tee_verifier(
     // expected_code_hash commits every voter to the same audited WASM; the
     // contract only compares voters' hashes against each other, not against
     // the deployed bytes.
-    let expected_code_hash = hex::encode(Sha256::digest(verifier_wasm));
+    let expected_code_hash = hex::encode(near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
     let args = json!({
         "candidate_account_id": verifier_account,
         "expected_code_hash": expected_code_hash,
@@ -1467,8 +1462,6 @@ async fn deploy_and_trust_tee_verifier(
 
     // The votes are not awaited to finality, so views can lag them; poll like
     // the post-init state waits do.
-    let timeout = Duration::from_secs(30);
-    let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
         let resolved: Option<String> = contract.view(method_names::TEE_VERIFIER_ACCOUNT_ID).await?;
         anyhow::ensure!(
@@ -1477,18 +1470,9 @@ async fn deploy_and_trust_tee_verifier(
         );
         Ok(())
     })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(POLL_INTERVAL)
-            .with_max_times(max_times),
-    )
+    .retry(cluster_poll_retry())
     .await
-    .with_context(|| {
-        format!(
-            "tee-verifier not resolved as the trusted verifier within {}s",
-            timeout.as_secs()
-        )
-    })
+    .context("tee-verifier not resolved as the trusted verifier")
 }
 
 async fn add_initial_domains(

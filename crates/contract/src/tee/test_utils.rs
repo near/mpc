@@ -118,9 +118,9 @@ pub fn whitelist_dstack_measurements(
     }
 }
 
-/// Adds `compose_hash` to `launcher_hash`'s allowlist entry in a raw `STATE` blob, for
-/// sandbox tests to patch back in. The attestation fixture's compose hash is not
-/// derivable from the compiled-in template, so no vote can allow it.
+/// Adds a [`LauncherDockerComposeHash`] to a [`LauncherImageHash`]'s allowlist entry in a
+/// raw `STATE` blob, for sandbox tests to patch back in. The attestation fixture's compose
+/// hash is not derivable from the compiled-in template, so no vote can allow it.
 pub fn allow_launcher_compose_hash_in_state(
     state: &[u8],
     launcher_hash: &LauncherImageHash,
