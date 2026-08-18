@@ -24,8 +24,9 @@ pub struct VerificationResult {
     pub launcher_compose_hash: LauncherDockerComposeHash,
     pub expiry_timestamp_seconds: u64,
     pub measurements: ExpectedMeasurements,
-    /// Informational advisory IDs (e.g. `INTEL-DOC-10000`) surfaced by Intel's
-    /// PCS alongside an `UpToDate` TCB status. Empty in the common case.
+    /// Advisory IDs surfaced by Intel's PCS alongside an accepted TCB status:
+    /// informational lifecycle markers (`INTEL-DOC-NNNNN`) or, for an accepted
+    /// `OutOfDate` status, real Security Advisories (`INTEL-SA-NNNNN`).
     pub advisory_ids: Vec<String>,
 }
 

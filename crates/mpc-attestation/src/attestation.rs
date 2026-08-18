@@ -53,10 +53,13 @@ pub struct AcceptedAttestation {
     /// The validated attestation data extracted during verification, stored for
     /// later re-verification against the then-current allowed set.
     pub attestation: VerifiedAttestation,
-    /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
-    /// Intel's PCS alongside an [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) TCB status. They are not a security
-    /// failure — [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) is the sole security gate; these advisories convey
-    /// platform lifecycle information.
+    /// Advisory IDs surfaced by Intel's PCS alongside an accepted TCB status:
+    /// informational lifecycle markers (`INTEL-DOC-NNNNN`, e.g. post-ESU) and,
+    /// while [`OutOfDate`](tee_verifier_interface::TcbStatus::OutOfDate) is
+    /// accepted (see [`ACCEPTED_QUOTE_STATUSES`](attestation::attestation::ACCEPTED_QUOTE_STATUSES)),
+    /// real Security Advisories (`INTEL-SA-NNNNN`) naming the platform
+    /// mitigations the quoted machine is missing. Callers should log or expose
+    /// them.
     pub advisory_ids: Vec<String>,
 }
 

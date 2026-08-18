@@ -22,8 +22,15 @@ use tee_verifier_interface::{TDReport10, VerifiedReport};
 #[cfg(feature = "local-verify")]
 use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 
-/// Expected TCB status for a successfully verified TEE quote.
-const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
+/// TCB statuses accepted for a successfully verified TEE quote.
+///
+/// `OutOfDate` is a temporary concession: Intel's TCB baseline bump of
+/// August 12, 2026 downgraded platforms that are still awaiting vendor
+/// firmware updates, and rejecting them would evict live nodes faster than
+/// operators can patch. Restrict this back to `UpToDate` only once the
+/// affected operators have upgraded their firmware. `Revoked` and all other
+/// statuses remain rejected.
+pub const ACCEPTED_QUOTE_STATUSES: &[&str] = &["UpToDate", "OutOfDate"];
 
 // DSTACK_EVENT_TYPE is defined in https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/tdx-attest/src/lib.rs#L28
 // It is the same for all events
@@ -47,10 +54,12 @@ pub struct DstackAttestation {
 pub struct AcceptedDstackAttestation {
     /// The accepted measurement set this attestation matched.
     pub measurements: ExpectedMeasurements,
-    /// Informational advisory IDs (e.g. `INTEL-DOC-10000` post-ESU) surfaced by
-    /// Intel's PCS alongside an [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) TCB status. They are not a security
-    /// failure — [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) is the sole security gate; these advisories convey
-    /// platform lifecycle information.
+    /// Advisory IDs surfaced by Intel's PCS alongside an accepted TCB status:
+    /// informational lifecycle markers (`INTEL-DOC-NNNNN`, e.g. post-ESU) and,
+    /// while [`OutOfDate`](tee_verifier_interface::TcbStatus::OutOfDate) is
+    /// accepted (see [`ACCEPTED_QUOTE_STATUSES`]), real Security Advisories
+    /// (`INTEL-SA-NNNNN`) naming the platform mitigations the quoted machine
+    /// is missing. Callers should log or expose them.
     pub advisory_ids: Vec<String>,
 }
 
@@ -251,20 +260,23 @@ impl DstackAttestation {
 
     /// Verifies the TCB status and returns any advisory IDs reported alongside it.
     ///
-    /// The "UpToDate" TCB status indicates that the measured platform components (CPU
-    /// microcode, firmware, etc.) match the latest known good values published by Intel
-    /// and do not require any updates or mitigations — this is the sole security gate.
+    /// A status in [`ACCEPTED_QUOTE_STATUSES`] means the measured platform components
+    /// (CPU microcode, firmware, etc.) are acceptable — this is the sole security
+    /// gate. See the constant's documentation for why `OutOfDate` is temporarily
+    /// part of that set.
     ///
     /// Intel's PCS surfaces `advisory_ids` for two distinct purposes:
-    ///   1. `INTEL-SA-NNNNN`: real Security Advisories. Intel only attaches these to
-    ///      a non-UpToDate TCB status, so they are implicitly rejected by the status
-    ///      check below.
+    ///   1. `INTEL-SA-NNNNN`: real Security Advisories. Intel attaches these to
+    ///      statuses other than [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate);
+    ///      while `OutOfDate` is accepted they pass through to the caller instead
+    ///      of being implicitly rejected by the status check below.
     ///   2. `INTEL-DOC-NNNNN`: informational lifecycle markers (e.g. `INTEL-DOC-10000`
     ///      after a product's Extended Servicing Updates date). These may appear with
     ///      [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) and do not indicate a vulnerability; they are returned so the
     ///      caller can log/expose them.
     fn verify_tcb_status(report: &VerifiedReport) -> Result<Vec<String>, VerificationError> {
-        (report.status == EXPECTED_QUOTE_STATUS)
+        ACCEPTED_QUOTE_STATUSES
+            .contains(&report.status.as_str())
             .or_err(|| VerificationError::TcbStatusNotUpToDate(report.status.clone()))?;
 
         Ok(report.advisory_ids.clone())
@@ -575,9 +587,26 @@ mod tests {
     }
 
     #[test]
-    fn verify_tcb_status__should_reject_non_uptodate_status() {
+    fn verify_tcb_status__should_accept_outofdate_with_security_advisories() {
+        // `OutOfDate` is temporarily accepted (see `ACCEPTED_QUOTE_STATUSES`);
+        // the security advisories explaining the downgrade pass through to the
+        // caller.
+
         // Given
-        let report = verified_report("OutOfDate", vec![]);
+        let advisories = vec!["INTEL-SA-01192".to_string()];
+        let report = verified_report("OutOfDate", advisories.clone());
+
+        // When
+        let result = DstackAttestation::verify_tcb_status(&report);
+
+        // Then
+        assert_eq!(result, Ok(advisories));
+    }
+
+    #[test]
+    fn verify_tcb_status__should_reject_revoked_status() {
+        // Given
+        let report = verified_report("Revoked", vec![]);
 
         // When
         let result = DstackAttestation::verify_tcb_status(&report);
@@ -586,15 +615,15 @@ mod tests {
         assert_eq!(
             result,
             Err(VerificationError::TcbStatusNotUpToDate(
-                "OutOfDate".to_string()
+                "Revoked".to_string()
             ))
         );
     }
 
     #[test]
-    fn verify_tcb_status__should_reject_non_uptodate_status_with_advisories() {
+    fn verify_tcb_status__should_reject_status_outside_accepted_set() {
         // Given
-        let report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
+        let report = verified_report("ConfigurationNeeded", vec!["INTEL-SA-00001".to_string()]);
 
         // When
         let result = DstackAttestation::verify_tcb_status(&report);
@@ -603,7 +632,7 @@ mod tests {
         assert_eq!(
             result,
             Err(VerificationError::TcbStatusNotUpToDate(
-                "OutOfDate".to_string()
+                "ConfigurationNeeded".to_string()
             ))
         );
     }

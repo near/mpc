@@ -17,9 +17,12 @@ pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
     println!("--- Failure Details ---");
     match err {
         VerificationError::TcbStatusNotUpToDate(status) => {
-            println!("Reason:          TCB status is not up to date");
+            println!("Reason:          TCB status is not accepted");
             println!("TCB Status:      {status}");
-            println!("Expected Status: UpToDate");
+            println!(
+                "Accepted:        {}",
+                attestation::attestation::ACCEPTED_QUOTE_STATUSES.join(", ")
+            );
         }
         VerificationError::WrongHash {
             name,
