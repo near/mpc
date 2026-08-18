@@ -55,12 +55,14 @@ pub enum AptosRpcError {
 /// <https://api.mainnet.aptoslabs.com/v1/spec#/operations/get_ledger_info>
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct LedgerInfoResponse {
-    /// One byte in the spec, one digit in practice: 1 is mainnet, 2 is testnet.
+    /// A bare `uint8` JSON number, unlike the other Int fields Aptos serves as
+    /// strings.
     pub chain_id: u64,
 }
 
-/// Decimal without leading zeros, the form Aptos publishes chain ids in. Text that is not a
-/// number is returned unchanged, so a nonsense answer can be reported as it was given.
+/// The `uint8` chain id as digits without leading zeros, the form Aptos publishes it in. Text
+/// that is not a number is returned unchanged, so a nonsense answer can be reported as it was
+/// given.
 pub fn canonical_chain_id_text(chain_id: &str) -> String {
     match chain_id.parse::<u64>() {
         Ok(parsed) => parsed.to_string(),

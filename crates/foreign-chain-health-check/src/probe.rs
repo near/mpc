@@ -260,9 +260,11 @@ mod tests {
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
-    /// Aptos publishes its ledger chain id in decimal.
+    /// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
+    /// the same number as text.
     const APTOS_MAINNET: u64 = 1;
     const APTOS_TESTNET: u64 = 2;
+    const PROVIDER_NAME: &str = "publicnode";
     /// Bitcoin's genesis block hash, which is what tells its networks apart.
     const BITCOIN_MAINNET: &str =
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
@@ -924,8 +926,8 @@ mod tests {
         mock_ledger_info(&server, APTOS_MAINNET).await;
         let config = ForeignChainsConfig {
             aptos: Some(chain_config(
-                Some("1"),
-                one_provider("publicnode", &server.base_url()),
+                Some(&APTOS_MAINNET.to_string()),
+                one_provider(PROVIDER_NAME, &server.base_url()),
             )),
             ..Default::default()
         };
@@ -935,7 +937,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Aptos, "publicnode"),
+            must_status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
             ProviderStatus::Healthy
         );
     }
@@ -947,8 +949,8 @@ mod tests {
         mock_ledger_info(&server, APTOS_TESTNET).await;
         let config = ForeignChainsConfig {
             aptos: Some(chain_config(
-                Some("1"),
-                one_provider("publicnode", &server.base_url()),
+                Some(&APTOS_MAINNET.to_string()),
+                one_provider(PROVIDER_NAME, &server.base_url()),
             )),
             ..Default::default()
         };
@@ -958,10 +960,10 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Aptos, "publicnode"),
+            must_status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
             ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new("1"),
-                observed: NetworkFingerprint::new("2"),
+                expected: NetworkFingerprint::new(APTOS_MAINNET.to_string()),
+                observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
             }
         );
     }
