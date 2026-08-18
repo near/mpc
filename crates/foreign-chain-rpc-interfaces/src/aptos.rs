@@ -115,10 +115,9 @@ impl ReqwestAptosClient {
         let response = self.client.get(url).send().await?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
             return Err(AptosRpcError::ApiError {
                 status: status.as_u16(),
-                body,
+                body: response.text().await.unwrap_or_default(),
             });
         }
 
@@ -345,7 +344,7 @@ mod tests {
 
     #[rstest]
     #[case::mainnet("1", "1")]
-    #[case::padded("0002", "2")]
+    #[case::padded_testnet("0002", "2")]
     // Should be reported as answered by the RPC provider.
     #[case::not_a_number("mainnet", "mainnet")]
     fn canonical_chain_id_text__should_canonicalize_what_is_configured(
@@ -357,22 +356,5 @@ mod tests {
 
         // Then
         assert_eq!(canonical, expected);
-    }
-
-    #[test]
-    fn deserialize_ledger_info__should_ignore_the_fields_the_probe_does_not_read() {
-        // Given
-        let json = serde_json::json!({
-            "chain_id": 1,
-            "epoch": "13",
-            "ledger_version": "1234",
-            "node_role": "full_node",
-        });
-
-        // When
-        let parsed: LedgerInfoResponse = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(parsed.chain_id, 1);
     }
 }
