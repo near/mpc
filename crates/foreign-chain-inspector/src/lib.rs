@@ -470,7 +470,8 @@ fn is_retryable_status(status_code: u16) -> bool {
     matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
 }
 
-/// The meaning of a provider's "not found" answer
+/// A provider returning "not found" status on a path/method could have different meanings,
+/// depending on which method was called.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AbsenceMeaning {
     TransactionIsAbsent,
@@ -481,8 +482,6 @@ pub(crate) trait HasAbsenceMeaning {
     const ABSENCE: AbsenceMeaning;
 }
 
-/// Reads a chain client's outcome as an inspection outcome. The absence meaning comes from the
-/// response type.
 pub(crate) trait ClassifyRpcOutcome {
     type Response: HasAbsenceMeaning;
 

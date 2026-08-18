@@ -2,6 +2,7 @@ use crate::aptos::{AptosExtractedValue, AptosTransactionHash};
 use crate::{
     AbsenceMeaning, ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector,
     HasAbsenceMeaning, HexBytes, NetworkFingerprint, NetworkFingerprintInspector,
+    is_retryable_status,
 };
 use foreign_chain_rpc_interfaces::aptos::{
     AptosRpcClient, AptosRpcError, LedgerInfoResponse, TransactionResponse,
@@ -129,15 +130,10 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
                     ForeignChainInspectionError::RpcRequestRejected(message)
                 }
             },
-            // Rate limits and server errors are provider hiccups → transient, so the
-            // affected provider is dropped from the quorum instead of blocking it.
-            AptosRpcError::ApiError {
-                status: 408 | 429, ..
-            } => ForeignChainInspectionError::RpcRequestFailed(message),
-            AptosRpcError::ApiError { status, .. } if status >= 500 => {
+            AptosRpcError::ApiError { status, .. } if is_retryable_status(status) => {
                 ForeignChainInspectionError::RpcRequestFailed(message)
             }
-            // Retrying cannot change a deterministic 4xx, so it counts as a substantive verdict.
+            // Retrying cannot change a deterministic 4xx.
             AptosRpcError::ApiError { .. } => {
                 ForeignChainInspectionError::RpcRequestRejected(message)
             }
@@ -145,7 +141,6 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, AptosRpcError> {
                 ForeignChainInspectionError::Timeout
             }
             AptosRpcError::Http(_) => ForeignChainInspectionError::RpcRequestFailed(message),
-            // A body that will not decode is not transient.
             AptosRpcError::MalformedBody(_) => {
                 ForeignChainInspectionError::MalformedRpcResponse(message)
             }
@@ -827,7 +822,7 @@ mod tests {
             .expect("network_fingerprint should succeed");
 
         // Then
-        assert_eq!(fingerprint.to_string(), "2");
+        assert_eq!(fingerprint.to_string(), TESTNET_CHAIN_ID.to_string());
     }
 
     #[tokio::test]
