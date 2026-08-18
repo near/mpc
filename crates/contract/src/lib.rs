@@ -2022,14 +2022,9 @@ impl MpcContract {
     #[handle_result]
     pub fn cancel_node_migration(&mut self) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
-
-        match self.node_migrations.remove_migration(&account_id) {
-            Some(destination_node_info) => log!(
-                "cancel_node_migration: signer={:?}, destination_node_info={:?}",
-                account_id,
-                destination_node_info
-            ),
-            None => return Err(errors::NodeMigrationError::MigrationNotFound.into()),
+        log!("cancel_node_migration: signer={:?}", account_id);
+        if self.node_migrations.remove_migration(&account_id).is_none() {
+            return Err(errors::NodeMigrationError::MigrationNotFound.into());
         }
         Ok(())
     }
