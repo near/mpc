@@ -24,7 +24,7 @@ use std::f64;
 use std::io::{Write, stdout};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::OwnedMutexGuard;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 impl ListLoadtestCmd {
@@ -241,7 +241,7 @@ impl RunLoadtestCmd {
         let mut keys = Vec::new();
         for account_id in &loadtest_setup.load_senders {
             let account = setup.accounts.account(account_id);
-            keys.extend(account.all_access_keys().await);
+            keys.extend(account.all_access_key_handles());
         }
 
         let parallel_sign_calls = self
@@ -511,7 +511,7 @@ type LoadSenderAsyncFn = Arc<
 /// access key, so enough access keys would be needed to saturate the QPS.
 /// Also, the rpc client will internally apply rate limits, so that's another possible bottleneck.
 async fn send_load(
-    keys: Vec<OwnedMutexGuard<OperatingAccessKey>>,
+    keys: Vec<Arc<Mutex<OperatingAccessKey>>>,
     qps: f64,
     sender: LoadSenderAsyncFn,
     res_sender: tokio::sync::mpsc::Sender<TxRpcResponse>,
@@ -519,13 +519,13 @@ async fn send_load(
 ) -> tokio::task::JoinSet<()> {
     let mut join_set = tokio::task::JoinSet::new();
     let (permits_sender, permits_receiver) = flume::bounded(qps.ceil() as usize);
-    for mut key in keys {
+    for key in keys {
         let permits_receiver = permits_receiver.clone();
         let res_sender_clone = res_sender.clone();
         let sender = sender.clone();
         join_set.spawn(async move {
             while permits_receiver.recv_async().await.is_ok() {
-                let resp = sender(&mut key).await;
+                let resp = sender(&mut *key.lock().await).await;
                 res_sender_clone.send(resp).await.unwrap();
             }
         });

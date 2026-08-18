@@ -366,7 +366,7 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let mut access_key = setup.accounts.account(&contract).any_access_key().await;
+        let access_key = setup.accounts.account(&contract).any_access_key_handle();
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -394,6 +394,8 @@ impl MpcInitContractCmd {
         .unwrap();
 
         access_key
+            .lock()
+            .await
             .submit_tx_to_call_function(
                 &contract,
                 method_names::INIT,
@@ -503,7 +505,8 @@ impl MpcProposeUpdateContractCmd {
         let proposer = setup.accounts.account(proposer_account_id);
 
         let result = proposer
-            .any_access_key()
+            .any_access_key_handle()
+            .lock()
             .await
             .submit_tx_to_call_function(
                 &contract,
@@ -559,19 +562,21 @@ impl MpcVoteUpdateCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let key = account.any_access_key_handle();
             let contract = contract.clone();
             futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_UPDATE,
-                    &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                key.lock()
+                    .await
+                    .submit_tx_to_call_function(
+                        &contract,
+                        method_names::VOTE_UPDATE,
+                        &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
+                        300,
+                        0,
+                        near_primitives::views::TxExecutionStatus::Final,
+                        true,
+                    )
+                    .await
             });
         }
         let results = futures::future::join_all(futs).await;
@@ -648,20 +653,22 @@ impl MpcVoteAddDomainsCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let key = account.any_access_key_handle();
             let contract = contract.clone();
             let proposal = proposal.clone();
             futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_ADD_DOMAINS,
-                    &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                key.lock()
+                    .await
+                    .submit_tx_to_call_function(
+                        &contract,
+                        method_names::VOTE_ADD_DOMAINS,
+                        &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
+                        300,
+                        0,
+                        near_primitives::views::TxExecutionStatus::Final,
+                        true,
+                    )
+                    .await
             });
         }
         let results = futures::future::join_all(futs).await;
@@ -775,24 +782,26 @@ impl MpcVoteNewParametersCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let key = account.any_access_key_handle();
             let contract = contract.clone();
             let proposal = proposal.clone();
             futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_NEW_PARAMETERS,
-                    &serde_json::to_vec(&VoteNewParametersArgs {
-                        prospective_epoch_id,
-                        proposal,
-                    })
-                    .unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                key.lock()
+                    .await
+                    .submit_tx_to_call_function(
+                        &contract,
+                        method_names::VOTE_NEW_PARAMETERS,
+                        &serde_json::to_vec(&VoteNewParametersArgs {
+                            prospective_epoch_id,
+                            proposal,
+                        })
+                        .unwrap(),
+                        300,
+                        0,
+                        near_primitives::views::TxExecutionStatus::Final,
+                        true,
+                    )
+                    .await
             });
         }
         let results = futures::future::join_all(futs).await;
@@ -844,21 +853,23 @@ impl MpcVoteApprovedHashCmd {
 
         for account_id in accounts.iter().take(threshold as usize) {
             let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let key = account.any_access_key_handle();
             let contract = contract.clone();
             let code_hash = self.mpc_docker_image_hash.into();
 
             voting_futures.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_CODE_HASH,
-                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                key.lock()
+                    .await
+                    .submit_tx_to_call_function(
+                        &contract,
+                        method_names::VOTE_CODE_HASH,
+                        &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
+                        300,
+                        0,
+                        near_primitives::views::TxExecutionStatus::Final,
+                        true,
+                    )
+                    .await
             });
         }
 
