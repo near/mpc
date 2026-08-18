@@ -9,42 +9,19 @@ use near_primitives::views::TxExecutionStatus;
 use tokio::sync::Mutex;
 
 pub(crate) trait CallMpcContract {
-    /// Handle submitting as this account, waiting for the transaction to be
-    /// final and logging each call.
     fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller>;
-
-    /// As [`Self::call_mpc`], but silent: for calls whose arguments are a
-    /// contract blob rather than anything readable.
-    fn call_mpc_quiet(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller>;
 }
 
 impl CallMpcContract for OperatingAccount {
+    /// The returned handle logs each call and waits for transaction to be final
     fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller> {
-        handle(self, contract_id, true)
-    }
-
-    fn call_mpc_quiet(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller> {
-        handle(self, contract_id, false)
+        MpcContractHandle::new(
+            DevnetCaller::new(self.any_access_key_handle(), TxExecutionStatus::Final, true),
+            contract_id.clone(),
+        )
     }
 }
 
-fn handle(
-    account: &OperatingAccount,
-    contract_id: &AccountId,
-    verbose: bool,
-) -> MpcContractHandle<DevnetCaller> {
-    MpcContractHandle::new(
-        DevnetCaller::new(
-            account.any_access_key_handle(),
-            TxExecutionStatus::Final,
-            verbose,
-        ),
-        contract_id.clone(),
-    )
-}
-
-/// The devnet [`CallContract`] backend: submits through one of an operating
-/// account's access keys.
 pub struct DevnetCaller {
     key: Arc<Mutex<OperatingAccessKey>>,
     wait_until: TxExecutionStatus,
@@ -61,6 +38,13 @@ impl DevnetCaller {
             key,
             wait_until,
             verbose,
+        }
+    }
+
+    pub fn quiet(self) -> Self {
+        Self {
+            verbose: false,
+            ..self
         }
     }
 }

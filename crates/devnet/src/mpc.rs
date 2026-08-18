@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
-use crate::caller::CallMpcContract;
+use crate::caller::{CallMpcContract, DevnetCaller};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -505,7 +505,8 @@ impl MpcProposeUpdateContractCmd {
         let proposer = setup.accounts.account(proposer_account_id);
 
         let result = proposer
-            .call_mpc_quiet(&contract)
+            .call_mpc(&contract)
+            .map_caller(DevnetCaller::quiet)
             .propose_update(ProposeUpdateArgs {
                 code: Some(contract_code),
                 config: None,
