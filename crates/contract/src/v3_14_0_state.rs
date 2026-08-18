@@ -13,6 +13,7 @@ use near_sdk::{
     AccountId, env,
     store::{Lazy, LookupMap},
 };
+use std::time::Duration;
 
 use crate::{
     SupportedForeignChainsByNode,
@@ -55,6 +56,16 @@ impl From<MpcContract> for crate::MpcContract {
             env::panic_str("Contract must be in running state when migrating.");
         }
 
+        let mut tee_state = old.tee_state;
+        tee_state.extend_dstack_attestation_expiries(Duration::from_secs(
+            mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS,
+        ));
+
+        let mut config = old.config;
+        config.launcher_hash_unused_ttl_seconds = config
+            .launcher_hash_unused_ttl_seconds
+            .max(crate::config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS);
+
         crate::MpcContract {
             protocol_state: old.protocol_state,
             pending_signature_requests: old.pending_signature_requests,
@@ -62,8 +73,8 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
-            config: old.config,
-            tee_state: old.tee_state,
+            config,
+            tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,
