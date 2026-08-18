@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.14.1] - 2026-08-18
+
+### ⚙️ Miscellaneous Tasks
+
+- (@gilcu3): Update contract migrations after 3.14 release (#4081)
+
+- (@pbeza): *(deny)* Ignore the unmaintained advisories for `im` and its dependencies (#4116)
+
+- (@dependabot[bot]): Bump the rust-minor-and-patch group with 4 updates (#4113)
+
+- (@barakeinav1): Install catatonit for repro-env podman builds (#4125)
+
+- (@barakeinav1): Install catatonit in the image-publishing workflows (#4128)
+
+- (@gilcu3): Move runner images to ubuntu 26.04 (#4134)
+
+- (@kevindeforth): *(contract)* Extend attestation expiry time during migration
+
+
 ## [3.14.0] - 2026-08-05
 
 ### 🚀 Features
