@@ -1,20 +1,14 @@
 //! Confidential key derivation functionality
 
 use crate::crypto_shared::types::PublicKeyExtended;
-use crate::errors::{InvalidState, TeeError};
-use crate::{
-    errors::Error,
-    primitives::ckd::{CKDRequest, app_public_key_check, ckd_output_check},
-};
-use near_mpc_contract_interface::types::{self as dtos, CKDResponse};
-use near_mpc_contract_interface::{method_names, types::CKDRequestArgs};
-
+use crate::errors::{Error, InvalidState, TeeError};
+use crate::primitives::ckd::{CKDRequest, app_public_key_check, ckd_output_check};
 use crate::primitives::signature::YieldIndex;
+use crate::{MpcContract, MpcContractExt, pending_requests};
 use dtos::{DomainId, DomainPurpose};
+use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::types::{self as dtos, CKDRequestArgs, CKDResponse};
 use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
-
-use crate::pending_requests;
-use crate::{MpcContract, MpcContractExt};
 
 #[near]
 impl MpcContract {
@@ -167,29 +161,23 @@ pub(crate) const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yocton
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::api::test_utils::*;
-    use std::panic;
-
+    use crate::api::test_utils::{
+        SharedSecretKey, basic_setup, basic_setup_with_protocol, submit_valid_attestations,
+        with_active_participant_and_attested_context,
+    };
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
-
-    use crate::*;
-
-    use dtos::{Attestation, MockAttestation};
-    use dtos::{Curve, Protocol};
-    use elliptic_curve::Field as _;
-    use elliptic_curve::Group;
+    use crate::state::ProtocolContractState;
+    use dtos::{Attestation, Curve, MockAttestation, Protocol};
+    use elliptic_curve::{Field as _, Group};
     use k256::{self, elliptic_curve};
-
     use near_mpc_contract_interface::types::CKDAppPublicKey;
-
-    use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
-
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::{AccountId, testing_env};
     use rand::SeedableRng;
     use rand::rngs::OsRng;
-
     use rand_core::CryptoRngCore;
     use rstest::rstest;
-
+    use std::panic;
     use threshold_signatures::confidential_key_derivation as ckd;
 
     pub fn new_ckd_pv_app_pk(
