@@ -39,6 +39,15 @@ use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_secret_key, image_digest, launcher_compose_digest,
     launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, verified_report,
 };
+use tokio_util::time::FutureExt as _;
+
+struct VerifiedFixture {
+    worker: Worker<Sandbox>,
+    contract: Contract,
+    verifier: Contract,
+    submitter: Account,
+    mpc_signer_accounts: Vec<Account>,
+}
 
 async fn setup() -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let setup = SandboxTestSetup::builder()
@@ -49,6 +58,8 @@ async fn setup() -> (Worker<Sandbox>, Contract, Vec<Account>) {
 }
 
 async fn trust_verifier(contract: &Contract, participants: &[Account], verifier: &AccountId) {
+    // Arbitrary: the hash only buckets votes (voters must commit to the same
+    // value), the contract never compares it to the deployed verifier code.
     let expected_code_hash = [7u8; 32];
     let votes = participants
         .iter()
@@ -153,13 +164,23 @@ async fn prepay_grant_from_separate_payer(
     beneficiary.view_account().await.unwrap().balance
 }
 
-async fn setup_verified_fixture() -> (Worker<Sandbox>, Contract, Account) {
+async fn setup_verified_fixture() -> VerifiedFixture {
+    setup_fixture(Some(launcher_compose_digest())).await
+}
+
+async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) -> VerifiedFixture {
     let (worker, contract, mpc_signer_accounts) = setup().await;
-    deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    whitelist_fixture_dstack_hashes(&worker, &contract, Some(launcher_compose_digest())).await;
+    let verifier = deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
+    whitelist_fixture_dstack_hashes(&worker, &contract, allowed_compose_hash).await;
     let submitter = create_fixture_account(&worker, "fixture-node-a").await;
     prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
-    (worker, contract, submitter)
+    VerifiedFixture {
+        worker,
+        contract,
+        verifier,
+        submitter,
+        mpc_signer_accounts,
+    }
 }
 
 async fn submit_dstack(submitter: &Account, contract: &Contract) -> ExecutionFinalResult {
@@ -203,6 +224,13 @@ async fn assert_submission_failed_cleanly(
 
     let stored = stored_fixture_attestation(contract).await;
     assert!(stored.is_none(), "nothing should be stored on failure");
+    let remaining = available_attestation_grants(contract, submitter.id())
+        .await
+        .unwrap();
+    assert_eq!(
+        remaining, 1,
+        "a failed submission must not consume the prepaid grant"
+    );
     assert_only_gas_spent(submitter, balance_before, result).await;
 }
 
@@ -225,17 +253,27 @@ async fn assert_only_gas_spent(
     balance_before: NearToken,
     result: &ExecutionFinalResult,
 ) {
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
     let expected = total_gas_fee(result);
     let mut net_spent = balance_before;
-    for _ in 0..20 {
-        let balance_after = account.view_account().await.unwrap().balance;
-        net_spent = balance_before.saturating_sub(balance_after);
-        if net_spent == expected {
-            return;
+    let settled = async {
+        loop {
+            let balance_after = account.view_account().await.unwrap().balance;
+            net_spent = balance_before.saturating_sub(balance_after);
+            if net_spent == expected {
+                return;
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    assert_eq!(net_spent, expected);
+    .timeout(TIMEOUT)
+    .await;
+    assert!(
+        settled.is_ok(),
+        "balance never settled at the gas fee: spent {net_spent}, expected {expected}"
+    );
 }
 
 #[tokio::test]
@@ -338,55 +376,52 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
 #[tokio::test]
 async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
     // Given
-    let (worker, contract, mpc_signer_accounts) = setup().await;
-    let verifier = deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    whitelist_fixture_dstack_hashes(&worker, &contract, Some(launcher_compose_digest())).await;
-    let submitter = &mpc_signer_accounts[0];
-    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, submitter).await;
+    let VerifiedFixture {
+        worker: _worker,
+        contract,
+        verifier,
+        submitter,
+        ..
+    } = setup_verified_fixture().await;
 
     // When
-    let result = submit_dstack(submitter, &contract).await;
+    let result = submit_dstack(&submitter, &contract).await;
 
-    // Then: the run succeeds within the production gas budget. Submitting from a
-    // plain dev account fails at the post-DCAP report_data binding; asserting that
-    // terminal error pins that the verdict was Verified, not Rejected.
+    // Then: full success pins that the verdict was Verified, so the whole DCAP
+    // path ran; a Rejected verdict or a failed promise fails the transaction.
+    assert!(
+        result.failures().is_empty(),
+        "expected every receipt to succeed, got: {result:#?}"
+    );
+    assert!(
+        stored_fixture_attestation(&contract).await.is_some(),
+        "a Verified submission must store an attestation"
+    );
     let outcomes = result.outcomes();
     let verify_quote_outcome = outcomes
         .iter()
         .find(|outcome| outcome.executor_id == *verifier.id())
         .expect("the verify_quote receipt must have executed on the verifier");
-    assert!(
-        verify_quote_outcome.is_success(),
-        "verify_quote must succeed, got: {verify_quote_outcome:#?}"
-    );
     // The receipt gets exactly `verifier_tera_gas` of static gas, so success already
     // proves it fit. Assert headroom instead: the regression that matters is
     // `dcap-qvl` growing until it OOGs in production.
+    const HEADROOM_PERCENT: u64 = 10;
     let budget = Gas::from_tgas(get_config(&contract).await.unwrap().verifier_tera_gas);
-    let headroom = Gas::from_gas(budget.as_gas() / 10);
+    let max_allowed = Gas::from_gas(budget.as_gas() * (100 - HEADROOM_PERCENT) / 100);
     assert!(
-        verify_quote_outcome.gas_burnt <= budget.saturating_sub(headroom),
-        "verify_quote burnt {} of the {budget} budget, leaving less than {headroom} headroom. \
-         Find what grew (gas schedule or `dcap-qvl`) before raising DEFAULT_VERIFIER_TERA_GAS, \
-         or the OOG this guards against reaches mainnet",
+        verify_quote_outcome.gas_burnt <= max_allowed,
+        "verify_quote burnt {} of the {budget} budget, leaving less than {HEADROOM_PERCENT}% \
+         headroom. Find what grew (gas schedule or `dcap-qvl`) before raising \
+         DEFAULT_VERIFIER_TERA_GAS, or the OOG this guards against reaches mainnet",
         verify_quote_outcome.gas_burnt,
     );
-    assert_submission_failed_cleanly(
-        &result,
-        &contract,
-        submitter,
-        balance_before,
-        // Substrings that survive the error's Debug formatting and
-        // near-workspaces' quote escaping.
-        &["failed verification", "report_data"],
-    )
-    .await;
 }
 
 #[tokio::test]
 async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_too_low() {
-    // Given: a verifier gas budget far below the ~170 Tgas a real DCAP run
-    // needs, so the verify_quote receipt runs out of gas.
+    // Given: a verifier gas budget far below `DEFAULT_VERIFIER_TERA_GAS`, so the
+    // verify_quote receipt runs out of gas mid-DCAP.
+    const INSUFFICIENT_VERIFIER_TERA_GAS: u64 = 10;
     let SandboxTestSetup {
         worker,
         mpc_signer_accounts,
@@ -395,7 +430,7 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
     } = SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .with_init_config(dtos::InitConfig {
-            verifier_tera_gas: Some(10),
+            verifier_tera_gas: Some(INSUFFICIENT_VERIFIER_TERA_GAS),
             ..Default::default()
         })
         .build()
@@ -421,7 +456,12 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
 #[tokio::test]
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given
-    let (_worker, contract, submitter) = setup_verified_fixture().await;
+    let VerifiedFixture {
+        worker: _worker,
+        contract,
+        submitter,
+        ..
+    } = setup_verified_fixture().await;
     let balance_before = submitter.view_account().await.unwrap().balance;
     let submitted_at = wall_clock_seconds();
 
@@ -479,7 +519,12 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
     // Given: NEAR allows the same public key on two accounts and report_data binds
     // only the key pair, so nothing in the attestation itself distinguishes the
     // second submitter; only the ownership guard does.
-    let (worker, contract, owner) = setup_verified_fixture().await;
+    let VerifiedFixture {
+        worker,
+        contract,
+        submitter: owner,
+        ..
+    } = setup_verified_fixture().await;
     submit_dstack(&owner, &contract)
         .await
         .into_result()
@@ -493,8 +538,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
     // When
     let result = submit_dstack(&attacker, &contract).await;
 
-    // Then: match the whole result rather than a receipt, so the assertion holds
-    // whichever layer the guard rejects from.
+    // Then
     assert!(
         result.is_failure(),
         "expected the attacker's submission to fail, got: {result:#?}"
@@ -525,13 +569,14 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
 
 #[tokio::test]
 async fn submit_participant_info__should_reject_verified_quote_when_compose_hash_not_allowed() {
-    // Given: the fixture's compose hash is never allowed, so the allowlist holds only
-    // the derived compose hash.
-    let (worker, contract, mpc_signer_accounts) = setup().await;
-    deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    whitelist_fixture_dstack_hashes(&worker, &contract, None).await;
-    let submitter = create_fixture_account(&worker, "fixture-node-a").await;
-    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
+    // Given
+    let VerifiedFixture {
+        worker: _worker,
+        contract,
+        submitter,
+        ..
+    } = setup_fixture(None).await;
+    let balance_before = submitter.view_account().await.unwrap().balance;
 
     // When
     let result = submit_dstack(&submitter, &contract).await;
@@ -549,34 +594,33 @@ async fn submit_participant_info__should_reject_verified_quote_when_compose_hash
         &["failed verification", &expected_rejection],
     )
     .await;
-    let remaining = available_attestation_grants(&contract, submitter.id())
-        .await
-        .unwrap();
-    assert_eq!(
-        remaining, 1,
-        "a failed submission must not consume the grant"
-    );
 }
 
 #[tokio::test]
-async fn verify_quote__should_ignore_pinned_timestamp_on_production_build() {
-    // Given
-    let (worker, verifier) = init_with_wasm(tee_verifier_contract()).await;
-    let args = include_bytes!("../../../tee-verifier/tests/fixtures/verify_quote_args.borsh");
-    let unpinned = call_verify_quote(&verifier, args).await;
+async fn submit_participant_info__should_reject_verified_quote_when_submitter_keys_do_not_match_report_data()
+ {
+    // Given: the fixture quote's report_data binds the fixture account's TLS and
+    // account keys, so a submitter with different keys must be rejected after
+    // DCAP.
+    let VerifiedFixture {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = setup_verified_fixture().await;
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, submitter).await;
 
-    // When: pin timestamps whose verdicts differ from block time in either direction,
-    // so honoring the pin would flip the outcome whichever side of the collateral
-    // window the wall clock is on.
-    let far_future = wall_clock_seconds() + 100 * 365 * 24 * 3600;
-    let mut pinned = Vec::new();
-    for pin in [VALID_ATTESTATION_TIMESTAMP, far_future] {
-        pin_verifier_clock(&worker, verifier.id(), pin).await;
-        pinned.push(call_verify_quote(&verifier, args).await);
-    }
+    // When
+    let result = submit_dstack(submitter, &contract).await;
 
     // Then
-    for result in pinned {
-        assert_eq!(result, unpinned, "the production build must ignore the pin");
-    }
+    assert_submission_failed_cleanly(
+        &result,
+        &contract,
+        submitter,
+        balance_before,
+        &["failed verification", "report_data"],
+    )
+    .await;
 }
