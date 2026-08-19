@@ -16,13 +16,12 @@ Two separate things meet here.
    straight from a client instead of reading them off the chain. Those requests are
    authorized under NEP-641, so every node has to resolve them itself.
 
-The problem is where they meet. When a request arrives as a transaction, the chain does
-the hard part for us: every node reads the same request from the same place, and the
-block it landed in is the obvious one to resolve against. An off-chain request arrives
-with none of that, and the nodes still have to resolve it against state fresh enough for
-the timestamp rule (NEP-641), and agree on the answer.
+For on-chain requests, the blockchain handles authorization and consensus for us. An
+off-chain request arrives with none of that, and the nodes still have to resolve it against
+a state fresh enough for the timestamp rule in NEP-641, and agree on the answer.
 
-We can achieve off-chain requests without tracking a new shards or trusted RPC providers:
+We can achieve off-chain requests without tracking a new shards or trusted RPC providers in
+MPC nodes:
 
 - A client, meaning a wallet, dApp, or backend service, sends its signed message to a
   **relay service** we run.
