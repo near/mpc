@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.14.1] - 2026-08-19
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4177](https://github.com/near/mpc/pull/4177)(@kevindeforth): Move runner images to ubuntu 26.04 (#4177)
+
+- [#4179](https://github.com/near/mpc/pull/4179)(@kevindeforth): Update contract migrations after 3.14 release (#4081) (#4179)
+
+- [#4178](https://github.com/near/mpc/pull/4178)(@kevindeforth): Extend attestation expiration dates (#4178)
+
+- [#4186](https://github.com/near/mpc/pull/4186)(@kevindeforth): Fix the skopeo image to use an immutable tag (#4186)
+
+
 ## [3.14.0] - 2026-08-05
 
 ### 🚀 Features
