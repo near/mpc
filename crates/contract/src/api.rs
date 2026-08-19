@@ -7,7 +7,9 @@ pub mod governance;
 pub mod key_events;
 pub mod keys;
 pub mod lifecycle;
+pub mod node_migration;
 pub mod sign;
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 pub mod test_utils;
+pub mod update;
