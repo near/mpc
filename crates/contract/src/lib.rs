@@ -8513,4 +8513,104 @@ mod tests {
              {WORST_CASE_ENTRY_COST_CEILING} at today's storage price"
         );
     }
+    #[test]
+    fn migrate__should_extend_dstack_expiries_and_raise_the_launcher_ttl() {
+        // Given persisted 3.14.0 state holding a dstack and a mock attestation.
+        const EXPIRY_SECONDS: u64 = 1_000_000;
+        let mock = MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
+            expected_measurements: None,
+        };
+        let (mut contract, participants, _, _) = setup_running_contract_with_domain(3, 2, 2);
+        contract.config.launcher_hash_unused_ttl_seconds = 1_209_600; // deployed 3.14.0 value: 14 days
+        let entries = participants.participants();
+        let (participant_account, _, participant) = &entries[0];
+        let dstack_key = participant.tls_public_key.clone();
+        let mock_key = entries[1].2.tls_public_key.clone();
+        let outsider_key = bogus_ed25519_public_key();
+        insert_attestation(
+            &mut contract,
+            participant_account.as_str(),
+            &dstack_key,
+            dstack_attestation_expiring_at(EXPIRY_SECONDS),
+        );
+        insert_attestation(
+            &mut contract,
+            entries[1].0.as_str(),
+            &mock_key,
+            VerifiedAttestation::Mock(mock.clone()),
+        );
+        insert_attestation(
+            &mut contract,
+            "outsider.near",
+            &outsider_key,
+            dstack_attestation_expiring_at(EXPIRY_SECONDS),
+        );
+        env::state_write(&contract);
+        drop(contract);
+
+        // When migrating, then writing state back as the `#[init]` wrapper does on chain.
+        let migrated = MpcContract::migrate().expect("3.14.0 state must migrate");
+        env::state_write(&migrated);
+        drop(migrated);
+
+        // Then the dstack expiry moved by one attestation window and the mock is untouched.
+        let reloaded = try_state_read::<MpcContract>().unwrap().unwrap();
+        let stored = &reloaded.tee_state.stored_attestations;
+        assert_matches!(
+            &stored.get(&dstack_key).unwrap().verified_attestation,
+            VerifiedAttestation::Dstack(dstack)
+                if dstack.expiry_timestamp_seconds
+                    == EXPIRY_SECONDS + 14 * 24 * 60 * 60
+        );
+        assert_matches!(
+            &stored.get(&mock_key).unwrap().verified_attestation,
+            VerifiedAttestation::Mock(stored) if *stored == mock
+        );
+
+        // A dstack attestation belonging to a non-participant is left alone: the migration
+        // walks the participant set, not the whole map.
+        assert_matches!(
+            &stored.get(&outsider_key).unwrap().verified_attestation,
+            VerifiedAttestation::Dstack(dstack)
+                if dstack.expiry_timestamp_seconds == EXPIRY_SECONDS
+        );
+
+        // And the launcher TTL was raised, keeping `Config::validate`'s invariant true.
+        assert_ne!(1_209_600, config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS);
+        assert_eq!(
+            reloaded.config.launcher_hash_unused_ttl_seconds,
+            config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS
+        );
+    }
+
+    fn insert_attestation(
+        contract: &mut MpcContract,
+        account_id: &str,
+        tls_public_key: &Ed25519PublicKey,
+        verified_attestation: VerifiedAttestation,
+    ) {
+        contract.tee_state.stored_attestations.insert(
+            tls_public_key.clone(),
+            NodeAttestation {
+                node_id: NodeId {
+                    account_id: account_id.parse().unwrap(),
+                    tls_public_key: tls_public_key.clone(),
+                    account_public_key: bogus_ed25519_public_key(),
+                },
+                verified_attestation,
+            },
+        );
+    }
+
+    fn dstack_attestation_expiring_at(expiry_timestamp_seconds: u64) -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: MAX_HASH.into(),
+            launcher_compose_hash: MAX_HASH.into(),
+            expiry_timestamp_seconds,
+            measurements: default_measurements()[0],
+        })
+    }
 }

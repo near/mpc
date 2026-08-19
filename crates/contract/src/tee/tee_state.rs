@@ -497,6 +497,29 @@ impl TeeState {
         removed
     }
 
+    pub(crate) fn extend_dstack_attestation_expiries(
+        &mut self,
+        participants: &Participants,
+        extension: Duration,
+    ) {
+        let extension_seconds = extension.as_secs();
+
+        for (_, _, participant) in participants.participants() {
+            let Some(node_attestation) = self
+                .stored_attestations
+                .get_mut(&participant.tls_public_key)
+            else {
+                continue;
+            };
+            if let VerifiedAttestation::Dstack(dstack) = &mut node_attestation.verified_attestation
+            {
+                dstack.expiry_timestamp_seconds = dstack
+                    .expiry_timestamp_seconds
+                    .saturating_add(extension_seconds);
+            }
+        }
+    }
+
     /// Returns the list of accounts that currently have TEE attestations stored.
     /// Note: This may include accounts that are no longer active protocol participants.
     pub fn get_tee_accounts(&self) -> Vec<NodeId> {

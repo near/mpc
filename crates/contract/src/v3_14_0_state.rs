@@ -8,11 +8,14 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+
+const PRE_3_14_1_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 use near_mpc_contract_interface::types::{Metrics, VerifyForeignTransactionRequest};
 use near_sdk::{
     AccountId, env,
     store::{Lazy, LookupMap},
 };
+use std::time::Duration;
 
 use crate::{
     SupportedForeignChainsByNode,
@@ -51,9 +54,24 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
-        if !matches!(old.protocol_state, ProtocolContractState::Running(_)) {
+        let ProtocolContractState::Running(running) = &old.protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
-        }
+        };
+        let participants = running.parameters.participants().clone();
+
+        let mut tee_state = old.tee_state;
+        tee_state.extend_dstack_attestation_expiries(
+            &participants,
+            Duration::from_secs(
+                mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS
+                    - PRE_3_14_1_EXPIRATION_DURATION_SECONDS,
+            ),
+        );
+
+        let mut config = old.config;
+        config.launcher_hash_unused_ttl_seconds = config
+            .launcher_hash_unused_ttl_seconds
+            .max(crate::config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS);
 
         crate::MpcContract {
             protocol_state: old.protocol_state,
@@ -62,8 +80,8 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
-            config: old.config,
-            tee_state: old.tee_state,
+            config,
+            tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             metrics: old.metrics,

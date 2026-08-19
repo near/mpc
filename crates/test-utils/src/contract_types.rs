@@ -19,6 +19,6 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         resolve_verification_tera_gas: value + 15,
         fail_attestation_submission_tera_gas: value + 16,
         // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
-        launcher_hash_unused_ttl_seconds: value + (14 * 24 * 60 * 60),
+        launcher_hash_unused_ttl_seconds: value + (21 * 24 * 60 * 60),
     }
 }
