@@ -1,7 +1,5 @@
 //! Test fixtures shared by more than one of the per-feature test modules in this tree.
 
-use std::str::FromStr;
-
 use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::Error;
@@ -13,23 +11,23 @@ use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdPara
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::gen_running_state;
 use crate::storage_keys::StorageKey;
-use elliptic_curve::Field as _;
-use elliptic_curve::Group;
-use k256::elliptic_curve;
-use near_account_id::AccountId;
-use near_mpc_contract_interface::types as dtos;
-use near_sdk::store::{IterableMap, Lazy, LookupMap};
-use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
-use rand_core::CryptoRngCore;
-use threshold_signatures::confidential_key_derivation as ckd;
-use threshold_signatures::frost_core::Group as _;
-use threshold_signatures::frost_ed25519::Ed25519Group;
-use threshold_signatures::frost_secp256k1::Secp256K1Group;
-
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
 };
+use elliptic_curve::{Field as _, Group};
+use k256::elliptic_curve;
+use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
+use near_sdk::store::{IterableMap, Lazy, LookupMap};
+use near_sdk::test_utils::VMContextBuilder;
+use near_sdk::{NearToken, VMContext, testing_env};
+use rand_core::CryptoRngCore;
+use std::str::FromStr;
+use threshold_signatures::confidential_key_derivation as ckd;
+use threshold_signatures::frost_core::Group as _;
+use threshold_signatures::frost_ed25519::Ed25519Group;
+use threshold_signatures::frost_secp256k1::Secp256K1Group;
 
 #[derive(Debug)]
 pub(crate) enum SharedSecretKey {
