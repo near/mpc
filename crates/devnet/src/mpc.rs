@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
-use crate::caller::{CallMpcContract, DevnetCaller};
+use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -506,7 +506,7 @@ impl MpcProposeUpdateContractCmd {
 
         let result = proposer
             .call_mpc(&contract)
-            .map_caller(DevnetCaller::quiet)
+            .with_verbosity(Verbosity::Quiet)
             .propose_update(ProposeUpdateArgs {
                 code: Some(contract_code),
                 config: None,

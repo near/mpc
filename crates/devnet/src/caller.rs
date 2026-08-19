@@ -16,7 +16,11 @@ impl CallMpcContract for OperatingAccount {
     /// The returned handle logs each call and waits for transaction to be final
     fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller> {
         MpcContractHandle::new(
-            DevnetCaller::new(self.any_access_key_handle(), TxExecutionStatus::Final, true),
+            DevnetCaller::new(
+                self.any_access_key_handle(),
+                TxExecutionStatus::Final,
+                Verbosity::Verbose,
+            ),
             contract_id.clone(),
         )
     }
@@ -25,27 +29,39 @@ impl CallMpcContract for OperatingAccount {
 pub struct DevnetCaller {
     key: Arc<Mutex<OperatingAccessKey>>,
     wait_until: TxExecutionStatus,
-    verbose: bool,
+    verbosity: Verbosity,
+}
+
+pub enum Verbosity {
+    Verbose,
+    Quiet,
 }
 
 impl DevnetCaller {
-    pub fn new(
+    pub(crate) fn new(
         key: Arc<Mutex<OperatingAccessKey>>,
         wait_until: TxExecutionStatus,
-        verbose: bool,
+        verbosity: Verbosity,
     ) -> Self {
         Self {
             key,
             wait_until,
-            verbose,
+            verbosity,
         }
     }
 
-    pub fn quiet(self) -> Self {
-        Self {
-            verbose: false,
-            ..self
-        }
+    pub(crate) fn with_verbosity(self, verbosity: Verbosity) -> Self {
+        Self { verbosity, ..self }
+    }
+}
+
+pub trait WithVerbosity {
+    fn with_verbosity(self, verbosity: Verbosity) -> Self;
+}
+
+impl WithVerbosity for MpcContractHandle<DevnetCaller> {
+    fn with_verbosity(self, verbosity: Verbosity) -> Self {
+        self.map_caller(|caller| caller.with_verbosity(verbosity))
     }
 }
 
@@ -68,7 +84,7 @@ impl CallContract for DevnetCaller {
                 call_args.gas.as_tgas(),
                 call_args.deposit.as_yoctonear(),
                 self.wait_until.clone(),
-                self.verbose,
+                matches!(self.verbosity, Verbosity::Verbose),
             )
             .await
     }
