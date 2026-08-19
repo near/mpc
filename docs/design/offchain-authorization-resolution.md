@@ -185,8 +185,8 @@ introduced (see also [validators](https://docs.near.org/protocol/network/validat
 2. At block B certain accounts or keys were not there at all.
    A node holding no state for those shards has to check both without trusting the provider.
 
-What makes that possible is how NEAR stores state. Each shard's state is arranged as a Merkle
-trie, in which every node is named by the hash of its contents, so a parent's hash covers its
+Each shard in NEAR blockchain stores state as a Merkle
+trie, in which every node is keyed by the hash of its contents. A parent's hash covers its
 children and the hash at the root is a fingerprint of that shard's entire state.
 
 ![Structure: the block header at B carries one fingerprint over every shard's state root. Shard 1's state root is the top of that shard's Merkle trie, and the path down through its trie nodes reaches the storage key and value the resolution read. The branches to either side are not needed and are not in the bundle.](diagrams/proof-structure.png)
@@ -199,14 +199,10 @@ showing no such child exists. Storage recording notes down the trie nodes being 
 This only proves what was the blockchain state held by the witness provider at block B. It
 says nothing about which entries the contract code actually read, nor that the provider's claimed
 answer follows from them. A dishonest provider could ship valid proofs alongside a
-fabricated result. The proofs make the ingredients trustworthy, replaying the resolution on
+fake result. The proofs only make the ingredients trustworthy, replaying the resolution on
 each MPC node makes the answer trustworthy (Component 6). Neither half is enough on its own.
 
-Those trie paths stop at the shard's state root, which on its own is just a number the
-witness provider handed over. The block header carries a fingerprint of every shard's state
-root together, and each MPC node validates headers itself rather than taking them from the
-bundle. So the bundle includes one last path, from this shard's root up into that
-fingerprint, and a node checks every proof against a header it already trusts (Component 5).
+Those trie paths stop at the shard's state root, which on its own is just a number the witness provider claims. The bundle (Component 3) closes this gap with one more path, from the shard's root up into the block header, which commits to every shard's state root. Each MPC node anchors verification (Component 5) by looking the named block up in the headers its embedded indexer has already validated, then checks every proof against it.
 
 ![Proof chain: the value read, or the gap where an absent key would sit, hashes up through the trie nodes on its path to the shard's state root, then through a path over all shard roots, landing on the block header at B, which the node validated itself. Everything except the header travels in the witness bundle.](diagrams/proof-chain.png)
 
@@ -224,19 +220,20 @@ which RPC providers, exchanges and indexer operators run routinely.
 
 The software does not exist, no public RPC provider would record a view call and prove it. Building it looks tractable and needs
 no change to nearcore, but we need to align with the nearcore team early on 2 questions:
-1. Would they ship the endpoint in `neard` itself, so any full node could serve it by upgrading? 
+
+1. Would they ship the endpoint in `neard` itself, so any full node could serve it by upgrading?
 2. If not, we build it on crates they mark internal (`node-runtime`, `near-store`, `near-epoch-manager`, all `publish = false`), and we need to
-know what stability we can expect from them. 
+   know what stability we can expect from them.
 
-Building `witness_view_call`, at the end of this document expands on requirements for this.
-
+The Q&A section [Can `witness_view_call` be built, and who owns
+it?](#can-witness_view_call-be-built-and-who-owns-it) expands on requirements for this.
 
 ### Component 3: the witness bundle
 
 Everything a MPC node needs to redo the resolution itself while holding no state for the shards
 involved.
 
-```
+```rust
 WitnessBundle {
   block_hash: CryptoHash,                 // the block everything resolved at,
                                           // always the provider's latest final block
@@ -265,759 +262,361 @@ WitnessBundle {
 }
 ```
 
-A contract can read every field of the execution context, so the provider and the nodes must
-run with identical values or produce different answers for reasons unrelated to
-authorization. They are block-level, so one context covers every call in the walk. Two things
-are deliberately absent: the shard each call runs on, which follows from the account and the
-epoch's shard layout, and the random seed, which in view mode is the state root.
+The design choices behind the fields:
 
-**One walk, many accounts.** A multisig sends the walk to its members, who may be contracts
-on other shards, so a single bundle routinely spans several accounts, several contracts and
-several shards. Grouping recorded nodes under the shard they came from keeps each set with
-the root it hashes toward, which is how a verifier rebuilds them anyway: one partial trie per
-shard.
+- **The execution context is block-level**, both witness provider and the MPC node must execute/verify in context of the same Near block.
+- **Witness entries are grouped by shard, not by contract.** A verifier rebuilds one partial
+  trie per shard, overlapping paths are stored once.
+- **Code is keyed by hash, not by account.** When multiple multisig members run the same wallet
+  implementation, the contract code is only sent once.
+- **The provider always includes the code**. The provider does not know if the contract code is cached at its downstreams,
+  so it always includes the code in the response. The Relay may decide to include only contract code hash or full contract code.
+- **The bundle covers the whole authorization tree.** NEP-641 leaves recursion to the
+  caller, so the provider runs the `pending` loop itself to find out what to record, all at
+  one block. As a simpler first version we could have the relay drive the loop instead, this is up to discussion.
+- **Absence is proved** When an access key or account is missing, the
+  bundle carries a non-inclusion proof.
 
-Note that there is one entry per shard, not per contract. A shard's trie holds every account
-on it, and every trie key embeds the account it belongs to, so two contracts on the same
-shard read out of the same rebuilt trie without any chance of collision. A node picks the
-entry to use by deriving the account's shard from the epoch's shard layout. Within a shard,
-overlapping paths also cost nothing twice, since nodes are content-addressed.
+**How big is a bundle?** Proof material is small. A serialized branch node is an 11-byte
+frame (tag, child bitmap, subtree size) plus 32 bytes per present child, so 75 bytes with
+two children up to 523 with all sixteen. A path runs ten to twenty nodes, and paths under
+one account share their upper half. An account record, its access key and a few storage
+entries come to 5 to 15 KB per account, and absence proofs cost the same.
 
-Code is keyed by hash rather than by account, so a multisig whose three members run the same
-wallet implementation carries that code once. Keying by hash is also what stops a bundle
-misbinding code to an account: a node reads the account record, which is itself proved
-against block B, takes the code hash named there, and looks that hash up, re-hashing the
-bytes to confirm. The bundle has no say in which account runs which code, nor in where the
-walk begins: the starting account and path come from the signed message, and everything
-after them from `pending` results the node computed itself.
+Contract code size, measured from released artifacts:
+[wNEAR](https://github.com/near/intents/blob/ec1e75adb964a6688d5b93777521340224fd19ce/releases/wnear.wasm) 181 KB,
+[fungible-token](https://github.com/near/intents/blob/ec1e75adb964a6688d5b93777521340224fd19ce/releases/fungible-token.wasm) 196 KB,
+[non-fungible-token](https://github.com/near/intents/blob/ec1e75adb964a6688d5b93777521340224fd19ce/releases/non-fungible-token.wasm) 303 KB,
+[PoA factory](https://github.com/near/intents/blob/ec1e75adb964a6688d5b93777521340224fd19ce/releases/defuse_poa_factory.wasm) 575 KB,
+[defuse](https://github.com/near/intents/blob/ec1e75adb964a6688d5b93777521340224fd19ce/releases/defuse-0.2.10.wasm) 1.2 MB,
+and the MPC contract [1.2 to 1.5 MB across recent
+releases](../../crates/contract-history/archive/). The chain caps code at
+`max_contract_size`, 4 MiB.
 
-The provider always returns that code, since it has no way of knowing what any node already
-holds. Trimming is the relay's job: it serves the bundle with code and without, and a node
-takes the smaller form plus whatever hashes it lacks. Each shard visited adds one root proof,
-which is a handful of hashes.
+The relay cannot know whether any node's code cache is warm, so a full bundle carries every
+contract's code:
 
-**The bundle covers a tree, not a list.** NEP-641 puts recursion on the caller's side:
-contracts never call each other, and a resolver keeps calling `w_resolve_auth` on whatever
-the last answer listed as `pending`. In this design that walk happens twice, for different
-reasons.
+| Case                                           | Bundle        |
+| ---------------------------------------------- | ------------- |
+| 1. Simple auth contract, minimal state touched | 0.2 to 0.6 MB |
+| 2. One-layer multisig, members are access keys | 0.3 to 0.7 MB |
+| 3. Two-layer multisig, all contracts distinct  | 3 to 8 MB     |
+| 4. Any of the above, only code hash is sent    | 5 to 200 KB   |
 
-The provider walks it to know what to record, since it cannot fetch the state for the second
-layer until the first has run and named it. So it drives the loop locally, the way the
-reference resolver drives it over RPC, and captures everything the whole walk touched,
-including account and access-key state, because each step tries an access-key authorization
-alongside the contract call. All of it at one block, as the standard requires.
-
-Each MPC node then walks the same tree again during replay, following only the `pending`
-results it computed for itself. That second walk is the one that decides. The provider's is
-just a fetch strategy, which is why a provider that explores a different tree produces
-nothing worse than a bundle missing entries the node needs.
-
-The alternative is to leave tree logic out of the provider entirely and have the relay drive
-the loop, calling the provider once per layer and concatenating what comes back. That works
-and simplifies the endpoint, at the cost of a round trip per layer, and it is worth keeping
-in mind as a smaller first version.
-
-**The bundle must prove absence too.** The access-key attempt has two outcomes that are not
-"here is the key": the account exists without the key, which is a rejection, or the account
-does not exist, which still resolves when the account ID is the implicit one derived from
-that public key. Both must be proved rather than asserted, or a provider omitting what it
-did not find is indistinguishable from one hiding a key. Usefully this is close to free:
-the recorder already walks and records the path to a key that is not there, so the
-non-inclusion proof falls out of attempting the read, and the endpoint's job is to emit it
-deliberately rather than drop it.
-
-**How big is a bundle.** Proof material is small. A branch node is a tag byte, a two-byte
-child bitmap and 32 bytes per present child, so 70 to 260 bytes; a path is ten to twenty
-nodes; paths under one account share their upper half. An account record, its access key and
-a few storage entries come to 5 to 15 KB per account, and absence proofs cost the same.
-
-Contract code decides the rest. Measured from released NEAR artifacts: wNEAR 181 KB,
-fungible-token 196 KB, non-fungible-token 303 KB, PoA factory 575 KB, defuse 1.2 MB, the MPC
-contract 1.4 MB. The cap is `max_contract_size`, 4 MiB.
-
-| Case                                 | Bundle        |
-| ------------------------------------ | ------------- |
-| Plain account, access-key leaf       | about 5 KB    |
-| One wallet contract, code cached     | 10 to 15 KB   |
-| One wallet contract, code not cached | 0.2 to 0.6 MB |
-| 2-of-3 multisig, code cached         | 40 to 60 KB   |
-| Same, code cold and distinct         | 1 to 2 MB     |
-
-So the code-hash cache decides whether a bundle fits in a mesh message. For scale, a whole
-chunk's state witness may reach `main_storage_proof_size_soft_limit`, 4 MB.
+Case 3 is a multisig whose member candidates are themselves multisigs, whose members in turn
+are simple auth contracts. Three wide at each layer, that is 13 distinct contracts, and code size
+dwarfs the proofs. Case 4 assumes that the MPC nodes does another round trip to fetch contract code by hashis.
 
 ### Component 4: the relay to MPC message format
 
-The object the relay puts on the wire. It is the network's ordinary signature request with
-the material needed to authorize it bundled alongside, which is why it is named for that
-rather than for the flow. It has to do three things: carry the user's signed message
-untouched, name the block everything resolves at, and deliver the bundle. It travels
-as an announcement with the bundle inline when small, or its hash when not, and logically
-forms one object:
+The object the relay sends to the MPC nodes. It is the ordinary signature request with the
+material needed to authorize it alongside.
 
-```
+```rust
 WitnessedSignatureRequest {
-  nep641_message: OffchainMessage,   // spec-defined, signed by the user, frozen
-  signatures: Vec<Signature>,        // spec-defined
-  resolution_block_hash: CryptoHash, // unsigned: the block to resolve at
-  witness_bundle: WitnessBundle,     // see Component 3
+  nep641_message: OffchainMessage,  // the signed envelope, defined below, frozen
+  authorization: String,            // top-level authorization blob, resolver contract-defined
+                                    // carries the user's signature(s) when auth resolution
+                                    // is signature-based
+  witness_bundle: WitnessBundle,    // Component 3; contains block_hash to pin the execution context,
+                                    // and it may carry contract code hashes only (case 4 in table above  `How big is a bundle?`)
 }
 ```
 
-Each node computes `request_hash = SHA-256(WitnessedSignatureRequest bytes)` over what it
-received, and that hash is bound into the signing session identity, so identical bytes at
-every participant is enforced rather than assumed.
+`OffchainMessage` is NEP-641's signable envelope:
 
-The block reference and witness need no user signature because they carry no authority. The
-signed timestamp defines which blocks are acceptable; the unsigned block hash picks one, and
-every node verifies the pick.
+```rust
+OffchainMessage {
+  chain_id: String,       // e.g. "mainnet"
+  signer_id: AccountId,   // the account being resolved
+  path: Vec<AccountId>,   // position in the authorization tree, empty at top
+                          // level; NOT a key derivation path
+  timestamp: Timestamp,   // u64 nanoseconds at signing
+  payload: String,        // the authorized payload, opaque to the spec
+}
+```
+
+For our network the payload encodes the signature request itself, what `SignRequestArgs`
+carries on chain today: the payload to sign, the `domain_id`, and the key derivation path.
+Clients should backdate the signed `timestamp` by about 60 seconds, per the standard, so
+honest messages are not rejected as future-dated against a block trailing wall clocks.
+
+Each MPC node computes `request_hash = SHA-256(WitnessedSignatureRequest bytes)` over the
+bytes it received itself. That hash is the task id for the signing session: the leader is
+elected from it and opens the session the same way the on-chain flow does today. A follower
+only joins a session IFF prompted by the leader and the locally computed hash matches the task id.
 
 ### Component 5: verifying the request (per node)
 
-Verification runs against trusted block headers, so start there. A node needs recent _final_
-headers for two things: the block timestamp, which is the chain clock, and
-`inner_lite.prev_state_root`, one Merkle root over **every** shard's state root, computed as
-`merklize(chunks.map(prev_state_root))` (`core/primitives/src/block.rs`). One header
-therefore covers the whole chain, and a proof needs only the shard's state root plus its
-path in that vector.
+Everything verifies against block headers the node already trusts today. The neard each MPC node embeds validates every block header, so the recent final headers verification needs are always on hand to anchor the proofs.
 
-**Today: the embedded indexer.** Nodes already embed a nearcore node via `chain-gateway`
-tracking one shard, and a node tracking one shard still fully validates every block header
-for the whole chain; only chunk execution is limited. The header source therefore already
-runs inside every node at no extra compute, disk or trust, and launch needs plumbing rather
-than infrastructure.
+"Verify the request" is six checks, run by every participant MPC node on the same
+`WitnessedSignatureRequest` bytes before it contributes a share:
 
-**Later: an embedded light client**, delivering the same two primitives at a few megabytes
-and under 0.1% of a core, from validator sets learned once per epoch. A future optimization,
-not a launch dependency, since no maintained embeddable Rust light client exists.
+1. **Signature.** The NEP-641/NEP-413 signature verifies for the claimed key.
+2. **Block validity.** `witness_bundle.block_hash` is a real, final block in the node's own
+   header view.
+3. **Freshness floor.** `state_block.timestamp >= message.timestamp`, using the shard's
+   chunk timestamp. Verifying contracts also enforce this themselves; checking up front rejects before the
+   tree walk, allowing the node to fail early..
+4. **Recency window** The block, and the shard's chunk height, are no older than the
+   recency window against the node's own head. Elaborated in detail below.
+5. **TTL, if set.** `block.timestamp - message.timestamp <= TTL`, the network's cap on top
+   of any the contracts impose.
+6. **Resolution.** The node replays the contract tree itself. (component 6)
 
-Either way downstream sees the same interface, for final blocks only. Finality lands about
-two blocks behind production, which rules out two honest nodes seeing competing chains.
+**The recency window.** No other check bounds the block's age: NEP-641 permits historical
+resolution, proofs of stale state verify with no issue, and a dishonest provider can pick
+any final block rather than its latest. If recency is unbounded, a revoked authorization stays usable
+forever.
 
-With those in hand, "verify the request" means these six checks, run by every participant on the same
-`WitnessedSignatureRequest` bytes before it contributes a share. They cover all three parts of it: the
-signed message, the block it names, and the witness bundle.
+![Timeline with a 60-second recency window: the message timestamp sits 50 seconds ago, and every block from there to now passes checks 3 and 4. A malicious provider picks block B from 45 seconds ago, before the revocation at 30 seconds ago, so B's pre-revocation state resolves with valid proofs.](diagrams/recency-window.png)
 
-Checks 1, 2, 3, 5 and 6 are deterministic functions of the request plus verified headers.
-Check 4 deliberately is not, since it reads the node's own head. The asymmetry is safe in
-one direction: integrity is deterministic, so no node can be pushed into accepting what
-another correctly rejects, while liveness is not, so a lagging node can reject what its
-peers accept and the request retries.
-
-1. **Signature.** NEP-641/NEP-413 signature verifies for the claimed key.
-2. **Block validity.** `resolution_block_hash` names a real, final block, verified against
-   the node's own header view.
-3. **Freshness floor.** At a contract step the verifying contract enforces this itself,
-   panicking when the signed timestamp is later than the block's; at an access-key leaf it
-   is ours. Running it up front turns a wasted tree walk into an immediate rejection.
-   Compare against the right timestamp: the state committed in B came from an earlier chunk,
-   so the check is `state_block.timestamp >= message.timestamp`, using that shard's chunk
-   header height.
-4. **Recency (our rule).** The block must be no older than the recency window measured
-   against the node's own head, proposed at 60 seconds, and so must the shard's own chunk
-   height. The standard recommends a recent final block but allows historical resolution,
-   so without our rule an hour-old block would pass.
-5. **TTL, if set.** `block.timestamp - message.timestamp <= TTL`. Contracts may impose their
-   own; this one is the network's.
-6. **Resolution.** The node walks the tree itself from the account and path in the _signed
-   message_, every later call coming from `pending` results it has already verified, never
-   from the bundle's contents or ordering. The bundle only answers storage reads, so a
-   bundle describing a different tree does not redirect the walk, it just lacks entries and
-   replay halts.
-
-Any failure is a rejection, safe to retry with a fresher block. Every misbehaviour degrades
-to "refuse".
-
-**What an access-key leaf costs us.** At a contract step the contract checks itself and we
-replay it. At a leaf every check is ours, and there are more than "the signature verifies":
-the authorization must name the chain we are on, the account being resolved, and the ancestry
-path we arrived by, so a leaf signed for one position in one tree cannot be lifted into
-another. The signing time must not be later than the block's, and the key must still carry
-full access, so a function-call key never suffices. Each is a way to diverge silently from
-other resolvers, which argues for shared test vectors.
-
-**How wide the block-shopping window is.** Checks 3 and 4 both apply, so an acceptable block
-falls between the signing time and now, and no older than the recency window, so the room to
-choose is whichever of those two is tighter: the age of the message, or the window. With the
-standard's 60-second backdate and a 60-second window, a promptly submitted message lets the
-assembler pick any block from the last minute, so an authorization revoked 30 seconds ago
-can still resolve against a block from 45 seconds ago.
-
-The recency window closes this, and the two bounds differ. TTL is measured from the message
-timestamp, so a TTL below the backdate rejects honest messages, and the backdate is the
-standard's guidance rather than ours. The recency window is measured from _now_, so setting
-it to 10 seconds would cut the room to choose to 10 seconds even with a 60-second
-backdate. What stops us is our own nodes: each checks against its own
-head, a presignature's whole set must agree, and the node already tolerates peers 50 blocks
-behind when deciding who is alive. Attacker freedom is bounded by how closely our slowest
-participants track the chain.
+We want the window short, the hard limit is at our MPC nodes. Today we tolerates peers 50
+blocks behind, roughly a minute, and a window below that lag rejects honest requests
+whenever one participant trails behind in an acceptable manner. Therefore **We propose 60 seconds recency window at launch**, matching the lag
+tolerated today.
 
 ### Component 6: local verified re-execution (per node)
 
-Running the request's contracts on the node itself, over state that came from the bundle
-rather than from local storage. Nodes already carry nearcore's runtime, since
-`near-vm-runner` and `node-runtime` arrive through `near-indexer` and run every block for the
-tracked shard, and `chain-gateway` already makes view calls through the embedded ViewClient.
-What is new is where the state comes from: that path only works for a tracked shard.
+Running the NEP-641 authorization tree's contracts on the node itself, over state served from the bundle. Nodes already ship NEAR's runtime and run it for their tracked shard.
+Replay has three requirements:
 
-It has to do three things: confirm the bundle's state is genuine, reproduce the resolution
-exactly, and survive running code an attacker chose. The first two are a short sequence:
+1. Confirm the bundle's state is genuine, by verifying the witness provider supplied Merkle proof against local block header hash.
+2. Reproduce the resolution exactly, by executing the contract code using the supplied storage state.
+3. Survive running malicious contract code, explained in details in `Guard rails` below.
 
-1. Checks every recorded entry and the code hash upward to the state root in the verified
-   header. One flipped byte breaks the chain.
-2. Re-executes, serving storage reads from the bundle (`Trie::from_recorded_storage` over
-   the provider's `PartialState`). Anything omitted halts replay with "missing data", which
-   means retry elsewhere, never an authorization answer.
-3. Takes its _own_ result as the answer; the provider's claim is a debugging cross-check.
+Two caviats:
 
-**"Deterministic" needs the context pinned.** `ViewApplyState`
-(`runtime/runtime/src/state_viewer/mod.rs`) carries `block_height`, `prev_block_hash`,
-`shard_id`, `epoch_id`, `epoch_height`, `block_timestamp` and `current_protocol_version`,
-and the runtime sets `random_seed` to the state root for view calls. All of it is visible to
-the contract, so provider and verifier must use identical values. All of it derives from
-block B plus the shard id, so the request carries it explicitly.
+1. **Access-key type resolution needs a resolver in the MPC node.** When a step in the tree is a
+   contract, the contract carries its own verification logic and we only replay it. When it is
+   a bare access key there is no contract to execute. The MPC node needs perform the checks defined in NEP-641 directly. We can copy the reference implementation and use its test vectors.
 
-Guardrails:
+2. **Determinism.** The witness provider and the replaying nodes must execute the NEP-641
+   resolution over exactly the same state: block B's state and execution context, both
+   carried in the bundle, under the protocol rules in force at B. Nodes therefore must
+   upgrade before a new protocol version activates, or requests resolved under it will fail to
+   replay.
 
-- **Gas cap, well below the default.** The request supplies the contract, so a hostile one
-  is a given. `max_gas_burnt_view` unset falls back to `max_gas_burnt`, 1,000 TGas, and gas
-  is calibrated at no more than 1 ms per TGas, so the default allows about a second of CPU
-  per call, times the calls in the tree. Choosing a lower value is a requirement, not tuning,
-  and bundle size needs a cap beside it.
-- **Keep the attacker's code out of the enclave.** Nodes run in Intel TDX VMs holding key
-  shares, and this design has them compile and run request-supplied WebAssembly on every
-  request, where a runtime or JIT bug stops being a crash. Replay belongs in a separate
-  sandboxed process with no key access, returning only the answer. Where that boundary sits
-  is a prerequisite, not later hardening.
-- **Cache code by hash, never by account.** The record proven at B names a code hash, and
-  the node asks its cache for those bytes, not for "the code of this account". An upgrade
-  changes that hash, so the lookup misses and the bundle supplies the new code: stale code is
-  unreachable rather than guarded against. One wallet implementation across a thousand
-  accounts is one cache entry.
-- **Code can be global.** An `AccountContract` may be `Local(hash)`, `Global(hash)`, or
-  `GlobalByAccount(account)`. The last is a pointer needing a second proven read at B, and
-  the cache keys off the hash resolution lands on.
-- **Match the storage mode.** `Trie::from_recorded_storage` takes a `flat_storage_used`
-  flag, and flat-storage reads record differently from trie reads, so disagreement fails
-  replay on valid requests.
-- **Bound the tree, not just each call.** Sub-authorizations come from attacker-controlled
-  output and the standard permits terminating cycles, so caps on depth and count are the only
-  guarantee the walk ends. Identical everywhere, or nodes disagree because one gave up first.
-- **Select the protocol version, do not just track it.** The rule is "run what the chain used
-  at block B", and nearcore is built for it:
-  `runtime_config_store.get_config(protocol_version)`. Older blocks then replay correctly
-  across upgrades. The tax is the binary: a new protocol version needs a release that knows
-  it, and `assert_supported_protocol_version` refuses anything outside the built range, so
-  nodes must upgrade before activation.
+Guardrails against malicious contract code:
+
+- **Cap gas well below the runtime default.** The default view-call budget allows about a second of CPU per
+  call. Authorization resolution contracts should be fairly simple so we should cap the runtime well below 1 second. In order to choose a cap value, we need to measure run time for a reasonable complex auth resolution contract..
+- **Keep the attacker's code out of the enclave.** Nodes hold private key shares inside TDX, and
+  replay runs request-supplied WebAssembly. The replay runtime should be sandboxed in a separate process.
+- **Cache code by hash, never by account.** A contract upgrade changes the hash, so stale code is
+  unreachable.
+- **Cap the tree's depth and breadth.** Sub-authorizations are attacker-controlled and the
+  standard permits cycles, so caps are the only guarantee the walk ends, and they must be
+  identical everywhere or nodes disagree by giving up at different points.
 
 ### Component 7: leader election and signing
 
-How one verified request becomes one signature. It has to settle two things without
-coordination: who drives the attempt, and which nodes sign. The second is not ours to choose,
-because each stored presignature records the participant set that produced it
-(`PresignOutputWithParticipants`, `crates/node/src/providers/ecdsa_common.rs`) and the store
-drops one as soon as any of them goes offline, so the set is a precondition rather than a
-label.
+Both work as they do for on-chain requests today. The leader is derived pseudo-randomly
+from the request hash over the alive participants. Signing is business as usual: the leader takes one of its presignatures and opens
+a session with that presignature's participant set, and a follower contributes a share only
+if it holds the request and it passes verification (Component 5).
 
-**Today.** A request arrives through the indexer as an on-chain `sign()` call. Every node
-sorts participants by `SHA256(participant_id || request_id)` and takes the first eligible
-one as leader (`crates/node/src/requests/queue.rs`), so all nodes agree without talking. A
-node that is not the leader then does nothing at all; the work is gated on
-`leader == my_participant_id`. The leader takes one of its own presignatures (`take_owned`)
-and opens a channel to that presignature's participants, and only then does each follower
-look the request up **in its own store**, refusing to proceed if it is absent
-(`crates/node/src/providers/ecdsa/sign.rs`). So agreement is not a vote, it is every
-prompted participant having independently seen the same on-chain request.
+Two adjustments for the off-chain path:
 
-**Two gaps for our path:**
+- **The broadcast from entry nodes to the rest of the network replaces the indexer as the
+  trigger.** Details in the Q&A section [How does a request get from the relay into the MPC
+  network?](#how-does-a-request-get-from-the-relay-into-the-mpc-network)
 
-- **A trigger and a leader without an indexed block.** Nodes feed requests into the same
-  `sign_request_store` from the broadcast, and leadership stays a deterministic function of
-  the request hash over the alive participants, so the broadcast does for us what the indexer
-  does for `sign()`.
-- **When to verify.** Keeping the prompted model matters more here than on chain, because our
-  verification is expensive: a bundle fetch and a full tree replay, versus reading a request
-  the indexer already delivered. Verifying eagerly on every node would burn that on nodes
-  that never sign. So follow the existing shape, verify when prompted, and at most prefetch
-  the bundle, which is cheap and cacheable, while deferring replay until the leader asks.
-- **Failing fast, so rejections cost a moment rather than a minute.** Taking a presignature
-  removes it from storage, and today a follower that lacks the request waits in
-  `sign_request_store.get` until the signature timeout, currently 60 seconds, before the
-  attempt collapses. Four changes fix that, in increasing order of effort.
-
-  First, distinguish "not yet" from "no". A follower still waiting for the broadcast should
-  wait, but one that holds the request and rejects it should return an error, which the
-  existing `MpcLeaderCentricComputation` already turns into an immediate Abort to the leader.
-  No new message type is needed.
-
-  Second, have the leader verify before it takes a presignature. Checks 1, 2, 3, 5 and 6 are
-  deterministic in the request bytes, so anything that survives the leader's own pipeline can
-  only fail at a follower on check 4.
-
-  Third, pick a set that will pass check 4. Participants already publish indexer heights
-  through `IndexerHeightTracker`, so the leader can prefer a presignature whose participants
-  are fresh enough for block B instead of discovering the problem by rejection.
-
-  Fourth, return the presignature when nothing was revealed. A presignature is dangerous only
-  if used for two different messages, so an attempt aborted before any share is sent has not
-  spent it. That is the phase-1 vote's benefit without a separate round, and it needs the
-  signing side to confirm exactly when a share counts as revealed.
-
-Liveness follows the unanimity math: if each participant rejects independently with
-probability p, an attempt succeeds with probability (1 − p)^s for a set of size s, and the
-leader's retry loop covers the rest. Usefully, `all_alive_participant_ids`
-(`crates/node/src/network.rs`) already drops participants trailing by more than
-`MAX_INDEXER_HEIGHT_DIFF`, 50 blocks or roughly a minute, and presignatures are pruned by
-the same signal, so the recency window should agree with that tolerance.
-
-**Two ways the pool drains faster than it looks.** The buffer is small, with the sample
-config asking for `desired_presignatures_to_buffer: 64` and replenishment costing triple
-generation. And leader election tolerates disagreement by design: the queue's own docs note
-that differing connectivity or indexer heights can give a request more than one leader. On
-chain that is harmless, since the contract takes the first response; off chain each extra
-leader spends its own presignature. So rank leaders deterministically by `request_hash` with
-backoff for lower ranks, and have a leader confirm the announcement propagated before taking
-a presignature.
-
-A malicious participant can still accept and then stall. The mitigation is bookkeeping:
-track aborts per participant, bias selection away from repeat offenders, and size
-replenishment for off-chain load on top of `sign()` traffic.
+- **The signing process must adapt to fail fast.** A client waits on the relay for its
+  signature, so a rejection has come fast. On-chain timeout solution is not acceptable
+  A follower that rejects tells the leader immediately, and the leader aborts and retries.
+  To keep retries cheap, the leader verifies the request before taking a presignature, and an attempt aborted before any share is revealed returns
+  its presignature to the pool. None of this is off-chain specific, these changes would improve the onchain flow too.
 
 ---
 
-## Why does the request carry a block at all?
 
-Every node has to resolve against the same state, or they reach different answers and no
-signature forms. The chain gives no such agreement for free once the request stops being a
-transaction, so something has to name a block, and whatever names it becomes a place where a
-hostile party might steer the outcome.
+## Q&A
 
-**Option A: the relay carries it, discovered from the fetch (recommended).** The provider
-resolves at its latest final block and reports which, and the relay passes that along with
-the bundle. Nodes verify rather than negotiate: any block passing checks 2 through 5 is
-acceptable by construction, so the proposer's motives do not matter. No coordination rounds,
-one bundle serves everyone, and a lagging node triggers a retry rather than a split decision.
+Questions about design choices: the options considered and why one was chosen.
 
-**Option B: the session leader picks it.** The leader fetches the bundle and includes both in
-the session initiation. Structurally this _is_ Option A with the leader as requester, reusing
-the pipeline unchanged, except that block picking and witness fetching move inside the nodes,
-which then need their own provider connections and retry loop.
+### Why does the request carry a block at all?
 
-**Option C: a periodic checkpoint beacon.** Every T seconds the nodes agree on a checkpoint
-block and requests arriving in the interval resolve there. This amortizes agreement across
-requests but imports consensus machinery: beacon liveness becomes a hard dependency of all
-authorization, checkpoint lag adds T seconds on top of the recency window, and a message
-signed after the
-current checkpoint waits for the next one.
+Every node must resolve against the same state or no signature forms, so something has to
+name the block.
 
-**We choose A.** The old argument for B was ecosystem friction, which owning the relay
-dissolves, since clients never see blocks either way. That leaves the question of where the
-block-picker lives: in a stateless service we already run, or inside the signing protocol
-with extra outbound dependencies. B stays the fallback if MPC input ever needs to be
-independent of any relay, and since it reuses every component, building A first costs
-nothing. Avoid C unless a strong reason appears.
+- **A. The relay carries it, discovered from the fetch (chosen).** The provider resolves at
+  its latest final block and reports it. The relay passes it along with the bundle.
+  MPC Nodes only verify the proposed block. Any block passing the checks is acceptable, so the
+  proposer's motives do not matter.
+- **B. The session leader picks it.** The same pipeline with the leader as requester, but
+  block picking and bundle fetching move inside the nodes, which then need their own
+  provider connections and retry loop.
+- **C. A periodic checkpoint beacon.** Nodes agree on a checkpoint block every T seconds.
+  Amortizes agreement across requests, but imports consensus machinery, makes beacon
+  liveness a hard dependency of all authorization, and adds up to T seconds of latency.
+
+A keeps the block picker in a stateless service we already run. B can be the fallback if MPC
+input must be independent a relay.
 
 ---
 
-## How does a request get from the relay into the MPC network?
+### How does the relay and the MPC network talk to each other?
 
-The relay has the request and every node needs it, but nodes are TEE machines that should
-not grow a public inbound surface, and the network is meant to keep growing without the relay
-changing shape.
+Nodes are TEE machines that should not grow a public inbound surface, and the network must
+scale without reshaping the relay.
 
-**Option A: through the MPC contract**, the way `sign()` works today. Rejected: it puts an
-on-chain transaction, its gas cost and seconds of latency inside a flow whose entire purpose
-is to stay off chain.
+- **A. Through the MPC contract**, like `sign()`. Rejected. This option adds the block chain with gas and latency back to a flow we want to execute off chain.
+- **B. Star shaped network**: every node holds a stream to the relay. Rejected: connections and identity
+  management scale linearly with network size, and it ignores the mesh the nodes already
+  run.
+- **C. Inject through k entry nodes and let the mesh spread it (chosen).** The relay pushes
+  a signed announcement to k rotating entry nodes, which dial out over mutual TLS and
+  broadcast it over the existing mesh. Relay connections stay O(k) at any network size.
 
-**Option B: a star**, every node holding a stream to the relay. Rejected: connections, TLS
-identity management and relay egress all scale linearly with network size, and it ignores the
-dissemination network the nodes already run.
+Bundles ride inside the announcement under about 64 KB; larger ones are fetched by
+`GET /bundle/<bundle_hash>` and checked against the hash. Fetching rather than pushing
+keeps the cost off the entry nodes: a mesh broadcast sends the same bytes once per
+participant, so pushing a 4 MB bundle to 30 participants is over 100 MB of egress from one
+TEE machine. Content-addressing makes the fetch CDN-cacheable, and nodes should also serve
+bundles to each other by hash, in case the relay disappears after the announcement spreads.
 
-**We choose C: inject through a few entry nodes and let the mesh spread it.** No transaction
-anywhere in the request path. The relay pushes to k rotating entry nodes, the announcement
-travels the mesh the nodes already maintain for signing, and bundles too large to travel
-inline are pulled content-addressed from a cacheable endpoint. That splits into a control
-plane and a data plane:
+The return path needs no held stream. The leader of a signature round posts the signature outbound to
+`POST /result/<request_hash>` on the relay.
 
-- **Control plane: announcements over the existing mesh.** The relay connects only to k
-  entry nodes, chosen by deterministic rotation, and they _dial out_ (mutual TLS). Nodes are
-  not otherwise unreachable, since participants publish a `url` and `tls_public_key` on
-  chain and accept each other's connections. What this design adds is no inbound surface
-  reachable from outside the participant set. Announcements carry the signed message, block
-  B hash, and the bundle inline or its hash, plus the relay's signature, deduplicated by
-  `request_hash`.
-- **Data plane: large bundles pulled by hash.** Anything above the inline threshold is
-  fetched with `GET /bundle/<bundle_hash>` and checked against it. Content-addressing makes
-  that trivially cacheable, with a CDN in front and providers or replicas as mirrors, so
-  origin bandwidth stays flat.
+#### What stops an entry node from quietly dropping requests?
 
-**Why fetch rather than push.** Not a size limit: `MAX_MESSAGE_SIZE_BYTES` is 100 MB
-(`crates/node/src/network/constants.rs`), so even a maximal bundle passes inline. It is where
-the cost lands. The mesh is a full mesh of direct connections and a broadcast is a loop
-sending the same bytes to each participant, so pushing makes the sending entry node upload
-the bundle once per node: over 100 MB of egress from one TEE machine for a 4 MB bundle across
-30 participants, on a link shared with the signing protocol.
+An entry node cannot change what the network signs, since every node verifies the request
+and `request_hash` binds the session; the attack surface is delay and withholding. Three
+rules shrink it: the relay signs every announcement with an expiry, it pushes to every live entry connection (withholding takes all k
+colluding), and it holds k live connections rather than k assigned slots.
 
-Two refinements. Bundles under about 64 KB should ride inside the announcement, which covers
-every warm-cache case including a small multisig and saves a pointless round trip. And if the
-relay becomes unreachable after the announcement spreads, every node holds a hash and no
-bytes until timeout, so nodes should serve bundles to each other by hash.
+The residual is the correlated window: with a third of nodes hostile and k = 3, one window
+in about 27 draws an all-hostile entry set, and every request in it stalls until the relay
+retries. Raising k or shortening the window buys that down.
 
-Scaling: relay connections O(k) regardless of network size; announcements ride a mesh that
-must scale for signing anyway; bundle distribution is CDN-shaped. Growing the network needs
-no relay-side change.
+Rotation needs no new agreement: each node sorts participants by
+`H(seed || participant_id)` with the seed taken from the first final block of the window,
+the top k are primaries and the next few hot spares. The relay computes no schedule and
+accepts any of them, so rotation changes ship with a node release.
 
-Implementation:
+#### How do nodes and the relay authenticate each other?
 
-1. **Node: entry-node duty plus a broadcast message type.** A new mesh message type carries
-   announcements, nodes in a rotation slot dial the configured relays and forward
-   announcements inward, and every node feeds verified requests into the existing
-   signing-session machinery. This second, off-chain trigger beside the indexer-event trigger
-   is the main structural change in node code.
-2. **Equivocation control.** `request_hash` is part of the session identity, so anyone
-   spreading different bytes to different nodes cannot split the decision, only fail to
-   assemble a threshold behind any one hash. Integrity never depends on the transport
-   behaving; only liveness does.
-3. **Bundle delivery.** Fetch by hash from CDN, mirror or origin. The relay serves each
-   bundle in two forms, with contract code and without, since only a node knows what its own
-   cache holds. A node takes the code-less form and fetches any code it lacks by hash, which
-   is also why code caches well: the same wallet implementation is one hash across every
-   account using it.
-4. **Response: the leader posts it.** Entry nodes exist because the relay cannot dial nodes,
-   so pushes need held streams. The return path needs none, since every node already calls
-   the relay outbound. The leader sends the signature to `POST /result/<request_hash>` on the
-   instance the announcement named, removing a hop and taking entry nodes out of the response
-   path. Session timeouts plus a relay retry with a fresh block B handle whatever never
-   reaches threshold.
+Each endpoint is different, because authentication does a different job on each:
 
-That endpoint is the one place the relay holds state: a map from request hash to the waiting
-client connection, ephemeral and expired by the session timeout. Nothing durable to
-replicate. Authentication on it is covered below.
+- **The announcement stream: mutual TLS, both sides grounded on chain.** The node checks
+  the relay's key against the voted `identity_key`; the relay checks the node against
+  `ParticipantInfo.tls_public_key`, the credential nodes already use with each other.
+  Neither check is an integrity input; both keep strangers from consuming resources.
+- **`GET /bundle/<bundle_hash>`: deliberately unauthenticated.** The content is
+  self-verifying, and credentials would break the CDN caching. Abuse is a rate-limit
+  problem.
+- **`POST /result/<request_hash>`: authenticated against spam only.** The relay verifies
+  the threshold signature before answering the client regardless; the poster reuses its
+  participant certificate over the same mutual TLS.
 
-Latency: no on-chain hop. This transport adds one mesh broadcast and one cacheable fetch per
-node, both of which should be small next to the signing session, though that ordering is an
-expectation to confirm against `near_mpc_signature_time_elapsed`.
+One consequence to decide deliberately: anyone holding a bundle hash, the CDN included, can
+read what the authorization touched. Hashes travel only to participants, so this is not
+open to the world, but if off-chain requests are meant to be private, that conflicts with
+CDN-cacheable bundles.
 
-### What stops an entry node from quietly dropping requests?
+#### How does a node know which relay to listen to?
 
-Concentrating the relay's reach into k nodes hands those k a chokepoint, and they rotate, so
-the chokepoint moves. The reassuring half is that an entry node can never change what the
-network signs, since every node verifies the request and `request_hash` binds the session, so
-the whole attack surface is delay and withholding. Three rules shrink it:
+Witness providers can stay in local config because their output is verified; relays cannot,
+since nodes must agree on who may inject requests at all. So the relay list is voted into
+the MPC contract, which nodes read through the shard they already track. The contract
+already maintains voted provider whitelists, so the mechanism exists.
 
-- **The relay signs every announcement**, with an expiry, so an entry node cannot fabricate,
-  replay or amplify, only drop.
-- **The relay pushes to every live connection**, so withholding takes every current entry
-  node colluding at once rather than one defecting.
-- **k live connections, not k assigned slots.** Rotation produces an ordered candidate list
-  and the relay holds connections to the first k that are up, so a node going down becomes a
-  reconnect rather than a hole lasting until the next rotation.
+- **Vote on identity, never on location.** On chain goes a long-lived `identity_key` and a
+  stable name; the TLS handshake checks the presented key against the voted one, so DNS
+  hijacks fail the handshake and IP addresses can change without the need to update the contract on chain. The identity
+  key signs short-lived records for instance keys and replicas, so routine rotation happens
+  below governance. A vote is needed only to admit, remove, or replace a compromised root.
+- **The list is an allowlist, not a trust root.** A relay cannot forge state or make any
+  node sign, so a wrong list costs availability, never correctness. Updates need not be
+  fast or atomic, and an operator can refuse a relay locally before the vote formalizes it.
 
-What remains is the correlated case, since selection is per window. If a third of nodes are
-hostile and k = 3, roughly one window in 27 draws an all-hostile entry set, and in that
-window _every_ request stalls rather than 3.7% of them. Those requests are not lost, they
-time out and the relay retries, so the cost is latency for one window. Raising k or
-shortening the window buys that down, and if withholding ever shows up in practice, numbered
-announcements with fetch-by-number would make it detectable rather than merely survivable.
+The relay itself pins one thing in config: the network's public key, which it verifies
+posted signatures against, refreshed deliberately at key events. Everything else it reads
+over untrusted RPC.
 
-Rotation is deterministic, unpredictable, and needs no new agreement:
+Two consequences of this: payment and metering move off chain, since no deposit rides the
+path, and there is no automatic on-chain audit trail. How to track and bill off-chain
+requests is left as a follow-up discussion.
 
-- Each node sorts participants by `H(seed || participant_id)` and takes the top m ≈ 2k, the
-  first k as primaries and the rest as hot spares.
-- The seed is the hash of the first final block in the window, which every node already
-  verifies, so nobody can steer the draw.
-- The relay accepts any node in the top m and pushes to all of them, absorbing disagreement
-  about window boundaries.
-- Slots are staggered, each with an overlap window: dial slightly early, hold slightly late.
-- A node may decline the duty and the next spare takes it.
+---
 
-Rotation lives entirely on the node side. The relay computes no schedule, accepting whoever
-presents a valid participant identity up to a connection cap, so a rotation change ships with
-a node release. The period is open: minutes rather than hours, and its own concept rather
-than the key-resharing epoch.
+### Can `witness_view_call` be built, and who owns it?
 
-### How do nodes and the relay authenticate each other?
+It can be built. The primitives are public functions in nearcore:
+`TrieViewer::call_function` runs a view call with an explicit context,
+`Trie::recording_reads_*` records every piece of state it touched, and
+`Trie::from_recorded_storage` rebuilds the trie on the verifying side. Non-inclusion proofs
+largely fall out of the recorder, and the remaining work is packaging these pieces into one
+endpoint. A provider can be our own binary, though it must own its node, since nearcore's
+store cannot be followed by a second process.
 
-Three endpoints face the nodes, and the tempting answer, authenticate everything, is wrong on
-one of them. Authentication is doing a different job in each case, so each gets a different
-answer.
-
-**The announcement stream (entry node dials the relay): mutual TLS, both directions
-grounded on chain.** The node checks the relay's presented key against the voted
-`identity_key`, which is what stops a hijacked address impersonating a relay. The relay
-checks the node against `ParticipantInfo.tls_public_key`, the same credential nodes already
-use with each other, so no new key material or distribution is needed. Neither check is an
-integrity input, since a rogue relay cannot forge a request and a rogue node cannot forge a
-signature; both exist to keep strangers from consuming resources.
-
-**`GET /bundle/<bundle_hash>`: deliberately unauthenticated.** The content is self-verifying, so
-authentication buys no integrity, and adding it would break the CDN caching the design
-depends on. Abuse is a bandwidth problem, answered with rate limits and cache rules rather
-than credentials.
-
-**`POST /result/<request_hash>`: authenticated for spam only.** Correctness does not need it,
-since the relay verifies the threshold signature against the network's public key before
-answering the client. But an open endpoint invites junk that costs a signature verification
-each, so the poster presents its participant certificate over the same mutual TLS as the
-announcement stream. A leader posting a result is already dialling out, so this reuses the
-credential rather than adding one.
-
-Worth deciding rather than inheriting: an unauthenticated bundle endpoint means anyone
-holding the hash can read what the authorization touched, and a CDN in front sees it too.
-Hashes only travel to participants, so this is not open to the world, but bundles are not
-secret either. If off-chain requests are meant to be private, that conflicts with
-CDN-cacheable bundles and the resolution belongs with the audit-trail question below.
-
-### How does a node know which relay to listen to?
-
-Witness providers could stay in local config because their output is verified (Component 1).
-Relays cannot: a node that accepts requests from a relay nobody sanctioned lets a stranger
-consume network resources, and nodes have to agree on who may inject at all. So this list
-comes from somewhere the whole network shares. Configuration flows both ways here, but only
-one direction has to be trusted.
-
-**Nodes read the relay set from the MPC contract**, through the shard they already track, so
-there is no seed file, no DNS to trust, and no chicken-and-egg at startup. The contract
-already does this for foreign chains: `vote_update_foreign_chain_providers` maintains a voted
-whitelist of `ProviderConfig { base_url, auth_scheme, chain_routing }` entries, and
-participants are stored as `ParticipantInfo { url, tls_public_key }`.
-
-**The relay reads almost nothing** from the chain, and only one of those reads matters. The
-latest final block comes from ordinary untrusted RPC, since getting it wrong just bounces a
-request off check 4. The MPC network's public key (`public_key(domain_id)` on the contract)
-is different: the relay verifies posted signatures against it, so a hostile RPC serving the
-wrong key would let an attacker post a forgery the relay then hands to the client. Client-side
-verification catches that, but the relay should not be the weak link, and the key changes
-only at key events, so pin it in relay config and refresh deliberately. Reading the
-participant set for admission and metering is optional. The relay never needs to know which
-node produced a signature, only that it verifies.
-
-**Vote on identity, never on location.** What goes on chain is a long-lived key and a stable
-name:
-
-```
-relays: [
-  { id: "near-one-relay",
-    identity_key: ed25519:...,
-    name: "relay.mpc.near-one.org" },
-]
-```
-
-Addresses behind that name change as often as operations demands without touching the chain.
-The TLS handshake proves the node reached the right relay, since it checks the presented key
-against the voted `identity_key`, so hijacked DNS yields a connection that fails the check.
-This also drops the certificate-authority dependency.
-
-**Routine key rotation happens below governance.** The identity key signs short-lived records
-certifying instance keys and endpoints, so operators rotate keys and add replicas freely. A
-vote is needed only to admit an operator, remove one, or replace a compromised root key.
-
-**The list is an allowlist, not a trust root.** A relay cannot forge state or make any node
-sign anything, so a wrong list costs availability, never correctness. The update path need not
-be fast or atomic, and each operator should be able to locally refuse a relay immediately,
-with the vote formalizing it later.
-
-**Replication.** Instances share one relay identity. One instance holds the client's request,
-so the announcement names which, and the leader posts the result there. Entry nodes hold one
-stream per listed instance, giving k × R connections, still independent of network size and
-needing no shared state. A shared bus is the fallback.
-
-**Two relays injecting the same message** pick different blocks and bundles, so the requests
-hash differently and burn two presignatures for one client request. Deduplicating a level up,
-on the signed-message hash, would prevent that, but it needs state nodes do not keep today: a
-short-lived map from message hash to "in flight" or "answered, here is the signature", held
-by whoever owns it. Note that only the original participants hold a finished signature, so a
-cached answer has to come from one of them. Re-delivery is safe where resolving afresh would
-not be, since the signature already exists and a second copy grants no new authority.
-
-Two consequences to accept, both to settle with the MPC and contract teams:
-
-- **Payment and metering move off-chain.** No deposit in the path means per-request payment
-  cannot come from attached NEAR, so the relay becomes the metering point.
-- **No automatic on-chain audit trail.** `sign()` requests are public by construction; these
-  are not. Logging request hashes or periodically anchoring a Merkle root is cheap. Decide
-  deliberately rather than losing the property by accident.
+How and when needs aligning with the nearcore team: either the endpoint ships in `neard`
+itself, so any full node can serve it by upgrading, or we build it on `node-runtime`,
+`near-store` and `near-epoch-manager`, which are `publish = false` internals with no
+compatibility contract, and then we need to know what stability to expect from them. That
+same stability question covers the replay path inside the node (Component 6).
 
 ---
 
 ## Security analysis
 
-| Threat                                                            | Defense                                                                                                                                              |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Forged state or code from a provider                              | The Merkle chain must land on a state root in a validator-signed final header.                                                                       |
-| Omitted state entries                                             | Replay halts on missing data; retry elsewhere. Fail-closed.                                                                                          |
-| Provider hides an existing key by reporting absence               | Non-inclusion proofs, so "not found" is proved rather than asserted.                                                                                 |
-| Resolution against pre-revocation state                           | Freshness floor (check 3), enforced by verifying contracts and by us at access-key leaves.                                                           |
-| Old-but-post-signing block where a just-revoked auth still passes | The recency check and TTL. What remains is whichever is tighter, the message's age or the recency window.                                            |
-| Hostile contract burning node CPU                                 | `max_gas_burnt_view` set well below the 1,000 TGas default, plus a bundle size cap.                                                                  |
-| Hostile contract attacking the runtime inside a key-holding TEE   | Replay in a sandboxed process with no key access. A prerequisite, not later hardening.                                                               |
-| Unbounded tree fan-out from attacker-controlled `pending`         | Network-wide caps on depth and sub-authorization count, identical on every node.                                                                     |
-| Duplicate leaders draining the presignature pool                  | Deterministic leader ranking with backoff, and no presignature taken before the announcement propagates. Buffer is 64 by default.                    |
-| Lagging or lying header source, chain forks                       | Headers fully validated by the embedded node, final blocks only, so a stale source causes rejections, not wrong answers.                             |
-| Stalled shard: block time fresh, shard state minutes old          | Checks 3 and 4 use the shard's own chunk height, not only block time.                                                                                |
-| Provider replays under a different epoch or protocol version      | Execution context pinned field by field and checked against B.                                                                                       |
-| Protocol upgrade splits chain and embedded runtimes               | Config selected by B's protocol version; a newer version is refused outright, so nodes upgrade ahead of activation.                                  |
-| Witness provider unavailability                                   | Multiple independent providers with failover; the provider is stateless and replaceable.                                                             |
-| Provider lagging behind the chain                                 | B fails check 4 against each node's own head and the relay retries. A wasted round trip, never a stale authorization.                                |
-| Compromised relay                                                 | Every field is verified by every node, so it can censor, delay, or pick any block inside the allowed window, never forge state.                      |
-| Relay or entry-node equivocation                                  | `request_hash` binds the session identity, so mismatched bytes cannot form a session; equivocation causes a timeout.                                 |
-| Entry node withholding                                            | The relay pushes to every live connection, so all of them must collude, and rotation replaces dead entries. A stalled request times out and retries. |
-| Entry node forging, replaying or amplifying                       | Announcements are signed by the relay's voted identity key and carry an expiry.                                                                      |
-| Relay impersonation by DNS or routing hijack                      | Nodes pin the identity key from contract config and check it in the TLS handshake.                                                                   |
-| Same message injected through two relays                          | Dedup on the signed-message hash, so one client request cannot burn two presignatures.                                                               |
-| Relay fooled about the participant set                            | Only gates admission and metering; integrity never depends on it.                                                                                    |
-| Participant accepts then stalls, burning a presignature           | Bookkeeping: track aborts, bias selection away from offenders, replenish in the background.                                                          |
+| Threat                                                   | Defense                                                                                                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Provider forges state or code                            | The Merkle chain must land on a state root in a final header the node validated itself.                                                                     |
+| Provider omits entries or hides an existing key          | Replay halts on missing data (fail-closed), and "not found" needs a non-inclusion proof.                                                                    |
+| Provider picks stale or pre-revocation state             | Freshness floor, recency window and TTL (checks 3 to 5), all measured against the shard's own chunk, so a stalled shard cannot hide behind a fresh block.   |
+| Provider runs a different epoch or protocol version      | Execution context pinned and checked against resolution block B; runtime config selected by block B's protocol version, with newer versions refused so nodes upgrade ahead.        |
+| Provider unavailable or lagging                          | Stateless and replaceable: the relay fails over to another provider replica, and a lagging block just bounces off check 4 and retries.                                                  |
+| Hostile contract code                                    | Gas capped well below the view-call default, replay sandboxed away from key shares, and network-wide caps on tree depth and fan-out.                        |
+| Compromised relay                                        | Every field is re-verified by every node, so it can censor, delay, or pick any other (not latest final) blocks inside the recency window, but can never forge state and by extension forge signatures.                                  |
+| Relay or entry node sends different requests to different nodes | `request_hash` binds the session. A session is keyed by the `request_hash` of the request being processed.                                  |
+| Entry node forges, replays or withholds                  | Announcements are relay-signed with an expiry, and the relay pushes to every live entry connection, so withholding takes all k entry nodes colluding.                   |
+| Relay impersonation by DNS or routing hijack             | Nodes pin the voted identity key and check it in the TLS handshake.                                                                                         |
+| Same message injected through two relays                 | Dedup on the signed-message hash, so one client request cannot burn two presignatures.                                                                      |
+| Duplicate leaders, or a participant accepting then stalling | Deterministic leader ranking with backoff; track aborts and bias selection away from repeat offenders.                                                    |
 
 Replay of a whole request is out of scope: NEP-641's nonce semantics and the target
 contract's own replay handling govern it.
 
 ---
 
-## What exists today vs what we need built
-
-### Exists today (checked against `nearcore` at 2026-08-17, `mpc` at 2026-08-14, `intents` at 2026-08-13)
-
-- **A reference resolver with this design's shape.** `RpcResolver`
-  (`crates/signatures/nep641/src/resolver/` in `near/intents`). Recursion is caller-side: one
-  loop calls the view method, reads `pending`, and pushes the next calls onto a pool of
-  in-flight futures. No promises, no contract-to-contract hops. Each step attempts the
-  access-key authorization and the contract call in parallel and prefers the access key, and a
-  mismatch between a parent's `expect` and the child's result aborts the whole resolution. It
-  pins one block for the entire tree, and exposes an override to resolve everything at a
-  block the caller names, which is what an MPC node needs when it replays against the block
-  the request carries.
-- **Storage recording and partial-trie replay.** `Trie::recording_reads_*` and
-  `Trie::from_recorded_storage` over a `PartialState` (`core/store/src/trie/mod.rs`), the
-  NEP-509 machinery, reused for one view call instead of a chunk.
-- **A view-call entry point with the pieces we need.** `TrieViewer::call_function`
-  (`runtime/runtime/src/state_viewer/mod.rs`) takes an explicit `ViewApplyState`, selects
-  runtime config by protocol version, and caps execution. What it does not do is record
-  storage or package proofs, which is the gap the new endpoint fills.
-- **State roots for every shard in one header field.** `inner_lite.prev_state_root`
-  (`core/primitives/src/block.rs`), also part of the light-client payload.
-- **Light-client protocol and serving endpoints.** `next_light_client_block` and
-  `chain/chain/src/lightclient.rs`.
-- **Embeddable contract runtime.** `near-vm-runner`, already in the node through
-  `near-indexer`, though with no stability guarantee for external embedders.
-- **Liveness filtering in the node.** `all_alive_participant_ids`
-  (`crates/node/src/network.rs`) excludes participants trailing by more than
-  `MAX_INDEXER_HEIGHT_DIFF`, and presignature storage prunes sets no longer alive.
-- **Voted provider whitelists in the contract.** `vote_update_foreign_chain_providers` is the
-  shape a relay list should follow.
-
-### Needs building, by team
-
-| Deliverable                                                                                                                                                                                | Owner (proposed)               | Notes                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `witness_view_call`: view call with recording on, proofs to `inner_lite.prev_state_root`, non-inclusion proofs for missing accounts and keys, pinned execution context, tree-wide bundles  | us, or the nearcore team       | The one genuinely new piece outside the MPC network. Primitives exist; the packaging does not. Absence proofs are least likely to fall out of the recorder for free. |
-| Supported-embedder story for the crates we depend on: semver expectations, upgrade notice period, protocol config feed                                                                     | nearcore team                  | `node-runtime`, `near-store` and `near-epoch-manager` are `publish = false`, so we track internals by git tag and chase them at every bump.                          |
-| Production-grade Rust light-client library                                                                                                                                                 | us / ecosystem, later          | Not launch-blocking, since the embedded indexer already validates all headers.                                                                                       |
-| Relay service: accept signed messages, pick a final block, fetch the bundle, inject `WitnessedSignatureRequest`, serve bundles, accept posted results                                      | us                             | Clients need standard NEP-641 signing plus one HTTP call.                                                                                                            |
-| Node: mesh announcement type, entry-node rotation and outbound relay client, bundle fetcher with code-hash cache, request-hash session binding, signed-message dedup cache, result posting | us                             | The structural change: a second, off-chain trigger for signing sessions beside the indexer-event trigger.                                                            |
-| MPC contract: config entries for relay identities (key plus stable name)                                                                                                                   | contract team (us)             | Config only. Addresses stay off chain, so operational churn never needs a vote.                                                                                      |
-| Off-chain payment and metering model                                                                                                                                                       | us + MPC operators             | No deposit in the path; the relay is the metering point.                                                                                                             |
-| MPC node: verified headers exposed via `chain-gateway`, the pipeline, sandboxed replay, policy knobs (recency window, TTL, tree caps, gas cap)                                             | us                             | The bulk of our own work.                                                                                                                                            |
-| Independent witness provider deployments                                                                                                                                                   | MPC operators / infra partners | At least two before mainnet.                                                                                                                                         |
-
-### Client guidance
-
-Backdate signing timestamps by about 60 seconds, per the standard, so honest messages are not
-rejected as future-dated against a block a few seconds behind wall clocks.
-
----
-
-## Building `witness_view_call`
-
-The endpoint does not exist, so this is the piece most likely to be waved through in review
-and then discovered to be someone else's roadmap. It is not: the primitives are all public
-functions in nearcore, and a provider can be our own binary. What we need from the nearcore
-team is a decision about ownership and stability, not permission.
-
-**The primitives exist.** `TrieViewer::call_function` and `TrieViewer::new` in `node-runtime`
-run a view call with an explicit context. `Trie::recording_reads_*` turns recording on,
-`Trie::recorded_storage` extracts what was read, and `Trie::from_recorded_storage` rebuilds a
-trie from it on the verifying side, all in `near-store`. Non-inclusion proofs largely come
-free, since the recorder already walks and records the path to a key that is not there.
-
-**It cannot be a sidecar.** nearcore's store has no secondary-instance mode and its
-`ReadOnly` mode is for offline tooling, so a second process cannot follow a live node's
-database. A provider owns its node.
-
-**The work is glue plus one contract.** Wiring the pieces is a few hundred lines: resolve the
-account to its shard using the epoch's layout, take the state root from B's chunk header,
-supply an `EpochInfoProvider`, run with recording on, and package proofs up to
-`inner_lite.prev_state_root`. The harder half is the agreement between provider and verifier,
-which must pin the execution context, the storage mode (flat-storage reads record differently
-from trie reads), and the state-root convention. Disagreement there shows up as "missing
-data" on perfectly valid requests, so it wants shared test vectors and differential testing
-against real contracts, not prose.
-
-**The exposure is stability, not access.** `node-runtime`, `near-store` and
-`near-epoch-manager` are `publish = false`, so they come by git tag rather than crates.io,
-exactly as the MPC node already consumes nearcore. That is nearcore calling them internal
-with no compatibility contract, so every version bump can move them under us. The same
-applies to the replay path inside the node (Component 6), which is why the supported-embedder
-question matters more than it looks.
-
-**One thing the recorder cannot capture.** Contracts may call `validator_stake` and
-`validator_total_stake`, which report how much a validator has staked. Those numbers come
-from the epoch's validator set rather than the shard's key-value state, so no amount of
-recorded storage covers them. A replaying node reads them from its own embedded nearcore
-node, which tracks validator sets for the whole chain whichever shard it follows, and only
-needs to know which epoch to look in, which is one reason the execution context names it.
-Dropping the indexer for a light client later would mean that light client supplying the same
-data.
-
----
 
 ## Open questions
 
-1. **The recency window.** 60 seconds proposed, and it should not be materially tighter than
-   `MAX_INDEXER_HEIGHT_DIFF`. Needs measurement against real head lag.
-2. **TTL policy.** Does the network impose its own on top of per-contract TTLs, and at what
+1. **The recency window.** 60 seconds proposed. Needs measurement against real head lag.
+2. **TTL policy.** Should the network impose its own TTL on top of per-contract TTLs, and at what
    value?
-3. **Witness bundle limits.** Maximum recorded entries, code size and gas, which bound how
-   expressive extension contracts may be.
+3. **Witness bundle limits.** What should be the upper limit of witness bundle that we send along in the announcement message?
 4. **Protocol upgrade operations.** How nodes learn of and roll out version bumps without an
    authorization outage.
-5. **Tree caps: the numbers, not the knobs.** The reference exposes two, total
-   sub-authorization count and maximum depth, refusing a depth larger than the count, and both
-   default to zero. Ours must be network policy, not per-node config.
-6. **Transport mechanics.** k and m, rotation period and stagger, stream protocol, session
-   timeouts, CDN topology.
-7. **Code cache policy (follow-up, after this design is accepted).** Warm-up and eviction,
-   which the sizing makes load-bearing: a hit keeps a bundle at tens of KB, a miss pushes it
-   past half a megabyte.
+5. **Cap on authorization resolution depth.** We need to decide on how hard the network is willing to try to resolve an authorization request.
+6. **Transport mechanics.** 
+- How many entry nodes the relay connects to and how many spares stand by. 
+- The rotation window's length and whether windows overlap so handoffs cannot drop announcements. 
+- The wire protocol of the relay stream.
+- How long the relay waits for a result before retrying with a fresh block.
+- How bundles are served at scale (CDN, mirrors, node-to-node fallback).
+7. **Code cache policy at MPC node (follow-up, after this design is accepted).** Cache buffer size, warm-up and eviction policies.
 8. **Payment and audit trail.** How operators are paid with no deposit in the path, and
-   whether to anchor a periodic Merkle root of served requests on chain.
-9. **Block-picker placement.** Whether the block keeps arriving with the request or is chosen
-   by the session leader instead.
-10. **Presignature pool policy.** Replenishment against expected load, selection policy, and
-    whether off-chain requests share the pool with `sign()` traffic.
-11. **How tight can the recency window go?** Its floor is head lag across a presignature set,
-    not anything in the standard, so measuring that tells us what each second of it buys.
-12. **Accounts that do not exist yet.** The resolver accepts an access key for an account with
-    no state when the account ID is the implicit one derived from that key, and it carries a
-    disabled path for resolving contract authorizations against a deterministic account's
-    initial state, pending RPC support. So some accounts are addressable, fundable and
-    authorization-relevant with nothing in the trie. We need a position: non-inclusion proofs
-    are assumed by Component 3, and contract resolution against a not-yet-deployed wallet is
-    either in scope at launch or explicitly refused.
-13. **How far to take fail-fast.** Explicit rejects and leader-side pre-verification are
-    cheap. Returning an unspent presignature to the pool needs the signing side to define
-    when a share counts as revealed.
-14. **Relay set governance.** Threshold, time to take effect, whether the list wants a size
+   whether to anchor a periodic Merkle root of served requests on chain. How to collect payment from clients?
+9. **Presignature pool policy.** Can current presignature setup replenish under expected load? Should off-chain requests share the pool with on-chain `sign()` traffic?
+10. **How tight can the recency window go?** Recency window cannot be tigher than head lag across a presignature set. Do we need more slack somewhere else?
+11. **Accounts that do not exist yet.** NEAR accounts can be used before they are created.
+    An implicit account, whose ID is the public key itself, can authorize with no on-chain
+    record. Component 3's absence proofs cover that. 
+    A deterministic contract account is harder: its account ID is the hash of the code and initial state it will be deployed
+    with (NEP-616), and the reference resolver has a disabled path for resolving against
+    that supplied initial state before deployment, when there is nothing on chain for us to
+    prove or replay. Is this in scope at launch or deferred to later?
+12. **How far to take fail-fast.** Explicit rejects and leader-side pre-verification are
+    cheap, at the cost of malicious leader could DOS the network. How far to balance these two competing objectives?
+13. **Relay set governance.** Threshold, time to take effect, whether the list wants a size
     cap, whether per-operator deny lists are policy or code, and how long a signed endpoint
     record lives.
-15. **Where replay is sandboxed.** Separate process, separate VM, or stronger, and what it
-    costs per request.
-16. **Is the total cost still worth it against the on-chain path?** That route was rejected
-    early for latency and gas, and this one has since accumulated a nearcore endpoint, an
-    embedded runtime with an upgrade obligation, a sandbox boundary, a transport layer and a
-    governance surface. The latency argument still holds, but the comparison deserves
-    restating with the real cost of each side.
-17. **Client API details.** How long the initial wait should be, the error taxonomy, whether
+14. **Where is the relay.** Where to host it, and what is the path forward beyond a single
+    relay instance hosted by the MPC team.
+15. **Client API details.** How long the initial wait should be, the error taxonomy, whether
     rejection hints are exposed verbatim or normalized, and how many retries the relay makes
     before giving up.
-18. **Message-level deduplication.** Where the cache lives, how long entries survive, and how
-    it interacts with NEP-641's own nonce and replay semantics.
