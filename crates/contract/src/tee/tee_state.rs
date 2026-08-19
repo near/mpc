@@ -497,23 +497,18 @@ impl TeeState {
         removed
     }
 
-    pub(crate) fn extend_dstack_attestation_expiries(&mut self, extension: Duration) {
+    pub(crate) fn extend_dstack_attestation_expiries(
+        &mut self,
+        participants: &Participants,
+        extension: Duration,
+    ) {
         let extension_seconds = extension.as_secs();
 
-        let dstack_tls_keys: Vec<Ed25519PublicKey> = self
-            .stored_attestations
-            .iter()
-            .filter(|(_, node_attestation)| {
-                matches!(
-                    node_attestation.verified_attestation,
-                    VerifiedAttestation::Dstack(_)
-                )
-            })
-            .map(|(tls_pk, _)| tls_pk.clone())
-            .collect();
-
-        for tls_pk in dstack_tls_keys {
-            let Some(node_attestation) = self.stored_attestations.get_mut(&tls_pk) else {
+        for (_, _, participant) in participants.participants() {
+            let Some(node_attestation) = self
+                .stored_attestations
+                .get_mut(&participant.tls_public_key)
+            else {
                 continue;
             };
             if let VerifiedAttestation::Dstack(dstack) = &mut node_attestation.verified_attestation

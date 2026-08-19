@@ -8523,22 +8523,30 @@ mod tests {
             expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
             expected_measurements: None,
         };
-        let (mut contract, _, _, _) = setup_running_contract_with_domain(3, 2, 2);
+        let (mut contract, participants, _, _) = setup_running_contract_with_domain(3, 2, 2);
         contract.config.launcher_hash_unused_ttl_seconds = 1_209_600; // deployed 3.14.0 value: 14 days
-        let dstack_key = insert_attestation(
+        let entries = participants.participants();
+        let (participant_account, _, participant) = &entries[0];
+        let dstack_key = participant.tls_public_key.clone();
+        let mock_key = entries[1].2.tls_public_key.clone();
+        let outsider_key = bogus_ed25519_public_key();
+        insert_attestation(
             &mut contract,
-            "dstack.near",
-            VerifiedAttestation::Dstack(ValidatedDstackAttestation {
-                mpc_image_hash: MAX_HASH.into(),
-                launcher_compose_hash: MAX_HASH.into(),
-                expiry_timestamp_seconds: EXPIRY_SECONDS,
-                measurements: default_measurements()[0],
-            }),
+            participant_account.as_str(),
+            &dstack_key,
+            dstack_attestation_expiring_at(EXPIRY_SECONDS),
         );
-        let mock_key = insert_attestation(
+        insert_attestation(
             &mut contract,
-            "mock.near",
+            entries[1].0.as_str(),
+            &mock_key,
             VerifiedAttestation::Mock(mock.clone()),
+        );
+        insert_attestation(
+            &mut contract,
+            "outsider.near",
+            &outsider_key,
+            dstack_attestation_expiring_at(EXPIRY_SECONDS),
         );
         env::state_write(&contract);
         drop(contract);
@@ -8562,6 +8570,14 @@ mod tests {
             VerifiedAttestation::Mock(stored) if *stored == mock
         );
 
+        // A dstack attestation belonging to a non-participant is left alone: the migration
+        // walks the participant set, not the whole map.
+        assert_matches!(
+            &stored.get(&outsider_key).unwrap().verified_attestation,
+            VerifiedAttestation::Dstack(dstack)
+                if dstack.expiry_timestamp_seconds == EXPIRY_SECONDS
+        );
+
         // And the launcher TTL was raised, keeping `Config::validate`'s invariant true.
         assert_ne!(1_209_600, config::DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS);
         assert_eq!(
@@ -8573,17 +8589,28 @@ mod tests {
     fn insert_attestation(
         contract: &mut MpcContract,
         account_id: &str,
+        tls_public_key: &Ed25519PublicKey,
         verified_attestation: VerifiedAttestation,
-    ) -> Ed25519PublicKey {
-        let node_id = create_node_id(&account_id.parse().unwrap(), &bogus_ed25519_public_key());
-        let tls_public_key = node_id.tls_public_key.clone();
+    ) {
         contract.tee_state.stored_attestations.insert(
             tls_public_key.clone(),
             NodeAttestation {
-                node_id,
+                node_id: NodeId {
+                    account_id: account_id.parse().unwrap(),
+                    tls_public_key: tls_public_key.clone(),
+                    account_public_key: bogus_ed25519_public_key(),
+                },
                 verified_attestation,
             },
         );
-        tls_public_key
+    }
+
+    fn dstack_attestation_expiring_at(expiry_timestamp_seconds: u64) -> VerifiedAttestation {
+        VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+            mpc_image_hash: MAX_HASH.into(),
+            launcher_compose_hash: MAX_HASH.into(),
+            expiry_timestamp_seconds,
+            measurements: default_measurements()[0],
+        })
     }
 }
