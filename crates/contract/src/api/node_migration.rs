@@ -112,7 +112,7 @@ impl MpcContract {
 
     /// Cancels a previously started node migration for the calling account.
     ///
-    /// Requires a deposit of at least [`crate::MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
     /// key.
     #[handle_result]
@@ -120,7 +120,7 @@ impl MpcContract {
     pub fn cancel_node_migration(&mut self) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
         log!("cancel_node_migration: signer={:?}", account_id);
-        require_deposit(crate::MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
+        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         if self.node_migrations.remove_migration(&account_id).is_none() {
             return Err(errors::NodeMigrationError::MigrationNotFound.into());
         }
