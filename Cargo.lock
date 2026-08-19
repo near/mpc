@@ -6115,7 +6115,6 @@ version = "3.14.0"
 dependencies = [
  "anyhow",
  "blstrs",
- "borsh",
  "bs58 0.5.1",
  "clap",
  "ed25519-dalek",
