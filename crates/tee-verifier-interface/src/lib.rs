@@ -193,8 +193,7 @@ pub enum VerificationResult {
 /// Storage key under which a sandbox test can pin the timestamp `verify_quote`
 /// verifies against, as u64 little-endian seconds since the Unix epoch.
 ///
-/// Honored only by verifier builds with the `sandbox-test-hooks` feature and
-/// the `mpc_sandbox_wasm` cfg marker set by the test harness; production
+/// Honored only by verifier builds the test harness produces; production
 /// builds never read it. Tests write it from outside the contract
 /// (state patching), which is why the key must be shared between the verifier
 /// and its callers' test suites rather than staying private.

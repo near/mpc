@@ -1,28 +1,28 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
-        CKDAppPublicKey, ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId,
-        DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, GovernanceThreshold,
-        GovernanceThresholdParameters, MockAttestation, ParticipantId, ParticipantInfo,
-        Participants, Payload, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol,
-        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
-        SignRequestArgs,
+        CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
+        GovernanceThreshold, GovernanceThresholdParameters, MockAttestation, ParticipantId,
+        ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs,
     },
 };
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::{SeedableRng, rngs::StdRng};
 use serde_json::json;
 
 use crate::blockchain::{DeployedContract, NearBlockchain, NearKitCaller};
@@ -1440,25 +1440,31 @@ async fn deploy_and_trust_tee_verifier(
         "candidate_account_id": verifier_account,
         "expected_code_hash": expected_code_hash,
     });
-    for &i in participant_indices {
-        let account = node_account(i);
-        let client = blockchain.client_for(&account, &operator_keys[i])?;
-        let outcome = contract
-            .call_from_with_deposit(
-                &client,
-                method_names::VOTE_TEE_VERIFIER_CHANGE,
-                args.clone(),
-                VOTE_TEE_VERIFIER_GAS,
-                near_kit::NearToken::from_yoctonear(0),
-            )
-            .await
-            .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
-        anyhow::ensure!(
-            outcome.is_success(),
-            "node {i}'s tee-verifier vote failed: {:?}",
-            outcome.failure_message()
-        );
-    }
+    // Each participant votes from its own account and key, so nothing forces an order.
+    let votes = participant_indices.iter().map(|&i| {
+        let args = args.clone();
+        async move {
+            let account = node_account(i);
+            let client = blockchain.client_for(&account, &operator_keys[i])?;
+            let outcome = contract
+                .call_from_with_deposit(
+                    &client,
+                    method_names::VOTE_TEE_VERIFIER_CHANGE,
+                    args,
+                    VOTE_TEE_VERIFIER_GAS,
+                    near_kit::NearToken::from_yoctonear(0),
+                )
+                .await
+                .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
+            anyhow::ensure!(
+                outcome.is_success(),
+                "node {i}'s tee-verifier vote failed: {:?}",
+                outcome.failure_message()
+            );
+            anyhow::Ok(())
+        }
+    });
+    futures::future::try_join_all(votes).await?;
 
     // The votes are not awaited to finality, so views can lag them; poll like
     // the post-init state waits do.

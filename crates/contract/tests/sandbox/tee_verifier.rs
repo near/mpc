@@ -1,9 +1,9 @@
-//! Sandbox tests for the async [`submit_participant_info`] flow against a real
-//! deployed `tee-verifier`, covering the Rejected, Unavailable, and Verified
-//! verdicts. Verified needs the `sandbox-test-hooks` verifier with its clock
-//! pinned inside the fixture collateral's validity window, the fixture's
-//! compose hash patched into contract state (no vote can derive it), and
-//! signing as the fixture account, whose key the quote's report_data binds.
+//! Sandbox tests for the attestation flow against a real deployed `tee-verifier`.
+//!
+//! The Verified path needs a verifier build whose clock is pinned inside the
+//! fixture collateral's validity window, the fixture's compose hash patched into
+//! contract state (no vote can derive it), and signing as the fixture account,
+//! whose key the quote's report_data binds.
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
@@ -208,15 +208,12 @@ async fn stored_fixture_attestation(contract: &Contract) -> Option<dtos::Verifie
         .unwrap()
 }
 
-/// Asserts a Dstack submission failed cleanly: a receipt failed mentioning every
-/// string in `expected_error` (`fail_attestation_submission` panics in its own
-/// receipt), no attestation was stored, and the caller spent only gas.
 async fn assert_submission_failed_cleanly(
     result: &ExecutionFinalResult,
     contract: &Contract,
     submitter: &Account,
     balance_before: NearToken,
-    expected_error: &[&str],
+    expected_errors: &[&str],
 ) {
     let failures = result.failures();
     assert!(
@@ -226,7 +223,7 @@ async fn assert_submission_failed_cleanly(
     // Substring-match: near-workspaces keeps `ExecutionOutcome.status`
     // `pub(crate)`, so the error is only reachable via the Debug dump.
     let rendered = format!("{failures:?}");
-    for expected in expected_error {
+    for expected in expected_errors {
         assert!(
             rendered.contains(expected),
             "expected a receipt failure containing {expected:?}, got: {rendered}"
@@ -238,8 +235,6 @@ async fn assert_submission_failed_cleanly(
     assert_only_gas_spent(submitter, balance_before, result).await;
 }
 
-/// Calls `verify_quote` with the committed borsh argument fixture and returns the raw
-/// borsh return value, asserting the call itself succeeded.
 async fn call_verify_quote(verifier: &Contract, args: &[u8]) -> Vec<u8> {
     let result = verifier
         .call(method_names::VERIFY_QUOTE)
@@ -252,9 +247,8 @@ async fn call_verify_quote(verifier: &Contract, args: &[u8]) -> Vec<u8> {
     result.raw_bytes().unwrap()
 }
 
-/// Asserts the caller spent only gas: no deposit is attached, so a failed submission costs nothing
-/// beyond gas. The unspent-gas refund lands a block or two after the transaction, so poll until
-/// the balance settles instead of reading it once.
+/// The unspent-gas refund lands a block or two after the transaction, so the
+/// balance is polled until it settles rather than read once.
 async fn assert_only_gas_spent(
     account: &Account,
     balance_before: NearToken,
@@ -371,10 +365,6 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
     .await;
 }
 
-/// Tolerance for comparing an on-chain expiry stamp against this process's
-/// wall clock (sandbox block time tracks it loosely).
-const EXPIRY_SLACK_SECONDS: u64 = 600;
-
 #[tokio::test]
 async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
     // Given
@@ -412,9 +402,9 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
     let headroom = Gas::from_gas(budget.as_gas() / 10);
     assert!(
         verify_quote_outcome.gas_burnt <= budget.saturating_sub(headroom),
-        "verify_quote burnt {} of the configured {budget}, leaving less than the {headroom} \
-         headroom this test exists to protect. Raise DEFAULT_VERIFIER_TERA_GAS (config.rs) \
-         before the real cost reaches the budget",
+        "verify_quote burnt {} of the {budget} budget, leaving less than {headroom} headroom. \
+         Find what grew (gas schedule or `dcap-qvl`) before raising DEFAULT_VERIFIER_TERA_GAS \
+         in config.rs, or the OOG this guards against reaches mainnet",
         verify_quote_outcome.gas_burnt,
     );
     assert_submission_failed_cleanly(
@@ -487,8 +477,10 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
         panic!("expected a stored Dstack attestation, got: {stored:?}");
     };
     let expected_expiry = submitted_at + DEFAULT_EXPIRATION_DURATION_SECONDS;
+    // The expiry is stamped from sandbox block time, which drifts from `submitted_at`
+    const MAX_CLOCK_DRIFT_SECONDS: u64 = 600;
     assert!(
-        stored.expiry_timestamp_seconds.abs_diff(expected_expiry) < EXPIRY_SLACK_SECONDS,
+        stored.expiry_timestamp_seconds.abs_diff(expected_expiry) < MAX_CLOCK_DRIFT_SECONDS,
         "expiry {} should be about {expected_expiry} (submission time + default expiration)",
         stored.expiry_timestamp_seconds,
     );
@@ -583,16 +575,16 @@ async fn submit_participant_info__should_reject_verified_quote_when_compose_hash
     let result = submit_dstack(&submitter, &contract).await;
 
     // Then
+    let expected_rejection = format!(
+        "MPC launcher compose hash {:?} is not in the allowed hashes list",
+        launcher_compose_digest()
+    );
     assert_submission_failed_cleanly(
         &result,
         &contract,
         &submitter,
         balance_before,
-        &[
-            "failed verification",
-            "launcher compose hash",
-            "is not in the allowed hashes list",
-        ],
+        &["failed verification", &expected_rejection],
     )
     .await;
     let remaining: u32 = contract

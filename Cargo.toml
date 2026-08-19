@@ -306,10 +306,7 @@ rand_core = "0.6.4"
 time = "0.3.45"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = [
-    'cfg(feature, values("abi"))',
-    'cfg(mpc_sandbox_wasm)',
-] }
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(feature, values("abi"))'] }
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
