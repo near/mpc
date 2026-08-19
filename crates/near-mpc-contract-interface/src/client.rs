@@ -47,7 +47,7 @@ pub const VOTE_ADD_DOMAINS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_NEW_PARAMETERS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
-pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(100);
+pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.

@@ -70,7 +70,7 @@ args:     {}
 
 contract: mpc.near
 method:   vote_tee_verifier_change
-gas:      100.0 Tgas
+gas:      22.0 Tgas
 deposit:  0 NEAR
 args:     {"candidate_account_id":"verifier.near","expected_code_hash":"0707070707070707070707070707070707070707070707070707070707070707"}
 
