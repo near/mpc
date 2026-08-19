@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+    consts::{GAS_FOR_INIT, PARTICIPANT_LEN},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
@@ -8,6 +8,7 @@ use crate::sandbox::utils::{
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
+    transactions::CallMpcContract,
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -24,7 +25,6 @@ use mpc_contract::{
         },
     },
     tee::tee_state::NodeId,
-    update::UpdateId,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
@@ -354,14 +354,11 @@ pub async fn propose_and_vote_contract_binary(
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), method_names::PROPOSE_UPDATE)
-        .args_borsh(ProposeUpdateArgs {
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
             code: Some(new_contract_binary.to_vec()),
             config: None,
         })
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
         .await
         .expect("propose update call succeeds");
 
@@ -370,7 +367,7 @@ pub async fn propose_and_vote_contract_binary(
         "propose update call failed"
     );
 
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+    let proposal_id: u64 = propose_update_execution.json().unwrap();
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -383,7 +380,7 @@ pub async fn propose_and_vote_contract_binary(
         .json()
         .expect("state is deserializable.");
 
-    vote_update_till_completion(contract, accounts, &proposal_id).await;
+    vote_update_till_completion(contract, accounts, proposal_id).await;
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
@@ -396,16 +393,12 @@ pub async fn propose_and_vote_contract_binary(
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: &UpdateId,
+    proposal_id: u64,
 ) {
     for voter in accounts {
         let execution = voter
-            .call(contract.id(), method_names::VOTE_UPDATE)
-            .args_json(serde_json::json!({
-                "id": proposal_id,
-            }))
-            .gas(GAS_FOR_VOTE_UPDATE)
-            .transact()
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
             .await
             .unwrap();
 
@@ -623,18 +616,11 @@ pub async fn execute_key_generation_and_add_random_state(
     let dummy_threshold_parameters =
         GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(threshold.0 + 1))
             .unwrap();
-    let dummy_proposal = json!({
-        "prospective_epoch_id": 1,
-        "proposal": ProposedGovernanceThresholdParameters::new(
-            dummy_threshold_parameters,
-            BTreeMap::new(),
-        ),
-    });
+    let dummy_proposal =
+        ProposedGovernanceThresholdParameters::new(dummy_threshold_parameters, BTreeMap::new());
     accounts[0]
-        .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-        .args_json(dummy_proposal)
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .vote_new_parameters(dtos::EpochId::new(1), dummy_proposal.into())
         .await
         .unwrap()
         .unwrap();
@@ -688,9 +674,8 @@ pub async fn register_foreign_chain_configuration(
     let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
     for account in accounts {
         let result = account
-            .call(contract.id(), method_names::REGISTER_FOREIGN_CHAIN_SUPPORT)
-            .args_json(json!({ "foreign_chain_support": node_foreign_chain_support }))
-            .transact()
+            .call_mpc(contract.id())
+            .register_foreign_chain_support(node_foreign_chain_support.clone())
             .await
             .unwrap()
             .into_result();

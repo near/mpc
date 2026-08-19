@@ -4,7 +4,7 @@ use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
-use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader, RealForeignChainPolicyReader};
+use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
@@ -69,10 +69,10 @@ pub fn spawn_real_indexer(
     foreign_chains: mpc_node_config::ForeignChainsConfig,
     tx_logger: impl LogTransaction,
     shutdown_token: CancellationToken,
-) -> IndexerAPI<impl TransactionSender, RealForeignChainPolicyReader> {
+) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
     let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
-    let (foreign_chain_policy_reader_sender, foreign_chain_policy_reader_receiver) =
+    let (foreign_chain_supporters_sender_oneshot, foreign_chain_supporters_receiver_oneshot) =
         oneshot::channel();
     let (attestation_reader_sender, attestation_reader_receiver) = oneshot::channel();
 
@@ -81,8 +81,6 @@ pub fn spawn_real_indexer(
     let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
-    let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
-        watch::channel(Default::default());
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -185,15 +183,6 @@ pub fn spawn_real_indexer(
                 tracing::error!("Failed to send txn_sender back to main thread.")
             };
 
-            let foreign_chain_policy_reader =
-                RealForeignChainPolicyReader::new(indexer_state.clone());
-            if foreign_chain_policy_reader_sender
-                .send(foreign_chain_policy_reader)
-                .is_err()
-            {
-                tracing::error!("failed to send foreign chain policy reader back to main thread")
-            };
-
             let attestation_reader: std::sync::Arc<dyn super::ReadAttestationExpiry> =
                 std::sync::Arc::new(RealAttestationExpiryReader::new(indexer_state.clone()));
             if attestation_reader_sender.send(attestation_reader).is_err() {
@@ -224,10 +213,16 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
-            tokio::spawn(monitor_foreign_chain_supporters(
-                foreign_chain_supporters_sender,
-                indexer_state.clone(),
-            ));
+            let foreign_chain_supporters_receiver =
+                monitor_foreign_chain_supporters(indexer_state.clone()).await;
+            if foreign_chain_supporters_sender_oneshot
+                .send(foreign_chain_supporters_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send foreign chain supporters receiver back to main driver."
+                )
+            };
 
             let (foreign_chain_whitelist_sender, foreign_chain_whitelist_receiver) =
                 watch::channel(std::collections::BTreeMap::new());
@@ -333,9 +328,9 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Migraration info receiver must be returned by indexer.");
 
-    let foreign_chain_policy_reader = foreign_chain_policy_reader_receiver
+    let foreign_chain_supporters_receiver = foreign_chain_supporters_receiver_oneshot
         .blocking_recv()
-        .expect("foreign chain policy reader must be returned by indexer");
+        .expect("foreign chain supporters receiver must be returned by indexer");
 
     let attestation_reader = attestation_reader_receiver
         .blocking_recv()
@@ -349,7 +344,6 @@ pub fn spawn_real_indexer(
         allowed_launcher_compose_receiver,
         attested_nodes_receiver: tee_accounts_receiver,
         my_migration_info_receiver,
-        foreign_chain_policy_reader,
         foreign_chain_supporters_receiver,
         attestation_reader,
     }
