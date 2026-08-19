@@ -138,8 +138,9 @@ build_reproducible_image() {
 # skopeo re-gzips every layer here, so the manifest digest depends on the
 # deflate library its binary was linked against rather than on its version
 # string: Ubuntu 26.04's package (klauspost/compress 1.18.1) emits different
-# bytes than 24.04's (1.17.7) for identical input. Pin the build by digest.
-skopeo_image="quay.io/skopeo/stable:v1.22.2@sha256:c7d3c512612f52805023cd38351081dad7e2729fc13d14b701e47c7c8bdd6615"
+# bytes than 24.04's (1.17.7) for identical input. Pin the build by digest, taken
+# from an upstream `-immutable` tag.
+skopeo_image="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810"
 
 # Compress a built image tar via skopeo to a temp directory.
 # Prints the temp dir path to stdout. The manifest digest can be
