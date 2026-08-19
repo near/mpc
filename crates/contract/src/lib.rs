@@ -92,7 +92,7 @@ use tee::{
 };
 
 /// Minimum deposit required for the operator-authenticated node-management methods
-/// (`register_backup_service`, `start_node_migration`, `update_participant_url`).
+/// (`register_backup_service`, `start_node_migration`, `update_participant_url`, 'cancel_node_migration').
 ///
 /// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
 /// is registered as a function-call access key, which cannot attach a deposit, so a leaked
@@ -2019,10 +2019,16 @@ impl MpcContract {
     }
 
     /// Cancels a previously started node migration for the calling account.
+    ///
+    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
+    /// the call must be signed by a full-access key rather than the node's function-call access
+    /// key.
     #[handle_result]
+    #[payable]
     pub fn cancel_node_migration(&mut self) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
         log!("cancel_node_migration: signer={:?}", account_id);
+        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         if self.node_migrations.remove_migration(&account_id).is_none() {
             return Err(errors::NodeMigrationError::MigrationNotFound.into());
         }
@@ -7054,7 +7060,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cancel_node_migration() {
+    #[should_panic(expected = "Attached deposit is lower than required")]
+    fn cancel_node_migration__should_reject_when_no_deposit_attached() {
         let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
         let mut contract = MpcContract::new_from_protocol_state(running_state);
         let participants = {
@@ -7068,14 +7075,51 @@ mod tests {
             .first()
             .expect("expected at least one participant")
             .clone();
+        let _ = Environment::new(None, Some(account_id.clone()), None);
+        let _ = contract.cancel_node_migration();
+    }
 
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .attached_deposit(NearToken::from_yoctonear(1))
-                .build()
+    #[test]
+    fn cancel_node_migration__should_reject_when_no_migration_info_is_found() {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let (account_id, _, _) = participants
+            .participants()
+            .first()
+            .expect("expected at least one participant")
+            .clone();
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(NearToken::from_yoctonear(1));
+        assert!(contract.migration_info().is_empty());
+        assert_matches!(
+            contract.cancel_node_migration().unwrap_err(),
+            Error::NodeMigrationError(NodeMigrationError::MigrationNotFound)
         );
+    }
+
+    #[test]
+    fn cancel_node_migration__should_cancel_node_migration() {
+        let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let (account_id, _, _) = participants
+            .participants()
+            .first()
+            .expect("expected at least one participant")
+            .clone();
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(NearToken::from_yoctonear(2));
         let destination_node_info = gen_random_destination_info();
         contract
             .start_node_migration(destination_node_info.clone())
@@ -7084,10 +7128,6 @@ mod tests {
             migration_info(&contract, &account_id),
             (account_id.clone(), None, Some(destination_node_info))
         );
-
-        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
-        test_env.set_signer(&account_id);
-        // Cancel the migration
         contract
             .cancel_node_migration()
             .expect("caller should be able to cancel their pending migration");
@@ -7095,12 +7135,6 @@ mod tests {
             migration_info(&contract, &account_id),
             (account_id.clone(), None, None)
         );
-        // Check migration was cancelled
         assert!(contract.migration_info().is_empty());
-        let res = contract.cancel_node_migration();
-        assert_matches!(
-            res.unwrap_err(),
-            Error::NodeMigrationError(NodeMigrationError::MigrationNotFound)
-        );
     }
 }

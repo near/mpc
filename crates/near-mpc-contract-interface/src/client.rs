@@ -244,10 +244,11 @@ impl<C: CallContract> MpcContractHandle<C> {
     pub async fn cancel_node_migration(
         &self,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        self.call(FunctionCallArgs::no_deposit(
+        self.call(FunctionCallArgs::new(
             CANCEL_NODE_MIGRATION,
             b"{}".to_vec(),
             MAX_GAS,
+            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
         ))
         .await
     }
@@ -530,6 +531,7 @@ mod tests {
             })
             .await
             .unwrap();
+        handle.cancel_node_migration().await.unwrap();
         handle
             .register_foreign_chain_support(BTreeSet::from([ForeignChain::Bitcoin]).into())
             .await
