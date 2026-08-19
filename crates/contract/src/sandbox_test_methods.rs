@@ -11,6 +11,10 @@
 use crate::MpcContract;
 use crate::primitives::ckd::CKDRequest;
 use crate::primitives::signature::SignatureRequest;
+use crate::tee::tee_state::{NodeAttestation, NodeId};
+use mpc_attestation::attestation::{
+    ValidatedDstackAttestation, VerifiedAttestation, default_measurements,
+};
 use near_sdk::near;
 
 // Import the generated extension trait from near
@@ -47,5 +51,23 @@ impl MpcContract {
             .unwrap_or(0);
         u32::try_from(len)
             .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
+    }
+
+    /// Stores a pre-verified dstack attestation, bypassing quote verification. The captured
+    /// fixtures hold one valid `(tls_key, account_key)` identity, so a test needing many
+    /// stored dstack entries cannot produce them through `submit_participant_info`.
+    pub fn store_dstack_attestation(&mut self, node_id: NodeId, expiry_timestamp_seconds: u64) {
+        self.tee_state.stored_attestations.insert(
+            node_id.tls_public_key.clone(),
+            NodeAttestation {
+                node_id,
+                verified_attestation: VerifiedAttestation::Dstack(ValidatedDstackAttestation {
+                    mpc_image_hash: [0u8; 32].into(),
+                    launcher_compose_hash: [0u8; 32].into(),
+                    expiry_timestamp_seconds,
+                    measurements: default_measurements()[0],
+                }),
+            },
+        );
     }
 }
