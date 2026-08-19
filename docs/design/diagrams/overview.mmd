@@ -1,13 +1,16 @@
 %%{init: {"flowchart": {"rankSpacing": 45, "nodeSpacing": 40}}}%%
-flowchart TB
+flowchart BT
     W["Client<br/>(wallet, dApp, service)"]
     R["Relay (ours)<br/>untrusted by the nodes"]
     WP["Witness provider<br/>untrusted full node,<br/>synced to every shard"]
     CHAIN[("NEAR chain")]
 
-    W <-->|"1. signed NEP-641 message<br/>6. result"| R
-    R <-->|"2. view call at final block B<br/>3. bundle: state, code, proofs"| WP
-    R <-->|"4. announce, then serve<br/>the bundle by hash<br/>5. leader posts the signature"| MPCNET
+    W -->|"1. signed NEP-641 message"| R
+    R -->|"6. result"| W
+    R -->|"2. view call at final block B"| WP
+    WP -->|"3. bundle: state, code, proofs"| R
+    R -->|"4. announce, then serve<br/>the bundle by hash"| E
+    P -->|"5. leader posts the signature"| R
     CHAIN -.->|"validated block headers,<br/>from each node's<br/>embedded indexer"| MPCNET
 
     subgraph MPCNET ["MPC network (still tracks only its own shard)"]
