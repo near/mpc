@@ -2,34 +2,24 @@
 //! state and config views.
 
 use crate::config::Config;
-use crate::errors::{DomainError, InvalidState};
-use crate::{
-    dto_mapping::{IntoInterfaceType, TryIntoContractType},
-    errors::Error,
-    foreign_chains_metadata::ForeignChainsMetadata,
-    primitives::domain::AddDomainsVotes,
-    storage_keys::StorageKey,
-    tee::tee_state::TeeState,
-    tee::verifier_votes::TeeVerifierVotes,
-    update::ProposedUpdates,
-};
-use near_mpc_contract_interface::types::{self as dtos};
-
+use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
+use crate::errors::{DomainError, Error, InvalidState};
+use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
-use crate::primitives::{
-    domain::{DomainRegistry, max_reconstruction_threshold},
-    key_state::{EpochId, Keyset},
-    thresholds::GovernanceThresholdParameters,
-};
+use crate::primitives::domain::{AddDomainsVotes, DomainRegistry, max_reconstruction_threshold};
+use crate::primitives::key_state::{EpochId, Keyset};
+use crate::primitives::thresholds::GovernanceThresholdParameters;
+use crate::state::ProtocolContractState;
+use crate::state::running::RunningContractState;
+use crate::storage_keys::StorageKey;
+use crate::tee::tee_state::TeeState;
+use crate::tee::verifier_votes::TeeVerifierVotes;
+use crate::update::ProposedUpdates;
+use crate::{MpcContract, MpcContractExt, v3_14_0_state};
 use dtos::DomainConfig;
-use near_sdk::{
-    env, log, near,
-    store::{IterableMap, Lazy, LookupMap},
-};
-
-use crate::state::{ProtocolContractState, running::RunningContractState};
-use crate::v3_14_0_state;
-use crate::{MpcContract, MpcContractExt};
+use near_mpc_contract_interface::types::{self as dtos};
+use near_sdk::store::{IterableMap, Lazy, LookupMap};
+use near_sdk::{env, log, near};
 
 #[near]
 impl MpcContract {
@@ -228,14 +218,10 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-
-    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
-
     use crate::primitives::test_utils::gen_participants;
-
-    use crate::*;
-
-    use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
+    use crate::primitives::thresholds::GovernanceThreshold;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::{NearToken, testing_env};
 
     #[test]
     fn init__should_reject_launcher_ttl_below_attestation_validity() {

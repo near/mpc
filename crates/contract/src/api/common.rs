@@ -2,10 +2,9 @@
 
 use crate::errors::{InvalidParameters, RequestError, TeeError};
 use crate::{MpcContract, MpcContractExt};
+use dtos::{DomainConfig, DomainId, DomainPurpose};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, env, log, near};
-
-use dtos::{DomainConfig, DomainId, DomainPurpose};
 
 /// Register used to receive data id from `promise_await_data`.
 /// Note: This is an implementation constant, not a configurable policy value.
@@ -157,11 +156,12 @@ pub(crate) fn refund_to(account_id: &AccountId, amount: NearToken) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::api::test_utils::*;
+    use crate::api::test_utils::basic_setup;
     use dtos::Curve;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
-    use rand::{SeedableRng, rngs::OsRng};
+    use rand::SeedableRng;
+    use rand::rngs::OsRng;
 
     fn override_context_for_preconditions(deposit: NearToken, prepaid_gas: Gas) {
         let predecessor: AccountId = "contract_account.near".parse().unwrap();
