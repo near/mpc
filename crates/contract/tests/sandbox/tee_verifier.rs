@@ -7,7 +7,7 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
-    common::{SandboxTestSetup, init_with_wasm},
+    common::SandboxTestSetup,
     utils::{
         consts::ALL_PROTOCOLS,
         contract_build::{tee_verifier_contract, tee_verifier_contract_with_sandbox_test_hooks},
@@ -26,7 +26,7 @@ use mpc_contract::{
     tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_mpc_contract_interface::{method_names, types as dtos};
+use near_mpc_contract_interface::types as dtos;
 use near_workspaces::{
     Account, AccountId, Contract, Worker,
     network::Sandbox,
@@ -232,18 +232,6 @@ async fn assert_submission_failed_cleanly(
         "a failed submission must not consume the prepaid grant"
     );
     assert_only_gas_spent(submitter, balance_before, result).await;
-}
-
-async fn call_verify_quote(verifier: &Contract, args: &[u8]) -> Vec<u8> {
-    let result = verifier
-        .call(method_names::VERIFY_QUOTE)
-        .args(args.to_vec())
-        .max_gas()
-        .transact()
-        .await
-        .unwrap();
-    assert!(result.is_success(), "verify_quote failed: {result:#?}");
-    result.raw_bytes().unwrap()
 }
 
 /// The unspent-gas refund lands a block or two after the transaction, so the
