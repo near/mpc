@@ -15,6 +15,23 @@ pub fn build_contract_path(opts: cargo_near_build::BuildOpts) -> PathBuf {
     artifact.canonicalize().unwrap()
 }
 
+/// Loads the WASM from `env_var` if set, else the workspace-relative `prebuilt`
+/// artifact, else a fresh build. The builder must output to `prebuilt`'s directory,
+/// or every process misses the fallback's artifact and rebuilds.
+pub fn must_load_wasm(env_var: &str, prebuilt: &str, builder: ContractBuilder) -> Vec<u8> {
+    let prebuilt = workspace_root().join(prebuilt);
+    let wasm_path = match std::env::var(env_var) {
+        Ok(path) => PathBuf::from(path),
+        Err(_) if prebuilt.exists() => prebuilt,
+        Err(_) => {
+            eprintln!("{env_var} not set and no pre-built WASM found; building from source");
+            return builder.build();
+        }
+    };
+    std::fs::read(&wasm_path)
+        .unwrap_or_else(|e| panic!("failed to read the WASM at {}: {e}", wasm_path.display()))
+}
+
 /// Builder for compiling a NEAR contract WASM with sensible test defaults.
 ///
 /// Disables ABI generation and uses the `release-contract` profile by default.

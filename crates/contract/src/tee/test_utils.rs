@@ -118,18 +118,21 @@ pub fn whitelist_dstack_measurements(
     }
 }
 
-/// Adds a [`LauncherDockerComposeHash`] to a [`LauncherImageHash`]'s allowlist entry in a
-/// raw `STATE` blob, for sandbox tests to patch back in. The attestation fixture's compose
-/// hash is not derivable from the compiled-in template, so no vote can allow it.
-pub fn allow_launcher_compose_hash_in_state(
+/// The compose hash bypasses voting because the attestation fixture's hash is not
+/// derivable from the compiled-in template, so no vote can allow it.
+pub fn whitelist_dstack_in_state(
     state: &[u8],
-    launcher_hash: &LauncherImageHash,
-    compose_hash: LauncherDockerComposeHash,
+    image: NodeImageHash,
+    launcher: LauncherImageHash,
+    compose_hash: Option<LauncherDockerComposeHash>,
 ) -> Vec<u8> {
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
-    contract
-        .tee_state
-        .allowed_launcher_images
-        .allow_compose_hash(launcher_hash, compose_hash);
+    whitelist_dstack_measurements(&mut contract.tee_state, image, launcher);
+    if let Some(compose_hash) = compose_hash {
+        contract
+            .tee_state
+            .allowed_launcher_images
+            .allow_compose_hash(&launcher, compose_hash);
+    }
     borsh::to_vec(&contract).expect("STATE serializes")
 }

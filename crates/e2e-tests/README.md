@@ -111,8 +111,8 @@ contract interaction, account creation, and WASM deployment goes through it.
 pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
-    pub fn new(rpc_url: &str, root_account: &str, root_secret: near_kit::SecretKey)
-        -> anyhow::Result<Self>;
+    pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
+        root_secret: near_kit::SecretKey) -> anyhow::Result<Self>;
     pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
@@ -126,9 +126,8 @@ impl NearBlockchain {
 client. It exposes `call`/`call_final` (from the contract account, used only
 for `init`), `handle_for` (a typed `MpcContractHandle` calling as a given
 `NearKitCaller`), `call_from_with_deposit` (untyped escape hatch for methods
-without a typed wrapper yet: `prepay_attestation_storage`,
-`vote_tee_verifier_change`), `view`, and `state()` (parsed
-`ProtocolContractState`).
+without a typed wrapper yet: `prepay_attestation_storage`), `view`, and
+`state()` (parsed `ProtocolContractState`).
 
 `NearKitCaller` binds a signer to a non-contract account (nodes voting, users
 submitting sign requests) and implements the `CallContract` transport trait,
@@ -190,7 +189,7 @@ The returned cluster exposes:
 - **Contract state:** `get_contract_state`, `wait_for_state`,
   `wait_for_node_healthy`, `get_tee_accounts`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
-  `vote_cancel_resharing_from`, `add_domains`.
+  `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
@@ -212,7 +211,6 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     pub binary_paths: Vec<PathBuf>,             // one or num_nodes
     pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
-    pub tee_verifier_wasm: Vec<u8>,             // loaded via MPC_TEE_VERIFIER_WASM
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
@@ -226,7 +224,7 @@ pub struct MpcClusterConfig {
 
 pub struct ForeignChainsClusterConfig {
     pub node_configs: Vec<ForeignChainsConfig>, // per-node; empty = default for all
-    pub whitelisted_chains: BTreeSet<ForeignChain>, // voted in during setup
+    pub whitelist: BTreeMap<ForeignChain, ChainEntry>, // voted in during setup
 }
 
 impl MpcClusterConfig {

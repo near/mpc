@@ -19,7 +19,7 @@ use near_mpc_contract_interface::{
         GovernanceThreshold, GovernanceThresholdParameters, MockAttestation, ParticipantId,
         ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -54,8 +54,6 @@ pub fn cluster_poll_retry() -> ConstantBuilder {
         )
 }
 
-const VOTE_TEE_VERIFIER_GAS: near_kit::Gas = near_kit::Gas::from_tgas(100);
-
 // The contract's default `key_event_timeout_blocks = 30` is ~18 s on
 // mainnet (~600 ms blocks). The e2e sandbox runs ~8 blocks/s, so the
 // same 30 collapses to ~3.7 s — too tight for the resharing
@@ -87,12 +85,6 @@ pub struct MpcClusterConfig {
     pub binary_paths: Vec<PathBuf>,
     /// Compiled contract WASM bytes (pre-compiled by the test).
     pub contract_wasm: Vec<u8>,
-    /// Compiled tee-verifier WASM bytes, deployed and voted in during cluster
-    /// startup for topology parity with production. Nodes in e2e clusters
-    /// submit mock attestations, which the MPC contract verifies without
-    /// calling the verifier; the cross-contract flow itself is covered by the
-    /// mpc-contract sandbox tests.
-    pub tee_verifier_wasm: Vec<u8>,
     /// Port seed for the port allocator (must be unique across parallel tests).
     pub port_seed: u16,
     /// Triple buffer size per node.
@@ -205,7 +197,6 @@ impl MpcClusterConfig {
             ],
             binary_paths: vec![default_mpc_binary_path()],
             contract_wasm,
-            tee_verifier_wasm: must_load_tee_verifier_wasm(),
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
@@ -253,35 +244,13 @@ fn default_mpc_binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/mpc-node")
 }
 
-/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
-pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
-    let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/near/tee_verifier/tee_verifier.wasm");
-    let wasm_path = match std::env::var("MPC_TEE_VERIFIER_WASM") {
-        Ok(path) => PathBuf::from(path),
-        Err(_) if default_path.exists() => default_path,
-        Err(_) => {
-            tracing::info!(
-                "MPC_TEE_VERIFIER_WASM not set and pre-built WASM not found; building \
-                 tee-verifier. Build it up front with `cargo make build-tee-verifier-optimized` \
-                 to skip this."
-            );
-            // Same out dir the probe above checks, so this build is found and reused
-            // by later test processes instead of rebuilding each time.
-            return test_utils::contract_build::ContractBuilder::new(
-                "crates/tee-verifier/Cargo.toml",
-            )
-            .out_dir("target/near/tee_verifier")
-            .build();
-        }
-    };
-    std::fs::read(&wasm_path).unwrap_or_else(|e| {
-        panic!(
-            "failed to read tee-verifier WASM at {}: {e}. Build it with \
-             `cargo make build-tee-verifier-optimized` (skipped when E2E_SKIP_BUILD is set)",
-            wasm_path.display()
-        )
-    })
+fn must_load_tee_verifier_wasm() -> Vec<u8> {
+    test_utils::contract_build::must_load_wasm(
+        "MPC_TEE_VERIFIER_WASM",
+        "target/near/tee_verifier/tee_verifier.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml")
+            .out_dir("target/near/tee_verifier"),
+    )
 }
 
 /// A running MPC test cluster with a deployed contract and N mpc-node processes.
@@ -372,14 +341,8 @@ impl MpcCluster {
         )
         .await?;
 
-        deploy_and_trust_tee_verifier(
-            &blockchain,
-            &contract,
-            &config.tee_verifier_wasm,
-            &operator_keys,
-            &participant_indices,
-        )
-        .await?;
+        deploy_and_trust_tee_verifier(&blockchain, &contract, &operator_keys, &participant_indices)
+            .await?;
 
         // Start MPC nodes BEFORE adding domains: key generation requires running nodes.
         let mut nodes = start_mpc_nodes(
@@ -1416,14 +1379,16 @@ async fn init_contract(
 }
 
 /// Deploys the tee-verifier and votes it in from every participant, mirroring
-/// the production topology (cf. `scripts/launch-localnet.sh`).
+/// the production topology (cf. `scripts/launch-localnet.sh`). Nodes submit mock
+/// attestations, which the contract verifies without calling the verifier; the
+/// cross-contract flow is covered by the mpc-contract sandbox tests.
 async fn deploy_and_trust_tee_verifier(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    verifier_wasm: &[u8],
     operator_keys: &[SigningKey],
     participant_indices: &[usize],
 ) -> anyhow::Result<()> {
+    let verifier_wasm = &must_load_tee_verifier_wasm();
     let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
     let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
     tracing::info!(account = %verifier_account, "deploying tee-verifier contract");
@@ -1435,50 +1400,24 @@ async fn deploy_and_trust_tee_verifier(
     // expected_code_hash commits every voter to the same audited WASM; the
     // contract only compares voters' hashes against each other, not against
     // the deployed bytes.
-    let expected_code_hash = hex::encode(near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
-    let args = json!({
-        "candidate_account_id": verifier_account,
-        "expected_code_hash": expected_code_hash,
-    });
-    // Each participant votes from its own account and key, so nothing forces an order.
-    let votes = participant_indices.iter().map(|&i| {
-        let args = args.clone();
-        async move {
-            let account = node_account(i);
-            let client = blockchain.client_for(&account, &operator_keys[i])?;
-            let outcome = contract
-                .call_from_with_deposit(
-                    &client,
-                    method_names::VOTE_TEE_VERIFIER_CHANGE,
-                    args,
-                    VOTE_TEE_VERIFIER_GAS,
-                    near_kit::NearToken::from_yoctonear(0),
-                )
-                .await
-                .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
-            anyhow::ensure!(
-                outcome.is_success(),
-                "node {i}'s tee-verifier vote failed: {:?}",
-                outcome.failure_message()
-            );
-            anyhow::Ok(())
-        }
-    });
-    futures::future::try_join_all(votes).await?;
-
-    // The votes are not awaited to finality, so views can lag them; poll like
-    // the post-init state waits do.
-    (|| async {
-        let resolved: Option<String> = contract.view(method_names::TEE_VERIFIER_ACCOUNT_ID).await?;
+    let expected_code_hash =
+        TeeVerifierCodeHash::new(*near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
+    let candidate: ContractAccountId = verifier_account.parse()?;
+    for &i in participant_indices {
+        let account = node_account(i);
+        let client = blockchain.client_for(&account, &operator_keys[i])?;
+        let outcome = contract
+            .handle_for(client)
+            .vote_tee_verifier_change(candidate.clone(), expected_code_hash)
+            .await
+            .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
         anyhow::ensure!(
-            resolved.as_deref() == Some(verifier_account.as_str()),
-            "tee-verifier vote has not crossed threshold, resolved verifier: {resolved:?}"
+            outcome.is_success(),
+            "node {i}'s tee-verifier vote failed: {:?}",
+            outcome.failure_message()
         );
-        Ok(())
-    })
-    .retry(cluster_poll_retry())
-    .await
-    .context("tee-verifier not resolved as the trusted verifier")
+    }
+    Ok(())
 }
 
 async fn add_initial_domains(

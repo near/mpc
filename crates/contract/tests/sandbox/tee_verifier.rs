@@ -7,15 +7,14 @@
 #![allow(non_snake_case)]
 
 use crate::sandbox::{
-    common::SandboxTestSetup,
+    common::{SandboxTestSetup, init_with_wasm},
     utils::{
         consts::ALL_PROTOCOLS,
         contract_build::{tee_verifier_contract, tee_verifier_contract_with_sandbox_test_hooks},
         mpc_contract::{
-            get_config, get_participant_attestation, get_tee_accounts, prepay_attestation_grants,
-            submit_participant_info, tee_verifier_account_id, total_gas_fee,
-            vote_add_launcher_hash, vote_add_os_measurement, vote_for_hash,
-            vote_tee_verifier_change,
+            available_attestation_grants, get_config, get_participant_attestation,
+            get_tee_accounts, prepay_attestation_grants, submit_participant_info,
+            tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
         },
     },
 };
@@ -24,11 +23,9 @@ use futures::future::join_all;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
     errors::TeeError,
-    tee::{
-        measurements::ContractExpectedMeasurements, tee_state::AttestationSubmissionError,
-        test_utils::allow_launcher_compose_hash_in_state,
-    },
+    tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
 };
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_mpc_contract_interface::{method_names, types as dtos};
 use near_workspaces::{
     Account, AccountId, Contract, Worker,
@@ -36,7 +33,7 @@ use near_workspaces::{
     result::ExecutionFinalResult,
     types::{Gas, NearToken, SecretKey},
 };
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY;
 use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_secret_key, image_digest, launcher_compose_digest,
@@ -51,18 +48,25 @@ async fn setup() -> (Worker<Sandbox>, Contract, Vec<Account>) {
     (setup.worker, setup.contract, setup.mpc_signer_accounts)
 }
 
-async fn all_vote(participants: &[Account], vote: impl AsyncFn(&Account) -> anyhow::Result<()>) {
-    for result in join_all(participants.iter().map(|p| vote(p))).await {
+async fn trust_verifier(contract: &Contract, participants: &[Account], verifier: &AccountId) {
+    let expected_code_hash = [7u8; 32];
+    let votes = participants
+        .iter()
+        .map(|account| vote_tee_verifier_change(account, contract, verifier, expected_code_hash));
+    for result in join_all(votes).await {
         result.unwrap();
     }
 }
 
-async fn trust_verifier(contract: &Contract, participants: &[Account], verifier: &AccountId) {
-    let expected_code_hash = [7u8; 32];
-    all_vote(participants, async |account| {
-        vote_tee_verifier_change(account, contract, verifier, expected_code_hash).await
-    })
-    .await;
+async fn deploy_and_trust(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    participants: &[Account],
+    wasm: &[u8],
+) -> Contract {
+    let verifier = worker.dev_deploy(wasm).await.unwrap();
+    trust_verifier(contract, participants, verifier.id()).await;
+    verifier
 }
 
 async fn deploy_and_trust_verifier(
@@ -70,8 +74,7 @@ async fn deploy_and_trust_verifier(
     contract: &Contract,
     participants: &[Account],
 ) {
-    let verifier = worker.dev_deploy(tee_verifier_contract()).await.unwrap();
-    trust_verifier(contract, participants, verifier.id()).await;
+    deploy_and_trust(worker, contract, participants, tee_verifier_contract()).await;
 }
 
 async fn pin_verifier_clock(worker: &Worker<Sandbox>, verifier: &AccountId, pin: u64) {
@@ -90,51 +93,26 @@ async fn deploy_and_trust_pinned_verifier(
     contract: &Contract,
     participants: &[Account],
 ) -> Contract {
-    let verifier = worker
-        .dev_deploy(tee_verifier_contract_with_sandbox_test_hooks())
-        .await
-        .unwrap();
+    let wasm = tee_verifier_contract_with_sandbox_test_hooks();
+    let verifier = deploy_and_trust(worker, contract, participants, wasm).await;
     pin_verifier_clock(worker, verifier.id(), VALID_ATTESTATION_TIMESTAMP).await;
-    trust_verifier(contract, participants, verifier.id()).await;
     verifier
 }
 
-async fn vote_fixture_image_and_launcher(contract: &Contract, participants: &[Account]) {
-    let image = image_digest();
-    all_vote(participants, async |account| {
-        vote_for_hash(account, contract, &image).await
-    })
-    .await;
-    let launcher = launcher_image_hash();
-    all_vote(participants, async |account| {
-        vote_add_launcher_hash(account, contract, &launcher).await
-    })
-    .await;
-}
-
-/// Votes the fixture's image and launcher hashes in, then patches its compose hash into
-/// contract state. The contract only allows compose hashes computed from its compiled-in
-/// template; the fixture CVM's compose carried an extra key-export service, so no vote
-/// can ever allow its hash.
 async fn whitelist_fixture_dstack_hashes(
     worker: &Worker<Sandbox>,
     contract: &Contract,
-    participants: &[Account],
+    compose_hash: Option<LauncherDockerComposeHash>,
 ) {
-    vote_fixture_image_and_launcher(contract, participants).await;
-    let mut entries = worker
+    let state = worker
         .view_state(contract.id())
         .prefix(b"STATE")
         .await
-        .unwrap();
-    let state = entries
+        .unwrap()
         .remove(b"STATE".as_slice())
         .expect("the contract must have a STATE entry");
-    let patched = allow_launcher_compose_hash_in_state(
-        &state,
-        &launcher_image_hash(),
-        launcher_compose_digest(),
-    );
+    let patched =
+        whitelist_dstack_in_state(&state, image_digest(), launcher_image_hash(), compose_hash);
     worker
         .patch_state(contract.id(), b"STATE", &patched)
         .await
@@ -178,14 +156,7 @@ async fn prepay_grant_from_separate_payer(
 async fn setup_verified_fixture() -> (Worker<Sandbox>, Contract, Account) {
     let (worker, contract, mpc_signer_accounts) = setup().await;
     deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    whitelist_fixture_dstack_hashes(&worker, &contract, &mpc_signer_accounts).await;
-    for &measurements in default_measurements() {
-        let measurements = ContractExpectedMeasurements::from(measurements);
-        all_vote(&mpc_signer_accounts, async |account| {
-            vote_add_os_measurement(account, &contract, &measurements).await
-        })
-        .await;
-    }
+    whitelist_fixture_dstack_hashes(&worker, &contract, Some(launcher_compose_digest())).await;
     let submitter = create_fixture_account(&worker, "fixture-node-a").await;
     prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
     (worker, contract, submitter)
@@ -262,7 +233,7 @@ async fn assert_only_gas_spent(
         if net_spent == expected {
             return;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
     assert_eq!(net_spent, expected);
 }
@@ -314,8 +285,8 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
     // Given
     let (worker, contract, mpc_signer_accounts) = setup().await;
     deploy_and_trust_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    let submitter = mpc_signer_accounts[0].clone();
-    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, submitter).await;
     let mut attestation = mock_dto_dstack_attestation();
     let dtos::Attestation::Dstack(dstack) = &mut attestation else {
         panic!("fixture must be a Dstack attestation");
@@ -323,16 +294,15 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
     dstack.quote = dtos::HexVec(vec![0u8; 16]);
 
     // When
-    let result =
-        submit_participant_info(&submitter, &contract, &attestation, &p2p_tls_key().into())
-            .await
-            .unwrap();
+    let result = submit_participant_info(submitter, &contract, &attestation, &p2p_tls_key().into())
+        .await
+        .unwrap();
 
     // Then
     assert_submission_failed_cleanly(
         &result,
         &contract,
-        &submitter,
+        submitter,
         balance_before,
         &[&TeeError::QuoteRejected {
             reason: String::new(),
@@ -348,17 +318,17 @@ async fn submit_participant_info__should_fail_and_store_nothing_when_verifier_un
     let (worker, contract, mpc_signer_accounts) = setup().await;
     let missing_verifier: AccountId = "nonexistent-verifier.near".parse().unwrap();
     trust_verifier(&contract, &mpc_signer_accounts, &missing_verifier).await;
-    let submitter = mpc_signer_accounts[0].clone();
-    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, submitter).await;
 
     // When
-    let result = submit_dstack(&submitter, &contract).await;
+    let result = submit_dstack(submitter, &contract).await;
 
     // Then
     assert_submission_failed_cleanly(
         &result,
         &contract,
-        &submitter,
+        submitter,
         balance_before,
         &[&TeeError::VerifierUnavailable.to_string()],
     )
@@ -370,20 +340,16 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
     // Given
     let (worker, contract, mpc_signer_accounts) = setup().await;
     let verifier = deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    // Only the hash allowlists gate this test's outcome: the plain dev-account
-    // submitter fails at report_data, which runs before the measurements check.
-    whitelist_fixture_dstack_hashes(&worker, &contract, &mpc_signer_accounts).await;
-    let submitter = mpc_signer_accounts[0].clone();
-    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
+    whitelist_fixture_dstack_hashes(&worker, &contract, Some(launcher_compose_digest())).await;
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, submitter).await;
 
     // When
-    let result = submit_dstack(&submitter, &contract).await;
+    let result = submit_dstack(submitter, &contract).await;
 
-    // Then: the real DCAP run succeeds within the production gas budget and its
-    // Verified verdict reaches the callback. This test deliberately submits from
-    // a plain dev account rather than the fixture node, so it then fails at the
-    // post-DCAP report_data binding; asserting that terminal error pins that the
-    // verdict was Verified, not Rejected.
+    // Then: the run succeeds within the production gas budget. Submitting from a
+    // plain dev account fails at the post-DCAP report_data binding; asserting that
+    // terminal error pins that the verdict was Verified, not Rejected.
     let outcomes = result.outcomes();
     let verify_quote_outcome = outcomes
         .iter()
@@ -393,24 +359,22 @@ async fn submit_participant_info__should_run_dcap_within_verifier_gas_budget() {
         verify_quote_outcome.is_success(),
         "verify_quote must succeed, got: {verify_quote_outcome:#?}"
     );
-    // The receipt is created with exactly `verifier_tera_gas` of static gas, so
-    // succeeding already proves it fit the budget. Assert headroom instead, which
-    // is the regression that matters: `dcap-qvl` growing until it OOGs in
-    // production. Read the budget from the contract so it cannot drift from
-    // `DEFAULT_VERIFIER_TERA_GAS`.
+    // The receipt gets exactly `verifier_tera_gas` of static gas, so success already
+    // proves it fit. Assert headroom instead: the regression that matters is
+    // `dcap-qvl` growing until it OOGs in production.
     let budget = Gas::from_tgas(get_config(&contract).await.unwrap().verifier_tera_gas);
     let headroom = Gas::from_gas(budget.as_gas() / 10);
     assert!(
         verify_quote_outcome.gas_burnt <= budget.saturating_sub(headroom),
         "verify_quote burnt {} of the {budget} budget, leaving less than {headroom} headroom. \
-         Find what grew (gas schedule or `dcap-qvl`) before raising DEFAULT_VERIFIER_TERA_GAS \
-         in config.rs, or the OOG this guards against reaches mainnet",
+         Find what grew (gas schedule or `dcap-qvl`) before raising DEFAULT_VERIFIER_TERA_GAS, \
+         or the OOG this guards against reaches mainnet",
         verify_quote_outcome.gas_burnt,
     );
     assert_submission_failed_cleanly(
         &result,
         &contract,
-        &submitter,
+        submitter,
         balance_before,
         // Substrings that survive the error's Debug formatting and
         // near-workspaces' quote escaping.
@@ -437,17 +401,17 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
         .build()
         .await;
     deploy_and_trust_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    let submitter = mpc_signer_accounts[0].clone();
-    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
+    let submitter = &mpc_signer_accounts[0];
+    let balance_before = prepay_grant_from_separate_payer(&worker, &contract, submitter).await;
 
     // When
-    let result = submit_dstack(&submitter, &contract).await;
+    let result = submit_dstack(submitter, &contract).await;
 
     // Then: the failed promise is indistinguishable from a crashed verifier.
     assert_submission_failed_cleanly(
         &result,
         &contract,
-        &submitter,
+        submitter,
         balance_before,
         &[&TeeError::VerifierUnavailable.to_string()],
     )
@@ -458,19 +422,18 @@ async fn submit_participant_info__should_fail_cleanly_when_verifier_gas_budget_t
 async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // Given
     let (_worker, contract, submitter) = setup_verified_fixture().await;
-    let contract = &contract;
     let balance_before = submitter.view_account().await.unwrap().balance;
     let submitted_at = wall_clock_seconds();
 
     // When
-    let result = submit_dstack(&submitter, contract).await;
+    let result = submit_dstack(&submitter, &contract).await;
 
     // Then
     assert!(
         result.failures().is_empty(),
         "expected every receipt to succeed, got: {result:#?}"
     );
-    let stored = stored_fixture_attestation(contract)
+    let stored = stored_fixture_attestation(&contract)
         .await
         .expect("a Verified submission must store an attestation");
     let dtos::VerifiedAttestation::Dstack(stored) = stored else {
@@ -513,23 +476,22 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
 #[tokio::test]
 async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owned_by_other_account()
 {
-    // Given: an owner stored a Verified attestation for the fixture TLS key. The
-    // quote's report_data binds only the key pair, not the account id, and NEAR
-    // allows the same public key on two accounts, so nothing in the attestation
-    // itself distinguishes the second submitter; only the ownership guard does.
-    // That guard runs before verification, so the rejection is synchronous and
-    // never reaches the verifier.
+    // Given: NEAR allows the same public key on two accounts and report_data binds
+    // only the key pair, so nothing in the attestation itself distinguishes the
+    // second submitter; only the ownership guard does.
     let (worker, contract, owner) = setup_verified_fixture().await;
-    let contract = &contract;
-    submit_dstack(&owner, contract).await.into_result().unwrap();
-    let stored_before = stored_fixture_attestation(contract)
+    submit_dstack(&owner, &contract)
+        .await
+        .into_result()
+        .unwrap();
+    let stored_before = stored_fixture_attestation(&contract)
         .await
         .expect("the owner's submission must store an attestation");
     let attacker = create_fixture_account(&worker, "fixture-node-b").await;
     let balance_before = attacker.view_account().await.unwrap().balance;
 
     // When
-    let result = submit_dstack(&attacker, contract).await;
+    let result = submit_dstack(&attacker, &contract).await;
 
     // Then: match the whole result rather than a receipt, so the assertion holds
     // whichever layer the guard rejects from.
@@ -543,14 +505,14 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
         rendered.contains(&expected),
         "expected a failure containing {expected:?}, got: {rendered}"
     );
-    let stored_after = stored_fixture_attestation(contract)
+    let stored_after = stored_fixture_attestation(&contract)
         .await
         .expect("the owner's attestation must survive the attack");
     assert_eq!(
         stored_after, stored_before,
         "the owner's entry must be unchanged"
     );
-    let tee_accounts = get_tee_accounts(contract).await.unwrap();
+    let tee_accounts = get_tee_accounts(&contract).await.unwrap();
     assert!(
         tee_accounts
             .iter()
@@ -563,11 +525,11 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
 
 #[tokio::test]
 async fn submit_participant_info__should_reject_verified_quote_when_compose_hash_not_allowed() {
-    // Given: hashes voted in but the fixture's compose hash never patched, so the
-    // allowlist holds only the derived compose hash.
+    // Given: the fixture's compose hash is never allowed, so the allowlist holds only
+    // the derived compose hash.
     let (worker, contract, mpc_signer_accounts) = setup().await;
     deploy_and_trust_pinned_verifier(&worker, &contract, &mpc_signer_accounts).await;
-    vote_fixture_image_and_launcher(&contract, &mpc_signer_accounts).await;
+    whitelist_fixture_dstack_hashes(&worker, &contract, None).await;
     let submitter = create_fixture_account(&worker, "fixture-node-a").await;
     let balance_before = prepay_grant_from_separate_payer(&worker, &contract, &submitter).await;
 
@@ -587,12 +549,8 @@ async fn submit_participant_info__should_reject_verified_quote_when_compose_hash
         &["failed verification", &expected_rejection],
     )
     .await;
-    let remaining: u32 = contract
-        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
-        .args_json(serde_json::json!({ "account_id": submitter.id() }))
+    let remaining = available_attestation_grants(&contract, submitter.id())
         .await
-        .unwrap()
-        .json()
         .unwrap();
     assert_eq!(
         remaining, 1,
@@ -603,8 +561,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_compose_hash
 #[tokio::test]
 async fn verify_quote__should_ignore_pinned_timestamp_on_production_build() {
     // Given
-    let worker = near_workspaces::sandbox().await.unwrap();
-    let verifier = worker.dev_deploy(tee_verifier_contract()).await.unwrap();
+    let (worker, verifier) = init_with_wasm(tee_verifier_contract()).await;
     let args = include_bytes!("../../../tee-verifier/tests/fixtures/verify_quote_args.borsh");
     let unpinned = call_verify_quote(&verifier, args).await;
 

@@ -302,7 +302,7 @@ jobs:
         run: nix develop --command cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
-        run: nix develop --command cargo build -p backup-cli --release --locked
+        run: nix develop --command cargo make build-backup-cli
 
       - name: Run E2E tests
         run: nix develop --command cargo make e2e-tests-skip-build

@@ -34,9 +34,8 @@ pub struct TeeVerifier {}
 impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
-    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp
-    /// (pinnable by sandbox tests in test-harness builds) and returns
-    /// [`VerificationResult::Verified`] with the report on success.
+    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp and
+    /// returns [`VerificationResult::Verified`] with the report on success.
     /// The caller is responsible for any post-DCAP policy (RTMR3 replay,
     /// report-data binding, measurement allowlist matching, etc.).
     ///
@@ -67,17 +66,12 @@ impl TeeVerifier {
 }
 
 /// The timestamp quotes are verified against: block time, unless a sandbox test
-/// pinned one under [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`].
-/// The pin exists because sandbox chain time is wall-clock and forward-only: once it
-/// passes the fixed validity window of a checked-in collateral fixture it never
-/// returns, so unpinned runs would start failing on that date.
+/// pinned one under [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`]
+/// to keep the checked-in collateral fixture inside its validity window.
 fn now_seconds() -> u64 {
     #[cfg(feature = "sandbox-test-hooks")]
     if let Some(bytes) = env::storage_read(SANDBOX_TEST_PINNED_NOW_STORAGE_KEY) {
-        let bytes: [u8; 8] = bytes
-            .try_into()
-            .expect("pinned timestamp must be exactly 8 little-endian bytes");
-        return u64::from_le_bytes(bytes);
+        return u64::from_le_bytes(bytes.try_into().expect("pinned timestamp must be 8 bytes"));
     }
     env::block_timestamp_ms() / 1000
 }

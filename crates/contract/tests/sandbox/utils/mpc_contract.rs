@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::transactions::all_receipts_successful;
-use mpc_contract::tee::{measurements::ContractExpectedMeasurements, tee_state::NodeId};
+use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
     method_names,
@@ -55,17 +55,24 @@ pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participant
     Ok(running.parameters.participants)
 }
 
-/// Helper function to get TEE participants from contract.
 pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeId>> {
     Ok(contract
-        .call(method_names::GET_TEE_ACCOUNTS)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .view(method_names::GET_TEE_ACCOUNTS)
         .await?
         .json::<Vec<NodeId>>()?
         .into_iter()
         .collect())
+}
+
+pub async fn available_attestation_grants(
+    contract: &Contract,
+    account_id: &AccountId,
+) -> anyhow::Result<u32> {
+    Ok(contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": account_id }))
+        .await?
+        .json()?)
 }
 
 pub async fn prepay_attestation_grants(
@@ -204,20 +211,6 @@ pub async fn vote_add_launcher_hash(
     let result = account
         .call(contract.id(), method_names::VOTE_ADD_LAUNCHER_HASH)
         .args_json(serde_json::json!({"launcher_hash": launcher_hash}))
-        .transact()
-        .await?;
-    all_receipts_successful(result)?;
-    Ok(())
-}
-
-pub async fn vote_add_os_measurement(
-    account: &Account,
-    contract: &Contract,
-    measurement: &ContractExpectedMeasurements,
-) -> anyhow::Result<()> {
-    let result = account
-        .call(contract.id(), method_names::VOTE_ADD_OS_MEASUREMENT)
-        .args_json(serde_json::json!({"measurement": measurement}))
         .transact()
         .await?;
     all_receipts_successful(result)?;

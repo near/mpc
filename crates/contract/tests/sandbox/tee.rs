@@ -9,10 +9,10 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold, get_config,
-            get_participant_attestation, get_state, get_tee_accounts,
-            prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
-            vote_add_launcher_hash, vote_for_hash,
+            assert_running_return_participants, assert_running_return_threshold,
+            available_attestation_grants, get_config, get_participant_attestation, get_state,
+            get_tee_accounts, prepay_and_submit_participant_info, prepay_attestation_grants,
+            submit_participant_info, vote_add_launcher_hash, vote_for_hash,
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
@@ -31,6 +31,15 @@ use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, p2p_tls_key};
+
+fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
+        expected_measurements: None,
+    }
+}
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -457,12 +466,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     let block_info = worker.view_block().await?;
     let expiry_timestamp_seconds =
         block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp_seconds),
-        expected_measurements: None,
-    });
+    let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp_seconds));
     let submit_result = prepay_and_submit_participant_info(
         stale_account,
         &contract,
@@ -629,19 +633,9 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     // as-is (a stored mock's expiry is `min(submitted, now + default window)`) and
     // the two attestations stay distinct.
     let now_seconds = worker.view_block().await.unwrap().timestamp() / 1_000_000_000;
-    let participant_1_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(now_seconds + 1_000),
-        expected_measurements: None,
-    });
+    let participant_1_attestation = Attestation::Mock(mock_expiring_at(now_seconds + 1_000));
 
-    let participant_2_mock = MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(now_seconds + 2_000),
-        expected_measurements: None,
-    };
+    let participant_2_mock = mock_expiring_at(now_seconds + 2_000);
     let participant_2_attestation = Attestation::Mock(participant_2_mock.clone());
 
     assert_ne!(
@@ -700,19 +694,9 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     // as-is (a stored mock's expiry is `min(submitted, now + default window)`) and
     // the two attestations stay distinct.
     let now_seconds = worker.view_block().await.unwrap().timestamp() / 1_000_000_000;
-    let first_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(now_seconds + 1_000),
-        expected_measurements: None,
-    });
+    let first_attestation = Attestation::Mock(mock_expiring_at(now_seconds + 1_000));
 
-    let second_mock = MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(now_seconds + 2_000),
-        expected_measurements: None,
-    };
+    let second_mock = mock_expiring_at(now_seconds + 2_000);
     let second_attestation = Attestation::Mock(second_mock.clone());
 
     assert_ne!(
@@ -843,12 +827,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         .find(|node| node.account_id == *target_account.id())
         .expect("target participant not found");
 
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp),
-        expected_measurements: None,
-    });
+    let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp));
 
     let submit_result = submit_participant_info(
         target_account,
@@ -965,12 +944,7 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     // Compute the expiry timestamp from the current block time.
     let block_info = worker.view_block().await?;
     let expiry_timestamp = block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
-    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
-        mpc_docker_image_hash: None,
-        launcher_docker_compose_hash: None,
-        expiry_timestamp_seconds: Some(expiry_timestamp),
-        expected_measurements: None,
-    });
+    let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp));
 
     // Submit an expiring attestation for every participant past the first `remaining_valid`.
     let internal_participants: Participants = (&initial_participants).into_contract_type();
@@ -1100,11 +1074,7 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
     assert!(submission.is_success(), "submission failed: {submission:?}");
 
     // Then
-    let remaining: u32 = contract
-        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
-        .args_json(serde_json::json!({ "account_id": node.id() }))
-        .await?
-        .json()?;
+    let remaining = available_attestation_grants(&contract, node.id()).await?;
     assert_eq!(remaining, GRANTS - 1, "the row must outlive the submission");
 
     let after = contract.as_account().view_account().await?;
@@ -1161,11 +1131,7 @@ async fn submit_participant_info__should_store_a_new_entry_against_a_prepaid_gra
     );
     let stored = get_participant_attestation(&contract, &fresh_tls_key).await?;
     assert!(stored.is_some(), "the entry should be stored on-chain");
-    let remaining: u32 = contract
-        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
-        .args_json(serde_json::json!({ "account_id": outsider.id() }))
-        .await?
-        .json()?;
+    let remaining = available_attestation_grants(&contract, outsider.id()).await?;
     assert_eq!(remaining, 0, "storing a new entry should consume the grant");
     Ok(())
 }
