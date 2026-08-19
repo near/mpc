@@ -1,0 +1,20 @@
+%%{init: {"flowchart": {"rankSpacing": 45, "nodeSpacing": 40}}}%%
+flowchart TB
+    W["Client<br/>(wallet, dApp, service)"]
+    R["Relay (ours)<br/>untrusted by the nodes"]
+    WP["Witness provider<br/>untrusted full node,<br/>synced to every shard"]
+    CHAIN[("NEAR chain")]
+
+    W <-->|"1. signed NEP-641 message<br/>6. result"| R
+    R <-->|"2. view call at final block B<br/>3. bundle: state, code, proofs"| WP
+    R <-->|"4. announce, then serve<br/>the bundle by hash<br/>5. leader posts the signature"| MPCNET
+    CHAIN -.->|"validated block headers,<br/>from each node's<br/>embedded indexer"| MPCNET
+
+    subgraph MPCNET ["MPC network (still tracks only its own shard)"]
+        direction TB
+        E["Entry nodes: k ~ 3, rotating,<br/>dialed out to the relay"]
+        N["Prompted participants:<br/>verify the request, then walk<br/>the auth tree in near-vm-runner"]
+        P["The presignature's exact set<br/>accepts unanimously, then signs"]
+        E -->|"broadcast over the existing mesh"| N
+        N -->|"authorized"| P
+    end
