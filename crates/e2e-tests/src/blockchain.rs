@@ -23,6 +23,7 @@ pub struct NearBlockchain {
 /// [`CallContract`] backend.
 pub struct NearKitCaller {
     inner: near_kit::Near,
+    wait_for_final: bool,
 }
 
 impl CallContract for NearKitCaller {
@@ -34,13 +35,17 @@ impl CallContract for NearKitCaller {
         contract_id: &near_kit::AccountId,
         call_args: FunctionCallArgs,
     ) -> Result<Self::Output, Self::Error> {
-        self.inner
+        let call = self
+            .inner
             .call(contract_id, &call_args.method_name)
             .args_raw(call_args.args)
             .gas(call_args.gas)
-            .deposit(call_args.deposit)
-            .send()
-            .await
+            .deposit(call_args.deposit);
+        if self.wait_for_final {
+            call.wait_until::<Final>().await
+        } else {
+            call.send().await
+        }
     }
 }
 
@@ -111,6 +116,7 @@ impl NearBlockchain {
     pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<NearKitCaller> {
         Ok(NearKitCaller {
             inner: self.make_client(account_id, key)?,
+            wait_for_final: false,
         })
     }
 
@@ -135,6 +141,18 @@ pub struct DeployedContract {
 impl DeployedContract {
     pub fn contract_id(&self) -> String {
         self.contract_id.to_string()
+    }
+
+    /// Handle signing as the contract account itself.
+    ///
+    /// Waits for finality: callers of this handle are setup steps whose next
+    /// action is typically a view, and a view resolves against the last final
+    /// block.
+    pub fn handle(&self) -> MpcContractHandle<NearKitCaller> {
+        self.handle_for(NearKitCaller {
+            inner: self.client.clone(),
+            wait_for_final: true,
+        })
     }
 
     pub fn handle_for(&self, caller: NearKitCaller) -> MpcContractHandle<NearKitCaller> {
