@@ -1,0 +1,24 @@
+%%{init: {"flowchart": {"rankSpacing": 42, "nodeSpacing": 30}}}%%
+flowchart TB
+    H["block header at B"]
+    FP["one fingerprint over<br/>every shard's state root"]
+    H --> FP
+    FP --> S0["shard 0<br/>state root"]
+    FP --> S2["shard 2<br/>state root"]
+
+    subgraph TRIE["shard 1's state trie, where our contract lives"]
+        direction TB
+        S1["shard 1 state root"]
+        A["trie node"]
+        B["trie node"]
+        K["storage key:<br/>wallet.near, key K<br/>value: X"]
+        A2["other branches<br/>(not in the bundle)"]
+        B2["other branches<br/>(not in the bundle)"]
+        S1 --> A
+        A --> B
+        A -.-> A2
+        B --> K
+        B -.-> B2
+    end
+
+    FP --> S1
