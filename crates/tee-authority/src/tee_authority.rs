@@ -1117,12 +1117,7 @@ mod tests {
     /// fresh for the JSON-field tests; the dedicated CRL-staleness tests
     /// drive their own `now` past the window.
     fn fixture_pck_crl() -> Vec<u8> {
-        let collateral_json = test_utils::attestation::collateral();
-        let hex_str = collateral_json
-            .get("pck_crl")
-            .and_then(|v| v.as_str())
-            .expect("test fixture has pck_crl");
-        hex::decode(hex_str).expect("test fixture pck_crl is valid hex")
+        test_utils::attestation::collateral().pck_crl
     }
 
     /// Build a [`Collateral`] with synthetic `tcb_info` / `qe_identity` JSON

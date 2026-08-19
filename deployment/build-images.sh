@@ -1,14 +1,14 @@
 #! /usr/bin/env bash
 # Script to reproducibly build the docker images for the node and launcher
 #
-# Requirements: docker, docker-buildx, git, find, touch, skopeo
-# Extra requirements if using --node or --rust-launcher: repro-env, podman
-# Extra requirements if using --push: docker must be logged in to registry
+# Requirements: docker, docker-buildx, git, find, touch, podman
+# Extra requirements if using --node or --rust-launcher: repro-env
+# Extra requirements if using --push: skopeo, docker must be logged in to registry
 #
 # Usage:
 #   ./deployment/build-images.sh [--node] [--node-gcp] [--rust-launcher] [--push]
 # If no image flags are used, all images are built
-# Manifest digests are always computed and printed (skopeo required)
+# Manifest digests are always computed and printed (via a pinned skopeo image)
 
 
 set -euo pipefail
@@ -60,10 +60,14 @@ require_cmds() {
   [[ "${missing}" -eq 0 ]] || die "Please install the missing dependencies above."
 }
 
-require_cmds docker git find touch skopeo
+require_cmds docker git find touch podman
 
-if $USE_NODE || $USE_RUST_LAUNCHER; then
-    require_cmds repro-env podman
+if $USE_NODE || $USE_NODE_GCP || $USE_RUST_LAUNCHER; then
+    require_cmds repro-env
+fi
+
+if $USE_PUSH; then
+    require_cmds skopeo
 fi
 
 if ! docker buildx &>/dev/null; then
@@ -97,9 +101,12 @@ find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
 
 buildkit_version="0.27.1"
 buildkit_image_name="buildkit_${buildkit_version}"
+# Digest of moby/buildkit:v${buildkit_version}; a re-pushed tag would change the
+# build output, so the builder is pinned by digest like the skopeo image below.
+buildkit_digest="sha256:1e110c71d389d6d24f67b9438e2f7b8da749a6ff407b22a1631e025c95599368"
 
 if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
-    docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
+    docker buildx create --use --driver-opt image=moby/buildkit@${buildkit_digest} --name ${buildkit_image_name}
 else
     # A reused builder may hold a stale local-context cache: buildkit keys
     # context changes on (size, mtime), but the touch above resets mtime, so a
@@ -128,6 +135,13 @@ build_reproducible_image() {
   docker load -i "$tar_path"
 }
 
+# skopeo re-gzips every layer here, so the manifest digest depends on the
+# deflate library its binary was linked against rather than on its version
+# string: Ubuntu 26.04's package (klauspost/compress 1.18.1) emits different
+# bytes than 24.04's (1.17.7) for identical input. Pin the build by digest, taken
+# from an upstream `-immutable` tag.
+skopeo_image="quay.io/skopeo/stable:v1.22.2-immutable@sha256:4a16d57b37617a04b3d643079a477a2848efe892dffcdf0ce56df4262b65f810"
+
 # Compress a built image tar via skopeo to a temp directory.
 # Prints the temp dir path to stdout. The manifest digest can be
 # computed from $dir/manifest.json.
@@ -137,7 +151,10 @@ skopeo_compress() {
     td=$(mktemp -d)
     # Compress the image to a local directory, which implicitly computes
     # the manifest digest in $td/manifest.json
-    skopeo copy --all --dest-compress "docker-archive:${tar_path}" "dir:$td" >&2
+    podman run --rm \
+      -v "${tar_path}:/image.tar:ro,z" -v "${td}:/out:z" \
+      "${skopeo_image}" \
+      copy --all --dest-compress docker-archive:/image.tar dir:/out >&2
     echo "$td"
 }
 

@@ -343,11 +343,12 @@ are binary (borsh), so they are read from a committed fixture file at
 near contract call-function as-read-only tee-verifier.test.near verify_quote file-args crates/tee-verifier/tests/fixtures/verify_quote_args.borsh network-config mpc-localnet now
 ```
 
-This returns `TCBInfo expired`: the contract ran the real DCAP verification and
-rejected because the fixture's collateral is time-expired against the live block
-clock. The accepting verdict is covered by the pinned-clock unit test
-`crates/tee-verifier/tests/verify_quote.rs`. Regenerate the fixture (after
-changing the quote/collateral fixtures) with:
+Either outcome proves the DCAP path runs: a verified report while the fixture's
+collateral is still inside its validity window (it ends at the `nextUpdate` in
+`crates/test-utils/assets/collateral.json`), and `TCBInfo expired` once the live
+block clock passes it. Tests pin the verification clock instead
+(`crates/tee-verifier/tests/verify_quote.rs`). Regenerate the
+fixture (after changing the quote/collateral fixtures) with:
 
 ```shell
 UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture

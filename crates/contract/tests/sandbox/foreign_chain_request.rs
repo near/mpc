@@ -8,12 +8,12 @@ use crate::sandbox::common::{
     register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
     starknet_request, sui_extracted_values, sui_request, ton_request,
 };
+use crate::sandbox::utils::transactions::CallMpcContract;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
-use near_workspaces::types::NearToken;
 use rstest::rstest;
 use serde_json::json;
 
@@ -56,14 +56,8 @@ async fn verify_foreign_transaction__should_succeed(
     };
 
     let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
 
@@ -136,25 +130,13 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
 
     // When
     let status_alice = alice
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
     let status_bob = bob
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
@@ -226,14 +208,8 @@ async fn respond_verify_foreign_tx__should_reject_response_not_matching_expected
     };
 
     let _status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args)
         .await
         .unwrap();
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
@@ -304,14 +280,8 @@ async fn verify_foreign_transaction__should_succeed_when_response_matches_expect
 
     // When
     let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args)
         .await
         .unwrap();
     await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request).await;
@@ -370,14 +340,8 @@ async fn verify_foreign_transaction__should_reject_without_policy(
     };
 
     let result = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
+        .call_mpc(setup.contract.id())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap()
         .into_result();
@@ -423,14 +387,8 @@ async fn verify_foreign_transaction__should_timeout_without_response(
     };
 
     let status = user
-        .call(
-            setup.contract.id(),
-            method_names::VERIFY_FOREIGN_TRANSACTION,
-        )
-        .args_json(json!({ "request": request_args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args.clone())
         .await
         .unwrap();
 

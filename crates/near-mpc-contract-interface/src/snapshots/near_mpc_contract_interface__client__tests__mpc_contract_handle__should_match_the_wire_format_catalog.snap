@@ -40,31 +40,31 @@ args:     0x01040000000707070700
 
 contract: mpc.near
 method:   vote_update
-gas:      300.0 Tgas
+gas:      260.0 Tgas
 deposit:  0 NEAR
 args:     {"id":7}
 
 contract: mpc.near
 method:   vote_add_domains
-gas:      300.0 Tgas
+gas:      22.0 Tgas
 deposit:  0 NEAR
 args:     {"domains":[{"id":0,"protocol":"CaitSith","reconstruction_threshold":2,"purpose":"Sign"}]}
 
 contract: mpc.near
 method:   vote_new_parameters
-gas:      300.0 Tgas
+gas:      22.0 Tgas
 deposit:  0 NEAR
 args:     {"prospective_epoch_id":7,"proposal":{"parameters":{"participants":{"next_id":1,"participants":[["alice.near",0,{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}]]},"threshold":1},"per_domain_thresholds":{}}}
 
 contract: mpc.near
 method:   vote_cancel_keygen
-gas:      300.0 Tgas
+gas:      5.0 Tgas
 deposit:  0 NEAR
 args:     {"next_domain_id":7}
 
 contract: mpc.near
 method:   vote_cancel_resharing
-gas:      300.0 Tgas
+gas:      5.0 Tgas
 deposit:  0 NEAR
 args:     {}
 
