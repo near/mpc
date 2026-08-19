@@ -13,7 +13,7 @@ permissions:
 jobs:
   release:
     name: "Promote built artifacts to a release"
-    runs-on: warp-ubuntu-2404-x64-2x
+    runs-on: warp-ubuntu-2604-x64-2x
     environment: production
     permissions:
       contents: write
@@ -85,11 +85,6 @@ jobs:
             echo "::error::No changelog section found for version ${VERSION} in CHANGELOG.md"
             exit 1
           fi
-
-      - name: Install skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
 
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0

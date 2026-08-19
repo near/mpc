@@ -1,3 +1,5 @@
+use crate::sandbox::utils::transactions::CallMpcContract;
+
 use super::consts::DEFAULT_MAX_TIMEOUT_TX_INCLUDED;
 use super::shared_key_utils::{
     DomainKey, SharedSecretKey, derive_secret_key_ed25519, derive_secret_key_secp256k1,
@@ -18,8 +20,7 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::method_names::{
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    SIGN,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, RESPOND, RESPOND_CKD,
 };
 use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
@@ -28,9 +29,7 @@ use near_mpc_contract_interface::types::{
 use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
-use near_workspaces::{
-    Account, Contract, Worker, network::Sandbox, operations::TransactionStatus, types::NearToken,
-};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox, operations::TransactionStatus};
 use rand::{Rng, rngs::OsRng};
 use rand_core::CryptoRngCore;
 use serde::Serialize;
@@ -109,14 +108,15 @@ impl DomainResponseTest {
         account: &Account,
         contract: &Contract,
     ) -> anyhow::Result<TransactionStatus> {
+        let handle = account.call_mpc_async(contract.id());
         match self {
             Self::Sign(inner) => {
-                let status = submit_sign_request(account, &inner.args, contract).await?;
+                let status = handle.sign(inner.args.clone()).await?;
                 await_request_in_contract_queue(contract, &inner.response.request, None).await?;
                 Ok(status)
             }
             Self::CKD(inner) => {
-                let status = submit_ckd_request(account, &inner.args, contract).await?;
+                let status = handle.request_app_private_key(inner.args.clone()).await?;
                 await_request_in_contract_queue(contract, &inner.response.request, None).await?;
                 Ok(status)
             }
@@ -162,14 +162,6 @@ impl SignRequestTest {
             "Returned signature request does not match"
         );
         Ok(())
-    }
-
-    pub async fn submit_response(
-        &self,
-        contract: &Contract,
-        attested_account: &Account,
-    ) -> anyhow::Result<()> {
-        submit_signature_response(&self.response, contract, attested_account).await
     }
 }
 
@@ -273,39 +265,6 @@ impl CKDRequestTest {
 pub struct CKDResponseArgs {
     pub request: CKDRequest,
     pub response: CKDResponse,
-}
-
-async fn submit_request(
-    account: &Account,
-    contract: &Contract,
-    method: &str,
-    args: impl Serialize,
-) -> anyhow::Result<TransactionStatus> {
-    let status = account
-        .call(contract.id(), method)
-        .args_json(serde_json::json!({ "request": args }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await?;
-    dbg!(&status);
-    Ok(status)
-}
-
-async fn submit_sign_request(
-    account: &Account,
-    request: &SignRequestArgs,
-    contract: &Contract,
-) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, SIGN, request).await
-}
-
-async fn submit_ckd_request(
-    account: &Account,
-    request: &CKDRequestArgs,
-    contract: &Contract,
-) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, REQUEST_APP_PRIVATE_KEY, request).await
 }
 
 async fn submit_response(
@@ -484,23 +443,20 @@ pub async fn make_and_submit_requests(
 
     let alice = worker.dev_create_account().await.unwrap();
     let alice_id = alice.id();
+    let handle = alice.call_mpc_async(contract.id());
 
     for key in keys {
         for _ in 0..NUM_TESTS {
             match DomainResponseTest::new(rng, key, alice_id) {
                 DomainResponseTest::Sign(inner) => {
-                    let transaction = submit_sign_request(&alice, &inner.args, contract)
-                        .await
-                        .unwrap();
+                    let transaction = handle.sign(inner.args).await.unwrap();
                     pending_sign_requests.push(PendingSignRequest {
                         transaction,
                         response: inner.response,
                     });
                 }
                 DomainResponseTest::CKD(inner) => {
-                    let transaction = submit_ckd_request(&alice, &inner.args, contract)
-                        .await
-                        .unwrap();
+                    let transaction = handle.request_app_private_key(inner.args).await.unwrap();
                     pending_ckd_requests.push(PendingCKDRequest {
                         transaction,
                         ckd_response: inner.response,
