@@ -84,21 +84,19 @@ impl VerifyForeignTxProvider {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
         let requested_chain = foreign_tx_request.request.chain();
 
-        // Also checked in `execute_foreign_chain_request`; resolved early here
-        // because the supporter set scopes which presignature may be taken. An
-        // availability flip after the take still costs one presignature.
         let chain_supporters: HashSet<ParticipantId> = {
-            let snapshot = self.supporters_by_foreign_chain.borrow();
-            ensure_chain_is_available(&snapshot, &foreign_tx_request.request).inspect_err(
+            let snapshot = self.supporters_by_foreign_chain.borrow().clone();
+            ensure_chain_is_available(&snapshot, foreign_tx_request.request.chain()).inspect_err(
                 |_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc(),
             )?;
             snapshot.get(&requested_chain).cloned().unwrap_or_default()
         };
 
-        // Election is not chain support aware, so a non-supporting node can be
-        // assigned leader for a request. Owned presignatures always include this
-        // node, so `take_owned_matching` below would never resolve.
-        // TODO(#3961): narrow election to chain supporters.
+        // Owned presignatures always include current (leader) node, so it would
+        // never be able to find a presignature from presignatures it owns
+        // where all participants (including itself) support the chain, so
+        // bail at this point (before waiting for such presignature).
+        // TODO(#3961): narrow leader selection to only chain supporters.
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
@@ -187,7 +185,9 @@ impl VerifyForeignTxProvider {
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request)
+        // Check that the requested chain is still available when this
+        // point is reached.
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
@@ -455,13 +455,14 @@ struct ChainNotAvailableError {
 /// participants supports it.
 fn ensure_chain_is_available(
     supporters_by_foreign_chain: &SupportersByForeignChain,
-    request: &dtos::ForeignChainRpcRequest,
+    foreign_chain: dtos::ForeignChain,
 ) -> Result<(), ChainNotAvailableError> {
-    let requested = request.chain();
-    if supporters_by_foreign_chain.contains_key(&requested) {
+    if supporters_by_foreign_chain.contains_key(&foreign_chain) {
         Ok(())
     } else {
-        Err(ChainNotAvailableError { requested })
+        Err(ChainNotAvailableError {
+            requested: foreign_chain,
+        })
     }
 }
 
@@ -516,7 +517,7 @@ mod tests {
 
         // When, then
         assert_matches!(
-            ensure_chain_is_available(&supporters, &bitcoin_request()),
+            ensure_chain_is_available(&supporters, bitcoin_request().chain()),
             Ok(_)
         );
     }
@@ -533,7 +534,7 @@ mod tests {
 
         // When, then
         assert_matches!(
-            ensure_chain_is_available(&supporters, &ethereum_request),
+            ensure_chain_is_available(&supporters, ethereum_request.chain()),
             Err(ChainNotAvailableError {
                 requested: dtos::ForeignChain::Ethereum
             })
