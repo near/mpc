@@ -487,6 +487,23 @@ impl AllowedLauncherImages {
             .find(|e| &e.launcher_hash == launcher_hash)
             .map(|e| e.expires_at.as_secs())
     }
+
+    /// Test-only: allows one more compose hash for an already-allowed launcher. The attestation
+    /// fixture is captured from a CVM whose launcher compose carries a key-export service, so
+    /// [`get_docker_compose_hash`] cannot derive its hash.
+    #[cfg(test)]
+    pub(crate) fn allow_compose_hash(
+        &mut self,
+        launcher_hash: &LauncherImageHash,
+        compose_hash: LauncherDockerComposeHash,
+    ) {
+        self.entries
+            .iter_mut()
+            .find(|e| &e.launcher_hash == launcher_hash)
+            .expect("launcher must be allowed first")
+            .compose_hashes
+            .push(compose_hash);
+    }
 }
 
 /// Given a launcher image hash and MPC docker image hash, compute the launcher docker compose hash

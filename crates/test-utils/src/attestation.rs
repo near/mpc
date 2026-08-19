@@ -7,10 +7,11 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeIma
 use near_mpc_contract_interface::types::HexVec;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tee_verifier_interface::VerifiedReport;
+use tee_verifier_interface::{Collateral, VerifiedReport};
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 pub const TEST_COLLATERAL_STRING: &str = include_str!("../assets/collateral.json");
+pub const TEST_PUBLIC_DATA_STRING: &str = include_str!("../assets/public_data.json");
 pub const TEST_APP_COMPOSE_STRING: &str = include_str!("../assets/app_compose.json");
 pub const TEST_APP_COMPOSE_WITH_SERVICES_STRING: &str =
     include_str!("../assets/app_compose_with_services.json");
@@ -21,10 +22,9 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
-/// Unix time as of 2026/03/29, represents a date where
-/// the measurements stored in ../assets are valid. When these measurements are
-/// modified, this value should be updated as well
-pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774945717;
+/// Unix time as of 2026/08/13, a date where the measurements stored in ../assets are valid. Update
+/// this whenever those measurements are regenerated.
+pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1786622400;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();
@@ -59,10 +59,27 @@ pub fn image_digest() -> NodeImageHash {
     NodeImageHash::from(digest)
 }
 
-pub fn collateral() -> Value {
-    TEST_COLLATERAL_STRING
+/// The captured collateral, with the NUL terminators the quote's C strings carry stripped.
+fn captured_collateral() -> Value {
+    let public_data: Value = TEST_PUBLIC_DATA_STRING
         .parse()
-        .expect("Quote collateral file is a valid json.")
+        .expect("public_data.json is valid json");
+    let mut collateral = public_data["tee_participant_info"]["Dstack"]["collateral"].clone();
+    for field in collateral
+        .as_object_mut()
+        .expect("collateral is a json object")
+        .values_mut()
+    {
+        if let Some(text) = field.as_str() {
+            *field = Value::from(text.trim_end_matches('\0'));
+        }
+    }
+    collateral
+}
+
+/// Collateral in the shape `/public_data` returns, so plain serde is enough to read it.
+pub fn collateral() -> Collateral {
+    serde_json::from_value(captured_collateral()).expect("captured collateral deserializes")
 }
 
 pub fn quote() -> QuoteBytes {
@@ -97,12 +114,16 @@ pub fn near_account_key() -> near_sdk::PublicKey {
     key_file.parse().expect("File contains a valid public key")
 }
 
+/// Secret counterpart of [`account_key`], the key the fixture quote's report_data binds, so tests
+/// can sign `submit_participant_info` as the fixture node. Raw "ed25519:..." string. Committable
+/// only because the node is a throwaway localnet one with no standing on any network.
+pub fn account_secret_key() -> &'static str {
+    include_str!("../assets/near_account_secret_key").trim()
+}
+
 pub fn mock_dstack_attestation_inner() -> DstackAttestation {
-    let quote = quote();
-    let collateral = mpc_attestation::collateral::collateral_from_str(TEST_COLLATERAL_STRING)
-        .expect("collateral.json is valid collateral");
     let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
-    DstackAttestation::new(quote, collateral, tcb_info)
+    DstackAttestation::new(quote(), collateral(), tcb_info)
 }
 
 pub fn mock_dstack_attestation() -> Attestation {
@@ -131,6 +152,7 @@ pub fn mock_dto_dstack_attestation() -> near_mpc_contract_interface::types::Atte
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     #[test]
@@ -146,6 +168,62 @@ mod tests {
     #[test]
     fn test_near_p2p_tls_key_works() {
         near_p2p_tls_key();
+    }
+
+    /// `collateral.json` is the captured collateral with its byte fields hex-encoded, which is the
+    /// shape the contract DTO reads. Regenerate with:
+    ///
+    ///   UPDATE_FIXTURES=1 cargo test -p test-utils collateral_fixture
+    #[test]
+    fn collateral_fixture__should_match_the_captured_public_data() {
+        // Given
+        const BYTE_FIELDS: [&str; 4] = [
+            "root_ca_crl",
+            "pck_crl",
+            "tcb_info_signature",
+            "qe_identity_signature",
+        ];
+        let mut collateral = captured_collateral();
+        for name in BYTE_FIELDS {
+            let bytes: Vec<u8> = serde_json::from_value(collateral[name].clone())
+                .unwrap_or_else(|_| panic!("{name} is a byte array"));
+            collateral[name] = Value::from(hex::encode(bytes));
+        }
+
+        // When
+        let expected = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&collateral).expect("collateral serializes")
+        );
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/collateral.json");
+        if std::env::var_os("UPDATE_FIXTURES").is_some() {
+            std::fs::write(path, &expected).expect("collateral.json is writable");
+        }
+
+        // Then
+        assert_eq!(
+            expected, TEST_COLLATERAL_STRING,
+            "collateral.json is stale; regenerate with UPDATE_FIXTURES=1"
+        );
+    }
+
+    #[test]
+    fn account_secret_key__should_pair_with_account_public_key() {
+        // Given: a NEAR ed25519 secret key is base58 of `seed || public_key`.
+        let secret = account_secret_key()
+            .strip_prefix("ed25519:")
+            .expect("secret key is ed25519-prefixed");
+        let decoded = bs58::decode(secret).into_vec().expect("base58 secret key");
+        let seed: [u8; 32] = decoded[..32]
+            .try_into()
+            .expect("secret key holds a 32-byte seed");
+
+        // When
+        let derived = ed25519_dalek::SigningKey::from_bytes(&seed).verifying_key();
+
+        // Then
+        assert_eq!(derived.to_bytes(), account_key());
+        assert_eq!(decoded[32..], account_key());
     }
 
     #[test]

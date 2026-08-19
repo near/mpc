@@ -16,14 +16,17 @@ use crate::sandbox::{
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
+        transactions::CallMpcContract,
     },
 };
 use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::Protocol;
-use near_mpc_contract_interface::types::{self as dtos, Attestation, MockAttestation};
+use near_mpc_contract_interface::types::{
+    self as dtos, Attestation, Config, MockAttestation, Protocol,
+};
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
 use near_workspaces::{AccessKey, Account, Contract};
 use rand::SeedableRng;
@@ -871,10 +874,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Call verify_tee() to trigger resharing
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VERIFY_TEE)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .verify_tee()
         .await?;
     dbg!(&verify_result);
     assert!(
@@ -998,10 +999,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
 
     // When: a participant calls verify_tee while too few valid attestations remain.
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), method_names::VERIFY_TEE)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .call_mpc(contract.id())
+        .verify_tee()
         .await?;
     assert!(
         verify_result.is_success(),
@@ -1036,13 +1035,8 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
     ) else {
         panic!("CaitSith domain must yield a sign request");
     };
-    let sign_result = requester
-        .call(contract.id(), method_names::SIGN)
-        .args_json(sign_request.request_json_args())
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact()
-        .await?;
+    let contract_handle = requester.call_mpc(contract.id());
+    let sign_result = contract_handle.sign(sign_request.args).await?;
     let Err(sign_err) = sign_result.into_result() else {
         panic!("sign request must be refused while the network is not accepting requests");
     };
@@ -1052,6 +1046,86 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         "expected TEE-validation-failed rejection, got: {sign_err}"
     );
 
+    Ok(())
+}
+
+/// Two grants, not one: consuming a single grant deletes the row, so only the entry would be
+/// measured. Charged against the deposit sent rather than the contract's balance growth, which
+/// also includes its share of the gas burnt.
+///
+/// TODO(#4135): the mock carries every constraint but `expected_measurements`, which no sandbox
+/// helper can get voted in.
+#[tokio::test]
+async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_fee_of_storage()
+-> Result<()> {
+    // Given
+    const GRANTS: u32 = 2;
+    const BUFFER: u128 = 2;
+    const EXPIRY_SECONDS: u64 = 1_000;
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .build()
+        .await;
+    let image_hash = image_digest();
+    for account in &mpc_signer_accounts {
+        vote_for_hash(account, &contract, &image_hash).await?;
+        vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
+    }
+    let [compose_hash] = get_allowed_launcher_compose_hashes(&contract).await?[..] else {
+        panic!("the launcher and image hashes must derive exactly one compose hash");
+    };
+    let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
+    let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: Some(image_hash),
+        launcher_docker_compose_hash: Some(compose_hash),
+        expiry_timestamp_seconds: Some(now_seconds + EXPIRY_SECONDS),
+        expected_measurements: None,
+    });
+    let node = worker.dev_create_account().await?;
+    let tls_key = bogus_ed25519_public_key();
+    let config: Config = contract
+        .view(method_names::CONFIG)
+        .args_json(serde_json::json!({}))
+        .await?
+        .json()?;
+    let before = contract.as_account().view_account().await?;
+
+    // When
+    let prepayment = prepay_attestation_grants(&node, &contract, node.id(), GRANTS).await?;
+    assert!(prepayment.is_success(), "prepayment failed: {prepayment:?}");
+    let submission = submit_participant_info(&node, &contract, &attestation, &tls_key).await?;
+    assert!(submission.is_success(), "submission failed: {submission:?}");
+
+    // Then
+    let remaining: u32 = contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": node.id() }))
+        .await?
+        .json()?;
+    assert_eq!(remaining, GRANTS - 1, "the row must outlive the submission");
+
+    let after = contract.as_account().view_account().await?;
+    let grown = after.storage_usage - before.storage_usage;
+    let charged = STORAGE_BYTE_COST_YOCTONEAR.saturating_mul(u128::from(grown));
+    let fee = NearToken::from_millinear(u128::from(config.attestation_storage_fee_millinear))
+        .as_yoctonear();
+    let expected_deposit = NearToken::from_yoctonear(fee.saturating_mul(u128::from(GRANTS)));
+    let balance_growth = after.balance.saturating_sub(before.balance);
+    assert!(
+        balance_growth >= expected_deposit,
+        "the prepayment must reach the contract's balance: grew {balance_growth}, \
+         deposited {expected_deposit}"
+    );
+    assert!(
+        charged.saturating_mul(BUFFER) <= fee,
+        "one grant's storage grew to {grown} bytes ({charged} yocto); the fee ({fee} yocto) \
+         must stay at least {BUFFER}x that, so growth is caught before it breaches"
+    );
     Ok(())
 }
 

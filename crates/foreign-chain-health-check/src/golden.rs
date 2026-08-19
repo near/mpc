@@ -113,9 +113,9 @@ const TESTNET: GoldenSet = GoldenSet {
         block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
     }),
     aptos: Some(AptosVector {
-        tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
+        tx: "f2b7473ddd239c7df77bd3b07cc21a4c92b84b891c469b1dbbcfd8f9f8ed2ea9",
         event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 302_761_912,
+        event_sequence_number: 830_687_280,
     }),
     sui: Some(SuiVector {
         chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
