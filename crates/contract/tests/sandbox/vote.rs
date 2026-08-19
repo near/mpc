@@ -5,12 +5,12 @@ use crate::sandbox::{
         generate_participant_and_submit_attestation,
     },
     utils::{
-        consts::{ALL_PROTOCOLS, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
+        consts::{ALL_PROTOCOLS, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
         interface::IntoContractType,
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
-        transactions::execute_async_transactions,
+        transactions::{CallMpcContract, execute_async_handle_calls},
     },
 };
 use assert_matches::assert_matches;
@@ -201,12 +201,10 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         assert_eq!(&expected_domain, found);
 
         // send threshold votes to abort key generation
-        execute_async_transactions(
+        execute_async_handle_calls(
             &mpc_signer_accounts[0..threshold],
             &contract,
-            method_names::VOTE_CANCEL_KEYGEN,
-            &json!({"next_domain_id": next_domain_id+1}),
-            GAS_FOR_VOTE_CANCEL_KEYGEN,
+            |handle| async move { handle.vote_cancel_keygen(next_domain_id + 1).await },
         )
         .await
         .unwrap();
@@ -433,8 +431,8 @@ async fn test_cancel_resharing_vote_is_idempotent(
     let account_1 = &persistent_participants[0];
     for _ in 0..initial_threshold {
         let result = account_1
-            .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-            .transact()
+            .call_mpc(contract.id())
+            .vote_cancel_resharing()
             .await?;
         assert!(result.is_success(), "{result:#?}");
     }
@@ -506,8 +504,8 @@ async fn test_cancel_resharing_requires_threshold_votes(
 
     // Add one more vote to reach threshold
     let result = persistent_participants[initial_threshold - 1]
-        .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-        .transact()
+        .call_mpc(contract.id())
+        .vote_cancel_resharing()
         .await?;
     assert!(result.is_success(), "{result:#?}");
 
@@ -534,12 +532,9 @@ async fn test_cancel_resharing_only_previous_participants_can_vote(
     } = setup_resharing_state.await;
 
     for new_participant_account in new_participant_accounts {
+        let handle = new_participant_account.call_mpc(contract.id());
         assert!(
-            new_participant_account
-                .call(contract.id(), method_names::VOTE_CANCEL_RESHARING)
-                .transact()
-                .await?
-                .is_failure(),
+            handle.vote_cancel_resharing().await?.is_failure(),
             "A new participant should not be able to vote for cancellation"
         );
     }
@@ -637,19 +632,17 @@ async fn test_cancelled_epoch_cannot_be_reused(
         );
     }
 
+    let rejected_epoch_id = dtos::EpochId(cancelled_epoch_id.0);
+    let proposed_parameters: dtos::ProposedGovernanceThresholdParameters =
+        ProposedGovernanceThresholdParameters::new(threshold_parameters.clone(), BTreeMap::new())
+            .into();
+
     // Check that starting a new resharing with cancelled epoch id fails
     for account in &persistent_participants {
         assert!(
             account
-                .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-                .args_json(json!({
-                    "prospective_epoch_id": cancelled_epoch_id.0,
-                    "proposal": ProposedGovernanceThresholdParameters::new(
-                        threshold_parameters.clone(),
-                        BTreeMap::new(),
-                    ),
-                }))
-                .transact()
+                .call_mpc(contract.id())
+                .vote_new_parameters(rejected_epoch_id, proposed_parameters.clone())
                 .await?
                 .is_failure(),
             "Voting for resharing with cancelled epoch id should be rejected"
@@ -809,23 +802,17 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         GovernanceThreshold::new(threshold.0 + 1),
     )
     .unwrap();
+    let prospective_epoch_id = dtos::EpochId(epoch_id.0 + 1);
+    let proposed_parameters: dtos::ProposedGovernanceThresholdParameters =
+        ProposedGovernanceThresholdParameters::new(threshold_parameters, BTreeMap::new()).into();
 
     mpc_signer_accounts.push(new_account.clone());
 
     // Vote to transition to resharing state
     for account in &mpc_signer_accounts {
         let call_result = account
-            .call(contract.id(), method_names::VOTE_NEW_PARAMETERS)
-            .max_gas()
-            .args_json(json!({
-                "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),
-                "proposal": ProposedGovernanceThresholdParameters::new(
-                    threshold_parameters.clone(),
-                    BTreeMap::new(),
-                ),
-            }))
-            .transact()
-            .await
+            .call_mpc(contract.id())
+            .vote_new_parameters(prospective_epoch_id, proposed_parameters.clone()).await
             .unwrap()
             .into_result()
             .expect_err("calling `vote_new_parameters` must fail when one participant has invalid TEE status.");
