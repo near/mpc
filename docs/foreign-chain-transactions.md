@@ -97,18 +97,37 @@ pub enum ForeignTxPayloadVersion {
 
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub derivation_path: String, // Key derivation path
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    // Optional opt-in binding of the response to this request, see below.
+    pub expected_payload_hash: Option<Hash256>,
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
-    pub tweak: Tweak,
     pub domain_id: DomainId,
     pub payload_version: ForeignTxPayloadVersion,
+    pub expected_payload_hash: Option<Hash256>,
 }
 ```
+
+#### Binding the response to the request (`expected_payload_hash`)
+
+A response's signature is verified against the network's root key, so without further
+checks any previously signed `(payload_hash, signature)` pair would satisfy
+`respond_verify_foreign_tx` and could resolve a pending request with a stale or
+unrelated observation (a replay DoS; callers detect the mismatch client-side, so funds
+are not at risk).
+
+Callers that can predict the signed payload — i.e. that know which extracted values they
+expect — can compute `msg_hash` (see [Sign Payload Serialization](#sign-payload-serialization))
+and submit it as `expected_payload_hash`. The contract then rejects any response whose
+`payload_hash` differs, and nodes refuse to sign a payload whose hash differs from the
+expectation. A request with an expectation that does not match on-chain reality therefore
+times out rather than receiving a mismatching response. The `near-mpc-sdk` request builder
+populates this field automatically from the caller's expected values.
+
+Omitting the field preserves the old unbound behavior.
 
 ### Chain Query DTOs
 
@@ -534,8 +553,12 @@ Not every chain has a fingerprint probe. The table lists the ones that do, with 
 | chain | probe |
 |---|---|
 | starknet | `starknet_chainId` |
+| base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` |
+| bitcoin | `getblockhash` at height 0 |
 
-Starknet's fingerprint is the chain id felt in lowercase `0x` hex without leading zeros. Both providers and operators are free to pad and upper-case it, so the reported and the configured value are normalized before they are compared.
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash.
+
+An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
 
 #### Why drop-and-log on local-config mismatch, not hard-crash
 
@@ -564,7 +587,8 @@ This ensures different nodes query different providers for the same request whil
 
 ## Failure and Timeout Behavior
 
-* Nodes **do not participate** if RPC queries fail or extraction fails.
+* Nodes **do not participate** if RPC queries fail, extraction fails, or the computed
+  payload hash does not match the request's `expected_payload_hash`.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
 * *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (RPC sub-quorum, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
@@ -691,10 +715,11 @@ The fingerprint is set per chain rather than once per deployment, so a config ca
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
 
-Only the chains with a fingerprint probe read the field at all — starknet today, the rest as their
-probes are written. For those chains, leaving it unset is not a silent skip: every provider of the
-chain is reported as `MissingExpectedFingerprint`, because silence reads as healthy on a dashboard. A
-chain with no probe yet reports `ProbeNotImplemented` whether the field is set or not.
+Only the chains with a fingerprint probe read the field at all — starknet, bitcoin and the EVM
+chains today, the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
+provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads as healthy
+on a dashboard. A chain with no probe yet reports `ProbeNotImplemented` whether the field is set or
+not.
 
 ## Risks
 

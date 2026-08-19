@@ -4,6 +4,14 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use foreign_chain_inspector::abstract_chain::inspector::Abstract;
+use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
+use foreign_chain_inspector::base::inspector::Base;
+use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
+use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
+use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
+use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
@@ -65,7 +73,6 @@ impl ProbeReport {
         &self.rows
     }
 
-    /// Only configured chains appear, never reports on a chain the operator did not configure.
     pub fn counts_per_chain(&self) -> BTreeMap<ForeignChain, ProviderCounts> {
         let mut counts: BTreeMap<ForeignChain, ProviderCounts> = BTreeMap::new();
         for row in &self.rows {
@@ -95,13 +102,36 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe the remaining chains.
+                ForeignChain::Abstract => probe_evm::<Abstract>(chain, chain_config).await,
+                ForeignChain::Arbitrum => probe_evm::<Arbitrum>(chain, chain_config).await,
+                ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
+                ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
+                ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
+                ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
+                ForeignChain::Bitcoin => {
+                    probe_chain(chain, chain_config, |provider| {
+                        Ok(BitcoinInspector::new(prepare_jsonrpc(provider)?))
+                    })
+                    .await
+                }
+                // TODO(#4003): probe Aptos and Sui. Ethereum, Solana and Ton have no inspector, so
+                // there is nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
 
     let report_rows = futures::future::join_all(probe_attempts).await.concat();
     ProbeReport { rows: report_rows }
+}
+
+async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> Vec<ProviderHealth>
+where
+    Chain: EvmChain + Clone + Send + Sync + 'static,
+{
+    probe_chain(chain, config, |provider| {
+        Ok(EvmInspector::<_, Chain>::new(prepare_jsonrpc(provider)?))
+    })
+    .await
 }
 
 async fn probe_chain<I>(
@@ -175,18 +205,6 @@ fn rows_of(
         .collect()
 }
 
-/// A provider answers what it likes and the report reaches logs and metric labels, so the length is
-/// capped well clear of the longest real fingerprint: Bitcoin's genesis hash, at 66 characters.
-fn bounded(observed: NetworkFingerprint) -> NetworkFingerprint {
-    const MAX_CHARS: usize = 96;
-
-    let observed = observed.to_string();
-    match observed.char_indices().nth(MAX_CHARS) {
-        None => NetworkFingerprint::from(observed),
-        Some((cutoff, _)) => NetworkFingerprint::from(format!("{}…", &observed[..cutoff])),
-    }
-}
-
 fn classify(
     expected: &NetworkFingerprint,
     reported: Result<NetworkFingerprint, ForeignChainInspectionError>,
@@ -195,7 +213,7 @@ fn classify(
         Ok(observed) if &observed == expected => ProviderStatus::Healthy,
         Ok(observed) => ProviderStatus::WrongNetwork {
             expected: expected.clone(),
-            observed: bounded(observed),
+            observed,
         },
         Err(error) => match error.provider_failure() {
             Some(ProviderFailure::Unreachable) => ProviderStatus::Unreachable,
@@ -224,6 +242,58 @@ mod tests {
     const PADDED_UPPERCASE_MAINNET: &str = "0x00534E5F4D41494E";
     /// Reserved as "discard", so nothing listens there.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
+    /// For a chain with no probe: the value is never read, only whether it is set at all.
+    const ANY_FINGERPRINT: &str = "any-fingerprint";
+    /// Bitcoin's genesis block hash, which is what tells its networks apart.
+    const BITCOIN_MAINNET: &str =
+        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+    const BITCOIN_TESTNET3: &str =
+        "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943";
+
+    struct EvmMainnet {
+        chain: ForeignChain,
+        chain_id: u64,
+    }
+
+    impl EvmMainnet {
+        /// The form an operator configures.
+        fn expected(&self) -> String {
+            self.chain_id.to_string()
+        }
+
+        /// The `0xXXX` hex quantity an RPC provider answers to an `eth_chainId` request.
+        fn answered(&self) -> String {
+            format!("{:#x}", self.chain_id)
+        }
+    }
+
+    /// Every EVM chain the probe covers, with its mainnet chain id.
+    const EVM_MAINNETS: [EvmMainnet; 6] = [
+        EvmMainnet {
+            chain: ForeignChain::Abstract,
+            chain_id: 2741,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Arbitrum,
+            chain_id: 42161,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Base,
+            chain_id: 8453,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Bnb,
+            chain_id: 56,
+        },
+        EvmMainnet {
+            chain: ForeignChain::HyperEvm,
+            chain_id: 999,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Polygon,
+            chain_id: 137,
+        },
+    ];
 
     fn provider(rpc_url: &str) -> ForeignChainProviderConfig {
         ForeignChainProviderConfig {
@@ -271,11 +341,42 @@ mod tests {
         }
     }
 
-    async fn mock_chain_id<'a>(
+    fn solana_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            solana: Some(config),
+            ..Default::default()
+        }
+    }
+
+    fn bitcoin_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            bitcoin: Some(config),
+            ..Default::default()
+        }
+    }
+
+    fn must_put_chain(
+        chains: &mut ForeignChainsConfig,
+        chain: ForeignChain,
+        config: ForeignChainConfig,
+    ) {
+        let slot = match chain {
+            ForeignChain::Abstract => &mut chains.abstract_chain,
+            ForeignChain::Arbitrum => &mut chains.arbitrum,
+            ForeignChain::Base => &mut chains.base,
+            ForeignChain::Bnb => &mut chains.bnb,
+            ForeignChain::HyperEvm => &mut chains.hyper_evm,
+            ForeignChain::Polygon => &mut chains.polygon,
+            other => panic!("no config slot wired for `{other:?}`"),
+        };
+        *slot = Some(config);
+    }
+
+    async fn mock_fingerprint<'a>(
         server: &'a httpmock::MockServer,
-        chain_id: &str,
+        fingerprint: &str,
     ) -> httpmock::Mock<'a> {
-        let body = serde_json::json!({"jsonrpc": "2.0", "result": chain_id, "id": 0});
+        let body = serde_json::json!({"jsonrpc": "2.0", "result": fingerprint, "id": 0});
         server
             .mock_async(|when, then| {
                 when.method(httpmock::Method::POST);
@@ -352,7 +453,7 @@ mod tests {
     async fn probe_all_providers__should_report_a_provider_on_the_expected_network_as_healthy() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        let mock = mock_chain_id(&server, MAINNET).await;
+        let mock = mock_fingerprint(&server, MAINNET).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -373,7 +474,7 @@ mod tests {
     async fn probe_all_providers__should_report_a_provider_on_another_network_as_wrong_network() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, SEPOLIA).await;
+        mock_fingerprint(&server, SEPOLIA).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -386,8 +487,8 @@ mod tests {
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::from(MAINNET.to_string()),
-                observed: NetworkFingerprint::from(SEPOLIA.to_string()),
+                expected: NetworkFingerprint::new(MAINNET),
+                observed: NetworkFingerprint::new(SEPOLIA),
             }
         );
     }
@@ -396,7 +497,7 @@ mod tests {
     async fn probe_all_providers__should_normalize_the_reported_fingerprint_before_comparing() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, PADDED_UPPERCASE_MAINNET).await;
+        mock_fingerprint(&server, PADDED_UPPERCASE_MAINNET).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -417,7 +518,7 @@ mod tests {
      {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        let mock = mock_chain_id(&server, MAINNET).await;
+        let mock = mock_fingerprint(&server, MAINNET).await;
         let config = starknet_only(chain_config(
             None,
             one_provider("publicnode", &server.base_url()),
@@ -537,7 +638,7 @@ mod tests {
     async fn probe_all_providers__should_normalize_the_configured_fingerprint_before_comparing() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, MAINNET).await;
+        mock_fingerprint(&server, MAINNET).await;
         let config = starknet_only(chain_config(
             Some(PADDED_UPPERCASE_MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -605,7 +706,7 @@ mod tests {
     async fn probe_all_providers__should_report_each_provider_of_a_chain_separately() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, MAINNET).await;
+        mock_fingerprint(&server, MAINNET).await;
         let mut providers = one_provider("healthy", &server.base_url());
         providers.insert("broken".to_string().into(), provider(CLOSED_PORT_URL));
         let config = starknet_only(chain_config(Some(MAINNET), providers));
@@ -635,20 +736,17 @@ mod tests {
     async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
      {
         // Given
-        let config = ForeignChainsConfig {
-            base: Some(chain_config(
-                Some("8453"),
-                one_provider("publicnode", CLOSED_PORT_URL),
-            )),
-            ..Default::default()
-        };
+        let config = solana_only(chain_config(
+            Some(ANY_FINGERPRINT),
+            one_provider("publicnode", CLOSED_PORT_URL),
+        ));
 
         // When
         let report = probe_all_providers(&config).await;
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            must_status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
     }
@@ -657,14 +755,14 @@ mod tests {
     async fn probe_all_providers__should_report_every_configured_chain_under_its_own_chain() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, MAINNET).await;
+        mock_fingerprint(&server, MAINNET).await;
         let config = ForeignChainsConfig {
             starknet: Some(chain_config(
                 Some(MAINNET),
                 one_provider("publicnode", &server.base_url()),
             )),
-            base: Some(chain_config(
-                Some("8453"),
+            solana: Some(chain_config(
+                Some(ANY_FINGERPRINT),
                 one_provider("publicnode", CLOSED_PORT_URL),
             )),
             ..Default::default()
@@ -679,10 +777,112 @@ mod tests {
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            must_status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
         assert_eq!(report.counts_per_chain().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_every_evm_chain_on_its_expected_network_as_healthy()
+    {
+        // Given
+        let mut servers = Vec::new();
+        let mut config = ForeignChainsConfig::default();
+        for mainnet in EVM_MAINNETS {
+            let server = httpmock::MockServer::start_async().await;
+            mock_fingerprint(&server, &mainnet.answered()).await;
+            must_put_chain(
+                &mut config,
+                mainnet.chain,
+                chain_config(
+                    Some(&mainnet.expected()),
+                    one_provider("publicnode", &server.base_url()),
+                ),
+            );
+            servers.push(server);
+        }
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        for EvmMainnet { chain, .. } in EVM_MAINNETS {
+            assert_eq!(
+                must_status_of(&report, chain, "publicnode"),
+                ProviderStatus::Healthy,
+                "{chain:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_evm_provider_on_another_network_as_wrong_network()
+     {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_fingerprint(&server, "0x14a34").await;
+        let mut config = ForeignChainsConfig::default();
+        must_put_chain(
+            &mut config,
+            ForeignChain::Base,
+            chain_config(Some("8453"), one_provider("publicnode", &server.base_url())),
+        );
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new("8453"),
+                observed: NetworkFingerprint::new("84532"),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_bitcoin_on_its_genesis_block_as_healthy() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_fingerprint(&server, BITCOIN_MAINNET).await;
+        let config = bitcoin_only(chain_config(
+            Some(BITCOIN_MAINNET),
+            one_provider("publicnode", &server.base_url()),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            ProviderStatus::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_bitcoin_on_another_network_as_wrong_network() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_fingerprint(&server, BITCOIN_TESTNET3).await;
+        let config = bitcoin_only(chain_config(
+            Some(BITCOIN_MAINNET),
+            one_provider("publicnode", &server.base_url()),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new(BITCOIN_MAINNET),
+                observed: NetworkFingerprint::new(BITCOIN_TESTNET3),
+            }
+        );
     }
 
     #[tokio::test]
@@ -711,7 +911,7 @@ mod tests {
         // Given
         let server = httpmock::MockServer::start_async().await;
         let flood = "n".repeat(5_000);
-        mock_chain_id(&server, &flood).await;
+        mock_fingerprint(&server, &flood).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             one_provider("publicnode", &server.base_url()),
@@ -726,13 +926,19 @@ mod tests {
         else {
             panic!("expected the flood to read as the wrong network");
         };
-        assert!(observed.to_string().chars().count() < 100);
+        let observed = observed.to_string();
+        assert!(observed.ends_with("_TRUNCATED"), "{observed}");
+        assert_eq!(
+            observed.chars().count(),
+            NetworkFingerprint::MAX_CHARS,
+            "{observed}"
+        );
     }
 
     #[test]
     fn classify__should_report_a_transaction_level_error_as_malformed() {
         // Given
-        let expected = NetworkFingerprint::from(MAINNET.to_string());
+        let expected = NetworkFingerprint::new(MAINNET);
 
         // When
         let status = classify(
@@ -761,7 +967,7 @@ mod tests {
     async fn probe_all_providers__should_keep_auth_material_out_of_the_report() {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_chain_id(&server, SEPOLIA).await;
+        mock_fingerprint(&server, SEPOLIA).await;
         let config = starknet_only(chain_config(
             Some(MAINNET),
             NonEmptyBTreeMap::new(

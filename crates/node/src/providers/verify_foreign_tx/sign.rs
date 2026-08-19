@@ -13,7 +13,7 @@ use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
-use crate::indexer::ReadSupportedForeignChain;
+use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
@@ -32,8 +32,15 @@ fn build_signature_request(
     request: &VerifyForeignTxRequest,
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
 ) -> anyhow::Result<SignatureRequest> {
-    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] =
-        foreign_tx_payload.compute_msg_hash()?.into();
+    let msg_hash = foreign_tx_payload.compute_msg_hash()?;
+    if let Some(expected_payload_hash) = &request.expected_payload_hash
+        && expected_payload_hash != &msg_hash
+    {
+        bail!(
+            "computed payload hash {msg_hash:?} does not match the request's expected payload hash {expected_payload_hash:?}"
+        );
+    }
+    let payload_hash: [u8; ECDSA_PAYLOAD_SIZE_BYTES] = msg_hash.into();
     let payload_bytes: BoundedVec<u8, ECDSA_PAYLOAD_SIZE_BYTES, ECDSA_PAYLOAD_SIZE_BYTES> =
         payload_hash.into();
 
@@ -48,15 +55,32 @@ fn build_signature_request(
     })
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: ReadSupportedForeignChain,
-{
+impl VerifyForeignTxProvider {
     pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
+
+        // Also checked in `execute_foreign_chain_request`; checked early here
+        // because `take_owned` below irreversibly consumes a presignature. An
+        // availability flip between the two checks still costs one presignature.
+        ensure_chain_is_available(
+            &self.supporters_by_foreign_chain.borrow(),
+            &foreign_tx_request.request,
+        )
+        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
+
+        let response_payload = self
+            .execute_foreign_chain_request(
+                &foreign_tx_request.request,
+                foreign_tx_request.payload_version,
+            )
+            .await?;
+
+        // Build and validate the request before the presignature is popped, so invalid/malicious
+        // requests don't cost a presignature.
+        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let keyshare = self
             .ecdsa_signature_provider
@@ -70,15 +94,6 @@ where
             },
             participants,
         )?;
-
-        let response_payload = self
-            .execute_foreign_chain_request(
-                &foreign_tx_request.request,
-                foreign_tx_request.payload_version,
-            )
-            .await?;
-
-        let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         let response = self
             .ecdsa_signature_provider
@@ -120,7 +135,10 @@ where
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        chain_is_supported(&self.foreign_chain_policy_reader, request).await?;
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request)
+            .inspect_err(|_| {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+            })?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
@@ -373,32 +391,25 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ForeignChainSupportError {
-    #[error("failed to fetch supported chains on the contract")]
-    FailedToReadContract(#[source] anyhow::Error),
-    #[error(
-        "requested chain {requested:?} is not present in the list of supported foreign chains on the MPC contract"
-    )]
-    ChainNotSupported { requested: dtos::ForeignChain },
+#[error(
+    "requested chain {requested:?} is not in the list of available foreign chains on the MPC contract"
+)]
+struct ChainNotAvailableError {
+    requested: dtos::ForeignChain,
 }
 
-async fn chain_is_supported(
-    policy_reader: &impl ReadSupportedForeignChain,
+/// A chain counts as available when the supporters map has an entry for it:
+/// the chain is available on the contract and a signing quorum of current
+/// participants supports it.
+fn ensure_chain_is_available(
+    supporters_by_foreign_chain: &SupportersByForeignChain,
     request: &dtos::ForeignChainRpcRequest,
-) -> Result<(), ForeignChainSupportError> {
-    let on_chain_foreign_chains_support = policy_reader
-        .get_supported_chains()
-        .await
-        .map_err(ForeignChainSupportError::FailedToReadContract)?;
-
-    let requested_chain = request.chain();
-
-    if on_chain_foreign_chains_support.contains(&requested_chain) {
+) -> Result<(), ChainNotAvailableError> {
+    let requested = request.chain();
+    if supporters_by_foreign_chain.contains_key(&requested) {
         Ok(())
     } else {
-        Err(ForeignChainSupportError::ChainNotSupported {
-            requested: requested_chain,
-        })
+        Err(ChainNotAvailableError { requested })
     }
 }
 
@@ -406,9 +417,76 @@ async fn chain_is_supported(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::indexer::MockReadSupportedForeignChain;
+    use crate::primitives::ParticipantId;
     use assert_matches::assert_matches;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, HashSet};
+
+    fn bitcoin_supporters() -> SupportersByForeignChain {
+        BTreeMap::from([(
+            dtos::ForeignChain::Bitcoin,
+            HashSet::from([ParticipantId::from_raw(1)]),
+        )])
+    }
+
+    #[test]
+    fn build_signature_request__should_reject_payload_not_matching_expected_hash() {
+        // Given
+        let request = verify_foreign_tx_request(Some(dtos::Hash256([1u8; 32])));
+        let payload = bitcoin_payload();
+
+        // When
+        let result = build_signature_request(&request, &payload);
+
+        // Then
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("does not match the request's expected payload hash"),
+            "expected the payload hash mismatch error, got: {error}",
+        );
+    }
+
+    #[test]
+    fn build_signature_request__should_accept_any_payload_without_expected_hash() {
+        // Given
+        let request = verify_foreign_tx_request(None);
+
+        // When
+        let result = build_signature_request(&request, &bitcoin_payload());
+
+        // Then
+        result.unwrap();
+    }
+
+    #[test]
+    fn ensure_chain_is_available__should_succeed_when_chain_has_supporters() {
+        // Given
+        let supporters = bitcoin_supporters();
+
+        // When, then
+        assert_matches!(
+            ensure_chain_is_available(&supporters, &bitcoin_request()),
+            Ok(_)
+        );
+    }
+
+    #[test]
+    fn ensure_chain_is_available__should_fail_when_chain_has_no_supporters() {
+        // Given: the supporters map covers Bitcoin, but the request is for Ethereum.
+        let supporters = bitcoin_supporters();
+        let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
+            tx_id: dtos::EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: dtos::EvmFinality::Finalized,
+        });
+
+        // When, then
+        assert_matches!(
+            ensure_chain_is_available(&supporters, &ethereum_request),
+            Err(ChainNotAvailableError {
+                requested: dtos::ForeignChain::Ethereum
+            })
+        );
+    }
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -418,41 +496,27 @@ mod tests {
         })
     }
 
-    fn bitcoin_chain_policy() -> dtos::SupportedForeignChains {
-        BTreeSet::from([dtos::ForeignChain::Bitcoin]).into()
+    fn bitcoin_payload() -> dtos::ForeignTxSignPayload {
+        dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
+            request: bitcoin_request(),
+            values: vec![dtos::ExtractedValue::BitcoinExtractedValue(
+                dtos::BitcoinExtractedValue::BlockHash(dtos::Hash256([42u8; 32])),
+            )],
+        })
     }
 
-    fn mock_policy_reader(policy: dtos::SupportedForeignChains) -> MockReadSupportedForeignChain {
-        let mut reader = MockReadSupportedForeignChain::new();
-        reader
-            .expect_get_supported_chains()
-            .returning(move || Box::pin(std::future::ready(Ok(policy.clone()))));
-        reader
-    }
-
-    #[tokio::test]
-    async fn chain_is_supported__should_succeed_when_chain_is_present_in_policy() {
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-
-        assert_matches!(chain_is_supported(&reader, &bitcoin_request()).await, Ok(_));
-    }
-
-    #[tokio::test]
-    async fn chain_is_supported__should_fail_when_chain_is_not_present_in_policy() {
-        // On-chain policy has Bitcoin, but request is for Ethereum
-        let reader = mock_policy_reader(bitcoin_chain_policy());
-        let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
-            tx_id: dtos::EvmTxId([0; 32]),
-            extractors: vec![],
-            finality: dtos::EvmFinality::Finalized,
-        });
-
-        let result = chain_is_supported(&reader, &ethereum_request).await;
-        assert_matches!(
-            result,
-            Err(ForeignChainSupportError::ChainNotSupported {
-                requested: dtos::ForeignChain::Ethereum
-            })
-        );
+    fn verify_foreign_tx_request(
+        expected_payload_hash: Option<dtos::Hash256>,
+    ) -> VerifyForeignTxRequest {
+        VerifyForeignTxRequest {
+            id: near_indexer_primitives::CryptoHash([1u8; 32]),
+            receipt_id: near_indexer_primitives::CryptoHash([2u8; 32]),
+            request: bitcoin_request(),
+            payload_version: dtos::ForeignTxPayloadVersion::V1,
+            expected_payload_hash,
+            entropy: [0u8; 32],
+            timestamp_nanosec: 0,
+            domain_id: mpc_primitives::domain::DomainId(0),
+        }
     }
 }

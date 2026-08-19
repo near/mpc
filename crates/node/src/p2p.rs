@@ -929,7 +929,10 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     }
 
     fn connectivity(&self, participant_id: ParticipantId) -> Arc<dyn NodeConnectivityInterface> {
-        self.connectivities.get(participant_id).unwrap().clone()
+        self.connectivities
+            .get(participant_id)
+            .expect("connectivity is only queried for other participants of our participant set")
+            .clone()
     }
 
     fn send(
@@ -1025,6 +1028,7 @@ pub mod testing {
         pub const MIGRATION_WEBSERVER_BACKUP_NOT_SERVED_TEST: TestPorts =
             TestPorts::mpc_node_tests(27);
         pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
+        pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
     }
 
     pub fn generate_test_p2p_configs(
