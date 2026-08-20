@@ -196,11 +196,12 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         .await
         .is_none()
     );
-    // All nodes run in-process, so the availability gate's rejections are
-    // visible in the process-global counter.
-    assert!(
-        crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.get()
-            > rejections_before,
-        "expected the availability gate to reject at least one attempt"
+    // All nodes run in-process, so any availability-gate rejection would be
+    // visible in the process-global counter. None is expected: leader election
+    // is narrowed to the chain's supporters, so the request is never attempted.
+    assert_eq!(
+        crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.get(),
+        rejections_before,
+        "no node should have attempted the request once Bitcoin lost its quorum"
     );
 }
