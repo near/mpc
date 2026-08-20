@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_kit::AccountId;
+use near_kit::{AccountId, ExecutedOptimistic};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::{
@@ -773,7 +773,10 @@ impl MpcCluster {
         Ok(())
     }
 
-    pub fn client_for(&self, account_id: &AccountId) -> anyhow::Result<NearKitCaller> {
+    pub fn client_for(
+        &self,
+        account_id: &AccountId,
+    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
         let key = self
             .user_accounts
             .get(account_id)
@@ -788,7 +791,10 @@ impl MpcCluster {
         self.blockchain.client_for(account_id.as_ref(), key)
     }
 
-    pub fn contract_handle(&self, account_id: &AccountId) -> MpcContractHandle<NearKitCaller> {
+    pub fn contract_handle(
+        &self,
+        account_id: &AccountId,
+    ) -> MpcContractHandle<NearKitCaller<ExecutedOptimistic>> {
         self.contract
             .handle_for(self.client_for(account_id).unwrap())
     }
@@ -838,7 +844,10 @@ impl MpcCluster {
     }
 
     /// Build a [`NearKitCaller`] for the operator key of the given node.
-    pub fn operator_client_for(&self, node_index: usize) -> anyhow::Result<NearKitCaller> {
+    pub fn operator_client_for(
+        &self,
+        node_index: usize,
+    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
         let node = &self.nodes[node_index];
         self.blockchain
             .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
@@ -1310,8 +1319,6 @@ async fn init_contract(
         key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
         ..InitConfig::default()
     };
-    // `handle()` waits for finality, which `prepay_attestation_grants` needs: it reads
-    // `config()` next, and a view resolves against the last final block.
     let outcome = match init_format {
         ContractInitFormat::Current => contract.handle().init(params, Some(init_config)).await?,
     };

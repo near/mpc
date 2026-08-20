@@ -1,6 +1,8 @@
+use std::marker::PhantomData;
+
 use ed25519_dalek::SigningKey;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::{Final, FinalExecutionOutcome};
+use near_kit::{ExecutedOptimistic, Final, FinalExecutionOutcome, WaitLevel};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
@@ -21,13 +23,35 @@ pub struct NearBlockchain {
 
 /// A [`near_kit::Near`] client bound to a specific account: the e2e
 /// [`CallContract`] backend.
-pub struct NearKitCaller {
+pub struct NearKitCaller<T> {
     inner: near_kit::Near,
-    wait_for_final: bool,
+    _wait_level: PhantomData<fn() -> T>,
 }
 
-impl CallContract for NearKitCaller {
-    type Output = FinalExecutionOutcome;
+impl<T> NearKitCaller<T> {
+    pub(crate) fn with_wait_level<U>(self) -> NearKitCaller<U> {
+        NearKitCaller {
+            inner: self.inner,
+            _wait_level: PhantomData,
+        }
+    }
+}
+
+pub trait WithWaitLevel {
+    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
+}
+
+impl<T> WithWaitLevel for MpcContractHandle<NearKitCaller<T>> {
+    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>> {
+        self.map_caller(NearKitCaller::with_wait_level)
+    }
+}
+
+impl<T> CallContract for NearKitCaller<T>
+where
+    T: WaitLevel,
+{
+    type Output = T::Response;
     type Error = near_kit::Error;
 
     async fn call_contract(
@@ -35,17 +59,13 @@ impl CallContract for NearKitCaller {
         contract_id: &near_kit::AccountId,
         call_args: FunctionCallArgs,
     ) -> Result<Self::Output, Self::Error> {
-        let call = self
-            .inner
+        self.inner
             .call(contract_id, &call_args.method_name)
             .args_raw(call_args.args)
             .gas(call_args.gas)
-            .deposit(call_args.deposit);
-        if self.wait_for_final {
-            call.wait_until::<Final>().await
-        } else {
-            call.send().await
-        }
+            .deposit(call_args.deposit)
+            .wait_until::<T>()
+            .await
     }
 }
 
@@ -113,10 +133,14 @@ impl NearBlockchain {
         })
     }
 
-    pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<NearKitCaller> {
+    pub fn client_for(
+        &self,
+        account_id: &str,
+        key: &SigningKey,
+    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
         Ok(NearKitCaller {
             inner: self.make_client(account_id, key)?,
-            wait_for_final: false,
+            _wait_level: PhantomData,
         })
     }
 
@@ -148,14 +172,14 @@ impl DeployedContract {
     /// Waits for finality: callers of this handle are setup steps whose next
     /// action is typically a view, and a view resolves against the last final
     /// block.
-    pub fn handle(&self) -> MpcContractHandle<NearKitCaller> {
+    pub fn handle(&self) -> MpcContractHandle<NearKitCaller<Final>> {
         self.handle_for(NearKitCaller {
             inner: self.client.clone(),
-            wait_for_final: true,
+            _wait_level: PhantomData,
         })
     }
 
-    pub fn handle_for(&self, caller: NearKitCaller) -> MpcContractHandle<NearKitCaller> {
+    pub fn handle_for<T>(&self, caller: NearKitCaller<T>) -> MpcContractHandle<NearKitCaller<T>> {
         MpcContractHandle::new(caller, self.contract_id.clone())
     }
 
@@ -189,14 +213,14 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
-    pub async fn call_from_with_deposit(
+    pub async fn call_from_with_deposit<T: WaitLevel>(
         &self,
-        client: &NearKitCaller,
+        client: &NearKitCaller<T>,
         method: &str,
         args: serde_json::Value,
         gas: near_kit::Gas,
         deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
+    ) -> anyhow::Result<T::Response> {
         client
             .inner
             .call(&self.contract_id, method)
@@ -204,6 +228,7 @@ impl DeployedContract {
             .gas(gas)
             .deposit(deposit)
             .send()
+            .wait_until::<T>()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }

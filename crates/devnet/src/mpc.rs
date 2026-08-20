@@ -366,7 +366,7 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let handle = setup.accounts.account(&contract).call_mpc(&contract);
+        let mpc_contract_handle = setup.accounts.account(&contract).call_mpc(&contract);
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -387,7 +387,7 @@ impl MpcInitContractCmd {
             },
             threshold: GovernanceThreshold::new(self.threshold),
         };
-        handle
+        mpc_contract_handle
             .init(
                 parameters,
                 Some(near_mpc_contract_interface::types::InitConfig::default()),
