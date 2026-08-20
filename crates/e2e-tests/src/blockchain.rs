@@ -28,22 +28,19 @@ pub struct NearKitCaller<T> {
     _wait_level: PhantomData<fn() -> T>,
 }
 
-impl<T> NearKitCaller<T> {
-    pub(crate) fn with_wait_level<U>(self) -> NearKitCaller<U> {
-        NearKitCaller {
-            inner: self.inner,
-            _wait_level: PhantomData,
-        }
-    }
+pub trait CallMpc<T> {
+    fn call_mpc(
+        self,
+        contract_id: near_account_id::AccountId,
+    ) -> MpcContractHandle<NearKitCaller<T>>;
 }
 
-pub trait WithWaitLevel {
-    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
-}
-
-impl<T> WithWaitLevel for MpcContractHandle<NearKitCaller<T>> {
-    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>> {
-        self.map_caller(NearKitCaller::with_wait_level)
+impl<T> CallMpc<T> for NearKitCaller<T> {
+    fn call_mpc(
+        self,
+        contract_id: near_account_id::AccountId,
+    ) -> MpcContractHandle<NearKitCaller<T>> {
+        MpcContractHandle::new(self, contract_id)
     }
 }
 
@@ -66,6 +63,25 @@ where
             .deposit(call_args.deposit)
             .wait_until::<T>()
             .await
+    }
+}
+
+impl<T> NearKitCaller<T> {
+    pub(crate) fn with_wait_level<U>(self) -> NearKitCaller<U> {
+        NearKitCaller {
+            inner: self.inner,
+            _wait_level: PhantomData,
+        }
+    }
+}
+
+pub trait WithWaitLevel {
+    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
+}
+
+impl<T> WithWaitLevel for MpcContractHandle<NearKitCaller<T>> {
+    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>> {
+        self.map_caller(NearKitCaller::with_wait_level)
     }
 }
 
@@ -162,6 +178,12 @@ pub struct DeployedContract {
     contract_id: near_account_id::AccountId,
 }
 
+impl From<&DeployedContract> for near_account_id::AccountId {
+    fn from(val: &DeployedContract) -> Self {
+        val.contract_id.clone()
+    }
+}
+
 impl DeployedContract {
     pub fn contract_id(&self) -> String {
         self.contract_id.to_string()
@@ -172,15 +194,14 @@ impl DeployedContract {
     /// Waits for finality: callers of this handle are setup steps whose next
     /// action is typically a view, and a view resolves against the last final
     /// block.
-    pub fn handle(&self) -> MpcContractHandle<NearKitCaller<Final>> {
-        self.handle_for(NearKitCaller {
-            inner: self.client.clone(),
-            _wait_level: PhantomData,
-        })
-    }
-
-    pub fn handle_for<T>(&self, caller: NearKitCaller<T>) -> MpcContractHandle<NearKitCaller<T>> {
-        MpcContractHandle::new(caller, self.contract_id.clone())
+    pub fn call_mpc(&self) -> MpcContractHandle<NearKitCaller<ExecutedOptimistic>> {
+        MpcContractHandle::new(
+            NearKitCaller {
+                inner: self.client.clone(),
+                _wait_level: PhantomData,
+            },
+            self.contract_id.clone(),
+        )
     }
 
     pub async fn call(
