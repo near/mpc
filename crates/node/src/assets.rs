@@ -233,6 +233,9 @@ where
     hot_receiver: flume::Receiver<(UniqueId, T)>,
     cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
     clock: Clock,
+    /// Wakes parked takers when another taker adds assets to the cold queue
+    /// that it cannot use itself (they may match a different taker's condition).
+    cold_queue_changed: tokio::sync::Notify,
 }
 
 impl<T, CondVal: Default + Eq> DoubleQueue<T, CondVal>
@@ -254,6 +257,7 @@ where
                 condition_value_fetcher,
             ))),
             clock,
+            cold_queue_changed: tokio::sync::Notify::new(),
         }
     }
 
@@ -269,6 +273,9 @@ where
         // away and we quickly exhaust the available assets.
         self.cold_queue.lock().unwrap().update_condition_value();
         loop {
+            // Created before the take so a notification sent between a failed
+            // take and the select below is not lost.
+            let cold_queue_changed = self.cold_queue_changed.notified();
             let taken = self.cold_queue.lock().unwrap().take();
             match taken {
                 ColdQueueTakeResult::Taken(result) => {
@@ -286,6 +293,10 @@ where
                         _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
                             // Don't wait for too long, because the condition could have changed
                             // making a cold queue element eligible.
+                            continue;
+                        }
+                        _ = cold_queue_changed => {
+                            // Another taker parked assets it can't use; re-scan.
                             continue;
                         }
                         received = self.hot_receiver.recv_async() => {
@@ -307,23 +318,38 @@ where
 
     pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
         loop {
-            {
+            // Created before the scan so a notification sent between a failed
+            // scan and the select below is not lost.
+            let cold_queue_changed = self.cold_queue_changed.notified();
+            let (taken, ingested) = {
                 let mut cold = self.cold_queue.lock().unwrap();
+                let mut ingested = false;
                 while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
                     cold.ingest(id, value);
+                    ingested = true;
                 }
-                if let Some(taken) = cold.take_first_matching(&cond_val) {
-                    return taken;
-                }
+                (cold.take_first_matching(&cond_val), ingested)
+            };
+            // Assets drained off the hot channel may satisfy other takers.
+            if ingested {
+                self.cold_queue_changed.notify_waiters();
+            }
+            if let Some(taken) = taken {
+                return taken;
             }
             // If the cold queue is exhausted, wait for a new element.
             tokio::select! {
                 _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
                     continue;
                 }
+                _ = cold_queue_changed => {
+                    // Another taker parked assets it can't use; re-scan.
+                    continue;
+                }
                 received = self.hot_receiver.recv_async() => {
                     let (id, value) = received.expect("should never fail because self keeps a sender");
                     self.cold_queue.lock().unwrap().ingest(id, value);
+                    self.cold_queue_changed.notify_waiters();
                 }
             }
         }
