@@ -552,6 +552,26 @@ mod tests {
         }
     }
 
+    impl TestSetup {
+        fn spawn_monitor(&self) -> tokio::task::JoinHandle<()> {
+            tokio::spawn(monitor_attestation_removal(
+                self.submitter.clone(),
+                self.node_account_id.clone(),
+                self.tee_accounts_receiver.clone(),
+            ))
+        }
+
+        fn remove_node_from_tee_accounts(&self) {
+            self.tee_accounts_sender.send(vec![]).unwrap();
+        }
+
+        fn restore_node_to_tee_accounts(&self) {
+            self.tee_accounts_sender
+                .send(vec![self.node_id.clone()])
+                .unwrap();
+        }
+    }
+
     #[tokio::test]
     #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_submit_on_each_tick() {
@@ -595,73 +615,49 @@ mod tests {
     async fn monitor_attestation_removal__should_resubmit_when_attestation_removed() {
         // Given
         let setup = test_setup();
-        let tee_accounts_sender = setup.tee_accounts_sender;
-        let mock_sender = setup.sender;
-        let monitoring_task = tokio::spawn(monitor_attestation_removal(
-            setup.submitter,
-            setup.node_account_id,
-            setup.tee_accounts_receiver,
-        ));
+        let monitoring_task = setup.spawn_monitor();
 
         // Yield control to allow the monitoring task to start and process initial state.
         // This is preferred over sleep() as it doesn't introduce arbitrary timing delays
         tokio::task::yield_now().await;
+        assert_eq!(setup.sender.count(), 0);
 
-        // Verify no submission occurred initially (node is in TEE accounts)
-        assert_eq!(mock_sender.count(), 0);
+        // When
+        setup.remove_node_from_tee_accounts();
 
-        // When: remove the node from TEE accounts (simulate attestation removal)
-        let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
-        tee_accounts_sender.send(removed_tee_accounts).unwrap();
-
-        // Then: wait for the resubmission to occur (with timeout to avoid hanging)
+        // Then
         tokio::time::timeout(
             TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT,
-            mock_sender.wait_for_submission(),
+            setup.sender.wait_for_submission(),
         )
         .await
         .expect("Expected resubmission to occur within timeout");
-
-        // Verify attestation resubmission occurred and no additional submissions occurred
-        // (node should be back in TEE accounts automatically after resubmission)
         assert_eq!(
-            mock_sender.count(),
+            setup.sender.count(),
             1,
             "Expected exactly one resubmission when node was removed"
         );
 
-        // Stop monitoring service and verify no further submissions occur
+        // A removal after the monitor stops must no longer trigger a resubmission
         monitoring_task.abort();
         let _ = monitoring_task.await;
-
-        // Verify the submission count remains unchanged after stopping monitoring
         assert_eq!(
-            mock_sender.count(),
+            setup.sender.count(),
             1,
             "Expected submission count to remain stable after stopping monitoring service"
         );
-
-        // Remove the node from TEE accounts again to verify monitoring service is truly stopped
-        let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
-        let _ = tee_accounts_sender.send(removed_tee_accounts);
-
-        // Give a brief moment to ensure no resubmission occurs when monitoring is stopped
-        // Since the monitoring task is stopped, we use a timeout to verify no submission happens
+        setup.remove_node_from_tee_accounts();
         let timeout_result = tokio::time::timeout(
             TEST_VERIFY_NO_ATTESTATION_RESUBMISSION_TIMEOUT,
-            mock_sender.wait_for_submission(),
+            setup.sender.wait_for_submission(),
         )
         .await;
-
-        // Verify the timeout occurred (no submission)
         assert!(
             timeout_result.is_err(),
             "Expected no resubmission when monitoring service is stopped"
         );
-
-        // Verify no resubmission occurred (monitoring service is stopped)
         assert_eq!(
-            mock_sender.count(),
+            setup.sender.count(),
             1,
             "Expected no resubmission when monitoring service is stopped"
         );
@@ -698,26 +694,19 @@ mod tests {
         // Given
         let setup = test_setup();
         setup.sender.set_failing(true);
-        let handle = tokio::spawn(monitor_attestation_removal(
-            setup.submitter,
-            setup.node_account_id.clone(),
-            setup.tee_accounts_receiver,
-        ));
-        // Under the paused clock each sleep is a barrier: it completes only once the monitor
-        // has processed the previous watch update and is idle again.
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        let handle = setup.spawn_monitor();
+        tokio::task::yield_now().await;
 
         // When
-        setup.tee_accounts_sender.send(vec![]).unwrap();
+        setup.remove_node_from_tee_accounts();
         tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
         assert_eq!(setup.sender.count(), 0);
         setup.sender.set_failing(false);
-        setup
-            .tee_accounts_sender
-            .send(vec![setup.node_id.clone()])
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        setup.tee_accounts_sender.send(vec![]).unwrap();
+        setup.restore_node_to_tee_accounts();
+        // Yield so the monitor observes the restore before the watch channel coalesces it
+        // with the next removal.
+        tokio::task::yield_now().await;
+        setup.remove_node_from_tee_accounts();
 
         // Then
         tokio::time::timeout(MAX_RETRY_DURATION, setup.sender.wait_for_submission())
@@ -730,6 +719,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_remote_attestation_valid() {
+        // Given
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key: Ed25519PublicKey =
             (&SigningKey::generate(&mut rng).verifying_key()).into();
@@ -744,18 +734,23 @@ mod tests {
             .unwrap();
         let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
         let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
-        validate_remote_attestation(
+
+        // When
+        let result = validate_remote_attestation(
             &attestation,
             tls_public_key,
             account_public_key,
             &allowed_docker_image_hashes,
             &allowed_launcher_compose_hashes,
-        )
-        .expect("Valid attestation should pass validation");
+        );
+
+        // Then
+        result.expect("Valid attestation should pass validation");
     }
 
     #[tokio::test]
     async fn test_validate_remote_attestation_invalid() {
+        // Given
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key: Ed25519PublicKey =
             (&SigningKey::generate(&mut rng).verifying_key()).into();
@@ -770,15 +765,17 @@ mod tests {
             .unwrap();
         let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
         let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
-        assert!(
-            validate_remote_attestation(
-                &attestation,
-                tls_public_key,
-                account_public_key,
-                &allowed_docker_image_hashes,
-                &allowed_launcher_compose_hashes
-            )
-            .is_err()
+
+        // When
+        let result = validate_remote_attestation(
+            &attestation,
+            tls_public_key,
+            account_public_key,
+            &allowed_docker_image_hashes,
+            &allowed_launcher_compose_hashes,
         );
+
+        // Then
+        assert!(result.is_err());
     }
 }
