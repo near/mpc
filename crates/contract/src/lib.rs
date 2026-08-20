@@ -120,12 +120,6 @@ impl SupportedForeignChainsByNode {
     }
 }
 
-impl MpcContract {}
-
-// User contract API
-#[near]
-impl MpcContract {}
-
 // Node API
 #[near]
 impl MpcContract {

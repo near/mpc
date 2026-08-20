@@ -242,8 +242,6 @@ mod tests {
             .collect::<BTreeMap<dtos::ForeignChain, NonEmptyBTreeSet<dtos::RpcProvider>>>()
             .into();
 
-        // pub struct ForeignChainConfiguration(BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>);
-
         let participants: Vec<_> = contract
             .protocol_state
             .active_participants()
