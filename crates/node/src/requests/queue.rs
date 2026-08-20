@@ -10,6 +10,7 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -36,6 +37,29 @@ pub const REQUEST_EXPIRATION_BLOCKS: NumBlocks = 200;
 const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration::seconds(10);
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
+
+/// Narrows the eligible-leader set for a specific request (e.g. to the participants
+/// supporting the request's foreign chain).
+pub trait RefineEligibleLeaders<RequestType>: Send {
+    /// Returns the subset of `eligible` allowed to lead `request`.
+    fn refine(
+        &self,
+        request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId>;
+}
+
+/// The eligible leaders for `request`: `eligible` narrowed by `refiner` when one is set.
+pub(super) fn eligible_leaders_for<'a, RequestType>(
+    refiner: Option<&dyn RefineEligibleLeaders<RequestType>>,
+    request: &RequestType,
+    eligible: &'a HashSet<ParticipantId>,
+) -> Cow<'a, HashSet<ParticipantId>> {
+    match refiner {
+        Some(refiner) => Cow::Owned(refiner.refine(request, eligible)),
+        None => Cow::Borrowed(eligible),
+    }
+}
 
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
@@ -71,6 +95,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
+
+    /// See [`RefineEligibleLeaders`].
+    pub(super) refine_eligible_leaders: Option<Box<dyn RefineEligibleLeaders<RequestType>>>,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -464,7 +491,17 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
+            refine_eligible_leaders: None,
         }
+    }
+
+    /// Sets the per-request [`RefineEligibleLeaders`] hook.
+    pub fn with_eligible_leaders_refiner(
+        mut self,
+        refiner: Box<dyn RefineEligibleLeaders<RequestType>>,
+    ) -> Self {
+        self.refine_eligible_leaders = Some(refiner);
+        self
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -633,7 +670,22 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
+            let request_eligible_leaders = eligible_leaders_for(
+                self.refine_eligible_leaders.as_deref(),
+                &request.request,
+                &eligible_leaders,
+            );
+            if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
+                metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
+                    .with_label_values(&[&RequestType::get_type().to_string()])
+                    .inc();
+            }
+            match request.process(
+                self.my_participant_id,
+                &request_eligible_leaders,
+                cutoff_block,
+                now,
+            ) {
                 RequestStatus::Drop(reason) => {
                     tracing::debug!(target: "request", reason = %reason, "removing request");
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
@@ -1372,5 +1424,78 @@ mod tests {
         // Then
         assert!(pending_requests.get_requests_to_attempt().is_empty());
         assert!(!pending_requests.requests.contains_key(&req.id));
+    }
+
+    struct TestRefiner {
+        allowed: Arc<Mutex<HashSet<ParticipantId>>>,
+    }
+
+    impl super::RefineEligibleLeaders<TestRequest> for TestRefiner {
+        fn refine(
+            &self,
+            _request: &TestRequest,
+            eligible: &HashSet<ParticipantId>,
+        ) -> HashSet<ParticipantId> {
+            eligible & &self.allowed.lock().unwrap()
+        }
+    }
+
+    impl TestRefiner {
+        fn new(allowed: HashSet<ParticipantId>) -> Self {
+            Self {
+                allowed: Arc::new(Mutex::new(allowed)),
+            }
+        }
+    }
+
+    /// A request's leader order starts with participant 0 and then us; the refiner
+    /// excludes participant 0, so leadership falls to us and we attempt the request.
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_reroute_leadership_when_refiner_excludes_first_leader() {
+        // Given
+        let (pending_requests, mut setup) = TestSetup::new();
+        let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
+        let refiner = TestRefiner::new(allowed);
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_park_request_until_refiner_allows_a_leader() {
+        // Given
+        let (pending_requests, mut setup) = TestSetup::new();
+        let refiner = TestRefiner::new(HashSet::new());
+        let allowed = refiner.allowed.clone();
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let req = setup.add_request_leader();
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 0);
+        assert!(pending_requests.requests.contains_key(&req.id));
+
+        // When
+        *allowed.lock().unwrap() = setup.participant_ids.iter().copied().collect();
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
     }
 }

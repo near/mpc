@@ -189,8 +189,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         let indexer_heights = self.network_api.indexer_heights();
 
         for request in self.requests.values() {
-            let debug_line =
-                request.debug_print(&self.clock, self.my_participant_id, &eligible_leaders);
+            let request_eligible_leaders = super::queue::eligible_leaders_for(
+                self.refine_eligible_leaders.as_deref(),
+                &request.request,
+                &eligible_leaders,
+            );
+            let debug_line = request.debug_print(
+                &self.clock,
+                self.my_participant_id,
+                &request_eligible_leaders,
+            );
             request_lines.push((
                 request.block_height.into(),
                 request.request.get_id(),

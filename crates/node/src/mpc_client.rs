@@ -1,3 +1,4 @@
+use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -265,6 +266,11 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+
+        let eligible_leaders_refiner = ForeignChainLeadersRefiner::new(
+            self.verify_foreign_tx_provider
+                .supporters_by_foreign_chain(),
+        );
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
@@ -273,7 +279,8 @@ impl MpcClient {
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
-        );
+        )
+        .with_eligible_leaders_refiner(Box::new(eligible_leaders_refiner));
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();

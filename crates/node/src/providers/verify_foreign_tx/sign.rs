@@ -96,7 +96,6 @@ impl VerifyForeignTxProvider {
         // never be able to find a presignature from presignatures it owns
         // where all participants (including itself) support the chain, so
         // bail at this point (before waiting for such presignature).
-        // TODO(#3961): narrow leader selection to only chain supporters.
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
