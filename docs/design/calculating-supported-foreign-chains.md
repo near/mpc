@@ -72,14 +72,14 @@ Foreign-tx signing must elect participants that **cover** the requested chain
 (report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
-Implemented in two layers. Leader election narrows each request's candidate
+Implemented in two layers. Leader selection narrows each request's candidate
 leaders to the chain's current supporters — the request queue refines the
 eligible-leader set against the `SupportersByForeignChain` watch channel — so
 a request for a chain without a quorum is parked instead of attempted. On top
 of that, the leader takes only presignatures whose participants are all alive
 **and** supporters of `C`, and refuses to lead a request for a chain it does
 not itself support (every owned presignature includes the leader), guarding
-against the queue's supporters snapshot going stale between election and
+against the queue's supporters snapshot going stale between selection and
 attempt.
 
 Residual limitation, accepted as-is: presignature generation remains

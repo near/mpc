@@ -87,12 +87,13 @@ fn bitcoin_only_config(rpc_url: &str) -> ForeignChainsConfig {
     }
 }
 
-// Tests that nodes only serve chain while it is available.
+// Tests that nodes only serve a chain while it is available.
 //
-// Setup is with four nodes with Bitcoin RPC while meeting reconstruction
-// threshold, two nodes then drop their registration, taking Bitcoin below the
-// ForeignTx reconstruction threshold. Nodes should then reject validation
-// request based on their supporters list.
+// Setup is with four nodes with Bitcoin RPC while meeting the reconstruction
+// threshold; two nodes then drop their registration, taking Bitcoin below the
+// ForeignTx reconstruction threshold. Leader selection is narrowed to the
+// chain's supporters, so no node picks the request up: it parks in the queue
+// and never gets a response.
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
@@ -162,8 +163,9 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
     );
 
     // When
-    let rejections_before =
-        crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.get();
+    let parked_before = crate::requests::metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
+        .with_label_values(&["verify_foreign_tx"])
+        .get();
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.register_foreign_chains_config("test2".parse().unwrap(), BTreeSet::new().into());
@@ -196,12 +198,15 @@ async fn verify_foreign_tx__should_only_be_served_while_chain_is_available() {
         .await
         .is_none()
     );
-    // All nodes run in-process, so any availability-gate rejection would be
-    // visible in the process-global counter. None is expected: leader election
-    // is narrowed to the chain's supporters, so the request is never attempted.
-    assert_eq!(
-        crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.get(),
-        rejections_before,
-        "no node should have attempted the request once Bitcoin lost its quorum"
+    // All nodes run in-process, so parked requests are visible in the
+    // process-global counter: with no supporters for Bitcoin, refinement
+    // leaves no eligible leader and the request parks instead of being
+    // attempted and rejected.
+    assert!(
+        crate::requests::metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
+            .with_label_values(&["verify_foreign_tx"])
+            .get()
+            > parked_before,
+        "expected the request to park with no refined eligible leader"
     );
 }
