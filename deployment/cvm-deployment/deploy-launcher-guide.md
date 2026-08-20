@@ -83,6 +83,7 @@ You can also use the example `.env` files under `configs/`:
 | `--env-file`, `-e`    | Path to a `.env` file with deployment parameters (default: `default.env`) |
 | `--base-path`, `-b`   | Path to the parent directory containing the `vmm` folder. For example, if your Dstack installation is in `/project/meta-dstack/dstack/vmm`, set `--base-path /project/meta-dstack/dstack/`. |
 | `--python-exec`, `-p` | Path to the Python executable to use (default: under base path)           |
+| `COMPOSE_TEMPLATE` env | Launcher compose template to render (default: the one the contract derives its allowed hash from) |
 
 ---
 

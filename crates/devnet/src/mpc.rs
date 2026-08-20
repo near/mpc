@@ -1,5 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
+use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -21,11 +22,10 @@ use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
-use near_mpc_contract_interface::call_args::VoteUpdateArgs;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, EpochId, GovernanceThreshold, GovernanceThresholdParameters,
-    NodeImageHash, ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
+    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, NodeImageHash,
+    ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
     ReconstructionThreshold, protocol_state_to_string,
 };
@@ -366,7 +366,7 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let mut access_key = setup.accounts.account(&contract).any_access_key().await;
+        let access_key = setup.accounts.account(&contract).any_access_key_handle();
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -394,6 +394,8 @@ impl MpcInitContractCmd {
         .unwrap();
 
         access_key
+            .lock()
+            .await
             .submit_tx_to_call_function(
                 &contract,
                 method_names::INIT,
@@ -503,21 +505,12 @@ impl MpcProposeUpdateContractCmd {
         let proposer = setup.accounts.account(proposer_account_id);
 
         let result = proposer
-            .any_access_key()
-            .await
-            .submit_tx_to_call_function(
-                &contract,
-                method_names::PROPOSE_UPDATE,
-                &borsh::to_vec(&ProposeUpdateArgs {
-                    code: Some(contract_code),
-                    config: None,
-                })
-                .unwrap(),
-                300,
-                self.deposit_near * ONE_NEAR,
-                near_primitives::views::TxExecutionStatus::Final,
-                false,
-            )
+            .call_mpc(&contract)
+            .with_verbosity(Verbosity::Quiet)
+            .propose_update(ProposeUpdateArgs {
+                code: Some(contract_code),
+                config: None,
+            })
             .await
             .into_return_value()
             .expect("Failed to propose update");
@@ -558,21 +551,8 @@ impl MpcVoteUpdateCmd {
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
-            let contract = contract.clone();
-            futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_UPDATE,
-                    &serde_json::to_vec(&VoteUpdateArgs { id: self.update_id }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
-            });
+            let handle = setup.accounts.account(account_id).call_mpc(&contract);
+            futs.push(async move { handle.vote_update(self.update_id).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
@@ -647,22 +627,9 @@ impl MpcVoteAddDomainsCmd {
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
-            let contract = contract.clone();
+            let handle = setup.accounts.account(account_id).call_mpc(&contract);
             let proposal = proposal.clone();
-            futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_ADD_DOMAINS,
-                    &serde_json::to_vec(&VoteAddDomainsArgs { domains: proposal }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
-            });
+            futs.push(async move { handle.vote_add_domains(proposal).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {
@@ -676,11 +643,6 @@ impl MpcVoteAddDomainsCmd {
             }
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteAddDomainsArgs {
-    domains: Vec<DomainConfig>,
 }
 
 impl MpcVoteNewParametersCmd {
@@ -774,25 +736,12 @@ impl MpcVoteNewParametersCmd {
 
         let mut futs = Vec::new();
         for account_id in from_accounts {
-            let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
-            let contract = contract.clone();
+            let handle = setup.accounts.account(account_id).call_mpc(&contract);
             let proposal = proposal.clone();
             futs.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_NEW_PARAMETERS,
-                    &serde_json::to_vec(&VoteNewParametersArgs {
-                        prospective_epoch_id,
-                        proposal,
-                    })
-                    .unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                handle
+                    .vote_new_parameters(prospective_epoch_id, proposal)
+                    .await
             });
         }
         let results = futures::future::join_all(futs).await;
@@ -844,21 +793,23 @@ impl MpcVoteApprovedHashCmd {
 
         for account_id in accounts.iter().take(threshold as usize) {
             let account = setup.accounts.account(account_id);
-            let mut key = account.any_access_key().await;
+            let key = account.any_access_key_handle();
             let contract = contract.clone();
             let code_hash = self.mpc_docker_image_hash.into();
 
             voting_futures.push(async move {
-                key.submit_tx_to_call_function(
-                    &contract,
-                    method_names::VOTE_CODE_HASH,
-                    &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
-                    300,
-                    0,
-                    near_primitives::views::TxExecutionStatus::Final,
-                    true,
-                )
-                .await
+                key.lock()
+                    .await
+                    .submit_tx_to_call_function(
+                        &contract,
+                        method_names::VOTE_CODE_HASH,
+                        &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
+                        300,
+                        0,
+                        near_primitives::views::TxExecutionStatus::Final,
+                        true,
+                    )
+                    .await
             });
         }
 
@@ -912,12 +863,6 @@ pub async fn read_contract_state(
             panic!("Unexpected error: {:?}", err);
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteNewParametersArgs {
-    prospective_epoch_id: EpochId,
-    proposal: ProposedGovernanceThresholdParameters,
 }
 
 #[derive(Serialize)]
