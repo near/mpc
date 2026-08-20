@@ -343,6 +343,7 @@ where
                 received = self.hot_receiver.recv_async() => {
                     let (id, value) = received.expect("should never fail because self keeps a sender");
                     self.cold_queue.lock().unwrap().ingest(id, value);
+                    self.cold_queue_changed.notify_waiters();
                 }
             }
         }
