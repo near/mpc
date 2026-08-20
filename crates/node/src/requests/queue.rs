@@ -10,6 +10,7 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -48,6 +49,18 @@ pub trait RefineEligibleLeaders<RequestType>: Send {
     ) -> HashSet<ParticipantId>;
 }
 
+/// The eligible leaders for `request`: `eligible` narrowed by `refiner` when one is set.
+pub(super) fn eligible_leaders_for<'a, RequestType>(
+    refiner: Option<&dyn RefineEligibleLeaders<RequestType>>,
+    request: &RequestType,
+    eligible: &'a HashSet<ParticipantId>,
+) -> Cow<'a, HashSet<ParticipantId>> {
+    match refiner {
+        Some(refiner) => Cow::Owned(refiner.refine(request, eligible)),
+        None => Cow::Borrowed(eligible),
+    }
+}
+
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
 ///  - Every block that comes from the indexer. For each block, we need the list of
@@ -83,7 +96,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 
-    /// When set, narrows eligible leaders set per request before leader selection.
+    /// See [`RefineEligibleLeaders`].
     pub(super) refine_eligible_leaders: Option<Box<dyn RefineEligibleLeaders<RequestType>>>,
 }
 
@@ -482,7 +495,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         }
     }
 
-    /// Narrows the eligible-leader set per request before leader selection.
+    /// Sets the per-request [`RefineEligibleLeaders`] hook.
     pub fn with_eligible_leaders_refiner(
         mut self,
         refiner: Box<dyn RefineEligibleLeaders<RequestType>>,
@@ -657,17 +670,19 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            let refined;
-            let request_eligible_leaders = match self.refine_eligible_leaders.as_deref() {
-                Some(refiner) => {
-                    refined = refiner.refine(&request.request, &eligible_leaders);
-                    &refined
-                }
-                None => &eligible_leaders,
-            };
+            let request_eligible_leaders = eligible_leaders_for(
+                self.refine_eligible_leaders.as_deref(),
+                &request.request,
+                &eligible_leaders,
+            );
+            if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
+                metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
+                    .with_label_values(&[&RequestType::get_type().to_string()])
+                    .inc();
+            }
             match request.process(
                 self.my_participant_id,
-                request_eligible_leaders,
+                &request_eligible_leaders,
                 cutoff_block,
                 now,
             ) {
@@ -1455,8 +1470,6 @@ mod tests {
         assert_eq!(to_attempt[0].request.id, req.id);
     }
 
-    /// While the refiner allows nobody to lead, the request is parked — neither
-    /// attempted nor dropped. Once the refiner allows leaders again, we attempt it.
     #[test_log::test]
     #[expect(non_snake_case)]
     fn get_requests_to_attempt__should_park_request_until_refiner_allows_a_leader() {

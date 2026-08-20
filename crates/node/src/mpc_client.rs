@@ -1,4 +1,4 @@
-use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -6,7 +6,7 @@ use crate::indexer::types::{
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
@@ -14,7 +14,7 @@ use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTa
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
-    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS, RefineEligibleLeaders,
+    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
@@ -31,7 +31,7 @@ use near_mpc_contract_interface::call_args as contract_args;
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_mpc_contract_interface::types::CKDResponse;
 use near_time::Clock;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -107,37 +107,6 @@ async fn run_led_computation<T>(
         .inc();
     metric.with_label_values(&[outcome_label]).inc();
     result
-}
-
-/// Narrows verify-foreign-tx leader election to the participants supporting the
-/// request's chain, always reading the freshest supporters snapshot.
-struct ForeignChainLeadersRefiner {
-    supporters_receiver: tokio::sync::watch::Receiver<SupportersByForeignChain>,
-}
-
-impl ForeignChainLeadersRefiner {
-    fn new(supporters_receiver: tokio::sync::watch::Receiver<SupportersByForeignChain>) -> Self {
-        ForeignChainLeadersRefiner {
-            supporters_receiver,
-        }
-    }
-}
-
-impl RefineEligibleLeaders<VerifyForeignTxRequest> for ForeignChainLeadersRefiner {
-    fn refine(
-        &self,
-        request: &VerifyForeignTxRequest,
-        eligible: &HashSet<ParticipantId>,
-    ) -> HashSet<ParticipantId> {
-        match self
-            .supporters_receiver
-            .borrow()
-            .get(&request.request.chain())
-        {
-            Some(supporters) => supporters & eligible,
-            None => HashSet::new(),
-        }
-    }
 }
 
 impl MpcClient {
@@ -739,7 +708,6 @@ mod tests {
     use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_indexer_primitives::CryptoHash;
-    use near_mpc_contract_interface::types as dtos;
 
     fn uid() -> UniqueId {
         UniqueId::new(ParticipantId::from_raw(0), 1, 0)
@@ -960,82 +928,5 @@ mod tests {
             0,
         );
         assert_label_value(&metric, metrics::MPC_NUM_COMPUTATIONS_LED_FAILED_LABEL, 0);
-    }
-
-    fn bitcoin_verify_foreign_tx_request() -> VerifyForeignTxRequest {
-        VerifyForeignTxRequest {
-            id: CryptoHash([1; 32]),
-            receipt_id: CryptoHash([2; 32]),
-            request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
-                tx_id: dtos::BitcoinTxId([3; 32]),
-                confirmations: 2.into(),
-                extractors: vec![dtos::BitcoinExtractor::BlockHash],
-            }),
-            payload_version: dtos::ForeignTxPayloadVersion::V1,
-            expected_payload_hash: None,
-            entropy: [4; 32],
-            timestamp_nanosec: 0,
-            domain_id: DomainId(0),
-        }
-    }
-
-    fn participants(ids: &[u32]) -> HashSet<ParticipantId> {
-        ids.iter().copied().map(ParticipantId::from_raw).collect()
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn foreign_chain_leaders_refiner__should_allow_nobody_when_chain_has_no_supporters() {
-        // Given
-        let (_sender, receiver) = tokio::sync::watch::channel(SupportersByForeignChain::new());
-        let refiner = ForeignChainLeadersRefiner::new(receiver);
-
-        // When
-        let refined = refiner.refine(&bitcoin_verify_foreign_tx_request(), &participants(&[0, 1]));
-
-        // Then
-        assert!(refined.is_empty());
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn foreign_chain_leaders_refiner__should_intersect_supporters_with_eligible() {
-        // Given
-        let supporters =
-            SupportersByForeignChain::from([(dtos::ForeignChain::Bitcoin, participants(&[1, 2]))]);
-        let (_sender, receiver) = tokio::sync::watch::channel(supporters);
-        let refiner = ForeignChainLeadersRefiner::new(receiver);
-
-        // When
-        let refined = refiner.refine(&bitcoin_verify_foreign_tx_request(), &participants(&[0, 1]));
-
-        // Then
-        assert_eq!(refined, participants(&[1]));
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn foreign_chain_leaders_refiner__should_pick_up_republished_supporters() {
-        // Given
-        let (sender, receiver) = tokio::sync::watch::channel(SupportersByForeignChain::new());
-        let refiner = ForeignChainLeadersRefiner::new(receiver);
-        let eligible = participants(&[0, 1]);
-        assert!(
-            refiner
-                .refine(&bitcoin_verify_foreign_tx_request(), &eligible)
-                .is_empty()
-        );
-
-        // When
-        sender
-            .send(SupportersByForeignChain::from([(
-                dtos::ForeignChain::Bitcoin,
-                participants(&[0]),
-            )]))
-            .unwrap();
-        let refined = refiner.refine(&bitcoin_verify_foreign_tx_request(), &eligible);
-
-        // Then
-        assert_eq!(refined, participants(&[0]));
     }
 }

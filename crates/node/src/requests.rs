@@ -1,4 +1,4 @@
 pub mod queue;
 
 mod debug;
-mod metrics;
+pub(crate) mod metrics;
