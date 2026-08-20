@@ -6,12 +6,12 @@ use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
-use futures::FutureExt;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 
 /// The cold queue contains a collection of assets and a condition function.
 /// The queue is divided into three sections by two barriers:
@@ -138,6 +138,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
 
     /// Adds an element to the cold queue. If the condition is *not* satisfied,
     /// instead of adding, it is returned. Otherwise, adds it to the front of the queue.
+    #[cfg(test)]
     pub(self) fn add_if_condition_satisfied(
         &mut self,
         id: UniqueId,
@@ -153,9 +154,32 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         ColdQueueAddIfSatisfiedResult::ConditionNotSatisfied(value)
     }
 
+    /// Removes and returns the first element satisfying the standing condition,
+    /// cycling non-satisfying elements to the back of the queue.
+    pub(self) fn take_available(&mut self) -> Option<(UniqueId, T)> {
+        loop {
+            match self.take() {
+                ColdQueueTakeResult::Taken(taken) => return Some(taken),
+                ColdQueueTakeResult::NotTakenButSomeMayBeAvailable => continue,
+                ColdQueueTakeResult::NotTakenAndNoneAvailable => return None,
+            }
+        }
+    }
+
+    /// Whether `value` satisfies the standing condition, per its last fetched value.
+    pub(self) fn satisfies_standing(&self, value: &T) -> bool {
+        (self.condition)(&self.last_condition_value, value)
+    }
+
+    /// Whether `value` satisfies the condition for the supplied `cond_val`.
+    pub(self) fn satisfies(&self, cond_val: &CondVal, value: &T) -> bool {
+        (self.condition)(cond_val, value)
+    }
+
     /// Adds an element to the cold queue. If the condition is satisfied,
     /// instead of adding, it is returned. Otherwise, adds it to the end of the cold
     /// queue after the barrier.
+    #[cfg(test)]
     pub(self) fn add_if_condition_not_satisfied(
         &mut self,
         id: UniqueId,
@@ -170,10 +194,12 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
     }
 
     /// Adds an element to the cold queue unconditionally, never returned.
+    /// A condition-satisfying element goes to the back of the ready section,
+    /// so satisfying elements are taken in insertion order.
     pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
         self.update_condition_value_if_due();
         if (self.condition)(&self.last_condition_value, &value) {
-            self.cold_queue.push_front((id, value));
+            self.cold_queue.insert(self.cold_ready, (id, value));
             self.cold_ready += 1;
             self.cold_available += 1;
         } else {
@@ -215,27 +241,117 @@ enum ColdQueueDiscardResult<T> {
     NotDiscardedAndNoneAvailable,
 }
 
+#[cfg(test)]
 enum ColdQueueAddIfSatisfiedResult<T> {
     ConditionNotSatisfied(T),
     Enqueued,
 }
 
+#[cfg(test)]
 enum ColdQueueAddIfNotSatisfiedResult<T> {
     ConditionSatisfied(T),
     Enqueued,
+}
+
+/// A taker waiting for an asset. [`DoubleQueue::add_owned`] dispatches an
+/// arriving asset to the first registered waiter that accepts it.
+struct Waiter<T, CondVal> {
+    /// Identity of the registration, for deregistering.
+    token: u64,
+    /// `None` accepts any asset satisfying the standing condition; `Some`
+    /// additionally requires the condition to hold for this value.
+    cond_val: Option<CondVal>,
+    slot: oneshot::Sender<(UniqueId, T)>,
+}
+
+struct QueueInner<T, CondVal: Default + Eq> {
+    cold: ColdQueue<T, CondVal>,
+    /// Waiting takers, in registration order.
+    waiters: Vec<Waiter<T, CondVal>>,
+    next_waiter_token: u64,
+}
+
+/// A taker's registration in the waiter list. Dispatch happens under the queue
+/// lock while the registration is present, so deregistering (explicitly or on
+/// drop, e.g. when the taker's future is cancelled) reclaims any concurrently
+/// dispatched asset — an asset is never lost in the hand-off.
+struct RegisteredWaiter<'a, T, CondVal: Default + Eq>
+where
+    T: Send + 'static,
+{
+    queue: &'a Mutex<QueueInner<T, CondVal>>,
+    token: u64,
+    /// `None` once the asset was received or the registration reclaimed.
+    receiver: Option<oneshot::Receiver<(UniqueId, T)>>,
+}
+
+impl<'a, T, CondVal: Default + Eq> RegisteredWaiter<'a, T, CondVal>
+where
+    T: Send + 'static,
+{
+    fn register(
+        queue: &'a Mutex<QueueInner<T, CondVal>>,
+        inner: &mut QueueInner<T, CondVal>,
+        cond_val: Option<CondVal>,
+    ) -> Self {
+        let token = inner.next_waiter_token;
+        inner.next_waiter_token += 1;
+        let (sender, receiver) = oneshot::channel();
+        inner.waiters.push(Waiter {
+            token,
+            cond_val,
+            slot: sender,
+        });
+        Self {
+            queue,
+            token,
+            receiver: Some(receiver),
+        }
+    }
+
+    async fn recv(&mut self) -> Option<(UniqueId, T)> {
+        let receiver = self.receiver.as_mut()?;
+        let received = receiver.await.ok();
+        if received.is_some() {
+            self.receiver = None;
+        }
+        received
+    }
+
+    /// Removes the registration and returns an asset that was dispatched to it
+    /// concurrently, if any.
+    fn deregister_and_reclaim(&mut self) -> Option<(UniqueId, T)> {
+        let mut inner = self.queue.lock().unwrap();
+        inner.waiters.retain(|waiter| waiter.token != self.token);
+        self.receiver
+            .take()
+            .and_then(|mut receiver| receiver.try_recv().ok())
+    }
+}
+
+impl<T, CondVal: Default + Eq> Drop for RegisteredWaiter<'_, T, CondVal>
+where
+    T: Send + 'static,
+{
+    fn drop(&mut self) {
+        if self.receiver.is_none() {
+            return;
+        }
+        if let Some((id, value)) = self.deregister_and_reclaim() {
+            self.queue.lock().unwrap().cold.ingest(id, value);
+        }
+    }
 }
 
 pub struct DoubleQueue<T, CondVal: Default + Eq>
 where
     T: Send + 'static,
 {
-    hot_sender: flume::Sender<(UniqueId, T)>,
-    hot_receiver: flume::Receiver<(UniqueId, T)>,
-    cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
+    inner: Mutex<QueueInner<T, CondVal>>,
     clock: Clock,
 }
 
-impl<T, CondVal: Default + Eq> DoubleQueue<T, CondVal>
+impl<T, CondVal: Default + Eq + Clone> DoubleQueue<T, CondVal>
 where
     T: Send + 'static,
 {
@@ -244,21 +360,39 @@ where
         condition: fn(&CondVal, &T) -> bool,
         condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
     ) -> Self {
-        let (hot_sender, hot_receiver) = flume::unbounded();
         Self {
-            hot_sender,
-            hot_receiver,
-            cold_queue: Arc::new(Mutex::new(ColdQueue::new(
-                clock.clone(),
-                condition,
-                condition_value_fetcher,
-            ))),
+            inner: Mutex::new(QueueInner {
+                cold: ColdQueue::new(clock.clone(), condition, condition_value_fetcher),
+                waiters: Vec::new(),
+                next_waiter_token: 0,
+            }),
             clock,
         }
     }
 
+    /// Adds an asset, dispatching it directly to the first waiting taker that
+    /// accepts it. Only an asset no waiting taker accepts goes to the cold queue.
     pub fn add_owned(&self, id: UniqueId, value: T) {
-        self.hot_sender.send((id, value)).unwrap()
+        let mut inner = self.inner.lock().unwrap();
+        let QueueInner { cold, waiters, .. } = &mut *inner;
+        cold.update_condition_value_if_due();
+        let mut asset = (id, value);
+        if cold.satisfies_standing(&asset.1) {
+            while let Some(pos) = waiters.iter().position(|waiter| {
+                waiter
+                    .cond_val
+                    .as_ref()
+                    .is_none_or(|cond_val| cold.satisfies(cond_val, &asset.1))
+            }) {
+                let waiter = waiters.remove(pos);
+                match waiter.slot.send(asset) {
+                    Ok(()) => return,
+                    // The taker was cancelled; try the next one.
+                    Err(returned) => asset = returned,
+                }
+            }
+        }
+        cold.ingest(asset.0, asset.1);
     }
 
     pub async fn take_owned(&self) -> (UniqueId, T) {
@@ -267,64 +401,41 @@ where
         // but we're not yet aware of it, and the caller calls this in a loop and
         // we keep yielding undesired elements, but the caller keeps throwing them
         // away and we quickly exhaust the available assets.
-        self.cold_queue.lock().unwrap().update_condition_value();
-        loop {
-            let taken = self.cold_queue.lock().unwrap().take();
-            match taken {
-                ColdQueueTakeResult::Taken(result) => {
-                    return result;
-                }
-                ColdQueueTakeResult::NotTakenButSomeMayBeAvailable => {
-                    continue;
-                }
-                ColdQueueTakeResult::NotTakenAndNoneAvailable => {
-                    // If the cold queue is exhausted, wait for a new element that is just produced.
-                    // Then, if that element also doesn't satisfy our condition, we put it in the cold
-                    // queue and continue.
-
-                    tokio::select! {
-                        _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
-                            // Don't wait for too long, because the condition could have changed
-                            // making a cold queue element eligible.
-                            continue;
-                        }
-                        received = self.hot_receiver.recv_async() => {
-                            let (id, value) = received.expect("should never fail because self keeps a sender");
-                            match self.cold_queue.lock().unwrap().add_if_condition_not_satisfied(id, value) {
-                                ColdQueueAddIfNotSatisfiedResult::ConditionSatisfied(value) => {
-                                    return (id, value);
-                                }
-                                ColdQueueAddIfNotSatisfiedResult::Enqueued => {
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        self.inner.lock().unwrap().cold.update_condition_value();
+        self.take_impl(None).await
     }
 
     pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
+        self.take_impl(Some(cond_val)).await
+    }
+
+    async fn take_impl(&self, cond_val: Option<CondVal>) -> (UniqueId, T) {
         loop {
-            {
-                let mut cold = self.cold_queue.lock().unwrap();
-                while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
-                    cold.ingest(id, value);
-                }
-                if let Some(taken) = cold.take_first_matching(&cond_val) {
+            let mut waiter = {
+                let mut inner = self.inner.lock().unwrap();
+                let taken = match &cond_val {
+                    Some(cond_val) => inner.cold.take_first_matching(cond_val),
+                    None => inner.cold.take_available(),
+                };
+                if let Some(taken) = taken {
                     return taken;
                 }
-            }
-            // If the cold queue is exhausted, wait for a new element.
+                RegisteredWaiter::register(&self.inner, &mut inner, cond_val.clone())
+            };
             tokio::select! {
                 _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
-                    continue;
+                    // The standing condition may have changed, making a cold
+                    // queue element eligible; deregister and rescan.
                 }
-                received = self.hot_receiver.recv_async() => {
-                    let (id, value) = received.expect("should never fail because self keeps a sender");
-                    self.cold_queue.lock().unwrap().ingest(id, value);
+                received = waiter.recv() => {
+                    if let Some(asset) = received {
+                        return asset;
+                    }
                 }
+            }
+            if let Some(asset) = waiter.deregister_and_reclaim() {
+                // An asset was dispatched to us concurrently with the tick.
+                return asset;
             }
         }
     }
@@ -332,13 +443,12 @@ where
     /// Process `num_elements_to_process`, removing any that doesn't satisfy condition.
     /// Return ids, that were removed from cold storage.
     pub async fn maybe_discard_owned(&self, mut num_elements_to_process: usize) -> Vec<UniqueId> {
-        self.cold_queue.lock().unwrap().update_condition_value();
+        self.inner.lock().unwrap().cold.update_condition_value();
 
         let mut removed_from_cold_queue: Vec<UniqueId> = vec![];
 
-        // First process elements in the cold queue
         while num_elements_to_process > 0 {
-            let discarded = self.cold_queue.lock().unwrap().discard();
+            let discarded = self.inner.lock().unwrap().cold.discard();
             match discarded {
                 ColdQueueDiscardResult::Discarded((id, _)) => {
                     removed_from_cold_queue.push(id);
@@ -355,38 +465,20 @@ where
             }
         }
 
-        // If the cold queue is exhausted, process elements buffered in the hot queue
-        while num_elements_to_process > 0 {
-            match self.hot_receiver.recv_async().now_or_never() {
-                Some(Ok((id, value))) => {
-                    num_elements_to_process -= 1;
-                    let _ = self
-                        .cold_queue
-                        .lock()
-                        .unwrap()
-                        .add_if_condition_satisfied(id, value);
-                }
-                _ => {
-                    // Nothing waiting in the hot queue
-                    break;
-                }
-            }
-        }
-
         removed_from_cold_queue
     }
 
     pub fn available(&self) -> usize {
-        self.hot_receiver.len() + self.cold_queue.lock().unwrap().cold_available
+        self.inner.lock().unwrap().cold.cold_available
     }
 
     pub fn ready(&self) -> usize {
-        self.cold_queue.lock().unwrap().cold_ready
+        self.inner.lock().unwrap().cold.cold_ready
     }
 
     pub fn offline(&self) -> usize {
-        let cold_queue = self.cold_queue.lock().unwrap();
-        cold_queue.cold_queue.len() - cold_queue.cold_available
+        let inner = self.inner.lock().unwrap();
+        inner.cold.cold_queue.len() - inner.cold.cold_available
     }
 }
 
@@ -802,13 +894,15 @@ mod tests {
         queue.add_owned(id1, 1);
         queue.add_owned(id2, 2);
         queue.add_owned(id3, 3);
-        assert_eq!(queue.available(), 3);
+        // `available` counts only condition-satisfying assets; the odd ones
+        // are parked in the non-satisfying section.
+        assert_eq!(queue.available(), 1);
 
         queue.maybe_discard_owned(1).now_or_never().unwrap();
-        assert_eq!(queue.available(), 2);
+        assert_eq!(queue.available(), 1);
 
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id2, 2));
-        assert_eq!(queue.available(), 1);
+        assert_eq!(queue.available(), 0);
 
         queue.maybe_discard_owned(1).now_or_never().unwrap();
         assert_eq!(queue.available(), 0);
@@ -846,9 +940,10 @@ mod tests {
         queue.add_owned(id3, 5);
 
         // Make condition "% 2 == 1".
+        // (The first add_owned above already queried the condition value once.)
         cond_value.store(1, Ordering::Relaxed);
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id1, 1));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 1);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
 
         // Make condition "% 2 == 0" and start taking an element.
         cond_value.store(0, Ordering::Relaxed);
@@ -856,7 +951,7 @@ mod tests {
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value when no element meets condition");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 3);
 
         // Change the condition to "% 2 == 1". The task that has been waiting for an element
         // does not immediately notice the condition change, until a timer has passed.
@@ -864,12 +959,12 @@ mod tests {
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value even when cond value changed");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 3);
 
         // Advance the clock so that the waiting task notices the condition change.
         clock.advance(near_time::Duration::seconds(1));
         assert_eq!(fut.now_or_never().unwrap(), (id2, 3));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 3);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
 
         // This time change the condition before starting to take an element.
         // It will be observed immediately even though the clock has not been advanced.
@@ -878,24 +973,24 @@ mod tests {
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value when no element meets condition");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 5);
 
         // Change the condition without advancing the clock. The waiting task won't notice.
         cond_value.store(1, Ordering::Relaxed);
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value even when cond value changed");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 5);
         queue.add_owned(id4, 4);
         // Even though the condition changed, we may get an element returned that satisfied a
         // stale condition (there's no point to prevent that because there can always be
-        // races).
+        // races): the dispatch in add_owned evaluated the not-yet-refreshed value.
         assert_eq!(fut.now_or_never().unwrap(), (id4, 4));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 5);
 
         // However, if we take_owned() again, we'll use the correct condition.
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id3, 5));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 5);
+        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 6);
     }
 
     #[test]
@@ -968,15 +1063,18 @@ mod tests {
             ParticipantsWithI32(first_participants_subset.clone(), 101112),
         );
 
-        let asset3 = store.take_owned().now_or_never().unwrap();
+        // The parked taker is first in line, so the new asset is dispatched
+        // directly to it.
         assert_eq!(
-            asset3,
+            asset_fut.now_or_never().unwrap(),
             (
                 id4,
                 ParticipantsWithI32(first_participants_subset.clone(), 101112)
             )
         );
 
+        // A new take parks as well: no eligible asset is left.
+        let asset_fut = store.take_owned();
         let MaybeReady::Future(asset_fut) = run_future_once(asset_fut) else {
             panic!("Cannot take value since set of participants has changed");
         };
@@ -997,7 +1095,9 @@ mod tests {
         // Now go back to all participants being available.
         *alive_participants.lock().unwrap() = all_participants.clone();
         store.add_owned(id5, ParticipantsWithI32(all_participants.clone(), 161718));
-        assert_eq!(store.num_owned(), 1);
+        // The add evaluated the not-yet-refreshed alive set, so the asset is
+        // parked as non-satisfying and not counted until the next refresh.
+        assert_eq!(store.num_owned(), 0);
 
         // Previously ineligible assets (456, 789, and 161718) should now be available.
         assert_eq!(
@@ -1641,5 +1741,132 @@ mod tests {
                 .await,
             (id1, 123)
         );
+    }
+
+    fn test_queue(clock: &FakeClock) -> DoubleQueue<i32, i32> {
+        DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0))
+    }
+
+    /// A parked taker receives an arriving asset directly, without the asset
+    /// passing through the cold queue.
+    #[test]
+    #[expect(non_snake_case)]
+    fn add_owned__should_dispatch_asset_directly_to_parked_taker() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = test_queue(&clock);
+        let MaybeReady::Future(take) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+
+        // When
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 2);
+
+        // Then
+        assert_eq!(take.now_or_never().unwrap(), (id, 2));
+        assert_eq!(queue.available(), 0);
+    }
+
+    /// The scenario behind the take_owned/take_owned_matching competition: a
+    /// chain-scoped taker parked first must not swallow an asset it cannot
+    /// use; the asset goes to the next taker that accepts it, immediately.
+    #[test]
+    #[expect(non_snake_case)]
+    fn add_owned__should_dispatch_asset_to_first_taker_whose_condition_accepts_it() {
+        // Given: a matching taker whose combined condition (even and odd) is
+        // unsatisfiable, parked before a plain taker.
+        let clock = FakeClock::default();
+        let queue = test_queue(&clock);
+        let MaybeReady::Future(take_matching) = run_future_once(queue.take_owned_matching(1))
+        else {
+            panic!("take_owned_matching should park on an empty queue");
+        };
+        let MaybeReady::Future(take) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+
+        // When
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 2);
+
+        // Then
+        assert_eq!(take.now_or_never().unwrap(), (id, 2));
+        assert!(matches!(
+            run_future_once(take_matching),
+            MaybeReady::Future(_)
+        ));
+    }
+
+    /// An asset no parked taker accepts goes to the cold queue.
+    #[test]
+    #[expect(non_snake_case)]
+    fn add_owned__should_park_asset_when_no_taker_accepts_it() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = test_queue(&clock);
+        let MaybeReady::Future(take_matching) = run_future_once(queue.take_owned_matching(1))
+        else {
+            panic!("take_owned_matching should park on an empty queue");
+        };
+
+        // When
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 2);
+
+        // Then
+        assert!(matches!(
+            run_future_once(take_matching),
+            MaybeReady::Future(_)
+        ));
+        assert_eq!(queue.available(), 1);
+        assert_eq!(queue.take_owned().now_or_never().unwrap(), (id, 2));
+    }
+
+    /// Takers receive assets in registration order.
+    #[test]
+    #[expect(non_snake_case)]
+    fn add_owned__should_dispatch_assets_to_takers_in_registration_order() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = test_queue(&clock);
+        let MaybeReady::Future(first) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+        let MaybeReady::Future(second) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+
+        // When
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+        queue.add_owned(id2, 4);
+
+        // Then
+        assert_eq!(first.now_or_never().unwrap(), (id1, 2));
+        assert_eq!(second.now_or_never().unwrap(), (id2, 4));
+    }
+
+    /// An asset dispatched to a taker that is cancelled before receiving it is
+    /// reclaimed into the cold queue rather than lost.
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_owned__should_return_dispatched_asset_to_queue_when_taker_is_cancelled() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = test_queue(&clock);
+        let MaybeReady::Future(take) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 2);
+
+        // When: the taker is cancelled without being polled again.
+        drop(take);
+
+        // Then
+        assert_eq!(queue.available(), 1);
+        assert_eq!(queue.take_owned().now_or_never().unwrap(), (id, 2));
     }
 }
