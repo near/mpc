@@ -117,14 +117,14 @@ tokio::spawn(async move {
     }
 });
 
-// Periodic attestation submission (every 7 days).
+// Periodic attestation submission (every hour).
 tokio::spawn({
     let tee_ctx = tee_ctx.clone();
     async move {
         loop {
             let quote = tee_authority.generate_quote(&report_data)?;
             tee_ctx.submit_attestation(quote).await?;
-            tokio::time::sleep(Duration::from_secs(7 * 24 * 3600)).await;
+            tokio::time::sleep(Duration::from_secs(3600)).await;
         }
     }
 });

@@ -368,19 +368,10 @@ where
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
-    tokio::spawn(async move {
-        if let Err(e) = periodic_attestation_submission(
-            submitter,
-            tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
-        )
-        .await
-        {
-            tracing::error!(
-                error = ?e,
-                "periodic attestation submission task failed"
-            );
-        }
-    });
+    tokio::spawn(periodic_attestation_submission(
+        submitter,
+        tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
+    ));
 
     // Spawn TEE attestation monitoring task
     let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
@@ -394,16 +385,11 @@ where
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
-    tokio::spawn(async move {
-        if let Err(e) =
-            monitor_attestation_removal(submitter, account_id_clone, tee_accounts_receiver).await
-        {
-            tracing::error!(
-                error = ?e,
-                "attestation removal monitoring task failed"
-            );
-        }
-    });
+    tokio::spawn(monitor_attestation_removal(
+        submitter,
+        account_id_clone,
+        tee_accounts_receiver,
+    ));
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();

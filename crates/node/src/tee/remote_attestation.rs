@@ -41,12 +41,13 @@ pub struct AttestationSubmitter<T> {
     pub attestation_reader: std::sync::Arc<dyn crate::indexer::ReadAttestationExpiry>,
 }
 
-/// Submits a remote attestation transaction to the MPC contract, retrying with backoff until success.
+/// Submits a remote attestation transaction to the MPC contract, retrying with backoff until
+/// success or until a fixed retry window elapses, whichever comes first.
 ///
-/// This function continuously attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
+/// This function repeatedly attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
-/// is observed.
+/// is observed. Returns an error if no attempt succeeds within the retry window.
 pub async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
@@ -156,11 +157,13 @@ pub async fn validate_and_submit_remote_attestation(
     submit_remote_attestation(tx_sender, attestation, tls_public_key, pre_submit_expiry).await
 }
 
+/// Periodically regenerates and submits this node's attestation. Generation and submission
+/// failures are logged and retried on the next tick; this task never returns.
 #[tracing::instrument(skip_all)]
 pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     submitter: AttestationSubmitter<T>,
     mut interval_ticker: I,
-) -> anyhow::Result<()> {
+) {
     let AttestationSubmitter {
         tee_authority,
         tx_sender,
@@ -186,18 +189,12 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                     .inc();
                 att
             }
-            Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
+            Err(e) => {
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
                 tracing::warn!(error = %e, "TEE attestation failed, will retry next interval");
                 continue;
-            }
-            Err(e) => {
-                crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                    .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
-                    .inc();
-                return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
             }
         };
         let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
@@ -219,7 +216,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 None
             }
         };
-        validate_and_submit_remote_attestation(
+        if let Err(error) = validate_and_submit_remote_attestation(
             tx_sender.clone(),
             fresh_attestation.clone(),
             tls_public_key.clone(),
@@ -228,7 +225,13 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             &allowed_launcher_compose_hashes_in_contract,
             pre_submit_expiry,
         )
-        .await?;
+        .await
+        {
+            tracing::error!(
+                error = %error,
+                "attestation submission failed; will retry with a fresh attestation next interval"
+            );
+        }
     }
 }
 
@@ -244,13 +247,14 @@ fn is_node_in_contract_tee_accounts(
 /// Monitors the contract for TEE attestation removal and triggers resubmission when needed.
 ///
 /// This function watches TEE account changes in the contract and resubmits attestations when
-/// the node's TEE attestation is no longer available.
+/// the node's TEE attestation is no longer available. Failures are logged and never fatal;
+/// this task returns only when the TEE-accounts watch channel closes.
 #[tracing::instrument(skip_all)]
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     submitter: AttestationSubmitter<T>,
     node_account_id: AccountId,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
-) -> anyhow::Result<()> {
+) {
     let AttestationSubmitter {
         tee_authority,
         tx_sender,
@@ -305,7 +309,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                         .inc();
                     att
                 }
-                Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
+                Err(e) => {
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
@@ -315,14 +319,6 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     );
                     was_available = is_available;
                     continue;
-                }
-                Err(e) => {
-                    crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                        .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
-                        .inc();
-                    return Err(
-                        anyhow::anyhow!(e).context("TEE attestation failed, cannot continue")
-                    );
                 }
             };
             let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
@@ -344,7 +340,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     None
                 }
             };
-            validate_and_submit_remote_attestation(
+            if let Err(error) = validate_and_submit_remote_attestation(
                 tx_sender.clone(),
                 fresh_attestation.clone(),
                 tls_public_key.clone(),
@@ -353,13 +349,17 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 &allowed_launcher_compose_hashes_in_contract,
                 pre_submit_expiry,
             )
-            .await?;
+            .await
+            {
+                tracing::error!(
+                    error = %error,
+                    "attestation resubmission failed; the periodic attestation task will retry"
+                );
+            }
         }
 
         was_available = is_available;
     }
-
-    Ok(())
 }
 
 /// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
@@ -379,7 +379,10 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use ed25519_dalek::SigningKey;
     use rand::SeedableRng;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
@@ -439,12 +442,13 @@ mod tests {
         node_id: NodeId,
     }
 
-    /// Mock that tracks attestation submissions and simulates contract responses.
+    /// Mock that tracks successful attestation submissions and simulates contract responses.
     #[derive(Clone)]
     struct MockSender {
         submissions: Arc<Mutex<usize>>,
         contract_simulator: Arc<ContractSimulator>,
         notify: Arc<tokio::sync::Notify>,
+        failing: Arc<AtomicBool>,
     }
 
     impl MockSender {
@@ -453,7 +457,12 @@ mod tests {
                 submissions: Arc::new(Mutex::new(0)),
                 contract_simulator: Arc::new(ContractSimulator { sender, node_id }),
                 notify: Arc::new(tokio::sync::Notify::new()),
+                failing: Arc::new(AtomicBool::new(false)),
             }
+        }
+
+        fn set_failing(&self, failing: bool) {
+            self.failing.store(failing, Ordering::Relaxed);
         }
 
         fn count(&self) -> usize {
@@ -470,6 +479,10 @@ mod tests {
             &self,
             _: ChainSendTransactionRequest,
         ) -> Result<(), TransactionProcessorError> {
+            if self.failing.load(Ordering::Relaxed) {
+                return Err(TransactionProcessorError::ProcessorIsClosed);
+            }
+
             *self.submissions.lock().unwrap() += 1;
 
             // Simulate contract adding the node back to TEE accounts after successful submission
@@ -491,38 +504,62 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_periodic_attestation_submission() {
-        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
+    struct TestSetup {
+        node_account_id: AccountId,
+        node_id: NodeId,
+        tee_accounts_sender: watch::Sender<Vec<NodeId>>,
+        tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
+        sender: MockSender,
+        submitter: AttestationSubmitter<MockSender>,
+    }
 
-        let (dummy_sender, _) = watch::channel(vec![]);
-        let dummy_node_id = NodeId {
-            account_id: "dummy.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey::from([0u8; 32]),
-            account_public_key: Ed25519PublicKey::from([0u8; 32]),
-        };
-        let sender = MockSender::new(dummy_sender, dummy_node_id);
+    /// Builds an [`AttestationSubmitter`] around a [`MockSender`], with the node initially
+    /// present in the TEE accounts watch channel.
+    fn test_setup() -> TestSetup {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let account_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
-        let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
+        let tls_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let account_public_key: Ed25519PublicKey =
+            (&SigningKey::generate(&mut rng).verifying_key()).into();
+        let node_account_id: AccountId = "test_node.near".parse().unwrap();
+        let node_id = NodeId {
+            account_id: node_account_id.clone(),
+            tls_public_key: tls_public_key.clone(),
+            account_public_key: account_public_key.clone(),
+        };
+        let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![node_id.clone()]);
+        let (_, allowed_image_hashes) = watch::channel(vec![]);
+        let (_, allowed_launcher_compose_hashes) = watch::channel(vec![]);
+        let sender = MockSender::new(tee_accounts_sender.clone(), node_id.clone());
         let submitter = AttestationSubmitter {
-            tee_authority,
+            tee_authority: TeeAuthority::from(LocalTeeAuthorityConfig::default()),
             tx_sender: sender.clone(),
-            tls_public_key: tls_key,
-            account_public_key: account_key,
-            allowed_image_hashes: allowed_image_hashes_receiver,
-            allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_receiver,
+            tls_public_key,
+            account_public_key,
+            allowed_image_hashes,
+            allowed_launcher_compose_hashes,
             attestation_reader: Arc::new(StubAttestationExpiryReader),
         };
-        let handle = tokio::spawn(periodic_attestation_submission(
+        TestSetup {
+            node_account_id,
+            node_id,
+            tee_accounts_sender,
+            tee_accounts_receiver,
+            sender,
             submitter,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_periodic_attestation_submission() {
+        let setup = test_setup();
+        let handle = tokio::spawn(periodic_attestation_submission(
+            setup.submitter,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        assert_eq!(sender.count(), TEST_SUBMISSION_COUNT);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert_eq!(setup.sender.count(), TEST_SUBMISSION_COUNT);
         handle.abort();
     }
 
@@ -531,76 +568,27 @@ mod tests {
     async fn periodic_attestation_submission__should_submit_when_baseline_read_fails() {
         // A failing pre-submit baseline read must not block submission (the node would otherwise
         // let its attestation lapse); submissions still happen, just without a baseline.
-        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
-        let (dummy_sender, _) = watch::channel(vec![]);
-        let dummy_node_id = NodeId {
-            account_id: "dummy.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey::from([0u8; 32]),
-            account_public_key: Ed25519PublicKey::from([0u8; 32]),
-        };
-        let sender = MockSender::new(dummy_sender, dummy_node_id);
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let account_key = (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
-        let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
-        let submitter = AttestationSubmitter {
-            tee_authority,
-            tx_sender: sender.clone(),
-            tls_public_key: tls_key,
-            account_public_key: account_key,
-            allowed_image_hashes: allowed_image_hashes_receiver,
-            allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_receiver,
-            attestation_reader: Arc::new(FailingAttestationExpiryReader),
-        };
+        let mut setup = test_setup();
+        setup.submitter.attestation_reader = Arc::new(FailingAttestationExpiryReader);
         let handle = tokio::spawn(periodic_attestation_submission(
-            submitter,
+            setup.submitter,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        assert_eq!(sender.count(), TEST_SUBMISSION_COUNT);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert_eq!(setup.sender.count(), TEST_SUBMISSION_COUNT);
         handle.abort();
     }
 
     #[tokio::test]
     async fn test_tee_attestation_removal_detection() {
-        let node_account_id: AccountId = "test_node.near".parse().unwrap();
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let account_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
-
-        let node_id = NodeId {
-            account_id: node_account_id.clone(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: account_public_key.clone(),
-        };
-
-        // Create initial TEE accounts list including our node
-        let initial_tee_accounts = vec![node_id.clone()];
-        let (tee_accounts_sender, receiver) = watch::channel(initial_tee_accounts);
-        let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
-        let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
-
-        // Create mock sender with contract simulator built-in
-        let mock_sender = MockSender::new(tee_accounts_sender.clone(), node_id.clone());
-
-        let submitter = AttestationSubmitter {
-            tee_authority,
-            tx_sender: mock_sender.clone(),
-            tls_public_key,
-            account_public_key,
-            allowed_image_hashes: allowed_image_hashes_receiver,
-            allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_receiver,
-            attestation_reader: Arc::new(StubAttestationExpiryReader),
-        };
+        let setup = test_setup();
+        let tee_accounts_sender = setup.tee_accounts_sender;
+        let mock_sender = setup.sender;
         let monitoring_task = tokio::spawn(monitor_attestation_removal(
-            submitter,
-            node_account_id.clone(),
-            receiver,
+            setup.submitter,
+            setup.node_account_id,
+            setup.tee_accounts_receiver,
         ));
 
         // Yield control to allow the monitoring task to start and process initial state.
@@ -665,6 +653,65 @@ mod tests {
             1,
             "Expected no resubmission when monitoring service is stopped"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_survive_submission_retry_timeout() {
+        // Given
+        let setup = test_setup();
+        setup.sender.set_failing(true);
+        let handle = tokio::spawn(periodic_attestation_submission(
+            setup.submitter,
+            MockTicker::new(2),
+        ));
+
+        // When
+        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        setup.sender.set_failing(false);
+
+        // Then
+        tokio::time::timeout(MAX_RETRY_DURATION, setup.sender.wait_for_submission())
+            .await
+            .expect("expected a successful submission after the first retry window timed out");
+        assert_eq!(setup.sender.count(), 1);
+        assert!(!handle.is_finished());
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn monitor_attestation_removal__should_survive_submission_retry_timeout() {
+        // Given
+        let setup = test_setup();
+        setup.sender.set_failing(true);
+        let handle = tokio::spawn(monitor_attestation_removal(
+            setup.submitter,
+            setup.node_account_id.clone(),
+            setup.tee_accounts_receiver,
+        ));
+        // Under the paused clock each sleep is a barrier: it completes only once the monitor
+        // has processed the previous watch update and is idle again.
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        // When
+        setup.tee_accounts_sender.send(vec![]).unwrap();
+        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        setup.sender.set_failing(false);
+        setup
+            .tee_accounts_sender
+            .send(vec![setup.node_id.clone()])
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        setup.tee_accounts_sender.send(vec![]).unwrap();
+
+        // Then
+        tokio::time::timeout(MAX_RETRY_DURATION, setup.sender.wait_for_submission())
+            .await
+            .expect("expected a successful resubmission after the first retry window timed out");
+        assert_eq!(setup.sender.count(), 1);
+        assert!(!handle.is_finished());
+        handle.abort();
     }
 
     #[tokio::test]

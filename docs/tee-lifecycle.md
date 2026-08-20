@@ -121,7 +121,7 @@ sequenceDiagram
         Note over OP: Operator restarts CVM with correct image
     end
 
-    loop Every 7 days
+    loop Every hour
         APP ->> APP: Generate fresh attestation quote
         APP ->> SC: submit_participant_info(attestation, tls_pk)
     end
@@ -163,7 +163,7 @@ subgraph TEE_CTX["TEE Context"]
     POLL_HASHES["Poll Allowed Hashes<br/>(ContractStateSubscriber)"]
     POLL_FCP["Poll Foreign Chain Policy<br/>(ContractStateSubscriber)"]
     MONITOR["Monitor Attestation<br/>Removal"]
-    ATTEST["Periodic Attestation<br/>(every 7 days)"]
+    ATTEST["Periodic Attestation<br/>(every hour)"]
 end
 
 subgraph CHAIN["Chain Gateway"]
@@ -183,7 +183,7 @@ class TEE_CTX ctx;
 
 1. **Poll allowed hashes** — Periodically queries the governance contract for [`allowed_docker_image_hashes()`][allowed-docker-image-hashes] and [`allowed_launcher_compose_hashes()`][allowed-launcher-compose-hashes] via the [Contract State Subscriber][contract-state-subscriber]. Writes updates to disk for the Launcher to use on next boot. (Reference: [`monitor_allowed_image_hashes`][allowed-hashes-watcher])
 
-2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the governance contract via [`submit_participant_info()`][submit-participant-info]. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
+2. **Periodic attestation** — Every hour, generates a fresh TDX attestation quote and submits it to the governance contract via [`submit_participant_info()`][submit-participant-info]. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
 
 3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. (Reference: [`monitor_attestation_removal`][monitor-attestation-removal])
 
@@ -203,7 +203,7 @@ class TEE_CTX ctx;
 After boot, every service must continuously prove to the governance contract that it is running an approved image inside a genuine TDX enclave. The attestation lifecycle is the same for all three services:
 
 1. **Initial attestation** — the service generates a TDX quote that binds its identity (TLS public key) to the enclave measurements and submits it to the governance contract.
-2. **Periodic renewal** — every 7 days a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
+2. **Periodic renewal** — every hour a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
 3. **Removal monitoring** — if the contract removes the node's attestation (e.g., after an image-hash rotation), the service detects this and resubmits immediately.
 4. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate all stored attestations and evict nodes whose image hashes are no longer on the approved list.
 
