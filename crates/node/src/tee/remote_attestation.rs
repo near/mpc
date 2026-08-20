@@ -133,79 +133,40 @@ fn validate_remote_attestation(
         .map(|_| ())
 }
 
-pub async fn validate_and_submit_remote_attestation(
-    tx_sender: impl TransactionSender,
-    attestation: Attestation,
-    tls_public_key: Ed25519PublicKey,
-    account_public_key: Ed25519PublicKey,
-    allowed_docker_image_hashes: &[NodeImageHash],
-    allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
-    pre_submit_expiry: Option<u64>,
-) -> anyhow::Result<()> {
-    let _ = validate_remote_attestation(
-        &attestation,
-        tls_public_key.clone(),
-        account_public_key,
-        allowed_docker_image_hashes,
-        allowed_launcher_compose_hashes,
-    )
-    .inspect_err(|err| {
-        // We could also return here, but for the moment I am just logging the
-        // attestation failure error and letting the submission continue
-        tracing::warn!("Attestation is not valid: {err}");
-    });
-    submit_remote_attestation(tx_sender, attestation, tls_public_key, pre_submit_expiry).await
-}
-
-/// Periodically regenerates and submits this node's attestation. Generation and submission
-/// failures are logged and retried on the next tick; this task never returns.
-#[tracing::instrument(skip_all)]
-pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
-    submitter: AttestationSubmitter<T>,
-    mut interval_ticker: I,
-) {
-    let AttestationSubmitter {
-        tee_authority,
-        tx_sender,
-        tls_public_key,
-        account_public_key,
-        allowed_image_hashes: allowed_image_hashes_in_contract,
-        allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_in_contract,
-        attestation_reader,
-    } = submitter;
-    let report_data: ReportData =
-        ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
-
-    loop {
-        interval_ticker.tick().await;
-
-        let fresh_attestation = match tee_authority
-            .generate_attestation(report_data.clone())
-            .await
-        {
-            Ok(att) => {
+impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
+    /// Generates a fresh attestation and submits it to the contract. Failures are logged,
+    /// never fatal; the caller decides when to try again.
+    async fn generate_and_submit(&self) {
+        let report_data: ReportData = ReportDataV1::new(
+            *self.tls_public_key.as_bytes(),
+            *self.account_public_key.as_bytes(),
+        )
+        .into();
+        let attestation = match self.tee_authority.generate_attestation(report_data).await {
+            Ok(attestation) => {
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
                     .inc();
-                att
+                attestation
             }
-            Err(e) => {
+            Err(error) => {
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
-                tracing::error!(error = %e, "TEE attestation failed, will retry next interval");
-                continue;
+                tracing::error!(%error, "TEE attestation generation failed");
+                return;
             }
         };
-        let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
+        let allowed_image_hashes: Vec<_> = self
+            .allowed_image_hashes
             .borrow()
             .iter()
             .map(|entry| entry.image_hash)
             .collect();
-        let allowed_launcher_compose_hashes_in_contract =
-            allowed_launcher_compose_hashes_in_contract.borrow().clone();
-        let pre_submit_expiry = match attestation_reader
-            .read_stored_attestation_expiry(&tls_public_key)
+        let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
+        let pre_submit_expiry = match self
+            .attestation_reader
+            .read_stored_attestation_expiry(&self.tls_public_key)
             .await
         {
             Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
@@ -216,22 +177,43 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 None
             }
         };
-        if let Err(error) = validate_and_submit_remote_attestation(
-            tx_sender.clone(),
-            fresh_attestation.clone(),
-            tls_public_key.clone(),
-            account_public_key.clone(),
-            &allowed_image_hashes_in_contract,
-            &allowed_launcher_compose_hashes_in_contract,
+        if let Err(error) = validate_remote_attestation(
+            &attestation,
+            self.tls_public_key.clone(),
+            self.account_public_key.clone(),
+            &allowed_image_hashes,
+            &allowed_launcher_compose_hashes,
+        ) {
+            // Non-blocking pre-flight check; its exact output is documented in the external
+            // node-operator guide, so keep the message format stable.
+            tracing::warn!("Attestation is not valid: {error}");
+        }
+        if let Err(error) = submit_remote_attestation(
+            self.tx_sender.clone(),
+            attestation,
+            self.tls_public_key.clone(),
             pre_submit_expiry,
         )
         .await
         {
             tracing::error!(
-                error = %error,
-                "attestation submission failed; will retry with a fresh attestation next interval"
+                %error,
+                "attestation submission failed; will retry with a fresh attestation on the next trigger"
             );
         }
+    }
+}
+
+/// Periodically regenerates and submits this node's attestation. Generation and submission
+/// failures are logged and retried on the next tick; this task never returns.
+#[tracing::instrument(skip_all)]
+pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
+    submitter: AttestationSubmitter<T>,
+    mut interval_ticker: I,
+) {
+    loop {
+        interval_ticker.tick().await;
+        submitter.generate_and_submit().await;
     }
 }
 
@@ -255,19 +237,10 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     node_account_id: AccountId,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) {
-    let AttestationSubmitter {
-        tee_authority,
-        tx_sender,
-        tls_public_key,
-        account_public_key,
-        allowed_image_hashes: allowed_image_hashes_in_contract,
-        allowed_launcher_compose_hashes: allowed_launcher_compose_hashes_in_contract,
-        attestation_reader,
-    } = submitter;
     let node_id = NodeId {
         account_id: node_account_id.clone(),
-        tls_public_key: tls_public_key.clone(),
-        account_public_key: account_public_key.clone(),
+        tls_public_key: submitter.tls_public_key.clone(),
+        account_public_key: submitter.account_public_key.clone(),
     };
 
     let initially_available =
@@ -280,8 +253,6 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let report_data: ReportData =
-        ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
 
     while tee_accounts_receiver.changed().await.is_ok() {
         let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
@@ -298,64 +269,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 %node_account_id,
                 "TEE attestation removed from contract, resubmitting"
             );
-
-            let fresh_attestation = match tee_authority
-                .generate_attestation(report_data.clone())
-                .await
-            {
-                Ok(att) => {
-                    crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                        .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
-                        .inc();
-                    att
-                }
-                Err(e) => {
-                    crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                        .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
-                        .inc();
-                    tracing::error!(
-                        error = %e,
-                        "TEE attestation failed, periodic attestation task will retry",
-                    );
-                    was_available = is_available;
-                    continue;
-                }
-            };
-            let allowed_image_hashes_in_contract: Vec<_> = allowed_image_hashes_in_contract
-                .borrow()
-                .iter()
-                .map(|entry| entry.image_hash)
-                .collect();
-            let allowed_launcher_compose_hashes_in_contract =
-                allowed_launcher_compose_hashes_in_contract.borrow().clone();
-            let pre_submit_expiry = match attestation_reader
-                .read_stored_attestation_expiry(&tls_public_key)
-                .await
-            {
-                Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
-                // Submit anyway on a read error: re-submitting a removed attestation is the
-                // priority, and a broken read must not block it (confirmation just lacks a baseline).
-                Err(error) => {
-                    tracing::warn!(%error, "could not read pre-submit attestation baseline; submitting without it");
-                    None
-                }
-            };
-            if let Err(error) = validate_and_submit_remote_attestation(
-                tx_sender.clone(),
-                fresh_attestation.clone(),
-                tls_public_key.clone(),
-                account_public_key.clone(),
-                &allowed_image_hashes_in_contract,
-                &allowed_launcher_compose_hashes_in_contract,
-                pre_submit_expiry,
-            )
-            .await
-            {
-                tracing::error!(
-                    error = %error,
-                    "attestation resubmission failed; the periodic attestation task will retry"
-                );
-            }
+            submitter.generate_and_submit().await;
         }
 
         was_available = is_available;
@@ -388,8 +302,7 @@ mod tests {
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
-    const TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT: Duration = Duration::from_millis(100);
-    const TEST_VERIFY_NO_ATTESTATION_RESUBMISSION_TIMEOUT: Duration = Duration::from_millis(100);
+    const TEST_RESUBMISSION_WAIT: Duration = Duration::from_millis(100);
 
     struct MockTicker {
         count: usize,
@@ -411,53 +324,44 @@ mod tests {
         }
     }
 
-    struct StubAttestationExpiryReader;
+    struct FakeAttestationExpiryReader {
+        fail: bool,
+    }
 
-    impl crate::indexer::ReadAttestationExpiry for StubAttestationExpiryReader {
+    impl crate::indexer::ReadAttestationExpiry for FakeAttestationExpiryReader {
         fn read_stored_attestation_expiry<'a>(
             &'a self,
             _tls_public_key: &'a Ed25519PublicKey,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>,
         > {
-            Box::pin(async { Ok(None) })
+            Box::pin(async {
+                if self.fail {
+                    Err(anyhow::anyhow!("simulated baseline read failure"))
+                } else {
+                    Ok(None)
+                }
+            })
         }
     }
 
-    struct FailingAttestationExpiryReader;
-
-    impl crate::indexer::ReadAttestationExpiry for FailingAttestationExpiryReader {
-        fn read_stored_attestation_expiry<'a>(
-            &'a self,
-            _tls_public_key: &'a Ed25519PublicKey,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = anyhow::Result<Option<u64>>> + Send + 'a>,
-        > {
-            Box::pin(async { Err(anyhow::anyhow!("simulated baseline read failure")) })
-        }
-    }
-
-    /// Simulates contract behavior by automatically adding the node back to TEE accounts
-    /// when an attestation submission occurs, mimicking real contract response to successful submissions.
-    struct ContractSimulator {
-        sender: watch::Sender<Vec<NodeId>>,
-        node_id: NodeId,
-    }
-
-    /// Mock that tracks successful attestation submissions and simulates contract responses.
+    /// Mock that tracks successful attestation submissions and mimics the contract by adding
+    /// the node back to TEE accounts on each one.
     #[derive(Clone)]
     struct MockSender {
         submissions: Arc<Mutex<usize>>,
-        contract_simulator: Arc<ContractSimulator>,
+        tee_accounts_sender: Arc<watch::Sender<Vec<NodeId>>>,
+        node_id: NodeId,
         notify: Arc<tokio::sync::Notify>,
         failing: Arc<AtomicBool>,
     }
 
     impl MockSender {
-        fn new(sender: watch::Sender<Vec<NodeId>>, node_id: NodeId) -> Self {
+        fn new(tee_accounts_sender: watch::Sender<Vec<NodeId>>, node_id: NodeId) -> Self {
             Self {
                 submissions: Arc::new(Mutex::new(0)),
-                contract_simulator: Arc::new(ContractSimulator { sender, node_id }),
+                tee_accounts_sender: Arc::new(tee_accounts_sender),
+                node_id,
                 notify: Arc::new(tokio::sync::Notify::new()),
                 failing: Arc::new(AtomicBool::new(false)),
             }
@@ -488,12 +392,9 @@ mod tests {
             *self.submissions.lock().unwrap() += 1;
 
             // Simulate contract adding the node back to TEE accounts after successful submission
-            let updated_tee_accounts = vec![self.contract_simulator.node_id.clone()];
-            let _ = self.contract_simulator.sender.send(updated_tee_accounts);
+            let _ = self.tee_accounts_sender.send(vec![self.node_id.clone()]);
 
-            // Notify that a submission occurred
             self.notify.notify_one();
-
             Ok(())
         }
 
@@ -506,8 +407,15 @@ mod tests {
         }
     }
 
+    fn test_keys() -> (Ed25519PublicKey, Ed25519PublicKey) {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        (
+            (&SigningKey::generate(&mut rng).verifying_key()).into(),
+            (&SigningKey::generate(&mut rng).verifying_key()).into(),
+        )
+    }
+
     struct TestSetup {
-        node_account_id: AccountId,
         node_id: NodeId,
         tee_accounts_sender: watch::Sender<Vec<NodeId>>,
         tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
@@ -518,14 +426,9 @@ mod tests {
     /// Builds an [`AttestationSubmitter`] around a [`MockSender`], with the node initially
     /// present in the TEE accounts watch channel.
     fn test_setup() -> TestSetup {
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let account_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let node_account_id: AccountId = "test_node.near".parse().unwrap();
+        let (tls_public_key, account_public_key) = test_keys();
         let node_id = NodeId {
-            account_id: node_account_id.clone(),
+            account_id: "test_node.near".parse().unwrap(),
             tls_public_key: tls_public_key.clone(),
             account_public_key: account_public_key.clone(),
         };
@@ -540,10 +443,9 @@ mod tests {
             account_public_key,
             allowed_image_hashes,
             allowed_launcher_compose_hashes,
-            attestation_reader: Arc::new(StubAttestationExpiryReader),
+            attestation_reader: Arc::new(FakeAttestationExpiryReader { fail: false }),
         };
         TestSetup {
-            node_account_id,
             node_id,
             tee_accounts_sender,
             tee_accounts_receiver,
@@ -553,10 +455,17 @@ mod tests {
     }
 
     impl TestSetup {
+        fn spawn_periodic(&self, ticks: usize) -> tokio::task::JoinHandle<()> {
+            tokio::spawn(periodic_attestation_submission(
+                self.submitter.clone(),
+                MockTicker::new(ticks),
+            ))
+        }
+
         fn spawn_monitor(&self) -> tokio::task::JoinHandle<()> {
             tokio::spawn(monitor_attestation_removal(
                 self.submitter.clone(),
-                self.node_account_id.clone(),
+                self.node_id.account_id.clone(),
                 self.tee_accounts_receiver.clone(),
             ))
         }
@@ -577,10 +486,7 @@ mod tests {
     async fn periodic_attestation_submission__should_submit_on_each_tick() {
         // Given
         let setup = test_setup();
-        let handle = tokio::spawn(periodic_attestation_submission(
-            setup.submitter,
-            MockTicker::new(TEST_SUBMISSION_COUNT),
-        ));
+        let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -596,11 +502,8 @@ mod tests {
         // Given: a failing pre-submit baseline read must not block submission (the node would
         // otherwise let its attestation lapse); submissions still happen, just without a baseline.
         let mut setup = test_setup();
-        setup.submitter.attestation_reader = Arc::new(FailingAttestationExpiryReader);
-        let handle = tokio::spawn(periodic_attestation_submission(
-            setup.submitter,
-            MockTicker::new(TEST_SUBMISSION_COUNT),
-        ));
+        setup.submitter.attestation_reader = Arc::new(FakeAttestationExpiryReader { fail: true });
+        let handle = setup.spawn_periodic(TEST_SUBMISSION_COUNT);
 
         // When
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -626,12 +529,9 @@ mod tests {
         setup.remove_node_from_tee_accounts();
 
         // Then
-        tokio::time::timeout(
-            TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT,
-            setup.sender.wait_for_submission(),
-        )
-        .await
-        .expect("Expected resubmission to occur within timeout");
+        tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender.wait_for_submission())
+            .await
+            .expect("Expected resubmission to occur within timeout");
         assert_eq!(
             setup.sender.count(),
             1,
@@ -647,11 +547,8 @@ mod tests {
             "Expected submission count to remain stable after stopping monitoring service"
         );
         setup.remove_node_from_tee_accounts();
-        let timeout_result = tokio::time::timeout(
-            TEST_VERIFY_NO_ATTESTATION_RESUBMISSION_TIMEOUT,
-            setup.sender.wait_for_submission(),
-        )
-        .await;
+        let timeout_result =
+            tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender.wait_for_submission()).await;
         assert!(
             timeout_result.is_err(),
             "Expected no resubmission when monitoring service is stopped"
@@ -669,10 +566,7 @@ mod tests {
         // Given
         let setup = test_setup();
         setup.sender.set_failing(true);
-        let handle = tokio::spawn(periodic_attestation_submission(
-            setup.submitter,
-            MockTicker::new(2),
-        ));
+        let handle = setup.spawn_periodic(2);
 
         // When
         tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
@@ -717,32 +611,30 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
-    async fn test_validate_remote_attestation_valid() {
-        // Given
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let account_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
+    async fn validate_locally_generated_attestation(
+        config: LocalTeeAuthorityConfig,
+    ) -> Result<(), VerificationError> {
+        let (tls_public_key, account_public_key) = test_keys();
         let report_data: ReportData =
             ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
-        let attestation = tee_authority
+        let attestation = TeeAuthority::from(config)
             .generate_attestation(report_data)
             .await
             .unwrap();
-        let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
-        let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
-
-        // When
-        let result = validate_remote_attestation(
+        validate_remote_attestation(
             &attestation,
             tls_public_key,
             account_public_key,
-            &allowed_docker_image_hashes,
-            &allowed_launcher_compose_hashes,
-        );
+            &[NodeImageHash::from([42u8; 32])],
+            &[LauncherDockerComposeHash::from([42u8; 32])],
+        )
+    }
+
+    #[tokio::test]
+    async fn test_validate_remote_attestation_valid() {
+        // Given / When
+        let result =
+            validate_locally_generated_attestation(LocalTeeAuthorityConfig::default()).await;
 
         // Then
         result.expect("Valid attestation should pass validation");
@@ -750,30 +642,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_remote_attestation_invalid() {
-        // Given
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let account_public_key: Ed25519PublicKey =
-            (&SigningKey::generate(&mut rng).verifying_key()).into();
-        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::new(false));
-        let report_data: ReportData =
-            ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
-        let attestation = tee_authority
-            .generate_attestation(report_data)
-            .await
-            .unwrap();
-        let allowed_docker_image_hashes = [NodeImageHash::from([42u8; 32])];
-        let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
-
-        // When
-        let result = validate_remote_attestation(
-            &attestation,
-            tls_public_key,
-            account_public_key,
-            &allowed_docker_image_hashes,
-            &allowed_launcher_compose_hashes,
-        );
+        // Given / When
+        let result =
+            validate_locally_generated_attestation(LocalTeeAuthorityConfig::new(false)).await;
 
         // Then
         assert!(result.is_err());
