@@ -186,6 +186,8 @@ pub enum ForeignChainRpcRequest {
     Ton(TonRpcRequest),
     Aptos(AptosRpcRequest),
     Sui(SuiRpcRequest),
+    Avalanche(EvmRpcRequest),
+    Adi(EvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -204,6 +206,8 @@ impl ForeignChainRpcRequest {
             Self::Ton(_) => ForeignChain::Ton,
             Self::Aptos(_) => ForeignChain::Aptos,
             Self::Sui(_) => ForeignChain::Sui,
+            Self::Avalanche(_) => ForeignChain::Avalanche,
+            Self::Adi(_) => ForeignChain::Adi,
         }
     }
 }
@@ -1276,6 +1280,8 @@ pub enum ForeignChain {
     Ton,
     Aptos,
     Sui,
+    Avalanche,
+    Adi,
 }
 
 #[derive(
@@ -2014,6 +2020,22 @@ mod tests {
             extractors: vec![],
         }),
         ForeignChain::Sui,
+    )]
+    #[case::avalanche(
+        ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Avalanche,
+    )]
+    #[case::adi(
+        ForeignChainRpcRequest::Adi(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Adi,
     )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
