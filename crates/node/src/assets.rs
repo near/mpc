@@ -183,7 +183,8 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
 
     /// Removes and returns the first element satisfying both the standing
     /// condition and the caller-supplied `cond_val`, shifting the barriers
-    /// that lie past the removed position.
+    /// ([`ColdQueue::cold_ready`] and [`ColdQueue::cold_available`]) that lie
+    /// past the removed position.
     pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
         self.update_condition_value_if_due();
         let pos = self
@@ -233,6 +234,7 @@ where
     hot_receiver: flume::Receiver<(UniqueId, T)>,
     cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
     clock: Clock,
+    cold_queue_changed: tokio::sync::Notify,
 }
 
 impl<T, CondVal: Default + Eq> DoubleQueue<T, CondVal>
@@ -254,6 +256,7 @@ where
                 condition_value_fetcher,
             ))),
             clock,
+            cold_queue_changed: tokio::sync::Notify::new(),
         }
     }
 
@@ -269,6 +272,7 @@ where
         // away and we quickly exhaust the available assets.
         self.cold_queue.lock().unwrap().update_condition_value();
         loop {
+            let cold_queue_changed = self.cold_queue_changed.notified();
             let taken = self.cold_queue.lock().unwrap().take();
             match taken {
                 ColdQueueTakeResult::Taken(result) => {
@@ -286,6 +290,9 @@ where
                         _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
                             // Don't wait for too long, because the condition could have changed
                             // making a cold queue element eligible.
+                            continue;
+                        }
+                        _ = cold_queue_changed => {
                             continue;
                         }
                         received = self.hot_receiver.recv_async() => {
@@ -307,18 +314,30 @@ where
 
     pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
         loop {
-            {
+            let cold_queue_changed = self.cold_queue_changed.notified();
+            let (taken, ingested) = {
                 let mut cold = self.cold_queue.lock().unwrap();
+                let mut ingested = false;
                 while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
                     cold.ingest(id, value);
+                    ingested = true;
                 }
-                if let Some(taken) = cold.take_first_matching(&cond_val) {
-                    return taken;
-                }
+                (cold.take_first_matching(&cond_val), ingested)
+            };
+
+            if ingested {
+                self.cold_queue_changed.notify_waiters();
             }
+            if let Some(taken) = taken {
+                return taken;
+            }
+
             // If the cold queue is exhausted, wait for a new element.
             tokio::select! {
                 _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
+                    continue;
+                }
+                _ = cold_queue_changed => {
                     continue;
                 }
                 received = self.hot_receiver.recv_async() => {
@@ -1641,5 +1660,60 @@ mod tests {
                 .await,
             (id1, 123)
         );
+    }
+
+    /// A `take_owned_matching` taker drains a buffered asset it can't use
+    /// (even fails its odd condition) into the cold queue on its first scan; a
+    /// parked `take_owned` taker must be woken for it immediately — the clock
+    /// never advances, so a missing wakeup leaves it pending on its 1s tick.
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_owned__should_wake_when_matching_take_drains_incompatible_asset() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let MaybeReady::Future(take_owned) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 2);
+
+        // When
+        let MaybeReady::Future(_take_matching) = run_future_once(queue.take_owned_matching(1))
+        else {
+            panic!("the asset must not satisfy the matching taker's condition");
+        };
+
+        // Then
+        assert_eq!(take_owned.now_or_never().unwrap(), (id, 2));
+    }
+
+    /// Same as above, but the asset arrives while the matching taker is
+    /// already parked, so it is ingested by the taker's hot-receiver select
+    /// arm rather than by the drain on the first scan; the parked `take_owned`
+    /// taker must be woken all the same.
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_owned__should_wake_when_parked_matching_take_receives_incompatible_asset() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let MaybeReady::Future(take_owned) = run_future_once(queue.take_owned()) else {
+            panic!("take_owned should park on an empty queue");
+        };
+        let MaybeReady::Future(take_matching) = run_future_once(queue.take_owned_matching(1))
+        else {
+            panic!("take_owned_matching should park on an empty queue");
+        };
+
+        // When
+        let id = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id, 2);
+        let MaybeReady::Future(_take_matching) = run_future_once(take_matching) else {
+            panic!("the asset must not satisfy the matching taker's condition");
+        };
+
+        // Then
+        assert_eq!(take_owned.now_or_never().unwrap(), (id, 2));
     }
 }
