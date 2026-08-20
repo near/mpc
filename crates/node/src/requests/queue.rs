@@ -37,6 +37,17 @@ const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration:
 /// Maximum attempts we should make for each request when we are the leader.
 const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
 
+/// Narrows the eligible-leader set for a specific request (e.g. to the participants
+/// supporting the request's foreign chain).
+pub trait RefineEligibleLeaders<RequestType>: Send {
+    /// Returns the subset of `eligible` allowed to lead `request`.
+    fn refine(
+        &self,
+        request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId>;
+}
+
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
 ///  - Every block that comes from the indexer. For each block, we need the list of
@@ -71,6 +82,9 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
+
+    /// When set, narrows eligible leaders set per request before leader selection.
+    pub(super) refine_eligible_leaders: Option<Box<dyn RefineEligibleLeaders<RequestType>>>,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -464,7 +478,17 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
+            refine_eligible_leaders: None,
         }
+    }
+
+    /// Narrows the eligible-leader set per request before leader selection.
+    pub fn with_eligible_leaders_refiner(
+        mut self,
+        refiner: Box<dyn RefineEligibleLeaders<RequestType>>,
+    ) -> Self {
+        self.refine_eligible_leaders = Some(refiner);
+        self
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -633,7 +657,20 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            match request.process(self.my_participant_id, &eligible_leaders, cutoff_block, now) {
+            let refined;
+            let request_eligible_leaders = match self.refine_eligible_leaders.as_deref() {
+                Some(refiner) => {
+                    refined = refiner.refine(&request.request, &eligible_leaders);
+                    &refined
+                }
+                None => &eligible_leaders,
+            };
+            match request.process(
+                self.my_participant_id,
+                request_eligible_leaders,
+                cutoff_block,
+                now,
+            ) {
                 RequestStatus::Drop(reason) => {
                     tracing::debug!(target: "request", reason = %reason, "removing request");
                     if matches!(RequestType::get_type(), types::RequestType::Signature) {
@@ -1372,5 +1409,80 @@ mod tests {
         // Then
         assert!(pending_requests.get_requests_to_attempt().is_empty());
         assert!(!pending_requests.requests.contains_key(&req.id));
+    }
+
+    struct TestRefiner {
+        allowed: Arc<Mutex<HashSet<ParticipantId>>>,
+    }
+
+    impl super::RefineEligibleLeaders<TestRequest> for TestRefiner {
+        fn refine(
+            &self,
+            _request: &TestRequest,
+            eligible: &HashSet<ParticipantId>,
+        ) -> HashSet<ParticipantId> {
+            eligible & &self.allowed.lock().unwrap()
+        }
+    }
+
+    impl TestRefiner {
+        fn new(allowed: HashSet<ParticipantId>) -> Self {
+            Self {
+                allowed: Arc::new(Mutex::new(allowed)),
+            }
+        }
+    }
+
+    /// A request's leader order starts with participant 0 and then us; the refiner
+    /// excludes participant 0, so leadership falls to us and we attempt the request.
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_reroute_leadership_when_refiner_excludes_first_leader() {
+        // Given
+        let (pending_requests, mut setup) = TestSetup::new();
+        let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
+        let refiner = TestRefiner::new(allowed);
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
+    }
+
+    /// While the refiner allows nobody to lead, the request is parked — neither
+    /// attempted nor dropped. Once the refiner allows leaders again, we attempt it.
+    #[test_log::test]
+    #[expect(non_snake_case)]
+    fn get_requests_to_attempt__should_park_request_until_refiner_allows_a_leader() {
+        // Given
+        let (pending_requests, mut setup) = TestSetup::new();
+        let refiner = TestRefiner::new(HashSet::new());
+        let allowed = refiner.allowed.clone();
+        let mut pending_requests =
+            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let req = setup.add_request_leader();
+        setup.update(&mut pending_requests);
+
+        // When
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 0);
+        assert!(pending_requests.requests.contains_key(&req.id));
+
+        // When
+        *allowed.lock().unwrap() = setup.participant_ids.iter().copied().collect();
+        setup.advance_clock(CHECK_EACH_REQUEST_INTERVAL);
+        let to_attempt = pending_requests.get_requests_to_attempt();
+
+        // Then
+        assert_eq!(to_attempt.len(), 1);
+        assert_eq!(to_attempt[0].request.id, req.id);
     }
 }
