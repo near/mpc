@@ -553,7 +553,7 @@ Not every chain has a fingerprint probe. The table lists the ones that do, with 
 | chain | probe |
 |---|---|
 | starknet | `starknet_chainId` |
-| base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` |
+| base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
 | bitcoin | `getblockhash` at height 0 |
 | aptos | the ledger info at the REST root |
 
@@ -694,6 +694,8 @@ checkpoint digest — hence the neutral name.
 | arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
 | polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
 | hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
+| avalanche | EIP-155 chain id, decimal | `"43114"` | `"43113"` (Fuji) |
+| adi | EIP-155 chain id, decimal | `"36900"` | `"99999"` (AB testnet) |
 | abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
 | starknet | chain id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
 | bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
