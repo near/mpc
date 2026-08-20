@@ -106,20 +106,26 @@ pub fn set_block_timestamp(timestamp_nanos: u64) {
     );
 }
 
+/// The compose hash bypasses voting because the attestation fixture's hash is not
+/// derivable from the compiled-in template, so no vote can allow it.
 pub fn whitelist_dstack_measurements(
     tee_state: &mut TeeState,
     image: NodeImageHash,
     launcher: LauncherImageHash,
+    compose_hash: Option<LauncherDockerComposeHash>,
 ) {
     tee_state.whitelist_tee_proposal(image, Duration::MAX);
     tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
     for &measurements in default_measurements() {
         tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
     }
+    if let Some(compose_hash) = compose_hash {
+        tee_state
+            .allowed_launcher_images
+            .allow_compose_hash(&launcher, compose_hash);
+    }
 }
 
-/// The compose hash bypasses voting because the attestation fixture's hash is not
-/// derivable from the compiled-in template, so no vote can allow it.
 pub fn whitelist_dstack_in_state(
     state: &[u8],
     image: NodeImageHash,
@@ -127,12 +133,6 @@ pub fn whitelist_dstack_in_state(
     compose_hash: Option<LauncherDockerComposeHash>,
 ) -> Vec<u8> {
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
-    whitelist_dstack_measurements(&mut contract.tee_state, image, launcher);
-    if let Some(compose_hash) = compose_hash {
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .allow_compose_hash(&launcher, compose_hash);
-    }
+    whitelist_dstack_measurements(&mut contract.tee_state, image, launcher, compose_hash);
     borsh::to_vec(&contract).expect("STATE serializes")
 }

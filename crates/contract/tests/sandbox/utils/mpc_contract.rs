@@ -4,7 +4,7 @@ use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -121,25 +121,6 @@ pub async fn submit_participant_info(
         .submit_participant_info(attestation.clone(), tls_key.clone())
         .await
         .map_err(Into::into)
-}
-
-pub async fn vote_tee_verifier_change(
-    account: &Account,
-    contract: &Contract,
-    candidate_account_id: &AccountId,
-    expected_code_hash: [u8; 32],
-) -> anyhow::Result<()> {
-    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
-    all_receipts_successful(
-        account
-            .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
-            .args_json(serde_json::json!({
-                "candidate_account_id": candidate_account_id,
-                "expected_code_hash": expected_code_hash,
-            }))
-            .transact()
-            .await?,
-    )
 }
 
 pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {

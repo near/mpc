@@ -1601,11 +1601,12 @@ mod tests {
         set_block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000);
         let mut tee_state = TeeState::default();
         assert_eq!(tee_state.stored_attestations.len(), 0);
-        whitelist_dstack_measurements(&mut tee_state, image_digest(), launcher_image_hash());
-        // The fixture's launcher compose carries the key-export service, so its hash is not derivable.
-        tee_state
-            .allowed_launcher_images
-            .allow_compose_hash(&launcher_image_hash(), launcher_compose_digest());
+        whitelist_dstack_measurements(
+            &mut tee_state,
+            image_digest(),
+            launcher_image_hash(),
+            Some(launcher_compose_digest()),
+        );
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
