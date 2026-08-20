@@ -368,9 +368,13 @@ where
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
+    // Skip missed ticks so a submission stuck across multiple intervals is not followed by a
+    // burst of redundant resubmissions
+    let mut attestation_interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
+    attestation_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     tokio::spawn(periodic_attestation_submission(
         submitter,
-        tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
+        attestation_interval,
     ));
 
     // Spawn TEE attestation monitoring task

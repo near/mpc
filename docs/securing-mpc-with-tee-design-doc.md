@@ -395,8 +395,8 @@ _Note_: submit_participant_info must be called by the node itself - the quote's 
 - Export remote attestation information via the same endpoint.
 - Send remote attestation to the contract (via submit_participant_info)
   - On each boot (after state sync is completed)
-  - Every 7 days.
-- Call verify_tee every 7 days - in order to trigger a re-validation of attestation information on the contract.
+  - Every hour.
+- Call verify_tee every 2 days - in order to trigger a re-validation of attestation information on the contract.
 - Monitor contract state - and if a new MPC docker image hash was voted successfully, pull that image and store on disk (so that the Launcher will use it for next boot)
 
 ### Secret key Handling
@@ -611,7 +611,7 @@ After a new MPC docker image hash has been successfully voted by Threshold parti
 The old MPC docker image hash will still be valid for 7 days.
 After 7 days, any call to the contract API `verify_tee` will removing the old MPC hash from the approved list, and trigger a check for the validity of the registered attestation for each one of the participants.
 
-_Note_ - Each MPC node will periodically call the `verify_tee`every 7 days.
+_Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
 If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
 Note - In case the number of remaining participants is less that the threshold. The node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.

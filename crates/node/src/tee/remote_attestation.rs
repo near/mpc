@@ -193,7 +193,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
                 crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                     .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                     .inc();
-                tracing::warn!(error = %e, "TEE attestation failed, will retry next interval");
+                tracing::error!(error = %e, "TEE attestation failed, will retry next interval");
                 continue;
             }
         };
@@ -313,7 +313,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                     crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
                         .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                         .inc();
-                    tracing::warn!(
+                    tracing::error!(
                         error = %e,
                         "TEE attestation failed, periodic attestation task will retry",
                     );
@@ -360,6 +360,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
 
         was_available = is_available;
     }
+
+    tracing::warn!("TEE accounts watch channel closed; stopping attestation removal monitoring");
 }
 
 /// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
@@ -551,14 +553,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_periodic_attestation_submission() {
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_submit_on_each_tick() {
+        // Given
         let setup = test_setup();
         let handle = tokio::spawn(periodic_attestation_submission(
             setup.submitter,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
+        // When
         tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Then
         assert_eq!(setup.sender.count(), TEST_SUBMISSION_COUNT);
         handle.abort();
     }
@@ -566,8 +573,8 @@ mod tests {
     #[tokio::test]
     #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_submit_when_baseline_read_fails() {
-        // A failing pre-submit baseline read must not block submission (the node would otherwise
-        // let its attestation lapse); submissions still happen, just without a baseline.
+        // Given: a failing pre-submit baseline read must not block submission (the node would
+        // otherwise let its attestation lapse); submissions still happen, just without a baseline.
         let mut setup = test_setup();
         setup.submitter.attestation_reader = Arc::new(FailingAttestationExpiryReader);
         let handle = tokio::spawn(periodic_attestation_submission(
@@ -575,13 +582,18 @@ mod tests {
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
+        // When
         tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Then
         assert_eq!(setup.sender.count(), TEST_SUBMISSION_COUNT);
         handle.abort();
     }
 
     #[tokio::test]
-    async fn test_tee_attestation_removal_detection() {
+    #[expect(non_snake_case)]
+    async fn monitor_attestation_removal__should_resubmit_when_attestation_removed() {
+        // Given
         let setup = test_setup();
         let tee_accounts_sender = setup.tee_accounts_sender;
         let mock_sender = setup.sender;
@@ -598,11 +610,11 @@ mod tests {
         // Verify no submission occurred initially (node is in TEE accounts)
         assert_eq!(mock_sender.count(), 0);
 
-        // Remove the node from TEE accounts (simulate attestation removal)
+        // When: remove the node from TEE accounts (simulate attestation removal)
         let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
         tee_accounts_sender.send(removed_tee_accounts).unwrap();
 
-        // Wait for the resubmission to occur (with timeout to avoid hanging)
+        // Then: wait for the resubmission to occur (with timeout to avoid hanging)
         tokio::time::timeout(
             TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT,
             mock_sender.wait_for_submission(),
@@ -668,6 +680,7 @@ mod tests {
 
         // When
         tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        assert_eq!(setup.sender.count(), 0);
         setup.sender.set_failing(false);
 
         // Then
@@ -697,6 +710,7 @@ mod tests {
         // When
         setup.tee_accounts_sender.send(vec![]).unwrap();
         tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        assert_eq!(setup.sender.count(), 0);
         setup.sender.set_failing(false);
         setup
             .tee_accounts_sender
