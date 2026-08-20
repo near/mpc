@@ -566,7 +566,7 @@ mod tests {
 
         let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
-        // ❌ Case: signer != predecessor — should panic
+        // Case: signer != predecessor — should panic
         let ctx = VMContextBuilder::new()
             .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
@@ -1197,7 +1197,8 @@ mod tests {
 
     /// Charged storage of the largest attestation entry the contract can store, in bytes:
     /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
-    /// [`VerifiedAttestation`] variant, including the [`IterableMap`] record overhead.
+    /// [`VerifiedAttestation`] variant, including the
+    /// [`IterableMap`](near_sdk::store::IterableMap) record overhead.
     const WORST_CASE_ENTRY_BYTES: u64 = 604;
 
     /// Ceiling on one entry's storage cost at today's price, with headroom over
