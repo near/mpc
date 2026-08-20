@@ -797,24 +797,6 @@ impl MpcContract {
         }
     }
 
-    /// Private endpoint to drop votes cast by non-participants after resharing.
-    /// Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].
-    #[private]
-    #[handle_result]
-    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
-        log!("clean_tee_status: signer={}", env::signer_account_id());
-
-        let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
-            _ => {
-                return Err(InvalidState::ProtocolStateNotRunning.into());
-            }
-        };
-
-        self.tee_state.clean_non_participant_votes(participants);
-        Ok(())
-    }
-
     /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
     /// referencing stale whitelists), returning one attestation-storage grant to the owner of
     /// each entry removed. Returns the number of entries removed. Callable by anyone while the

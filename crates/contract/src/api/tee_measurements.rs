@@ -2,8 +2,9 @@
 //! accepted by the contract: the MPC node image, the launcher image and its
 //! derived compose hashes, and the OS measurements.
 
-use crate::errors::Error;
+use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
+use crate::state::ProtocolContractState;
 use crate::tee::measurements::{
     ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
 };
@@ -210,6 +211,24 @@ impl MpcContract {
     pub fn code_hash_votes(&self) -> CodeHashesVotes {
         self.tee_state.votes.clone()
     }
+
+    /// Private endpoint to drop votes cast by non-participants after resharing.
+    /// Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].
+    #[private]
+    #[handle_result]
+    pub fn clean_tee_status(&mut self) -> Result<(), Error> {
+        log!("clean_tee_status: signer={}", env::signer_account_id());
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.tee_state.clean_non_participant_votes(participants);
+        Ok(())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -217,7 +236,6 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
-    use crate::state::ProtocolContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
