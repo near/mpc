@@ -1284,6 +1284,28 @@ pub enum ForeignChain {
     Adi,
 }
 
+impl ForeignChain {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Solana => "solana",
+            Self::Bitcoin => "bitcoin",
+            Self::Ethereum => "ethereum",
+            Self::Base => "base",
+            Self::Bnb => "bnb",
+            Self::Arbitrum => "arbitrum",
+            Self::Abstract => "abstract",
+            Self::Starknet => "starknet",
+            Self::Polygon => "polygon",
+            Self::HyperEvm => "hyper_evm",
+            Self::Ton => "ton",
+            Self::Aptos => "aptos",
+            Self::Sui => "sui",
+            Self::Avalanche => "avalanche",
+            Self::Adi => "adi",
+        }
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -1819,6 +1841,19 @@ pub struct ChainEntry {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    /// The two whose config key is not the variant name lowercased, which is where a label would
+    /// drift from what an operator writes.
+    #[rstest]
+    #[case::hyper_evm(ForeignChain::HyperEvm, "hyper_evm")]
+    #[case::abstract_chain(ForeignChain::Abstract, "abstract")]
+    fn label__should_name_the_chain_as_its_config_key(
+        #[case] chain: ForeignChain,
+        #[case] expected: &str,
+    ) {
+        // When / Then
+        assert_eq!(chain.label(), expected);
+    }
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {

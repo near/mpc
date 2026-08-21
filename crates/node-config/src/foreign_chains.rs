@@ -191,6 +191,7 @@ impl ForeignChainsConfig {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use super::*;
     use crate::ConfigFile;
 
     /// Every section a [`ConfigFile`] requires except `foreign_chains`.
@@ -705,5 +706,53 @@ ckd:
         let error = format!("{:#}", result.unwrap_err());
         assert!(error.contains("provider `keyinpath`"), "{error}");
         assert!(error.contains("support only header auth"), "{error}");
+    }
+
+    /// Every chain is set, so a chain added later has to be listed here too.
+    #[test]
+    fn foreign_chains_config__should_key_every_chain_by_its_label() {
+        // Given
+        let section = || ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            expected_network_fingerprint: None,
+            providers: NonEmptyBTreeMap::new(
+                "only".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: "https://rpc.example.com".to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        };
+        let config = ForeignChainsConfig {
+            solana: Some(section()),
+            bitcoin: Some(section()),
+            ethereum: Some(section()),
+            abstract_chain: Some(section()),
+            starknet: Some(section()),
+            bnb: Some(section()),
+            base: Some(section()),
+            arbitrum: Some(section()),
+            hyper_evm: Some(section()),
+            polygon: Some(section()),
+            aptos: Some(section()),
+            sui: Some(section()),
+        };
+
+        // When
+        let serialized = serde_yaml::to_value(&config).expect("config should serialize");
+
+        // Then
+        let written_keys: BTreeSet<&str> = serialized
+            .as_mapping()
+            .expect("a chain map")
+            .keys()
+            .map(|key| key.as_str().expect("a chain key"))
+            .collect();
+        let labels: BTreeSet<&str> = config
+            .iter_chains()
+            .map(|(chain, _)| chain.label())
+            .collect();
+        assert_eq!(written_keys, labels);
     }
 }

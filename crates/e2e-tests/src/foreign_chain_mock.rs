@@ -75,6 +75,8 @@ impl MockServerExt {
     }
 }
 
+pub const MOCK_EVM_CHAIN_ID: u64 = 8453;
+
 pub const MOCK_BLOCK_HASH: &str =
     "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 pub const MOCK_TX_ID: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -146,6 +148,7 @@ pub fn setup_evm_mock(server: &MockServer, auth: MockAuthExpectation) -> usize {
             let method = body["method"].as_str().expect("method field");
 
             let result = match method {
+                "eth_chainId" => serde_json::json!(format!("{MOCK_EVM_CHAIN_ID:#x}")),
                 "eth_getBlockByNumber" => {
                     // First param is either a finality tag (e.g. "finalized") for the
                     // finality-head lookup, or a `0x`-prefixed block number for the

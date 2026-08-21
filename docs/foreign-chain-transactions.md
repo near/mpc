@@ -544,7 +544,9 @@ Voting uses the protocol's existing signing threshold (`self.threshold()?.value(
 
 The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the fan-out across a chain's providers is the structural one. The network fingerprint probe is a per-node diagnostic on top of both.
 
-Once wired into node startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
+At startup, every provider of a chain the node can identify gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing. It runs detached, so it never delays startup. A node that configures no foreign chain at all is warned about instead: the chains the code supports are the chains an operator is expected to configure.
+
+The result is a line per provider, an `x/y providers healthy` summary counting only the providers a probe covers, and two gauges labelled by chain: `mpc_foreign_chain_rpc_providers_configured` and `mpc_foreign_chain_rpc_providers_healthy`. The gauges are per chain rather than per provider, because a provider name is operator chosen and would put an unbounded label on a time series. A chain whose providers cannot be identified, such as Solana or Ethereum, is left out of both the summary and the gauges: reporting `0` healthy against its configured count would read as every provider failing.
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
@@ -560,7 +562,7 @@ Every chain with an inspector is probed, each by the RPC below. `solana` and `et
 
 The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing, and Sui's base58 digest has a single spelling with nothing to normalize.
 
-An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
+An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into the logs.
 
 #### Why drop-and-log on local-config mismatch, not hard-crash
 
@@ -720,9 +722,10 @@ each value must match the network of the `rpc_url` beside it. The value is alway
 including the fingerprints that look numeric.
 
 Every chain with an inspector is probed, and for those, leaving the field unset is not a silent
-skip: every provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads
-as healthy on a dashboard. `solana` and `ethereum` report `ProbeNotImplemented` whether the field is
-set or not.
+skip: every provider of the chain is reported as `MissingExpectedFingerprint` and counts against the
+chain's healthy total, because silence reads as healthy on a dashboard. `solana` and `ethereum` have
+no inspector, so their providers are never asked and no health is reported for them, whether the
+field is set or not.
 
 ## Risks
 

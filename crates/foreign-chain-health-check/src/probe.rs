@@ -72,6 +72,12 @@ pub struct ProbeReport {
     rows: Vec<ProviderHealth>,
 }
 
+impl From<Vec<ProviderHealth>> for ProbeReport {
+    fn from(rows: Vec<ProviderHealth>) -> Self {
+        Self { rows }
+    }
+}
+
 impl ProbeReport {
     pub fn rows(&self) -> &[ProviderHealth] {
         &self.rows
@@ -146,8 +152,10 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
             }
         });
 
-    let report_rows = futures::future::join_all(probe_attempts).await.concat();
-    ProbeReport { rows: report_rows }
+    futures::future::join_all(probe_attempts)
+        .await
+        .concat()
+        .into()
 }
 
 async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> Vec<ProviderHealth>
