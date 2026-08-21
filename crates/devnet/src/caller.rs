@@ -2,64 +2,11 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::account::{OperatingAccessKey, OperatingAccount};
+use crate::tx::{Final, WaitLevel};
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
 use near_mpc_contract_interface::client::MpcContractHandle;
-use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
-use near_primitives::views::TxExecutionStatus;
 use tokio::sync::Mutex;
-
-/// The status a submitted transaction is awaited to, and the response type that
-/// status can produce. `send_tx` returns no execution outcome before
-/// [`TxExecutionStatus::Executed`], so early levels surface the locally derived
-/// transaction hash instead.
-pub trait WaitLevel {
-    type Response;
-
-    const STATUS: TxExecutionStatus;
-
-    fn response(
-        tx_hash: CryptoHash,
-        sender_id: &AccountId,
-        response: RpcTransactionResponse,
-    ) -> Self::Response;
-}
-
-pub struct Included;
-
-impl WaitLevel for Included {
-    type Response = TransactionInfo;
-
-    const STATUS: TxExecutionStatus = TxExecutionStatus::Included;
-
-    fn response(
-        tx_hash: CryptoHash,
-        sender_id: &AccountId,
-        _response: RpcTransactionResponse,
-    ) -> Self::Response {
-        TransactionInfo::TransactionId {
-            tx_hash,
-            sender_account_id: sender_id.clone(),
-        }
-    }
-}
-
-pub struct Final;
-
-impl WaitLevel for Final {
-    type Response = RpcTransactionResponse;
-
-    const STATUS: TxExecutionStatus = TxExecutionStatus::Final;
-
-    fn response(
-        _tx_hash: CryptoHash,
-        _sender_id: &AccountId,
-        response: RpcTransactionResponse,
-    ) -> Self::Response {
-        response
-    }
-}
 
 pub(crate) trait CallMpcContract {
     fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller<Final>>;
@@ -68,8 +15,16 @@ pub(crate) trait CallMpcContract {
 impl CallMpcContract for OperatingAccount {
     /// The returned handle logs each call and waits for transaction to be final
     fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller<Final>> {
+        self.any_access_key_handle().call_mpc(contract_id)
+    }
+}
+
+impl CallMpcContract for Arc<Mutex<OperatingAccessKey>> {
+    /// Binds one specific access key, so callers driving many keys concurrently pick
+    /// which one signs.
+    fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller<Final>> {
         MpcContractHandle::new(
-            DevnetCaller::new(self.any_access_key_handle(), Verbosity::Verbose),
+            DevnetCaller::new(self.clone(), Verbosity::Verbose),
             contract_id.clone(),
         )
     }
@@ -86,7 +41,7 @@ pub enum Verbosity {
     Quiet,
 }
 
-impl<W> DevnetCaller<W> {
+impl DevnetCaller<Final> {
     pub(crate) fn new(key: Arc<Mutex<OperatingAccessKey>>, verbosity: Verbosity) -> Self {
         Self {
             key,
@@ -94,9 +49,19 @@ impl<W> DevnetCaller<W> {
             _wait_level: PhantomData,
         }
     }
+}
 
+impl<W> DevnetCaller<W> {
     pub(crate) fn with_verbosity(self, verbosity: Verbosity) -> Self {
         Self { verbosity, ..self }
+    }
+
+    pub(crate) fn with_finality<U: WaitLevel>(self) -> DevnetCaller<U> {
+        DevnetCaller {
+            key: self.key,
+            verbosity: self.verbosity,
+            _wait_level: PhantomData,
+        }
     }
 }
 
@@ -107,6 +72,18 @@ pub trait WithVerbosity {
 impl<W> WithVerbosity for MpcContractHandle<DevnetCaller<W>> {
     fn with_verbosity(self, verbosity: Verbosity) -> Self {
         self.map_caller(|caller| caller.with_verbosity(verbosity))
+    }
+}
+
+/// Allows to change the status a transaction is awaited to before a call returns.
+/// Note that the return type of the contract handle changes with the finality.
+pub trait WithFinality {
+    fn with_finality<U: WaitLevel>(self) -> MpcContractHandle<DevnetCaller<U>>;
+}
+
+impl<W> WithFinality for MpcContractHandle<DevnetCaller<W>> {
+    fn with_finality<U: WaitLevel>(self) -> MpcContractHandle<DevnetCaller<U>> {
+        self.map_caller(DevnetCaller::with_finality)
     }
 }
 

@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
-use crate::caller::{CallMpcContract, Final, Verbosity, WithVerbosity};
+use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -13,6 +13,7 @@ use crate::funding::{AccountToFund, fund_accounts};
 use crate::queries;
 use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
+use crate::tx::Final;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use ed25519_dalek::{SigningKey, VerifyingKey};

@@ -1,5 +1,49 @@
-use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
+use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
+use near_primitives::transaction::SignedTransaction;
+use near_primitives::views::TxExecutionStatus;
 use std::fmt::Debug;
+
+/// The status a submitted transaction is awaited to, and the response type that
+/// status can produce. `send_tx` returns no execution outcome before
+/// [`TxExecutionStatus::Executed`], so early levels identify the transaction
+/// instead of reporting its result.
+pub trait WaitLevel {
+    type Response;
+
+    const STATUS: TxExecutionStatus;
+
+    fn response(signed_tx: &SignedTransaction, response: RpcTransactionResponse) -> Self::Response;
+}
+
+pub struct Included;
+
+impl WaitLevel for Included {
+    type Response = TransactionInfo;
+
+    const STATUS: TxExecutionStatus = TxExecutionStatus::Included;
+
+    fn response(
+        signed_tx: &SignedTransaction,
+        _response: RpcTransactionResponse,
+    ) -> Self::Response {
+        signed_tx.clone().into()
+    }
+}
+
+pub struct Final;
+
+impl WaitLevel for Final {
+    type Response = RpcTransactionResponse;
+
+    const STATUS: TxExecutionStatus = TxExecutionStatus::Final;
+
+    fn response(
+        _signed_tx: &SignedTransaction,
+        response: RpcTransactionResponse,
+    ) -> Self::Response {
+        response
+    }
+}
 
 pub trait IntoReturnValueExt {
     /// Converts the RPC call result to a return value, or error if the result is anything else.

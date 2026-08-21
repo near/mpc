@@ -1,15 +1,17 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts, resolve_funding_account};
-use crate::caller::{DevnetCaller, Included, Verbosity};
+use crate::caller::{CallMpcContract, DevnetCaller, Verbosity, WithFinality, WithVerbosity};
 use crate::cli::{
     DeployParallelSignContractCmd, ListLoadtestCmd, NewLoadtestCmd, RunLoadtestCmd,
     UpdateLoadtestCmd,
 };
 use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
-use crate::contracts::{ContractActionCall, make_actions};
+use crate::contracts::{ContractActionCall, make_actions, make_payload};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{AccountToFund, fund_accounts};
 use crate::mpc::read_contract_state;
+use crate::rpc::NearRpcClients;
+use crate::tx::Included;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
 use futures::FutureExt;
@@ -18,7 +20,7 @@ use mpc_primitives::domain::{DomainId, Protocol};
 use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
 use near_jsonrpc_client::methods::send_tx;
 use near_jsonrpc_client::methods::tx::TransactionInfo;
-use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState};
+use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState, SignRequestArgs};
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
 use std::io::{Write, stdout};
@@ -282,8 +284,10 @@ impl RunLoadtestCmd {
                 })
                 .collect();
             Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
-                let caller: DevnetCaller<Included> = DevnetCaller::new(key, Verbosity::Quiet);
-                let interface = ParallelContractInterface::new(caller, parallel_contract.clone());
+                let interface = ParallelContractInterface::new(
+                    DevnetCaller::new(key, Verbosity::Quiet).with_finality::<Included>(),
+                    parallel_contract.clone(),
+                );
                 let mpc_account = mpc_account.clone();
                 let calls_by_domain = calls_by_domain.clone();
                 async move {
@@ -293,51 +297,45 @@ impl RunLoadtestCmd {
                 }
                 .boxed()
             })
-        } else {
-            let contract_action: ContractActionCall = if let Some(domain_id) = self.domain_id {
-                let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
-                let domain_config = find_domain_config(&contract_state, DomainId(domain_id))
-                    .expect("require valid domain id");
-                match domain_config.protocol {
-                    Protocol::ConfidentialKeyDerivation => {
-                        ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
-                            mpc_contract: mpc_account,
-                            domain_config,
-                        })
-                    }
-                    Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => {
-                        ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
-                            mpc_contract: mpc_account,
-                            domain_config,
-                        })
-                    }
-                }
-            } else {
-                ContractActionCall::LegacySign(crate::contracts::LegacySignActionCallArgs {
-                    mpc_contract: mpc_account,
-                })
-            };
-            Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
-                let action_call = make_actions(contract_action.clone());
-                let rpc_clone = rpc_clone.clone();
-                async move {
-                    let signed_tx = key.lock().await.sign_tx_from_actions(action_call).await;
-                    let tx_hash = signed_tx.get_hash();
-                    let sender_id = signed_tx.transaction.signer_id().clone();
-                    rpc_clone
-                        .submit(send_tx::RpcSendTransactionRequest {
-                            signed_transaction: signed_tx,
-                            wait_until: TxExecutionStatus::Included,
-                        })
-                        .await
-                        .map_err(|e| anyhow!("error sending tx request: {}", e))?;
-                    Ok(TransactionInfo::TransactionId {
-                        tx_hash,
-                        sender_account_id: sender_id,
+        } else if let Some(domain_id) = self.domain_id {
+            let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
+            let domain_config = find_domain_config(&contract_state, DomainId(domain_id))
+                .expect("require valid domain id");
+            match domain_config.protocol {
+                Protocol::ConfidentialKeyDerivation => action_sender(
+                    rpc_clone,
+                    ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
+                        mpc_contract: mpc_account,
+                        domain_config,
+                    }),
+                ),
+                Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => {
+                    Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
+                        let handle = key
+                            .call_mpc(&mpc_account)
+                            .with_verbosity(Verbosity::Quiet)
+                            .with_finality::<Included>();
+                        let domain_config = domain_config.clone();
+                        async move {
+                            Ok(handle
+                                .sign(SignRequestArgs::new(
+                                    "".to_string(),
+                                    make_payload(domain_config.protocol),
+                                    domain_config.id,
+                                ))
+                                .await?)
+                        }
+                        .boxed()
                     })
                 }
-                .boxed()
-            })
+            }
+        } else {
+            action_sender(
+                rpc_clone,
+                ContractActionCall::LegacySign(crate::contracts::LegacySignActionCallArgs {
+                    mpc_contract: mpc_account,
+                }),
+            )
         };
         let (tx_sender, mut receiver): (
             Sender<anyhow::Result<TransactionInfo>>,
@@ -500,6 +498,29 @@ fn find_domain_config(state: &ProtocolContractState, id: DomainId) -> Option<Dom
         ProtocolContractState::NotInitialized => return None,
     };
     domains.iter().find(|d| d.id == id).cloned()
+}
+
+/// Sender for the request kinds not yet on [`MpcContractHandle`]: legacy V1 `sign`
+/// payloads, and CKD whose attached gas differs from the handle's.
+fn action_sender(
+    rpc: Arc<NearRpcClients>,
+    contract_action: ContractActionCall,
+) -> LoadSenderAsyncFn {
+    Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
+        let action_call = make_actions(contract_action.clone());
+        let rpc = rpc.clone();
+        async move {
+            let signed_tx = key.lock().await.sign_tx_from_actions(action_call).await;
+            rpc.submit(send_tx::RpcSendTransactionRequest {
+                signed_transaction: signed_tx.clone(),
+                wait_until: TxExecutionStatus::Included,
+            })
+            .await
+            .map_err(|e| anyhow!("error sending tx request: {}", e))?;
+            Ok(signed_tx.into())
+        }
+        .boxed()
+    })
 }
 
 type LoadSenderAsyncFn = Arc<

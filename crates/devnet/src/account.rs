@@ -16,11 +16,11 @@
     clippy::disallowed_types,
     reason = "devnet tooling uses `near_crypto_public::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
 )]
-use crate::caller::WaitLevel;
 use crate::constants::{LOCALNET_MASTER_ACCOUNT_ID, LOCALNET_VALIDATOR_KEY_PATH};
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
+use crate::tx::WaitLevel;
 use crate::types::{
     ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind, ParsedConfig,
 };
@@ -328,9 +328,9 @@ impl OperatingAccessKey {
             ),
             wait_until: W::STATUS,
         };
-        let tx_hash = request.signed_transaction.get_hash();
+        let signed_tx = request.signed_transaction.clone();
         let response = self.client.submit(request).await?;
-        Ok(W::response(tx_hash, &self.account_id, response))
+        Ok(W::response(&signed_tx, response))
     }
 
     pub async fn sign_tx_from_actions(&mut self, action_call: ActionCall) -> SignedTransaction {

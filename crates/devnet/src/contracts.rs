@@ -6,7 +6,7 @@ use near_mpc_contract_interface::{
     method_names,
     types::{
         Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainConfig,
-        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload, Protocol, SignRequestArgs,
+        EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES, Payload, Protocol,
     },
 };
 use near_primitives::action::Action;
@@ -45,29 +45,12 @@ pub struct LegacySignActionCallArgs {
 
 #[derive(Clone)]
 pub enum ContractActionCall {
-    Sign(RequestActionCallArgs),
     LegacySign(LegacySignActionCallArgs),
     Ckd(RequestActionCallArgs),
 }
 
 pub fn make_actions(call: ContractActionCall) -> ActionCall {
     match call {
-        ContractActionCall::Sign(args) => ActionCall {
-            receiver_id: args.mpc_contract,
-            actions: vec![make_action(
-                method_names::SIGN,
-                &serde_json::to_vec(&SignArgsV2 {
-                    request: SignRequestArgs {
-                        domain_id: args.domain_config.id,
-                        path: "".to_string(),
-                        payload: make_payload(args.domain_config.protocol),
-                    },
-                })
-                .unwrap(),
-                SIGN_TGAS,
-                1,
-            )],
-        },
         ContractActionCall::LegacySign(args) => ActionCall {
             receiver_id: args.mpc_contract,
             actions: vec![make_action(
@@ -116,16 +99,11 @@ struct SignRequestV1 {
 }
 
 #[derive(Serialize)]
-struct SignArgsV2 {
-    pub request: SignRequestArgs,
-}
-
-#[derive(Serialize)]
 struct CKDArgs {
     pub request: CKDRequestArgs,
 }
 
-fn make_payload(protocol: Protocol) -> Payload {
+pub(crate) fn make_payload(protocol: Protocol) -> Payload {
     match protocol {
         Protocol::CaitSith | Protocol::DamgardEtAl => {
             Payload::Ecdsa(rand::random::<[u8; 32]>().into())
