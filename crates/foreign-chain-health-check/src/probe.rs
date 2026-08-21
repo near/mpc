@@ -134,8 +134,8 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe Sui. Ethereum, Solana and Ton have no inspector, so there is
-                // nothing to probe them with.
+                // TODO(#4003): probe Sui, Solana and Fogo. Ethereum and Ton have no inspector,
+                // so there is nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
