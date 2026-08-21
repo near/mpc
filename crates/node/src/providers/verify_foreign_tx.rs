@@ -20,6 +20,7 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
+use foreign_chain_inspector::svm::inspector::{FogoInspector, SolanaInspector};
 use foreign_chain_inspector::{FanOut, RpcAuthentication};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
@@ -48,6 +49,8 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub adi: Option<FanOut<AdiInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
     pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
+    pub solana: Option<FanOut<SolanaInspector<Client>>>,
+    pub fogo: Option<FanOut<FogoInspector<Client>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -153,7 +156,70 @@ impl ForeignChainInspectors<HttpClient> {
             adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
             aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
             sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
+            solana: build_fanout(
+                config.solana.as_ref(),
+                with_http_client(SolanaInspector::new),
+            )?,
+            fogo: build_fanout(config.fogo.as_ref(), with_http_client(FogoInspector::new))?,
         })
+    }
+}
+
+/// The chain markers cannot check which *config* feeds `build` — a
+/// `config.solana`/`config.fogo` swap still type-checks — so these tests pin it.
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use std::num::NonZeroU64;
+
+    fn chain_config() -> ForeignChainConfig {
+        ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(30).unwrap(),
+            max_retries: NonZeroU64::new(3).unwrap(),
+            expected_network_fingerprint: None,
+            providers: NonEmptyBTreeMap::new(
+                "public".to_string().into(),
+                ForeignChainProviderConfig {
+                    rpc_url: "https://rpc.example.com".to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        }
+    }
+
+    #[test]
+    fn build__should_wire_the_solana_config_to_the_solana_slot_only() {
+        // Given
+        let config = ForeignChainsConfig {
+            solana: Some(chain_config()),
+            ..Default::default()
+        };
+
+        // When
+        let inspectors = ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        assert!(inspectors.solana.is_some());
+        assert!(inspectors.fogo.is_none());
+    }
+
+    #[test]
+    fn build__should_wire_the_fogo_config_to_the_fogo_slot_only() {
+        // Given
+        let config = ForeignChainsConfig {
+            fogo: Some(chain_config()),
+            ..Default::default()
+        };
+
+        // When
+        let inspectors = ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        assert!(inspectors.fogo.is_some());
+        assert!(inspectors.solana.is_none());
     }
 }
 

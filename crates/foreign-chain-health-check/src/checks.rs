@@ -24,7 +24,9 @@ use foreign_chain_inspector::{
         SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
+    svm::inspector::{SvmChain, SvmInspector},
 };
+use foreign_chain_inspector::{NetworkFingerprint, NetworkFingerprintInspector};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use http::{HeaderName, HeaderValue};
@@ -210,6 +212,30 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
     }
 }
 
+/// SVM providers prune historical transactions, so there is no long-lived
+/// reference transaction to pin extracted values against. The check verifies the
+/// provider's chain identity instead: the genesis hash never changes.
+pub async fn check_svm<Chain>(client: HttpClient, expected_genesis_hash: &str) -> anyhow::Result<()>
+where
+    Chain: SvmChain + Send + Sync,
+{
+    let expected: NetworkFingerprint =
+        SvmInspector::<HttpClient, Chain>::canonical_fingerprint(expected_genesis_hash);
+    let inspector = SvmInspector::<HttpClient, Chain>::new(client);
+    let got = inspector
+        .network_fingerprint()
+        .await
+        .context("failed to fetch the genesis hash")?;
+    if got != expected {
+        return Err(Mismatch::ChainId {
+            expected: expected.to_string(),
+            got: got.to_string(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 pub async fn check_aptos(
     url: String,
     auth_header: Option<(HeaderName, HeaderValue)>,
@@ -254,6 +280,7 @@ mod tests {
     use crate::golden;
     use crate::network::Network;
     use assert_matches::assert_matches;
+    use foreign_chain_inspector::svm::inspector::Solana;
     use httpmock::prelude::*;
 
     fn golden_aptos_body(tx: &str, type_tag: &str, sequence_number: u64) -> serde_json::Value {
@@ -354,6 +381,60 @@ mod tests {
                     ]),
             ))
         }
+    }
+
+    /// A `getGenesisHash` responder: the method answers a bare base58 string.
+    async fn mock_genesis_hash<'a>(
+        server: &'a MockServer,
+        genesis_hash: &str,
+    ) -> httpmock::Mock<'a> {
+        let body = serde_json::json!({"jsonrpc": "2.0", "result": genesis_hash, "id": 0});
+        server
+            .mock_async(|when, then| {
+                when.method(POST);
+                then.status(200).json_body(body);
+            })
+            .await
+    }
+
+    fn client_for(server: &MockServer) -> foreign_chain_inspector::http_client::HttpClient {
+        foreign_chain_inspector::build_http_client(
+            server.base_url(),
+            foreign_chain_inspector::RpcAuthentication::KeyInUrl,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn check_svm__should_pass_when_provider_is_on_the_expected_network() {
+        // Given
+        let solana = golden::golden_set(Network::Mainnet).solana.unwrap();
+        let server = MockServer::start_async().await;
+        mock_genesis_hash(&server, solana.genesis_hash).await;
+
+        // When
+        let result = check_svm::<Solana>(client_for(&server), solana.genesis_hash).await;
+
+        // Then
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_svm__should_fail_when_genesis_hash_differs() {
+        // Given — a provider on Solana devnet against a mainnet expectation.
+        let expected = golden::golden_set(Network::Mainnet).solana.unwrap();
+        let devnet = golden::golden_set(Network::Testnet).solana.unwrap();
+        let server = MockServer::start_async().await;
+        mock_genesis_hash(&server, devnet.genesis_hash).await;
+
+        // When
+        let result = check_svm::<Solana>(client_for(&server), expected.genesis_hash).await;
+
+        // Then
+        assert_matches!(
+            result.unwrap_err().downcast_ref::<Mismatch>(),
+            Some(Mismatch::ChainId { .. })
+        );
     }
 
     #[tokio::test]

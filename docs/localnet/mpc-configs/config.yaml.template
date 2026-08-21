@@ -78,3 +78,14 @@ foreign_chains:
         rpc_url: "https://archive.mainnet.sui.io"
         auth:
           kind: none
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    # Genesis hash, as `getGenesisHash` returns it. Devnet:
+    # "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG".
+    expected_network_fingerprint: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+    providers:
+      public:
+        rpc_url: "https://api.mainnet-beta.solana.com"
+        auth:
+          kind: none

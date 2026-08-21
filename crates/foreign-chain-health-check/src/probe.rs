@@ -16,6 +16,7 @@ use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::svm::inspector::{FogoInspector, SolanaInspector};
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
 };
@@ -134,8 +135,20 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe Sui, Solana and Fogo. Ethereum and Ton have no inspector,
-                // so there is nothing to probe them with.
+                ForeignChain::Solana => {
+                    probe_chain(chain, chain_config, |provider| {
+                        Ok(SolanaInspector::new(prepare_jsonrpc(provider)?))
+                    })
+                    .await
+                }
+                ForeignChain::Fogo => {
+                    probe_chain(chain, chain_config, |provider| {
+                        Ok(FogoInspector::new(prepare_jsonrpc(provider)?))
+                    })
+                    .await
+                }
+                // TODO(#4003): probe Sui. Ethereum and Ton have no inspector, so there is
+                // nothing to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -251,6 +264,8 @@ fn classify(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::golden;
+    use crate::network::Network;
     use assert_matches::assert_matches;
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -374,9 +389,9 @@ mod tests {
         }
     }
 
-    fn solana_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
         ForeignChainsConfig {
-            solana: Some(config),
+            sui: Some(config),
             ..Default::default()
         }
     }
@@ -402,6 +417,8 @@ mod tests {
             ForeignChain::Bnb => &mut chains.bnb,
             ForeignChain::HyperEvm => &mut chains.hyper_evm,
             ForeignChain::Polygon => &mut chains.polygon,
+            ForeignChain::Solana => &mut chains.solana,
+            ForeignChain::Fogo => &mut chains.fogo,
             other => panic!("no config slot wired for `{other:?}`"),
         };
         *slot = Some(config);
@@ -771,7 +788,7 @@ mod tests {
     async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
      {
         // Given
-        let config = solana_only(chain_config(
+        let config = sui_only(chain_config(
             Some(ANY_FINGERPRINT),
             one_provider("publicnode", CLOSED_PORT_URL),
         ));
@@ -781,7 +798,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Solana, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
     }
@@ -796,7 +813,7 @@ mod tests {
                 Some(MAINNET),
                 one_provider("publicnode", &server.base_url()),
             )),
-            solana: Some(chain_config(
+            sui: Some(chain_config(
                 Some(ANY_FINGERPRINT),
                 one_provider("publicnode", CLOSED_PORT_URL),
             )),
@@ -812,7 +829,7 @@ mod tests {
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Solana, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
         assert_eq!(report.counts_per_chain().len(), 2);
@@ -849,6 +866,76 @@ mod tests {
                 "{chain:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_every_svm_chain_on_its_expected_network_as_healthy()
+    {
+        // Given — each chain answers its own genesis hash, so a cross-wired arm would
+        // compare Solana's against Fogo's.
+        let golden = golden::golden_set(Network::Mainnet);
+        let expected = [
+            (ForeignChain::Solana, golden.solana.unwrap().genesis_hash),
+            (ForeignChain::Fogo, golden.fogo.unwrap().genesis_hash),
+        ];
+        let mut servers = Vec::new();
+        let mut config = ForeignChainsConfig::default();
+        for (chain, genesis_hash) in expected {
+            let server = httpmock::MockServer::start_async().await;
+            mock_fingerprint(&server, genesis_hash).await;
+            must_put_chain(
+                &mut config,
+                chain,
+                chain_config(
+                    Some(genesis_hash),
+                    one_provider("publicnode", &server.base_url()),
+                ),
+            );
+            servers.push(server);
+        }
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        for (chain, _) in expected {
+            assert_eq!(
+                must_status_of(&report, chain, "publicnode"),
+                ProviderStatus::Healthy,
+                "{chain:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_svm_provider_on_another_network_as_wrong_network()
+     {
+        // Given — a provider on Solana devnet against a mainnet expectation.
+        let mainnet = golden::golden_set(Network::Mainnet).solana.unwrap();
+        let devnet = golden::golden_set(Network::Testnet).solana.unwrap();
+        let server = httpmock::MockServer::start_async().await;
+        mock_fingerprint(&server, devnet.genesis_hash).await;
+        let mut config = ForeignChainsConfig::default();
+        must_put_chain(
+            &mut config,
+            ForeignChain::Solana,
+            chain_config(
+                Some(mainnet.genesis_hash),
+                one_provider("publicnode", &server.base_url()),
+            ),
+        );
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Solana, "publicnode"),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new(mainnet.genesis_hash),
+                observed: NetworkFingerprint::new(devnet.genesis_hash),
+            }
+        );
     }
 
     #[tokio::test]
