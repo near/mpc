@@ -10,7 +10,7 @@
 //!   `resolve_yields_for` drains the full queue on a response, and
 //!   `pop_oldest_pending_yield` removes the head entry on a timeout.
 //!
-//! Callers in `lib.rs` go through these helpers rather than touching the maps
+//! Callers in [`crate::api`] go through these helpers rather than touching the maps
 //! directly, so the queue policy lives in one place.
 
 use borsh::{BorshDeserialize, BorshSerialize};

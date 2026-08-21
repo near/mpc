@@ -4,6 +4,7 @@ pub mod attestation;
 pub mod authorization;
 pub mod ckd;
 pub mod common;
+pub mod foreign_chain;
 pub mod governance;
 pub mod key_events;
 pub mod keys;
