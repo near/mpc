@@ -8,31 +8,33 @@ use crate::event_subscriber::{
     subscriber::{BlockEventSubscription, BlockEventSubscriptions},
 };
 
-pub(super) struct StreamerConfig {
+#[derive(Clone)]
+pub(crate) struct StreamerConfig {
     pub(super) block_events: BlockEvents,
     pub(super) buffer_size: usize,
 }
 
 // helper struct for efficient access
+#[derive(Clone)]
 pub(super) struct BlockEvents {
     pub(super) receipt_executor_events: ReceiptExecutorEventIdsByContractIds,
     pub(super) receipt_receiver_events: ReceiptReceiverEventIdsByContractIds,
 }
 
-#[derive(Default, Deref, DerefMut)]
+#[derive(Default, Clone, Deref, DerefMut)]
 pub(super) struct ReceiptReceiverEventIdsByContractIds(
     BTreeMap<AccountId, ReceiptReceiverEventIdsByMethodNames>,
 );
 
-#[derive(Default, Deref, DerefMut)]
+#[derive(Default, Clone, Deref, DerefMut)]
 pub(super) struct ReceiptReceiverEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
-#[derive(Default, Deref, DerefMut)]
+#[derive(Default, Clone, Deref, DerefMut)]
 pub(super) struct ReceiptExecutorEventIdsByContractIds(
     BTreeMap<AccountId, ReceiptExecutorEventIdsByMethodNames>,
 );
 
-#[derive(Default, Deref, DerefMut)]
+#[derive(Default, Clone, Deref, DerefMut)]
 pub(super) struct ReceiptExecutorEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
 impl From<BlockEventSubscriptions> for StreamerConfig {
