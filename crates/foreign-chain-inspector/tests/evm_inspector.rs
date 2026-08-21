@@ -720,6 +720,11 @@ evm_inspector_tests!(
     foreign_chain_inspector::polygon::inspector::Polygon,
     polygon
 );
+evm_inspector_tests!(
+    foreign_chain_inspector::avalanche::inspector::Avalanche,
+    avalanche
+);
+evm_inspector_tests!(foreign_chain_inspector::adi::inspector::Adi, adi);
 
 // Base mainnet, standing in for every EVM chain: the fingerprint call has no chain-specific parts.
 const CHAIN_ID_8453: &str = "0x2105";

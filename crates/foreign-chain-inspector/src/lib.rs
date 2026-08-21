@@ -16,8 +16,10 @@ use thiserror::Error;
 pub use jsonrpsee::http_client;
 
 pub mod abstract_chain;
+pub mod adi;
 pub mod aptos;
 pub mod arbitrum;
+pub mod avalanche;
 pub mod base;
 pub mod bitcoin;
 pub mod bnb;
@@ -468,6 +470,24 @@ fn is_retryable_status(status_code: u16) -> bool {
     const SERVER_ERROR: u16 = 500;
 
     matches!(status_code, REQUEST_TIMEOUT | TOO_MANY_REQUESTS) || status_code >= SERVER_ERROR
+}
+
+/// A provider returning "not found" status on a path/method could have different meanings,
+/// depending on which method was called.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AbsenceMeaning {
+    TransactionIsAbsent,
+    ApiIsNotServed,
+}
+
+pub(crate) trait HasAbsenceMeaning {
+    const ABSENCE: AbsenceMeaning;
+}
+
+pub(crate) trait ClassifyRpcOutcome {
+    type Response: HasAbsenceMeaning;
+
+    fn classified(self) -> Result<Self::Response, ForeignChainInspectionError>;
 }
 
 /// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
