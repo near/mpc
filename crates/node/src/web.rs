@@ -303,16 +303,36 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
     }
 }
 
+/// Reads the node's network public key (PeerId) out of
+/// `node_key.json` under `home_dir`
+fn read_nearcore_network_public_key(home_dir: &std::path::Path) -> Option<String> {
+    let path = crate::home_paths::near_node_key_file(home_dir);
+    match near_crypto::KeyFile::from_file(&path) {
+        Ok(key_file) => Some(key_file.public_key.to_string()),
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                path = %path.display(),
+                "failed to read node_key.json"
+            );
+            None
+        }
+    }
+}
+
 pub fn static_web_data(
+    home_dir: &std::path::Path,
     value: &SecretsConfig,
     tee_participant_info: Option<Attestation>,
 ) -> StaticWebData {
     let public_keys = get_public_keys(value);
+    let nearcore_network_public_key = read_nearcore_network_public_key(home_dir);
 
     StaticWebData {
         near_signer_public_key: public_keys.near_signer_public_key,
         near_p2p_public_key: public_keys.near_p2p_public_key,
         near_responder_public_keys: public_keys.near_responder_public_keys,
+        nearcore_network_public_key,
         tee_participant_info,
     }
 }
