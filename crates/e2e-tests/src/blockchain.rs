@@ -178,16 +178,6 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
 
-    /// Typed read access to the MPC contract, the read-side counterpart of
-    /// [`CallMpc::call_mpc`](crate::caller::CallMpc::call_mpc). Views need no
-    /// signer, so the handle borrows the contract itself as its viewer.
-    pub fn view_mpc(&self) -> MpcContractHandle<&Self> {
-        MpcContractHandle::new(self, self.contract_id.clone())
-    }
-
-    /// Untyped escape hatch, kept for reads that must tolerate a contract binary
-    /// whose response does not deserialize into the current DTO. Prefer
-    /// [`Self::view_mpc`].
     pub async fn view<T: DeserializeOwned + Send + 'static>(
         &self,
         method: &str,
@@ -196,6 +186,10 @@ impl DeployedContract {
             .view::<T>(&self.contract_id, method)
             .await
             .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
+    }
+
+    pub fn view_mpc(&self) -> MpcContractHandle<&Self> {
+        MpcContractHandle::new(self, self.contract_id.clone())
     }
 
     /// SHA-256 hash of the contract code currently deployed at this account.
