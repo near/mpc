@@ -227,15 +227,6 @@ impl MpcClusterConfig {
                 self.num_nodes,
             );
         }
-        // Startup indexes the key vectors by participant index, so an out-of-range
-        // entry here would otherwise surface as a panic mid-startup.
-        for (i, &participant_idx) in self.initial_participant_indices.iter().enumerate() {
-            anyhow::ensure!(
-                participant_idx < self.num_nodes,
-                "initial_participant_indices[{i}]: index {participant_idx} must be < num_nodes ({})",
-                self.num_nodes,
-            );
-        }
         Ok(())
     }
 }
