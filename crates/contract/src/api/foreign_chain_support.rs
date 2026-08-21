@@ -110,6 +110,9 @@ impl MpcContract {
             .update_available_chains_config_cache(&active_tls_keys, reconstruction_threshold);
     }
 
+    #[deprecated(
+        note = "https://github.com/near/mpc/issues/3079. Node will be upgraded to use register_foreign_chain_support instead"
+    )]
     #[handle_result]
     pub fn register_foreign_chain_config(
         &mut self,
