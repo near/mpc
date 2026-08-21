@@ -34,6 +34,10 @@ abi = ["borsh/unstable__schema", "tee-verifier-interface/borsh-schema"]
 # Enables `near_sdk::testing_env!` for tests; the workspace `near-sdk`
 # dependency no longer turns on `unit-testing` by default.
 test-utils = ["near-sdk/unit-testing"]
+# Lets sandbox tests pin the timestamp quotes are verified against, so the
+# fixture collateral verifies regardless of the wall clock. No release path
+# enables it.
+sandbox-test-hooks = []
 
 [dependencies]
 borsh = { workspace = true }

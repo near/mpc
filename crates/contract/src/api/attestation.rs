@@ -593,12 +593,8 @@ mod tests {
             &mut contract.tee_state,
             image_digest(),
             launcher_image_hash(),
+            Some(launcher_compose_digest()),
         );
-        // The fixture's launcher compose carries the key-export service, so its hash is not derivable.
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .allow_compose_hash(&launcher_image_hash(), launcher_compose_digest());
 
         // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
         contract

@@ -1,28 +1,28 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
 use near_kit::{AccountId, ExecutedOptimistic};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::CKDRequestArgs;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
     types::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
-        CKDAppPublicKey, ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId,
-        DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, GovernanceThreshold,
-        GovernanceThresholdParameters, MockAttestation, ParticipantId, ParticipantInfo,
-        Participants, Payload, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol,
-        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
-        SignRequestArgs,
+        CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
+        GovernanceThreshold, GovernanceThresholdParameters, MockAttestation, ParticipantId,
+        ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
     },
 };
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::{SeedableRng, rngs::StdRng};
 use serde_json::json;
 
 use crate::NearKitCaller;
@@ -73,6 +73,7 @@ const KEY_SEED_P2P: u64 = 100;
 const KEY_SEED_OPERATOR: u64 = 200;
 const KEY_SEED_MIGRATION_P2P: u64 = 300;
 const KEY_SEED_MIGRATION_NEAR_SIGNER: u64 = 400;
+const KEY_SEED_TEE_VERIFIER: u64 = 500;
 
 /// Configuration for creating a new [`MpcCluster`].
 pub struct MpcClusterConfig {
@@ -86,6 +87,8 @@ pub struct MpcClusterConfig {
     pub binary_paths: Vec<PathBuf>,
     /// Compiled contract WASM bytes (pre-compiled by the test).
     pub contract_wasm: Vec<u8>,
+    /// Compiled tee-verifier WASM bytes (pre-compiled by the test).
+    pub tee_verifier_wasm: Vec<u8>,
     /// Port seed for the port allocator (must be unique across parallel tests).
     pub port_seed: u16,
     /// Triple buffer size per node.
@@ -172,7 +175,11 @@ impl MpcClusterConfig {
     /// - 3 nodes, 2-of-3 threshold
     /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
     /// - 10 triples, 10 presignatures per node
-    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self {
+    pub fn default_for_test(
+        port_seed: u16,
+        contract_wasm: Vec<u8>,
+        tee_verifier_wasm: Vec<u8>,
+    ) -> Self {
         Self {
             num_nodes: 3,
             threshold: 2,
@@ -198,6 +205,7 @@ impl MpcClusterConfig {
             ],
             binary_paths: vec![default_mpc_binary_path()],
             contract_wasm,
+            tee_verifier_wasm,
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
@@ -324,6 +332,15 @@ impl MpcCluster {
                 participant_indices: participant_indices.clone(),
                 init_format: config.init_format,
             },
+        )
+        .await?;
+
+        deploy_and_trust_tee_verifier(
+            &blockchain,
+            &contract,
+            &config.tee_verifier_wasm,
+            &operator_keys,
+            &participant_indices,
         )
         .await?;
 
@@ -1367,6 +1384,47 @@ async fn init_contract(
     .await
     .map(|_| ())
     .context("contract did not reach Running state after init")
+}
+
+/// Deploys the tee-verifier and votes it in from every participant. Nodes submit mock
+/// attestations, which the contract verifies without calling the verifier; the cross-contract
+/// flow is covered by the mpc-contract sandbox tests.
+async fn deploy_and_trust_tee_verifier(
+    blockchain: &NearBlockchain,
+    contract: &DeployedContract,
+    verifier_wasm: &[u8],
+    operator_keys: &[SigningKey],
+    participant_indices: &[usize],
+) -> anyhow::Result<()> {
+    let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
+    let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
+    tracing::info!(account = %verifier_account, "deploying tee-verifier contract");
+    // The verifier is stateless, so there is no initializer to call on deploy.
+    blockchain
+        .create_account_and_deploy(&verifier_account, 100, &verifier_key, verifier_wasm)
+        .await?;
+
+    // expected_code_hash commits every voter to the same audited WASM; the
+    // contract only compares voters' hashes against each other, not against
+    // the deployed bytes.
+    let expected_code_hash =
+        TeeVerifierCodeHash::new(*near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
+    let candidate: ContractAccountId = verifier_account.parse()?;
+    for &i in participant_indices {
+        let account = node_account(i);
+        let client = blockchain.client_for(&account, &operator_keys[i])?;
+        let outcome = client
+            .call_mpc(contract.account_id())
+            .vote_tee_verifier_change(candidate.clone(), expected_code_hash)
+            .await
+            .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "node {i}'s tee-verifier vote failed: {:?}",
+            outcome.failure_message()
+        );
+    }
+    Ok(())
 }
 
 async fn add_initial_domains(

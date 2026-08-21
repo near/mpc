@@ -32,9 +32,9 @@ pub struct TeeVerifier {}
 impl TeeVerifier {
     /// Verify a TDX quote against Intel collateral.
     ///
-    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp
-    /// and returns `VerificationResult::Verified(report)` on success. The
-    /// caller is responsible for any post-DCAP policy (RTMR3 replay,
+    /// Calls [`dcap_qvl::verify::verify`] with the current block timestamp and
+    /// returns [`VerificationResult::Verified`] with the report on success.
+    /// The caller is responsible for any post-DCAP policy (RTMR3 replay,
     /// report-data binding, measurement allowlist matching, etc.).
     ///
     /// A rejected quote returns [`VerificationResult::Rejected`] as the
@@ -51,7 +51,7 @@ impl TeeVerifier {
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
     ) -> VerificationResult {
-        let now_seconds = env::block_timestamp_ms() / 1000;
+        let now_seconds = now_seconds();
         let quote_bytes: Vec<u8> = quote.into_dcap_type();
         let collateral = collateral.into_dcap_type();
         match dcap_qvl::verify::verify(&quote_bytes, &collateral, now_seconds) {
@@ -60,5 +60,16 @@ impl TeeVerifier {
                 VerificationResult::Rejected(VerifierError::DcapVerification(err.to_string()))
             }
         }
+    }
+}
+
+/// The timestamp quotes are verified against: block time, except in test builds,
+/// which pin [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS`] to keep
+/// the checked-in collateral fixture inside its validity window.
+fn now_seconds() -> u64 {
+    if cfg!(feature = "sandbox-test-hooks") {
+        tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS
+    } else {
+        env::block_timestamp_ms() / 1000
     }
 }

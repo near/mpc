@@ -111,8 +111,8 @@ contract interaction, account creation, and WASM deployment goes through it.
 pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
-    pub fn new(rpc_url: &str, root_account: &str, root_secret: near_kit::SecretKey)
-        -> anyhow::Result<Self>;
+    pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
+        root_secret: near_kit::SecretKey) -> anyhow::Result<Self>;
     pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
@@ -184,12 +184,16 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 8. Call `init()` on the contract with the initial participants.
 9. Call `submit_participant_info` for each initial participant (with a
    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
-10. Spawn the `mpc-node` binaries (start *before* adding domains so key
+10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
+    every participant, for topology parity with production. Mock attestations
+    are verified without calling it, so the verifier stays idle; the
+    cross-contract flow is covered by the mpc-contract sandbox tests.
+11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
-11. Sleep briefly and assert no node exited early.
-12. If `config.domains` is non-empty, vote `add_domains` from each participant
+12. Sleep briefly and assert no node exited early.
+13. If `config.domains` is non-empty, vote `add_domains` from each participant
     and wait for `Running` state.
-13. Create user accounts for signing/CKD/verify requests.
+14. Create user accounts for signing/CKD/verify requests.
 
 The returned cluster exposes:
 
@@ -198,7 +202,7 @@ The returned cluster exposes:
 - **Contract state:** `get_contract_state`, `wait_for_state`,
   `wait_for_node_healthy`, `get_tee_accounts`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
-  `vote_cancel_resharing_from`, `add_domains`.
+  `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
@@ -233,7 +237,7 @@ pub struct MpcClusterConfig {
 
 pub struct ForeignChainsClusterConfig {
     pub node_configs: Vec<ForeignChainsConfig>, // per-node; empty = default for all
-    pub whitelisted_chains: BTreeSet<ForeignChain>, // voted in during setup
+    pub whitelist: BTreeMap<ForeignChain, ChainEntry>, // voted in during setup
 }
 
 impl MpcClusterConfig {
@@ -343,12 +347,13 @@ so any nextest filter or flag works (substring filters, `-E` expressions,
 runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
 forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
-The task runner builds three things before tests run: the mpc-node binary
-with the `network-hardship-simulation` feature, the MPC contract WASM, and
-the test parallel contract WASM. Paths are passed to tests via the
-`MPC_CONTRACT_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment variables
-read by `must_load_contract_wasm` / `must_load_parallel_contract_wasm` in
-`tests/common.rs`; if the env var is unset and no pre-built WASM is found,
+The task runner builds five things before tests run: the mpc-node binary with
+the `network-hardship-simulation` feature, the MPC contract WASM, the
+tee-verifier WASM, the test parallel contract WASM, and the backup CLI. WASM
+paths are passed to tests via the `MPC_CONTRACT_WASM`,
+`MPC_TEE_VERIFIER_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment
+variables, read by the `must_load_*` helpers in `tests/common.rs` and
+`src/cluster.rs`; if the env var is unset and no pre-built WASM is found,
 `test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
 local iteration).
 

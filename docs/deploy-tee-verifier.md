@@ -66,7 +66,7 @@ near account create-account sponsor-by-faucet-service "$VERIFIER_ACCOUNT" autoge
 
 On `mainnet` there is no faucet; create and fund the account from an existing one. The
 balance only needs to cover storage staking for the deployed WASM (about 1 NEAR per
-100 KB); 5 NEAR comfortably covers the ~360 KB verifier:
+100 KB); 5 NEAR covers the ~430 KB verifier:
 
 ```shell
 near account create-account fund-myself "$VERIFIER_ACCOUNT" '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as <funding-account> network-config "$NETWORK" sign-with-keychain send
@@ -85,7 +85,7 @@ near contract deploy "$VERIFIER_ACCOUNT" use-file target/near/tee_verifier/tee_v
 
 ## 4. Audit the deployed account (before locking)
 
-`mpc-contract` cannot check either of the verifier requirements itself, so each
+`mpc-contract` cannot check the verifier requirements itself, so each
 operator audits them off-chain. Confirm the deployed bytes match `H_source`:
 
 ```shell
@@ -102,11 +102,24 @@ its full-access key:
 near account list-keys "$VERIFIER_ACCOUNT" network-config "$NETWORK" now
 ```
 
+The verifier holds no state of its own, so its storage must be empty. Deploying does not
+clear storage, so anything written before this point survives every later deploy and
+outlives the lock:
+
+```shell
+near contract view-storage "$VERIFIER_ACCOUNT" all as-text network-config "$NETWORK" now
+```
+
+Any key listed here is a failed audit: the other checks look only at code and access
+keys, so unexpected state means something unexpected reached the account.
+
 Optionally confirm the contract executes by calling `verify_quote` read-only with the
 committed fixture. Either outcome proves the DCAP path runs: a verified report while
 the fixture's collateral is inside its validity window, or `TCBInfo expired` once the
-live clock passes it. Tests pin the verification clock instead of relying on that
-window (`crates/tee-verifier/tests/verify_quote.rs`):
+live clock passes it. A verified report after that point is a failed audit: the
+contract is not reading block time. Tests pin the verification clock instead of relying
+on that window (`crates/tee-verifier/tests/verify_quote.rs` and, cross-contract, the
+sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`):
 
 ```shell
 near contract call-function as-read-only "$VERIFIER_ACCOUNT" verify_quote file-args crates/tee-verifier/tests/fixtures/verify_quote_args.borsh network-config "$NETWORK" now
@@ -123,23 +136,27 @@ cannot be controlled again. Delete the key from
 near account delete-keys "$VERIFIER_ACCOUNT" public-keys <full-access-public-key> network-config "$NETWORK" sign-with-keychain send
 ```
 
-Confirm the account is now locked (no keys listed) and the code is unchanged:
+Confirm the account is now locked (no keys listed), the code is unchanged, and storage
+is still empty:
 
 ```shell
 near account list-keys "$VERIFIER_ACCOUNT" network-config "$NETWORK" now
 near contract download-wasm regular "$VERIFIER_ACCOUNT" save-to-file /tmp/onchain_verifier_locked.wasm network-config "$NETWORK" now
 sha256sum /tmp/onchain_verifier_locked.wasm
+near contract view-storage "$VERIFIER_ACCOUNT" all as-text network-config "$NETWORK" now
 ```
 
 ## 6. Vote the verifier in (participants)
 
 Publish `$VERIFIER_ACCOUNT` and `H_source` so every operator can independently audit the
-account before voting. Each operator confirms both verifier requirements:
+account before voting. Each operator confirms every verifier requirement:
 
 - the deployed code hash matches `H_source` (`near contract download-wasm regular
-  "$VERIFIER_ACCOUNT" ...` then `sha256sum`, as in [step 4](#4-audit-the-deployed-account-before-locking)); and
+  "$VERIFIER_ACCOUNT" ...` then `sha256sum`, as in [step 4](#4-audit-the-deployed-account-before-locking));
 - the account is locked — `near account list-keys "$VERIFIER_ACCOUNT" network-config
-  "$NETWORK" now` returns no keys, so the code can never be replaced.
+  "$NETWORK" now` returns no keys, so the code can never be replaced; and
+- the account's storage is empty — `near contract view-storage "$VERIFIER_ACCOUNT" all
+  as-text network-config "$NETWORK" now` lists no keys.
 
 Each participant then votes for the same `(candidate_account_id, expected_code_hash)`
 pair. Voters who submit different hashes land in different buckets and never combine, so

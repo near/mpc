@@ -3,11 +3,13 @@
 //! This module provides helper functions and types for testing TEE state,
 //! attestation behavior, and general contract state management.
 
+use crate::MpcContract;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
 use crate::tee::{measurements::ContractExpectedMeasurements, tee_state::TeeState};
 use mpc_attestation::attestation::default_measurements;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_account_id::AccountId;
+use near_sdk::borsh::{self, BorshDeserialize};
 use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, testing_env};
 use rand::Rng;
 use std::time::Duration;
@@ -104,14 +106,33 @@ pub fn set_block_timestamp(timestamp_nanos: u64) {
     );
 }
 
+/// The compose hash bypasses voting because the attestation fixture's hash is not
+/// derivable from the compiled-in template, so no vote can allow it.
 pub fn whitelist_dstack_measurements(
     tee_state: &mut TeeState,
     image: NodeImageHash,
     launcher: LauncherImageHash,
+    compose_hash: Option<LauncherDockerComposeHash>,
 ) {
     tee_state.whitelist_tee_proposal(image, Duration::MAX);
     tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
     for &measurements in default_measurements() {
         tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
     }
+    if let Some(compose_hash) = compose_hash {
+        tee_state
+            .allowed_launcher_images
+            .allow_compose_hash(&launcher, compose_hash);
+    }
+}
+
+pub fn whitelist_dstack_in_state(
+    state: &[u8],
+    image: NodeImageHash,
+    launcher: LauncherImageHash,
+    compose_hash: Option<LauncherDockerComposeHash>,
+) -> Vec<u8> {
+    let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
+    whitelist_dstack_measurements(&mut contract.tee_state, image, launcher, compose_hash);
+    borsh::to_vec(&contract).expect("STATE serializes")
 }
