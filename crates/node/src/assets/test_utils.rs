@@ -128,7 +128,7 @@ impl TestContext {
         alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         Self {
             db,
             clock: FakeClock::default(),
@@ -165,29 +165,29 @@ impl TestContext {
     pub fn populate(&self, participants: &[ParticipantId]) {
         // Mirror cleanup's view of triples: per-`t` TripleV2 column.
         let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
-        let id = store.generate_and_reserve_id();
-        store.add_owned(id, make_triple(participants));
+        let id = store.generate_and_reserve_id().unwrap();
+        store.add_owned(id, make_triple(participants)).unwrap();
 
         for &d in &self.presign_domain_ids {
             let store = self.new_store::<PresignOutputWithParticipants>(
                 DBCol::Presignature,
                 d.0.to_be_bytes().to_vec(),
             );
-            let id = store.generate_and_reserve_id();
-            store.add_owned(id, make_presign(participants));
+            let id = store.generate_and_reserve_id().unwrap();
+            store.add_owned(id, make_presign(participants)).unwrap();
         }
     }
 
     pub fn assert_owned(&self, expected: usize) {
         let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
-        assert_eq!(store.num_owned(), expected);
+        assert_eq!(store.num_owned().unwrap(), expected);
 
         for &d in &self.presign_domain_ids {
             let store = self.new_store::<PresignOutputWithParticipants>(
                 DBCol::Presignature,
                 d.0.to_be_bytes().to_vec(),
             );
-            assert_eq!(store.num_owned(), expected);
+            assert_eq!(store.num_owned().unwrap(), expected);
         }
     }
 }

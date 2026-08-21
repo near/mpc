@@ -64,12 +64,12 @@ impl EcdsaSignatureProvider {
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
         loop {
-            progress_tracker.update_progress();
+            progress_tracker.update_progress().unwrap(); // Since return is !
             metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE
-                .set(presignature_store.num_owned_ready() as i64);
+                .set(presignature_store.num_owned_ready().unwrap() as i64); // Since return is !
             metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT
-                .set(presignature_store.num_owned_offline() as i64);
-            let my_presignatures_count: usize = presignature_store.num_owned();
+                .set(presignature_store.num_owned_offline().unwrap() as i64); // Since return is !
+            let my_presignatures_count: usize = presignature_store.num_owned().unwrap(); // Since return is !
             metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(my_presignatures_count as i64);
             let should_generate = my_presignatures_count + in_flight_generations.num_in_flight()
                 < config.desired_presignatures_to_buffer;
@@ -79,10 +79,11 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                 < config.concurrency * 2
             {
-                let id = presignature_store.generate_and_reserve_id();
-                progress_tracker.set_waiting_for_triples(true);
-                let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
-                progress_tracker.set_waiting_for_triples(false);
+                let id = presignature_store.generate_and_reserve_id().unwrap(); // Since return is !
+                progress_tracker.set_waiting_for_triples(true).unwrap(); // Since return is !
+                let (paired_triple_id, (triple0, triple1)) =
+                    triple_store.take_owned().await.unwrap(); // Since return is !
+                progress_tracker.set_waiting_for_triples(false).unwrap(); // Since return is !
                 let participants = participants_from_triples(&triple0, &triple1);
                 let task_id = EcdsaTaskId::Presignature {
                     id,
@@ -129,7 +130,7 @@ impl EcdsaSignatureProvider {
                                     presignature,
                                     participants,
                                 },
-                            );
+                            )?;
 
                             anyhow::Ok(())
                         }),
@@ -139,10 +140,10 @@ impl EcdsaSignatureProvider {
 
             // If the store is full, try to discard some presignatures which cannot be used right now
             if my_presignatures_count >= config.desired_presignatures_to_buffer {
-                presignature_store.maybe_discard_owned(1).await;
+                presignature_store.maybe_discard_owned(1).await.unwrap(); // Since return is !
             }
 
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
@@ -270,7 +271,7 @@ impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
                 presignature,
                 participants: channel.participants().to_vec(),
             },
-        );
+        )?;
         Ok(())
     }
 
@@ -287,16 +288,17 @@ struct PresignatureGenerationProgressTracker {
 }
 
 impl PresignatureGenerationProgressTracker {
-    pub fn set_waiting_for_triples(&self, waiting: bool) {
+    pub fn set_waiting_for_triples(&self, waiting: bool) -> anyhow::Result<()> {
         self.waiting_for_triples
             .store(waiting, std::sync::atomic::Ordering::Relaxed);
-        self.update_progress();
+        self.update_progress()?;
+        Ok(())
     }
 
-    pub fn update_progress(&self) {
+    pub fn update_progress(&self) -> anyhow::Result<()> {
         tracking::set_progress(&format!(
             "Presignatures: available: {}/{}; generating: {}{}",
-            self.presignature_store.num_owned(),
+            self.presignature_store.num_owned()?,
             self.desired_presignatures_to_buffer,
             self.in_flight_generations
                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -308,6 +310,7 @@ impl PresignatureGenerationProgressTracker {
             } else {
                 ""
             }
-        ))
+        ));
+        Ok(())
     }
 }
