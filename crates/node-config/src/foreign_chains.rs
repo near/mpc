@@ -40,6 +40,10 @@ pub struct ForeignChainsConfig {
     pub aptos: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sui: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avalanche: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adi: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -175,6 +179,8 @@ impl ForeignChainsConfig {
             (self.polygon.as_ref(), dtos::ForeignChain::Polygon),
             (self.aptos.as_ref(), dtos::ForeignChain::Aptos),
             (self.sui.as_ref(), dtos::ForeignChain::Sui),
+            (self.avalanche.as_ref(), dtos::ForeignChain::Avalanche),
+            (self.adi.as_ref(), dtos::ForeignChain::Adi),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))

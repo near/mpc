@@ -274,9 +274,12 @@ impl TeeState {
     }
 
     /// Evicts expired entries from the allowed docker-image and launcher-image sets, then
-    /// reverifies stored participant attestations, removing any that fail reverification
-    /// (e.g. the MPC image hash the attestation was tied to is no longer allowed, or a
-    /// certificate expired).
+    /// reverifies stored participant attestations, reporting whether all still pass or, if
+    /// not, which subset does (an attestation fails when e.g. its MPC image hash is no longer
+    /// allowed, or a certificate expired).
+    ///
+    /// The attestations themselves are not pruned here; reclaiming them is
+    /// [`Self::clean_invalid_attestations`]'s job.
     pub fn reverify_and_cleanup_participants(
         &mut self,
         participants: &Participants,
@@ -622,8 +625,8 @@ mod tests {
     use near_sdk::testing_env;
     use std::time::Duration;
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_image_hash,
-        mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
+        launcher_image_hash, mock_dstack_attestation_inner, p2p_tls_key, verified_report,
     };
 
     /// Helper to set up the testing environment with a specific signer
@@ -1599,6 +1602,10 @@ mod tests {
         let mut tee_state = TeeState::default();
         assert_eq!(tee_state.stored_attestations.len(), 0);
         whitelist_dstack_measurements(&mut tee_state, image_digest(), launcher_image_hash());
+        // The fixture's launcher compose carries the key-export service, so its hash is not derivable.
+        tee_state
+            .allowed_launcher_images
+            .allow_compose_hash(&launcher_image_hash(), launcher_compose_digest());
         let node_id = NodeId {
             account_id: "alice.near".parse().unwrap(),
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),

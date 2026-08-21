@@ -574,9 +574,11 @@ Not every chain has a fingerprint probe. The table lists the ones that do, with 
 | chain | probe |
 |---|---|
 | starknet | `starknet_chainId` |
-| base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` |
+| base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
+| bitcoin | `getblockhash` at height 0 |
+| aptos | the ledger info at the REST root |
 
-The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity.
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing.
 
 An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
 
@@ -713,6 +715,8 @@ checkpoint digest — hence the neutral name.
 | arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
 | polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
 | hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
+| avalanche | EIP-155 chain id, decimal | `"43114"` | `"43113"` (Fuji) |
+| adi | EIP-155 chain id, decimal | `"36900"` | `"99999"` (AB testnet) |
 | abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
 | starknet | chain id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
 | bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
@@ -735,8 +739,8 @@ The fingerprint is set per chain rather than once per deployment, so a config ca
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
 
-Only the chains with a fingerprint probe read the field at all — starknet and the EVM chains today,
-the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
+Only the chains with a fingerprint probe read the field at all — starknet, bitcoin, aptos and the
+EVM chains today, the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
 provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads as healthy
 on a dashboard. A chain with no probe yet reports `ProbeNotImplemented` whether the field is set or
 not.
