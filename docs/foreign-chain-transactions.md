@@ -39,7 +39,8 @@ Not all extractors can be satisfied by a single RPC method call.
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`, plus `eth_getBlockByNumber` for the finality-head and canonical-chain checks.
   * **BlockHash (Bitcoin)**: `getrawtransaction` (verbose) for the containing `blockhash` and confirmation count, then `getblockheader` + `getblockhash` for the canonical-chain defense-in-depth check.
   * **BlockHash (Starknet)**: `starknet_getTransactionReceipt` for `block_hash` + `finality_status`, then `starknet_getBlockWithTxHashes` for the canonical-chain defense-in-depth check.
-  * **SolanaProgramIdIndex / SolanaDataHash**: `getTransaction` to access `transaction.message` + `meta` and instruction data.
+  * **InnerInstruction (SVM)**: `getTransaction` for `meta.innerInstructions`, the account keys and the loaded lookup-table addresses, plus `getSlot` for the finality check when `Finalized` is requested.
+  * **AccountState (SVM)**: `getAccountInfo` for the account's owner and data, alongside the `getTransaction` gates above.
 * **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
 
 To keep behavior predictable and auditable, each extractor family must have a fixed, well-specified set of RPC methods it may invoke, with strict timeouts and response-size limits.
@@ -134,8 +135,9 @@ Omitting the field preserves the old unbound behavior.
 ```rust
 pub enum ForeignChainRpcRequest {
     Ethereum(EvmRpcRequest),
-    Solana(SolanaRpcRequest),
+    Solana(SvmRpcRequest),
     Bitcoin(BitcoinRpcRequest),
+    Fogo(SvmRpcRequest),
     // Future chains...
 }
 
@@ -145,10 +147,11 @@ pub struct EvmRpcRequest {
     pub finality: EvmFinality,
 }
 
-pub struct SolanaRpcRequest {
-    pub tx_id: SolanaTxId, // This is the payload we're signing
-    pub finality: SolanaFinality, // Optimistic or Final
-    pub extractors: Vec<SolanaExtractor>,
+// Shared by every SVM chain (Solana, Fogo), like EvmRpcRequest is shared by EVM chains.
+pub struct SvmRpcRequest {
+    pub tx_id: SvmTxId, // The 64-byte transaction signature
+    pub finality: SvmFinality,
+    pub extractors: Vec<SvmExtractor>,
 }
 
 pub struct BitcoinRpcRequest {
@@ -162,8 +165,9 @@ pub enum EvmFinality {
     Safe,
     Finalized,
 }
-pub enum SolanaFinality {
-    Processed,
+pub enum SvmFinality {
+    // `processed` is deliberately absent: getTransaction does not serve it. `Confirmed` is
+    // not rooted, so callers that need irreversibility ask for `Finalized`.
     Confirmed,
     Finalized,
 }
@@ -221,11 +225,11 @@ pub enum EthereumExtractor {
     BlockHash,
 }
 
-pub enum SolanaExtractor {
-    // Resolves instruction.programIdIndex to the actual program pubkey via account keys.
-    SolanaProgramIdIndex { ix_index: u32 },
-    // Hash of the instruction data bytes for ix_index.
-    SolanaDataHash { ix_index: u32 },
+pub enum SvmExtractor {
+    // One inner (CPI) instruction, with program id and account indices resolved to pubkeys.
+    InnerInstruction { instruction_index: u64, inner_instruction_index: u64 },
+    // Current owner and data of the account at `pubkey`.
+    AccountState { pubkey: SvmAddress },
 }
 
 pub enum BitcoinExtractor {
@@ -233,15 +237,32 @@ pub enum BitcoinExtractor {
 }
 ```
 
-#### Solana extractor details (context from RPC responses)
+#### SVM extractor details (context from RPC responses)
 
-Solana transaction RPC responses encode the instruction’s program as an index (`programIdIndex`) into the
-transaction’s account list. To make the value useful on-chain, `SolanaProgramIdIndex` **resolves the index**
-to the actual 32-byte program pubkey using the `accountKeys` / loaded addresses arrays from `getTransaction`.
-This avoids relying on caller-side mapping and keeps the extracted value self-contained.
+SVM transaction RPC responses encode an instruction's program and accounts as indices into the
+transaction's account list. To make the value useful on-chain, `InnerInstruction` **resolves the
+indices** to the actual 32-byte pubkeys using `accountKeys` followed by the addresses loaded from
+lookup tables (`meta.loadedAddresses.writable`, then `.readonly`), and base58-decodes the
+instruction data. `instruction_index` addresses the top-level instruction (the `index` field of a
+`meta.innerInstructions` entry); `inner_instruction_index` is the position within that entry's
+flattened inner-instruction list. The extracted value is
+`SvmInnerInstruction { program_id, accounts, data }`, self-contained and provider-independent.
 
-`SolanaDataHash` hashes the raw instruction data bytes for the requested `ix_index` so large instruction payloads
-never appear on-chain. The hash function is fixed by the extractor definition and is **sha256**.
+Message-level instructions are not addressable: the initial set covers CPI instructions only. It
+replaces the previously defined `SolanaProgramIdIndex` / `SolanaDataHash`, which no inspector ever
+implemented. `SvmExtractor` is `#[non_exhaustive]`, so a message-level variant can be added later.
+
+`AccountState` reads the account at `pubkey` via `getAccountInfo` at the request's commitment and
+extracts `SvmAccount { owner, data }`. The lamport balance is deliberately left out: anyone can
+credit any account with a bare transfer, so binding the balance in would let a third party
+permanently break verification of a chosen account for one lamport. SVM RPC has no historical
+account reads, so the
+value reflects the state at query time, which makes it the one extractor whose result is not a
+function of `(tx_id, finality, extractors)` alone. It therefore only suits accounts that no longer
+change. If an account does change, two failure modes follow and only the first is diagnosed: one
+node's own providers disagreeing is caught by the fan-out as a response mismatch, whereas two
+*nodes* observing different states is caught by nothing — they derive different payload hashes and
+the signing session dies, surfacing to the caller as a timeout.
 
 ## Domain Separation
 

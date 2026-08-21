@@ -175,7 +175,7 @@ pub struct VerifyForeignTransactionResponse {
 pub enum ForeignChainRpcRequest {
     Abstract(EvmRpcRequest),
     Ethereum(EvmRpcRequest),
-    Solana(SolanaRpcRequest),
+    Solana(SvmRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     Starknet(StarknetRpcRequest),
     Bnb(EvmRpcRequest),
@@ -188,6 +188,7 @@ pub enum ForeignChainRpcRequest {
     Sui(SuiRpcRequest),
     Avalanche(EvmRpcRequest),
     Adi(EvmRpcRequest),
+    Fogo(SvmRpcRequest),
 }
 
 impl ForeignChainRpcRequest {
@@ -208,6 +209,7 @@ impl ForeignChainRpcRequest {
             Self::Sui(_) => ForeignChain::Sui,
             Self::Avalanche(_) => ForeignChain::Avalanche,
             Self::Adi(_) => ForeignChain::Adi,
+            Self::Fogo(_) => ForeignChain::Fogo,
         }
     }
 }
@@ -252,10 +254,10 @@ pub struct EvmRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct SolanaRpcRequest {
-    pub tx_id: SolanaTxId,
-    pub finality: SolanaFinality,
-    pub extractors: Vec<SolanaExtractor>,
+pub struct SvmRpcRequest {
+    pub tx_id: SvmTxId,
+    pub finality: SvmFinality,
+    pub extractors: Vec<SvmExtractor>,
 }
 
 #[derive(
@@ -973,8 +975,7 @@ pub enum EvmFinality {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
-pub enum SolanaFinality {
-    Processed,
+pub enum SvmFinality {
     Confirmed,
     Finalized,
 }
@@ -1074,9 +1075,111 @@ pub struct EvmLog {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[non_exhaustive]
-pub enum SolanaExtractor {
-    SolanaProgramIdIndex { ix_index: u32 },
-    SolanaDataHash { ix_index: u32 },
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum SvmExtractor {
+    InnerInstruction {
+        instruction_index: u64,
+        inner_instruction_index: u64,
+    } = 1,
+    AccountState {
+        pubkey: SvmAddress,
+    } = 2,
+}
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SvmAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SvmInnerInstruction {
+    pub program_id: SvmAddress,
+    pub accounts: Vec<SvmAddress>,
+    #[serde_as(as = "Hex")]
+    pub data: Vec<u8>,
+}
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct SvmAccount {
+    pub owner: SvmAddress,
+    #[serde_as(as = "Hex")]
+    pub data: Vec<u8>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+#[non_exhaustive]
+pub enum SvmExtractedValue {
+    InnerInstruction(SvmInnerInstruction),
+    AccountState(SvmAccount),
 }
 
 #[derive(
@@ -1178,6 +1281,7 @@ pub enum ExtractedValue {
     TonExtractedValue(TonExtractedValue),
     AptosExtractedValue(AptosExtractedValue),
     SuiExtractedValue(SuiExtractedValue),
+    SvmExtractedValue(SvmExtractedValue),
 }
 
 #[derive(
@@ -1282,6 +1386,7 @@ pub enum ForeignChain {
     Sui,
     Avalanche,
     Adi,
+    Fogo,
 }
 
 #[derive(
@@ -1561,14 +1666,44 @@ pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct SolanaTxId(
+pub struct SvmTxId(
     #[cfg_attr(
         all(feature = "abi", not(target_arch = "wasm32")),
-        schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
+        schemars(with = "Hex64Schema")
     )]
     #[serde_as(as = "Hex")]
     pub [u8; 64],
 );
+
+/// Hex-string schema for a 64-byte array, which schemars has no
+/// [`JsonSchema`](schemars::JsonSchema) impl for. The `{64}` in the pattern restates the length of
+/// [`SvmTxId`]'s array and has to be kept in step with it by hand: overriding the schema also
+/// overrides the ABI snapshot's view of it, so nothing catches the two disagreeing.
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+struct Hex64Schema;
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Hex64Schema {
+    fn schema_name() -> String {
+        "Hex64".to_string()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            string: Some(Box::new(schemars::schema::StringValidation {
+                pattern: Some(r"^(?:[0-9A-Fa-f]{2}){64}$".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
 
 #[serde_as]
 #[derive(
@@ -1845,22 +1980,60 @@ mod tests {
     fn foreign_tx_sign_payload_v1_solana__should_have_consistent_hash() {
         // Given
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: ForeignChainRpcRequest::Solana(SolanaRpcRequest {
-                tx_id: SolanaTxId([0x11; 64]),
-                finality: SolanaFinality::Finalized,
+            request: ForeignChainRpcRequest::Solana(SvmRpcRequest {
+                tx_id: SvmTxId([0x11; 64]),
+                finality: SvmFinality::Finalized,
                 extractors: vec![
-                    SolanaExtractor::SolanaProgramIdIndex { ix_index: 0 },
-                    SolanaExtractor::SolanaDataHash { ix_index: 1 },
+                    SvmExtractor::InnerInstruction {
+                        instruction_index: 2,
+                        inner_instruction_index: 0,
+                    },
+                    SvmExtractor::AccountState {
+                        pubkey: SvmAddress([0x22; 32]),
+                    },
                 ],
             }),
             values: vec![
-                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(Hash256(
-                    [0x33; 32],
-                ))),
-                ExtractedValue::EvmExtractedValue(EvmExtractedValue::BlockHash(Hash256(
-                    [0x44; 32],
-                ))),
+                ExtractedValue::SvmExtractedValue(SvmExtractedValue::InnerInstruction(
+                    SvmInnerInstruction {
+                        program_id: SvmAddress([0x33; 32]),
+                        accounts: vec![SvmAddress([0x44; 32]), SvmAddress([0x55; 32])],
+                        data: vec![0xde, 0xad, 0xbe, 0xef],
+                    },
+                )),
+                ExtractedValue::SvmExtractedValue(SvmExtractedValue::AccountState(SvmAccount {
+                    owner: SvmAddress([0x66; 32]),
+                    data: vec![0xca, 0xfe],
+                })),
             ],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v1_fogo__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Fogo(SvmRpcRequest {
+                tx_id: SvmTxId([0x77; 64]),
+                finality: SvmFinality::Confirmed,
+                extractors: vec![SvmExtractor::InnerInstruction {
+                    instruction_index: 0,
+                    inner_instruction_index: 1,
+                }],
+            }),
+            values: vec![ExtractedValue::SvmExtractedValue(
+                SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+                    program_id: SvmAddress([0x88; 32]),
+                    accounts: vec![SvmAddress([0x99; 32])],
+                    data: vec![0x01, 0x02, 0x03],
+                }),
+            )],
         });
 
         // When
@@ -1930,9 +2103,9 @@ mod tests {
         ForeignChain::Ethereum,
     )]
     #[case::solana(
-        ForeignChainRpcRequest::Solana(SolanaRpcRequest {
-            tx_id: SolanaTxId([0; 64]),
-            finality: SolanaFinality::Finalized,
+        ForeignChainRpcRequest::Solana(SvmRpcRequest {
+            tx_id: SvmTxId([0; 64]),
+            finality: SvmFinality::Finalized,
             extractors: vec![],
         }),
         ForeignChain::Solana,
@@ -2036,6 +2209,14 @@ mod tests {
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Adi,
+    )]
+    #[case::fogo(
+        ForeignChainRpcRequest::Fogo(SvmRpcRequest {
+            tx_id: SvmTxId([0; 64]),
+            finality: SvmFinality::Finalized,
+            extractors: vec![],
+        }),
+        ForeignChain::Fogo,
     )]
     fn foreign_chain_rpc_request_chain__should_return_correct_chain(
         #[case] request: ForeignChainRpcRequest,
