@@ -1,7 +1,21 @@
-use anyhow::Context;
 use foreign_chain_inspector::RpcAuthentication;
 use http::HeaderValue;
-use mpc_node_config::AuthConfig;
+use mpc_node_config::{AuthConfig, TokenResolveError};
+
+/// Why an [`AuthConfig`] could not be turned into an [`RpcAuthentication`]. No variant
+/// carries the token or the URL: [`AuthConfig::Path`] and [`AuthConfig::Query`] splice the
+/// token into the URL, so echoing either could leak it.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RpcAuthError {
+    #[error("could not resolve the auth token: {0}")]
+    Token(#[from] TokenResolveError),
+    #[error("the resolved token is not a legal value for header `{header}`")]
+    TokenNotAHeaderValue { header: http::HeaderName },
+    #[error(
+        "the RPC URL could not be parsed, so the auth query parameter cannot be appended: {reason}"
+    )]
+    UrlNotParseable { reason: url::ParseError },
+}
 
 /// Convert an [`AuthConfig`] into a [`foreign_chain_inspector::RpcAuthentication`].
 ///
@@ -12,7 +26,7 @@ use mpc_node_config::AuthConfig;
 pub fn auth_config_to_rpc_auth(
     auth: AuthConfig,
     rpc_url: &mut String,
-) -> anyhow::Result<RpcAuthentication> {
+) -> Result<RpcAuthentication, RpcAuthError> {
     match auth {
         AuthConfig::None => Ok(RpcAuthentication::KeyInUrl),
         AuthConfig::Header {
@@ -25,7 +39,11 @@ pub fn auth_config_to_rpc_auth(
                 Some(scheme) => format!("{scheme} {token_value}"),
                 None => token_value,
             };
-            let mut header_value = HeaderValue::from_str(&header_value_str)?;
+            let mut header_value = HeaderValue::from_str(&header_value_str).map_err(|_| {
+                RpcAuthError::TokenNotAHeaderValue {
+                    header: header_name.clone(),
+                }
+            })?;
             // Redacts the token from `Debug` output and excludes it from HPACK
             // dynamic-table indexing on h2 connections.
             header_value.set_sensitive(true);
@@ -42,7 +60,7 @@ pub fn auth_config_to_rpc_auth(
         AuthConfig::Query { name, token } => {
             let token_value = token.resolve()?;
             let mut parsed_rpc_url = url::Url::parse(rpc_url)
-                .with_context(|| format!("invalid RPC URL: `{rpc_url}`"))?;
+                .map_err(|reason| RpcAuthError::UrlNotParseable { reason })?;
             parsed_rpc_url
                 .query_pairs_mut()
                 .append_pair(&name, &token_value);
@@ -256,6 +274,36 @@ mod tests {
         let result = auth_config_to_rpc_auth(auth, &mut url);
 
         // Then
-        result.unwrap_err();
+        assert_matches!(result, Err(RpcAuthError::UrlNotParseable { .. }));
+    }
+
+    #[test]
+    fn auth_config_to_rpc_auth__should_keep_the_token_and_url_out_of_every_error() {
+        // Given — each failure mode, with a recognizable token in play.
+        let unparseable_url = AuthConfig::Query {
+            name: "api-key".to_string(),
+            token: TokenConfig::Val {
+                val: "super-secret-token".to_string(),
+            },
+        };
+        let illegal_header_value = AuthConfig::Header {
+            name: http::HeaderName::from_static("x-api-key"),
+            scheme: None,
+            token: TokenConfig::Val {
+                val: "super-secret\ntoken".to_string(),
+            },
+        };
+
+        // When
+        let url_error =
+            auth_config_to_rpc_auth(unparseable_url, &mut "::not a url::".to_string()).unwrap_err();
+        let header_error =
+            auth_config_to_rpc_auth(illegal_header_value, &mut "https://x.example".to_string())
+                .unwrap_err();
+
+        // Then
+        let rendered = format!("{url_error} {url_error:?} {header_error} {header_error:?}");
+        assert!(!rendered.contains("super-secret"));
+        assert!(!rendered.contains("not a url"));
     }
 }
