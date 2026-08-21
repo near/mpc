@@ -546,7 +546,7 @@ impl MpcCluster {
                 let domains = domains.clone();
                 Ok(async move {
                     client
-                        .call_mpc(self.contract_id().clone())
+                        .call_mpc(self.contract_id())
                         .vote_add_domains(domains)
                         .await
                         .with_context(|| format!("node {i} ({account}) failed to vote_add_domains"))
@@ -572,7 +572,7 @@ impl MpcCluster {
         next_domain_id: u64,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
             .vote_cancel_keygen(next_domain_id)
             .await
             .with_context(|| format!("node {node_index} failed to send cancel keygen vote"))
@@ -695,7 +695,7 @@ impl MpcCluster {
         for i in participants_first.iter().chain(candidates_second.iter()) {
             let outcome = self
                 .operator_client_for(*i)?
-                .call_mpc(self.contract_id().clone())
+                .call_mpc(self.contract_id())
                 .vote_new_parameters(prospective_epoch_id, proposal.clone())
                 .await
                 .with_context(|| format!("node {i} failed to send resharing vote"))?;
@@ -719,7 +719,7 @@ impl MpcCluster {
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
             .vote_cancel_resharing()
             .await
             .with_context(|| format!("node {node_index} failed to send cancel resharing vote"))
@@ -811,7 +811,7 @@ impl MpcCluster {
     ) -> MpcContractHandle<NearKitCaller<ExecutedOptimistic>> {
         self.client_for(account_id)
             .unwrap()
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
     }
 
     pub fn default_user_account(&self) -> &AccountId {
@@ -875,7 +875,7 @@ impl MpcCluster {
         backup_service_info: BackupServiceInfo,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
             .register_backup_service(backup_service_info)
             .await
             .context("failed to register backup service")
@@ -905,7 +905,7 @@ impl MpcCluster {
         foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
             .register_foreign_chain_support(foreign_chain_support.clone())
             .await
             .context("failed to register foreign chain support")
@@ -986,7 +986,7 @@ impl MpcCluster {
                 .operator_client_for(idx)
                 .with_context(|| format!("whitelist_foreign_chains: node {idx}"))?;
             client
-                .call_mpc(self.contract_id().clone())
+                .call_mpc(self.contract_id())
                 .vote_update_foreign_chain_providers(batch.clone())
                 .await
                 .with_context(|| {
@@ -1003,7 +1003,7 @@ impl MpcCluster {
         destination_node_info: DestinationNodeInfo,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
             .start_node_migration(destination_node_info)
             .await
             .context("failed to start node migration")
@@ -1016,7 +1016,7 @@ impl MpcCluster {
         url: String,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
         self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id().clone())
+            .call_mpc(self.contract_id())
             .update_participant_url(url)
             .await
             .context("failed to update participant url")
@@ -1355,7 +1355,7 @@ async fn init_contract(
         blockchain
             .client_for(&account, &near_keys[i])
             .unwrap()
-            .call_mpc(contract.account_id().clone())
+            .call_mpc(contract.account_id())
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
@@ -1382,7 +1382,7 @@ async fn add_initial_domains(
         let account = node_account(i);
         let client = blockchain.client_for(&account, &operator_keys[i])?;
         client
-            .call_mpc(contract.account_id().clone())
+            .call_mpc(contract.account_id())
             .vote_add_domains(domains.to_vec())
             .await
             .with_context(|| format!("node {i} failed to vote add domains"))?;

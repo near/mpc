@@ -11,12 +11,12 @@ pub struct NearKitCaller<T> {
 }
 
 pub trait CallMpc: Sized {
-    fn call_mpc(self, contract_id: near_account_id::AccountId) -> MpcContractHandle<Self>;
+    fn call_mpc(self, contract_id: &near_account_id::AccountId) -> MpcContractHandle<Self>;
 }
 
 impl<T> CallMpc for NearKitCaller<T> {
-    fn call_mpc(self, contract_id: near_account_id::AccountId) -> MpcContractHandle<Self> {
-        MpcContractHandle::new(self, contract_id)
+    fn call_mpc(self, contract_id: &near_account_id::AccountId) -> MpcContractHandle<Self> {
+        MpcContractHandle::new(self, contract_id.clone())
     }
 }
 

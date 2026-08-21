@@ -139,7 +139,7 @@ Finality influences the return type (`T::Response`).
 
 ```rust
 pub trait CallMpc: Sized {
-    fn call_mpc(self, contract_id: AccountId) -> MpcContractHandle<Self>;
+    fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
 }
 
 pub trait WithWaitLevel {
