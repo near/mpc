@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "interface")]
 pub mod interface;
-/// Always available, including on wasm: the contract itself names its own callback.
 pub mod method_names;
 
 #[derive(Serialize)]

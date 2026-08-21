@@ -1,9 +1,3 @@
-//! Host-side typed interface to the test parallel contract.
-//!
-//! [`ParallelContractInterface`] is the single source of each method's wire format
-//! (method name, argument struct, gas, deposit), generic over a transport backend
-//! implementing [`CallContract`].
-
 use std::collections::BTreeMap;
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas};
@@ -16,18 +10,8 @@ use crate::method_names::{
     MAKE_DUPLICATE_CKD_CALLS, MAKE_DUPLICATE_SIGN_CALLS, MAKE_PARALLEL_SIGN_CALLS,
 };
 
-/// Every entry point fans the request out into up to ~10 child calls on the MPC
-/// contract, each reserving its own share of the parent receipt's budget, so all of
-/// them are called with the full per-receipt maximum.
 pub const FAN_OUT_GAS: NearGas = NearGas::from_tgas(300);
 
-/// Typed interface to a deployed test parallel contract at a fixed account, generic
-/// over the transport backend `C`.
-///
-/// The child `sign` / `request_app_private_key` calls each carry the 1 yoctoNEAR
-/// deposit the MPC contract requires, but the contract pays those from its own
-/// balance rather than forwarding an attached deposit — so no method here attaches
-/// one, and a deployed helper needs a funded account.
 pub struct ParallelContractInterface<C> {
     caller: C,
     contract_id: AccountId,
@@ -43,10 +27,6 @@ impl<C> ParallelContractInterface<C> {
 }
 
 impl<C: CallContract> ParallelContractInterface<C> {
-    /// Fans out one `sign` (or `request_app_private_key`) call per requested count in
-    /// `calls_by_domain`, dispatching each domain to the payload kind its
-    /// [`Protocol`] implies. `seed` derives the payloads, so distinct seeds produce
-    /// distinct requests.
     pub async fn make_parallel_sign_calls(
         &self,
         target_contract: AccountId,
@@ -57,8 +37,6 @@ impl<C: CallContract> ParallelContractInterface<C> {
         self.call(MAKE_PARALLEL_SIGN_CALLS, &args).await
     }
 
-    /// Fans `request` out `count` times, exercising the contract's duplicate-request
-    /// path. The caller picks the payload so it knows which response to produce.
     pub async fn make_duplicate_sign_calls(
         &self,
         target_contract: AccountId,
@@ -73,7 +51,6 @@ impl<C: CallContract> ParallelContractInterface<C> {
         self.call(MAKE_DUPLICATE_SIGN_CALLS, &args).await
     }
 
-    /// CKD counterpart to [`Self::make_duplicate_sign_calls`].
     pub async fn make_duplicate_ckd_calls(
         &self,
         target_contract: AccountId,
