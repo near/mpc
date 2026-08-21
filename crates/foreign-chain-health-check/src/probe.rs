@@ -1051,7 +1051,7 @@ mod tests {
         let server = sui_on_chain(SUI_MAINNET).await;
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
-            one_provider("publicnode", &server.url),
+            one_provider(PROVIDER_NAME, &server.url),
         ));
 
         // When
@@ -1059,7 +1059,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::Healthy
         );
     }
@@ -1070,7 +1070,7 @@ mod tests {
         let server = sui_on_chain(SUI_TESTNET).await;
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
-            one_provider("publicnode", &server.url),
+            one_provider(PROVIDER_NAME, &server.url),
         ));
 
         // When
@@ -1078,7 +1078,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new(SUI_MAINNET),
                 observed: NetworkFingerprint::new(SUI_TESTNET),
@@ -1092,7 +1092,7 @@ mod tests {
         let server = sui_answering(Ok(GetServiceInfoResponse::default())).await;
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
-            one_provider("publicnode", &server.url),
+            one_provider(PROVIDER_NAME, &server.url),
         ));
 
         // When
@@ -1100,7 +1100,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::MalformedResponse
         );
     }
@@ -1111,7 +1111,7 @@ mod tests {
         let server = sui_answering(Err(Status::not_found("no such service"))).await;
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
-            one_provider("publicnode", &server.url),
+            one_provider(PROVIDER_NAME, &server.url),
         ));
 
         // When
@@ -1119,7 +1119,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::RequestRejected
         );
     }
@@ -1130,7 +1130,7 @@ mod tests {
         let server = sui_answering(Err(Status::deadline_exceeded("too slow"))).await;
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
-            one_provider("publicnode", &server.url),
+            one_provider(PROVIDER_NAME, &server.url),
         ));
 
         // When
@@ -1138,7 +1138,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::TimedOut
         );
     }
@@ -1148,7 +1148,7 @@ mod tests {
         // Given
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
-            one_provider("publicnode", CLOSED_PORT_URL),
+            one_provider(PROVIDER_NAME, CLOSED_PORT_URL),
         ));
 
         // When
@@ -1156,7 +1156,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::Unreachable
         );
     }

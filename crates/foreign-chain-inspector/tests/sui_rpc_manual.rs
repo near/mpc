@@ -74,7 +74,8 @@ fn parse_tx_digest(digest: &str) -> SuiTransactionDigest {
     SuiTransactionDigest::from(array)
 }
 
-/// Sui mainnet's genesis checkpoint digest.
+/// Sui mainnet's genesis checkpoint digest, as shipped in the node config file
+/// `foreign_chains.sui.expected_network_fingerprint`.
 const EXPECTED_NETWORK_FINGERPRINT: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
 
 #[tokio::test]

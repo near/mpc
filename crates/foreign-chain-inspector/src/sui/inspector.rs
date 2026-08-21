@@ -150,7 +150,6 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
                     ForeignChainInspectionError::RpcRequestRejected(message)
                 }
             },
-            // Split from the other transient failures so a slow provider reads as timed out.
             Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
             Code::Unavailable
             | Code::ResourceExhausted
