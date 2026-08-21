@@ -8,7 +8,7 @@ makes it the trusted verifier for the MPC contract.
 Putting the verifier code on-chain is not enough for the MPC contract to use it: the
 contract only calls a verifier the participants have voted to trust. So this runbook has
 two halves. First, deploy the verifier to its own account and lock it — remove the
-account's keys so the code can never change
+account's keys, and confirm the code has no self-upgrade path, so it can never change
 ([steps 1-5](#1-reproducibly-build-the-verifier-and-record-its-hash)). Then the
 participants vote that account, together with its code hash, in as the trusted verifier
 ([step 6](#6-vote-the-verifier-in-participants)).
@@ -85,7 +85,7 @@ near contract deploy "$VERIFIER_ACCOUNT" use-file target/near/tee_verifier/tee_v
 
 ## 4. Audit the deployed account (before locking)
 
-`mpc-contract` cannot check either of the verifier requirements itself, so each
+`mpc-contract` cannot check any of the verifier requirements itself, so each
 operator audits them off-chain. Confirm the deployed bytes match `H_source`:
 
 ```shell
@@ -101,6 +101,26 @@ its full-access key:
 ```shell
 near account list-keys "$VERIFIER_ACCOUNT" network-config "$NETWORK" now
 ```
+
+Locking in [step 5](#5-lock-the-account) blocks an *outside* redeploy, but it does not
+stop the deployed code from redeploying itself: `DeployContract`, `AddKey`, and
+`DeleteAccount` are actions a contract can issue on its own account with no access key
+involved — that is exactly how `mpc-contract` upgrades itself. A matching code hash does
+not rule this out either. Check it on the downloaded bytes (`wasm-dis` ships with
+`binaryen`, already in the devshell):
+
+```shell
+wasm-dis /tmp/onchain_verifier.wasm | grep '(import '
+wasm-dis /tmp/onchain_verifier.wasm | grep '(export '
+```
+
+The verifier is a pure function of its arguments and the block timestamp, so the import
+list must contain no `promise_batch_*` (no self-deploy, no re-keying, no cross-contract
+call) and no `storage_write` (no state to mutate). The exports must be `verify_quote`,
+`contract_source_metadata`, `memory`, and compiler-internal helpers (`__getrandom_custom`,
+`ring_core_*`). Those helpers take arguments, and NEAR only invokes exports that take none
+and return none, so the two methods are the contract's only reachable entry points. Any
+other argument-less export is an entry point this audit has not accounted for.
 
 Optionally confirm the contract executes by calling `verify_quote` read-only with the
 committed fixture. Either outcome proves the DCAP path runs: a verified report while
@@ -134,12 +154,14 @@ sha256sum /tmp/onchain_verifier_locked.wasm
 ## 6. Vote the verifier in (participants)
 
 Publish `$VERIFIER_ACCOUNT` and `H_source` so every operator can independently audit the
-account before voting. Each operator confirms both verifier requirements:
+account before voting. Each operator confirms all three verifier requirements:
 
 - the deployed code hash matches `H_source` (`near contract download-wasm regular
-  "$VERIFIER_ACCOUNT" ...` then `sha256sum`, as in [step 4](#4-audit-the-deployed-account-before-locking)); and
+  "$VERIFIER_ACCOUNT" ...` then `sha256sum`, as in [step 4](#4-audit-the-deployed-account-before-locking));
 - the account is locked — `near account list-keys "$VERIFIER_ACCOUNT" network-config
-  "$NETWORK" now` returns no keys, so the code can never be replaced.
+  "$NETWORK" now` returns no keys, so nobody can redeploy it from the outside; and
+- the code cannot redeploy itself — no `promise_batch_*` import and no unaccounted-for
+  export, as in [step 4](#4-audit-the-deployed-account-before-locking).
 
 Each participant then votes for the same `(candidate_account_id, expected_code_hash)`
 pair. Voters who submit different hashes land in different buckets and never combine, so
