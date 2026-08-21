@@ -270,17 +270,15 @@ impl RunLoadtestCmd {
                 "Signatures per contract call specified, but no parallel signatures contract is deployed",
             );
             let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
-            let calls_by_domain: Vec<(DomainConfig, u64)> = self
+            let calls_by_domain: Vec<(DomainId, Protocol, u64)> = self
                 .parallel_sign_calls_per_domain
                 .as_ref()
                 .unwrap()
                 .iter()
                 .map(|(domain_id, n_calls)| {
-                    (
-                        find_domain_config(&contract_state, DomainId(*domain_id))
-                            .expect("require valid domain id"),
-                        *n_calls,
-                    )
+                    let domain = find_domain_config(&contract_state, DomainId(*domain_id))
+                        .expect("require valid domain id");
+                    (domain.id, domain.protocol, *n_calls)
                 })
                 .collect();
             Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas};
 use near_mpc_contract_interface::types::{
-    AccountId, CKDRequestArgs, DomainConfig, Protocol, SignRequestArgs,
+    AccountId, CKDRequestArgs, DomainId, Protocol, SignRequestArgs,
 };
 use serde::Serialize;
 
@@ -30,7 +30,7 @@ impl<C: CallContract> ParallelContractInterface<C> {
     pub async fn make_parallel_sign_calls(
         &self,
         target_contract: AccountId,
-        calls_by_domain: impl IntoIterator<Item = (DomainConfig, u64)>,
+        calls_by_domain: impl IntoIterator<Item = (DomainId, Protocol, u64)>,
         seed: u64,
     ) -> Result<C::Output, C::Error> {
         let args = MakeParallelSignCallsArgs::new(target_contract, calls_by_domain, seed);
@@ -88,24 +88,24 @@ struct MakeParallelSignCallsArgs {
 
 impl MakeParallelSignCallsArgs {
     /// Buckets `calls_by_domain` into the four per-scheme maps the contract takes,
-    /// keyed by each domain's [`Protocol`].
+    /// keyed by [`Protocol`].
     fn new(
         target_contract: AccountId,
-        calls_by_domain: impl IntoIterator<Item = (DomainConfig, u64)>,
+        calls_by_domain: impl IntoIterator<Item = (DomainId, Protocol, u64)>,
         seed: u64,
     ) -> Self {
         let mut ecdsa_calls_by_domain = BTreeMap::new();
         let mut robust_ecdsa_calls_by_domain = BTreeMap::new();
         let mut eddsa_calls_by_domain = BTreeMap::new();
         let mut ckd_calls_by_domain = BTreeMap::new();
-        for (domain, calls) in calls_by_domain {
-            let bucket = match domain.protocol {
+        for (domain_id, protocol, calls) in calls_by_domain {
+            let bucket = match protocol {
                 Protocol::CaitSith => &mut ecdsa_calls_by_domain,
                 Protocol::DamgardEtAl => &mut robust_ecdsa_calls_by_domain,
                 Protocol::Frost => &mut eddsa_calls_by_domain,
                 Protocol::ConfidentialKeyDerivation => &mut ckd_calls_by_domain,
             };
-            *bucket.entry(domain.id.0).or_default() += calls;
+            *bucket.entry(domain_id.0).or_default() += calls;
         }
         Self {
             target_contract,

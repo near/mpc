@@ -3,10 +3,6 @@ use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::TxExecutionStatus;
 use std::fmt::Debug;
 
-/// The status a submitted transaction is awaited to, and the response type that
-/// status can produce. `send_tx` returns no execution outcome before
-/// [`TxExecutionStatus::Executed`], so early levels identify the transaction
-/// instead of reporting its result.
 pub trait WaitLevel {
     type Response;
 

@@ -19,35 +19,32 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     const N: u64 = ROBUST_ECDSA_CALLS + ECDSA_CALLS + EDDSA_CALLS + CKD_CALLS;
 
     // given
-    let domains = vec![
-        common::damgard_etal_domain(0, 3),
-        DomainConfig {
-            id: DomainId(1),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(5),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(2),
-            protocol: Protocol::Frost,
-            reconstruction_threshold: ReconstructionThreshold::new(5),
-            purpose: DomainPurpose::Sign,
-        },
-        DomainConfig {
-            id: DomainId(3),
-            protocol: Protocol::ConfidentialKeyDerivation,
-            reconstruction_threshold: ReconstructionThreshold::new(5),
-            purpose: DomainPurpose::CKD,
-        },
-    ];
-    let calls = [ROBUST_ECDSA_CALLS, ECDSA_CALLS, EDDSA_CALLS, CKD_CALLS];
-
     let (cluster, _running) =
         common::must_setup_cluster(common::PARALLEL_SIGN_CALLS_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 5;
-            c.domains = domains.clone();
+            c.domains = vec![
+                common::damgard_etal_domain(0, 3),
+                DomainConfig {
+                    id: DomainId(1),
+                    protocol: Protocol::CaitSith,
+                    reconstruction_threshold: ReconstructionThreshold::new(5),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(2),
+                    protocol: Protocol::Frost,
+                    reconstruction_threshold: ReconstructionThreshold::new(5),
+                    purpose: DomainPurpose::Sign,
+                },
+                DomainConfig {
+                    id: DomainId(3),
+                    protocol: Protocol::ConfidentialKeyDerivation,
+                    reconstruction_threshold: ReconstructionThreshold::new(5),
+                    purpose: DomainPurpose::CKD,
+                },
+            ];
             c.presignatures_to_buffer = 6;
         })
         .await;
@@ -87,7 +84,12 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     )
     .make_parallel_sign_calls(
         cluster.contract.account_id().clone(),
-        domains.into_iter().zip(calls),
+        [
+            (DomainId(0), Protocol::DamgardEtAl, ROBUST_ECDSA_CALLS),
+            (DomainId(1), Protocol::CaitSith, ECDSA_CALLS),
+            (DomainId(2), Protocol::Frost, EDDSA_CALLS),
+            (DomainId(3), Protocol::ConfidentialKeyDerivation, CKD_CALLS),
+        ],
         42,
     )
     .await
