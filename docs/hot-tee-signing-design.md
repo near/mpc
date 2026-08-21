@@ -466,7 +466,7 @@ sequenceDiagram
         Note over OP: Operator restarts CVM with correct image
     end
 
-    loop Every 7 days
+    loop Every hour
         APP ->> APP: Generate fresh attestation quote
         APP ->> HC: submit_participant_info(attestation, tls_pk)
     end
