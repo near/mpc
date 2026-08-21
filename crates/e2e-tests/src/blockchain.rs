@@ -114,8 +114,8 @@ pub struct DeployedContract {
 }
 
 impl DeployedContract {
-    pub fn account_id(&self) -> near_account_id::AccountId {
-        self.contract_id.clone()
+    pub fn account_id(&self) -> &near_account_id::AccountId {
+        &self.contract_id
     }
 
     pub fn client(&self) -> NearKitCaller<ExecutedOptimistic> {

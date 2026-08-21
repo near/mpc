@@ -10,18 +10,12 @@ pub struct NearKitCaller<T> {
     pub(crate) _wait_level: PhantomData<fn() -> T>,
 }
 
-pub trait CallMpc<T> {
-    fn call_mpc(
-        self,
-        contract_id: near_account_id::AccountId,
-    ) -> MpcContractHandle<NearKitCaller<T>>;
+pub trait CallMpc: Sized {
+    fn call_mpc(self, contract_id: near_account_id::AccountId) -> MpcContractHandle<Self>;
 }
 
-impl<T> CallMpc<T> for NearKitCaller<T> {
-    fn call_mpc(
-        self,
-        contract_id: near_account_id::AccountId,
-    ) -> MpcContractHandle<NearKitCaller<T>> {
+impl<T> CallMpc for NearKitCaller<T> {
+    fn call_mpc(self, contract_id: near_account_id::AccountId) -> MpcContractHandle<Self> {
         MpcContractHandle::new(self, contract_id)
     }
 }
@@ -49,7 +43,7 @@ where
 }
 
 impl<T> NearKitCaller<T> {
-    pub(crate) fn with_wait_level<U>(self) -> NearKitCaller<U> {
+    pub(crate) fn with_wait_level<U: WaitLevel>(self) -> NearKitCaller<U> {
         NearKitCaller {
             inner: self.inner,
             _wait_level: PhantomData,
