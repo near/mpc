@@ -8,15 +8,15 @@ This document defines goals and outlines the design of the Foreign chain configu
 
 ## Background
 
-Nodes have Foreign chain RPC configurations which are not visible in debug endpoints due to them being potential attack vectors. We would still like to easily access and inspect this information to spot potential configuration bugs. 
+Nodes have Foreign chain RPC configurations which are not visible in debug endpoints due to them being potential attack vectors. We would still like to easily access and inspect this information to spot potential configuration bugs.
 
 ## Proposed solution
 
-Blaire will work as a standalone web application that serves Foreign chain RPC configuration debug information (e.g. foreign chain configuration, certain logs etc.) to authenticated users. The current workflow is to ping each node operator manually and separately for the configurations. Through Blaire, the MPC team members will save time and effort by simply requesting the webservice for information relevant to debugging. 
+Blaire will work as a standalone web application that serves Foreign chain RPC configuration debug information (e.g. foreign chain configuration, certain logs etc.) to authenticated users. The current workflow is to ping each node operator manually and separately for the configurations. Through Blaire, the MPC team members will save time and effort by simply requesting the webservice for information relevant to debugging.
 
 ## High level design
 
-The webservice will be accessible to authenticated MPC team members. 
+The webservice will be accessible to authenticated MPC team members.
 
 ### Work flow
 
@@ -29,7 +29,7 @@ Users:
 2. The user will be able to request Blaire for node configurations.
 3. Blaire reads its database to serve the information to users.
 4. The requests are recorded in an audit log.
-5. (Potentially) The user will be able to save/copy/compare the information. 
+5. (Potentially) The user will be able to save/copy/compare the information.
 
 ```mermaid
 ---
@@ -69,25 +69,25 @@ flowchart TD
     DB@{ shape: db}
 ```
 
-See [the Foreign chain configurations documentation](https://github.com/near/mpc/blob/0185bf46611aece50a9e876ed8ec0ef96133e421/docs/foreign-chain-transactions.md?plain=1#L631) for a configuration example snippet. 
+See [the Foreign chain configurations documentation](https://github.com/near/mpc/blob/0185bf46611aece50a9e876ed8ec0ef96133e421/docs/foreign-chain-transactions.md?plain=1#L631) for a configuration example snippet.
 
 API keys for authentication will still need to be redacted for security reasons and the nodes will redact these secrets before they are published to Blaire. Therefore, the server never sees the secrets, ensuring that no keys can be leaked in case of a breach.
 
 ### Requirements
 
 Required functions:
-- Nodes publish redacted Foreign chain configurations   
+- Nodes publish redacted Foreign chain configurations
 - SSO authentication of users (only team members) before site can be accessed
 - Store MPC nodes' Foreign chain configurations
 - Users able to request the database for configurations
-- Users can see their own request history 
+- Users can see their own request history
 
 Potential functionalities:
 - Download the information as a file/JSON
 - The ability to easily copy the information to clip board (button)
 - Hand-select several nodes of interest and get all of their configuration information at the same time
 - Compare different nodes' configurations
-- The MPC node operators having access to Blaire 
+- The MPC node operators having access to Blaire
 
 ## Wire formats/service API
 
@@ -95,11 +95,11 @@ Potential functionalities:
 
 For the service there are two main wiring groups: the connections between the nodes and the service, and between the user and service. They have different requirements and will fulfill different objectives. The next section will include more details on the individual endpoints.
 
-Server endpoint/API root path: 
+Server endpoint/API root path:
 https://URL (TBD)
 
 Summary:
-POST /api/v1/reports                        publish config info                         config:write 
+POST /api/v1/reports                        publish config info                         config:write
 POST /api/login                             log in authenticated users
 POST /api/logout                            log out authenticated users
 GET /api/v1/nodes                           list currently participating nodes          nodes:read
@@ -111,7 +111,7 @@ GET /api/v1/activity                        list users actions/requests         
 
 ### MPC nodes --> Blaire
 
-POST /api/v1/reports     publish config info     config:write   
+POST /api/v1/reports     publish config info     config:write
 
 The reports will be posted through the Blaire API, where the configs are recorded at a node's startup or reconfiguration. The configurations will have a historic record, so that previous configurations could be compared to newer ones. The Blaire IP/web-adress can be passed to the nodes via config-files where the adress won't be public, which increases obscurity.
 
@@ -134,7 +134,7 @@ POST /api/logout                            log out authenticated users
 
 #### Configuration information
 
-The endpoints will mainly depend of fetching the nodes' configurations from the database and then serve the information in different formats, depending on what the user has requested. First, having an endpoint that serves information on the current participating nodes enables the team to check if there are any nodes that are no longer active and remove their configs from the database tables. One endpoint will serve individual node configurations, so users can inspect for possible problems. There will also be a history endpoint, where users can view older versions of individual node configs. 
+The endpoints will mainly depend of fetching the nodes' configurations from the database and then serve the information in different formats, depending on what the user has requested. First, having an endpoint that serves information on the current participating nodes enables the team to check if there are any nodes that are no longer active and remove their configs from the database tables. One endpoint will serve individual node configurations, so users can inspect for possible problems. There will also be a history endpoint, where users can view older versions of individual node configs.
 
 GET /api/v1/nodes                           list currently participating nodes          nodes:read
 GET /api/v1/nodes/{node_id}/config          fetch latest reported config from a node    config:read
@@ -222,7 +222,7 @@ CREATE TABLE node_config_reports (
 
 | Node ID       | Operator ID   |
 | ------------- | ------------- |
-| Near #1       | .....         | 
+| Near #1       | .....         |
 | Everstake     | .....         |
 | ....          | .....         |
 
@@ -230,7 +230,7 @@ CREATE TABLE node_config_reports (
 CREATE TABLE node_operator_mapping (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node_id TEXT NOT NULL UNIQUE,
-    operator_id TEXT NOT NULL 
+    operator_id TEXT NOT NULL
 );
 ```
 
@@ -244,7 +244,7 @@ CREATE TABLE node_operator_mapping (
 
 ```sql
 CREATE TABLE audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,  
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     event_timestamp TEXT NOT NULL DEFAULT (datetime('now')),
     event_type TEXT NOT NULL
@@ -270,7 +270,7 @@ CREATE TABLE node_credentials (
 
 ## Authentication/security
 
-Initially, while in development, the webpage will have an authentications system between the user and service where there will only be one single user, with a username and password configured in environment variables. Once the webpage is ready for deployment, there will be a stronger authentication system in place. For these purposes we will use the SSO service provided by Okta, making it easy to maintain access to only current team members by using group permissions within the organisation. 
+Initially, while in development, the webpage will have an authentications system between the user and service where there will only be one single user, with a username and password configured in environment variables. Once the webpage is ready for deployment, there will be a stronger authentication system in place. For these purposes we will use the SSO service provided by Okta, making it easy to maintain access to only current team members by using group permissions within the organisation.
 
 [For reference, the Okta integration docs can be found here.](https://developer.okta.com/docs/guides/sign-in-overview/main/)
 
@@ -278,6 +278,6 @@ There also needs to be some type of authentication for the nodes to access Blair
 
 ### Risks
 
-The configuration information used to be public but was withdrawn as an extra precaution. If the debug service were to be hacked and this information is leaked, we heighten the risk to our node system. Therefore, security should still be strong and accessibility limited to only MPC team members. 
+The configuration information used to be public but was withdrawn as an extra precaution. If the debug service were to be hacked and this information is leaked, we heighten the risk to our node system. Therefore, security should still be strong and accessibility limited to only MPC team members.
 
 Since the service aggregates the information about the configurations of all of the nodes, it could become a bigger target for bad actors compared to when each configuration's information is stored separately by the node operators.
