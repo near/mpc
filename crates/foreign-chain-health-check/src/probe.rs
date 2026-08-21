@@ -2,7 +2,6 @@
 //! operator's `expected_network_fingerprint`.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::adi::inspector::Adi;
@@ -16,6 +15,7 @@ use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
 };
@@ -24,7 +24,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
-use crate::{prepare_aptos, prepare_jsonrpc};
+use crate::{prepare_aptos, prepare_jsonrpc, prepare_sui, timeout_of};
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,7 +123,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 ForeignChain::Aptos => {
-                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
+                    let timeout = timeout_of(chain_config);
                     probe_chain(chain, chain_config, move |provider| {
                         let (url, auth_header) = prepare_aptos(provider)?;
                         Ok(AptosInspector::new(ReqwestAptosClient::new(
@@ -134,8 +134,14 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe Sui. Ethereum, Solana and Ton have no inspector, so there is
-                // nothing to probe them with.
+                ForeignChain::Sui => {
+                    let timeout = timeout_of(chain_config);
+                    probe_chain(chain, chain_config, move |provider| {
+                        Ok(SuiInspector::new(prepare_sui(provider, timeout)?))
+                    })
+                    .await
+                }
+                // Ethereum, Solana and Ton have no inspector to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -185,9 +191,8 @@ where
         return rows;
     };
 
-    let timeout = Duration::from_secs(config.timeout_sec.get());
     let fingerprints = FanOut::new(inspectors)
-        .network_fingerprints(timeout, config.max_retries)
+        .network_fingerprints(timeout_of(config), config.max_retries)
         .await;
     for (provider, reported) in fingerprints {
         rows.push(ProviderHealth {
@@ -252,9 +257,15 @@ fn classify(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use foreign_chain_rpc_interfaces::sui::Status;
+    use foreign_chain_rpc_interfaces::sui::proto::ledger_service_server::{
+        LedgerService, LedgerServiceServer,
+    };
+    use foreign_chain_rpc_interfaces::sui::proto::{GetServiceInfoRequest, GetServiceInfoResponse};
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::num::NonZeroU64;
+    use std::time::Duration;
 
     /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
     const MAINNET: &str = "0x534e5f4d41494e";
@@ -264,6 +275,9 @@ mod tests {
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
+    /// Sui's genesis checkpoint digest, base58.
+    const SUI_MAINNET: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
+    const SUI_TESTNET: &str = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD";
     /// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
     /// the same number as text.
     const APTOS_MAINNET: u64 = 1;
@@ -979,6 +993,171 @@ mod tests {
                 expected: NetworkFingerprint::new(APTOS_MAINNET.to_string()),
                 observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
             }
+        );
+    }
+
+    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            sui: Some(config),
+            ..Default::default()
+        }
+    }
+
+    /// A gRPC ledger service answering whatever a test arms.
+    struct FakeSuiLedger(Result<GetServiceInfoResponse, Status>);
+
+    #[tonic::async_trait]
+    impl LedgerService for FakeSuiLedger {
+        async fn get_service_info(
+            &self,
+            _request: tonic::Request<GetServiceInfoRequest>,
+        ) -> Result<tonic::Response<GetServiceInfoResponse>, Status> {
+            self.0.clone().map(tonic::Response::new)
+        }
+    }
+
+    /// Serves a [`FakeSuiLedger`] on a loopback port until dropped.
+    struct FakeSuiServer {
+        url: String,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for FakeSuiServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn sui_answering(answer: Result<GetServiceInfoResponse, Status>) -> FakeSuiServer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(LedgerServiceServer::new(FakeSuiLedger(answer)))
+                .serve_with_incoming(tonic::transport::server::TcpIncoming::from(listener))
+                .await
+                .expect("the fake Sui ledger should keep serving until the test drops it");
+        });
+        FakeSuiServer { url, task }
+    }
+
+    async fn sui_on_chain(chain_id: &str) -> FakeSuiServer {
+        sui_answering(Ok(GetServiceInfoResponse::default().with_chain_id(chain_id))).await
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_sui_on_its_genesis_digest_as_healthy() {
+        // Given
+        let server = sui_on_chain(SUI_MAINNET).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_sui_on_another_network_as_wrong_network() {
+        // Given
+        let server = sui_on_chain(SUI_TESTNET).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::WrongNetwork {
+                expected: NetworkFingerprint::new(SUI_MAINNET),
+                observed: NetworkFingerprint::new(SUI_TESTNET),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_sui_service_info_without_a_chain_id_as_malformed() {
+        // Given
+        let server = sui_answering(Ok(GetServiceInfoResponse::default())).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::MalformedResponse
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_a_sui_provider_not_serving_the_api_as_rejected() {
+        // Given
+        let server = sui_answering(Err(Status::not_found("no such service"))).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::RequestRejected
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_a_slow_sui_provider_as_timed_out() {
+        // Given
+        let server = sui_answering(Err(Status::deadline_exceeded("too slow"))).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::TimedOut
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_unreachable_sui_provider() {
+        // Given
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, CLOSED_PORT_URL),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::Unreachable
         );
     }
 
