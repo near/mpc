@@ -620,12 +620,27 @@ mod tests {
     }
 
     #[test]
+    fn validate_app_compose_config__should_accept_the_committed_fixture() {
+        // Given
+        let fixture: AppCompose =
+            serde_json::from_str(test_utils::attestation::TEST_APP_COMPOSE_STRING)
+                .expect("the fixture app-compose parses");
+
+        // When
+        let result = DstackAttestation::validate_app_compose_config(&fixture);
+
+        // Then
+        assert!(result)
+    }
+
+    #[test]
     fn validate_app_compose_config__rejects_present_pre_launch_script() {
         // Given
         let app_compose = AppCompose {
             pre_launch_script: Some("echo pwn".to_string()),
             ..valid_app_compose()
         };
+
         // When
         let result = DstackAttestation::validate_app_compose_config(&app_compose);
 

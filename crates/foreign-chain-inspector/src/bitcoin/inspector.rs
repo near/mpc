@@ -1,10 +1,14 @@
 use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
-use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
+use crate::{
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprint,
+    NetworkFingerprintInspector,
+};
 use foreign_chain_rpc_interfaces::bitcoin::{
-    GetBlockHashArgs, GetBlockHeaderArgs, GetBlockHeaderVerboseResponse, GetRawTransactionArgs,
-    GetRawTransactionVerboseResponse, TransportBitcoinBlockHash, TransportBitcoinTransactionHash,
+    GetBlockHashArgs, GetBlockHashResponse, GetBlockHeaderArgs, GetBlockHeaderVerboseResponse,
+    GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
+    TransportBitcoinTransactionHash,
 };
 
 /// <https://developer.bitcoin.org/reference/rpc/getrawtransaction.html>
@@ -16,9 +20,33 @@ const GET_BLOCK_HEADER_METHOD: &str = "getblockheader";
 /// <https://developer.bitcoin.org/reference/rpc/getblockhash.html>
 const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 
+/// Bitcoin has no chain id, so the genesis block is what tells the networks apart.
+const GENESIS_BLOCK_HEIGHT: u64 = 0;
+
 #[derive(Clone)]
 pub struct BitcoinInspector<Client> {
     client: Client,
+}
+
+impl<Client> NetworkFingerprintInspector for BitcoinInspector<Client>
+where
+    Client: ClientT + Send + Sync,
+{
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        let args = GetBlockHashArgs {
+            height: GENESIS_BLOCK_HEIGHT,
+        };
+        let genesis_hash: GetBlockHashResponse = self
+            .client
+            .request(GET_BLOCK_HASH_METHOD, &args)
+            .await
+            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+        Ok(NetworkFingerprint::new(genesis_hash.canonical_text()))
+    }
+
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(GetBlockHashResponse(fingerprint.to_owned()).canonical_text())
+    }
 }
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>

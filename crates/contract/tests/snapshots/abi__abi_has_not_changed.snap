@@ -259,6 +259,16 @@ expression: abi
                     ],
                     [
                       13,
+                      "Avalanche",
+                      "ForeignChain__Avalanche"
+                    ],
+                    [
+                      14,
+                      "Adi",
+                      "ForeignChain__Adi"
+                    ],
+                    [
+                      15,
                       "Fogo",
                       "ForeignChain__Fogo"
                     ]
@@ -268,10 +278,16 @@ expression: abi
               "ForeignChain__Abstract": {
                 "Struct": null
               },
+              "ForeignChain__Adi": {
+                "Struct": null
+              },
               "ForeignChain__Aptos": {
                 "Struct": null
               },
               "ForeignChain__Arbitrum": {
+                "Struct": null
+              },
+              "ForeignChain__Avalanche": {
                 "Struct": null
               },
               "ForeignChain__Base": {
@@ -3100,6 +3116,16 @@ expression: abi
                         ],
                         [
                           13,
+                          "Avalanche",
+                          "ForeignChain__Avalanche"
+                        ],
+                        [
+                          14,
+                          "Adi",
+                          "ForeignChain__Adi"
+                        ],
+                        [
+                          15,
                           "Fogo",
                           "ForeignChain__Fogo"
                         ]
@@ -3109,10 +3135,16 @@ expression: abi
                   "ForeignChain__Abstract": {
                     "Struct": null
                   },
+                  "ForeignChain__Adi": {
+                    "Struct": null
+                  },
                   "ForeignChain__Aptos": {
                     "Struct": null
                   },
                   "ForeignChain__Arbitrum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Avalanche": {
                     "Struct": null
                   },
                   "ForeignChain__Base": {
@@ -4084,6 +4116,8 @@ expression: abi
             "Ton",
             "Aptos",
             "Sui",
+            "Avalanche",
+            "Adi",
             "Fogo"
           ]
         },
@@ -4248,6 +4282,30 @@ expression: abi
               "properties": {
                 "Sui": {
                   "$ref": "#/definitions/SuiRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Avalanche"
+              ],
+              "properties": {
+                "Avalanche": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Adi"
+              ],
+              "properties": {
+                "Adi": {
+                  "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
               "additionalProperties": false

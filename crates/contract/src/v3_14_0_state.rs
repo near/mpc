@@ -15,9 +15,8 @@ use near_sdk::{
 };
 
 use crate::{
-    SupportedForeignChainsByNode,
     config::Config,
-    foreign_chains_metadata::ForeignChainsMetadata,
+    foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
@@ -56,8 +55,10 @@ struct OldConfig {
 
 impl From<OldConfig> for Config {
     fn from(old: OldConfig) -> Self {
-        // Carry the deployed values; the attestation-storage fee is new in this release, so
-        // it takes its default.
+        // Deployed values carry forward, except `clean_invalid_attestations_tera_gas`: the
+        // deployed 10 TGas is consumed by the scan itself, so the first eviction overruns it
+        // and the detached sweep rolls back unnoticed. Taking the new default applies the fix
+        // without a governance vote.
         Config {
             key_event_timeout_blocks: old.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
@@ -73,7 +74,8 @@ impl From<OldConfig> for Config {
             fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
             fail_attestation_submission_tera_gas: old.fail_attestation_submission_tera_gas,
             clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
-            clean_invalid_attestations_tera_gas: old.clean_invalid_attestations_tera_gas,
+            clean_invalid_attestations_tera_gas: Config::default()
+                .clean_invalid_attestations_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: old
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: old
@@ -84,6 +86,7 @@ impl From<OldConfig> for Config {
             verifier_tera_gas: old.verifier_tera_gas,
             resolve_verification_tera_gas: old.resolve_verification_tera_gas,
             launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
+            // `attestation_storage_fee_millinear` is new in this release, so it defaults.
             ..Default::default()
         }
     }

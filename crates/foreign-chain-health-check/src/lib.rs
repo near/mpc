@@ -15,7 +15,9 @@ use std::future::Future;
 use std::time::Duration;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
+use foreign_chain_inspector::adi::inspector::Adi;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
+use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bnb::inspector::Bnb;
 use foreign_chain_inspector::evm::inspector::EvmChain;
@@ -73,6 +75,16 @@ pub async fn check_all_providers(
         run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm, network, &mut out).await;
     } else {
         mark_not_configured("hyper_evm", &mut out);
+    }
+    if let Some(cfg) = &fc.avalanche {
+        run_evm::<Avalanche>("avalanche", cfg, golden.avalanche, network, &mut out).await;
+    } else {
+        mark_not_configured("avalanche", &mut out);
+    }
+    if let Some(cfg) = &fc.adi {
+        run_evm::<Adi>("adi", cfg, golden.adi, network, &mut out).await;
+    } else {
+        mark_not_configured("adi", &mut out);
     }
     if let Some(cfg) = &fc.abstract_chain {
         run_evm::<Abstract>("abstract", cfg, golden.abstract_chain, network, &mut out).await;
@@ -511,6 +523,8 @@ mod tests {
             "arbitrum",
             "polygon",
             "hyper_evm",
+            "avalanche",
+            "adi",
             "abstract",
             "bitcoin",
             "starknet",

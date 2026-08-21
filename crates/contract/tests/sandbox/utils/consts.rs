@@ -17,7 +17,7 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
 /// gas attachment; in practice, nodes usually attach the maximum available gas. For testing,
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(50);
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(60);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
 /// Gas required for votes cast before the threshold is reached (votes 1 through N-1).

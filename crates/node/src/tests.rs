@@ -16,7 +16,7 @@ use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
-use crate::indexer::fake::{FakeIndexerManager, FakeReadSupportedForeignChain};
+use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{
     CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -64,6 +64,7 @@ mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;
 mod update_participant_url;
+mod verify_foreign_tx_gating;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
@@ -75,7 +76,7 @@ pub struct OneNodeTestConfig {
     home_dir: PathBuf,
     pub config: ConfigFile,
     secrets: SecretsConfig,
-    indexer: IndexerAPI<MockTransactionSender, FakeReadSupportedForeignChain>,
+    indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
 }
@@ -475,14 +476,15 @@ async fn do_request_ckd_and_await_response(
     }
 }
 
-/// Request a verify foreign tx from the indexer and wait for the response.
+/// Request a Bitcoin verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
-// TODO: remove this when tests are added for this functionality
-#[expect(unused)]
+/// `bitcoin_tx_id` distinguishes concurrent requests: responses are matched by
+/// request payload, so callers must not reuse an id across requests.
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
     domain: &DomainConfig,
+    bitcoin_tx_id: [u8; 32],
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     assert_matches!(
@@ -495,7 +497,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
         receipt_id: CryptoHash(rand::random()),
         request: VerifyForeignTransactionRequestArgs {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id: [42u8; 32].into(),
+                tx_id: bitcoin_tx_id.into(),
                 confirmations: 2.into(),
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),

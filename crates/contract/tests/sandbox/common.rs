@@ -898,6 +898,22 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
     })
 }
 
+pub fn avalanche_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn adi_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Adi(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
 pub fn ton_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Ton(TonRpcRequest {
         tx_id: TonTxId([0xbb; 32]),

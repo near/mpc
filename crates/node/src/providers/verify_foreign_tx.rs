@@ -1,5 +1,6 @@
 mod sign;
 
+use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::EcdsaSignatureProvider;
@@ -7,8 +8,10 @@ use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::adi::inspector::AdiInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
+use foreign_chain_inspector::avalanche::inspector::AvalancheInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
@@ -26,6 +29,7 @@ use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
 use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
 
 /// Pre-built HTTP clients for each foreign chain, one per configured provider and named by its
 /// [`ProviderId`].
@@ -41,6 +45,8 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
+    pub avalanche: Option<FanOut<AvalancheInspector<Client>>>,
+    pub adi: Option<FanOut<AdiInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
     pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
     pub solana: Option<FanOut<SolanaInspector<Client>>>,
@@ -143,6 +149,11 @@ impl ForeignChainInspectors<HttpClient> {
                 config.polygon.as_ref(),
                 with_http_client(PolygonInspector::new),
             )?,
+            avalanche: build_fanout(
+                config.avalanche.as_ref(),
+                with_http_client(AvalancheInspector::new),
+            )?,
+            adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
             aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
             sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
             solana: build_fanout(
@@ -212,30 +223,12 @@ mod tests {
     }
 }
 
-pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
+pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
-    foreign_chain_policy_reader: ForeignChainPolicyReader,
+    supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-}
-
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader> {
-    pub fn new(
-        config: Arc<ConfigFile>,
-        foreign_chain_policy_reader: ForeignChainPolicyReader,
-        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
-        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
-    ) -> anyhow::Result<Self> {
-        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
-        Ok(Self {
-            config,
-            inspectors,
-            foreign_chain_policy_reader,
-            verify_foreign_tx_request_store,
-            ecdsa_signature_provider,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
@@ -252,10 +245,23 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
-where
-    ForeignChainPolicyReader: crate::indexer::ReadSupportedForeignChain,
-{
+impl VerifyForeignTxProvider {
+    pub fn new(
+        config: Arc<ConfigFile>,
+        supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+        ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+    ) -> anyhow::Result<Self> {
+        let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
+        Ok(Self {
+            config,
+            inspectors,
+            supporters_by_foreign_chain,
+            verify_foreign_tx_request_store,
+            ecdsa_signature_provider,
+        })
+    }
+
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::VerifyForeignTxTaskId(task) => match task {

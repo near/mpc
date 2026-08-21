@@ -19,7 +19,7 @@ Payment and submission must be **separate transactions**, because neither party 
 
 ### Grants
 
-`available_attestation_grants: LookupMap<AccountId, u32>` — a count (not an amount). Prepay `+1`, new entry `−1`, reclaimed entry `+1`, row deleted at zero. The invariant, enforced by refusing to go below zero:
+`available_attestation_grants: IterableMap<AccountId, u32>` — a count (not an amount). Prepay `+1`, new entry `−1`, reclaimed entry `+1`, row deleted at zero. The invariant, enforced by refusing to go below zero:
 
 ```text
 entries an account holds  ≤  grants it has bought
@@ -45,7 +45,7 @@ Evaluated read-only at the top of `submit_participant_info` — before any verif
 
 1. **Entry exists and this account owns it** — re-attestation. Updates in place, consumes nothing. Keys on *ownership*, not key presence: a presence-only test would classify someone else's key as "no grant needed".
 2. **New entry** — consume one grant; reject if the account has none. On the async `Dstack` path this is checked twice: once here, and again in `resolve_verification`, which runs a later receipt in which the grant may since have been consumed. Without the second check, two submissions from one account could both clear the first check and then store two entries against a single grant.
-3. **Entry reclaimed** by `clean_invalid_attestations` — return one grant to its owner. There is exactly one removal site, so the counter cannot drift. This adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside a gas-bounded sweep, so `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` need re-validating against the heavier per-entry cost — tracked in [#4035](https://github.com/near/mpc/issues/4035), where the budget already fell short of the scan limit before this change. Those two constants bound only the promise `vote_reshared` schedules: `clean_invalid_attestations` is permissionless and takes `max_scan` as a parameter, so an external caller is bound by neither.
+3. **Entry reclaimed** by `clean_invalid_attestations` — return one grant to its owner. There is exactly one removal site, so the counter cannot drift. This adds a grants-map write per removed entry — a row *insert*, not an update, whenever the owner's row was deleted at zero — inside a gas-bounded sweep, which roughly triples the per-removal cost. `clean_invalid_attestations_tera_gas` and `RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN` were re-validated against it in [#4035](https://github.com/near/mpc/issues/4035) and now sit at 15 TGas and 30 entries, enough for a full scan plus ~10 removals. Those two constants bound only the promise `vote_reshared` schedules: `clean_invalid_attestations` is permissionless and takes `max_scan` as a parameter, so an external caller is bound by neither.
 
 Consuming at insert means a failed attestation consumes nothing — nothing was stored, so nothing is owed — and keeps [#3991](https://github.com/near/mpc/issues/3991) unblocked, since no charge has to survive a failing callback.
 
@@ -53,13 +53,15 @@ Migration and multi-node operators need no special rule: prepay again. Hence no 
 
 ### Fee
 
-0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.7× the floor. The entry figure is **charged** bytes, not a borsh size: `measure_stored_entry_bytes` (`crates/contract/src/lib.rs`) inserts into the real map, flushes, and takes the `env::storage_usage()` delta, so `IterableMap` record and key overhead are measured rather than estimated, and a test pins 604/599 and forbids updating them to make a failure pass. The grants-map row is an estimate, which the headroom covers.
+0.02 NEAR — a governance-votable `Config` field, not a constant — about 2.5× the floor. Both figures are **charged** bytes, not borsh sizes: `measure_stored_entry_bytes` and `measure_grant_row_bytes` (`crates/contract/src/api/attestation.rs`) insert into the real map, flush, and take the `env::storage_usage()` delta, so record and key overhead are measured rather than estimated.
 
 | Component | Charged bytes | Cost |
 |---|---|---|
 | Worst-case entry: a `Mock` one at 604 (`Dstack` is 599) | 604 | 0.00604 NEAR |
-| Grants-map row | ~130 | ~0.0013 NEAR |
-| **Floor** | **~734** | **~0.0073 NEAR** |
+| Grants-map row, worst case (64-char account) | 194 | 0.00194 NEAR |
+| **Floor** | **798** | **0.00798 NEAR** |
+
+Entry sizes are pinned by `stored_attestation_entry__should_have_the_pinned_size`; the grants row is measured at the time of writing. Either way the fee is held to twice the floor, so a test fails when it stops covering the layout.
 
 The rest is headroom, so a layout change cannot leave sold grants under-funded. Over-sizing costs nothing — the margin is never returned — while under-sizing silently reopens the drain. Being a `Config` field, the fee can be re-priced without a release.
 

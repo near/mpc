@@ -186,6 +186,8 @@ pub enum ForeignChainRpcRequest {
     Ton(TonRpcRequest),
     Aptos(AptosRpcRequest),
     Sui(SuiRpcRequest),
+    Avalanche(EvmRpcRequest),
+    Adi(EvmRpcRequest),
     Fogo(SvmRpcRequest),
 }
 
@@ -205,6 +207,8 @@ impl ForeignChainRpcRequest {
             Self::Ton(_) => ForeignChain::Ton,
             Self::Aptos(_) => ForeignChain::Aptos,
             Self::Sui(_) => ForeignChain::Sui,
+            Self::Avalanche(_) => ForeignChain::Avalanche,
+            Self::Adi(_) => ForeignChain::Adi,
             Self::Fogo(_) => ForeignChain::Fogo,
         }
     }
@@ -1380,6 +1384,8 @@ pub enum ForeignChain {
     Ton,
     Aptos,
     Sui,
+    Avalanche,
+    Adi,
     Fogo,
 }
 
@@ -2187,6 +2193,22 @@ mod tests {
             extractors: vec![],
         }),
         ForeignChain::Sui,
+    )]
+    #[case::avalanche(
+        ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Avalanche,
+    )]
+    #[case::adi(
+        ForeignChainRpcRequest::Adi(EvmRpcRequest {
+            tx_id: EvmTxId([12; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Adi,
     )]
     #[case::fogo(
         ForeignChainRpcRequest::Fogo(SvmRpcRequest {
