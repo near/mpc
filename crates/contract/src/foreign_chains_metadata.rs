@@ -89,6 +89,37 @@ impl ForeignChainsMetadata {
     }
 }
 
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+pub(crate) struct SupportedForeignChainsByNode {
+    pub(crate) foreign_chain_support_by_node:
+        IterableMap<dtos::AccountId, dtos::SupportedForeignChains>,
+}
+
+impl Default for SupportedForeignChainsByNode {
+    fn default() -> Self {
+        Self {
+            foreign_chain_support_by_node: IterableMap::new(
+                StorageKey::SupportedForeignChainsByNode,
+            ),
+        }
+    }
+}
+
+impl SupportedForeignChainsByNode {
+    pub(crate) fn to_dto(&self) -> dtos::ForeignChainSupportByNode {
+        let foreign_chain_configuration_by_node = self
+            .foreign_chain_support_by_node
+            .iter()
+            .map(|(account_id, foreign_chains)| (account_id.clone(), foreign_chains.clone()))
+            .collect();
+
+        dtos::ForeignChainSupportByNode {
+            foreign_chain_support_by_node: foreign_chain_configuration_by_node,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
