@@ -310,26 +310,25 @@ impl OperatingAccessKey {
                 String::from_utf8_lossy(args),
             );
         }
-        let signed_tx = SignedTransaction::from_actions(
-            self.next_nonce().await,
-            self.account_id.clone(),
-            contract_id.clone(),
-            &self.signer,
-            vec![Action::FunctionCall(Box::new(
-                near_primitives::action::FunctionCallAction {
-                    method_name: method.to_string(),
-                    args: args.to_vec(),
-                    gas: Gas::from_teragas(tgas),
-                    deposit: Balance::from_yoctonear(deposit),
-                },
-            ))],
-            self.recent_block_hash,
-        );
-        let tx_hash = signed_tx.get_hash();
         let request = methods::send_tx::RpcSendTransactionRequest {
-            signed_transaction: signed_tx,
+            signed_transaction: SignedTransaction::from_actions(
+                self.next_nonce().await,
+                self.account_id.clone(),
+                contract_id.clone(),
+                &self.signer,
+                vec![Action::FunctionCall(Box::new(
+                    near_primitives::action::FunctionCallAction {
+                        method_name: method.to_string(),
+                        args: args.to_vec(),
+                        gas: Gas::from_teragas(tgas),
+                        deposit: Balance::from_yoctonear(deposit),
+                    },
+                ))],
+                self.recent_block_hash,
+            ),
             wait_until: W::STATUS,
         };
+        let tx_hash = request.signed_transaction.get_hash();
         let response = self.client.submit(request).await?;
         Ok(W::response(tx_hash, &self.account_id, response))
     }

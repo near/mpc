@@ -10,7 +10,6 @@ use crate::contracts::{ContractActionCall, make_actions};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{AccountToFund, fund_accounts};
 use crate::mpc::read_contract_state;
-use crate::tx::SubmittedTx;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
 use futures::FutureExt;
@@ -334,14 +333,17 @@ impl RunLoadtestCmd {
                         })
                         .await
                         .map_err(|e| anyhow!("error sending tx request: {}", e))?;
-                    Ok(SubmittedTx { tx_hash, sender_id })
+                    Ok(TransactionInfo::TransactionId {
+                        tx_hash,
+                        sender_account_id: sender_id,
+                    })
                 }
                 .boxed()
             })
         };
         let (tx_sender, mut receiver): (
-            Sender<anyhow::Result<SubmittedTx>>,
-            Receiver<anyhow::Result<SubmittedTx>>,
+            Sender<anyhow::Result<TransactionInfo>>,
+            Receiver<anyhow::Result<TransactionInfo>>,
         ) = tokio::sync::mpsc::channel(100);
         let rpc_clone = config.rpc.clone();
         let parallel = if parallel_sign_calls > 0 {
@@ -355,7 +357,7 @@ impl RunLoadtestCmd {
         let res_handle = tokio::spawn(async move {
             let mut n_rpc_requests = 0;
             let mut n_rpc_errors = 0;
-            let mut txs: Vec<SubmittedTx> = Vec::new();
+            let mut txs: Vec<TransactionInfo> = Vec::new();
             let mut rpc_errs: Vec<String> = Vec::new();
             while let Some(x) = receiver.recv().await {
                 n_rpc_requests += 1;
@@ -406,10 +408,7 @@ impl RunLoadtestCmd {
                     let waiting_time = 1000 / (config.rpc.total_qps() as u64);
                     tokio::time::sleep(Duration::from_millis(waiting_time)).await;
                     let request = RpcTransactionStatusRequest {
-                        transaction_info: TransactionInfo::TransactionId {
-                            tx_hash: tx.tx_hash,
-                            sender_account_id: tx.sender_id.clone(),
-                        },
+                        transaction_info: tx.clone(),
                         wait_until: TxExecutionStatus::Final,
                     };
                     match rpc_clone.submit(request).await {
@@ -506,7 +505,7 @@ fn find_domain_config(state: &ProtocolContractState, id: DomainId) -> Option<Dom
 }
 
 type LoadSenderAsyncFn = Arc<
-    dyn Fn(Arc<Mutex<OperatingAccessKey>>) -> BoxFuture<'static, anyhow::Result<SubmittedTx>>
+    dyn Fn(Arc<Mutex<OperatingAccessKey>>) -> BoxFuture<'static, anyhow::Result<TransactionInfo>>
         + Send
         + Sync
         + 'static,
@@ -520,7 +519,7 @@ async fn send_load(
     keys: Vec<Arc<Mutex<OperatingAccessKey>>>,
     qps: f64,
     sender: LoadSenderAsyncFn,
-    res_sender: tokio::sync::mpsc::Sender<anyhow::Result<SubmittedTx>>,
+    res_sender: tokio::sync::mpsc::Sender<anyhow::Result<TransactionInfo>>,
     cancel: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinSet<()> {
     let mut join_set = tokio::task::JoinSet::new();

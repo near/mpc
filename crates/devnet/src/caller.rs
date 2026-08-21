@@ -2,9 +2,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::account::{OperatingAccessKey, OperatingAccount};
-use crate::tx::SubmittedTx;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
+use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
@@ -30,7 +29,7 @@ pub trait WaitLevel {
 pub struct Included;
 
 impl WaitLevel for Included {
-    type Response = SubmittedTx;
+    type Response = TransactionInfo;
 
     const STATUS: TxExecutionStatus = TxExecutionStatus::Included;
 
@@ -39,9 +38,9 @@ impl WaitLevel for Included {
         sender_id: &AccountId,
         _response: RpcTransactionResponse,
     ) -> Self::Response {
-        SubmittedTx {
+        TransactionInfo::TransactionId {
             tx_hash,
-            sender_id: sender_id.clone(),
+            sender_account_id: sender_id.clone(),
         }
     }
 }

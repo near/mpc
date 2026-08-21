@@ -1,12 +1,5 @@
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
-use near_primitives::hash::CryptoHash;
-use near_primitives::types::AccountId;
 use std::fmt::Debug;
-
-pub struct SubmittedTx {
-    pub tx_hash: CryptoHash,
-    pub sender_id: AccountId,
-}
 
 pub trait IntoReturnValueExt {
     /// Converts the RPC call result to a return value, or error if the result is anything else.
