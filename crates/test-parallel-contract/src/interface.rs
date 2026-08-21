@@ -32,7 +32,7 @@ impl<C: CallContract> ParallelContractInterface<C> {
         target_contract: AccountId,
         calls_by_domain: impl IntoIterator<Item = (DomainConfig, u64)>,
         seed: u64,
-    ) -> Result<C::Output, ParallelContractInterfaceError<C::Error>> {
+    ) -> Result<C::Output, C::Error> {
         let args = MakeParallelSignCallsArgs::new(target_contract, calls_by_domain, seed);
         self.call(MAKE_PARALLEL_SIGN_CALLS, &args).await
     }
@@ -42,7 +42,7 @@ impl<C: CallContract> ParallelContractInterface<C> {
         target_contract: AccountId,
         request: SignRequestArgs,
         count: u64,
-    ) -> Result<C::Output, ParallelContractInterfaceError<C::Error>> {
+    ) -> Result<C::Output, C::Error> {
         let args = MakeDuplicateSignCallsArgs {
             target_contract,
             request,
@@ -56,7 +56,7 @@ impl<C: CallContract> ParallelContractInterface<C> {
         target_contract: AccountId,
         request: CKDRequestArgs,
         count: u64,
-    ) -> Result<C::Output, ParallelContractInterfaceError<C::Error>> {
+    ) -> Result<C::Output, C::Error> {
         let args = MakeDuplicateCkdCallsArgs {
             target_contract,
             request,
@@ -65,28 +65,15 @@ impl<C: CallContract> ParallelContractInterface<C> {
         self.call(MAKE_DUPLICATE_CKD_CALLS, &args).await
     }
 
-    async fn call(
-        &self,
-        method_name: &str,
-        args: &impl Serialize,
-    ) -> Result<C::Output, ParallelContractInterfaceError<C::Error>> {
-        let args = serde_json::to_vec(args)?;
+    async fn call(&self, method_name: &str, args: &impl Serialize) -> Result<C::Output, C::Error> {
+        let args = serde_json::to_vec(args).expect("arg structs are infallibly serializable");
         self.caller
             .call_contract(
                 &self.contract_id,
                 FunctionCallArgs::no_deposit(method_name, args, FAN_OUT_GAS),
             )
             .await
-            .map_err(ParallelContractInterfaceError::Call)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ParallelContractInterfaceError<E> {
-    #[error("failed to serialize call arguments: {0}")]
-    Serialize(#[from] serde_json::Error),
-    #[error("contract call failed: {0}")]
-    Call(E),
 }
 
 #[derive(Serialize)]
