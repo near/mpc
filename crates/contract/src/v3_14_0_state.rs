@@ -15,9 +15,8 @@ use near_sdk::{
 };
 
 use crate::{
-    SupportedForeignChainsByNode,
     config::Config,
-    foreign_chains_metadata::ForeignChainsMetadata,
+    foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,

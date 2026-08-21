@@ -83,7 +83,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         .call(
             "make_parallel_sign_calls",
             json!({
-                "target_contract": cluster.contract.contract_id(),
+                "target_contract": cluster.contract.account_id().as_str(),
                 "robust_ecdsa_calls_by_domain": { "0": ROBUST_ECDSA_CALLS },
                 "ecdsa_calls_by_domain": { "1": ECDSA_CALLS },
                 "eddsa_calls_by_domain": { "2": EDDSA_CALLS },
