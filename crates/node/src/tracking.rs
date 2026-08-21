@@ -1,4 +1,5 @@
 use futures::FutureExt;
+use futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::future::Future;
@@ -88,6 +89,28 @@ where
     handle
         .spawn(current_task().scope_checked(description, f))
         .into()
+}
+
+/// Like [`spawn`], but pairs the task with its description for [`first_task_exit`].
+pub fn spawn_described<F, R>(description: String, f: F) -> (String, AutoAbortTask<R>)
+where
+    F: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    let task = spawn(&description, f);
+    (description, task)
+}
+
+/// Resolves when the first of `tasks` exits, yielding its description and outcome and
+/// aborting the rest. `None` if `tasks` is empty.
+pub async fn first_task_exit<R>(
+    tasks: Vec<(String, AutoAbortTask<R>)>,
+) -> Option<(String, Result<R, JoinError>)> {
+    let mut running = tasks
+        .into_iter()
+        .map(|(description, task)| async move { (description, task.await) })
+        .collect::<FuturesUnordered<_>>();
+    running.next().await
 }
 
 /// A collection of tasks that should all be aborted when the collection itself
@@ -490,6 +513,48 @@ mod tests {
 
         // Then the task ran on the provided runtime's worker thread.
         assert_eq!(thread_name, "spawn-checked-on-target");
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn first_task_exit__should_resolve_to_the_task_that_exited() {
+        // Given a task that panics next to one that never returns,
+        let runtime = named_runtime("first-task-exit");
+        let (root, _handle) = start_root_task("test-root", async {
+            let tasks = vec![
+                (
+                    "never returns".to_string(),
+                    spawn("never returns", std::future::pending::<()>()),
+                ),
+                (
+                    "panics".to_string(),
+                    spawn("panics", async { panic!("task panicked") }),
+                ),
+            ];
+
+            // When we wait for the first exit,
+            first_task_exit(tasks).await
+        });
+        let exited = runtime.block_on(root);
+
+        // Then it resolves to the panicking task rather than waiting on its sibling.
+        let (description, outcome) = exited.expect("a task exited");
+        assert_eq!(description, "panics");
+        assert!(outcome.expect_err("the task panicked").is_panic());
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn first_task_exit__should_resolve_to_none_when_there_are_no_tasks() {
+        // Given no tasks to wait on,
+        let runtime = named_runtime("first-task-exit-empty");
+        let tasks: Vec<(String, AutoAbortTask<()>)> = Vec::new();
+
+        // When we wait for the first exit,
+        let exited = runtime.block_on(first_task_exit(tasks));
+
+        // Then there is nothing to report.
+        assert!(exited.is_none());
     }
 }
 
