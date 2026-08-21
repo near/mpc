@@ -9,8 +9,6 @@
 //! See `docs/design/attestation-verifier-contract.md` for the design.
 
 use near_sdk::{env, near};
-#[cfg(feature = "sandbox-test-hooks")]
-use tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY;
 use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifierError};
 
 use tee_verifier_conversions::{IntoDcapType as _, IntoInterfaceType as _};
@@ -65,13 +63,13 @@ impl TeeVerifier {
     }
 }
 
-/// The timestamp quotes are verified against: block time, unless a sandbox test
-/// pinned one under [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY`]
-/// to keep the checked-in collateral fixture inside its validity window.
+/// The timestamp quotes are verified against: block time, except in test builds,
+/// which pin [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS`] to keep
+/// the checked-in collateral fixture inside its validity window.
 fn now_seconds() -> u64 {
-    #[cfg(feature = "sandbox-test-hooks")]
-    if let Some(bytes) = env::storage_read(SANDBOX_TEST_PINNED_NOW_STORAGE_KEY) {
-        return u64::from_le_bytes(bytes.try_into().expect("pinned timestamp must be 8 bytes"));
+    if cfg!(feature = "sandbox-test-hooks") {
+        tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS
+    } else {
+        env::block_timestamp_ms() / 1000
     }
-    env::block_timestamp_ms() / 1000
 }

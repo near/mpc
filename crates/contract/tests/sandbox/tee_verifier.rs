@@ -34,10 +34,9 @@ use near_workspaces::{
     types::{Gas, NearToken, SecretKey},
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_STORAGE_KEY;
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_secret_key, image_digest, launcher_compose_digest,
-    launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, verified_report,
+    account_secret_key, image_digest, launcher_compose_digest, launcher_image_hash,
+    mock_dto_dstack_attestation, p2p_tls_key, verified_report,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -73,20 +72,6 @@ async fn trust_verifier(setup: &SandboxTestSetup, verifier: &AccountId) {
 async fn deploy_and_trust(setup: &SandboxTestSetup, wasm: &[u8]) -> Contract {
     let verifier = setup.worker.dev_deploy(wasm).await.unwrap();
     trust_verifier(setup, verifier.id()).await;
-    verifier
-}
-
-async fn deploy_and_trust_pinned_verifier(setup: &SandboxTestSetup) -> Contract {
-    let verifier = deploy_and_trust(setup, tee_verifier_contract_with_sandbox_test_hooks()).await;
-    setup
-        .worker
-        .patch_state(
-            verifier.id(),
-            SANDBOX_TEST_PINNED_NOW_STORAGE_KEY,
-            &VALID_ATTESTATION_TIMESTAMP.to_le_bytes(),
-        )
-        .await
-        .unwrap();
     verifier
 }
 
@@ -143,7 +128,7 @@ async fn setup_verified_fixture() -> VerifiedFixture {
 
 async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) -> VerifiedFixture {
     let setup = setup().await;
-    let verifier = deploy_and_trust_pinned_verifier(&setup).await;
+    let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_sandbox_test_hooks()).await;
     whitelist_fixture_dstack_hashes(&setup, allowed_compose_hash).await;
     let submitter = create_fixture_account(&setup.worker, "fixture-node-a").await;
     prepay_grant_from_separate_payer(&setup, &submitter).await;

@@ -63,8 +63,8 @@ pub fn tee_verifier_contract() -> &'static [u8] {
     TEE_VERIFIER_CONTRACT.get_or_init(|| ContractBuilder::new(TEE_VERIFIER_MANIFEST).build())
 }
 
-/// Returns the tee-verifier WASM with the pinnable verification clock enabled.
-/// Use this for tests that need the time-expired fixture quote to reach a
+/// Returns the tee-verifier WASM with the verification clock pinned to the fixture
+/// timestamp. Use this for tests that need the time-expired fixture quote to reach a
 /// Verified verdict; everything else should deploy [`tee_verifier_contract`].
 pub fn tee_verifier_contract_with_sandbox_test_hooks() -> &'static [u8] {
     TEE_VERIFIER_CONTRACT_WITH_SANDBOX_TEST_HOOKS.get_or_init(|| {
