@@ -142,10 +142,11 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// JSON wire format used for the contract's `init` call.
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to
-/// `init` lands, add a `Legacy*` variant emitting the now-old shape and
-/// branch on it in `init_parameters_json` so tests can still target the
-/// previous production contract. After the breaking change has rolled out to
-/// Mainnet/Testnet, drop the obsolete variant.
+/// `init` lands, add a `Legacy*` variant emitting the now-old shape as raw JSON
+/// ([`MpcContractHandle::init`] only speaks the current format) and branch on it
+/// in `init_contract` so tests can still target the previous production
+/// contract. After the breaking change has rolled out to Mainnet/Testnet, drop
+/// the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
     /// Current [`GovernanceThresholdParameters`] shape.
@@ -1321,6 +1322,8 @@ async fn init_contract(
         key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
         ..InitConfig::default()
     };
+    // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
+    // next, and a view resolves against the last final block.
     let outcome = match init_format {
         ContractInitFormat::Current => {
             contract
