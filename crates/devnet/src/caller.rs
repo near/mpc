@@ -69,7 +69,7 @@ impl CallMpcContract for OperatingAccount {
     /// The returned handle logs each call and waits for transaction to be final
     fn call_mpc(&self, contract_id: &AccountId) -> MpcContractHandle<DevnetCaller<Final>> {
         MpcContractHandle::new(
-            DevnetCaller::awaiting_final(self.any_access_key_handle(), Verbosity::Verbose),
+            DevnetCaller::new(self.any_access_key_handle(), Verbosity::Verbose),
             contract_id.clone(),
         )
     }
@@ -86,33 +86,15 @@ pub enum Verbosity {
     Quiet,
 }
 
-impl DevnetCaller<Final> {
-    pub(crate) fn awaiting_final(
-        key: Arc<Mutex<OperatingAccessKey>>,
-        verbosity: Verbosity,
-    ) -> Self {
-        Self {
-            key,
-            verbosity,
-            _wait_level: PhantomData,
-        }
-    }
-}
-
-impl DevnetCaller<Included> {
-    pub(crate) fn awaiting_inclusion(
-        key: Arc<Mutex<OperatingAccessKey>>,
-        verbosity: Verbosity,
-    ) -> Self {
-        Self {
-            key,
-            verbosity,
-            _wait_level: PhantomData,
-        }
-    }
-}
-
 impl<W> DevnetCaller<W> {
+    pub(crate) fn new(key: Arc<Mutex<OperatingAccessKey>>, verbosity: Verbosity) -> Self {
+        Self {
+            key,
+            verbosity,
+            _wait_level: PhantomData,
+        }
+    }
+
     pub(crate) fn with_verbosity(self, verbosity: Verbosity) -> Self {
         Self { verbosity, ..self }
     }

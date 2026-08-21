@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts, resolve_funding_account};
-use crate::caller::{DevnetCaller, Verbosity};
+use crate::caller::{DevnetCaller, Included, Verbosity};
 use crate::cli::{
     DeployParallelSignContractCmd, ListLoadtestCmd, NewLoadtestCmd, RunLoadtestCmd,
     UpdateLoadtestCmd,
@@ -282,10 +282,8 @@ impl RunLoadtestCmd {
                 })
                 .collect();
             Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
-                let interface = ParallelContractInterface::new(
-                    DevnetCaller::awaiting_inclusion(key, Verbosity::Quiet),
-                    parallel_contract.clone(),
-                );
+                let caller: DevnetCaller<Included> = DevnetCaller::new(key, Verbosity::Quiet);
+                let interface = ParallelContractInterface::new(caller, parallel_contract.clone());
                 let mpc_account = mpc_account.clone();
                 let calls_by_domain = calls_by_domain.clone();
                 async move {
