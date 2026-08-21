@@ -1,10 +1,11 @@
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
-use near_primitives::transaction::SignedTransaction;
+use near_primitives::hash::CryptoHash;
+use near_primitives::types::AccountId;
 use std::fmt::Debug;
 
 pub struct SubmittedTx {
-    pub signed_tx: SignedTransaction,
-    pub response: RpcTransactionResponse,
+    pub tx_hash: CryptoHash,
+    pub sender_id: AccountId,
 }
 
 pub trait IntoReturnValueExt {
@@ -12,11 +13,11 @@ pub trait IntoReturnValueExt {
     fn into_return_value(self) -> anyhow::Result<Vec<u8>>;
 }
 
-impl<E: Debug> IntoReturnValueExt for Result<SubmittedTx, E> {
+impl<E: Debug> IntoReturnValueExt for Result<RpcTransactionResponse, E> {
     fn into_return_value(self) -> anyhow::Result<Vec<u8>> {
         match self {
-            Ok(submitted) => {
-                let Some(outcome) = submitted.response.final_execution_outcome else {
+            Ok(tx_response) => {
+                let Some(outcome) = tx_response.final_execution_outcome else {
                     return Err(anyhow::anyhow!("Final execution outcome not found"));
                 };
                 let outcome = outcome.into_outcome();

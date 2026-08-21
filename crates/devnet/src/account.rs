@@ -16,11 +16,11 @@
     clippy::disallowed_types,
     reason = "devnet tooling uses `near_crypto_public::SecretKey` to build signed transactions via the legacy `near_jsonrpc_client` API."
 )]
+use crate::caller::WaitLevel;
 use crate::constants::{LOCALNET_MASTER_ACCOUNT_ID, LOCALNET_VALIDATOR_KEY_PATH};
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
-use crate::tx::SubmittedTx;
 use crate::types::{
     ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind, ParsedConfig,
 };
@@ -292,17 +292,15 @@ impl OperatingAccessKey {
     }
 
     /// Submits a transaction to the chain to mutably call a function on a contract.
-    #[expect(clippy::too_many_arguments)]
-    pub async fn submit_tx_to_call_function(
+    pub async fn submit_tx_to_call_function<W: WaitLevel>(
         &mut self,
         contract_id: &AccountId,
         method: &str,
         args: &[u8],
         tgas: u64,
         deposit: u128,
-        wait_until: TxExecutionStatus,
         verbose: bool,
-    ) -> anyhow::Result<SubmittedTx> {
+    ) -> anyhow::Result<W::Response> {
         if verbose {
             println!(
                 "[{}] Calling {}::{} with args {}",
@@ -327,15 +325,13 @@ impl OperatingAccessKey {
             ))],
             self.recent_block_hash,
         );
+        let tx_hash = signed_tx.get_hash();
         let request = methods::send_tx::RpcSendTransactionRequest {
-            signed_transaction: signed_tx.clone(),
-            wait_until,
+            signed_transaction: signed_tx,
+            wait_until: W::STATUS,
         };
         let response = self.client.submit(request).await?;
-        Ok(SubmittedTx {
-            signed_tx,
-            response,
-        })
+        Ok(W::response(tx_hash, &self.account_id, response))
     }
 
     pub async fn sign_tx_from_actions(&mut self, action_call: ActionCall) -> SignedTransaction {

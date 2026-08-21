@@ -1,6 +1,6 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccount, OperatingAccounts, resolve_funding_account};
-use crate::caller::{CallMpcContract, Verbosity, WithVerbosity};
+use crate::caller::{CallMpcContract, Final, Verbosity, WithVerbosity};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,
     MpcProposeUpdateContractCmd, MpcViewContractCmd, MpcVoteAddDomainsCmd, MpcVoteApprovedHashCmd,
@@ -396,15 +396,7 @@ impl MpcInitContractCmd {
         access_key
             .lock()
             .await
-            .submit_tx_to_call_function(
-                &contract,
-                method_names::INIT,
-                &args,
-                300,
-                0,
-                near_primitives::views::TxExecutionStatus::Final,
-                true,
-            )
+            .submit_tx_to_call_function::<Final>(&contract, method_names::INIT, &args, 300, 0, true)
             .await
             .into_return_value()
             .unwrap();
@@ -800,13 +792,12 @@ impl MpcVoteApprovedHashCmd {
             voting_futures.push(async move {
                 key.lock()
                     .await
-                    .submit_tx_to_call_function(
+                    .submit_tx_to_call_function::<Final>(
                         &contract,
                         method_names::VOTE_CODE_HASH,
                         &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
                         300,
                         0,
-                        near_primitives::views::TxExecutionStatus::Final,
                         true,
                     )
                     .await

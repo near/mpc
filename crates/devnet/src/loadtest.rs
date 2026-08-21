@@ -20,7 +20,6 @@ use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRe
 use near_jsonrpc_client::methods::send_tx;
 use near_jsonrpc_client::methods::tx::TransactionInfo;
 use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState};
-use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
 use std::io::{Write, stdout};
@@ -285,7 +284,7 @@ impl RunLoadtestCmd {
                 .collect();
             Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
                 let interface = ParallelContractInterface::new(
-                    DevnetCaller::new(key, TxExecutionStatus::Included, Verbosity::Quiet),
+                    DevnetCaller::awaiting_inclusion(key, Verbosity::Quiet),
                     parallel_contract.clone(),
                 );
                 let mpc_account = mpc_account.clone();
@@ -326,17 +325,16 @@ impl RunLoadtestCmd {
                 let rpc_clone = rpc_clone.clone();
                 async move {
                     let signed_tx = key.lock().await.sign_tx_from_actions(action_call).await;
-                    let response = rpc_clone
+                    let tx_hash = signed_tx.get_hash();
+                    let sender_id = signed_tx.transaction.signer_id().clone();
+                    rpc_clone
                         .submit(send_tx::RpcSendTransactionRequest {
-                            signed_transaction: signed_tx.clone(),
+                            signed_transaction: signed_tx,
                             wait_until: TxExecutionStatus::Included,
                         })
                         .await
                         .map_err(|e| anyhow!("error sending tx request: {}", e))?;
-                    Ok(SubmittedTx {
-                        signed_tx,
-                        response,
-                    })
+                    Ok(SubmittedTx { tx_hash, sender_id })
                 }
                 .boxed()
             })
@@ -357,7 +355,7 @@ impl RunLoadtestCmd {
         let res_handle = tokio::spawn(async move {
             let mut n_rpc_requests = 0;
             let mut n_rpc_errors = 0;
-            let mut txs: Vec<SignedTransaction> = Vec::new();
+            let mut txs: Vec<SubmittedTx> = Vec::new();
             let mut rpc_errs: Vec<String> = Vec::new();
             while let Some(x) = receiver.recv().await {
                 n_rpc_requests += 1;
@@ -370,7 +368,7 @@ impl RunLoadtestCmd {
                     }
                     Ok(submitted) => {
                         if store_data {
-                            txs.push(submitted.signed_tx);
+                            txs.push(submitted);
                         }
                     }
                 }
@@ -408,8 +406,9 @@ impl RunLoadtestCmd {
                     let waiting_time = 1000 / (config.rpc.total_qps() as u64);
                     tokio::time::sleep(Duration::from_millis(waiting_time)).await;
                     let request = RpcTransactionStatusRequest {
-                        transaction_info: TransactionInfo::Transaction {
-                            signed_tx: tx.clone(),
+                        transaction_info: TransactionInfo::TransactionId {
+                            tx_hash: tx.tx_hash,
+                            sender_account_id: tx.sender_id.clone(),
                         },
                         wait_until: TxExecutionStatus::Final,
                     };
