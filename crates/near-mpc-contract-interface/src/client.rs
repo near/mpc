@@ -2,9 +2,12 @@
 //!
 //! [`MpcContractHandle`] is the single source of each method's wire format
 //! (method name, argument struct, gas, deposit), generic over a transport
-//! backend implementing [`CallContract`].
+//! backend implementing [`CallContract`] for change methods and
+//! [`ViewContract`] for views.
 
-use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
+use near_contract_transport::{
+    CallContract, FunctionCallArgs, NearGas, NearToken, ObservedState, ViewArgs, ViewContract,
+};
 
 use crate::call_args::{
     RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs, SignArgs,
@@ -17,19 +20,24 @@ use crate::deposits::{
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
-    REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
-    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
-    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
+    ALLOWED_FOREIGN_CHAIN_PROVIDERS, GET_AVAILABLE_FOREIGN_CHAINS,
+    GET_FOREIGN_CHAIN_SUPPORT_BY_NODE, GET_FOREIGN_CHAINS_CONFIGS, GET_SUPPORTED_FOREIGN_CHAINS,
+    GET_TEE_ACCOUNTS, MIGRATION_INFO, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAIN_SUPPORT, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, STATE,
+    SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
+    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
     VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
-    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain, PayloadBytesError,
-    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
-    SupportedForeignChains, VerifyForeignTransactionRequestArgs,
+    AccountId, Attestation, AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey,
+    CKDRequestArgs, ChainEntry, DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId,
+    ForeignChain, ForeignChainSupportByNode, ForeignChainsConfigs, MigrationInfo, NodeId,
+    PayloadBytesError, ProposeUpdateArgs, ProposedGovernanceThresholdParameters,
+    ProtocolContractState, SignRequestArgs, SupportedForeignChains,
+    VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use std::collections::BTreeMap;
 
 /// Default gas for handle-issued calls without a method-specific amount.
 // TODO(#166): 300 Tgas used to be the protocol maximum and higher than most methods
@@ -315,6 +323,96 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 }
 
+impl<C: ViewContract> MpcContractHandle<C> {
+    pub async fn state(
+        &self,
+    ) -> Result<ObservedState<ProtocolContractState>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(STATE))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    pub async fn get_tee_accounts(
+        &self,
+    ) -> Result<ObservedState<Vec<NodeId>>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    pub async fn migration_info(
+        &self,
+    ) -> Result<ObservedState<MigrationInfo>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(MIGRATION_INFO))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    pub async fn get_supported_foreign_chains(
+        &self,
+    ) -> Result<ObservedState<SupportedForeignChains>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(GET_SUPPORTED_FOREIGN_CHAINS))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    pub async fn get_foreign_chain_support_by_node(
+        &self,
+    ) -> Result<ObservedState<ForeignChainSupportByNode>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(GET_FOREIGN_CHAIN_SUPPORT_BY_NODE))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    pub async fn get_available_foreign_chains(
+        &self,
+    ) -> Result<ObservedState<AvailableForeignChains>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    pub async fn get_foreign_chains_configs(
+        &self,
+    ) -> Result<ObservedState<ForeignChainsConfigs>, MpcContractHandleError<C::Error>> {
+        self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
+            .await?
+            .deserialize()
+            .map_err(MpcContractHandleError::DeserializeResponse)
+    }
+
+    /// The contract's only borsh-serialized view result.
+    pub async fn allowed_foreign_chain_providers(
+        &self,
+    ) -> Result<ObservedState<BTreeMap<ForeignChain, ChainEntry>>, MpcContractHandleError<C::Error>>
+    {
+        let observed = self
+            .view(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
+            .await?;
+        Ok(ObservedState {
+            observed_at: observed.observed_at,
+            value: borsh::from_slice(&observed.value)
+                .map_err(MpcContractHandleError::DecodeResponse)?,
+        })
+    }
+
+    async fn view(
+        &self,
+        view_args: ViewArgs,
+    ) -> Result<ObservedState, MpcContractHandleError<C::Error>> {
+        self.caller
+            .view_contract(&self.contract_id, view_args)
+            .await
+            .map_err(MpcContractHandleError::View)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MpcContractHandleError<E> {
     #[error("failed to serialize call arguments: {0}")]
@@ -325,6 +423,12 @@ pub enum MpcContractHandleError<E> {
     Deposit(#[from] DepositOverflowError),
     #[error("contract call failed: {0}")]
     Call(E),
+    #[error("contract view failed: {0}")]
+    View(E),
+    #[error("failed to deserialize the view response: {0}")]
+    DeserializeResponse(serde_json::Error),
+    #[error("failed to borsh-decode the view response: {0}")]
+    DecodeResponse(std::io::Error),
 }
 
 impl<E> From<PayloadBytesError> for MpcContractHandleError<E> {
@@ -350,7 +454,9 @@ mod tests {
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
         ReconstructionThreshold, SignRequestArgs, VerifyForeignTransactionRequestArgs,
     };
-    use near_contract_transport::{CallContract, FunctionCallArgs};
+    use near_contract_transport::{
+        CallContract, FunctionCallArgs, ObservedState, ViewArgs, ViewContract,
+    };
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use std::collections::{BTreeMap, BTreeSet};
@@ -380,6 +486,32 @@ mod tests {
         }
     }
 
+    /// A [`ViewContract`] that records the view requests it is handed, so a test
+    /// can assert the exact wire encoding a handle method produced.
+    #[derive(Default)]
+    struct RecordingViewer {
+        views: Mutex<Vec<(AccountId, ViewArgs)>>,
+    }
+
+    impl ViewContract for RecordingViewer {
+        type Error = ();
+
+        async fn view_contract(
+            &self,
+            contract_id: &AccountId,
+            view_args: ViewArgs,
+        ) -> Result<ObservedState, Self::Error> {
+            self.views
+                .lock()
+                .unwrap()
+                .push((contract_id.clone(), view_args));
+            Ok(ObservedState {
+                observed_at: 7.into(),
+                value: b"null".to_vec(),
+            })
+        }
+    }
+
     /// Renders a recorded call as its reviewable wire format
     /// (method, gas, deposit, args).
     fn render(contract_id: &AccountId, call: &FunctionCallArgs) -> String {
@@ -397,6 +529,15 @@ mod tests {
             call.method_name,
             call.gas,
             call.deposit.exact_amount_display(),
+        )
+    }
+
+    /// Renders a recorded view as its reviewable wire format (method, args).
+    fn render_view(contract_id: &AccountId, view: &ViewArgs) -> String {
+        format!(
+            "contract: {contract_id}\nmethod:   {}\nargs:     {}",
+            view.method_name,
+            String::from_utf8_lossy(&view.args),
         )
     }
 
@@ -563,6 +704,38 @@ mod tests {
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        insta::assert_snapshot!(catalog);
+    }
+
+    /// Read-side counterpart of the catalog above: every view method is called
+    /// once and its request wire format becomes a section of the snapshot. New
+    /// view methods add a call here.
+    #[tokio::test]
+    async fn mpc_contract_handle__should_match_the_view_wire_format_catalog() {
+        // Given
+        let viewer = RecordingViewer::default();
+        let handle = MpcContractHandle::new(&viewer, "mpc.near".parse().unwrap());
+
+        // When: every view method, once, in declaration order. The recorded
+        // response cannot decode into eight distinct return types, so only the
+        // request is under test and the result is discarded.
+        let _ = handle.state().await;
+        let _ = handle.get_tee_accounts().await;
+        let _ = handle.migration_info().await;
+        let _ = handle.get_supported_foreign_chains().await;
+        let _ = handle.get_foreign_chain_support_by_node().await;
+        let _ = handle.get_available_foreign_chains().await;
+        let _ = handle.get_foreign_chains_configs().await;
+        let _ = handle.allowed_foreign_chain_providers().await;
+
+        // Then
+        let views = viewer.views.lock().unwrap();
+        assert_eq!(views.len(), 8);
+        let catalog = views
+            .iter()
+            .map(|(contract_id, view)| render_view(contract_id, view))
             .collect::<Vec<_>>()
             .join("\n\n");
         insta::assert_snapshot!(catalog);

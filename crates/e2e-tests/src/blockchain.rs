@@ -1,8 +1,11 @@
 use std::marker::PhantomData;
 
 use ed25519_dalek::SigningKey;
-use near_kit::{ExecutedOptimistic, Final, FinalExecutionOutcome, WaitLevel};
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
+use near_kit::{
+    BlockReference, ExecutedOptimistic, Final, FinalExecutionOutcome, Finality, WaitLevel,
+};
+use near_mpc_contract_interface::client::MpcContractHandle;
 use serde::de::DeserializeOwned;
 
 use crate::NearKitCaller;
@@ -175,6 +178,16 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }
 
+    /// Typed read access to the MPC contract, the read-side counterpart of
+    /// [`CallMpc::call_mpc`](crate::caller::CallMpc::call_mpc). Views need no
+    /// signer, so the handle borrows the contract itself as its viewer.
+    pub fn view_mpc(&self) -> MpcContractHandle<&Self> {
+        MpcContractHandle::new(self, self.contract_id.clone())
+    }
+
+    /// Untyped escape hatch, kept for reads that must tolerate a contract binary
+    /// whose response does not deserialize into the current DTO. Prefer
+    /// [`Self::view_mpc`].
     pub async fn view<T: DeserializeOwned + Send + 'static>(
         &self,
         method: &str,
@@ -185,21 +198,6 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
     }
 
-    pub async fn view_borsh<T: borsh::BorshDeserialize + Send + 'static>(
-        &self,
-        method: &str,
-    ) -> anyhow::Result<T> {
-        self.client
-            .view::<T>(&self.contract_id, method)
-            .borsh()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
-    }
-
-    pub async fn state(&self) -> anyhow::Result<ProtocolContractState> {
-        self.view("state").await
-    }
-
     /// SHA-256 hash of the contract code currently deployed at this account.
     pub async fn code_hash(&self) -> anyhow::Result<near_kit::CryptoHash> {
         let view = self
@@ -208,5 +206,30 @@ impl DeployedContract {
             .await
             .map_err(|e| anyhow::anyhow!("view_account for `{}` failed: {e}", self.contract_id))?;
         Ok(view.code_hash)
+    }
+}
+
+impl ViewContract for DeployedContract {
+    type Error = near_kit::Error;
+
+    async fn view_contract(
+        &self,
+        contract_id: &near_kit::AccountId,
+        view_args: ViewArgs,
+    ) -> Result<ObservedState, Self::Error> {
+        let result = self
+            .client
+            .rpc()
+            .view_function(
+                contract_id,
+                &view_args.method_name,
+                &view_args.args,
+                BlockReference::Finality(Finality::Final),
+            )
+            .await?;
+        Ok(ObservedState {
+            observed_at: result.block_height.into(),
+            value: result.result,
+        })
     }
 }

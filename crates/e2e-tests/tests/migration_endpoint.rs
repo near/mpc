@@ -1,17 +1,11 @@
 use crate::common;
 
-use std::collections::BTreeMap;
-
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, ParticipantInfo};
-
-/// Per-account migration entry: (backup_service_info, destination_node_info).
-type AccountEntry = (Option<BackupServiceInfo>, Option<DestinationNodeInfo>);
-
-/// Full migration state as returned by the contract's `migration_info` view.
-type MigrationState = BTreeMap<String, AccountEntry>;
+use near_mpc_contract_interface::types::{
+    BackupServiceInfo, DestinationNodeInfo, MigrationInfo, ParticipantInfo,
+};
 
 /// Verify the `/debug/migrations` endpoint tracks migration state in lockstep
 /// with the contract. The scenario is a chain of Given/When/Then steps:
@@ -31,7 +25,7 @@ async fn migration_endpoint__should_track_migration_state() {
         common::must_setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {}).await;
 
     let client = reqwest::Client::new();
-    let mut expected_migrations = MigrationState::new();
+    let mut expected_migrations = MigrationInfo::new();
 
     for (i, node_state) in cluster.nodes.iter().enumerate() {
         let node = match node_state {
@@ -39,7 +33,7 @@ async fn migration_endpoint__should_track_migration_state() {
             _ => panic!("node {i} is not running"),
         };
         let web_addr = node.web_address();
-        let account_id = node_state.account_id().to_string();
+        let account_id = node_state.account_id().clone();
 
         // Given: the migration state carried over from prior iterations
         //         (empty on the first iteration).
@@ -110,11 +104,9 @@ async fn migration_endpoint__should_track_migration_state() {
     }
 }
 
-async fn get_contract_migrations(
-    cluster: &e2e_tests::MpcCluster,
-) -> anyhow::Result<MigrationState> {
+async fn get_contract_migrations(cluster: &e2e_tests::MpcCluster) -> anyhow::Result<MigrationInfo> {
     cluster
-        .view_migration_info::<MigrationState>()
+        .view_migration_info()
         .await
         .context("failed to view migration info")
 }
@@ -122,7 +114,7 @@ async fn get_contract_migrations(
 async fn get_debug_migrations(
     client: &reqwest::Client,
     web_addr: &str,
-) -> anyhow::Result<(u64, MigrationState)> {
+) -> anyhow::Result<(u64, MigrationInfo)> {
     let resp = client
         .get(format!("http://{web_addr}/debug/migrations"))
         .send()
@@ -132,7 +124,7 @@ async fn get_debug_migrations(
     if status != reqwest::StatusCode::OK {
         bail!("unexpected /debug/migrations status: {status}");
     }
-    resp.json::<(u64, MigrationState)>()
+    resp.json::<(u64, MigrationInfo)>()
         .await
         .context("failed to parse migration response")
 }
@@ -141,7 +133,7 @@ async fn get_debug_migrations(
 /// Retries to absorb indexer lag, then returns an error on timeout.
 async fn ensure_contract_matches(
     cluster: &e2e_tests::MpcCluster,
-    expected: &MigrationState,
+    expected: &MigrationInfo,
 ) -> anyhow::Result<()> {
     let expected = expected.clone();
     (|| async {
@@ -166,7 +158,7 @@ async fn ensure_contract_matches(
 async fn ensure_endpoint_matches(
     client: &reqwest::Client,
     web_addr: &str,
-    expected: &MigrationState,
+    expected: &MigrationInfo,
 ) -> anyhow::Result<()> {
     let expected = expected.clone();
     (|| async {

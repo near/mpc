@@ -3,8 +3,7 @@ use std::future::Future;
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::IsSyncing;
 use near_account_id::AccountId;
-use near_contract_transport::{BlockHeight, ObservedState};
-use near_contract_transport::{ViewArgs, ViewContract};
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
 use serde::de::DeserializeOwned;
 
 use super::subscription::ContractMethodSubscription;
@@ -102,9 +101,8 @@ pub trait ViewMethod {
         Res: DeserializeOwned + Send + Clone;
 }
 
-/// All other viewer traits are derived from this one. Subscriptions track the
-/// height a value was observed at, so the backend must report one.
-pub(crate) trait ViewRaw: IsSyncing + ViewContract<ObservedAt = BlockHeight> {
+/// All other viewer traits are derived from this one.
+pub(crate) trait ViewRaw: IsSyncing + ViewContract {
     // waits until self is synced and then queries the view function
     fn view_raw(
         &self,
@@ -129,7 +127,7 @@ pub trait WatchContractState<Res> {
 
 impl<T> ViewRaw for T
 where
-    T: IsSyncing + ViewContract<ObservedAt = BlockHeight>,
+    T: IsSyncing + ViewContract,
     <T as ViewContract>::Error: std::fmt::Display,
 {
     async fn view_raw(

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
-use near_contract_transport::{BlockHeight, ObservedState, ViewArgs, ViewContract};
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
 
 use crate::types::LatestFinalBlockInfo;
 use crate::{
@@ -31,7 +31,6 @@ impl NearViewClientActorHandle {
 
 impl ViewContract for NearViewClientActorHandle {
     type Error = NearViewClientError;
-    type ObservedAt = BlockHeight;
     /// calls view method contract_id::method_name(args) and returns the result
     async fn view_contract(
         &self,

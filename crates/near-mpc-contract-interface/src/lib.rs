@@ -22,7 +22,7 @@ pub mod types {
     pub use near_mpc_crypto_types::ckd::CKDRequest;
 
     pub use near_mpc_crypto_types::kdf;
-    pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo};
+    pub use node_migrations::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo};
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{

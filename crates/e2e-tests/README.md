@@ -125,8 +125,11 @@ impl NearBlockchain {
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
 client. It exposes `account_id()`, `call`/`call_final` (from the contract
 account, used only for `init`), `call_from_with_deposit` (untyped escape hatch
-for `prepay_attestation_storage`, which has no typed method yet), `view`, and
-`state()` (parsed `ProtocolContractState`).
+for `prepay_attestation_storage`, which has no typed method yet), and
+`view_mpc()` for typed reads. It implements the `ViewContract` transport trait
+itself — views need no signer — so `view_mpc()` returns an
+`MpcContractHandle<&DeployedContract>`. The untyped `view` remains for the one
+read that must tolerate an older contract binary's response (`config`).
 
 #### `NearKitCaller<T>` — signer-bound caller (`caller` module)
 

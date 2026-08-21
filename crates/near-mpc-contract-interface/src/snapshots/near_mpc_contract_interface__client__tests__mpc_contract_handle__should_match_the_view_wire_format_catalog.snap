@@ -1,0 +1,35 @@
+---
+source: crates/near-mpc-contract-interface/src/client.rs
+expression: catalog
+---
+contract: mpc.near
+method:   state
+args:     {}
+
+contract: mpc.near
+method:   get_tee_accounts
+args:     {}
+
+contract: mpc.near
+method:   migration_info
+args:     {}
+
+contract: mpc.near
+method:   get_supported_foreign_chains
+args:     {}
+
+contract: mpc.near
+method:   get_foreign_chain_support_by_node
+args:     {}
+
+contract: mpc.near
+method:   get_available_foreign_chains
+args:     {}
+
+contract: mpc.near
+method:   get_foreign_chains_configs
+args:     {}
+
+contract: mpc.near
+method:   allowed_foreign_chain_providers
+args:     {}

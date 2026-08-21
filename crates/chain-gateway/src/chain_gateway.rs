@@ -17,7 +17,7 @@ use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
 use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
-use near_contract_transport::{BlockHeight, ObservedState};
+use near_contract_transport::ObservedState;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -38,7 +38,6 @@ impl IsSyncing for ChainGateway {
 
 impl ViewContract for ChainGateway {
     type Error = NearViewClientError;
-    type ObservedAt = BlockHeight;
     async fn view_contract(
         &self,
         contract_id: &AccountId,

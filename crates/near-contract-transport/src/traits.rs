@@ -34,19 +34,27 @@ impl<T: CallContract> CallContract for &T {
 /// A backend executing NEAR view calls against a contract.
 ///
 /// Implementors wire [`ViewArgs`] to their transport (nearcore view client,
-/// RPC, test double) and surface the transport's native error as
+/// RPC, test double), convert the transport's observation height into
+/// [`BlockHeight`](crate::BlockHeight), and surface its native error as
 /// [`Error`](ViewContract::Error).
 pub trait ViewContract {
     type Error;
-    /// Height witness: [`BlockHeight`] where the backend reports the
-    /// observation height, `()` where it cannot.
-    ///
-    /// [`BlockHeight`]: crate::BlockHeight
-    type ObservedAt;
 
     fn view_contract(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> impl Future<Output = Result<ObservedState<Vec<u8>, Self::ObservedAt>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<ObservedState<Vec<u8>>, Self::Error>> + Send;
+}
+
+impl<T: ViewContract> ViewContract for &T {
+    type Error = T::Error;
+
+    fn view_contract(
+        &self,
+        contract_id: &AccountId,
+        view_args: ViewArgs,
+    ) -> impl Future<Output = Result<ObservedState<Vec<u8>>, Self::Error>> + Send {
+        T::view_contract(self, contract_id, view_args)
+    }
 }

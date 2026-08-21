@@ -71,18 +71,16 @@ impl BlockHeight {
 }
 
 /// A value read from a contract together with the height it was observed at.
-/// `H` is the backend's height witness: [`BlockHeight`] where the backend
-/// reports one, `()` where it cannot.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ObservedState<T = Vec<u8>, H = BlockHeight> {
-    pub observed_at: H,
+pub struct ObservedState<T = Vec<u8>> {
+    pub observed_at: BlockHeight,
     pub value: T,
 }
 
-impl<H> ObservedState<Vec<u8>, H> {
+impl ObservedState<Vec<u8>> {
     pub fn deserialize<Res: DeserializeOwned>(
         self,
-    ) -> Result<ObservedState<Res, H>, serde_json::Error> {
+    ) -> Result<ObservedState<Res>, serde_json::Error> {
         Ok(ObservedState {
             observed_at: self.observed_at,
             value: serde_json::from_slice(&self.value)?,

@@ -1,6 +1,13 @@
-use crate::types::{Ed25519PublicKey, ParticipantInfo};
+use crate::types::{AccountId, Ed25519PublicKey, ParticipantInfo};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+/// Return type of the contract's `migration_info` view: per account, the
+/// registered backup service and the in-flight migration destination, either of
+/// which may be absent.
+pub type MigrationInfo =
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(

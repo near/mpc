@@ -4,25 +4,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use std::collections::BTreeMap;
-
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::ProcessGuard;
 use near_mpc_contract_interface::types::{
-    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, ParticipantInfo,
-    ProtocolContractState,
+    AccountId, BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
+    ParticipantInfo, ProtocolContractState,
 };
 use rand::SeedableRng;
-
-/// Mirror of the production [`node::indexer::migrations::ContractMigrationInfo`]
-/// type. Used to deserialize the `/debug/migrations` response strictly so the
-/// readiness asserts compare typed fields rather than substring-match the
-/// JSON body.
-type ContractMigrationInfo =
-    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>;
 
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_secs(120);
 const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -228,25 +219,25 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
 }
 
 /// Fetch one node's `/debug/migrations` endpoint and deserialize the body
-/// into the typed [`ContractMigrationInfo`] map (the second element of the
-/// `(indexer_height, ContractMigrationInfo)` tuple the endpoint returns).
+/// into the typed [`MigrationInfo`] map (the second element of the
+/// `(indexer_height, MigrationInfo)` tuple the endpoint returns).
 async fn fetch_debug_migration_info(
     http_client: &reqwest::Client,
     web_addr: &str,
-) -> anyhow::Result<ContractMigrationInfo> {
+) -> anyhow::Result<MigrationInfo> {
     let body = http_client
         .get(format!("http://{web_addr}/debug/migrations"))
         .send()
         .await?
         .text()
         .await?;
-    let (_indexer_height, info) = serde_json::from_str::<(u64, ContractMigrationInfo)>(&body)
+    let (_indexer_height, info) = serde_json::from_str::<(u64, MigrationInfo)>(&body)
         .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
     Ok(info)
 }
 
 /// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
-/// re-running `check` against the typed [`ContractMigrationInfo`] until it
+/// re-running `check` against the typed [`MigrationInfo`] until it
 /// returns `Ok` (or the timeout elapses). `description` is interpolated
 /// into the timeout error.
 async fn wait_for_debug_migration<F>(
@@ -255,7 +246,7 @@ async fn wait_for_debug_migration<F>(
     check: F,
 ) -> anyhow::Result<()>
 where
-    F: Fn(&ContractMigrationInfo) -> anyhow::Result<()>,
+    F: Fn(&MigrationInfo) -> anyhow::Result<()>,
 {
     let http_client = reqwest::Client::new();
     (|| async {
@@ -275,7 +266,7 @@ where
 
 fn running_state_matches_participant_key(
     state: &ProtocolContractState,
-    account_id: &str,
+    account_id: &AccountId,
     expected_pk: &str,
 ) -> bool {
     match state {
@@ -285,7 +276,7 @@ fn running_state_matches_participant_key(
                 .participants
                 .iter()
                 .any(|(a, _, info)| {
-                    a.as_str() == account_id && String::from(&info.tls_public_key) == expected_pk
+                    a == account_id && String::from(&info.tls_public_key) == expected_pk
                 })
         }
         _ => false,
@@ -300,7 +291,7 @@ async fn register_backup_service_and_wait(
     backup_service: &BackupService,
 ) -> anyhow::Result<()> {
     let backup_public_key = backup_service.public_key()?;
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account = cluster.nodes[source_idx].account_id().clone();
 
     let outcome = cluster
         .register_backup_service(
@@ -318,13 +309,13 @@ async fn register_backup_service_and_wait(
     );
 
     (|| async {
-        let info: serde_json::Value = cluster
+        let info = cluster
             .view_migration_info()
             .await
             .context("failed to view migration info")?;
-        let entry = info.get(&source_account_id);
         anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(0).unwrap_or(&serde_json::Value::Null).is_null()),
+            info.get(&source_account)
+                .is_some_and(|(backup_service, _)| backup_service.is_some()),
             "node has not indexed backup registration yet"
         );
         Ok(())
@@ -343,9 +334,6 @@ async fn register_backup_service_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("source node not running"),
     };
-    let source_account: AccountId = source_account_id
-        .parse()
-        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     wait_for_debug_migration(
         &source_web_addr,
         "source node debug endpoint to show backup registration",
@@ -397,7 +385,7 @@ async fn start_migration_and_wait(
     source_idx: usize,
     target_idx: usize,
 ) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
     let target_p2p_url = cluster.nodes[target_idx].p2p_url();
     let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
@@ -420,13 +408,13 @@ async fn start_migration_and_wait(
     );
 
     (|| async {
-        let info: serde_json::Value = cluster
+        let info = cluster
             .view_migration_info()
             .await
             .context("failed to view migration info")?;
-        let entry = info.get(&source_account_id);
         anyhow::ensure!(
-            entry.is_some_and(|e| !e.get(1).unwrap_or(&serde_json::Value::Null).is_null()),
+            info.get(&source_account)
+                .is_some_and(|(_, destination)| destination.is_some()),
             "contract has not indexed node migration yet"
         );
         Ok(())
@@ -443,8 +431,8 @@ async fn start_migration_and_wait(
 
     // Wait for the target's own indexer to ingest start_node_migration
     // before backup-cli does PUT keyshares. Otherwise the target's
-    // `MigrationInfo.active_migration` flips mid-PUT, fires the
-    // migration web-server's per-connection cancellation token, and
+    // `migration_service::types::MigrationInfo.active_migration` flips mid-PUT,
+    // fires the migration web-server's per-connection cancellation token, and
     // tears down the in-flight TLS stream.
     //
     // Note: we check destination_node_info.tls_public_key because it's
@@ -461,9 +449,6 @@ async fn start_migration_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("target node not running"),
     };
-    let source_account: AccountId = source_account_id
-        .parse()
-        .with_context(|| format!("invalid source account id: {source_account_id}"))?;
     wait_for_debug_migration(
         &target_web_addr,
         "target node to index node migration",
@@ -517,7 +502,7 @@ async fn wait_for_migration_completion(
     source_idx: usize,
     target_idx: usize,
 ) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().to_string();
+    let source_account = cluster.nodes[source_idx].account_id().clone();
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
 
     (|| async {
@@ -526,7 +511,7 @@ async fn wait_for_migration_completion(
             .await
             .context("failed to get contract state")?;
         anyhow::ensure!(
-            running_state_matches_participant_key(&state, &source_account_id, &target_p2p_key),
+            running_state_matches_participant_key(&state, &source_account, &target_p2p_key),
             "target node not yet active participant"
         );
         Ok(())
@@ -543,16 +528,15 @@ async fn wait_for_migration_completion(
     .context("timed out waiting for migration to complete")?;
 
     (|| async {
-        let migration_info: serde_json::Value = cluster
+        let migration_info = cluster
             .view_migration_info()
             .await
             .context("failed to view migration info")?;
-        let entry = migration_info
-            .get(&source_account_id)
+        let (_, destination) = migration_info
+            .get(&source_account)
             .context("account not found in migration info")?;
-        let destination = entry.get(1).unwrap_or(&serde_json::Value::Null);
         anyhow::ensure!(
-            destination.is_null(),
+            destination.is_none(),
             "migration destination should be cleared after completion"
         );
         Ok(())

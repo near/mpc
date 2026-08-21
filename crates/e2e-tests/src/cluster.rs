@@ -15,10 +15,10 @@ use near_mpc_contract_interface::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
         CKDAppPublicKey, ChainEntry, ChainRouting, DestinationNodeInfo, DomainConfig, DomainId,
         DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, GovernanceThreshold,
-        GovernanceThresholdParameters, MockAttestation, ParticipantId, ParticipantInfo,
-        Participants, Payload, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol,
-        ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
-        SignRequestArgs,
+        GovernanceThresholdParameters, MigrationInfo, MockAttestation, NodeId, ParticipantId,
+        ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
+        ProviderId, ReconstructionThreshold, SignRequestArgs,
     },
 };
 use rand::SeedableRng;
@@ -466,7 +466,7 @@ impl MpcCluster {
     }
 
     pub async fn get_contract_state(&self) -> anyhow::Result<ProtocolContractState> {
-        self.contract.state().await
+        Ok(self.contract.view_mpc().state().await?.value)
     }
 
     pub async fn wait_for_state(
@@ -507,8 +507,8 @@ impl MpcCluster {
     }
 
     /// Query all accounts that have TEE attestations stored in the contract.
-    pub async fn get_tee_accounts(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        self.contract.view(method_names::GET_TEE_ACCOUNTS).await
+    pub async fn get_tee_accounts(&self) -> anyhow::Result<Vec<NodeId>> {
+        Ok(self.contract.view_mpc().get_tee_accounts().await?.value)
     }
 
     /// Vote to add domains and wait until the contract returns to the
@@ -642,15 +642,15 @@ impl MpcCluster {
         &self,
         node_indices: &[usize],
     ) -> anyhow::Result<()> {
-        let required: Vec<String> = node_indices
+        let required: Vec<AccountId> = node_indices
             .iter()
-            .map(|&idx| self.nodes[idx].account_id().to_string())
+            .map(|&idx| self.nodes[idx].account_id().clone())
             .collect();
         (|| async {
             let tee_accounts = self.get_tee_accounts().await?;
-            let have: std::collections::HashSet<String> = tee_accounts
-                .iter()
-                .filter_map(|v| v.get("account_id")?.as_str().map(String::from))
+            let have: std::collections::HashSet<AccountId> = tee_accounts
+                .into_iter()
+                .map(|node| node.account_id)
                 .collect();
             anyhow::ensure!(
                 required.iter().all(|a| have.contains(a)),
@@ -852,10 +852,8 @@ impl MpcCluster {
     }
 
     /// View migration info from the contract.
-    pub async fn view_migration_info<T: serde::de::DeserializeOwned + Send + 'static>(
-        &self,
-    ) -> anyhow::Result<T> {
-        self.contract.view(method_names::MIGRATION_INFO).await
+    pub async fn view_migration_info(&self) -> anyhow::Result<MigrationInfo> {
+        Ok(self.contract.view_mpc().migration_info().await?.value)
     }
 
     /// Build a [`NearKitCaller`] for the operator key of the given node.
@@ -884,18 +882,24 @@ impl MpcCluster {
     pub async fn view_foreign_chains_supported_by_contract(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
-        self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
-            .await
+        Ok(self
+            .contract
+            .view_mpc()
+            .get_supported_foreign_chains()
+            .await?
+            .value)
     }
 
     /// View the per-node foreign chain configurations registered with the contract.
     pub async fn view_foreign_chain_configurations(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-            .await
+        Ok(self
+            .contract
+            .view_mpc()
+            .get_foreign_chain_support_by_node()
+            .await?
+            .value)
     }
 
     /// Register foreign chain support on the contract for a specific node.
@@ -914,25 +918,34 @@ impl MpcCluster {
     pub async fn view_available_foreign_chains(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::AvailableForeignChains> {
-        self.contract
-            .view(method_names::GET_AVAILABLE_FOREIGN_CHAINS)
-            .await
+        Ok(self
+            .contract
+            .view_mpc()
+            .get_available_foreign_chains()
+            .await?
+            .value)
     }
 
     pub async fn view_foreign_chains_configs(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainsConfigs> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAINS_CONFIGS)
-            .await
+        Ok(self
+            .contract
+            .view_mpc()
+            .get_foreign_chains_configs()
+            .await?
+            .value)
     }
 
     pub async fn view_allowed_foreign_chain_providers(
         &self,
     ) -> anyhow::Result<BTreeMap<ForeignChain, ChainEntry>> {
-        self.contract
-            .view_borsh(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
-            .await
+        Ok(self
+            .contract
+            .view_mpc()
+            .allowed_foreign_chain_providers()
+            .await?
+            .value)
     }
 
     /// Polls until the registered per-node configs equal `expected`.
@@ -1298,7 +1311,7 @@ async fn prepay_attestation_grants(
 async fn attestation_storage_fee(
     contract: &DeployedContract,
 ) -> anyhow::Result<Option<near_kit::NearToken>> {
-    let config: serde_json::Value = contract.view("config").await?;
+    let config: serde_json::Value = contract.view(method_names::CONFIG).await?;
     Ok(config["attestation_storage_fee_millinear"]
         .as_u64()
         .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
@@ -1589,12 +1602,12 @@ async fn wait_for_contract_state(
 ) -> anyhow::Result<ProtocolContractState> {
     let max_times = (timeout.as_millis() / POLL_INTERVAL.as_millis()) as usize;
     (|| async {
-        match contract.state().await {
-            Ok(state) if predicate(&state) => Ok(state),
+        match contract.view_mpc().state().await {
+            Ok(observed) if predicate(&observed.value) => Ok(observed.value),
             Ok(_) => anyhow::bail!("predicate not yet satisfied"),
             Err(e) => {
                 tracing::debug!(error = %e, "failed to query contract state (retrying)");
-                Err(e)
+                Err(e.into())
             }
         }
     })
