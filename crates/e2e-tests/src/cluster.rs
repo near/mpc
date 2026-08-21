@@ -85,6 +85,8 @@ pub struct MpcClusterConfig {
     pub binary_paths: Vec<PathBuf>,
     /// Compiled contract WASM bytes (pre-compiled by the test).
     pub contract_wasm: Vec<u8>,
+    /// Compiled tee-verifier WASM bytes (pre-compiled by the test).
+    pub tee_verifier_wasm: Vec<u8>,
     /// Port seed for the port allocator (must be unique across parallel tests).
     pub port_seed: u16,
     /// Triple buffer size per node.
@@ -171,7 +173,11 @@ impl MpcClusterConfig {
     /// - 3 nodes, 2-of-3 threshold
     /// - All 3 standard domains (Secp256k1, Edwards25519, Bls12381)
     /// - 10 triples, 10 presignatures per node
-    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self {
+    pub fn default_for_test(
+        port_seed: u16,
+        contract_wasm: Vec<u8>,
+        tee_verifier_wasm: Vec<u8>,
+    ) -> Self {
         Self {
             num_nodes: 3,
             threshold: 2,
@@ -197,6 +203,7 @@ impl MpcClusterConfig {
             ],
             binary_paths: vec![default_mpc_binary_path()],
             contract_wasm,
+            tee_verifier_wasm,
             port_seed,
             triples_to_buffer: DEFAULT_TRIPLES_TO_BUFFER,
             presignatures_to_buffer: DEFAULT_PRESIGNATURES_TO_BUFFER,
@@ -233,15 +240,6 @@ impl MpcClusterConfig {
 
 fn default_mpc_binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/mpc-node")
-}
-
-fn must_load_tee_verifier_wasm() -> Vec<u8> {
-    test_utils::contract_build::must_load_wasm(
-        "MPC_TEE_VERIFIER_WASM",
-        "target/near/tee_verifier/tee_verifier.wasm",
-        test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml")
-            .out_dir("target/near/tee_verifier"),
-    )
 }
 
 /// A running MPC test cluster with a deployed contract and N mpc-node processes.
@@ -332,8 +330,14 @@ impl MpcCluster {
         )
         .await?;
 
-        deploy_and_trust_tee_verifier(&blockchain, &contract, &operator_keys, &participant_indices)
-            .await?;
+        deploy_and_trust_tee_verifier(
+            &blockchain,
+            &contract,
+            &config.tee_verifier_wasm,
+            &operator_keys,
+            &participant_indices,
+        )
+        .await?;
 
         // Start MPC nodes BEFORE adding domains: key generation requires running nodes.
         let mut nodes = start_mpc_nodes(
@@ -1376,10 +1380,10 @@ async fn init_contract(
 async fn deploy_and_trust_tee_verifier(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
+    verifier_wasm: &[u8],
     operator_keys: &[SigningKey],
     participant_indices: &[usize],
 ) -> anyhow::Result<()> {
-    let verifier_wasm = &must_load_tee_verifier_wasm();
     let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
     let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
     tracing::info!(account = %verifier_account, "deploying tee-verifier contract");

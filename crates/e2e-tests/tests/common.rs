@@ -72,7 +72,9 @@ pub async fn must_setup_cluster(
         .ok();
 
     let contract_wasm = must_load_contract_wasm();
-    let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
+    let tee_verifier_wasm = must_load_tee_verifier_wasm();
+    let mut config =
+        MpcClusterConfig::default_for_test(port_seed, contract_wasm, tee_verifier_wasm);
     configure(&mut config);
 
     let initial_participant_indices = config.participant_indices();
@@ -307,6 +309,15 @@ pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
         test_utils::contract_build::ContractBuilder::new(
             "crates/test-parallel-contract/Cargo.toml",
         ),
+    )
+}
+
+pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
+    test_utils::contract_build::must_load_wasm(
+        "MPC_TEE_VERIFIER_WASM",
+        "target/near/tee_verifier/tee_verifier.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml")
+            .out_dir("target/near/tee_verifier"),
     )
 }
 
