@@ -1373,10 +1373,9 @@ async fn init_contract(
     .context("contract did not reach Running state after init")
 }
 
-/// Deploys the tee-verifier and votes it in from every participant, mirroring
-/// the production topology (cf. `scripts/launch-localnet.sh`). Nodes submit mock
-/// attestations, which the contract verifies without calling the verifier; the
-/// cross-contract flow is covered by the mpc-contract sandbox tests.
+/// Deploys the tee-verifier and votes it in from every participant. Nodes submit mock
+/// attestations, which the contract verifies without calling the verifier; the cross-contract
+/// flow is covered by the mpc-contract sandbox tests.
 async fn deploy_and_trust_tee_verifier(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
