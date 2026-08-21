@@ -161,6 +161,29 @@ and `:mainnet-release`. Promote with the retag workflows:
 Use `source-tag = 3.11.0` and `release-tag = testnet-release` or
 `mainnet-release`.
 
+## Ops tooling
+
+[`scripts/ops/menu.sh`](./scripts/ops/menu.sh) is the entry point for the
+scripted parts of a release. It offers two things:
+
+1. **release github code** — runs `prepare-github-release.sh` (step 1 above).
+2. **migrate devnet cluster** — rolls a published release out to a NEAR One dev
+   cluster via [`scripts/ops/dev-cluster/dev-menu.sh`](./scripts/ops/dev-cluster/dev-menu.sh).
+
+Given a network and release version, the dev-cluster flow retags every
+`mpc-node-*` Nomad job (plan, confirm, run), checks the nodes report the new
+`release=`, and offers a test signature. Each job keeps its own image
+repository; the MPC task is found by the `MPC_ACCOUNT_SK` it carries, never by
+its image name.
+
+Every command is printed before it runs and every write is behind a
+confirmation prompt. Addresses and credentials stay out of this repo: the Nomad
+URL and credentials are typed in per run, node addresses come from Nomad, and
+the member keys are read from the job definitions into the near-cli keystore —
+never reaching the command line or the echoed output. The per-network
+`NOMAD_ADDR_DEV_*`, `NOMAD_HTTP_AUTH_DEV_*`, and `MPC_NODE_ADDRS_DEV_*`
+variables skip the matching step.
+
 ## Re-running after a failure
 
 The workflow refuses to start if a release for the version already
