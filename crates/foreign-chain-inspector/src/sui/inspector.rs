@@ -47,7 +47,7 @@ where
         Ok(Self::canonical_fingerprint(&chain_id))
     }
 
-    /// Base58 is case sensitive and carries no prefix or padding, so a digest has one spelling.
+    /// Base58 is case sensitive and does not permit prefix or padding.
     fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(fingerprint)
     }
@@ -125,7 +125,6 @@ impl HasAbsenceMeaning for GetTransactionResponse {
     const ABSENCE: AbsenceMeaning = AbsenceMeaning::TransactionIsAbsent;
 }
 
-/// Every Sui node reports its own identity, so a missing service is a refusal.
 impl HasAbsenceMeaning for GetServiceInfoResponse {
     const ABSENCE: AbsenceMeaning = AbsenceMeaning::ApiIsNotServed;
 }
@@ -141,7 +140,6 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
 
         let message = status.to_string();
         Err(match status.code() {
-            // Sui nodes answer NotFound both for an absent transaction and for an unserved method.
             Code::NotFound => match T::ABSENCE {
                 AbsenceMeaning::TransactionIsAbsent => {
                     ForeignChainInspectionError::TransactionNotFound
@@ -337,7 +335,7 @@ mod tests {
     #[case::unavailable(Code::Unavailable)]
     #[case::invalid_argument(Code::InvalidArgument)]
     #[case::unauthenticated(Code::Unauthenticated)]
-    fn classified__should_treat_not_found_as_the_only_resource_dependent_code(#[case] code: Code) {
+    fn classified__should_vary_by_resource_only_for_not_found(#[case] code: Code) {
         // Given
         let status = Status::new(code, "same code, either resource");
 
