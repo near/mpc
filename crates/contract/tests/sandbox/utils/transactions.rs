@@ -36,8 +36,6 @@ impl CallMpcContract for Account {
 }
 
 pub(crate) trait CallParallelContract {
-    /// The returned interface does not wait for the fan-out transaction to complete;
-    /// callers await the [`TransactionStatus`] once every batch is submitted.
     fn call_parallel_async(&self) -> ParallelContractInterface<AsyncSandboxCaller<'_>>;
 }
 

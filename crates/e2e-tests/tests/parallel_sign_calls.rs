@@ -19,46 +19,35 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     const N: u64 = ROBUST_ECDSA_CALLS + ECDSA_CALLS + EDDSA_CALLS + CKD_CALLS;
 
     // given
-    let calls_by_domain = [
-        (common::damgard_etal_domain(0, 3), ROBUST_ECDSA_CALLS),
-        (
-            DomainConfig {
-                id: DomainId(1),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(5),
-                purpose: DomainPurpose::Sign,
-            },
-            ECDSA_CALLS,
-        ),
-        (
-            DomainConfig {
-                id: DomainId(2),
-                protocol: Protocol::Frost,
-                reconstruction_threshold: ReconstructionThreshold::new(5),
-                purpose: DomainPurpose::Sign,
-            },
-            EDDSA_CALLS,
-        ),
-        (
-            DomainConfig {
-                id: DomainId(3),
-                protocol: Protocol::ConfidentialKeyDerivation,
-                reconstruction_threshold: ReconstructionThreshold::new(5),
-                purpose: DomainPurpose::CKD,
-            },
-            CKD_CALLS,
-        ),
+    let domains = vec![
+        common::damgard_etal_domain(0, 3),
+        DomainConfig {
+            id: DomainId(1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(5),
+            purpose: DomainPurpose::Sign,
+        },
+        DomainConfig {
+            id: DomainId(2),
+            protocol: Protocol::Frost,
+            reconstruction_threshold: ReconstructionThreshold::new(5),
+            purpose: DomainPurpose::Sign,
+        },
+        DomainConfig {
+            id: DomainId(3),
+            protocol: Protocol::ConfidentialKeyDerivation,
+            reconstruction_threshold: ReconstructionThreshold::new(5),
+            purpose: DomainPurpose::CKD,
+        },
     ];
+    let calls = [ROBUST_ECDSA_CALLS, ECDSA_CALLS, EDDSA_CALLS, CKD_CALLS];
 
     let (cluster, _running) =
         common::must_setup_cluster(common::PARALLEL_SIGN_CALLS_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 5;
-            c.domains = calls_by_domain
-                .iter()
-                .map(|(domain, _)| domain.clone())
-                .collect();
+            c.domains = domains.clone();
             c.presignatures_to_buffer = 6;
         })
         .await;
@@ -96,7 +85,11 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         parallel_contract.client(),
         parallel_contract.account_id().clone(),
     )
-    .make_parallel_sign_calls(cluster.contract.account_id().clone(), calls_by_domain, 42)
+    .make_parallel_sign_calls(
+        cluster.contract.account_id().clone(),
+        domains.into_iter().zip(calls),
+        42,
+    )
     .await
     .expect("parallel call failed");
 
