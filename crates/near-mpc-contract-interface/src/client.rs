@@ -420,23 +420,24 @@ mod tests {
         let caller = RecordingCaller::default();
         let handle = MpcContractHandle::new(&caller, "mpc.near".parse().unwrap());
 
+        let governance_threshold_parameters = GovernanceThresholdParameters {
+            threshold: GovernanceThreshold(1),
+            participants: Participants {
+                next_id: ParticipantId(1),
+                participants: vec![(
+                    "alice.near".parse().unwrap(),
+                    ParticipantId(0),
+                    ParticipantInfo {
+                        url: "http://localhost:7".to_string(),
+                        tls_public_key: Ed25519PublicKey::from([7u8; 32]),
+                    },
+                )],
+            },
+        };
         // When: every handle method, once, in declaration order
         handle
             .init(
-                GovernanceThresholdParameters {
-                    threshold: GovernanceThreshold(1),
-                    participants: Participants {
-                        next_id: ParticipantId(1),
-                        participants: vec![(
-                            "alice.near".parse().unwrap(),
-                            ParticipantId(0),
-                            ParticipantInfo {
-                                url: "http://localhost:7".to_string(),
-                                tls_public_key: Ed25519PublicKey::from([7u8; 32]),
-                            },
-                        )],
-                    },
-                },
+                governance_threshold_parameters.clone(),
                 Some(InitConfig::default()),
             )
             .await
@@ -517,20 +518,7 @@ mod tests {
             .vote_new_parameters(
                 EpochId::new(7),
                 ProposedGovernanceThresholdParameters {
-                    parameters: GovernanceThresholdParameters {
-                        threshold: GovernanceThreshold(1),
-                        participants: Participants {
-                            next_id: ParticipantId(1),
-                            participants: vec![(
-                                "alice.near".parse().unwrap(),
-                                ParticipantId(0),
-                                ParticipantInfo {
-                                    url: "http://localhost:7".to_string(),
-                                    tls_public_key: Ed25519PublicKey::from([7u8; 32]),
-                                },
-                            )],
-                        },
-                    },
+                    parameters: governance_threshold_parameters,
                     per_domain_thresholds: BTreeMap::new(),
                 },
             )
