@@ -141,15 +141,33 @@ fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
 }
 
-fn prepare_jsonrpc(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
+/// Why a provider's RPC client could not be assembled from its config. No variant carries
+/// the token or the URL: [`AuthConfig::Path`] and [`AuthConfig::Query`] splice the token
+/// into the URL, so echoing either could leak it. The report row already names the chain
+/// and provider, which is enough to locate the offending entry in the operator's config.
+///
+/// [`AuthConfig::Path`]: mpc_node_config::AuthConfig::Path
+/// [`AuthConfig::Query`]: mpc_node_config::AuthConfig::Query
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProviderSetupError {
+    #[error(transparent)]
+    Auth(#[from] foreign_chain_rpc_auth::RpcAuthError),
+    /// The client builder's own message is withheld: it can echo the token-spliced URL.
+    #[error("the RPC client could not be built from the configured URL")]
+    ClientBuild,
+}
+
+fn prepare_jsonrpc(
+    provider: &ForeignChainProviderConfig,
+) -> Result<HttpClient, ProviderSetupError> {
     let mut url = provider.rpc_url.clone();
     let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
-    build_http_client(url, auth).map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
+    build_http_client(url, auth).map_err(|_| ProviderSetupError::ClientBuild)
 }
 
 fn prepare_aptos(
     provider: &ForeignChainProviderConfig,
-) -> anyhow::Result<(String, Option<(HeaderName, HeaderValue)>)> {
+) -> Result<(String, Option<(HeaderName, HeaderValue)>), ProviderSetupError> {
     let mut url = provider.rpc_url.clone();
     let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
     let header = match auth {
@@ -328,7 +346,7 @@ async fn run_sui(
 fn prepare_sui(
     provider: &ForeignChainProviderConfig,
     timeout: Duration,
-) -> anyhow::Result<GrpcSuiClient> {
+) -> Result<GrpcSuiClient, ProviderSetupError> {
     let mut url = provider.rpc_url.clone();
     let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
     let header = match auth {
@@ -338,8 +356,7 @@ fn prepare_sui(
             header_value,
         } => Some((header_name, header_value)),
     };
-    GrpcSuiClient::new(url, header, timeout)
-        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
+    GrpcSuiClient::new(url, header, timeout).map_err(|_| ProviderSetupError::ClientBuild)
 }
 
 fn mark_skipped(

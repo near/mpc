@@ -20,10 +20,12 @@ http = { workspace = true }
 mpc-node-config = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+foreign-chain-inspector = { workspace = true, features = ["test-utils"] }
 httpmock = { workspace = true }
 serde_json = { workspace = true }
 

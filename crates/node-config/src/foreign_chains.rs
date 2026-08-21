@@ -9,7 +9,7 @@ use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_mpc_contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
-pub use auth::{AuthConfig, TokenConfig};
+pub use auth::{AuthConfig, TokenConfig, TokenResolveError};
 
 mod auth;
 

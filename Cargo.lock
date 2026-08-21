@@ -3863,6 +3863,7 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "serde_json",
+ "thiserror 2.0.20",
  "tokio",
 ]
 
@@ -3896,11 +3897,11 @@ dependencies = [
 name = "foreign-chain-rpc-auth"
 version = "3.14.0"
 dependencies = [
- "anyhow",
  "assert_matches",
  "foreign-chain-inspector",
  "http",
  "mpc-node-config",
+ "thiserror 2.0.20",
  "url",
 ]
 
@@ -6262,6 +6263,7 @@ dependencies = [
  "serde",
  "serde_with",
  "serde_yaml",
+ "thiserror 2.0.20",
  "toml 1.1.4+spec-1.1.0",
  "url",
 ]

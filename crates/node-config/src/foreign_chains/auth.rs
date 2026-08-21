@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
@@ -47,16 +46,32 @@ pub enum TokenConfig {
     Val { val: String },
 }
 
+/// Why a [`TokenConfig`] could not be resolved. Payloads name the variable, never its
+/// value: [`std::env::VarError::NotUnicode`] carries the token's bytes and displays them,
+/// so the source error is deliberately not retained.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TokenResolveError {
+    #[error("environment variable `{env}` is not set")]
+    EnvVarUnset { env: String },
+    #[error("environment variable `{env}` is set but is not valid unicode")]
+    EnvVarNotUnicode { env: String },
+}
+
 impl TokenConfig {
-    pub fn resolve(&self) -> anyhow::Result<String> {
+    pub fn resolve(&self) -> Result<String, TokenResolveError> {
         match self {
             // TODO(#2335): do not resolve env variables this deep in the binary.
             // Should be resolved at start, preferably in the config so we can kill env configs
             //
             // One option is to have a separate secrets config file.
-            TokenConfig::Env { env } => {
-                std::env::var(env).with_context(|| format!("environment variable {env} is not set"))
-            }
+            TokenConfig::Env { env } => std::env::var(env).map_err(|error| match error {
+                std::env::VarError::NotPresent => {
+                    TokenResolveError::EnvVarUnset { env: env.clone() }
+                }
+                std::env::VarError::NotUnicode(_) => {
+                    TokenResolveError::EnvVarNotUnicode { env: env.clone() }
+                }
+            }),
             TokenConfig::Val { val } => Ok(val.clone()),
         }
     }
@@ -100,6 +115,8 @@ pub(crate) fn validate_auth_config(auth: &AuthConfig, rpc_url: &str) -> anyhow::
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
 
     #[test]
     fn strip_placeholder__borrows_for_none_auth() {
@@ -151,5 +168,54 @@ mod tests {
         let result = auth.strip_placeholder(url);
         assert_matches!(result, Cow::Owned(_));
         assert_eq!(result, "https://rpc.ankr.com/near/");
+    }
+
+    #[test]
+    fn resolve__should_report_an_unset_env_var_by_name() {
+        // Given
+        let token = TokenConfig::Env {
+            env: "AUTH_TEST_TOKEN_THAT_IS_NEVER_SET".to_string(),
+        };
+
+        // When
+        let error = token.resolve().unwrap_err();
+
+        // Then
+        assert_eq!(
+            error,
+            TokenResolveError::EnvVarUnset {
+                env: "AUTH_TEST_TOKEN_THAT_IS_NEVER_SET".to_string()
+            }
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve__should_report_a_non_unicode_env_var_by_name_without_its_value() {
+        // Given
+        let var = "AUTH_TEST_TOKEN_WITH_INVALID_UNICODE";
+        // SAFETY: mutating the process environment is unsound with concurrent readers of
+        // any variable; nextest, the repo's mandated runner, gives this test its own
+        // process, so no other thread touches the environment while it runs.
+        unsafe {
+            std::env::set_var(var, std::ffi::OsString::from_vec(vec![0x66, 0xff, 0x67]));
+        }
+        let token = TokenConfig::Env {
+            env: var.to_string(),
+        };
+
+        // When
+        let error = token.resolve().unwrap_err();
+
+        // Then
+        assert_eq!(
+            error,
+            TokenResolveError::EnvVarNotUnicode {
+                env: var.to_string()
+            }
+        );
+        let rendered = format!("{error} {error:?}");
+        assert!(rendered.contains(var));
+        assert!(!rendered.contains('\u{fffd}'));
     }
 }
