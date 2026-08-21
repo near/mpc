@@ -5,9 +5,9 @@ use std::time::Duration;
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_kit::{AccountId, ExecutedOptimistic};
+use near_kit::{AccountId, ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::CKDRequestArgs;
+use near_mpc_contract_interface::types::{CKDRequestArgs, InitConfig};
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     method_names,
@@ -27,7 +27,7 @@ use serde_json::json;
 
 use crate::NearKitCaller;
 use crate::blockchain::{DeployedContract, NearBlockchain};
-use crate::caller::CallMpc;
+use crate::caller::{CallMpc, WithWaitLevel};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use test_port_allocator::TestPorts;
@@ -151,19 +151,6 @@ pub enum ContractInitFormat {
     /// Current [`GovernanceThresholdParameters`] shape.
     #[default]
     Current,
-}
-
-impl ContractInitFormat {
-    /// JSON shape for the `parameters` argument of the contract's `init` call,
-    /// in the wire format that the targeted contract expects.
-    fn init_parameters_json(
-        self,
-        params: &GovernanceThresholdParameters,
-    ) -> serde_json::Result<serde_json::Value> {
-        match self {
-            Self::Current => serde_json::to_value(params),
-        }
-    }
 }
 
 impl MpcClusterConfig {
@@ -1330,16 +1317,20 @@ async fn init_contract(
         ?init_format,
         "initializing contract"
     );
-    let init_config = json!({ "key_event_timeout_blocks": KEY_EVENT_TIMEOUT_BLOCKS });
-    let parameters_json = init_format.init_parameters_json(&params)?;
-    // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
-    // next, and a view resolves against the last final block.
-    let outcome = contract
-        .call_final(
-            method_names::INIT,
-            json!({ "parameters": parameters_json, "init_config": init_config }),
-        )
-        .await?;
+    let init_config = InitConfig {
+        key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
+        ..InitConfig::default()
+    };
+    let outcome = match init_format {
+        ContractInitFormat::Current => {
+            contract
+                .client()
+                .call_mpc(contract.account_id())
+                .with_wait_level::<Final>()
+                .init(params, Some(init_config))
+                .await?
+        }
+    };
     anyhow::ensure!(
         outcome.is_success(),
         "init failed: {:?}",
