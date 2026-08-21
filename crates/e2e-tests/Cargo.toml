@@ -45,6 +45,7 @@ near-mpc-bounded-collections = { workspace = true }
 near-mpc-sdk = { workspace = true }
 regex = { workspace = true }
 rstest = { workspace = true }
+test-parallel-contract = { workspace = true, features = ["interface"] }
 threshold-signatures = { workspace = true }
 tracing-subscriber = { workspace = true }
 

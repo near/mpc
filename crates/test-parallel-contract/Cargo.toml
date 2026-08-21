@@ -5,20 +5,33 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["getrandom", "borsh", "serde"]
+ignored = ["getrandom", "borsh"]
 
 [lib]
 crate-type = ["cdylib", "lib"]
+
+[features]
+# Host-side typed interface (`ParallelContractInterface`) over the `CallContract`
+# transport. `near-sdk/non-contract-usage` is required because consumers compile this
+# crate natively, which near-sdk otherwise rejects with a `compile_error!`.
+interface = [
+    "dep:near-contract-transport",
+    "near-contract-transport/traits",
+    "near-sdk/non-contract-usage",
+]
 
 [dependencies]
 assert_matches = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 elliptic-curve = { workspace = true }
+near-contract-transport = { workspace = true, optional = true }
 near-mpc-contract-interface = { workspace = true, features = ["blstrs"] }
 near-sdk = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
+thiserror = { workspace = true }
 
 # k256 won't compile without settings the custom rand flag for `getrandom`
 [target.'cfg(target_arch = "wasm32")'.dependencies]

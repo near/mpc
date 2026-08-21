@@ -5,7 +5,7 @@ use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
-use serde_json::json;
+use test_parallel_contract::interface::ParallelContractInterface;
 
 /// 9 parallel calls (3 DamgardEtAl + 2 ECDSA + 2 EdDSA + 2 CKD) via the test parallel
 /// contract, against a 6-node / threshold-5 cluster that carries all four signing-scheme
@@ -19,32 +19,46 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     const N: u64 = ROBUST_ECDSA_CALLS + ECDSA_CALLS + EDDSA_CALLS + CKD_CALLS;
 
     // given
+    let calls_by_domain = [
+        (common::damgard_etal_domain(0, 3), ROBUST_ECDSA_CALLS),
+        (
+            DomainConfig {
+                id: DomainId(1),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(5),
+                purpose: DomainPurpose::Sign,
+            },
+            ECDSA_CALLS,
+        ),
+        (
+            DomainConfig {
+                id: DomainId(2),
+                protocol: Protocol::Frost,
+                reconstruction_threshold: ReconstructionThreshold::new(5),
+                purpose: DomainPurpose::Sign,
+            },
+            EDDSA_CALLS,
+        ),
+        (
+            DomainConfig {
+                id: DomainId(3),
+                protocol: Protocol::ConfidentialKeyDerivation,
+                reconstruction_threshold: ReconstructionThreshold::new(5),
+                purpose: DomainPurpose::CKD,
+            },
+            CKD_CALLS,
+        ),
+    ];
+
     let (cluster, _running) =
         common::must_setup_cluster(common::PARALLEL_SIGN_CALLS_PORT_SEED, |c| {
             c.num_nodes = 6;
             c.initial_participant_indices = (0..6).collect();
             c.threshold = 5;
-            c.domains = vec![
-                common::damgard_etal_domain(0, 3),
-                DomainConfig {
-                    id: DomainId(1),
-                    protocol: Protocol::CaitSith,
-                    reconstruction_threshold: ReconstructionThreshold::new(5),
-                    purpose: DomainPurpose::Sign,
-                },
-                DomainConfig {
-                    id: DomainId(2),
-                    protocol: Protocol::Frost,
-                    reconstruction_threshold: ReconstructionThreshold::new(5),
-                    purpose: DomainPurpose::Sign,
-                },
-                DomainConfig {
-                    id: DomainId(3),
-                    protocol: Protocol::ConfidentialKeyDerivation,
-                    reconstruction_threshold: ReconstructionThreshold::new(5),
-                    purpose: DomainPurpose::CKD,
-                },
-            ];
+            c.domains = calls_by_domain
+                .iter()
+                .map(|(domain, _)| domain.clone())
+                .collect();
             c.presignatures_to_buffer = 6;
         })
         .await;
@@ -77,22 +91,14 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
         .await
         .expect("failed to sum CKD queue attempts");
 
-    // when — fire all 9 calls in a single transaction with 1000 TGas.
-    // Domains: 0=DamgardEtAl(Sign), 1=CaitSith(Sign), 2=Frost(Sign), 3=ConfidentialKeyDerivation(CKD).
-    let outcome = parallel_contract
-        .call(
-            "make_parallel_sign_calls",
-            json!({
-                "target_contract": cluster.contract.account_id().as_str(),
-                "robust_ecdsa_calls_by_domain": { "0": ROBUST_ECDSA_CALLS },
-                "ecdsa_calls_by_domain": { "1": ECDSA_CALLS },
-                "eddsa_calls_by_domain": { "2": EDDSA_CALLS },
-                "ckd_calls_by_domain": { "3": CKD_CALLS },
-                "seed": 42u64,
-            }),
-        )
-        .await
-        .expect("parallel call failed");
+    // when — fire all 9 calls in a single transaction
+    let outcome = ParallelContractInterface::new(
+        parallel_contract.client(),
+        parallel_contract.account_id().clone(),
+    )
+    .make_parallel_sign_calls(cluster.contract.account_id().clone(), calls_by_domain, 42)
+    .await
+    .expect("parallel call failed");
 
     // then
     let completed: u64 = outcome

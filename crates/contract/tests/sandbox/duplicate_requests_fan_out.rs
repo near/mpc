@@ -15,6 +15,7 @@ use crate::sandbox::{
             CKDResponseArgs, create_response_ckd, create_response_ed25519,
             create_response_secp256k1, submit_ckd_response, submit_signature_response,
         },
+        transactions::CallParallelContract,
     },
 };
 use elliptic_curve::Group;
@@ -25,7 +26,6 @@ use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, Protocol, SignRequestArgs,
 };
 use near_workspaces::operations::TransactionStatus;
-use serde::Serialize;
 use std::time::Duration;
 use threshold_signatures::blstrs;
 
@@ -196,29 +196,14 @@ async fn submit_duplicate_sign_batches(
     while remaining > 0 {
         let k = remaining.min(SIGN_CALLS_PER_BATCH);
         let status = parallel
-            .call("make_duplicate_sign_calls")
-            .args_json(MakeDuplicateSignCallsArgs {
-                target_contract: contract.id(),
-                request: sign_args,
-                count: k,
-            })
-            .max_gas()
-            .transact_async()
+            .call_parallel_async()
+            .make_duplicate_sign_calls(contract.id().clone(), sign_args.clone(), k)
             .await?;
         statuses.push((status, k));
         remaining -= k;
         worker.fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS).await?;
     }
     Ok(statuses)
-}
-
-/// Wire shape for [`test_parallel_contract::make_duplicate_sign_calls`]. The contract
-/// just fans the supplied `request` out `count` times; the test owns the payload.
-#[derive(Serialize)]
-struct MakeDuplicateSignCallsArgs<'a> {
-    target_contract: &'a AccountId,
-    request: &'a SignRequestArgs,
-    count: u64,
 }
 
 /// Polls the contract's `pending_signature_queue_len` view until the queue holds
@@ -292,28 +277,14 @@ async fn submit_duplicate_ckd_batches(
     while remaining > 0 {
         let k = remaining.min(CKD_CALLS_PER_BATCH);
         let status = parallel
-            .call("make_duplicate_ckd_calls")
-            .args_json(MakeDuplicateCkdCallsArgs {
-                target_contract: contract.id(),
-                request: ckd_args,
-                count: k,
-            })
-            .max_gas()
-            .transact_async()
+            .call_parallel_async()
+            .make_duplicate_ckd_calls(contract.id().clone(), ckd_args.clone(), k)
             .await?;
         statuses.push((status, k));
         remaining -= k;
         worker.fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS).await?;
     }
     Ok(statuses)
-}
-
-/// CKD counterpart to [`MakeDuplicateSignCallsArgs`].
-#[derive(Serialize)]
-struct MakeDuplicateCkdCallsArgs<'a> {
-    target_contract: &'a AccountId,
-    request: &'a CKDRequestArgs,
-    count: u64,
 }
 
 /// CKD counterpart to [`wait_for_pending_signature_queue`]; same rationale.

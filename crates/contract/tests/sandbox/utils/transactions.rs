@@ -6,6 +6,7 @@ use near_workspaces::{
 };
 use serde::Serialize;
 use std::future::Future;
+use test_parallel_contract::interface::ParallelContractInterface;
 
 pub(crate) trait CallMpcContract {
     fn call_mpc(
@@ -31,6 +32,18 @@ impl CallMpcContract for Account {
         contract_id: &near_account_id::AccountId,
     ) -> MpcContractHandle<AsyncSandboxCaller<'_>> {
         MpcContractHandle::new(AsyncSandboxCaller(self), contract_id.clone())
+    }
+}
+
+pub(crate) trait CallParallelContract {
+    /// The returned interface does not wait for the fan-out transaction to complete;
+    /// callers await the [`TransactionStatus`] once every batch is submitted.
+    fn call_parallel_async(&self) -> ParallelContractInterface<AsyncSandboxCaller<'_>>;
+}
+
+impl CallParallelContract for Contract {
+    fn call_parallel_async(&self) -> ParallelContractInterface<AsyncSandboxCaller<'_>> {
+        ParallelContractInterface::new(AsyncSandboxCaller(self.as_account()), self.id().clone())
     }
 }
 

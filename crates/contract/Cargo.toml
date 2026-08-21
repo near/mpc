@@ -141,6 +141,7 @@ rand_core = { workspace = true }
 rstest = { workspace = true }
 sha2 = { workspace = true }
 signature = { workspace = true }
+test-parallel-contract = { workspace = true, features = ["interface"] }
 test-utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }

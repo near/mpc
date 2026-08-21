@@ -3319,6 +3319,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-parallel-contract",
  "test-port-allocator",
  "test-utils",
  "threshold-signatures",
@@ -6101,6 +6102,7 @@ dependencies = [
  "sha2 0.10.9",
  "signature 2.2.0",
  "tee-verifier-interface",
+ "test-parallel-contract",
  "test-utils",
  "thiserror 2.0.20",
  "threshold-signatures",
@@ -11661,10 +11663,13 @@ dependencies = [
  "borsh",
  "elliptic-curve",
  "getrandom 0.2.17",
+ "near-contract-transport",
  "near-mpc-contract-interface",
  "near-sdk",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use elliptic_curve::group::Group;
-use near_mpc_contract_interface::method_names;
+use near_mpc_contract_interface::method_names as mpc_method_names;
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, DomainId, Payload, SignRequestArgs,
 };
@@ -7,6 +7,11 @@ use near_sdk::serde::Serialize;
 use near_sdk::{AccountId, Gas, NearToken, Promise, env, near, serde_json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+
+#[cfg(feature = "interface")]
+pub mod interface;
+/// Always available, including on wasm: the contract itself names its own callback.
+pub mod method_names;
 
 #[derive(Serialize)]
 struct SignArgs {
@@ -182,7 +187,7 @@ impl TestContract {
 fn sign_promise(target_contract: &AccountId, request: SignRequestArgs) -> Promise {
     let args = SignArgs { request };
     Promise::new(target_contract.clone()).function_call(
-        method_names::SIGN.to_string(),
+        mpc_method_names::SIGN.to_string(),
         serde_json::to_vec(&args).unwrap(),
         NearToken::from_yoctonear(1),
         Gas::from_tgas(SIGN_CALL_TGAS),
@@ -192,7 +197,7 @@ fn sign_promise(target_contract: &AccountId, request: SignRequestArgs) -> Promis
 fn ckd_promise(target_contract: &AccountId, request: CKDRequestArgs) -> Promise {
     let args = CKDArgs { request };
     Promise::new(target_contract.clone()).function_call(
-        method_names::REQUEST_APP_PRIVATE_KEY.to_string(),
+        mpc_method_names::REQUEST_APP_PRIVATE_KEY.to_string(),
         serde_json::to_vec(&args).unwrap(),
         NearToken::from_yoctonear(1),
         Gas::from_tgas(CKD_CALL_TGAS),
@@ -210,7 +215,7 @@ fn join_with_handle_results(mut promises: Vec<Promise>) -> Promise {
         combined_promise = combined_promise.and(promises.pop().unwrap());
     }
     combined_promise.then(Promise::new(env::current_account_id()).function_call(
-        "handle_results".to_string(),
+        method_names::HANDLE_RESULTS.to_string(),
         vec![],
         NearToken::from_near(0),
         Gas::from_tgas(HANDLE_RESULTS_TGAS),
