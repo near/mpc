@@ -46,6 +46,7 @@ mod foreign_chain_whitelist_verifier;
 mod home_paths;
 mod indexer;
 mod key_events;
+pub(crate) mod log_dedup;
 mod mpc_client;
 mod network;
 mod protocol;
