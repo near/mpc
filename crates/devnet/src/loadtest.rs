@@ -1,14 +1,16 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
 use crate::account::{OperatingAccessKey, OperatingAccounts, resolve_funding_account};
+use crate::caller::{DevnetCaller, Verbosity};
 use crate::cli::{
     DeployParallelSignContractCmd, ListLoadtestCmd, NewLoadtestCmd, RunLoadtestCmd,
     UpdateLoadtestCmd,
 };
 use crate::constants::{DEFAULT_PARALLEL_SIGN_CONTRACT_PATH, ONE_NEAR};
-use crate::contracts::{ContractActionCall, ParallelSignCallArgs, make_actions};
+use crate::contracts::{ContractActionCall, make_actions};
 use crate::devnet::OperatingDevnetSetup;
 use crate::funding::{AccountToFund, fund_accounts};
 use crate::mpc::read_contract_state;
+use crate::tx::SubmittedTx;
 use crate::types::{LoadtestSetup, NearAccount, ParsedConfig};
 use anyhow::anyhow;
 use futures::FutureExt;
@@ -16,7 +18,7 @@ use futures::future::BoxFuture;
 use mpc_primitives::domain::{DomainId, Protocol};
 use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
 use near_jsonrpc_client::methods::send_tx;
-use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
+use near_jsonrpc_client::methods::tx::TransactionInfo;
 use near_mpc_contract_interface::types::{DomainConfig, ProtocolContractState};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
@@ -24,6 +26,7 @@ use std::f64;
 use std::io::{Write, stdout};
 use std::sync::Arc;
 use std::time::Duration;
+use test_parallel_contract::interface::ParallelContractInterface;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -262,8 +265,8 @@ impl RunLoadtestCmd {
             );
         }
         let rpc_clone = config.rpc.clone();
-        let contract_action: ContractActionCall = if parallel_sign_calls > 0 {
-            let contract = loadtest_setup.parallel_signatures_contract.clone().expect(
+        let sender: LoadSenderAsyncFn = if parallel_sign_calls > 0 {
+            let parallel_contract = loadtest_setup.parallel_signatures_contract.clone().expect(
                 "Signatures per contract call specified, but no parallel signatures contract is deployed",
             );
             let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
@@ -280,59 +283,68 @@ impl RunLoadtestCmd {
                     )
                 })
                 .collect();
-            let args = ParallelSignCallArgs {
-                parallel_sign_contract: contract,
-                mpc_contract: mpc_account,
-                calls_by_domain,
-            };
-            crate::contracts::ContractActionCall::ParallelSignCall(args)
-        } else if let Some(domain_id) = self.domain_id {
-            let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
-            let domain_config = find_domain_config(&contract_state, DomainId(domain_id))
-                .expect("require valid domain id");
-            match domain_config.protocol {
-                Protocol::ConfidentialKeyDerivation => {
-                    ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
-                        mpc_contract: mpc_account,
-                        domain_config,
-                    })
+            Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
+                let interface = ParallelContractInterface::new(
+                    DevnetCaller::new(key, TxExecutionStatus::Included, Verbosity::Quiet),
+                    parallel_contract.clone(),
+                );
+                let mpc_account = mpc_account.clone();
+                let calls_by_domain = calls_by_domain.clone();
+                async move {
+                    interface
+                        .make_parallel_sign_calls(mpc_account, calls_by_domain, rand::random())
+                        .await
                 }
-                Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => {
-                    ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
-                        mpc_contract: mpc_account,
-                        domain_config,
-                    })
-                }
-            }
-        } else {
-            ContractActionCall::LegacySign(crate::contracts::LegacySignActionCallArgs {
-                mpc_contract: mpc_account,
+                .boxed()
             })
-        };
-        let sender: LoadSenderAsyncFn = {
-            Arc::new(move |key: &mut OperatingAccessKey| {
+        } else {
+            let contract_action: ContractActionCall = if let Some(domain_id) = self.domain_id {
+                let contract_state = read_contract_state(&config.rpc, &mpc_account).await;
+                let domain_config = find_domain_config(&contract_state, DomainId(domain_id))
+                    .expect("require valid domain id");
+                match domain_config.protocol {
+                    Protocol::ConfidentialKeyDerivation => {
+                        ContractActionCall::Ckd(crate::contracts::RequestActionCallArgs {
+                            mpc_contract: mpc_account,
+                            domain_config,
+                        })
+                    }
+                    Protocol::CaitSith | Protocol::DamgardEtAl | Protocol::Frost => {
+                        ContractActionCall::Sign(crate::contracts::RequestActionCallArgs {
+                            mpc_contract: mpc_account,
+                            domain_config,
+                        })
+                    }
+                }
+            } else {
+                ContractActionCall::LegacySign(crate::contracts::LegacySignActionCallArgs {
+                    mpc_contract: mpc_account,
+                })
+            };
+            Arc::new(move |key: Arc<Mutex<OperatingAccessKey>>| {
                 let action_call = make_actions(contract_action.clone());
                 let rpc_clone = rpc_clone.clone();
                 async move {
-                    let signed_tx = key.sign_tx_from_actions(action_call).await;
-
-                    let rpc_response = rpc_clone
+                    let signed_tx = key.lock().await.sign_tx_from_actions(action_call).await;
+                    let response = rpc_clone
                         .submit(send_tx::RpcSendTransactionRequest {
                             signed_transaction: signed_tx.clone(),
-                            wait_until: near_primitives::views::TxExecutionStatus::Included,
+                            wait_until: TxExecutionStatus::Included,
                         })
                         .await
-                        .map_err(|e| anyhow!("error sending tx request: {}", e));
-                    TxRpcResponse {
-                        rpc_response,
+                        .map_err(|e| anyhow!("error sending tx request: {}", e))?;
+                    Ok(SubmittedTx {
                         signed_tx,
-                    }
+                        response,
+                    })
                 }
                 .boxed()
             })
         };
-        let (tx_sender, mut receiver): (Sender<TxRpcResponse>, Receiver<TxRpcResponse>) =
-            tokio::sync::mpsc::channel(100);
+        let (tx_sender, mut receiver): (
+            Sender<anyhow::Result<SubmittedTx>>,
+            Receiver<anyhow::Result<SubmittedTx>>,
+        ) = tokio::sync::mpsc::channel(100);
         let rpc_clone = config.rpc.clone();
         let parallel = if parallel_sign_calls > 0 {
             "parallel "
@@ -349,16 +361,16 @@ impl RunLoadtestCmd {
             let mut rpc_errs: Vec<String> = Vec::new();
             while let Some(x) = receiver.recv().await {
                 n_rpc_requests += 1;
-                match x.rpc_response {
+                match x {
                     Err(e) => {
                         n_rpc_errors += 1;
                         if store_data {
                             rpc_errs.push(e.to_string());
                         }
                     }
-                    Ok(_) => {
+                    Ok(submitted) => {
                         if store_data {
-                            txs.push(x.signed_tx);
+                            txs.push(submitted.signed_tx);
                         }
                     }
                 }
@@ -494,13 +506,8 @@ fn find_domain_config(state: &ProtocolContractState, id: DomainId) -> Option<Dom
     domains.iter().find(|d| d.id == id).cloned()
 }
 
-pub struct TxRpcResponse {
-    pub rpc_response: anyhow::Result<RpcTransactionResponse>,
-    pub signed_tx: SignedTransaction,
-}
-
 type LoadSenderAsyncFn = Arc<
-    dyn for<'a> Fn(&'a mut OperatingAccessKey) -> BoxFuture<'a, TxRpcResponse>
+    dyn Fn(Arc<Mutex<OperatingAccessKey>>) -> BoxFuture<'static, anyhow::Result<SubmittedTx>>
         + Send
         + Sync
         + 'static,
@@ -514,7 +521,7 @@ async fn send_load(
     keys: Vec<Arc<Mutex<OperatingAccessKey>>>,
     qps: f64,
     sender: LoadSenderAsyncFn,
-    res_sender: tokio::sync::mpsc::Sender<TxRpcResponse>,
+    res_sender: tokio::sync::mpsc::Sender<anyhow::Result<SubmittedTx>>,
     cancel: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinSet<()> {
     let mut join_set = tokio::task::JoinSet::new();
@@ -525,7 +532,7 @@ async fn send_load(
         let sender = sender.clone();
         join_set.spawn(async move {
             while permits_receiver.recv_async().await.is_ok() {
-                let resp = sender(&mut *key.lock().await).await;
+                let resp = sender(key.clone()).await;
                 res_sender_clone.send(resp).await.unwrap();
             }
         });

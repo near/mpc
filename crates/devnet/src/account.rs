@@ -20,6 +20,7 @@ use crate::constants::{LOCALNET_MASTER_ACCOUNT_ID, LOCALNET_VALIDATOR_KEY_PATH};
 use crate::contracts::ActionCall;
 use crate::queries;
 use crate::rpc::NearRpcClients;
+use crate::tx::SubmittedTx;
 use crate::types::{
     ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind, ParsedConfig,
 };
@@ -29,7 +30,6 @@ use near_account_id::AccountId;
 use near_crypto_public::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::send_tx::SignedTransaction;
-use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::account::AccessKey;
 use near_primitives::action::{Action, AddKeyAction};
@@ -302,7 +302,7 @@ impl OperatingAccessKey {
         deposit: u128,
         wait_until: TxExecutionStatus,
         verbose: bool,
-    ) -> anyhow::Result<RpcTransactionResponse> {
+    ) -> anyhow::Result<SubmittedTx> {
         if verbose {
             println!(
                 "[{}] Calling {}::{} with args {}",
@@ -312,25 +312,30 @@ impl OperatingAccessKey {
                 String::from_utf8_lossy(args),
             );
         }
+        let signed_tx = SignedTransaction::from_actions(
+            self.next_nonce().await,
+            self.account_id.clone(),
+            contract_id.clone(),
+            &self.signer,
+            vec![Action::FunctionCall(Box::new(
+                near_primitives::action::FunctionCallAction {
+                    method_name: method.to_string(),
+                    args: args.to_vec(),
+                    gas: Gas::from_teragas(tgas),
+                    deposit: Balance::from_yoctonear(deposit),
+                },
+            ))],
+            self.recent_block_hash,
+        );
         let request = methods::send_tx::RpcSendTransactionRequest {
-            signed_transaction: SignedTransaction::from_actions(
-                self.next_nonce().await,
-                self.account_id.clone(),
-                contract_id.clone(),
-                &self.signer,
-                vec![Action::FunctionCall(Box::new(
-                    near_primitives::action::FunctionCallAction {
-                        method_name: method.to_string(),
-                        args: args.to_vec(),
-                        gas: Gas::from_teragas(tgas),
-                        deposit: Balance::from_yoctonear(deposit),
-                    },
-                ))],
-                self.recent_block_hash,
-            ),
+            signed_transaction: signed_tx.clone(),
             wait_until,
         };
-        Ok(self.client.submit(request).await?)
+        let response = self.client.submit(request).await?;
+        Ok(SubmittedTx {
+            signed_tx,
+            response,
+        })
     }
 
     pub async fn sign_tx_from_actions(&mut self, action_call: ActionCall) -> SignedTransaction {

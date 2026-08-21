@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use blstrs::G1Projective;
 use group::Group;
 use near_account_id::AccountId;
@@ -27,22 +25,11 @@ const SIGN_TGAS: u64 = 15;
 /// [`AppPublicKeyPV`](CKDAppPublicKey::AppPublicKeyPV) does an on-chain bls12381 pairing check before
 /// yielding.
 const CKD_TGAS: u64 = 100;
-/// Gas attached to a `make_parallel_sign_calls` invocation on the
-/// parallel-sign helper contract. The helper schedules up to ~10
-/// sub-calls into the MPC contract, so this needs the full block budget.
-const PARALLEL_SIGN_TGAS: u64 = 300;
 
 #[derive(Clone)]
 pub struct ActionCall {
     pub receiver_id: AccountId,
     pub actions: Vec<Action>,
-}
-
-#[derive(Clone)]
-pub struct ParallelSignCallArgs {
-    pub parallel_sign_contract: AccountId,
-    pub mpc_contract: AccountId,
-    pub calls_by_domain: Vec<(DomainConfig, u64)>,
 }
 
 #[derive(Clone)]
@@ -58,7 +45,6 @@ pub struct LegacySignActionCallArgs {
 
 #[derive(Clone)]
 pub enum ContractActionCall {
-    ParallelSignCall(ParallelSignCallArgs),
     Sign(RequestActionCallArgs),
     LegacySign(LegacySignActionCallArgs),
     Ckd(RequestActionCallArgs),
@@ -66,45 +52,6 @@ pub enum ContractActionCall {
 
 pub fn make_actions(call: ContractActionCall) -> ActionCall {
     match call {
-        ContractActionCall::ParallelSignCall(args) => {
-            let mut ecdsa_calls_by_domain = BTreeMap::new();
-            let mut robust_ecdsa_calls_by_domain = BTreeMap::new();
-            let mut eddsa_calls_by_domain = BTreeMap::new();
-            let mut ckd_calls_by_domain = BTreeMap::new();
-            for (domain, prot_calls) in args.calls_by_domain {
-                match domain.protocol {
-                    Protocol::CaitSith => {
-                        ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
-                    }
-                    Protocol::DamgardEtAl => {
-                        robust_ecdsa_calls_by_domain.insert(domain.id.0, prot_calls);
-                    }
-                    Protocol::Frost => {
-                        eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
-                    }
-                    Protocol::ConfidentialKeyDerivation => {
-                        ckd_calls_by_domain.insert(domain.id.0, prot_calls);
-                    }
-                }
-            }
-            ActionCall {
-                receiver_id: args.parallel_sign_contract,
-                actions: vec![make_action(
-                    "make_parallel_sign_calls",
-                    &serde_json::to_vec(&ParallelSignArgsV2 {
-                        target_contract: args.mpc_contract,
-                        ecdsa_calls_by_domain,
-                        robust_ecdsa_calls_by_domain,
-                        eddsa_calls_by_domain,
-                        ckd_calls_by_domain,
-                        seed: rand::random(),
-                    })
-                    .unwrap(),
-                    PARALLEL_SIGN_TGAS,
-                    1,
-                )],
-            }
-        }
         ContractActionCall::Sign(args) => ActionCall {
             receiver_id: args.mpc_contract,
             actions: vec![make_action(
@@ -176,16 +123,6 @@ struct SignArgsV2 {
 #[derive(Serialize)]
 struct CKDArgs {
     pub request: CKDRequestArgs,
-}
-
-#[derive(Serialize)]
-struct ParallelSignArgsV2 {
-    target_contract: AccountId,
-    ecdsa_calls_by_domain: BTreeMap<u64, u64>,
-    robust_ecdsa_calls_by_domain: BTreeMap<u64, u64>,
-    eddsa_calls_by_domain: BTreeMap<u64, u64>,
-    ckd_calls_by_domain: BTreeMap<u64, u64>,
-    seed: u64,
 }
 
 fn make_payload(protocol: Protocol) -> Payload {

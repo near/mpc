@@ -6140,6 +6140,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "test-parallel-contract",
  "tokio",
  "tokio-util",
 ]

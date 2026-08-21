@@ -10,7 +10,7 @@ use crate::method_names::{
     MAKE_DUPLICATE_CKD_CALLS, MAKE_DUPLICATE_SIGN_CALLS, MAKE_PARALLEL_SIGN_CALLS,
 };
 
-pub const FAN_OUT_GAS: NearGas = NearGas::from_tgas(300);
+const FAN_OUT_GAS: NearGas = NearGas::from_tgas(300);
 
 pub struct ParallelContractInterface<C> {
     caller: C,
@@ -77,19 +77,19 @@ impl<C: CallContract> ParallelContractInterface<C> {
 }
 
 #[derive(Serialize)]
-pub struct MakeParallelSignCallsArgs {
-    pub target_contract: AccountId,
-    pub ecdsa_calls_by_domain: BTreeMap<u64, u64>,
-    pub robust_ecdsa_calls_by_domain: BTreeMap<u64, u64>,
-    pub eddsa_calls_by_domain: BTreeMap<u64, u64>,
-    pub ckd_calls_by_domain: BTreeMap<u64, u64>,
-    pub seed: u64,
+struct MakeParallelSignCallsArgs {
+    target_contract: AccountId,
+    ecdsa_calls_by_domain: BTreeMap<u64, u64>,
+    robust_ecdsa_calls_by_domain: BTreeMap<u64, u64>,
+    eddsa_calls_by_domain: BTreeMap<u64, u64>,
+    ckd_calls_by_domain: BTreeMap<u64, u64>,
+    seed: u64,
 }
 
 impl MakeParallelSignCallsArgs {
     /// Buckets `calls_by_domain` into the four per-scheme maps the contract takes,
     /// keyed by each domain's [`Protocol`].
-    pub fn new(
+    fn new(
         target_contract: AccountId,
         calls_by_domain: impl IntoIterator<Item = (DomainConfig, u64)>,
         seed: u64,
@@ -119,15 +119,15 @@ impl MakeParallelSignCallsArgs {
 }
 
 #[derive(Serialize)]
-pub struct MakeDuplicateSignCallsArgs {
-    pub target_contract: AccountId,
-    pub request: SignRequestArgs,
-    pub count: u64,
+struct MakeDuplicateSignCallsArgs {
+    target_contract: AccountId,
+    request: SignRequestArgs,
+    count: u64,
 }
 
 #[derive(Serialize)]
-pub struct MakeDuplicateCkdCallsArgs {
-    pub target_contract: AccountId,
-    pub request: CKDRequestArgs,
-    pub count: u64,
+struct MakeDuplicateCkdCallsArgs {
+    target_contract: AccountId,
+    request: CKDRequestArgs,
+    count: u64,
 }
