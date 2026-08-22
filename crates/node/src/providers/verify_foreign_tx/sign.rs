@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{Context, bail};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
 use foreign_chain_inspector::adi::inspector::AdiExtractor;
@@ -17,6 +19,7 @@ use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -29,6 +32,7 @@ use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const PRESIGNATURE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -57,21 +61,49 @@ fn build_signature_request(
     })
 }
 
+// Awaits on the future for specified grace duration, and calls on_slow
+// if grace period expires.
+async fn await_with_slow_hook<F: Future>(
+    grace: Duration,
+    fut: F,
+    on_slow: impl FnOnce(),
+) -> F::Output {
+    tokio::pin!(fut);
+    match timeout(grace, &mut fut).await {
+        Ok(output) => output,
+        Err(_) => {
+            on_slow();
+            fut.await
+        }
+    }
+}
+
 impl VerifyForeignTxProvider {
     pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
+        let requested_chain = foreign_tx_request.request.chain();
 
-        // Also checked in `execute_foreign_chain_request`; checked early here
-        // because `take_owned` below irreversibly consumes a presignature. An
-        // availability flip between the two checks still costs one presignature.
-        ensure_chain_is_available(
-            &self.supporters_by_foreign_chain.borrow(),
-            &foreign_tx_request.request,
-        )
-        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
+        let chain_supporters: HashSet<ParticipantId> = {
+            let snapshot = self.supporters_by_foreign_chain.borrow().clone();
+            ensure_chain_is_available(&snapshot, foreign_tx_request.request.chain()).inspect_err(
+                |_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc(),
+            )?;
+            snapshot.get(&requested_chain).cloned().unwrap_or_default()
+        };
+
+        // Owned presignatures always include current (leader) node, so it would
+        // never be able to find a presignature from presignatures it owns
+        // where all participants (including itself) support the chain, so
+        // bail at this point (before waiting for such presignature).
+        // TODO(#3961): narrow leader selection to only chain supporters.
+        let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
+        if !chain_supporters.contains(&my_participant_id) {
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
+            anyhow::bail!("this node does not support the requested chain {requested_chain:?}");
+        }
 
         let response_payload = self
             .execute_foreign_chain_request(
@@ -87,7 +119,25 @@ impl VerifyForeignTxProvider {
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
+        // Aliveness is enforced inside the store: the take requires the
+        // presignature's participants to satisfy the (continuously refreshed)
+        // alive condition and be a subset of the chain's supporters. Since
+        // presignature generation is not chain-aware, a compatible one may
+        // not exist yet, count and log when the take has to wait.
+        let (presignature_id, presignature) = await_with_slow_hook(
+            PRESIGNATURE_TAKE_GRACE_PERIOD,
+            keyshare
+                .presignature_store
+                .take_owned_matching(chain_supporters.iter().copied().collect()),
+            || {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS.inc();
+                tracing::warn!(
+                    ?requested_chain,
+                    "no chain-compatible presignatures available, waiting"
+                )
+            },
+        )
+        .await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
@@ -137,7 +187,9 @@ impl VerifyForeignTxProvider {
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request)
+        // Check that the requested chain is still available when this
+        // point is reached.
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
@@ -449,13 +501,14 @@ struct ChainNotAvailableError {
 /// participants supports it.
 fn ensure_chain_is_available(
     supporters_by_foreign_chain: &SupportersByForeignChain,
-    request: &dtos::ForeignChainRpcRequest,
+    foreign_chain: dtos::ForeignChain,
 ) -> Result<(), ChainNotAvailableError> {
-    let requested = request.chain();
-    if supporters_by_foreign_chain.contains_key(&requested) {
+    if supporters_by_foreign_chain.contains_key(&foreign_chain) {
         Ok(())
     } else {
-        Err(ChainNotAvailableError { requested })
+        Err(ChainNotAvailableError {
+            requested: foreign_chain,
+        })
     }
 }
 
@@ -510,7 +563,7 @@ mod tests {
 
         // When, then
         assert_matches!(
-            ensure_chain_is_available(&supporters, &bitcoin_request()),
+            ensure_chain_is_available(&supporters, bitcoin_request().chain()),
             Ok(_)
         );
     }
@@ -527,7 +580,7 @@ mod tests {
 
         // When, then
         assert_matches!(
-            ensure_chain_is_available(&supporters, &ethereum_request),
+            ensure_chain_is_available(&supporters, ethereum_request.chain()),
             Err(ChainNotAvailableError {
                 requested: dtos::ForeignChain::Ethereum
             })
