@@ -6,6 +6,7 @@ edition = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
+chain-gateway = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }

@@ -43,6 +43,7 @@ impl ViewContract for ChainGateway {
         contract_id: &AccountId,
         view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
+        self.wait_for_full_sync().await;
         self.view_client.view_contract(contract_id, view_args).await
     }
 }

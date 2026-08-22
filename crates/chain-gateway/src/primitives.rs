@@ -10,7 +10,7 @@ use std::future::Future;
 use std::time::Duration;
 
 /// Low-level trait for checking indexer sync status.
-pub(crate) trait IsSyncing: Send + Sync + 'static {
+pub trait IsSyncing: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     /// Returns whether the node is currently syncing.
     fn is_syncing(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send;

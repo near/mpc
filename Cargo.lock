@@ -1281,6 +1281,7 @@ version = "3.14.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "chain-gateway",
  "clap",
  "ed25519-dalek",
  "mpc-node",
@@ -6697,6 +6698,10 @@ dependencies = [
  "near-token",
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

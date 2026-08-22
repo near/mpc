@@ -6,7 +6,8 @@
 //! [`ViewContract`] for views.
 
 use near_contract_transport::{
-    CallContract, FunctionCallArgs, NearGas, NearToken, ObservedState, ViewArgs, ViewContract,
+    CallContract, FunctionCallArgs, NearGas, NearToken, ObservedState, ViewArgs, ViewCall,
+    ViewContract,
 };
 
 use crate::call_args::{
@@ -323,94 +324,77 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 }
 
-impl<C: ViewContract> MpcContractHandle<C> {
-    pub async fn state(
-        &self,
-    ) -> Result<ObservedState<ProtocolContractState>, MpcContractHandleError<C::Error>> {
+impl<C: ViewContract + Clone> MpcContractHandle<C> {
+    fn view<T>(&self, args: ViewArgs) -> ViewCall<C, T> {
+        ViewCall::new(self.caller.clone(), self.contract_id.clone(), args)
+    }
+
+    pub fn state(&self) -> ViewCall<C, ProtocolContractState> {
         self.view(ViewArgs::no_args(STATE))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
     }
 
-    pub async fn get_tee_accounts(
-        &self,
-    ) -> Result<ObservedState<Vec<NodeId>>, MpcContractHandleError<C::Error>> {
+    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
     }
+    //pub async fn migration_info(
+    //    &self,
+    //) -> Result<ObservedState<MigrationInfo>, MpcContractHandleError<C::Error>> {
+    //    self.view(ViewArgs::no_args(MIGRATION_INFO))
+    //        .await?
+    //        .deserialize()
+    //        .map_err(MpcContractHandleError::DeserializeResponse)
+    //}
 
-    pub async fn migration_info(
-        &self,
-    ) -> Result<ObservedState<MigrationInfo>, MpcContractHandleError<C::Error>> {
-        self.view(ViewArgs::no_args(MIGRATION_INFO))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
-    }
+    //pub async fn get_supported_foreign_chains(
+    //    &self,
+    //) -> Result<ObservedState<SupportedForeignChains>, MpcContractHandleError<C::Error>> {
+    //    self.view(ViewArgs::no_args(GET_SUPPORTED_FOREIGN_CHAINS))
+    //        .await?
+    //        .deserialize()
+    //        .map_err(MpcContractHandleError::DeserializeResponse)
+    //}
 
-    pub async fn get_supported_foreign_chains(
-        &self,
-    ) -> Result<ObservedState<SupportedForeignChains>, MpcContractHandleError<C::Error>> {
-        self.view(ViewArgs::no_args(GET_SUPPORTED_FOREIGN_CHAINS))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
-    }
+    //pub async fn get_foreign_chain_support_by_node(
+    //    &self,
+    //) -> Result<ObservedState<ForeignChainSupportByNode>, MpcContractHandleError<C::Error>> {
+    //    self.view(ViewArgs::no_args(GET_FOREIGN_CHAIN_SUPPORT_BY_NODE))
+    //        .await?
+    //        .deserialize()
+    //        .map_err(MpcContractHandleError::DeserializeResponse)
+    //}
 
-    pub async fn get_foreign_chain_support_by_node(
-        &self,
-    ) -> Result<ObservedState<ForeignChainSupportByNode>, MpcContractHandleError<C::Error>> {
-        self.view(ViewArgs::no_args(GET_FOREIGN_CHAIN_SUPPORT_BY_NODE))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
-    }
+    //pub async fn get_available_foreign_chains(
+    //    &self,
+    //) -> Result<ObservedState<AvailableForeignChains>, MpcContractHandleError<C::Error>> {
+    //    self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
+    //        .await?
+    //        .deserialize()
+    //        .map_err(MpcContractHandleError::DeserializeResponse)
+    //}
 
-    pub async fn get_available_foreign_chains(
-        &self,
-    ) -> Result<ObservedState<AvailableForeignChains>, MpcContractHandleError<C::Error>> {
-        self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
-    }
+    //pub async fn get_foreign_chains_configs(
+    //    &self,
+    //) -> Result<ObservedState<ForeignChainsConfigs>, MpcContractHandleError<C::Error>> {
+    //    self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
+    //        .await?
+    //        .deserialize()
+    //        .map_err(MpcContractHandleError::DeserializeResponse)
+    //}
 
-    pub async fn get_foreign_chains_configs(
-        &self,
-    ) -> Result<ObservedState<ForeignChainsConfigs>, MpcContractHandleError<C::Error>> {
-        self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
-            .await?
-            .deserialize()
-            .map_err(MpcContractHandleError::DeserializeResponse)
-    }
-
-    /// The contract's only borsh-serialized view result.
-    pub async fn allowed_foreign_chain_providers(
-        &self,
-    ) -> Result<ObservedState<BTreeMap<ForeignChain, ChainEntry>>, MpcContractHandleError<C::Error>>
-    {
-        let observed = self
-            .view(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
-            .await?;
-        Ok(ObservedState {
-            observed_at: observed.observed_at,
-            value: borsh::from_slice(&observed.value)
-                .map_err(MpcContractHandleError::DecodeResponse)?,
-        })
-    }
-
-    async fn view(
-        &self,
-        view_args: ViewArgs,
-    ) -> Result<ObservedState, MpcContractHandleError<C::Error>> {
-        self.caller
-            .view_contract(&self.contract_id, view_args)
-            .await
-            .map_err(MpcContractHandleError::View)
-    }
+    ///// The contract's only borsh-serialized view result.
+    //pub async fn allowed_foreign_chain_providers(
+    //    &self,
+    //) -> Result<ObservedState<BTreeMap<ForeignChain, ChainEntry>>, MpcContractHandleError<C::Error>>
+    //{
+    //    let observed = self
+    //        .view(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
+    //        .await?;
+    //    Ok(ObservedState {
+    //        observed_at: observed.observed_at,
+    //        value: borsh::from_slice(&observed.value)
+    //            .map_err(MpcContractHandleError::DecodeResponse)?,
+    //    })
+    //}
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -460,7 +444,8 @@ mod tests {
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use std::collections::{BTreeMap, BTreeSet};
-    use std::sync::Mutex;
+    use std::convert::Infallible;
+    use std::sync::{Arc, Mutex};
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
     /// assert the exact wire encoding a handle method produced.
@@ -488,13 +473,13 @@ mod tests {
 
     /// A [`ViewContract`] that records the view requests it is handed, so a test
     /// can assert the exact wire encoding a handle method produced.
-    #[derive(Default)]
+    #[derive(Clone, Default)]
     struct RecordingViewer {
-        views: Mutex<Vec<(AccountId, ViewArgs)>>,
+        views: Arc<Mutex<Vec<(AccountId, ViewArgs)>>>,
     }
 
     impl ViewContract for RecordingViewer {
-        type Error = ();
+        type Error = Infallible;
 
         async fn view_contract(
             &self,
@@ -716,19 +701,19 @@ mod tests {
     async fn mpc_contract_handle__should_match_the_view_wire_format_catalog() {
         // Given
         let viewer = RecordingViewer::default();
-        let handle = MpcContractHandle::new(&viewer, "mpc.near".parse().unwrap());
+        let handle = MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap());
 
         // When: every view method, once, in declaration order. The recorded
         // response cannot decode into eight distinct return types, so only the
         // request is under test and the result is discarded.
         let _ = handle.state().await;
         let _ = handle.get_tee_accounts().await;
-        let _ = handle.migration_info().await;
-        let _ = handle.get_supported_foreign_chains().await;
-        let _ = handle.get_foreign_chain_support_by_node().await;
-        let _ = handle.get_available_foreign_chains().await;
-        let _ = handle.get_foreign_chains_configs().await;
-        let _ = handle.allowed_foreign_chain_providers().await;
+        //let _ = handle.migration_info().await;
+        //let _ = handle.get_supported_foreign_chains().await;
+        //let _ = handle.get_foreign_chain_support_by_node().await;
+        //let _ = handle.get_available_foreign_chains().await;
+        //let _ = handle.get_foreign_chains_configs().await;
+        //let _ = handle.allowed_foreign_chain_providers().await;
 
         // Then
         let views = viewer.views.lock().unwrap();

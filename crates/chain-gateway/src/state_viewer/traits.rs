@@ -125,16 +125,17 @@ pub trait WatchContractState<Res> {
     fn changed(&mut self) -> impl Future<Output = Result<(), ChainGatewayError>> + Send;
 }
 
-impl<T> ViewRaw for T
+impl<T> ViewContract for T
 where
-    T: IsSyncing + ViewContract,
-    <T as ViewContract>::Error: std::fmt::Display,
+    T: IsSyncing + ViewRaw,
+    // <T as ViewContract>::Error: std::fmt::Display,
 {
-    async fn view_raw(
+    type Error = ChainGatewayError;
+    async fn view_contract(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<ObservedState, ChainGatewayError> {
+    ) -> Result<ObservedState, Self::Error> {
         self.wait_for_full_sync().await;
         let method_name = view_args.method_name.clone();
         self.view_contract(contract_id, view_args)

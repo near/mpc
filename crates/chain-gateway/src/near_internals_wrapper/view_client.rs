@@ -29,14 +29,21 @@ impl NearViewClientActorHandle {
     }
 }
 
-impl ViewContract for NearViewClientActorHandle {
-    type Error = NearViewClientError;
-    /// calls view method contract_id::method_name(args) and returns the result
-    async fn view_contract(
+pub trait ViewRaw {
+    async fn view_raw(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<ObservedState, Self::Error> {
+    ) -> Result<ObservedState, NearViewClientError>;
+}
+
+impl ViewRaw for NearViewClientActorHandle {
+    /// calls view method contract_id::method_name(args) and returns the result
+    async fn view_raw(
+        &self,
+        contract_id: &AccountId,
+        view_args: ViewArgs,
+    ) -> Result<ObservedState, NearViewClientError> {
         let method_name = view_args.method_name;
         let query = near_client::Query {
             block_reference: near_indexer_primitives::types::BlockReference::Finality(
