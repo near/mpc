@@ -1,35 +1,52 @@
 use std::error::Error;
 
 use near_account_id::AccountId;
-use near_kit::{Error as NearKitError, Near, RpcError as NearKitRpcError};
-use near_mpc_contract_interface::method_names;
+use near_contract_transport::{ObservedState, ViewContract};
+use near_kit::{Near, RpcError as NearKitRpcError};
+use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
 use near_mpc_contract_interface::types::ProtocolContractState;
 
 use crate::ports::ReadContractState;
 
-/// Reads the MPC contract's `state` view method from a NEAR JSON-RPC endpoint.
-pub struct RpcContractStateReader {
-    client: Near,
-    contract_id: AccountId,
+pub struct RpcStateReader(Near);
+
+impl RpcStateReader {
+    pub fn new(rpc_url: &str, near_chain_id: &str) -> Self {
+        Self(Near::custom(rpc_url, near_chain_id).build())
+    }
 }
 
-impl RpcContractStateReader {
-    pub fn new(rpc_url: &str, chain_id: &str, contract_id: AccountId) -> Self {
-        Self {
-            client: Near::custom(rpc_url, chain_id).build(),
-            contract_id,
+impl ViewContract for RpcStateReader {
+    type Error = RpcError;
+    async fn view_contract(
+        &self,
+        contract_id: &AccountId,
+        view_args: near_contract_transport::ViewArgs,
+    ) -> Result<near_contract_transport::ObservedState<Vec<u8>>, Self::Error> {
+        match self
+            .0
+            .rpc()
+            .view_function(
+                contract_id,
+                &view_args.method_name,
+                &view_args.args,
+                near_kit::BlockReference::Finality(near_kit::Finality::Final),
+            )
+            .await
+        {
+            Ok(res) => Ok(ObservedState {
+                observed_at: res.block_height.into(),
+                value: res.result,
+            }),
+            Err(err) => Err(RpcError(describe(&err))),
         }
     }
 }
 
-impl ReadContractState for RpcContractStateReader {
-    type Error = RpcError;
-
+impl ReadContractState for MpcContractHandle<RpcStateReader> {
+    type Error = MpcContractHandleError<RpcError>;
     async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
-        self.client
-            .view::<ProtocolContractState>(&self.contract_id, method_names::STATE)
-            .await
-            .map_err(|err| RpcError(describe(&err)))
+        self.state().await.map(|success| success.value)
     }
 }
 
@@ -40,16 +57,15 @@ pub struct RpcError(String);
 /// `reqwest` writes the request url, which is where an api key lives, into both the [`Display`](std::fmt::Display) and
 /// the [`Debug`] of its errors, so its own text is dropped in favour of the causes below it, which do
 /// not know the url. Every other variant carries text `near_kit` authored itself.
-fn describe(err: &NearKitError) -> String {
-    match err {
-        NearKitError::Rpc(rpc) if matches!(rpc.as_ref(), NearKitRpcError::Http(_)) => {
-            let below_reqwest = Error::source(rpc.as_ref()).and_then(Error::source);
-            match below_reqwest {
-                Some(cause) => format!("http transport error: {cause:?}"),
-                None => "http transport error".to_owned(),
-            }
+fn describe(err: &near_kit::RpcError) -> String {
+    if matches!(err, NearKitRpcError::Http(_)) {
+        let below_reqwest = Error::source(err).and_then(Error::source);
+        match below_reqwest {
+            Some(cause) => format!("http transport error: {cause:?}"),
+            None => "http transport error".to_owned(),
         }
-        _ => err.to_string(),
+    } else {
+        err.to_string()
     }
 }
 
@@ -72,9 +88,12 @@ mod tests {
                 drop(stream);
             }
         });
-        let reader = RpcContractStateReader::new(
-            &format!("http://127.0.0.1:{port}/?apikey={API_KEY}"),
-            "mainnet",
+
+        let reader = MpcContractHandle::new(
+            RpcStateReader::new(
+                &format!("http://127.0.0.1:{port}/?apikey={API_KEY}"),
+                "mainnet",
+            ),
             "v1.signer".parse().unwrap(),
         );
 

@@ -1285,6 +1285,7 @@ dependencies = [
  "ed25519-dalek",
  "mpc-node",
  "near-account-id",
+ "near-contract-transport",
  "near-kit",
  "near-mpc-contract-interface",
  "rand 0.8.6",

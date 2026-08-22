@@ -1,6 +1,6 @@
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types as contract_types;
+use near_mpc_contract_interface::{client::MpcContractHandle, types as contract_types};
 use rand_core::OsRng;
 use std::{
     path::{Path, PathBuf},
@@ -12,7 +12,12 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    adapters, cli, keyset::keyset_to_backup, ports, service::Service, types::PersistentSecrets,
+    adapters::{self, contract_state_rpc::RpcStateReader},
+    cli,
+    keyset::keyset_to_backup,
+    ports,
+    service::Service,
+    types::PersistentSecrets,
 };
 
 pub async fn run_command(args: cli::Args) {
@@ -68,13 +73,13 @@ pub async fn run_command(args: cli::Args) {
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
+            let contract_handle = MpcContractHandle::new(
+                RpcStateReader::new(&subcommand_args.rpc_url, &subcommand_args.near_chain_id),
+                subcommand_args.mpc_contract_account_id,
+            );
             let contract_state =
                 adapters::contract_state_polling::PollingContractStateWatcher::spawn(
-                    adapters::contract_state_rpc::RpcContractStateReader::new(
-                        &subcommand_args.rpc_url,
-                        &subcommand_args.near_chain_id,
-                        subcommand_args.mpc_contract_account_id,
-                    ),
+                    contract_handle,
                     Duration::from_secs(subcommand_args.poll_interval_seconds),
                     Duration::from_secs(subcommand_args.node.request_timeout_seconds),
                 )

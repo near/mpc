@@ -11,7 +11,8 @@ ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
 near-account-id = { workspace = true }
 near-kit = { workspace = true }
-near-mpc-contract-interface = { workspace = true }
+near-contract-transport = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["call-args"] }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }
