@@ -40,7 +40,7 @@ where
     pub fn new(interval: Duration, ttl: Duration, max_entries: usize) -> Self {
         Self {
             state: Mutex::new(State {
-                entries: HashMap::new(),
+                entries: HashMap::with_capacity(max_entries),
                 last_cleanup: Instant::now(),
             }),
             interval,
@@ -110,16 +110,21 @@ mod tests {
 
     #[test]
     fn deduplicator__should_emit() {
+        // Given a new deduplicator
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(50), Duration::from_secs(1), 10);
+        // When / Then the first check is always emitted
         assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
     }
 
     #[test]
     fn deduplicator__should_suppress() {
+        // Given a new deduplicator with an event already emitted
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(200), Duration::from_secs(1), 10);
         assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        // When the same event occurs several times within the interval
+        // Then it is suppressed
         assert_eq!(
             dedup.check(&"test", now + Duration::from_millis(50)),
             Decision::Suppress
@@ -136,9 +141,11 @@ mod tests {
 
     #[test]
     fn deduplicator__should_emit_suppression_count() {
+        // Given a new deduplicator with an event already emitted
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(30), Duration::from_secs(1), 10);
         assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        // When the same event occurs several times within the TTL and before the interval
         assert_eq!(
             dedup.check(&"test", now + Duration::from_millis(5)),
             Decision::Suppress
@@ -147,6 +154,7 @@ mod tests {
             dedup.check(&"test", now + Duration::from_millis(10)),
             Decision::Suppress
         );
+        // Then the next identical event following the interval but before thr TTL gets emitted with the suppressed count
         assert_eq!(
             dedup.check(&"test", now + Duration::from_millis(50)),
             Decision::Emit { suppressed: 2 }
@@ -155,10 +163,12 @@ mod tests {
 
     #[test]
     fn deduplicator__should_cleanup_stale_entries() {
+        // Given a new deduplicator with an event already emitted
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(10), Duration::from_millis(30), 10);
         assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
-        // Entry should have been cleaned up as stale, so it looks fresh again.
+        // When the event becomes stale by crossing the TTL
+        // Then the entry should have been cleaned up as stale and becomes fresh again.
         assert_eq!(
             dedup.check(&"test", now + Duration::from_millis(50)),
             Decision::Emit { suppressed: 0 }
@@ -167,8 +177,10 @@ mod tests {
 
     #[test]
     fn deduplicator__should_evict_on_max_entries() {
+        // Given a deduplicator only accepting 2 entries.
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(10), Duration::from_millis(10), 2);
+        // When entries are added that exceed max_entries
         assert_eq!(
             dedup.check(&"one", now + Duration::from_millis(1)),
             Decision::Emit { suppressed: 0 }
@@ -181,6 +193,7 @@ mod tests {
             dedup.check(&"three", now + Duration::from_millis(3)),
             Decision::Emit { suppressed: 0 }
         );
+        // Then they get evicted and present as new entries again
         assert_eq!(
             dedup.check(&"one", now + Duration::from_millis(4)),
             Decision::Emit { suppressed: 0 }
@@ -193,6 +206,7 @@ mod tests {
 
     #[test]
     fn deduplicator__should_emit_after_reset() {
+        // Given a deduplication and event within the TTL.
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_secs(2), Duration::from_millis(500), 10);
         assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
@@ -200,7 +214,9 @@ mod tests {
             dedup.check(&"test", now + Duration::from_millis(100)),
             Decision::Suppress
         );
+        // When reset
         dedup.reset(&"test");
+        // Then next identical event will be a new log that is emitted
         assert_eq!(
             dedup.check(&"test", now + Duration::from_millis(200)),
             Decision::Emit { suppressed: 0 }
