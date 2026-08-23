@@ -148,8 +148,9 @@ The `DoubleQueue` that holds owned assets has two layers:
 ### Hot queue
 
 An unbounded multi-producer multi-consumer (MPMC) channel. Newly generated assets are pushed here by
-`add_owned()`. The hot queue is drained into the cold queue the first
-time an asset is needed.
+`add_owned()`. Takers move buffered hot-queue assets into the cold queue
+while searching for a usable asset; a take stops as soon as it finds one,
+so assets may remain buffered in the hot queue.
 
 ### Cold queue
 

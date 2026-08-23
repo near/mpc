@@ -6,7 +6,6 @@ use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
-use futures::FutureExt;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -323,7 +322,7 @@ where
                 let mut cold = self.cold_queue.lock().unwrap();
                 let mut ingested = false;
                 let mut taken = None;
-                while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
+                while let Some((id, value)) = self.hot_receiver.try_recv().ok() {
                     if cold.satisfies_condition(&cond_val, &value) {
                         taken = Some((id, value));
                         break;
@@ -389,8 +388,8 @@ where
 
         // If the cold queue is exhausted, process elements buffered in the hot queue
         while num_elements_to_process > 0 {
-            match self.hot_receiver.recv_async().now_or_never() {
-                Some(Ok((id, value))) => {
+            match self.hot_receiver.try_recv().ok() {
+                Some((id, value)) => {
                     num_elements_to_process -= 1;
                     let _ = self
                         .cold_queue
@@ -1507,7 +1506,9 @@ mod tests {
     }
 
     // The standing condition holds for 2 and 3, the supplied one for 3 and 4:
-    // only 3 satisfies both and may be taken; the rest stay in the queue.
+    // only 3 satisfies both and is taken. The drain stops at the match, so 2
+    // is parked in the cold queue while 4 stays buffered in the hot queue
+    // (counted by `available`, invisible to `offline`).
     #[test]
     #[expect(non_snake_case)]
     fn take_owned_matching__should_only_take_asset_satisfying_both_conditions() {
@@ -1530,8 +1531,8 @@ mod tests {
 
         // Then
         assert_eq!(taken, Some((id2, 3)));
-        assert_eq!(queue.available(), 1);
-        assert_eq!(queue.offline(), 1);
+        assert_eq!(queue.available(), 2);
+        assert_eq!(queue.offline(), 0);
     }
 
     // A take with a supplied value nothing matches yet parks; it completes once
