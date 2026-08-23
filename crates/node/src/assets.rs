@@ -322,7 +322,7 @@ where
                 let mut cold = self.cold_queue.lock().unwrap();
                 let mut ingested = false;
                 let mut taken = None;
-                while let Some((id, value)) = self.hot_receiver.try_recv().ok() {
+                while let Ok((id, value)) = self.hot_receiver.try_recv() {
                     if cold.satisfies_condition(&cond_val, &value) {
                         taken = Some((id, value));
                         break;
