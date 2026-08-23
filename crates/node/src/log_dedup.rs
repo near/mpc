@@ -49,8 +49,7 @@ where
         }
     }
 
-    pub fn check(&self, key: &K) -> Decision {
-        let now = Instant::now();
+    pub fn check(&self, key: &K, now: Instant) -> Decision {
         // Poisoning is not critical just for log suppression, ignore and continue, deliberate.
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if now.duration_since(state.last_cleanup) >= self.ttl {
@@ -85,7 +84,7 @@ where
                 let entry = o.get_mut();
                 entry.last_seen = now;
                 if now.duration_since(entry.last_emit) < self.interval {
-                    entry.suppressed += 1;
+                    entry.suppressed = entry.suppressed.saturating_add(1);
                     return Decision::Suppress;
                 }
                 let suppressed = entry.suppressed;
@@ -95,54 +94,116 @@ where
             }
         }
     }
+
+    pub fn reset(&self, key: &K) {
+        // Poisoning is not critical just for log suppression, ignore and continue, deliberate.
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.entries.remove(key);
+    }
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use std::thread::sleep;
+    use crate::log_dedup::{Decision, Deduplicator};
+    use std::time::{Duration, Instant};
 
     #[test]
-    fn test_emission() {
-        let dedup = Deduplicator::new(Duration::from_millis(50), Duration::from_secs(60), 10);
-        assert_eq!(dedup.check(&"test"), Decision::Emit { suppressed: 0 });
+    fn deduplicator__should_emit() {
+        let now = Instant::now();
+        let dedup = Deduplicator::new(Duration::from_millis(50), Duration::from_secs(1), 10);
+        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
     }
 
     #[test]
-    fn test_suppression() {
-        let dedup = Deduplicator::new(Duration::from_millis(200), Duration::from_secs(60), 10);
-        assert_eq!(dedup.check(&"test"), Decision::Emit { suppressed: 0 });
-        assert_eq!(dedup.check(&"test"), Decision::Suppress);
-        assert_eq!(dedup.check(&"test"), Decision::Suppress);
-        assert_eq!(dedup.check(&"test"), Decision::Suppress);
+    fn deduplicator__should_suppress() {
+        let now = Instant::now();
+        let dedup = Deduplicator::new(Duration::from_millis(200), Duration::from_secs(1), 10);
+        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(50)),
+            Decision::Suppress
+        );
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(100)),
+            Decision::Suppress
+        );
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(150)),
+            Decision::Suppress
+        );
     }
 
     #[test]
-    fn test_emission_suppression_count() {
-        let dedup = Deduplicator::new(Duration::from_millis(30), Duration::from_secs(60), 10);
-        assert_eq!(dedup.check(&"test"), Decision::Emit { suppressed: 0 });
-        assert_eq!(dedup.check(&"test"), Decision::Suppress);
-        assert_eq!(dedup.check(&"test"), Decision::Suppress);
-        sleep(Duration::from_millis(50));
-        assert_eq!(dedup.check(&"test"), Decision::Emit { suppressed: 2 });
+    fn deduplicator__should_emit_suppression_count() {
+        let now = Instant::now();
+        let dedup = Deduplicator::new(Duration::from_millis(30), Duration::from_secs(1), 10);
+        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(5)),
+            Decision::Suppress
+        );
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(10)),
+            Decision::Suppress
+        );
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(50)),
+            Decision::Emit { suppressed: 2 }
+        );
     }
 
     #[test]
-    fn test_stale_entry_cleanup() {
+    fn deduplicator__should_cleanup_stale_entries() {
+        let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(10), Duration::from_millis(30), 10);
-        assert_eq!(dedup.check(&"test"), Decision::Emit { suppressed: 0 });
-        sleep(Duration::from_millis(50));
+        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
         // Entry should have been cleaned up as stale, so it looks fresh again.
-        assert_eq!(dedup.check(&"test"), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(50)),
+            Decision::Emit { suppressed: 0 }
+        );
     }
 
     #[test]
-    fn test_max_entries_eviction() {
-        let dedup = Deduplicator::new(Duration::from_secs(60), Duration::from_secs(60), 2);
-        assert_eq!(dedup.check(&"one"), Decision::Emit { suppressed: 0 });
-        assert_eq!(dedup.check(&"two"), Decision::Emit { suppressed: 0 });
-        assert_eq!(dedup.check(&"three"), Decision::Emit { suppressed: 0 });
-        assert_eq!(dedup.check(&"one"), Decision::Emit { suppressed: 0 });
-        assert_eq!(dedup.check(&"two"), Decision::Emit { suppressed: 0 });
+    fn deduplicator__should_evict_on_max_entries() {
+        let now = Instant::now();
+        let dedup = Deduplicator::new(Duration::from_millis(10), Duration::from_millis(10), 2);
+        assert_eq!(
+            dedup.check(&"one", now + Duration::from_millis(1)),
+            Decision::Emit { suppressed: 0 }
+        );
+        assert_eq!(
+            dedup.check(&"two", now + Duration::from_millis(2)),
+            Decision::Emit { suppressed: 0 }
+        );
+        assert_eq!(
+            dedup.check(&"three", now + Duration::from_millis(3)),
+            Decision::Emit { suppressed: 0 }
+        );
+        assert_eq!(
+            dedup.check(&"one", now + Duration::from_millis(4)),
+            Decision::Emit { suppressed: 0 }
+        );
+        assert_eq!(
+            dedup.check(&"two", now + Duration::from_millis(5)),
+            Decision::Emit { suppressed: 0 }
+        );
+    }
+
+    #[test]
+    fn deduplicator__should_emit_after_reset() {
+        let now = Instant::now();
+        let dedup = Deduplicator::new(Duration::from_secs(2), Duration::from_millis(500), 10);
+        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(100)),
+            Decision::Suppress
+        );
+        dedup.reset(&"test");
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(200)),
+            Decision::Emit { suppressed: 0 }
+        );
     }
 }

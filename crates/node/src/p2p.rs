@@ -439,7 +439,8 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
-                            tracing::info!(
+                            CONNECT_RETRY_DEDUP.reset(&target_participant_id);
+                            info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
                                 "outgoing connection established"
@@ -448,10 +449,13 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            match CONNECT_RETRY_DEDUP.check(&target_participant_id) {
+                            match CONNECT_RETRY_DEDUP.check(
+                                &target_participant_id,
+                                tokio::time::Instant::now().into_std(),
+                            ) {
                                 Decision::Suppress => {}
                                 Decision::Emit { suppressed } => {
-                                    tracing::info!(
+                                    info!(
                                         my_id = %my_id,
                                         target_participant_id = %target_participant_id,
                                         suppressed,
@@ -462,7 +466,6 @@ impl PersistentConnection {
                             }
                             // Don't immediately retry, to avoid spamming the network with
                             // connection attempts.
-                            // TODO: Consider implementing exponential backoff here as well.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
                             continue;
                         }
