@@ -1,6 +1,7 @@
+use lru::LruCache;
 use std::{
-    collections::{HashMap, hash_map::Entry as HashMapEntry},
     hash::Hash,
+    num::NonZeroUsize,
     sync::{Mutex, PoisonError},
     time::{Duration, Instant},
 };
@@ -18,19 +19,18 @@ struct Entry {
     suppressed: u64,
 }
 
-struct State<K> {
-    entries: HashMap<K, Entry>,
+struct State<K: Hash + Eq> {
+    entries: LruCache<K, Entry>,
     last_cleanup: Instant,
 }
 
-pub struct Deduplicator<K> {
+/// Suppresses repeated occurrences of the same event within interval, only logging once per interval.
+pub struct Deduplicator<K: Hash + Eq> {
     state: Mutex<State<K>>,
     // Minimum time key stays suppressed
     interval: Duration,
     // Time an entry is valid for before eligible for cleanup
     ttl: Duration,
-    // Maximum number of entries to track
-    max_entries: usize,
 }
 
 impl<K> Deduplicator<K>
@@ -38,17 +38,18 @@ where
     K: Eq + Hash + Clone,
 {
     pub fn new(interval: Duration, ttl: Duration, max_entries: usize) -> Self {
+        let capacity = NonZeroUsize::new(max_entries).expect("max_entries must be non-zero");
         Self {
             state: Mutex::new(State {
-                entries: HashMap::with_capacity(max_entries),
+                entries: LruCache::new(capacity),
                 last_cleanup: Instant::now(),
             }),
             interval,
             ttl,
-            max_entries,
         }
     }
 
+    /// Records an event for deduplication. Returns the [`Decision`] plus any events that got dropped.
     pub fn check(&self, key: &K, now: Instant) -> (Decision, Vec<(K, u64)>) {
         // Poisoning is not critical just for log suppression, ignore and continue, deliberate.
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -63,7 +64,7 @@ where
                 .map(|(k, _)| k.clone())
                 .collect();
             for k in stale_keys {
-                if let Some(entry) = state.entries.remove(&k)
+                if let Some(entry) = state.entries.pop(&k)
                     && entry.suppressed > 0
                 {
                     dropped.push((k, entry.suppressed));
@@ -72,51 +73,40 @@ where
             state.last_cleanup = now;
         }
 
-        if !state.entries.contains_key(key) && state.entries.len() >= self.max_entries {
-            let oldest = state
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.last_seen)
-                .map(|(k, _)| k.clone());
-            if let Some(oldest_key) = oldest
-                && let Some(entry) = state.entries.remove(&oldest_key)
-                && entry.suppressed > 0
-            {
-                dropped.push((oldest_key, entry.suppressed));
+        let decision = if let Some(entry) = state.entries.get_mut(key) {
+            entry.last_seen = now;
+            if now.duration_since(entry.last_emit) < self.interval {
+                entry.suppressed = entry.suppressed.saturating_add(1);
+                Decision::Suppress
+            } else {
+                let suppressed = entry.suppressed;
+                entry.suppressed = 0;
+                entry.last_emit = now;
+                Decision::Emit { suppressed }
             }
-        }
-
-        let decision = match state.entries.entry(key.clone()) {
-            HashMapEntry::Vacant(v) => {
-                v.insert(Entry {
+        } else {
+            if let Some((evicted_key, evicted_entry)) = state.entries.push(
+                key.clone(),
+                Entry {
                     last_emit: now,
                     last_seen: now,
                     suppressed: 0,
-                });
-                Decision::Emit { suppressed: 0 }
+                },
+            ) && evicted_entry.suppressed > 0
+            {
+                dropped.push((evicted_key, evicted_entry.suppressed));
             }
-            HashMapEntry::Occupied(mut o) => {
-                let entry = o.get_mut();
-                entry.last_seen = now;
-                if now.duration_since(entry.last_emit) < self.interval {
-                    entry.suppressed = entry.suppressed.saturating_add(1);
-                    Decision::Suppress
-                } else {
-                    let suppressed = entry.suppressed;
-                    entry.suppressed = 0;
-                    entry.last_emit = now;
-                    Decision::Emit { suppressed }
-                }
-            }
+            Decision::Emit { suppressed: 0 }
         };
 
         (decision, dropped)
     }
 
+    /// Removes the event from suppression.
     pub fn reset(&self, key: &K) {
         // Poisoning is not critical just for log suppression, ignore and continue, deliberate.
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.entries.remove(key);
+        state.entries.pop(key);
     }
 }
 
