@@ -1890,6 +1890,7 @@ version = "3.14.0"
 dependencies = [
  "assert_matches",
  "base64 0.23.1",
+ "borsh",
  "chain-gateway",
  "chain-gateway-test-contract",
  "derive_more 2.1.1",
@@ -6692,6 +6693,7 @@ dependencies = [
 name = "near-contract-transport"
 version = "3.14.0"
 dependencies = [
+ "borsh",
  "derive_more 2.1.1",
  "near-account-id",
  "near-gas",

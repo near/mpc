@@ -24,7 +24,8 @@ async fn test_subscription() {
     let contract_id = localnet.contract.account_id.clone();
 
     let mut sub = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .view::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .subscribe()
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");

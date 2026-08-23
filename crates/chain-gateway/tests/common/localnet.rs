@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
-use chain_gateway::state_viewer::ViewMethod;
 use near_contract_transport::ObservedState;
 
 use chain_gateway_test_contract::consts::VIEW_VALUE;

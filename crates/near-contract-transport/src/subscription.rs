@@ -1,6 +1,8 @@
 use std::error::Error;
 
+use crate::TransportError;
 use crate::monitoring::{MonitoringTask, make_monitoring_task};
+use crate::traits::Decoder;
 use crate::{ObservedState, ViewArgs, ViewContract, traits::PollInterval};
 
 use near_account_id::AccountId;
@@ -18,16 +20,17 @@ impl<T: Clone + Error + PartialEq + Send + Sync + 'static> ViewError for T {}
 pub trait WatchContractState<T, E> {
     /// Returns the last value observed on chain and the block height at which it was first
     /// observed.
-    fn latest(&mut self) -> Result<ObservedState<T>, SubscriptionError<E>>;
+    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<E>>;
     /// Waits until the observed value changes.
-    fn changed(&mut self) -> impl Future<Output = Result<(), SubscriptionError<E>>> + Send;
+    fn changed(&mut self) -> impl Future<Output = Result<(), TransportError<E>>> + Send;
 }
 
 /// Holds a Monitoring task and the latest cached value.
 /// This is useful such that we don't unnecessarily deserialize the same state multiple times.
 pub(crate) struct ContractMethodSubscription<T, E> {
     inner: MonitoringTask<E>,
-    cached: Result<ObservedState<T>, SubscriptionError<E>>,
+    cached: Result<ObservedState<T>, TransportError<E>>,
+    decoder: Decoder<T>,
 }
 
 impl<T, E> ContractMethodSubscription<T, E>
@@ -38,8 +41,12 @@ where
     fn update_cache(&mut self) {
         let observed = self.inner.last_observed.borrow_and_update().clone();
         self.cached = observed
-            .map_err(|err| SubscriptionError::ViewError(err))
-            .and_then(|value| deserialize_observed(value));
+            .map_err(|err| TransportError::ViewError(err))
+            .and_then(|value| {
+                (self.decoder)(value).map_err(|err| TransportError::Deserialization {
+                    message: err.to_string(),
+                })
+            });
     }
 }
 
@@ -50,22 +57,22 @@ where
 {
     /// The constructor marks the initial value as seen, so
     /// `changed().await` will not fire until a genuinely new value arrives.
-    async fn changed(&mut self) -> Result<(), SubscriptionError<E>> {
+    async fn changed(&mut self) -> Result<(), TransportError<E>> {
         self.inner
             .last_observed
             .changed()
             .await
-            .map_err(|_| SubscriptionError::MonitoringClosed)?;
+            .map_err(|_| TransportError::MonitoringClosed)?;
         self.update_cache();
         Ok(())
     }
 
-    fn latest(&mut self) -> Result<ObservedState<T>, SubscriptionError<E>> {
+    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<E>> {
         if self
             .inner
             .last_observed
             .has_changed()
-            .map_err(|_| SubscriptionError::MonitoringClosed)?
+            .map_err(|_| TransportError::MonitoringClosed)?
         {
             self.update_cache();
         }
@@ -73,47 +80,32 @@ where
     }
 }
 
-impl<T, E> ContractMethodSubscription<T, E>
-where
-    T: DeserializeOwned,
-{
-    pub(super) async fn new<V>(viewer: V, contract_id: AccountId, view_args: ViewArgs) -> Self
+impl<T, E> ContractMethodSubscription<T, E> {
+    pub(super) async fn new<V>(
+        viewer: V,
+        contract_id: AccountId,
+        view_args: ViewArgs,
+        decoder: Decoder<T>,
+    ) -> Self
     where
         V: ViewContract<Error = E> + PollInterval + Send + 'static,
         E: ViewError,
     {
         let mut task = make_monitoring_task(viewer, contract_id, view_args).await;
-        let cached: Result<ObservedState<T>, SubscriptionError<E>> = task
+        let cached: Result<ObservedState<T>, TransportError<E>> = task
             .last_observed
             .borrow_and_update()
             .clone()
-            .map_err(|err| SubscriptionError::ViewError(err))
-            .and_then(|value| deserialize_observed(value));
+            .map_err(|err| TransportError::ViewError(err))
+            .and_then(|value| {
+                (decoder)(value).map_err(|err| TransportError::Deserialization {
+                    message: err.to_string(),
+                })
+            });
         Self {
             inner: task,
             cached,
+            decoder,
         }
     }
-}
-// todo: move this somewhee better
-pub(crate) fn deserialize_observed<T: DeserializeOwned, E>(
-    observed: ObservedState,
-) -> Result<ObservedState<T>, SubscriptionError<E>> {
-    observed
-        .deserialize()
-        .map_err(|err| SubscriptionError::Deserialization {
-            message: err.to_string(),
-        })
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum SubscriptionError<E> {
-    #[error("deserialization error: {message}")]
-    Deserialization { message: String },
-
-    #[error("monitoring task closed")]
-    MonitoringClosed,
-
-    #[error("View call failed: {0}")]
-    ViewError(E),
 }

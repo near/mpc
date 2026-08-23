@@ -5,10 +5,11 @@
 //! backend implementing [`CallContract`] for change methods and
 //! [`ViewContract`] for views.
 
+use borsh::BorshDeserialize;
 use near_contract_transport::{
-    CallContract, FunctionCallArgs, NearGas, NearToken, ObservedState, ViewArgs, ViewCall,
-    ViewContract,
+    CallContract, FunctionCallArgs, NearGas, NearToken, ViewArgs, ViewCall, ViewContract,
 };
+use serde::de::DeserializeOwned;
 
 use crate::call_args::{
     RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs, SignArgs,
@@ -21,7 +22,7 @@ use crate::deposits::{
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    ALLOWED_FOREIGN_CHAIN_PROVIDERS, GET_AVAILABLE_FOREIGN_CHAINS,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, GET_AVAILABLE_FOREIGN_CHAINS,
     GET_FOREIGN_CHAIN_SUPPORT_BY_NODE, GET_FOREIGN_CHAINS_CONFIGS, GET_SUPPORTED_FOREIGN_CHAINS,
     GET_TEE_ACCOUNTS, MIGRATION_INFO, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAIN_SUPPORT, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, STATE,
@@ -30,12 +31,12 @@ use crate::method_names::{
     VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, Attestation, AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey,
-    CKDRequestArgs, ChainEntry, DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId,
-    ForeignChain, ForeignChainSupportByNode, ForeignChainsConfigs, MigrationInfo, NodeId,
-    PayloadBytesError, ProposeUpdateArgs, ProposedGovernanceThresholdParameters,
-    ProtocolContractState, SignRequestArgs, SupportedForeignChains,
-    VerifyForeignTransactionRequestArgs,
+    AccountId, AllowedMpcDockerImageHash, Attestation, AvailableForeignChains, BackupServiceInfo,
+    CKDAppPublicKey, CKDRequestArgs, ChainEntry, DestinationNodeInfo, DomainConfig,
+    Ed25519PublicKey, EpochId, ForeignChain, ForeignChainSupportByNode, ForeignChainsConfigs,
+    MigrationInfo, NodeId, PayloadBytesError, ProposeUpdateArgs,
+    ProposedGovernanceThresholdParameters, ProtocolContractState, SignRequestArgs,
+    SupportedForeignChains, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::BTreeMap;
@@ -325,8 +326,12 @@ impl<C: CallContract> MpcContractHandle<C> {
 }
 
 impl<C: ViewContract + Clone> MpcContractHandle<C> {
-    fn view<T>(&self, args: ViewArgs) -> ViewCall<C, T> {
+    fn view<T: DeserializeOwned>(&self, args: ViewArgs) -> ViewCall<C, T> {
         ViewCall::new(self.caller.clone(), self.contract_id.clone(), args)
+    }
+
+    fn view_borsh<T: BorshDeserialize>(&self, args: ViewArgs) -> ViewCall<C, T> {
+        ViewCall::borsh(self.caller.clone(), self.contract_id.clone(), args)
     }
 
     pub fn state(&self) -> ViewCall<C, ProtocolContractState> {
@@ -336,65 +341,40 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
     }
-    //pub async fn migration_info(
-    //    &self,
-    //) -> Result<ObservedState<MigrationInfo>, MpcContractHandleError<C::Error>> {
-    //    self.view(ViewArgs::no_args(MIGRATION_INFO))
-    //        .await?
-    //        .deserialize()
-    //        .map_err(MpcContractHandleError::DeserializeResponse)
-    //}
+    pub async fn migration_info(&self) -> ViewCall<C, MigrationInfo> {
+        self.view(ViewArgs::no_args(MIGRATION_INFO))
+    }
 
-    //pub async fn get_supported_foreign_chains(
-    //    &self,
-    //) -> Result<ObservedState<SupportedForeignChains>, MpcContractHandleError<C::Error>> {
-    //    self.view(ViewArgs::no_args(GET_SUPPORTED_FOREIGN_CHAINS))
-    //        .await?
-    //        .deserialize()
-    //        .map_err(MpcContractHandleError::DeserializeResponse)
-    //}
+    pub async fn get_supported_foreign_chains(&self) -> ViewCall<C, SupportedForeignChains> {
+        self.view(ViewArgs::no_args(GET_SUPPORTED_FOREIGN_CHAINS))
+    }
 
-    //pub async fn get_foreign_chain_support_by_node(
-    //    &self,
-    //) -> Result<ObservedState<ForeignChainSupportByNode>, MpcContractHandleError<C::Error>> {
-    //    self.view(ViewArgs::no_args(GET_FOREIGN_CHAIN_SUPPORT_BY_NODE))
-    //        .await?
-    //        .deserialize()
-    //        .map_err(MpcContractHandleError::DeserializeResponse)
-    //}
+    pub async fn get_foreign_chain_support_by_node(
+        &self,
+    ) -> ViewCall<C, ForeignChainSupportByNode> {
+        self.view(ViewArgs::no_args(GET_FOREIGN_CHAIN_SUPPORT_BY_NODE))
+    }
 
-    //pub async fn get_available_foreign_chains(
-    //    &self,
-    //) -> Result<ObservedState<AvailableForeignChains>, MpcContractHandleError<C::Error>> {
-    //    self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
-    //        .await?
-    //        .deserialize()
-    //        .map_err(MpcContractHandleError::DeserializeResponse)
-    //}
+    pub async fn get_available_foreign_chains(&self) -> ViewCall<C, AvailableForeignChains> {
+        self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
+    }
 
-    //pub async fn get_foreign_chains_configs(
-    //    &self,
-    //) -> Result<ObservedState<ForeignChainsConfigs>, MpcContractHandleError<C::Error>> {
-    //    self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
-    //        .await?
-    //        .deserialize()
-    //        .map_err(MpcContractHandleError::DeserializeResponse)
-    //}
+    pub async fn get_foreign_chains_configs(&self) -> ViewCall<C, ForeignChainsConfigs> {
+        self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
+    }
 
-    ///// The contract's only borsh-serialized view result.
-    //pub async fn allowed_foreign_chain_providers(
-    //    &self,
-    //) -> Result<ObservedState<BTreeMap<ForeignChain, ChainEntry>>, MpcContractHandleError<C::Error>>
-    //{
-    //    let observed = self
-    //        .view(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
-    //        .await?;
-    //    Ok(ObservedState {
-    //        observed_at: observed.observed_at,
-    //        value: borsh::from_slice(&observed.value)
-    //            .map_err(MpcContractHandleError::DecodeResponse)?,
-    //    })
-    //}
+    // todo: remove the get* prefix everywhere here
+    pub async fn get_allowed_docker_image_hashes(
+        &self,
+    ) -> ViewCall<C, Vec<AllowedMpcDockerImageHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES))
+    }
+    /// The contract's only borsh-serialized view result.
+    pub async fn allowed_foreign_chain_providers(
+        &self,
+    ) -> ViewCall<C, BTreeMap<ForeignChain, ChainEntry>> {
+        self.view_borsh(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

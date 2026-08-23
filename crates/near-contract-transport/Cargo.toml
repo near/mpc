@@ -11,6 +11,7 @@ traits = ["dep:near-account-id"]
 monitoring = ["traits", "dep:thiserror", "dep:tokio", "dep:tokio-util", "dep:tracing"]
 
 [dependencies]
+borsh = { workspace = true }
 derive_more = { workspace = true }
 near-account-id = { workspace = true, optional = true }
 near-gas = { workspace = true }

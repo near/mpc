@@ -4,12 +4,9 @@ mod types;
 pub use errors::TeeContextError;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
-use chain_gateway::{
-    state_viewer::{SubscribeToContractMethod, WatchContractState},
-    transaction_sender::{AccountCaller, SubmitFunctionCall, TransactionSigner},
-};
+use chain_gateway::transaction_sender::{AccountCaller, SubmitFunctionCall, TransactionSigner};
 use near_account_id::AccountId;
-use near_contract_transport::ViewArgs;
+use near_contract_transport::{PollInterval, ViewArgs, ViewContract};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES,
@@ -22,30 +19,6 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
-
-// TODO(#3751): drop this struct after upgrading the contract.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-enum AllowedDockerImageHashesResponse {
-    WithExpiry(Vec<AllowedMpcDockerImageHash>),
-    Legacy(Vec<DockerImageHash>),
-}
-
-impl AllowedDockerImageHashesResponse {
-    /// Entries newest first; [`Legacy`](AllowedDockerImageHashesResponse::Legacy) hashes have no expiry timestamp.
-    fn into_entries(self) -> Vec<AllowedMpcDockerImageHash> {
-        match self {
-            Self::WithExpiry(entries) => entries,
-            Self::Legacy(hashes) => hashes
-                .into_iter()
-                .map(|image_hash| AllowedMpcDockerImageHash {
-                    image_hash,
-                    expiry_timestamp_seconds: None,
-                })
-                .collect(),
-        }
-    }
-}
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -73,7 +46,7 @@ impl Drop for CancelOnDrop {
 
 impl<S> TeeContext<S>
 where
-    S: SubmitFunctionCall + SubscribeToContractMethod + Clone + Send + Sync + 'static,
+    S: SubmitFunctionCall + ViewContract + Clone + Send + Sync + 'static,
 {
     /// Creates a new [`TeeContext`].
     ///
@@ -87,12 +60,9 @@ where
         signer: TransactionSigner,
     ) -> Result<Self, TeeContextError> {
         let cancel = CancellationToken::new();
-        let rx = spawn_hash_watcher(
-            chain_gateway.clone(),
-            governance_contract.clone(),
-            cancel.clone(),
-        )
-        .await?;
+
+        let viewer = MpcContractHandle::new(chain_gateway.clone(), governance_contract.clone());
+        let rx = spawn_hash_watcher(viewer, cancel.clone()).await?;
 
         let caller = AccountCaller::new(chain_gateway, [signer].into());
         let mpc_contract_handle = MpcContractHandle::new(caller, governance_contract);
@@ -137,14 +107,13 @@ where
 
 /// Subscribes to both allowed hash view methods on the governance contract and
 /// merges updates into a single [`AllowedTeeHashes`] watch channel.
-async fn spawn_hash_watcher(
-    chain_gateway: impl SubscribeToContractMethod + Send + 'static,
-    governance_contract: AccountId,
+async fn spawn_hash_watcher<C: ViewContract + Clone>(
+    mpc_view_handle: MpcContractHandle<C>,
     cancel: CancellationToken,
 ) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError> {
     let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-    tokio::spawn(watch_hashes(chain_gateway, governance_contract, tx, cancel));
+    tokio::spawn(watch_hashes(mpc_view_handle, tx, cancel));
 
     rx.changed()
         .await
@@ -157,18 +126,17 @@ async fn spawn_hash_watcher(
 /// merging updates into a single [`watch::Sender<AllowedTeeHashes>`].
 ///
 /// Exits when the [`CancellationToken`] is cancelled or a subscription closes.
-async fn watch_hashes(
-    chain_gateway: impl SubscribeToContractMethod,
-    governance_contract: AccountId,
+async fn watch_hashes<C: ViewContract+Clone + PollInterval>(
+    mpc_view_handle: MpcContractHandle<C>,
     tx: watch::Sender<AllowedTeeHashes>,
     cancel: CancellationToken,
 ) {
-    let mut image_sub = chain_gateway
-        .subscribe_to_contract_method::<AllowedDockerImageHashesResponse>(
-            governance_contract.clone(),
-            ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES),
-        )
-        .await;
+    let mut image_sub = mpc_view_handle.get_allowed_docker_image_hashes().
+     //   .view_contract::<AllowedDockerImageHashesResponse>(
+     //       governance_contract.clone(),
+     //       ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES),
+     //   )
+     //   .await;
 
     let mut launcher_sub = chain_gateway
         .subscribe_to_contract_method::<Vec<LauncherDockerComposeHash>>(

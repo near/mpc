@@ -1,12 +1,15 @@
 use std::future::Future;
 use std::path::Path;
+use std::time::Duration;
 
+use borsh::BorshDeserialize;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_contract_transport::{ViewArgs, ViewContract};
+use near_contract_transport::{PollInterval, ViewArgs, ViewCall, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use nearcore::NearConfig;
+use serde::de::DeserializeOwned;
 use tokio::sync::mpsc::Receiver;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
@@ -16,7 +19,8 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
-use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
+use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
+use crate::state_viewer::traits::IsSyncing;
 use near_contract_transport::ObservedState;
 
 #[derive(Clone)]
@@ -27,6 +31,13 @@ pub struct ChainGateway {
     client: NearClientActorHandle,
     /// For sending transactions to the blockchain.
     rpc_handler: NearRpcActorHandle,
+}
+
+pub const POLL_INTERVAL: Duration = Duration::from_millis(200);
+impl PollInterval for ChainGateway {
+    fn poll_interval() -> std::time::Duration {
+        POLL_INTERVAL
+    }
 }
 
 impl IsSyncing for ChainGateway {
@@ -44,7 +55,24 @@ impl ViewContract for ChainGateway {
         view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
         self.wait_for_full_sync().await;
-        self.view_client.view_contract(contract_id, view_args).await
+        self.view_client.view_raw(contract_id, view_args).await
+    }
+}
+
+impl ChainGateway {
+    pub fn view<T: DeserializeOwned>(
+        &self,
+        contract_id: AccountId,
+        args: ViewArgs,
+    ) -> ViewCall<Self, T> {
+        ViewCall::new(self.clone(), contract_id, args)
+    }
+    pub fn veiw_borsh<T: BorshDeserialize>(
+        &self,
+        contract_id: AccountId,
+        args: ViewArgs,
+    ) -> ViewCall<Self, T> {
+        ViewCall::borsh(self.clone(), contract_id, args)
     }
 }
 

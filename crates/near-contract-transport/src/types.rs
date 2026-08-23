@@ -1,3 +1,4 @@
+use borsh::BorshDeserialize;
 use derive_more::{Display, From, Into};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -86,6 +87,26 @@ impl ObservedState<Vec<u8>> {
             value: serde_json::from_slice(&self.value)?,
         })
     }
+    pub fn deserialize_borsh<Res: BorshDeserialize>(
+        self,
+    ) -> Result<ObservedState<Res>, std::io::Error> {
+        Ok(ObservedState {
+            observed_at: self.observed_at,
+            value: borsh::from_slice(&self.value)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum TransportError<E> {
+    #[error("deserialization error: {message}")]
+    Deserialization { message: String },
+
+    #[error("monitoring task closed")]
+    MonitoringClosed,
+
+    #[error("View call failed: {0}")]
+    ViewError(E),
 }
 
 #[cfg(test)]

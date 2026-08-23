@@ -12,5 +12,7 @@ mod traits;
 mod types;
 
 #[cfg(feature = "traits")]
-pub use traits::{CallContract, ViewCall, ViewContract};
-pub use types::{BlockHeight, FunctionCallArgs, NearGas, NearToken, ObservedState, ViewArgs};
+pub use traits::{CallContract, PollInterval, ViewCall, ViewContract};
+pub use types::{
+    BlockHeight, FunctionCallArgs, NearGas, NearToken, ObservedState, TransportError, ViewArgs,
+};

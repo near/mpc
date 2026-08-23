@@ -1,35 +1,69 @@
 use std::future::Future;
-use std::marker::PhantomData;
 use std::time::Duration;
 
+use borsh::BorshDeserialize;
 use near_account_id::AccountId;
 use serde::de::DeserializeOwned;
 use std::{future::IntoFuture, pin::Pin};
 
 use crate::FunctionCallArgs;
+use crate::TransportError;
 use crate::ViewArgs;
 use crate::subscription::ContractMethodSubscription;
-use crate::subscription::SubscriptionError;
 use crate::subscription::ViewError;
 use crate::subscription::WatchContractState;
-use crate::subscription::deserialize_observed;
 use crate::types::ObservedState;
+
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeError {
+    #[error("json: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("borsh: {0}")]
+    Borsh(#[from] std::io::Error),
+}
+
+pub(crate) type Decoder<T> = fn(ObservedState<Vec<u8>>) -> Result<ObservedState<T>, DecodeError>;
+
+fn decode_json<T: DeserializeOwned>(raw: ObservedState) -> Result<ObservedState<T>, DecodeError> {
+    raw.deserialize::<T>().map_err(DecodeError::Json)
+}
+
+fn decode_borsh<T: BorshDeserialize>(raw: ObservedState) -> Result<ObservedState<T>, DecodeError> {
+    raw.deserialize_borsh::<T>().map_err(DecodeError::Borsh)
+}
 
 #[must_use = "a ViewCall does nothing unless you call .get() or .subscribe()"]
 pub struct ViewCall<V, T> {
     viewer: V,
     contract_id: AccountId,
     args: ViewArgs,
-    _out: PhantomData<fn() -> T>,
+    decoder: Decoder<T>,
 }
 
-impl<V, T> ViewCall<V, T> {
+impl<V, T> ViewCall<V, T>
+where
+    T: DeserializeOwned,
+{
+    /// by defaults, decodes json
     pub fn new(viewer: V, contract_id: AccountId, args: ViewArgs) -> Self {
         Self {
             viewer,
             contract_id,
             args,
-            _out: PhantomData,
+            decoder: decode_json::<T>,
+        }
+    }
+}
+impl<V, T> ViewCall<V, T>
+where
+    T: BorshDeserialize,
+{
+    pub fn borsh(viewer: V, contract_id: AccountId, args: ViewArgs) -> Self {
+        Self {
+            viewer,
+            contract_id,
+            args,
+            decoder: decode_borsh::<T>,
         }
     }
 }
@@ -38,9 +72,9 @@ impl<V, T> IntoFuture for ViewCall<V, T>
 where
     V: ViewContract + Send + 'static,
     V::Error: ViewError,
-    T: DeserializeOwned + 'static,
+    T: 'static,
 {
-    type Output = Result<ObservedState<T>, SubscriptionError<V::Error>>;
+    type Output = Result<ObservedState<T>, TransportError<V::Error>>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -53,15 +87,16 @@ impl<V, T> ViewCall<V, T>
 where
     V: ViewContract,
     V::Error: ViewError,
-    T: DeserializeOwned,
 {
-    pub async fn get(self) -> Result<ObservedState<T>, SubscriptionError<V::Error>> {
+    async fn get(self) -> Result<ObservedState<T>, TransportError<V::Error>> {
         let raw = self
             .viewer
             .view_contract(&self.contract_id, self.args)
             .await
-            .map_err(SubscriptionError::ViewError)?;
-        deserialize_observed(raw)
+            .map_err(TransportError::ViewError)?;
+        (self.decoder)(raw).map_err(|err| TransportError::Deserialization {
+            message: err.to_string(),
+        })
     }
 }
 
@@ -70,19 +105,14 @@ impl<V, T> ViewCall<V, T>
 where
     V: ViewContract + PollInterval + Send + 'static,
     V::Error: ViewError,
-    T: DeserializeOwned + Send + Clone,
+    T: Send + Clone,
 {
+    // todo: generic deserializer here...
     pub async fn subscribe(self) -> impl WatchContractState<T, V::Error> + Send {
-        ContractMethodSubscription::new(self.viewer, self.contract_id, self.args).await
+        ContractMethodSubscription::new(self.viewer, self.contract_id, self.args, self.decoder)
+            .await
     }
 }
-//impl<H: ViewContract> IntoFuture for ViewCall<H> {
-//    type Output = Result<ObservedState<Vec<u8>>, H::Error>;
-//    type IntoFuture = dyn Future<Output = Self::Output> + Send + 'a;
-//    fn into_future(self) -> Self::IntoFuture {
-//        self.handle.view_contract()
-//    }
-//}
 
 pub trait CallContract {
     /// Backend-specific successful call outcome.

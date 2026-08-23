@@ -1,4 +1,4 @@
-use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
+use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
 use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
@@ -131,12 +131,12 @@ impl MockChainStateBuilder {
     }
 }
 
-impl IsSyncing for MockChainState {
-    type Error = MockError;
-    async fn is_syncing(&self) -> Result<bool, Self::Error> {
-        self.sync_response.lock().unwrap().clone()
-    }
-}
+//impl IsSyncing for MockChainState {
+//    type Error = MockError;
+//    async fn is_syncing(&self) -> Result<bool, Self::Error> {
+//        self.sync_response.lock().unwrap().clone()
+//    }
+//}
 
 impl ViewContract for MockChainState {
     type Error = MockError;

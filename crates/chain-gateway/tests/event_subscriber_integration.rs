@@ -10,7 +10,6 @@ use chain_gateway::{
         },
         subscriber::{BlockEventSubscription, BlockEventSubscriptions},
     },
-    state_viewer::{SubscribeToContractMethod, WatchContractState},
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
 };
 use chain_gateway_test_contract::{
@@ -146,7 +145,8 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
         .unwrap();
 
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+        .view::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+        .subscribe()
         .await;
 
     loop {

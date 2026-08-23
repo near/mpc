@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
-use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
+use near_contract_transport::{ObservedState, ViewArgs};
 
+//use crate::state_viewer::traits::ViewRaw;
 use crate::types::LatestFinalBlockInfo;
 use crate::{
     errors::{NearViewClientError, NearViewClientQuery},
@@ -29,17 +30,9 @@ impl NearViewClientActorHandle {
     }
 }
 
-pub trait ViewRaw {
-    async fn view_raw(
-        &self,
-        contract_id: &AccountId,
-        view_args: ViewArgs,
-    ) -> Result<ObservedState, NearViewClientError>;
-}
-
-impl ViewRaw for NearViewClientActorHandle {
+impl NearViewClientActorHandle {
     /// calls view method contract_id::method_name(args) and returns the result
-    async fn view_raw(
+    pub async fn view_raw(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
