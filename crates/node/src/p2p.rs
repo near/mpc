@@ -407,6 +407,7 @@ impl PersistentConnection {
     }
     const MIN_CONNECTION_ID: u32 = 0;
 
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_config: Arc<ClientConfig>,
         my_id: ParticipantId,
@@ -415,13 +416,12 @@ impl PersistentConnection {
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
         resolve_address: impl Fn() -> Option<String> + Send + 'static,
+        connect_retry_dedup: Arc<Deduplicator<ParticipantId>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
-                let connect_retry_dedup: Deduplicator<ParticipantId> =
-                    Deduplicator::new(Duration::from_secs(60), Duration::from_secs(300), 1024);
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
@@ -589,6 +589,11 @@ where
                 participant_identities.clone(),
                 connectivities.get(participant.id)?,
                 resolve_address,
+                Arc::new(Deduplicator::new(
+                    Duration::from_secs(60),
+                    Duration::from_secs(300),
+                    1024,
+                )),
             )?),
         );
     }
@@ -1094,6 +1099,7 @@ mod tests {
         incoming_connection_handler,
     };
     use crate::config::MpcConfig;
+    use crate::log_dedup::{Decision, Deduplicator};
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion};
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{generate_test_p2p_configs, port_seed};
@@ -1568,6 +1574,11 @@ mod tests {
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
                 || None,
+                Arc::new(Deduplicator::new(
+                    Duration::from_secs(60),
+                    Duration::from_secs(300),
+                    1024,
+                )),
             )
             .unwrap();
 
@@ -1616,6 +1627,11 @@ mod tests {
                 Arc::new(ParticipantIdentities::default()),
                 connectivities.get(target_id).unwrap(),
                 resolve_address,
+                Arc::new(Deduplicator::new(
+                    Duration::from_secs(60),
+                    Duration::from_secs(300),
+                    1024,
+                )),
             )
             .unwrap();
 
@@ -1675,5 +1691,51 @@ mod tests {
             format!("{error:#}").contains("timed out"),
             "unexpected error: {error:#}"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[test_log::test]
+    async fn persistent_connection__should_share_dedup_state_with_retry_loop() {
+        // Given a listener that accepts connections but never responds
+        let (target_address, mut accept_rx, listener_task) = must_spawn_silent_listener().await;
+        let client_config = must_make_client_config();
+        let my_id = ParticipantId::from_raw(0);
+        let target_id = ParticipantId::from_raw(1);
+        let connect_retry_dedup = Arc::new(Deduplicator::new(
+            Duration::from_secs(120),
+            Duration::from_secs(600),
+            1024,
+        ));
+        start_root_task_with_periodic_dump(async move {
+            let connectivity = AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                my_id,
+                &[my_id, target_id],
+            );
+            // When the retry loop dials the hung listener twice.
+            let _connection = PersistentConnection::new(
+                client_config,
+                my_id,
+                target_address,
+                target_id,
+                Arc::new(ParticipantIdentities::default()),
+                connectivity.get(target_id).unwrap(),
+                || None,
+                connect_retry_dedup.clone(),
+            )
+            .unwrap();
+
+            for _ in 0..2 {
+                timeout(Duration::from_secs(120), accept_rx.recv())
+                    .await
+                    .unwrap();
+            }
+
+            // Then checking the same event in deduplicator shows supression
+            let (decision, _dropped) =
+                connect_retry_dedup.check(&target_id, tokio::time::Instant::now().into_std());
+            assert_eq!(decision, Decision::Suppress,);
+        })
+        .await;
+        listener_task.abort();
     }
 }
