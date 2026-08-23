@@ -6,7 +6,6 @@ use crate::traits::Decoder;
 use crate::{ObservedState, ViewArgs, ViewContract, traits::PollInterval};
 
 use near_account_id::AccountId;
-use serde::de::DeserializeOwned;
 
 pub trait ViewError: Clone + Error + PartialEq + Send + Sync + 'static {}
 impl<T: Clone + Error + PartialEq + Send + Sync + 'static> ViewError for T {}
@@ -17,12 +16,13 @@ impl<T: Clone + Error + PartialEq + Send + Sync + 'static> ViewError for T {}
 /// and [`changed()`](WatchContractState::changed) to wait for the next update.
 /// Only actual value changes (different bytes) trigger a notification (block
 /// height increases alone do not).
-pub trait WatchContractState<T, E> {
+pub trait WatchContractState<T> {
+    type Error;
     /// Returns the last value observed on chain and the block height at which it was first
     /// observed.
-    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<E>>;
+    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<Self::Error>>;
     /// Waits until the observed value changes.
-    fn changed(&mut self) -> impl Future<Output = Result<(), TransportError<E>>> + Send;
+    fn changed(&mut self) -> impl Future<Output = Result<(), TransportError<Self::Error>>> + Send;
 }
 
 /// Holds a Monitoring task and the latest cached value.
@@ -35,7 +35,6 @@ pub(crate) struct ContractMethodSubscription<T, E> {
 
 impl<T, E> ContractMethodSubscription<T, E>
 where
-    T: DeserializeOwned,
     E: ViewError,
 {
     fn update_cache(&mut self) {
@@ -50,11 +49,12 @@ where
     }
 }
 
-impl<T, E> WatchContractState<T, E> for ContractMethodSubscription<T, E>
+impl<T, E> WatchContractState<T> for ContractMethodSubscription<T, E>
 where
-    T: DeserializeOwned + Send + Clone,
+    T: Send + Clone,
     E: ViewError,
 {
+    type Error = E;
     /// The constructor marks the initial value as seen, so
     /// `changed().await` will not fire until a genuinely new value arrives.
     async fn changed(&mut self) -> Result<(), TransportError<E>> {

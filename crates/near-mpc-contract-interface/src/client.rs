@@ -341,36 +341,32 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
     }
-    pub async fn migration_info(&self) -> ViewCall<C, MigrationInfo> {
+    pub fn migration_info(&self) -> ViewCall<C, MigrationInfo> {
         self.view(ViewArgs::no_args(MIGRATION_INFO))
     }
 
-    pub async fn get_supported_foreign_chains(&self) -> ViewCall<C, SupportedForeignChains> {
+    pub fn get_supported_foreign_chains(&self) -> ViewCall<C, SupportedForeignChains> {
         self.view(ViewArgs::no_args(GET_SUPPORTED_FOREIGN_CHAINS))
     }
 
-    pub async fn get_foreign_chain_support_by_node(
-        &self,
-    ) -> ViewCall<C, ForeignChainSupportByNode> {
+    pub fn get_foreign_chain_support_by_node(&self) -> ViewCall<C, ForeignChainSupportByNode> {
         self.view(ViewArgs::no_args(GET_FOREIGN_CHAIN_SUPPORT_BY_NODE))
     }
 
-    pub async fn get_available_foreign_chains(&self) -> ViewCall<C, AvailableForeignChains> {
+    pub fn get_available_foreign_chains(&self) -> ViewCall<C, AvailableForeignChains> {
         self.view(ViewArgs::no_args(GET_AVAILABLE_FOREIGN_CHAINS))
     }
 
-    pub async fn get_foreign_chains_configs(&self) -> ViewCall<C, ForeignChainsConfigs> {
+    pub fn get_foreign_chains_configs(&self) -> ViewCall<C, ForeignChainsConfigs> {
         self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
     }
 
     // todo: remove the get* prefix everywhere here
-    pub async fn get_allowed_docker_image_hashes(
-        &self,
-    ) -> ViewCall<C, Vec<AllowedMpcDockerImageHash>> {
+    pub fn get_allowed_docker_image_hashes(&self) -> ViewCall<C, Vec<AllowedMpcDockerImageHash>> {
         self.view(ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES))
     }
     /// The contract's only borsh-serialized view result.
-    pub async fn allowed_foreign_chain_providers(
+    pub fn allowed_foreign_chain_providers(
         &self,
     ) -> ViewCall<C, BTreeMap<ForeignChain, ChainEntry>> {
         self.view_borsh(ViewArgs::no_args(ALLOWED_FOREIGN_CHAIN_PROVIDERS))
@@ -387,12 +383,6 @@ pub enum MpcContractHandleError<E> {
     Deposit(#[from] DepositOverflowError),
     #[error("contract call failed: {0}")]
     Call(E),
-    #[error("contract view failed: {0}")]
-    View(E),
-    #[error("failed to deserialize the view response: {0}")]
-    DeserializeResponse(serde_json::Error),
-    #[error("failed to borsh-decode the view response: {0}")]
-    DecodeResponse(std::io::Error),
 }
 
 impl<E> From<PayloadBytesError> for MpcContractHandleError<E> {
