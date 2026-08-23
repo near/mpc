@@ -49,29 +49,44 @@ where
         }
     }
 
-    pub fn check(&self, key: &K, now: Instant) -> Decision {
+    pub fn check(&self, key: &K, now: Instant) -> (Decision, Vec<(K, u64)>) {
         // Poisoning is not critical just for log suppression, ignore and continue, deliberate.
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut dropped = Vec::new();
+
         if now.duration_since(state.last_cleanup) >= self.ttl {
             let ttl = self.ttl;
-            state
+            let stale_keys: Vec<K> = state
                 .entries
-                .retain(|_, entry| now.duration_since(entry.last_seen) < ttl);
+                .iter()
+                .filter(|(_, entry)| now.duration_since(entry.last_seen) >= ttl)
+                .map(|(k, _)| k.clone())
+                .collect();
+            for k in stale_keys {
+                if let Some(entry) = state.entries.remove(&k)
+                    && entry.suppressed > 0
+                {
+                    dropped.push((k, entry.suppressed));
+                }
+            }
             state.last_cleanup = now;
         }
 
-        if !state.entries.contains_key(key)
-            && state.entries.len() >= self.max_entries
-            && let Some(oldest_key) = state
+        if !state.entries.contains_key(key) && state.entries.len() >= self.max_entries {
+            let oldest = state
                 .entries
                 .iter()
                 .min_by_key(|(_, entry)| entry.last_seen)
-                .map(|(k, _)| k.clone())
-        {
-            state.entries.remove(&oldest_key);
+                .map(|(k, _)| k.clone());
+            if let Some(oldest_key) = oldest
+                && let Some(entry) = state.entries.remove(&oldest_key)
+                && entry.suppressed > 0
+            {
+                dropped.push((oldest_key, entry.suppressed));
+            }
         }
 
-        match state.entries.entry(key.clone()) {
+        let decision = match state.entries.entry(key.clone()) {
             HashMapEntry::Vacant(v) => {
                 v.insert(Entry {
                     last_emit: now,
@@ -85,14 +100,17 @@ where
                 entry.last_seen = now;
                 if now.duration_since(entry.last_emit) < self.interval {
                     entry.suppressed = entry.suppressed.saturating_add(1);
-                    return Decision::Suppress;
+                    Decision::Suppress
+                } else {
+                    let suppressed = entry.suppressed;
+                    entry.suppressed = 0;
+                    entry.last_emit = now;
+                    Decision::Emit { suppressed }
                 }
-                let suppressed = entry.suppressed;
-                entry.suppressed = 0;
-                entry.last_emit = now;
-                Decision::Emit { suppressed }
             }
-        }
+        };
+
+        (decision, dropped)
     }
 
     pub fn reset(&self, key: &K) {
@@ -114,7 +132,10 @@ mod tests {
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(50), Duration::from_secs(1), 10);
         // When / Then the first check is always emitted
-        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now).0,
+            Decision::Emit { suppressed: 0 }
+        );
     }
 
     #[test]
@@ -122,19 +143,22 @@ mod tests {
         // Given a new deduplicator with an event already emitted
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(200), Duration::from_secs(1), 10);
-        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now).0,
+            Decision::Emit { suppressed: 0 }
+        );
         // When the same event occurs several times within the interval
         // Then it is suppressed
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(50)),
+            dedup.check(&"test", now + Duration::from_millis(50)).0,
             Decision::Suppress
         );
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(100)),
+            dedup.check(&"test", now + Duration::from_millis(100)).0,
             Decision::Suppress
         );
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(150)),
+            dedup.check(&"test", now + Duration::from_millis(150)).0,
             Decision::Suppress
         );
     }
@@ -144,19 +168,22 @@ mod tests {
         // Given a new deduplicator with an event already emitted
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(30), Duration::from_secs(1), 10);
-        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now).0,
+            Decision::Emit { suppressed: 0 }
+        );
         // When the same event occurs several times within the TTL and before the interval
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(5)),
+            dedup.check(&"test", now + Duration::from_millis(5)).0,
             Decision::Suppress
         );
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(10)),
+            dedup.check(&"test", now + Duration::from_millis(10)).0,
             Decision::Suppress
         );
         // Then the next identical event following the interval but before thr TTL gets emitted with the suppressed count
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(50)),
+            dedup.check(&"test", now + Duration::from_millis(50)).0,
             Decision::Emit { suppressed: 2 }
         );
     }
@@ -166,11 +193,14 @@ mod tests {
         // Given a new deduplicator with an event already emitted
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_millis(10), Duration::from_millis(30), 10);
-        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
+        assert_eq!(
+            dedup.check(&"test", now).0,
+            Decision::Emit { suppressed: 0 }
+        );
         // When the event becomes stale by crossing the TTL
         // Then the entry should have been cleaned up as stale and becomes fresh again.
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(50)),
+            dedup.check(&"test", now + Duration::from_millis(50)).0,
             Decision::Emit { suppressed: 0 }
         );
     }
@@ -182,24 +212,24 @@ mod tests {
         let dedup = Deduplicator::new(Duration::from_millis(10), Duration::from_millis(10), 2);
         // When entries are added that exceed max_entries
         assert_eq!(
-            dedup.check(&"one", now + Duration::from_millis(1)),
+            dedup.check(&"one", now + Duration::from_millis(1)).0,
             Decision::Emit { suppressed: 0 }
         );
         assert_eq!(
-            dedup.check(&"two", now + Duration::from_millis(2)),
+            dedup.check(&"two", now + Duration::from_millis(2)).0,
             Decision::Emit { suppressed: 0 }
         );
         assert_eq!(
-            dedup.check(&"three", now + Duration::from_millis(3)),
+            dedup.check(&"three", now + Duration::from_millis(3)).0,
             Decision::Emit { suppressed: 0 }
         );
         // Then they get evicted and present as new entries again
         assert_eq!(
-            dedup.check(&"one", now + Duration::from_millis(4)),
+            dedup.check(&"one", now + Duration::from_millis(4)).0,
             Decision::Emit { suppressed: 0 }
         );
         assert_eq!(
-            dedup.check(&"two", now + Duration::from_millis(5)),
+            dedup.check(&"two", now + Duration::from_millis(5)).0,
             Decision::Emit { suppressed: 0 }
         );
     }
@@ -209,16 +239,19 @@ mod tests {
         // Given a deduplication and event within the TTL.
         let now = Instant::now();
         let dedup = Deduplicator::new(Duration::from_secs(2), Duration::from_millis(500), 10);
-        assert_eq!(dedup.check(&"test", now), Decision::Emit { suppressed: 0 });
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(100)),
+            dedup.check(&"test", now).0,
+            Decision::Emit { suppressed: 0 }
+        );
+        assert_eq!(
+            dedup.check(&"test", now + Duration::from_millis(100)).0,
             Decision::Suppress
         );
         // When reset
         dedup.reset(&"test");
         // Then next identical event will be a new log that is emitted
         assert_eq!(
-            dedup.check(&"test", now + Duration::from_millis(200)),
+            dedup.check(&"test", now + Duration::from_millis(200)).0,
             Decision::Emit { suppressed: 0 }
         );
     }

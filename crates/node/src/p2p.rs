@@ -29,7 +29,7 @@ use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
-use std::{sync::LazyLock, time::Duration};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -39,9 +39,6 @@ use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::FutureExt;
 use tracing::info;
-
-static CONNECT_RETRY_DEDUP: LazyLock<Deduplicator<ParticipantId>> =
-    LazyLock::new(|| Deduplicator::new(Duration::from_secs(60), Duration::from_secs(300), 1024));
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
 /// This will send small packets immediately, reducing latency for node messages at
@@ -423,6 +420,8 @@ impl PersistentConnection {
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
+                let connect_retry_dedup: Deduplicator<ParticipantId> =
+                    Deduplicator::new(Duration::from_secs(60), Duration::from_secs(300), 1024);
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
@@ -439,7 +438,7 @@ impl PersistentConnection {
                     .await
                     {
                         Ok(new_conn) => {
-                            CONNECT_RETRY_DEDUP.reset(&target_participant_id);
+                            connect_retry_dedup.reset(&target_participant_id);
                             info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
@@ -449,10 +448,19 @@ impl PersistentConnection {
                             new_conn
                         }
                         Err(e) => {
-                            match CONNECT_RETRY_DEDUP.check(
+                            let (decision, dropped) = connect_retry_dedup.check(
                                 &target_participant_id,
                                 tokio::time::Instant::now().into_std(),
-                            ) {
+                            );
+                            for (dropped_key, suppressed) in dropped {
+                                info!(
+                                    my_id = %my_id,
+                                    target_participant_id = %dropped_key,
+                                    suppressed,
+                                    "suppressed discarded",
+                                );
+                            }
+                            match decision {
                                 Decision::Suppress => {}
                                 Decision::Emit { suppressed } => {
                                     info!(
