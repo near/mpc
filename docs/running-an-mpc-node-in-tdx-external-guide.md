@@ -257,11 +257,19 @@ After the file is created or modified you must run:
 ```bash
 # to reload the service files
 sudo systemctl daemon-reload
+# to enable the service so it starts automatically on boot (and start it now)
+sudo systemctl enable --now dstack-vmm
 # to start/stop/restart the service
 sudo systemctl start/stop/restart dstack-vmm
 # to check the status the service
 systemctl status dstack-vmm
 ```
+
+`systemctl enable` is required for the service to come back after a host reboot:
+without it the unit's `WantedBy=multi-user.target` is inert, so `dstack-vmm` (and
+every CVM it runs) stays down until it is started manually. Make sure your
+key-provider is likewise enabled on boot, so it is serving on `:3443` before the
+CVMs start.
 
 Notice that some of the commands require `sudo`, so they cannot be run using the
 `mpc` user which has no such permissions by default.
