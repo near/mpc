@@ -92,10 +92,7 @@ impl VerifyForeignTxProvider {
             snapshot.get(&requested_chain).cloned().unwrap_or_default()
         };
 
-        // Owned presignatures always include current (leader) node, so it would
-        // never be able to find a presignature from presignatures it owns
-        // where all participants (including itself) support the chain, so
-        // bail at this point (before waiting for such presignature).
+        // If we don't support the foreign chain, we can't lead the computation.
         // TODO(#3961): narrow leader selection to only chain supporters.
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
@@ -117,11 +114,6 @@ impl VerifyForeignTxProvider {
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        // Aliveness is enforced inside the store: the take requires the
-        // presignature's participants to satisfy the (continuously refreshed)
-        // alive condition and be a subset of the chain's supporters. Since
-        // presignature generation is not chain-aware, a compatible one may
-        // not exist yet, count and log when the take has to wait.
         let (presignature_id, presignature) = await_with_slow_hook(
             PRESIGNATURE_TAKE_GRACE_PERIOD,
             keyshare

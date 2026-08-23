@@ -87,8 +87,7 @@ operations:
 ### Properties of an asset taken from the queue
 
 When `take_owned()` or `take_owned_matching(eligible)` returns an asset,
-the following holds (`take_owned_matching` additionally guarantees all
-borrowers are in `eligible`):
+the following holds:
 
 1. **All borrowers were online at check time.** The queue verifies
    that the asset is online by the time it is taken from the queue
@@ -97,9 +96,13 @@ borrowers are in `eligible`):
 2. **The asset has not been used before.** It is removed from storage
    atomically on retrieval. Each asset is consumed exactly once.
 
-`take_unowned(id)` does not guarantee either property — it performs a
-plain database lookup with no liveness check. Borrowers trust the
-owner's choice.
+3. **All borrowers are in `eligible`** — `take_owned_matching` only.
+   The asset's borrowers are checked against the caller-supplied set at
+   the same time as the liveness classification.
+
+`take_unowned(id)` does not guarantee any of these properties — it
+performs a plain database lookup with no liveness check. Borrowers trust
+the owner's choice.
 
 **Remark: No real-time liveness guarantee.** A participant can go offline
 between the liveness check and the start of the protocol. If that
@@ -166,11 +169,6 @@ A `VecDeque` divided into three logical regions by two barriers:
 - **Non-satisfying** (cold_available..len): offline assets. Skipped by
   `take()`, targeted by `discard()`.
 
-`take_first_matching()` (backing `take_owned_matching`) is the exception
-to front/back access: it removes the first online asset also matching the
-caller's set from *any* position before `cold_available`, shifting the
-barriers past the removal point down by one.
-
 The **condition** is whether the asset is online. The set of corresponding
 online participants is cached for up to 1 second. When it changes, the barriers
 reset — the entire queue becomes "unknown" — and assets are re-classified lazily
@@ -181,6 +179,13 @@ become usable again when participants reconnect. However, `take_owned()`
 will never return an offline asset — if all owned assets are offline, it
 blocks and re-checks the set of online participants every second until
 an asset comes back online.
+
+### take_first_matching()
+
+Backing `take_owned_matching`, this is the exception to the cold queue's
+front/back access: it removes the first online asset also matching the
+caller's set from *any* position before `cold_available`, shifting the
+barriers past the removal point down by one.
 
 ### take_owned() flow
 

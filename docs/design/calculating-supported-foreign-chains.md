@@ -66,16 +66,16 @@ result as non-retryable. (Open: whether a sub-quorum from purely *transient*
 failures — timeouts, finality not reached — should still retry, vs. only genuine
 disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
 
-## Participant election
+## Participant selection
 
-Foreign-tx signing must elect participants that **cover** the requested chain
+Foreign-tx signing must select participants that **cover** the requested chain
 (report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
 Implemented on the presignature-selection side: the leader only takes a
 presignature whose participants are all alive **and** supporters of `C`, and
 refuses to lead a request for a chain it does not itself support (every owned
-presignature includes the leader). Leader election itself is not yet
+presignature includes the leader). Leader selection itself is not yet
 chain-aware — a non-supporting leader rejects the attempt instead of serving
 it — tracked in [#3961](https://github.com/near/mpc/issues/3961).
 
@@ -85,7 +85,9 @@ When not all alive participants support `C`, many presignatures are
 incompatible, and a request may wait until a compatible one is generated or
 the request times out. We do not plan chain-aware generation, the
 `mpc_num_verify_foreign_tx_presignature_waits` metric (plus a warning log)
-makes such waits observable.
+makes such waits observable. A broader redesign of asset selection and the
+underlying queue — which could subsume this limitation — is tracked in
+[#377](https://github.com/near/mpc/issues/377).
 
 ## Per-node registration
 
@@ -121,13 +123,13 @@ chain leaves the available set only when more than `n − signing_threshold` nod
 it. This strictly improves on the intersection rule, where one non-registering node
 dropped a chain to zero availability.
 
-## Known tradeoff
+## Known limitations
 
 A node that's up but not covering a chain `C` shrinks the eligible presignature
 pool for `C`: presignatures it co-owns are excluded from selection for `C`'s
 requests (they stay usable for chains the node does cover), and the smaller
 the supporter set, the fewer generated presignatures qualify (see
-[Participant election](#participant-election)). Its **triples are
+[Participant selection](#participant-selection)). Its **triples are
 not lost** — they're shared across domains and stay in use, so triples go
 offline only if the node is genuinely down. Mitigation is operational:
 alerting keeps coverage high and operators are expected to configure every

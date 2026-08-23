@@ -169,7 +169,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         ColdQueueAddIfNotSatisfiedResult::Enqueued
     }
 
-    /// Adds an element to the cold queue unconditionally, never returned.
+    /// Adds an element to the cold queue unconditionally.
     pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
         self.update_condition_value_if_due();
         if (self.condition)(&self.last_condition_value, &value) {
@@ -191,9 +191,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             .cold_queue
             .iter()
             .take(self.cold_available)
-            .position(|(_, val)| {
-                (self.condition)(&self.last_condition_value, val) && (self.condition)(cond_val, val)
-            })?;
+            .position(|(_, val)| self.satisfies_condition(cond_val, val))?;
         if pos < self.cold_ready {
             self.cold_ready -= 1;
         }
@@ -201,6 +199,10 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             self.cold_available -= 1;
         }
         self.cold_queue.remove(pos)
+    }
+
+    pub(self) fn satisfies_condition(&self, cond_val: &CondVal, val: &T) -> bool {
+        (self.condition)(&self.last_condition_value, val) && (self.condition)(cond_val, val)
     }
 }
 
@@ -234,7 +236,7 @@ where
     hot_receiver: flume::Receiver<(UniqueId, T)>,
     cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
     clock: Clock,
-    cold_queue_changed: tokio::sync::Notify,
+    cold_queue_new_elements: tokio::sync::Notify,
 }
 
 impl<T, CondVal: Default + Eq> DoubleQueue<T, CondVal>
@@ -256,7 +258,7 @@ where
                 condition_value_fetcher,
             ))),
             clock,
-            cold_queue_changed: tokio::sync::Notify::new(),
+            cold_queue_new_elements: tokio::sync::Notify::new(),
         }
     }
 
@@ -272,7 +274,7 @@ where
         // away and we quickly exhaust the available assets.
         self.cold_queue.lock().unwrap().update_condition_value();
         loop {
-            let cold_queue_changed = self.cold_queue_changed.notified();
+            let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let taken = self.cold_queue.lock().unwrap().take();
             match taken {
                 ColdQueueTakeResult::Taken(result) => {
@@ -292,7 +294,7 @@ where
                             // making a cold queue element eligible.
                             continue;
                         }
-                        _ = cold_queue_changed => {
+                        _ = cold_queue_new_elements => {
                             continue;
                         }
                         received = self.hot_receiver.recv_async() => {
@@ -301,6 +303,8 @@ where
                                 ColdQueueAddIfNotSatisfiedResult::ConditionSatisfied(value) => {
                                     return (id, value);
                                 }
+                                // Element failed the queue condition (aliveness)
+                                // so it would not be suitable for any taker. Hence, no notify.
                                 ColdQueueAddIfNotSatisfiedResult::Enqueued => {
                                     continue;
                                 }
@@ -314,19 +318,27 @@ where
 
     pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
         loop {
-            let cold_queue_changed = self.cold_queue_changed.notified();
+            let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let (taken, ingested) = {
                 let mut cold = self.cold_queue.lock().unwrap();
                 let mut ingested = false;
+                let mut taken = None;
                 while let Some(Ok((id, value))) = self.hot_receiver.recv_async().now_or_never() {
+                    if cold.satisfies_condition(&cond_val, &value) {
+                        taken = Some((id, value));
+                        break;
+                    }
                     cold.ingest(id, value);
                     ingested = true;
                 }
-                (cold.take_first_matching(&cond_val), ingested)
+                (
+                    taken.or_else(|| cold.take_first_matching(&cond_val)),
+                    ingested,
+                )
             };
 
             if ingested {
-                self.cold_queue_changed.notify_waiters();
+                self.cold_queue_new_elements.notify_waiters();
             }
             if let Some(taken) = taken {
                 return taken;
@@ -337,13 +349,13 @@ where
                 _ = self.clock.sleep(near_time::Duration::seconds(1)) => {
                     continue;
                 }
-                _ = cold_queue_changed => {
+                _ = cold_queue_new_elements => {
                     continue;
                 }
                 received = self.hot_receiver.recv_async() => {
                     let (id, value) = received.expect("should never fail because self keeps a sender");
                     self.cold_queue.lock().unwrap().ingest(id, value);
-                    self.cold_queue_changed.notify_waiters();
+                    self.cold_queue_new_elements.notify_waiters();
                 }
             }
         }
