@@ -129,13 +129,15 @@ fn cleanup_behavior(
 
 #[cfg(test)]
 mod tests {
-    use crate::network::testing::new_test_client;
     use crate::assets::cleanup::EpochData;
     use crate::assets::cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
     use crate::assets::test_utils;
-    use crate::assets::test_utils::{TestContext, get_participant_ids, make_triple, random_verifying_key, triple_v2_key};
+    use crate::assets::test_utils::{
+        TestContext, get_participant_ids, make_triple, random_verifying_key, triple_v2_key,
+    };
     use crate::db::EPOCH_ID_KEY;
     use crate::db::{DBCol, SecretDB};
+    use crate::network::testing::new_test_client;
     use crate::primitives::UniqueId;
     use crate::providers::ecdsa::triple::TripleStorage;
     use mpc_primitives::domain::DomainId;

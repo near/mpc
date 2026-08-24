@@ -866,6 +866,7 @@ impl NetworkTaskChannel {
 #[cfg(test)]
 pub mod testing {
     use super::conn::{ConnectionVersion, NodeConnectivityInterface};
+    use super::indexer_heights::IndexerHeightTracker;
     use super::{
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
     };
@@ -874,7 +875,6 @@ pub mod testing {
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use super::indexer_heights::IndexerHeightTracker;
 
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
