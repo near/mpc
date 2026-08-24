@@ -3,14 +3,16 @@
 //! implemented once per transport backend. The traits live behind the
 //! opt-in `traits` feature.
 
-#[cfg(feature = "monitoring")]
+#[cfg(feature = "traits")]
 mod monitoring;
-#[cfg(feature = "monitoring")]
+#[cfg(feature = "traits")]
 mod subscription;
 #[cfg(feature = "traits")]
 mod traits;
 mod types;
 
+#[cfg(feature = "traits")]
+pub use subscription::{ViewError, WatchContractState};
 #[cfg(feature = "traits")]
 pub use traits::{CallContract, PollInterval, ViewCall, ViewContract};
 pub use types::{

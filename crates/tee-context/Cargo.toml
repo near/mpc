@@ -7,7 +7,7 @@ license = { workspace = true }
 [dependencies]
 chain-gateway = { workspace = true }
 mpc-primitives = { workspace = true }
-near-contract-transport = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
 
 near-account-id = { workspace = true }

@@ -20,7 +20,7 @@ blstrs = ["near-mpc-crypto-types/blstrs"]
 call-args = []
 # The typed client (`MpcContractHandle`) over the transport traits. Pulls in
 # the transport crate.
-client = ["call-args", "dep:near-contract-transport", "near-contract-transport/traits", "near-contract-transport/monitoring"]
+client = ["call-args", "dep:near-contract-transport", "near-contract-transport/traits"]
 ed25519-dalek = ["near-mpc-crypto-types/ed25519-dalek"]
 k256 = ["near-mpc-crypto-types/k256"]
 near = ["near-mpc-crypto-types/near"]

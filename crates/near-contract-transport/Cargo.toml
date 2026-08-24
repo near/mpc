@@ -7,8 +7,14 @@ repository.workspace = true
 description = "NEAR function-call payload and the CallContract/ViewContract transport traits shared across the MPC stack"
 
 [features]
-traits = ["dep:near-account-id"]
-monitoring = ["traits", "dep:thiserror", "dep:tokio", "dep:tokio-util", "dep:tracing"]
+# The payload types build without this; the transport traits and the polling
+# machinery behind them need a tokio runtime, which a wasm contract cannot have.
+traits = [
+    "dep:near-account-id",
+    "dep:tokio",
+    "dep:tokio-util",
+    "dep:tracing",
+]
 
 [dependencies]
 borsh = { workspace = true }
@@ -18,7 +24,7 @@ near-gas = { workspace = true }
 near-token = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true, optional = true }
+thiserror = { workspace = true }
 tracing = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
