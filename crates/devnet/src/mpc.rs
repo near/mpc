@@ -366,7 +366,7 @@ impl MpcInitContractCmd {
             .clone()
             .expect("Require MPC network to have a contract deployed.");
 
-        let access_key = setup.accounts.account(&contract).any_access_key_handle();
+        let mpc_contract_handle = setup.accounts.account(&contract).call_mpc(&contract);
 
         let mut participant_entries = Vec::new();
         let mut next_id = ParticipantId::new(0);
@@ -387,34 +387,15 @@ impl MpcInitContractCmd {
             },
             threshold: GovernanceThreshold::new(self.threshold),
         };
-        let args = serde_json::to_vec(&InitV2Args {
-            parameters,
-            init_config: near_mpc_contract_interface::types::InitConfig::default(),
-        })
-        .unwrap();
-
-        access_key
-            .lock()
-            .await
-            .submit_tx_to_call_function(
-                &contract,
-                method_names::INIT,
-                &args,
-                300,
-                0,
-                near_primitives::views::TxExecutionStatus::Final,
-                true,
+        mpc_contract_handle
+            .init(
+                parameters,
+                Some(near_mpc_contract_interface::types::InitConfig::default()),
             )
             .await
             .into_return_value()
             .unwrap();
     }
-}
-
-#[derive(Serialize)]
-struct InitV2Args {
-    parameters: GovernanceThresholdParameters,
-    init_config: near_mpc_contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {

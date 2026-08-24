@@ -139,22 +139,6 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
-    /// Like [`Self::call`], but waits for the block to be final, so a `view` issued
-    /// afterwards sees the state this call wrote.
-    pub async fn call_final(
-        &self,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.client
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .wait_until::<Final>()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
     pub async fn call_from_with_deposit<T: WaitLevel>(
         &self,
         client: &NearKitCaller<T>,
