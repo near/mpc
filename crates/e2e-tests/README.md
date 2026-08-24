@@ -362,13 +362,15 @@ CI runs the same task via the `mpc-e2e-tests` job.
 
 Each test gets an artifact directory (`/tmp/mpc-e2e-<random>` by default) with a
 `node<i>/` subdirectory per node holding its config, secrets, RocksDB data, the
-embedded neard home, and `stdout.log` / `stderr.log`. `TestDir`
+embedded neard home, `stdout.log` (the node's tracing output) and `stderr.log`
+(panics only). `TestDir`
 (`src/test_dir.rs`) keeps it when the test failed and prints the path to the
 test's stderr; a startup failure also carries it in the error:
 
 ```
 failed to start cluster: cluster artifacts preserved in /tmp/mpc-e2e-AbC123:
-mpc-node 0 exited early, check /tmp/mpc-e2e-AbC123/node0/stderr.log
+mpc-node 0 exited early, check /tmp/mpc-e2e-AbC123/node0 (stdout.log holds its
+logs, stderr.log any panic)
 ```
 
 | Variable | Effect |

@@ -1574,8 +1574,9 @@ async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
         if let MpcNodeState::Running(n) = node {
             anyhow::ensure!(
                 !n.has_exited(),
-                "mpc-node {i} exited early, check {}/{}",
+                "mpc-node {i} exited early, check {} ({} holds its logs, {} any panic)",
                 n.setup().home_dir().display(),
+                crate::mpc_node::STDOUT_LOG,
                 crate::mpc_node::STDERR_LOG
             );
         }
