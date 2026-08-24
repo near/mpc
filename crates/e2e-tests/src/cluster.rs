@@ -1014,8 +1014,8 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        self.contract
-            .handle_for(self.operator_client_for(node_index)?)
+        self.operator_client_for(node_index)?
+            .call_mpc(self.contract_id())
             .cancel_node_migration()
             .await
             .context("failed to cancel node migration")
