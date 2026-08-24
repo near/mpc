@@ -16,9 +16,7 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
-use crate::providers::DomainKeyshare;
-use crate::providers::SignatureProvider;
-use crate::providers::ecdsa_common;
+use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -68,13 +66,7 @@ impl EcdsaSignatureProvider {
         {
             triple_stores.insert(
                 t,
-                Arc::new(TripleStorage::new(
-                    clock.clone(),
-                    db.clone(),
-                    client.my_participant_id(),
-                    ecdsa_common::active_participants_query(&client),
-                    t,
-                )?),
+                Arc::new(TripleStorage::new(clock.clone(), db.clone(), &client, t)?),
             );
         }
 
