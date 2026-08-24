@@ -368,6 +368,8 @@ where
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
     let mut attestation_interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
+    // A failed submission can retry internally for longer than the interval; skip the missed
+    // ticks instead of bursting stale submissions afterwards
     attestation_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     tokio::spawn(periodic_attestation_submission(
         submitter.clone(),
