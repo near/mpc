@@ -1,50 +1,20 @@
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
-use near_contract_transport::{
-    ObserveContract, ObservedState, Observations, ViewArgs, ViewContract, publish_if_changed,
-};
-use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_contract_transport::test_utils::{RecordingViewer, ViewRequest};
 use std::collections::HashMap;
+use std::future::Future;
+use near_contract_transport::{ObserveContract, ObservedState, Observations, ViewArgs, ViewContract};
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::{Notify, watch};
 
 #[derive(Clone)]
 pub struct MockChainState {
     sync_response: Arc<Mutex<Result<bool, MockError>>>,
-    view_state: Arc<Mutex<MockViewState>>,
+    views: RecordingViewer<MockError>,
     latest_final_block: Arc<Mutex<Result<LatestFinalBlockInfo, MockError>>>,
     signed_transaction_submitter_state: Arc<Mutex<MockSignedTransactionSubmitterState>>,
-    read_notify: Arc<Notify>,
-}
-
-pub struct MockViewState {
-    pub response: Result<ObservedState, MockError>,
-    /// Consulted before [`response`](MockViewState::response), so a test that
-    /// watches two view methods can give each its own payload.
-    pub responses_by_method: HashMap<String, Result<ObservedState, MockError>>,
-    pub submitted: Vec<Call>,
-    /// One sender per observed view method, so a `set_view_response*` call
-    /// reaches subscribers immediately instead of on the next poll.
-    observers: HashMap<String, watch::Sender<Result<ObservedState, MockError>>>,
-}
-
-impl MockViewState {
-    fn response_for(&self, method_name: &str) -> Result<ObservedState, MockError> {
-        self.responses_by_method
-            .get(method_name)
-            .unwrap_or(&self.response)
-            .clone()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Call {
-    pub contract_id: AccountId,
-    pub method_name: String,
-    pub args: Vec<u8>,
 }
 
 pub struct MockSignedTransactionSubmitterState {
@@ -64,14 +34,7 @@ impl MockChainState {
     /// Update the view function query response, waking every observer that has
     /// no method-specific response of its own.
     pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
-        let mut inner = self.view_state.lock().unwrap();
-        inner.response = value;
-        let overridden: Vec<String> = inner.responses_by_method.keys().cloned().collect();
-        for (method_name, sender) in &inner.observers {
-            if !overridden.contains(method_name) {
-                publish_if_changed(sender, inner.response.clone());
-            }
-        }
+        self.views.set_response(value);
     }
 
     /// Update the response served for `method_name` only, waking its observer.
@@ -80,27 +43,12 @@ impl MockChainState {
         method_name: impl Into<String>,
         value: Result<ObservedState, MockError>,
     ) {
-        let method_name = method_name.into();
-        let mut inner = self.view_state.lock().unwrap();
-        inner
-            .responses_by_method
-            .insert(method_name.clone(), value.clone());
-        if let Some(sender) = inner.observers.get(&method_name) {
-            publish_if_changed(sender, value);
-        }
-    }
-
-    /// Wait for the next view_contract call (polls submitted.len() every 10ms).
-    pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
-        tokio::time::timeout(max_wait_duration, self.read_notify.notified())
-            .await
-            .map_err(|_| MockError::Timeout)
+        self.views.set_response_for(method_name, value);
     }
 
     /// Returns a snapshot of all recorded view function calls.
-    pub async fn view_calls(&self) -> Vec<Call> {
-        let inner = self.view_state.lock().unwrap();
-        inner.submitted.clone()
+    pub async fn view_calls(&self) -> Vec<ViewRequest> {
+        self.views.calls()
     }
 
     /// Returns a snapshot of all recorded signed transactions.
@@ -167,15 +115,14 @@ impl MockChainStateBuilder {
     }
 
     pub fn build(self) -> MockChainState {
+        let views = RecordingViewer::answering(self.view_response);
+        for (method_name, response) in self.responses_by_method {
+            views.set_response_for(method_name, response);
+        }
+
         MockChainState {
             sync_response: Arc::new(Mutex::new(self.sync_response)),
-            view_state: Arc::new(Mutex::new(MockViewState {
-                response: self.view_response,
-                responses_by_method: self.responses_by_method,
-                submitted: Vec::new(),
-                observers: HashMap::new(),
-            })),
-            read_notify: Arc::new(Notify::new()),
+            views,
             latest_final_block: Arc::new(Mutex::new(self.latest_final_block)),
             signed_transaction_submitter_state: Arc::new(Mutex::new(
                 MockSignedTransactionSubmitterState {
@@ -199,44 +146,23 @@ impl MockChainStateBuilder {
 /// not implement [`PollInterval`](near_contract_transport::PollInterval): the
 /// two are mutually exclusive.
 impl ObserveContract for MockChainState {
-    async fn observe(
+    fn observe(
         &self,
         contract_id: AccountId,
         view_args: ViewArgs,
-    ) -> Observations<Self::Error> {
-        let mut inner = self.view_state.lock().unwrap();
-        let current = inner.response_for(&view_args.method_name);
-        inner.submitted.push(Call {
-            contract_id,
-            method_name: view_args.method_name.clone(),
-            args: view_args.args,
-        });
-        let receiver = inner
-            .observers
-            .entry(view_args.method_name)
-            .or_insert_with(|| watch::channel(current).0)
-            .subscribe();
-        Observations::pushed(receiver)
+    ) -> impl Future<Output = Observations<Self::Error>> + Send {
+        self.views.observe(contract_id, view_args)
     }
 }
 
 impl ViewContract for MockChainState {
     type Error = MockError;
-    async fn view_contract(
+    fn view_contract(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<ObservedState, Self::Error> {
-        let mut inner = self.view_state.lock().unwrap();
-        let response = inner.response_for(&view_args.method_name);
-        inner.submitted.push(Call {
-            contract_id: contract_id.clone(),
-            method_name: view_args.method_name,
-            args: view_args.args,
-        });
-        drop(inner);
-        self.read_notify.notify_waiters();
-        response
+    ) -> impl Future<Output = Result<ObservedState, Self::Error>> + Send {
+        self.views.view_contract(contract_id, view_args)
     }
 }
 

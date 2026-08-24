@@ -6,7 +6,7 @@ edition = { workspace = true }
 autotests = false
 
 [features]
-test-utils = []
+test-utils = ["near-contract-transport/test-utils"]
 
 [dependencies]
 borsh = { workspace = true }

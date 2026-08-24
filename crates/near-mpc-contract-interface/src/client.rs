@@ -413,14 +413,13 @@ mod tests {
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
         ReconstructionThreshold, SignRequestArgs, VerifyForeignTransactionRequestArgs,
     };
-    use near_contract_transport::{
-        CallContract, FunctionCallArgs, ObservedState, ViewArgs, ViewContract,
-    };
+    use near_contract_transport::test_utils::{RecordingViewer, ViewRequest};
+    use near_contract_transport::{CallContract, FunctionCallArgs, ObservedState};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
     use std::collections::{BTreeMap, BTreeSet};
     use std::convert::Infallible;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
     /// assert the exact wire encoding a handle method produced.
@@ -446,32 +445,6 @@ mod tests {
         }
     }
 
-    /// A [`ViewContract`] that records the view requests it is handed, so a test
-    /// can assert the exact wire encoding a handle method produced.
-    #[derive(Clone, Default)]
-    struct RecordingViewer {
-        views: Arc<Mutex<Vec<(AccountId, ViewArgs)>>>,
-    }
-
-    impl ViewContract for RecordingViewer {
-        type Error = Infallible;
-
-        async fn view_contract(
-            &self,
-            contract_id: &AccountId,
-            view_args: ViewArgs,
-        ) -> Result<ObservedState, Self::Error> {
-            self.views
-                .lock()
-                .unwrap()
-                .push((contract_id.clone(), view_args));
-            Ok(ObservedState {
-                observed_at: 7.into(),
-                value: b"null".to_vec(),
-            })
-        }
-    }
-
     /// Renders a recorded call as its reviewable wire format
     /// (method, gas, deposit, args).
     fn render(contract_id: &AccountId, call: &FunctionCallArgs) -> String {
@@ -493,9 +466,10 @@ mod tests {
     }
 
     /// Renders a recorded view as its reviewable wire format (method, args).
-    fn render_view(contract_id: &AccountId, view: &ViewArgs) -> String {
+    fn render_view(view: &ViewRequest) -> String {
         format!(
-            "contract: {contract_id}\nmethod:   {}\nargs:     {}",
+            "contract: {}\nmethod:   {}\nargs:     {}",
+            view.contract_id,
             view.method_name,
             String::from_utf8_lossy(&view.args),
         )
@@ -675,27 +649,32 @@ mod tests {
     #[tokio::test]
     async fn mpc_contract_handle__should_match_the_view_wire_format_catalog() {
         // Given
-        let viewer = RecordingViewer::default();
+        let viewer: RecordingViewer<Infallible> = RecordingViewer::answering(Ok(ObservedState {
+            observed_at: 7.into(),
+            value: b"null".to_vec(),
+        }));
         let handle = MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap());
 
-        // When: every view method, once, in declaration order. The recorded
-        // response cannot decode into eight distinct return types, so only the
-        // request is under test and the result is discarded.
+        // When: every view method, once, in declaration order. One canned
+        // response cannot decode into every return type, so only the request is
+        // under test and the result is discarded.
         let _ = handle.state().await;
         let _ = handle.get_tee_accounts().await;
-        //let _ = handle.migration_info().await;
-        //let _ = handle.get_supported_foreign_chains().await;
-        //let _ = handle.get_foreign_chain_support_by_node().await;
-        //let _ = handle.get_available_foreign_chains().await;
-        //let _ = handle.get_foreign_chains_configs().await;
-        //let _ = handle.allowed_foreign_chain_providers().await;
+        let _ = handle.migration_info().await;
+        let _ = handle.get_supported_foreign_chains().await;
+        let _ = handle.get_foreign_chain_support_by_node().await;
+        let _ = handle.get_available_foreign_chains().await;
+        let _ = handle.get_foreign_chains_configs().await;
+        let _ = handle.get_allowed_docker_image_hashes().await;
+        let _ = handle.allowed_launcher_compose_hashes().await;
+        let _ = handle.allowed_foreign_chain_providers().await;
 
         // Then
-        let views = viewer.views.lock().unwrap();
-        assert_eq!(views.len(), 8);
+        let views = viewer.calls();
+        assert_eq!(views.len(), 10);
         let catalog = views
             .iter()
-            .map(|(contract_id, view)| render_view(contract_id, view))
+            .map(render_view)
             .collect::<Vec<_>>()
             .join("\n\n");
         insta::assert_snapshot!(catalog);

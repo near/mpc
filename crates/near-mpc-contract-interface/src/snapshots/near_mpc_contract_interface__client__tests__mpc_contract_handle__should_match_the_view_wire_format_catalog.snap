@@ -31,5 +31,13 @@ method:   get_foreign_chains_configs
 args:     {}
 
 contract: mpc.near
+method:   allowed_docker_image_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_launcher_compose_hashes
+args:     {}
+
+contract: mpc.near
 method:   allowed_foreign_chain_providers
 args:     {}
