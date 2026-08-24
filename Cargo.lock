@@ -3862,8 +3862,10 @@ dependencies = [
  "mpc-node-config",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "rstest",
  "serde_json",
  "tokio",
+ "tonic 0.14.6",
 ]
 
 [[package]]

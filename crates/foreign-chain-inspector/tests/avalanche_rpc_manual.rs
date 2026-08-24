@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     avalanche::{
-        AvalancheBlockHash, AvalancheTransactionHash,
+        AvalancheBlockHash, AvalancheTransactionHash, MAINNET_CHAIN_ID,
         inspector::{AvalancheExtractedValue, AvalancheExtractor, AvalancheInspector},
     },
 };
@@ -55,8 +55,8 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     assert_matches!(extracted_values[1], AvalancheExtractedValue::Log(_));
 }
 
-/// Avalanche C-Chain mainnet's chain id, as shipped in `expected_network_fingerprint`.
-const EXPECTED_NETWORK_FINGERPRINT: &str = "43114";
+/// As shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: u64 = MAINNET_CHAIN_ID;
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Avalanche C-Chain RPC provider"]
@@ -76,5 +76,8 @@ async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_p
         .expect("network_fingerprint should succeed");
 
     // then
-    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
+    assert_eq!(
+        fingerprint.to_string(),
+        EXPECTED_NETWORK_FINGERPRINT.to_string()
+    );
 }
