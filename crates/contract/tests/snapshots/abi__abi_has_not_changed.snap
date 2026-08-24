@@ -448,6 +448,20 @@ expression: abi
         }
       },
       {
+        "name": "cancel_node_migration",
+        "doc": " Cancels a previously started node migration for the calling account.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_foreign_chain_data",
         "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
