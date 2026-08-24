@@ -3,7 +3,7 @@ use std::time::Duration;
 use foreign_chain_inspector::{
     ForeignChainInspector,
     sui::{
-        SuiExtractedValue, SuiTransactionDigest,
+        MAINNET_GENESIS_CHECKPOINT_DIGEST, SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
 };
@@ -74,9 +74,8 @@ fn parse_tx_digest(digest: &str) -> SuiTransactionDigest {
     SuiTransactionDigest::from(array)
 }
 
-/// Sui mainnet's genesis checkpoint digest, as shipped in the node config file
-/// `foreign_chains.sui.expected_network_fingerprint`.
-const EXPECTED_NETWORK_FINGERPRINT: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
+/// As shipped in the node config `foreign_chains.sui.expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_GENESIS_CHECKPOINT_DIGEST;
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Sui RPC provider"]

@@ -257,6 +257,10 @@ fn classify(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use foreign_chain_inspector::{
+        abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, hyperevm, polygon,
+        starknet, sui,
+    };
     use foreign_chain_rpc_interfaces::sui::Status;
     use foreign_chain_rpc_interfaces::sui::proto::ledger_service_server::{
         LedgerService, LedgerServiceServer,
@@ -264,30 +268,26 @@ mod tests {
     use foreign_chain_rpc_interfaces::sui::proto::{GetServiceInfoRequest, GetServiceInfoResponse};
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use rstest::rstest;
     use std::num::NonZeroU64;
     use std::time::Duration;
 
-    /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
-    const MAINNET: &str = "0x534e5f4d41494e";
-    const SEPOLIA: &str = "0x534e5f5345504f4c4941";
+    const MAINNET: &str = starknet::MAINNET_CHAIN_ID;
+    const SEPOLIA: &str = starknet::SEPOLIA_CHAIN_ID;
     const PADDED_UPPERCASE_MAINNET: &str = "0x00534E5F4D41494E";
     /// Reserved as "discard", so nothing listens there.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
-    /// Sui's genesis checkpoint digest, base58.
-    const SUI_MAINNET: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
-    const SUI_TESTNET: &str = "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD";
+    const SUI_MAINNET: &str = sui::MAINNET_GENESIS_CHECKPOINT_DIGEST;
+    const SUI_TESTNET: &str = sui::TESTNET_GENESIS_CHECKPOINT_DIGEST;
     /// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
     /// the same number as text.
-    const APTOS_MAINNET: u64 = 1;
-    const APTOS_TESTNET: u64 = 2;
+    const APTOS_MAINNET: u64 = aptos::MAINNET_CHAIN_ID;
+    const APTOS_TESTNET: u64 = aptos::TESTNET_CHAIN_ID;
     const PROVIDER_NAME: &str = "publicnode";
-    /// Bitcoin's genesis block hash, which is what tells its networks apart.
-    const BITCOIN_MAINNET: &str =
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
-    const BITCOIN_TESTNET3: &str =
-        "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943";
+    const BITCOIN_MAINNET: &str = bitcoin::MAINNET_GENESIS_BLOCK_HASH;
+    const BITCOIN_TESTNET3: &str = bitcoin::TESTNET3_GENESIS_BLOCK_HASH;
 
     struct EvmMainnet {
         chain: ForeignChain,
@@ -310,35 +310,35 @@ mod tests {
     const EVM_MAINNETS: [EvmMainnet; 8] = [
         EvmMainnet {
             chain: ForeignChain::Abstract,
-            chain_id: 2741,
+            chain_id: abstract_chain::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Adi,
-            chain_id: 36900,
+            chain_id: adi::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Arbitrum,
-            chain_id: 42161,
+            chain_id: arbitrum::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Avalanche,
-            chain_id: 43114,
+            chain_id: avalanche::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Base,
-            chain_id: 8453,
+            chain_id: base::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Bnb,
-            chain_id: 56,
+            chain_id: bnb::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::HyperEvm,
-            chain_id: 999,
+            chain_id: hyperevm::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Polygon,
-            chain_id: 137,
+            chain_id: polygon::MAINNET_CHAIN_ID,
         },
     ];
 
@@ -1041,14 +1041,34 @@ mod tests {
         FakeSuiServer { url, task }
     }
 
-    async fn sui_on_chain(chain_id: &str) -> FakeSuiServer {
-        sui_answering(Ok(GetServiceInfoResponse::default().with_chain_id(chain_id))).await
-    }
-
+    #[rstest]
+    #[case::on_its_genesis_digest(
+        Ok(GetServiceInfoResponse::default().with_chain_id(SUI_MAINNET)),
+        ProviderStatus::Healthy
+    )]
+    #[case::on_another_network(
+        Ok(GetServiceInfoResponse::default().with_chain_id(SUI_TESTNET)),
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new(SUI_MAINNET),
+            observed: NetworkFingerprint::new(SUI_TESTNET),
+        }
+    )]
+    #[case::missing_chain_id(
+        Ok(GetServiceInfoResponse::default()),
+        ProviderStatus::MalformedResponse
+    )]
+    #[case::not_serving_the_api(
+        Err(Status::not_found("no such service")),
+        ProviderStatus::RequestRejected
+    )]
+    #[case::slow_answer(Err(Status::deadline_exceeded("too slow")), ProviderStatus::TimedOut)]
     #[tokio::test]
-    async fn probe_all_providers__should_report_sui_on_its_genesis_digest_as_healthy() {
+    async fn probe_all_providers__should_classify_the_sui_answer(
+        #[case] answer: Result<GetServiceInfoResponse, Status>,
+        #[case] expected: ProviderStatus,
+    ) {
         // Given
-        let server = sui_on_chain(SUI_MAINNET).await;
+        let server = sui_answering(answer).await;
         let config = sui_only(chain_config(
             Some(SUI_MAINNET),
             one_provider(PROVIDER_NAME, &server.url),
@@ -1060,86 +1080,7 @@ mod tests {
         // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
-            ProviderStatus::Healthy
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_sui_on_another_network_as_wrong_network() {
-        // Given
-        let server = sui_on_chain(SUI_TESTNET).await;
-        let config = sui_only(chain_config(
-            Some(SUI_MAINNET),
-            one_provider(PROVIDER_NAME, &server.url),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
-            ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new(SUI_MAINNET),
-                observed: NetworkFingerprint::new(SUI_TESTNET),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_sui_service_info_without_a_chain_id_as_malformed() {
-        // Given
-        let server = sui_answering(Ok(GetServiceInfoResponse::default())).await;
-        let config = sui_only(chain_config(
-            Some(SUI_MAINNET),
-            one_provider(PROVIDER_NAME, &server.url),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
-            ProviderStatus::MalformedResponse
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_sui_provider_not_serving_the_api_as_rejected() {
-        // Given
-        let server = sui_answering(Err(Status::not_found("no such service"))).await;
-        let config = sui_only(chain_config(
-            Some(SUI_MAINNET),
-            one_provider(PROVIDER_NAME, &server.url),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
-            ProviderStatus::RequestRejected
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_slow_sui_provider_as_timed_out() {
-        // Given
-        let server = sui_answering(Err(Status::deadline_exceeded("too slow"))).await;
-        let config = sui_only(chain_config(
-            Some(SUI_MAINNET),
-            one_provider(PROVIDER_NAME, &server.url),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
-            ProviderStatus::TimedOut
+            expected
         );
     }
 

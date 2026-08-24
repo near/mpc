@@ -47,6 +47,7 @@ where
         Ok(Self::canonical_fingerprint(&chain_id))
     }
 
+    /// Unlike inspectors for other chains, we do not need to normalize the input string here.
     /// Base58 is case sensitive and does not permit prefix or padding.
     fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(fingerprint)

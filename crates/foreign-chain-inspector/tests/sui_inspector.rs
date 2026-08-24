@@ -4,7 +4,7 @@ use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     sui::{
-        SuiExtractedValue, SuiTransactionDigest,
+        MAINNET_GENESIS_CHECKPOINT_DIGEST, SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
 };
@@ -470,14 +470,12 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
     assert_eq!(expected, extracted_values);
 }
 
-/// Sui mainnet's genesis checkpoint digest.
-const MAINNET_CHAIN_ID: &str = "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S";
-
 #[tokio::test]
 async fn network_fingerprint__should_return_the_chain_id_the_service_reports() {
     // Given
-    let client =
-        MockSuiClient::serving(GetServiceInfoResponse::default().with_chain_id(MAINNET_CHAIN_ID));
+    let client = MockSuiClient::serving(
+        GetServiceInfoResponse::default().with_chain_id(MAINNET_GENESIS_CHECKPOINT_DIGEST),
+    );
     let inspector = SuiInspector::new(client);
 
     // When
@@ -487,7 +485,7 @@ async fn network_fingerprint__should_return_the_chain_id_the_service_reports() {
         .expect("network_fingerprint should succeed");
 
     // Then
-    assert_eq!(fingerprint.to_string(), MAINNET_CHAIN_ID);
+    assert_eq!(fingerprint.to_string(), MAINNET_GENESIS_CHECKPOINT_DIGEST);
 }
 
 #[tokio::test]

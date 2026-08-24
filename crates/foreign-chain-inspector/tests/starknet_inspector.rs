@@ -10,7 +10,7 @@ use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     RpcAuthentication, build_http_client,
     starknet::{
-        StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
+        MAINNET_CHAIN_ID, StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
@@ -515,8 +515,6 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
     );
 }
 
-/// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
-const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
 const PADDED_UPPERCASE_MAINNET_CHAIN_ID: &str = "0x00534E5F4D41494E";
 
 #[tokio::test]
