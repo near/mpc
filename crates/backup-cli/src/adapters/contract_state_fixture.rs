@@ -1,25 +1,27 @@
 use std::path::{Path, PathBuf};
 
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_account_id::AccountId;
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
+use near_mpc_contract_interface::client::MpcContractHandle;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::ports::ReadContractState;
-
 const CONTRACT_STATE_FILENAME: &str = "contract_state.json";
 
-#[derive(thiserror::Error, Debug)]
+/// A fixture answers from its file, so which account it is asked about is
+/// immaterial; a handle still needs one.
+const FIXTURE_CONTRACT: &str = "fixture.near";
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     #[error("failed to open file: {0}")]
-    OpenFile(tokio::io::Error),
+    OpenFile(String),
 
     #[error("could not read from file: {0}")]
-    Read(tokio::io::Error),
-
-    #[error("failed to deserialize secrets")]
-    JsonDeserialization(serde_json::Error),
+    Read(String),
 }
 
+#[derive(Clone)]
 pub struct ContractStateFixture {
     contract_state_path: PathBuf,
 }
@@ -31,22 +33,38 @@ impl ContractStateFixture {
             contract_state_path,
         }
     }
+
+    pub fn handle(self) -> MpcContractHandle<Self> {
+        MpcContractHandle::new(
+            self,
+            FIXTURE_CONTRACT.parse().expect("a valid account id"),
+        )
+    }
 }
 
-impl ReadContractState for ContractStateFixture {
+/// Answers every view method with the fixture file, which only holds the
+/// contract state. Height is reported as `0`: a file has no block.
+impl ViewContract for ContractStateFixture {
     type Error = Error;
 
-    async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
+    async fn view_contract(
+        &self,
+        _contract_id: &AccountId,
+        _view_args: ViewArgs,
+    ) -> Result<ObservedState, Self::Error> {
         let mut destination = File::open(self.contract_state_path.as_path())
             .await
-            .map_err(Error::OpenFile)?;
+            .map_err(|err| Error::OpenFile(err.to_string()))?;
         let mut buffer = Vec::new();
         destination
             .read_to_end(&mut buffer)
             .await
-            .map_err(Error::Read)?;
+            .map_err(|err| Error::Read(err.to_string()))?;
 
-        serde_json::from_slice(&buffer).map_err(Error::JsonDeserialization)
+        Ok(ObservedState {
+            observed_at: 0.into(),
+            value: buffer,
+        })
     }
 }
 
@@ -56,17 +74,17 @@ mod tests {
 
     use near_mpc_contract_interface::types::{GovernanceThreshold, ProtocolContractState};
 
-    use crate::{adapters::contract_state_fixture::ContractStateFixture, ports::ReadContractState};
+    use crate::adapters::contract_state_fixture::ContractStateFixture;
 
     pub const TEST_CONTRACT_STATE_PATH: &str = "assets/";
     #[tokio::test]
     async fn test_get_contract_state() {
         // Given
         let storage_path = PathBuf::from(TEST_CONTRACT_STATE_PATH);
-        let contract_interface = ContractStateFixture::new(storage_path);
+        let contract_interface = ContractStateFixture::new(storage_path).handle();
 
         // When
-        let contract_state = contract_interface.get_contract_state().await.unwrap();
+        let contract_state = contract_interface.state().await.unwrap().value;
 
         // Then
         let ProtocolContractState::Running(state) = &contract_state else {

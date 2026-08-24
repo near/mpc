@@ -8,7 +8,8 @@ use near_mpc_contract_interface::types::{DomainId, EpochId, Keyset, ProtocolCont
 use tokio_util::sync::CancellationToken;
 
 use crate::keyset::keyset_to_backup;
-use crate::ports::{KeyShareRepository, P2PClient, WatchContractState};
+use crate::ports::{KeyShareRepository, P2PClient};
+use near_contract_transport::WatchContractState;
 
 /// Keeps local storage holding the keyshares of the contract's current keyset
 pub struct Service<Keyshares, Storage, Contract> {
@@ -23,7 +24,8 @@ impl<Keyshares, Storage, Contract> Service<Keyshares, Storage, Contract>
 where
     Keyshares: P2PClient,
     Storage: KeyShareRepository,
-    Contract: WatchContractState,
+    Contract: WatchContractState<ProtocolContractState>,
+    Contract::Error: std::fmt::Debug,
 {
     /// Reads back what local storage already holds, so a restart does not re-fetch a keyset
     /// that is already stored.
@@ -63,8 +65,8 @@ where
         loop {
             // A read failure is reported by the watcher itself, once per distinct failure
             // rather than once per read, and leaves nothing to back up until a state arrives.
-            if let Ok(state) = self.contract_state.latest() {
-                match self.back_up_if_needed(&state, &shutdown).await {
+            if let Ok(observed) = self.contract_state.latest() {
+                match self.back_up_if_needed(&observed.value, &shutdown).await {
                     Ok(BackupOutcome::BackedUp {
                         epoch_id,
                         num_domains,
@@ -213,6 +215,7 @@ mod tests {
 
     use mpc_node::keyshare::Keyshare;
     use mpc_node::keyshare::test_utils::generate_dummy_keyshare;
+    use near_contract_transport::{ObservedState, TransportError};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
@@ -353,6 +356,9 @@ mod tests {
         }
     }
 
+    /// No assertion depends on the observation height.
+    const FAKE_OBSERVED_AT: u64 = 0;
+
     struct FakeWatchContractState {
         states: watch::Receiver<Result<ProtocolContractState, &'static str>>,
     }
@@ -374,18 +380,27 @@ mod tests {
         }
     }
 
-    impl WatchContractState for FakeWatchContractState {
+    impl WatchContractState<ProtocolContractState> for FakeWatchContractState {
         type Error = &'static str;
 
-        fn latest(&mut self) -> Result<ProtocolContractState, Self::Error> {
-            self.states.borrow_and_update().clone()
+        fn latest(
+            &mut self,
+        ) -> Result<ObservedState<ProtocolContractState>, TransportError<Self::Error>> {
+            self.states
+                .borrow_and_update()
+                .clone()
+                .map(|value| ObservedState {
+                    observed_at: FAKE_OBSERVED_AT.into(),
+                    value,
+                })
+                .map_err(TransportError::ViewError)
         }
 
-        async fn changed(&mut self) -> Result<(), Self::Error> {
+        async fn changed(&mut self) -> Result<(), TransportError<Self::Error>> {
             self.states
                 .changed()
                 .await
-                .map_err(|_| "the contract state is no longer observed")
+                .map_err(|_| TransportError::MonitoringClosed)
         }
     }
 

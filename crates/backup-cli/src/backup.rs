@@ -1,5 +1,6 @@
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
+use near_contract_transport::{ViewContract, WatchContractState};
 use near_mpc_contract_interface::{client::MpcContractHandle, types as contract_types};
 use rand_core::OsRng;
 use std::{
@@ -56,7 +57,7 @@ pub async fn run_command(args: cli::Args) {
                 open_node_client_and_storage(&home_dir, &subcommand_args).await;
 
             let mpc_contract =
-                adapters::contract_state_fixture::ContractStateFixture::new(home_dir);
+                adapters::contract_state_fixture::ContractStateFixture::new(home_dir).handle();
             get_keyshares(&mpc_p2p_client, &key_shares_storage, &mpc_contract)
                 .await
                 .expect("failed to get and store keyshares");
@@ -74,16 +75,15 @@ pub async fn run_command(args: cli::Args) {
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
             let contract_handle = MpcContractHandle::new(
-                RpcStateReader::new(&subcommand_args.rpc_url, &subcommand_args.near_chain_id),
-                subcommand_args.mpc_contract_account_id,
-            );
-            let contract_state =
-                adapters::contract_state_polling::PollingContractStateWatcher::spawn(
-                    contract_handle,
+                RpcStateReader::new(
+                    &subcommand_args.rpc_url,
+                    &subcommand_args.near_chain_id,
                     Duration::from_secs(subcommand_args.poll_interval_seconds),
                     Duration::from_secs(subcommand_args.node.request_timeout_seconds),
-                )
-                .await;
+                ),
+                subcommand_args.mpc_contract_account_id,
+            );
+            let contract_state = contract_handle.state().subscribe().await;
 
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
@@ -141,13 +141,17 @@ async fn open_node_client_and_storage(
 /// Backs up keyshares whenever the observed contract state stops being covered by what is
 /// stored, until `shutdown` is cancelled. A failed backup is re-attempted after `retry_delay`,
 /// since the contract state it failed on may not change again for a long time.
-pub async fn run_backup_service(
+pub async fn run_backup_service<Contract>(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
-    contract_state: impl ports::WatchContractState,
+    contract_state: Contract,
     retry_delay: Duration,
     shutdown: CancellationToken,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    Contract: WatchContractState<contract_types::ProtocolContractState>,
+    Contract::Error: std::fmt::Debug,
+{
     Service::new(
         mpc_p2p_client,
         keyshares_storage,
@@ -223,15 +227,20 @@ async fn print_register_command(
     );
 }
 
-pub async fn get_keyshares(
+pub async fn get_keyshares<C>(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
-    mpc_contract: &impl ports::ReadContractState,
-) -> anyhow::Result<()> {
+    mpc_contract: &MpcContractHandle<C>,
+) -> anyhow::Result<()>
+where
+    C: ViewContract + Clone + Send + 'static,
+    C::Error: std::fmt::Debug,
+{
     let contract_state = mpc_contract
-        .get_contract_state()
+        .state()
         .await
-        .map_err(|err| anyhow::anyhow!("could not get contract state: {err:?}"))?;
+        .map_err(|err| anyhow::anyhow!("could not get contract state: {err:?}"))?
+        .value;
     let keyset = keyset_to_backup(&contract_state)?;
     let keyshares = mpc_p2p_client
         .get_keyshares(&keyset)

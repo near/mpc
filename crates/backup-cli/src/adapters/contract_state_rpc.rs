@@ -1,18 +1,36 @@
 use std::error::Error;
+use std::time::Duration;
 
 use near_account_id::AccountId;
-use near_contract_transport::{ObservedState, ViewContract};
+use near_contract_transport::{ObservedState, PollInterval, ViewArgs, ViewContract};
 use near_kit::{Near, RpcError as NearKitRpcError};
-use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
-use near_mpc_contract_interface::types::ProtocolContractState;
+use tokio::time::timeout;
 
-use crate::ports::ReadContractState;
-
-pub struct RpcStateReader(Near);
+#[derive(Clone)]
+pub struct RpcStateReader {
+    near: Near,
+    poll_interval: Duration,
+    request_timeout: Duration,
+}
 
 impl RpcStateReader {
-    pub fn new(rpc_url: &str, near_chain_id: &str) -> Self {
-        Self(Near::custom(rpc_url, near_chain_id).build())
+    pub fn new(
+        rpc_url: &str,
+        near_chain_id: &str,
+        poll_interval: Duration,
+        request_timeout: Duration,
+    ) -> Self {
+        Self {
+            near: Near::custom(rpc_url, near_chain_id).build(),
+            poll_interval,
+            request_timeout,
+        }
+    }
+}
+
+impl PollInterval for RpcStateReader {
+    fn poll_interval(&self) -> Duration {
+        self.poll_interval
     }
 }
 
@@ -21,38 +39,35 @@ impl ViewContract for RpcStateReader {
     async fn view_contract(
         &self,
         contract_id: &AccountId,
-        view_args: near_contract_transport::ViewArgs,
-    ) -> Result<near_contract_transport::ObservedState<Vec<u8>>, Self::Error> {
-        match self
-            .0
-            .rpc()
-            .view_function(
-                contract_id,
-                &view_args.method_name,
-                &view_args.args,
-                near_kit::BlockReference::Finality(near_kit::Finality::Final),
-            )
-            .await
-        {
-            Ok(res) => Ok(ObservedState {
+        view_args: ViewArgs,
+    ) -> Result<ObservedState, Self::Error> {
+        let call = self.near.rpc().view_function(
+            contract_id,
+            &view_args.method_name,
+            &view_args.args,
+            near_kit::BlockReference::Finality(near_kit::Finality::Final),
+        );
+
+        match timeout(self.request_timeout, call).await {
+            Err(_elapsed) => Err(RpcError::Timeout(self.request_timeout)),
+            Ok(Ok(res)) => Ok(ObservedState {
                 observed_at: res.block_height.into(),
                 value: res.result,
             }),
-            Err(err) => Err(RpcError(describe(&err))),
+            Ok(Err(err)) => Err(RpcError::View(describe(&err))),
         }
     }
 }
 
-impl ReadContractState for MpcContractHandle<RpcStateReader> {
-    type Error = MpcContractHandleError<RpcError>;
-    async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
-        self.state().await.map(|success| success.value)
-    }
+/// `Clone`, `PartialEq` and `Eq` are what let a subscription hold this in its
+/// watch channel and notify once per distinct failure rather than once per read.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RpcError {
+    #[error("contract state view call failed: {0}")]
+    View(String),
+    #[error("contract state view call did not finish within {0:?}")]
+    Timeout(Duration),
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("contract state view call failed: {0}")]
-pub struct RpcError(String);
 
 /// `reqwest` writes the request url, which is where an api key lives, into both the [`Display`](std::fmt::Display) and
 /// the [`Debug`] of its errors, so its own text is dropped in favour of the causes below it, which do
@@ -74,12 +89,15 @@ fn describe(err: &near_kit::RpcError) -> String {
 mod tests {
     use super::*;
 
+    use near_mpc_contract_interface::client::MpcContractHandle;
     use tokio::net::TcpListener;
 
     const API_KEY: &str = "d0n0tl0gme";
+    const TEST_POLL_INTERVAL: Duration = Duration::from_secs(60);
+    const TEST_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
     #[tokio::test]
-    async fn get_contract_state__should_not_report_the_api_key_of_a_failing_endpoint() {
+    async fn view_contract__should_not_report_the_api_key_of_a_failing_endpoint() {
         // Given
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -93,13 +111,15 @@ mod tests {
             RpcStateReader::new(
                 &format!("http://127.0.0.1:{port}/?apikey={API_KEY}"),
                 "mainnet",
+                TEST_POLL_INTERVAL,
+                TEST_REQUEST_TIMEOUT,
             ),
             "v1.signer".parse().unwrap(),
         );
 
         // When
         let err = reader
-            .get_contract_state()
+            .state()
             .await
             .expect_err("a hung up endpoint should fail the read");
 
