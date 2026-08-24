@@ -1026,6 +1026,18 @@ impl MpcCluster {
             .context("failed to start node migration")
     }
 
+    /// Cancel a previously started node migration for a specific node.
+    pub async fn cancel_node_migration(
+        &self,
+        node_index: usize,
+    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
+        self.operator_client_for(node_index)?
+            .call_mpc(self.contract_id())
+            .cancel_node_migration()
+            .await
+            .context("failed to cancel node migration")
+    }
+
     /// Update the registered URL of a specific node, called from that node's own operator account.
     pub async fn update_participant_url(
         &self,
