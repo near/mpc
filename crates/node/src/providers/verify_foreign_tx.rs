@@ -25,6 +25,7 @@ use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
+use mpc_primitives::ReconstructionThreshold;
 use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -161,6 +162,9 @@ pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+    /// [`foreign_tx_reconstruction_threshold`](crate::foreign_chain_policy::foreign_tx_reconstruction_threshold)
+    /// of the running domains; `None` when there is no ForeignTx domain.
+    foreign_tx_quorum: Option<ReconstructionThreshold>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -183,6 +187,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+        foreign_tx_quorum: Option<ReconstructionThreshold>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -191,6 +196,7 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
+            foreign_tx_quorum,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         })
@@ -198,6 +204,10 @@ impl VerifyForeignTxProvider {
 
     pub(crate) fn supporters_by_foreign_chain(&self) -> watch::Receiver<SupportersByForeignChain> {
         self.supporters_by_foreign_chain.clone()
+    }
+
+    pub(crate) fn foreign_tx_quorum(&self) -> Option<ReconstructionThreshold> {
+        self.foreign_tx_quorum
     }
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {

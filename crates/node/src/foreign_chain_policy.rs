@@ -132,15 +132,25 @@ fn resolve_participant_ids(
 }
 
 /// Narrows verify-foreign-tx leader selection to the participants supporting the
-/// request's chain, always reading the freshest supporters snapshot.
+/// request's chain, always reading the freshest supporters snapshot. A leader is
+/// only elected when a quorum of supporters is eligible, so an under-quorum
+/// request parks instead of burning attempts that cannot find a compatible
+/// presignature.
 pub(crate) struct ForeignChainLeadersRefiner {
     supporters_receiver: watch::Receiver<SupportersByForeignChain>,
+    /// [`foreign_tx_reconstruction_threshold`] of the running domains, `None`
+    /// when there is no ForeignTx domain (the snapshot is then always empty).
+    quorum: Option<ReconstructionThreshold>,
 }
 
 impl ForeignChainLeadersRefiner {
-    pub(crate) fn new(supporters_receiver: watch::Receiver<SupportersByForeignChain>) -> Self {
+    pub(crate) fn new(
+        supporters_receiver: watch::Receiver<SupportersByForeignChain>,
+        quorum: Option<ReconstructionThreshold>,
+    ) -> Self {
         ForeignChainLeadersRefiner {
             supporters_receiver,
+            quorum,
         }
     }
 }
@@ -151,13 +161,23 @@ impl RefineEligibleLeaders<VerifyForeignTxRequest> for ForeignChainLeadersRefine
         request: &VerifyForeignTxRequest,
         eligible: &HashSet<ParticipantId>,
     ) -> HashSet<ParticipantId> {
-        match self
+        let refined = match self
             .supporters_receiver
             .borrow()
             .get(&request.request.chain())
         {
             Some(supporters) => supporters & eligible,
+            None => return HashSet::new(),
+        };
+        match self.quorum {
             None => HashSet::new(),
+            Some(quorum) => {
+                if u64::try_from(refined.len()).is_ok_and(|count| count >= quorum.inner()) {
+                    refined
+                } else {
+                    HashSet::new()
+                }
+            }
         }
     }
 }
@@ -429,7 +449,8 @@ mod tests {
     fn foreign_chain_leaders_refiner__should_allow_nobody_when_chain_has_no_supporters() {
         // Given
         let (_sender, receiver) = watch::channel(SupportersByForeignChain::new());
-        let refiner = ForeignChainLeadersRefiner::new(receiver);
+        let refiner =
+            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(1)));
 
         // When
         let refined = refiner.refine(
@@ -449,7 +470,8 @@ mod tests {
             participant_set(&[1, 2]),
         )]);
         let (_sender, receiver) = watch::channel(supporters);
-        let refiner = ForeignChainLeadersRefiner::new(receiver);
+        let refiner =
+            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(1)));
 
         // When
         let refined = refiner.refine(
@@ -462,10 +484,53 @@ mod tests {
     }
 
     #[test]
+    fn foreign_chain_leaders_refiner__should_allow_nobody_when_eligible_supporters_below_quorum() {
+        // Given: three supporters, quorum 2, but only one supporter is eligible.
+        let supporters = SupportersByForeignChain::from([(
+            dtos::ForeignChain::Bitcoin,
+            participant_set(&[1, 2, 3]),
+        )]);
+        let (_sender, receiver) = watch::channel(supporters);
+        let refiner =
+            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(2)));
+
+        // When
+        let refined = refiner.refine(
+            &bitcoin_verify_foreign_tx_request(),
+            &participant_set(&[0, 1]),
+        );
+
+        // Then
+        assert!(refined.is_empty());
+    }
+
+    #[test]
+    fn foreign_chain_leaders_refiner__should_allow_supporters_when_eligible_quorum_is_met() {
+        // Given: three supporters, quorum 2, two of them eligible.
+        let supporters = SupportersByForeignChain::from([(
+            dtos::ForeignChain::Bitcoin,
+            participant_set(&[1, 2, 3]),
+        )]);
+        let (_sender, receiver) = watch::channel(supporters);
+        let refiner =
+            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(2)));
+
+        // When
+        let refined = refiner.refine(
+            &bitcoin_verify_foreign_tx_request(),
+            &participant_set(&[0, 1, 2]),
+        );
+
+        // Then
+        assert_eq!(refined, participant_set(&[1, 2]));
+    }
+
+    #[test]
     fn foreign_chain_leaders_refiner__should_pick_up_republished_supporters() {
         // Given
         let (sender, receiver) = watch::channel(SupportersByForeignChain::new());
-        let refiner = ForeignChainLeadersRefiner::new(receiver);
+        let refiner =
+            ForeignChainLeadersRefiner::new(receiver, Some(ReconstructionThreshold::new(1)));
         let eligible = participant_set(&[0, 1]);
         assert!(
             refiner
