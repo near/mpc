@@ -111,6 +111,7 @@ impl NearBlockchain {
 }
 
 /// Handle to a deployed MPC signer contract.
+#[derive(Clone)]
 pub struct DeployedContract {
     client: near_kit::Near,
     contract_id: near_account_id::AccountId,
@@ -188,8 +189,8 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract view `{method}` failed: {e}"))
     }
 
-    pub fn view_mpc(&self) -> MpcContractHandle<&Self> {
-        MpcContractHandle::new(self, self.contract_id.clone())
+    pub fn view_mpc(&self) -> MpcContractHandle<Self> {
+        MpcContractHandle::new(self.clone(), self.contract_id.clone())
     }
 
     /// SHA-256 hash of the contract code currently deployed at this account.

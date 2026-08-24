@@ -71,7 +71,6 @@ where
 impl<V, T> IntoFuture for ViewCall<V, T>
 where
     V: ViewContract + Send + 'static,
-    V::Error: ViewError,
     T: 'static,
 {
     type Output = Result<ObservedState<T>, TransportError<V::Error>>;
@@ -82,11 +81,9 @@ where
     }
 }
 
-// one-shot: no PollInterval, no Send, no 'static
 impl<V, T> ViewCall<V, T>
 where
     V: ViewContract,
-    V::Error: ViewError,
 {
     async fn get(self) -> Result<ObservedState<T>, TransportError<V::Error>> {
         let raw = self
