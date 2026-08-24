@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
             let report = tcb_status::run(&static_data).await?;
             output::print_tcb_status(&report);
             // The verdict and what to do about it are already printed; this
-            // only carries the failure into the exit code.
+            // sets the exit code, at the cost of a second line on stderr.
             if report.is_up_to_date() {
                 Ok(())
             } else {

@@ -190,7 +190,7 @@ The node's quote is evaluated against two sets, and both are reported:
 | Set | What it tells you |
 |-----|-------------------|
 | served by the node | What the node's own boot-time collateral says. `/public_data` serves the attestation built at CVM boot, so this can lag reality by days. |
-| Intel `standard` | What the contract decides today. Collateral is fetched with no `update` parameter, exactly as the node does. |
+| Intel `standard` | What the contract will decide the next time the node re-attests. Fetched with no `update` parameter, like the node, though straight from Intel rather than through the node's PCCS, so the two can differ in cache freshness. |
 
 Both verdicts come from `dcap-qvl`, the same verification the contract runs. Contacting Intel is anonymous: no PCS subscription key and no node credentials.
 
@@ -226,8 +226,6 @@ Advisory IDs:           INTEL-SA-01192, INTEL-SA-01245, INTEL-SA-01312, INTEL-SA
 The node above still serves an `UpToDate` set 19 while Intel has moved to 20, which is the lag that makes the served row alone unreliable.
 
 A quote is judged in two independent halves, and either can demote a platform. The TDX module half is `tee_tcb_svn[0]`, the module's ISV SVN, matched against the identity `tee_tcb_svn[1]` selects; a newer Intel TDX module (SEAM) raises it, usually shipped inside a vendor BIOS. The platform half is the rest of `tee_tcb_svn` plus the PCK certificate's SGX components and PCESVN; BIOS and CPU microcode raise those. The shortfall lines say which half is short, so you know which update you need.
-
-Exit code is 0 when Intel rates the platform `UpToDate` and 1 when it does not.
 
 ## Troubleshooting
 
