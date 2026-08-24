@@ -99,3 +99,137 @@ impl<T, E> ContractMethodSubscription<T, E> {
         }
     }
 }
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use assert_matches::assert_matches;
+    use near_account_id::AccountId;
+
+    use crate::test_utils::{RecordingViewer, TestViewError};
+    use crate::traits::ViewCall;
+    use crate::types::{ObservedState, TransportError, ViewArgs};
+    use crate::WatchContractState;
+
+    const METHOD: &str = "get_value";
+
+    fn contract() -> AccountId {
+        "test.testnet".parse().unwrap()
+    }
+
+    fn json(observed_at: u64, value: &str) -> Result<ObservedState, TestViewError> {
+        Ok(ObservedState {
+            observed_at: observed_at.into(),
+            value: serde_json::to_vec(value).unwrap(),
+        })
+    }
+
+    /// Subscribes through the public path, so the decoder is wired the same way
+    /// a caller gets it.
+    async fn subscribed(
+        initial: Result<ObservedState, TestViewError>,
+    ) -> (
+        RecordingViewer<TestViewError>,
+        impl WatchContractState<String, Error = TestViewError>,
+    ) {
+        let viewer = RecordingViewer::answering(initial);
+        let subscription = ViewCall::<_, String>::new(viewer.clone(), contract(), ViewArgs::no_args(METHOD))
+            .subscribe()
+            .await;
+        (viewer, subscription)
+    }
+
+    #[tokio::test]
+    async fn subscribe__should_decode_the_initial_observation() {
+        // Given / When
+        let (_viewer, mut subscription) = subscribed(json(42, "hello")).await;
+
+        // Then
+        let observed = subscription.latest().expect("the initial read succeeded");
+        assert_eq!(observed.value, "hello");
+        assert_eq!(observed.observed_at, 42.into());
+    }
+
+    #[tokio::test]
+    async fn subscribe__should_surface_a_view_failure() {
+        // Given / When
+        let (_viewer, mut subscription) = subscribed(Err(TestViewError::First)).await;
+
+        // Then
+        assert_eq!(
+            subscription.latest().unwrap_err(),
+            TransportError::ViewError(TestViewError::First)
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe__should_surface_a_decode_failure() {
+        // Given / When
+        let (_viewer, mut subscription) = subscribed(Ok(ObservedState {
+            observed_at: 1.into(),
+            value: b"not json".to_vec(),
+        }))
+        .await;
+
+        // Then
+        assert_matches!(
+            subscription.latest().unwrap_err(),
+            TransportError::Deserialization { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn latest__should_return_the_value_observed_after_a_change() {
+        // Given
+        let (viewer, mut subscription) = subscribed(json(1, "initial")).await;
+        assert_eq!(subscription.latest().unwrap().value, "initial");
+
+        // When
+        viewer.set_response_for(METHOD, json(2, "updated"));
+
+        // Then
+        let observed = subscription.latest().expect("the new value should decode");
+        assert_eq!(observed.value, "updated");
+        assert_eq!(observed.observed_at, 2.into());
+    }
+
+    /// `changed` decodes eagerly, so the `latest` that follows it costs nothing.
+    /// Asserted by the backend not being read again.
+    #[tokio::test]
+    async fn changed__should_resolve_and_cache_the_new_value() {
+        // Given
+        let (viewer, mut subscription) = subscribed(json(1, "before")).await;
+        assert_eq!(subscription.latest().unwrap().value, "before");
+        viewer.set_response_for(METHOD, json(5, "after"));
+
+        // When
+        subscription.changed().await.expect("still observing");
+        let reads_before_latest = viewer.calls().len();
+
+        // Then
+        let observed = subscription.latest().unwrap();
+        assert_eq!(observed.value, "after");
+        assert_eq!(observed.observed_at, 5.into());
+        assert_eq!(
+            viewer.calls().len(),
+            reads_before_latest,
+            "latest should read the cache, not the backend"
+        );
+    }
+
+    /// A dropped producer must surface rather than hang.
+    #[tokio::test]
+    async fn changed__should_fail_once_nothing_publishes() {
+        // Given
+        let (viewer, mut subscription) = subscribed(json(1, "only")).await;
+
+        // When
+        drop(viewer);
+
+        // Then
+        assert_eq!(
+            subscription.changed().await.unwrap_err(),
+            TransportError::MonitoringClosed
+        );
+    }
+}

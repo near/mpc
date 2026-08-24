@@ -197,3 +197,119 @@ impl<T: ViewContract> ViewContract for &T {
         T::view_contract(self, contract_id, view_args)
     }
 }
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use assert_matches::assert_matches;
+    use near_account_id::AccountId;
+
+    use super::ViewCall;
+    use crate::test_utils::{RecordingViewer, TestViewError, ViewRequest};
+    use crate::types::{ObservedState, TransportError, ViewArgs};
+
+    const METHOD: &str = "get_value";
+
+    fn contract() -> AccountId {
+        "test.testnet".parse().unwrap()
+    }
+
+    fn viewer(response: Result<ObservedState, TestViewError>) -> RecordingViewer<TestViewError> {
+        RecordingViewer::answering(response)
+    }
+
+    #[tokio::test]
+    async fn view_call__should_ask_the_backend_for_the_requested_method_and_args() {
+        // Given
+        let backend = viewer(Ok(ObservedState {
+            observed_at: 1.into(),
+            value: serde_json::to_vec("value").unwrap(),
+        }));
+        let args = vec![0xAA, 0xBB];
+
+        // When
+        let _ = ViewCall::<_, String>::new(
+            backend.clone(),
+            contract(),
+            ViewArgs::new(METHOD, args.clone()),
+        )
+        .await;
+
+        // Then
+        assert_eq!(
+            backend.calls(),
+            vec![ViewRequest {
+                contract_id: contract(),
+                method_name: METHOD.to_string(),
+                args,
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn view_call__should_decode_a_json_response() {
+        // Given
+        let backend = viewer(Ok(ObservedState {
+            observed_at: 7.into(),
+            value: serde_json::to_vec("decoded").unwrap(),
+        }));
+
+        // When
+        let observed = ViewCall::<_, String>::new(backend, contract(), ViewArgs::no_args(METHOD))
+            .await
+            .expect("a well-formed response should decode");
+
+        // Then
+        assert_eq!(observed.value, "decoded");
+        assert_eq!(observed.observed_at, 7.into());
+    }
+
+    #[tokio::test]
+    async fn view_call__should_surface_the_backend_failure_unchanged() {
+        // Given
+        let backend = viewer(Err(TestViewError::Second));
+
+        // When
+        let err = ViewCall::<_, String>::new(backend, contract(), ViewArgs::no_args(METHOD))
+            .await
+            .expect_err("a failing backend should fail the call");
+
+        // Then
+        assert_eq!(err, TransportError::ViewError(TestViewError::Second));
+    }
+
+    #[tokio::test]
+    async fn view_call__should_report_a_response_it_cannot_decode() {
+        // Given
+        let backend = viewer(Ok(ObservedState {
+            observed_at: 1.into(),
+            value: b"not json".to_vec(),
+        }));
+
+        // When
+        let err = ViewCall::<_, String>::new(backend, contract(), ViewArgs::no_args(METHOD))
+            .await
+            .expect_err("undecodable bytes should fail the call");
+
+        // Then
+        assert_matches!(err, TransportError::Deserialization { .. });
+    }
+
+    /// The contract's only borsh view proves the decoder is selectable.
+    #[tokio::test]
+    async fn view_call__should_decode_a_borsh_response() {
+        // Given
+        let backend = viewer(Ok(ObservedState {
+            observed_at: 3.into(),
+            value: borsh::to_vec(&7u64).unwrap(),
+        }));
+
+        // When
+        let observed = ViewCall::<_, u64>::borsh(backend, contract(), ViewArgs::no_args(METHOD))
+            .await
+            .expect("a well-formed borsh response should decode");
+
+        // Then
+        assert_eq!(observed.value, 7);
+    }
+}

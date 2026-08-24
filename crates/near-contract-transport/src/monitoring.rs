@@ -155,22 +155,12 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{Observations, poll, poll_observations, replace_if_changed};
-    use crate::test_utils::{RecordingViewer, ViewRequest};
+    use crate::test_utils::{RecordingViewer, TestViewError, ViewRequest};
     use crate::types::{ObservedState, ViewArgs};
 
     const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-    /// Distinguishable failures, so the change-detection cases can tell "the
-    /// same error again" from "a different error".
-    #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-    enum TestError {
-        #[error("first")]
-        First,
-        #[error("second")]
-        Second,
-    }
-
-    type Spec = Result<(u64, u8), TestError>;
+    type Spec = Result<(u64, u8), TestViewError>;
 
     fn requested() -> ViewRequest {
         ViewRequest {
@@ -185,7 +175,7 @@ mod tests {
         ViewArgs::new(request.method_name, request.args)
     }
 
-    fn observed(spec: Spec) -> Result<ObservedState, TestError> {
+    fn observed(spec: Spec) -> Result<ObservedState, TestViewError> {
         spec.map(|(observed_at, byte)| ObservedState {
             observed_at: observed_at.into(),
             value: vec![byte],
@@ -193,8 +183,8 @@ mod tests {
     }
 
     async fn polling(
-        initial: Result<ObservedState, TestError>,
-    ) -> (RecordingViewer<TestError>, Observations<TestError>) {
+        initial: Result<ObservedState, TestViewError>,
+    ) -> (RecordingViewer<TestViewError>, Observations<TestViewError>) {
         let viewer = RecordingViewer::answering(initial);
         let observations = poll_observations(
             viewer.clone(),
@@ -211,10 +201,10 @@ mod tests {
     #[case::same_bytes_new_height(Ok((0, 0)), Ok((5, 0)), false)]
     #[case::new_bytes_new_height(Ok((0, 0)), Ok((1, 1)), true)]
     #[case::new_bytes_same_height(Ok((0, 0)), Ok((0, 1)), true)]
-    #[case::ok_to_error(Ok((0, 0)), Err(TestError::First), true)]
-    #[case::error_to_ok(Err(TestError::First), Ok((0, 0)), true)]
-    #[case::same_error(Err(TestError::First), Err(TestError::First), false)]
-    #[case::different_error(Err(TestError::First), Err(TestError::Second), true)]
+    #[case::ok_to_error(Ok((0, 0)), Err(TestViewError::First), true)]
+    #[case::error_to_ok(Err(TestViewError::First), Ok((0, 0)), true)]
+    #[case::same_error(Err(TestViewError::First), Err(TestViewError::First), false)]
+    #[case::different_error(Err(TestViewError::First), Err(TestViewError::Second), true)]
     fn replace_if_changed__should_replace_only_what_differs(
         #[case] existing: Spec,
         #[case] update: Spec,
@@ -266,9 +256,9 @@ mod tests {
     #[case::same_bytes_new_height(Ok((0, 0)), Ok((5, 0)), false)]
     #[case::new_bytes_new_height(Ok((0, 0)), Ok((1, 1)), true)]
     #[case::new_bytes_same_height(Ok((0, 0)), Ok((0, 1)), true)]
-    #[case::ok_to_error(Ok((0, 0)), Err(TestError::First), true)]
-    #[case::error_to_ok(Err(TestError::First), Ok((0, 0)), true)]
-    #[case::same_error(Err(TestError::First), Err(TestError::First), false)]
+    #[case::ok_to_error(Ok((0, 0)), Err(TestViewError::First), true)]
+    #[case::error_to_ok(Err(TestViewError::First), Ok((0, 0)), true)]
+    #[case::same_error(Err(TestViewError::First), Err(TestViewError::First), false)]
     #[tokio::test(start_paused = true)]
     async fn poll__should_notify_only_when_the_observation_changes(
         #[case] initial: Spec,
@@ -305,7 +295,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn poll_observations__should_seed_an_initial_failure() {
         // Given
-        let initial = observed(Err(TestError::First));
+        let initial = observed(Err(TestViewError::First));
 
         // When
         let (_viewer, mut observations) = polling(initial.clone()).await;

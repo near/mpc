@@ -13,6 +13,16 @@ use crate::subscription::ViewError;
 use crate::traits::{ObserveContract, ViewContract};
 use crate::types::{ObservedState, ViewArgs};
 
+/// Two distinguishable failures, so a test can tell "the same error again"
+/// from "a different error" — which is what change detection turns on.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum TestViewError {
+    #[error("first test failure")]
+    First,
+    #[error("second test failure")]
+    Second,
+}
+
 /// One recorded view request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewRequest {
