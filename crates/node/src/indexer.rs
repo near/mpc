@@ -5,7 +5,7 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 use self::stats::IndexerStats;
 use anyhow::Context;
 use handler::ChainBlockUpdate;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
@@ -46,14 +46,6 @@ pub mod types;
 
 #[cfg(test)]
 pub mod fake;
-
-// TODO(#3751): drop this struct after upgrading the contract.
-#[derive(Debug, PartialEq, Deserialize)]
-#[serde(untagged)]
-enum AllowedDockerImageHashesResponse {
-    WithExpiry(Vec<dtos::AllowedMpcDockerImageHash>),
-    Legacy(Vec<NodeImageHash>),
-}
 
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
@@ -334,22 +326,8 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<dtos::AllowedMpcDockerImageHash>)> {
-        let (block_height, response): (u64, AllowedDockerImageHashesResponse) = self
-            .get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
-            .await?;
-
-        // TODO(#3751): drop this logic after upgrading the contract.
-        let entries = match response {
-            AllowedDockerImageHashesResponse::WithExpiry(entries) => entries,
-            AllowedDockerImageHashesResponse::Legacy(hashes) => hashes
-                .into_iter()
-                .map(|image_hash| dtos::AllowedMpcDockerImageHash {
-                    image_hash,
-                    expiry_timestamp_seconds: None,
-                })
-                .collect(),
-        };
-        Ok((block_height, entries))
+        self.get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
+            .await
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
         &self,
@@ -592,42 +570,7 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{
-        AllowedDockerImageHashesResponse, BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress,
-    };
-    use assert_matches::assert_matches;
-    use mpc_primitives::hash::NodeImageHash;
-
-    #[test]
-    fn allowed_docker_image_hashes_response__should_deserialize_with_expiry_objects() {
-        let json = r#"[
-        { "image_hash": "1111111111111111111111111111111111111111111111111111111111111111", "expiry_timestamp_seconds": 42 },
-        { "image_hash": "2222222222222222222222222222222222222222222222222222222222222222", "expiry_timestamp_seconds": null }
-    ]"#;
-        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
-        assert_matches!(response, AllowedDockerImageHashesResponse::WithExpiry(entries) if entries.len() == 2);
-    }
-
-    #[test]
-    fn allowed_docker_image_hashes_response__should_deserialize_legacy_bare_hashes() {
-        // Given: the shape returned by contracts predating expiry reporting.
-        let json = r#"[
-            "1111111111111111111111111111111111111111111111111111111111111111",
-            "2222222222222222222222222222222222222222222222222222222222222222"
-        ]"#;
-
-        // When
-        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
-
-        // Then
-        assert_eq!(
-            response,
-            AllowedDockerImageHashesResponse::Legacy(vec![
-                NodeImageHash::from([0x11; 32]),
-                NodeImageHash::from([0x22; 32]),
-            ])
-        );
-    }
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();

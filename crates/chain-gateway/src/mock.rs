@@ -3,6 +3,7 @@ use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
 use near_contract_transport::{ObservedState, PollInterval, ViewArgs, ViewContract};
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
@@ -19,6 +20,9 @@ pub struct MockChainState {
 
 pub struct MockViewState {
     pub response: Result<ObservedState, MockError>,
+    /// Consulted before [`response`](MockViewState::response), so a test that
+    /// watches two view methods can give each its own payload.
+    pub responses_by_method: HashMap<String, Result<ObservedState, MockError>>,
     pub submitted: Vec<Call>,
 }
 
@@ -49,6 +53,16 @@ impl MockChainState {
         inner.response = value;
     }
 
+    /// Update the response served for `method_name` only.
+    pub async fn set_view_response_for(
+        &self,
+        method_name: impl Into<String>,
+        value: Result<ObservedState, MockError>,
+    ) {
+        let mut inner = self.view_state.lock().unwrap();
+        inner.responses_by_method.insert(method_name.into(), value);
+    }
+
     /// Wait for the next view_contract call (polls submitted.len() every 10ms).
     pub async fn await_next_view_call(&self, max_wait_duration: Duration) -> Result<(), MockError> {
         tokio::time::timeout(max_wait_duration, self.read_notify.notified())
@@ -72,6 +86,7 @@ impl MockChainState {
 pub struct MockChainStateBuilder {
     sync_response: Result<bool, MockError>,
     view_response: Result<ObservedState, MockError>,
+    responses_by_method: HashMap<String, Result<ObservedState, MockError>>,
     latest_final_block: Result<LatestFinalBlockInfo, MockError>,
     signed_transaction_submitter_response: Result<(), MockError>,
 }
@@ -87,6 +102,7 @@ impl MockChainStateBuilder {
         Self {
             sync_response: Err(MockError::NotInitialized),
             view_response: Err(MockError::NotInitialized),
+            responses_by_method: HashMap::new(),
             latest_final_block: Err(MockError::NotInitialized),
             signed_transaction_submitter_response: Err(MockError::NotInitialized),
         }
@@ -112,11 +128,23 @@ impl MockChainStateBuilder {
         self
     }
 
+    /// Serve `r` for `method_name` only, overriding
+    /// [`with_view_response`](Self::with_view_response) for that method.
+    pub fn with_view_response_for(
+        mut self,
+        method_name: impl Into<String>,
+        r: Result<ObservedState, MockError>,
+    ) -> Self {
+        self.responses_by_method.insert(method_name.into(), r);
+        self
+    }
+
     pub fn build(self) -> MockChainState {
         MockChainState {
             sync_response: Arc::new(Mutex::new(self.sync_response)),
             view_state: Arc::new(Mutex::new(MockViewState {
                 response: self.view_response,
+                responses_by_method: self.responses_by_method,
                 submitted: Vec::new(),
             })),
             read_notify: Arc::new(Notify::new()),
@@ -152,12 +180,16 @@ impl ViewContract for MockChainState {
         view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
         let mut inner = self.view_state.lock().unwrap();
+        let response = inner
+            .responses_by_method
+            .get(&view_args.method_name)
+            .unwrap_or(&inner.response)
+            .clone();
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
             method_name: view_args.method_name,
             args: view_args.args,
         });
-        let response = inner.response.clone();
         drop(inner);
         self.read_notify.notify_waiters();
         response

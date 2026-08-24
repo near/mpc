@@ -204,6 +204,9 @@ mod tests {
     use near_account_id::AccountId;
     use near_contract_transport::ObservedState;
     use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
+    use near_mpc_contract_interface::method_names::{
+        ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES,
+    };
     use near_mpc_contract_interface::types::{
         AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey, MockAttestation,
     };
@@ -242,14 +245,30 @@ mod tests {
             .to_vec()
     }
 
-    fn mock_chain() -> MockChainState {
-        MockChainStateBuilder::new()
+    /// Serves each allowed-hash view its own payload: the two views have
+    /// different response shapes, so one shared response cannot satisfy both.
+    fn with_hash_views(builder: MockChainStateBuilder) -> MockChainStateBuilder {
+        builder
             .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
-            .build()
+            .with_view_response_for(
+                ALLOWED_DOCKER_IMAGE_HASHES,
+                Ok(ObservedState {
+                    observed_at: MOCK_BLOCK_HEIGHT.into(),
+                    value: serde_json::to_vec(&entries_without_expiry(allowed_image_hashes()))
+                        .unwrap(),
+                }),
+            )
+            .with_view_response_for(
+                ALLOWED_LAUNCHER_COMPOSE_HASHES,
+                Ok(ObservedState {
+                    observed_at: MOCK_BLOCK_HEIGHT.into(),
+                    value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
+                }),
+            )
+    }
+
+    fn mock_chain() -> MockChainState {
+        with_hash_views(MockChainStateBuilder::new()).build()
     }
 
     fn test_signer() -> TransactionSigner {
@@ -268,12 +287,7 @@ mod tests {
         latest_block: Result<LatestFinalBlockInfo, MockError>,
         submit_response: Result<(), MockError>,
     ) -> TeeContext<MockChainState> {
-        let mock = MockChainStateBuilder::new()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
+        let mock = with_hash_views(MockChainStateBuilder::new())
             .with_latest_block(latest_block)
             .with_signed_transaction_submitter_response(submit_response)
             .build();
@@ -283,12 +297,7 @@ mod tests {
     }
 
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
-        let mock_chain_state = MockChainStateBuilder::new()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: MOCK_BLOCK_HEIGHT.into(),
-                value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
-            }))
+        let mock_chain_state = with_hash_views(MockChainStateBuilder::new())
             .with_latest_block(Ok(default_block_info()))
             .with_signed_transaction_submitter_response(Ok(()))
             .build();
@@ -472,9 +481,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
-        let updated_bytes = [99u8; 32];
-        let updated_image = vec![DockerImageHash::from(updated_bytes)];
-        let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
+        let updated_image = vec![DockerImageHash::from([99u8; 32])];
 
         let cancel_clone = cancel.clone();
         let mock_clone = mock.clone();
@@ -485,10 +492,13 @@ mod tests {
                 rx.changed().await.unwrap();
                 // Confirm initial value differs from the update we're about to make.
                 assert_ne!(rx.borrow().allowed_docker_image_hashes, expected_image);
-                mock_clone.set_view_response(Ok(ObservedState {
-                    observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
-                    value: serde_json::to_vec(&updated_image).unwrap(),
-                })).await;
+                mock_clone.set_view_response_for(
+                    ALLOWED_DOCKER_IMAGE_HASHES,
+                    Ok(ObservedState {
+                        observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
+                        value: serde_json::to_vec(&expected_image).unwrap(),
+                    }),
+                ).await;
                 tokio::time::sleep(chain_gateway::POLL_INTERVAL * 3).await;
                 rx.changed().await.unwrap();
                 cancel_clone.cancel();
@@ -499,7 +509,7 @@ mod tests {
             *rx.borrow(),
             AllowedTeeHashes {
                 allowed_docker_image_hashes: expected_image,
-                allowed_launcher_compose_hashes: updated_launcher,
+                allowed_launcher_compose_hashes: allowed_launcher_hashes(),
             }
         );
     }
