@@ -14,7 +14,6 @@ use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
 use conn::{ConnectionVersion, NodeConnectivityInterface};
-use indexer_heights::IndexerHeightTracker;
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
@@ -875,6 +874,7 @@ pub mod testing {
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use tokio::sync::mpsc;
+    use super::indexer_heights::IndexerHeightTracker;
 
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
