@@ -10,7 +10,7 @@ use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs,
     SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
     VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
-    VoteUpdateArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -20,15 +20,15 @@ use crate::method_names::{
     CANCEL_NODE_MIGRATION, INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAIN_SUPPORT, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION,
     SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
-    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
     GovernanceThresholdParameters, InitConfig, PayloadBytesError, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, SignRequestArgs, SupportedForeignChains,
-    VerifyForeignTransactionRequestArgs,
+    TeeVerifierCodeHash, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -48,6 +48,7 @@ pub const VOTE_ADD_DOMAINS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_NEW_PARAMETERS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
+pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
@@ -218,6 +219,23 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn vote_tee_verifier_change(
+        &self,
+        candidate_account_id: AccountId,
+        expected_code_hash: TeeVerifierCodeHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteTeeVerifierChangeArgs::new(
+            candidate_account_id,
+            expected_code_hash,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_TEE_VERIFIER_CHANGE,
+            args,
+            VOTE_TEE_VERIFIER_CHANGE_GAS,
+        ))
+        .await
+    }
+
     pub async fn update_participant_url(
         &self,
         url: String,
@@ -371,7 +389,8 @@ mod tests {
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
-        ReconstructionThreshold, SignRequestArgs, VerifyForeignTransactionRequestArgs,
+        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -539,6 +558,13 @@ mod tests {
         handle.vote_cancel_keygen(7).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
         handle
+            .vote_tee_verifier_change(
+                "verifier.near".parse().unwrap(),
+                TeeVerifierCodeHash::new([7u8; 32]),
+            )
+            .await
+            .unwrap();
+        handle
             .update_participant_url("http://localhost:7".to_string())
             .await
             .unwrap();
@@ -591,7 +617,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 20);
+        assert_eq!(calls.len(), 21);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
