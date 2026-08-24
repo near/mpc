@@ -59,3 +59,22 @@ updates:
       - dependency-name: "near-store"
       - dependency-name: "near-time"
       - dependency-name: "nearcore"
+
+  - package-ecosystem: "github-actions"
+    target-branch: "main"
+    # `/` covers `.github/workflows`; composite actions need their own entry.
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    schedule:
+      interval: "weekly"
+
+    open-pull-requests-limit: 5
+
+    cooldown:
+      default-days: 7
+
+    groups:
+      github-actions:
+        patterns:
+          - "*"
