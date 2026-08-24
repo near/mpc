@@ -223,6 +223,7 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     pub binary_paths: Vec<PathBuf>,             // one or num_nodes
     pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
+    pub tee_verifier_wasm: Vec<u8>,             // pre-compiled by the test
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
@@ -240,7 +241,7 @@ pub struct ForeignChainsClusterConfig {
 }
 
 impl MpcClusterConfig {
-    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self;
+    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>, tee_verifier_wasm: Vec<u8>) -> Self;
     pub fn participant_indices(&self) -> Vec<usize>;
 }
 ```
@@ -351,8 +352,8 @@ the `network-hardship-simulation` feature, the MPC contract WASM, the
 tee-verifier WASM, the test parallel contract WASM, and the backup CLI. WASM
 paths are passed to tests via the `MPC_CONTRACT_WASM`,
 `MPC_TEE_VERIFIER_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment
-variables, read by the `must_load_*` helpers in `tests/common.rs` and
-`src/cluster.rs`; if the env var is unset and no pre-built WASM is found,
+variables, read by the `must_load_*` helpers in `tests/common.rs`; if the
+env var is unset and no pre-built WASM is found,
 `test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
 local iteration).
 

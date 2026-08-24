@@ -106,8 +106,16 @@ pub fn set_block_timestamp(timestamp_nanos: u64) {
     );
 }
 
-/// The compose hash bypasses voting because the attestation fixture's hash is not
-/// derivable from the compiled-in template, so no vote can allow it.
+/// Fills the allowlists a Dstack submission is checked against: MPC image,
+/// launcher image, expected measurements, and optionally one compose hash.
+///
+/// The compose hash is injected directly because it is the one value no vote can
+/// authorize: [`get_docker_compose_hash`](crate::tee::proposal::get_docker_compose_hash)
+/// derives the accepted hashes from the voted launcher and MPC images through a
+/// compiled-in template, and the fixture's CVM ran a modified compose carrying a
+/// key-export service (the only way to get the signer key out of the CVM, which the
+/// quote's `report_data` binds and tests must sign with). Pass [`None`] to exercise
+/// the rejection path.
 pub fn whitelist_dstack_measurements(
     tee_state: &mut TeeState,
     image: NodeImageHash,
