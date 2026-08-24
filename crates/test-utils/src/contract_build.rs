@@ -46,6 +46,8 @@ pub struct ContractBuilder {
     manifest_path: String,
     out_dir: Option<String>,
     features: Vec<String>,
+    env: Vec<(String, String)>,
+    no_default_features: bool,
 }
 
 impl ContractBuilder {
@@ -55,6 +57,8 @@ impl ContractBuilder {
             manifest_path: manifest_path.to_string(),
             out_dir: None,
             features: Vec::new(),
+            env: Vec::new(),
+            no_default_features: false,
         }
     }
 
@@ -71,6 +75,18 @@ impl ContractBuilder {
     /// Add cargo features to enable.
     pub fn features(mut self, features: &[&str]) -> Self {
         self.features = features.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Set an environment variable for the contract build.
+    pub fn env(mut self, key: &str, value: &str) -> Self {
+        self.env.push((key.to_string(), value.to_string()));
+        self
+    }
+
+    /// Build without the crate's default features.
+    pub fn no_default_features(mut self) -> Self {
+        self.no_default_features = true;
         self
     }
 
@@ -103,6 +119,8 @@ impl ContractBuilder {
             } else {
                 Some(self.features.join(","))
             },
+            env: self.env,
+            no_default_features: self.no_default_features,
             ..Default::default()
         };
 

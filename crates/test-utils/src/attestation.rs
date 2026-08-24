@@ -22,7 +22,9 @@ pub const TEST_MPC_IMAGE_DIGEST_HEX: &str = include_str!("../assets/mpc_image_di
 pub const TEST_LAUNCHER_IMAGE_COMPOSE_STRING: &str =
     include_str!("../assets/launcher_image_compose.yaml");
 
-pub use tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS as VALID_ATTESTATION_TIMESTAMP;
+/// The instant (Unix seconds) at which the committed attestation fixtures verify.
+/// Update whenever the fixtures are regenerated.
+pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1_786_622_400;
 
 pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
     let digest: [u8; 32] = Sha256::digest(TEST_LAUNCHER_IMAGE_COMPOSE_STRING).into();

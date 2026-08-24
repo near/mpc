@@ -190,11 +190,6 @@ pub enum VerificationResult {
     Rejected(VerifierError),
 }
 
-/// The instant (Unix seconds) at which the committed attestation fixtures verify, used as
-/// the verification time by pinned-clock test builds of the verifier. Update whenever the
-/// fixtures are regenerated.
-pub const SANDBOX_TEST_PINNED_NOW_SECONDS: u64 = 1786622400;
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {

@@ -117,9 +117,10 @@ Optionally confirm the contract executes by calling `verify_quote` read-only wit
 committed fixture. Either outcome proves the DCAP path runs: a verified report while
 the fixture's collateral is inside its validity window, or `TCBInfo expired` once the
 live clock passes it. A verified report after that point is a failed audit: the
-contract is not reading block time. Tests pin the verification clock instead of relying
-on that window (`crates/tee-verifier/tests/verify_quote.rs` and, cross-contract, the
-sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs`):
+contract is not reading block time. Tests control the verification clock instead of
+relying on that window: the crate tests set the VM block timestamp
+(`crates/tee-verifier/tests/verify_quote.rs`), and the sandbox tests build the verifier
+with its clock pinned at compile time (`crates/contract/tests/sandbox/tee_verifier.rs`):
 
 ```shell
 near contract call-function as-read-only "$VERIFIER_ACCOUNT" verify_quote file-args crates/tee-verifier/tests/fixtures/verify_quote_args.borsh network-config "$NETWORK" now

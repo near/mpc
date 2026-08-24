@@ -63,13 +63,19 @@ impl TeeVerifier {
     }
 }
 
-/// The timestamp quotes are verified against: block time, except in test builds,
-/// which pin [`tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS`] to keep
-/// the checked-in collateral fixture inside its validity window.
+/// The timestamp quotes are verified against: block time, unless the build both
+/// disables the default clock feature and sets `TEE_VERIFIER_PINNED_NOW_SECONDS`
+/// (Unix seconds); one without the other keeps block time. Sandbox tests pin the
+/// clock to keep the checked-in attestation fixture inside its collateral's
+/// validity window.
+// TODO(#4222): drop the pin once sandbox block time can be controlled from tests.
+// TODO(#4223): consider pinning the sandbox process clock from the test environment instead.
 fn now_seconds() -> u64 {
-    if cfg!(feature = "sandbox-test-hooks") {
-        tee_verifier_interface::SANDBOX_TEST_PINNED_NOW_SECONDS
-    } else {
-        env::block_timestamp_ms() / 1000
+    #[cfg(not(feature = "block-clock"))]
+    if let Some(pinned) = option_env!("TEE_VERIFIER_PINNED_NOW_SECONDS") {
+        return pinned
+            .parse()
+            .expect("TEE_VERIFIER_PINNED_NOW_SECONDS must be Unix seconds");
     }
+    env::block_timestamp_ms() / 1000
 }

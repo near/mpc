@@ -10,7 +10,7 @@ use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
         consts::ALL_PROTOCOLS,
-        contract_build::{tee_verifier_contract, tee_verifier_contract_with_sandbox_test_hooks},
+        contract_build::{tee_verifier_contract, tee_verifier_contract_with_pinned_clock},
         mpc_contract::{
             available_attestation_grants, get_config, get_participant_attestation,
             get_tee_accounts, prepay_attestation_grants, submit_participant_info,
@@ -128,7 +128,7 @@ async fn setup_verified_fixture() -> VerifiedFixture {
 
 async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) -> VerifiedFixture {
     let setup = setup().await;
-    let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_sandbox_test_hooks()).await;
+    let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
     whitelist_fixture_dstack_hashes(&setup, allowed_compose_hash).await;
     let submitter = create_fixture_account(&setup.worker, "fixture-node-a").await;
     prepay_grant_from_separate_payer(&setup, &submitter).await;
