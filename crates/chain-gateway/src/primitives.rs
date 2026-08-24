@@ -39,6 +39,14 @@ pub(crate) trait IsSyncing: Send + Sync + 'static {
     }
 }
 
+pub(crate) async fn view_when_synced<T, F: Future<Output = T>>(
+    sync: &impl IsSyncing,
+    view: impl FnOnce() -> F,
+) -> T {
+    sync.wait_for_full_sync().await;
+    view().await
+}
+
 pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
     fn fetch_latest_final_block_info(
@@ -53,4 +61,51 @@ pub(crate) trait SubmitSignedTransaction: Send + Sync + 'static {
         &self,
         transaction: SignedTransaction,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{IsSyncing, view_when_synced};
+    use std::convert::Infallible;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    struct MockSync {
+        syncing: Arc<Mutex<bool>>,
+    }
+
+    impl IsSyncing for MockSync {
+        type Error = Infallible;
+        async fn is_syncing(&self) -> Result<bool, Self::Error> {
+            Ok(*self.syncing.lock().unwrap())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn view_when_synced__should_not_start_view_until_synced() {
+        // Given
+        let syncing = Arc::new(Mutex::new(true));
+        let sync = MockSync {
+            syncing: syncing.clone(),
+        };
+        let view_started = Arc::new(AtomicBool::new(false));
+        let started = view_started.clone();
+        let handle = tokio::spawn(async move {
+            view_when_synced(&sync, move || {
+                started.store(true, Ordering::SeqCst);
+                async { 42 }
+            })
+            .await
+        });
+
+        // When
+        tokio::time::sleep(MockSync::INTERVAL * 2).await;
+        let started_while_syncing = view_started.load(Ordering::SeqCst);
+        *syncing.lock().unwrap() = false;
+
+        // Then
+        assert!(!started_while_syncing);
+        assert_eq!(handle.await.unwrap(), 42);
+    }
 }

@@ -1,16 +1,13 @@
 use std::time::Duration;
 
-use chain_gateway::{
-    state_viewer::{SubscribeToContractMethod, WatchContractState},
-    transaction_sender::SubmitFunctionCall,
-};
+use chain_gateway::{state_viewer::ViewExt, transaction_sender::SubmitFunctionCall};
 use chain_gateway_test_contract::{
     args::make_set_value_args,
     consts::{DEFAULT_VALUE, VIEW_VALUE},
 };
 
 use crate::common::localnet::LocalnetBuilder;
-use near_contract_transport::ViewArgs;
+use near_contract_transport::{ViewArgs, WatchContractState};
 
 /// Checks if subscribing to the state succeeds
 #[tokio::test]
@@ -24,7 +21,8 @@ async fn test_subscription() {
     let contract_id = localnet.contract.account_id.clone();
 
     let mut sub = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .view_json::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .subscribe()
         .await;
 
     let res = sub.latest().expect("subscription latest should succeed");

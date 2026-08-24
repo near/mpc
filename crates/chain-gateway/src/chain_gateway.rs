@@ -1,9 +1,11 @@
+use std::cmp::max;
 use std::future::Future;
 use std::path::Path;
+use std::time::Duration;
 
 use near_account_id::AccountId;
 use near_async::ActorSystem;
-use near_contract_transport::{ViewArgs, ViewContract};
+use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use nearcore::NearConfig;
@@ -16,8 +18,10 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
-use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
-use near_contract_transport::{BlockHeight, ObservedState};
+use crate::primitives::{
+    FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
+};
+use near_contract_transport::SerializedObservation;
 
 #[derive(Clone)]
 pub struct ChainGateway {
@@ -27,6 +31,25 @@ pub struct ChainGateway {
     client: NearClientActorHandle,
     /// For sending transactions to the blockchain.
     rpc_handler: NearRpcActorHandle,
+    expected_block_time: Duration,
+}
+
+/// This is a floor in case we run a localnet with a super short block time.
+const MIN_CHAIN_GATEWAY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const MAX_POLLS_PER_BLOCK: u32 = 2;
+
+fn poll_interval(expected_block_time: Duration) -> PollInterval {
+    PollInterval::new(max(
+        expected_block_time / MAX_POLLS_PER_BLOCK,
+        MIN_CHAIN_GATEWAY_POLL_INTERVAL,
+    ))
+    .expect("at least the 50ms floor")
+}
+
+impl HasPollInterval for ChainGateway {
+    fn poll_interval(&self) -> PollInterval {
+        poll_interval(self.expected_block_time)
+    }
 }
 
 impl IsSyncing for ChainGateway {
@@ -38,13 +61,13 @@ impl IsSyncing for ChainGateway {
 
 impl ViewContract for ChainGateway {
     type Error = NearViewClientError;
-    type ObservedAt = BlockHeight;
+
     async fn view_contract(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<ObservedState, Self::Error> {
-        self.view_client.view_contract(contract_id, view_args).await
+    ) -> Result<SerializedObservation, Self::Error> {
+        view_when_synced(self, || self.view_client.view_near(contract_id, view_args)).await
     }
 }
 
@@ -154,6 +177,12 @@ fn run_node(
     mut shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
     streamer_setup: Option<StreamerSetup>,
 ) {
+    let expected_block_time: std::time::Duration = near_config
+        .config
+        .consensus
+        .min_block_production_delay
+        .try_into()
+        .expect("block time must be non-negative");
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -224,6 +253,7 @@ fn run_node(
                 view_client,
                 client,
                 rpc_handler,
+                expected_block_time,
             },
             stream,
         )));
@@ -262,8 +292,35 @@ async fn await_sync_or_shutdown(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::await_sync_or_shutdown;
+    use super::{
+        MAX_POLLS_PER_BLOCK, MIN_CHAIN_GATEWAY_POLL_INTERVAL, await_sync_or_shutdown, poll_interval,
+    };
     use std::future::pending;
+    use std::time::Duration;
+
+    #[test]
+    fn poll_interval__should_fit_max_polls_within_a_block() {
+        // Given
+        let block_time = Duration::from_secs(1);
+
+        // When
+        let interval = poll_interval(block_time);
+
+        // Then
+        assert_eq!(Duration::from(interval) * MAX_POLLS_PER_BLOCK, block_time);
+    }
+
+    #[test]
+    fn poll_interval__should_not_go_below_the_floor() {
+        // Given
+        let block_time = MIN_CHAIN_GATEWAY_POLL_INTERVAL;
+
+        // When
+        let interval = poll_interval(block_time);
+
+        // Then
+        assert_eq!(Duration::from(interval), MIN_CHAIN_GATEWAY_POLL_INTERVAL);
+    }
 
     #[tokio::test]
     async fn await_sync_or_shutdown__should_return_true_when_sync_completes_first() {

@@ -10,7 +10,7 @@ use chain_gateway::{
         },
         subscriber::{BlockEventSubscription, BlockEventSubscriptions},
     },
-    state_viewer::{SubscribeToContractMethod, WatchContractState},
+    state_viewer::ViewExt,
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
 };
 use chain_gateway_test_contract::{
@@ -19,7 +19,7 @@ use chain_gateway_test_contract::{
     },
     consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
 };
-use near_contract_transport::ViewArgs;
+use near_contract_transport::{ViewArgs, WatchContractState};
 use rstest::rstest;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -146,7 +146,8 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
         .unwrap();
 
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+        .view_json::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+        .subscribe()
         .await;
 
     loop {
@@ -328,7 +329,8 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
     let observer_gw = &localnet.observer.chain_gateway;
 
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .view_json::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .subscribe()
         .await;
 
     for target in ["first", "second"] {
@@ -392,7 +394,8 @@ async fn test_block_status_handle_becomes_final() {
 
     // Sync on the state viewer observing the finalised state change.
     let mut watch_value = observer_gw
-        .subscribe_to_contract_method::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+        .view_json::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
+        .subscribe()
         .await;
     loop {
         if watch_value
