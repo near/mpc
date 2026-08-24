@@ -403,14 +403,6 @@ mod tests {
 
         let result = TeeContext::new(mock.clone(), governance_account(), test_signer()).await;
         assert!(result.is_err());
-
-        // The task exited on initial failure — no further polling should happen.
-        assert_eq!(
-            mock.await_next_view_call(std::time::Duration::from_secs(1))
-                .await,
-            Err(MockError::Timeout),
-            "no additional polls should happen after initial failure"
-        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -499,7 +491,6 @@ mod tests {
                         value: serde_json::to_vec(&expected_image).unwrap(),
                     }),
                 ).await;
-                tokio::time::sleep(chain_gateway::POLL_INTERVAL * 3).await;
                 rx.changed().await.unwrap();
                 cancel_clone.cancel();
             } => {}

@@ -1,13 +1,15 @@
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
-use near_contract_transport::{ObservedState, PollInterval, ViewArgs, ViewContract};
+use near_contract_transport::{
+    ObserveContract, ObservedState, Observations, ViewArgs, ViewContract, publish_if_changed,
+};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 
 #[derive(Clone)]
 pub struct MockChainState {
@@ -24,6 +26,18 @@ pub struct MockViewState {
     /// watches two view methods can give each its own payload.
     pub responses_by_method: HashMap<String, Result<ObservedState, MockError>>,
     pub submitted: Vec<Call>,
+    /// One sender per observed view method, so a `set_view_response*` call
+    /// reaches subscribers immediately instead of on the next poll.
+    observers: HashMap<String, watch::Sender<Result<ObservedState, MockError>>>,
+}
+
+impl MockViewState {
+    fn response_for(&self, method_name: &str) -> Result<ObservedState, MockError> {
+        self.responses_by_method
+            .get(method_name)
+            .unwrap_or(&self.response)
+            .clone()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,20 +61,33 @@ impl MockChainState {
         *self.sync_response.lock().unwrap() = value;
     }
 
-    /// Update the view function query response.
+    /// Update the view function query response, waking every observer that has
+    /// no method-specific response of its own.
     pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
         let mut inner = self.view_state.lock().unwrap();
         inner.response = value;
+        let overridden: Vec<String> = inner.responses_by_method.keys().cloned().collect();
+        for (method_name, sender) in &inner.observers {
+            if !overridden.contains(method_name) {
+                publish_if_changed(sender, inner.response.clone());
+            }
+        }
     }
 
-    /// Update the response served for `method_name` only.
+    /// Update the response served for `method_name` only, waking its observer.
     pub async fn set_view_response_for(
         &self,
         method_name: impl Into<String>,
         value: Result<ObservedState, MockError>,
     ) {
+        let method_name = method_name.into();
         let mut inner = self.view_state.lock().unwrap();
-        inner.responses_by_method.insert(method_name.into(), value);
+        inner
+            .responses_by_method
+            .insert(method_name.clone(), value.clone());
+        if let Some(sender) = inner.observers.get(&method_name) {
+            publish_if_changed(sender, value);
+        }
     }
 
     /// Wait for the next view_contract call (polls submitted.len() every 10ms).
@@ -146,6 +173,7 @@ impl MockChainStateBuilder {
                 response: self.view_response,
                 responses_by_method: self.responses_by_method,
                 submitted: Vec::new(),
+                observers: HashMap::new(),
             })),
             read_notify: Arc::new(Notify::new()),
             latest_final_block: Arc::new(Mutex::new(self.latest_final_block)),
@@ -166,9 +194,29 @@ impl MockChainStateBuilder {
 //    }
 //}
 
-impl PollInterval for MockChainState {
-    fn poll_interval(&self) -> Duration {
-        crate::POLL_INTERVAL
+/// Publishes rather than being polled, so a `set_view_response*` call wakes
+/// subscribers at once and a test never waits out an interval. Deliberately does
+/// not implement [`PollInterval`](near_contract_transport::PollInterval): the
+/// two are mutually exclusive.
+impl ObserveContract for MockChainState {
+    async fn observe(
+        &self,
+        contract_id: AccountId,
+        view_args: ViewArgs,
+    ) -> Observations<Self::Error> {
+        let mut inner = self.view_state.lock().unwrap();
+        let current = inner.response_for(&view_args.method_name);
+        inner.submitted.push(Call {
+            contract_id,
+            method_name: view_args.method_name.clone(),
+            args: view_args.args,
+        });
+        let receiver = inner
+            .observers
+            .entry(view_args.method_name)
+            .or_insert_with(|| watch::channel(current).0)
+            .subscribe();
+        Observations::pushed(receiver)
     }
 }
 
@@ -180,11 +228,7 @@ impl ViewContract for MockChainState {
         view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
         let mut inner = self.view_state.lock().unwrap();
-        let response = inner
-            .responses_by_method
-            .get(&view_args.method_name)
-            .unwrap_or(&inner.response)
-            .clone();
+        let response = inner.response_for(&view_args.method_name);
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
             method_name: view_args.method_name,
