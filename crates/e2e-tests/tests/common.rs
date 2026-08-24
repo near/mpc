@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -74,7 +73,9 @@ pub async fn must_setup_cluster(
         .ok();
 
     let contract_wasm = must_load_contract_wasm();
-    let mut config = MpcClusterConfig::default_for_test(port_seed, contract_wasm);
+    let tee_verifier_wasm = must_load_tee_verifier_wasm();
+    let mut config =
+        MpcClusterConfig::default_for_test(port_seed, contract_wasm, tee_verifier_wasm);
     configure(&mut config);
 
     let initial_participant_indices = config.participant_indices();
@@ -294,59 +295,31 @@ pub async fn sum_metric(cluster: &MpcCluster, name: &str) -> anyhow::Result<i64>
         .sum())
 }
 
-/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
 pub fn must_load_contract_wasm() -> Vec<u8> {
-    if let Ok(path) = std::env::var("MPC_CONTRACT_WASM") {
-        let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read contract WASM at {}: {e}",
-                wasm_path.display()
-            )
-        });
-    }
-
-    let default_path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/near/contract/mpc_contract.wasm");
-
-    if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read contract WASM at {}: {e}",
-                default_path.display()
-            )
-        });
-    }
-
-    tracing::info!("MPC_CONTRACT_WASM not set and pre-built WASM not found — building contract");
-    test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml").build()
+    test_utils::contract_build::must_load_wasm(
+        "MPC_CONTRACT_WASM",
+        "target/near/contract/mpc_contract.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml"),
+    )
 }
 
-/// Plumbing helper: failures here are setup bugs, not test failures, so we panic.
 pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
-    if let Ok(path) = std::env::var("MPC_PARALLEL_CONTRACT_WASM") {
-        let wasm_path = PathBuf::from(&path);
-        return std::fs::read(&wasm_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read parallel contract WASM at {}: {e}",
-                wasm_path.display()
-            )
-        });
-    }
+    test_utils::contract_build::must_load_wasm(
+        "MPC_PARALLEL_CONTRACT_WASM",
+        "target/near/test-parallel-contract/test_parallel_contract.wasm",
+        test_utils::contract_build::ContractBuilder::new(
+            "crates/test-parallel-contract/Cargo.toml",
+        ),
+    )
+}
 
-    let default_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/near/test-parallel-contract/test_parallel_contract.wasm");
-    if default_path.exists() {
-        return std::fs::read(&default_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read parallel contract WASM at {}: {e}",
-                default_path.display()
-            )
-        });
-    }
-    tracing::info!("pre-built parallel contract WASM not found — building");
-    test_utils::contract_build::ContractBuilder::new("crates/test-parallel-contract/Cargo.toml")
-        .build()
+pub fn must_load_tee_verifier_wasm() -> Vec<u8> {
+    test_utils::contract_build::must_load_wasm(
+        "MPC_TEE_VERIFIER_WASM",
+        "target/near/tee_verifier/tee_verifier.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/tee-verifier/Cargo.toml")
+            .out_dir("target/near/tee_verifier"),
+    )
 }
 
 /// Payload matching the signature scheme of `domain`. Panics for
