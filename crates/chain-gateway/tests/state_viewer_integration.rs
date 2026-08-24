@@ -1,6 +1,5 @@
 use assert_matches::assert_matches;
 
-use chain_gateway::errors::ChainGatewayError;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 use near_contract_transport::ObservedState;
 use near_contract_transport::TransportError;

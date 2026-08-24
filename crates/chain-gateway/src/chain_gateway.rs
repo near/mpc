@@ -12,15 +12,15 @@ use nearcore::NearConfig;
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc::Receiver;
 
-use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
+use crate::errors::{ChainGatewayError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
 use crate::event_subscriber::block_events::BlockUpdate;
 use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
-use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
-use crate::state_viewer::traits::IsSyncing;
+use crate::primitives::{FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction};
+use crate::synced_views::SyncedViews;
 use near_contract_transport::ObservedState;
 
 #[derive(Clone)]
@@ -40,13 +40,6 @@ impl PollInterval for ChainGateway {
     }
 }
 
-impl IsSyncing for ChainGateway {
-    type Error = NearClientError;
-    async fn is_syncing(&self) -> Result<bool, Self::Error> {
-        self.client.is_syncing().await
-    }
-}
-
 impl ViewContract for ChainGateway {
     type Error = NearViewClientError;
     async fn view_contract(
@@ -54,8 +47,9 @@ impl ViewContract for ChainGateway {
         contract_id: &AccountId,
         view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
-        self.wait_for_full_sync().await;
-        self.view_client.view_raw(contract_id, view_args).await
+        SyncedViews::new(self.client.clone(), self.view_client.clone())
+            .view_contract(contract_id, view_args)
+            .await
     }
 }
 

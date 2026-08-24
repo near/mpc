@@ -7,6 +7,40 @@
 use crate::types::LatestFinalBlockInfo;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::future::Future;
+use std::time::Duration;
+
+/// Whether the node has caught up. A view answered from a partially synced node
+/// can report state far behind the chain head, so reads are gated on this.
+pub(crate) trait IsSyncing: Send + Sync + 'static {
+    type Error: std::error::Error + Send + Sync + 'static;
+    /// Returns whether the node is currently syncing.
+    fn is_syncing(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+
+    const INTERVAL: Duration = Duration::from_millis(500);
+    /// Polls [`is_syncing`](Self::is_syncing) until the node is fully synced.
+    /// A failed poll is logged and retried: not knowing is not the same as
+    /// being synced.
+    fn wait_for_full_sync(&self) -> impl Future<Output = ()> + Send {
+        async {
+            let mut attempt = 0u32;
+            loop {
+                match self.is_syncing().await {
+                    Ok(false) => return,
+                    Ok(true) => {
+                        if attempt.is_multiple_of(120) {
+                            tracing::info!("has been syncing for: {} seconds", attempt / 2);
+                        }
+                        attempt += 1;
+                    }
+                    Err(err) => {
+                        tracing::warn!(err = %err, "error while waiting for sync");
+                    }
+                }
+                tokio::time::sleep(Self::INTERVAL).await;
+            }
+        }
+    }
+}
 
 pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;

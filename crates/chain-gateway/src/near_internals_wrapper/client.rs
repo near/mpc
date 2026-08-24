@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use near_async::messaging::CanSendAsync as _;
 
-use crate::{errors::NearClientError, state_viewer::traits::IsSyncing};
+use crate::{errors::NearClientError, primitives::IsSyncing};
 
 /// Arc-wrapper around near-internal struct
 #[derive(Clone)]

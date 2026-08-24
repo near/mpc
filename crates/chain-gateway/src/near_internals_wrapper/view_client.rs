@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
-use near_contract_transport::{ObservedState, ViewArgs};
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
 
-//use crate::state_viewer::traits::ViewRaw;
 use crate::types::LatestFinalBlockInfo;
 use crate::{
     errors::{NearViewClientError, NearViewClientQuery},
@@ -30,9 +29,12 @@ impl NearViewClientActorHandle {
     }
 }
 
-impl NearViewClientActorHandle {
-    /// calls view method contract_id::method_name(args) and returns the result
-    pub async fn view_raw(
+impl ViewContract for NearViewClientActorHandle {
+    type Error = NearViewClientError;
+
+    /// The un-gated read. Compose with [`SyncedViews`](crate::synced_views::SyncedViews)
+    /// to wait for the node to finish syncing first.
+    async fn view_contract(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
