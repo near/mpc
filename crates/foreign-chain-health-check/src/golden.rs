@@ -37,6 +37,8 @@ pub struct GoldenSet {
     pub arbitrum: Option<BlockHashVector>,
     pub polygon: Option<BlockHashVector>,
     pub hyper_evm: Option<BlockHashVector>,
+    pub avalanche: Option<BlockHashVector>,
+    pub adi: Option<BlockHashVector>,
     pub abstract_chain: Option<BlockHashVector>,
     pub bitcoin: Option<BlockHashVector>,
     pub starknet: Option<BlockHashVector>,
@@ -72,6 +74,14 @@ const MAINNET: GoldenSet = GoldenSet {
         tx: "4d94e2c9c33c533f125bd28a788e80ee24c108356e8fa8a7878f642cf94dcf4a",
         block_hash: "657b2ee81add87e3f654840425baca06a06d5876f6d2d873197e70f00f6762e6",
     }),
+    avalanche: Some(BlockHashVector {
+        tx: "51f5b652c9917189b64a5abb5e1814d3bd0a58dbe433f3f7a58e9b0d20f40bb5",
+        block_hash: "ce5c4ceb1b1c14ba8a0d58f23545106934278390446466810991245a9cff2a43",
+    }),
+    adi: Some(BlockHashVector {
+        tx: "df89849ce8e1b4cf390560395198a10f1bd0498822c6880346a8ce28869ec8e5",
+        block_hash: "e49e64cb14a417a1356929043dc87559c57afb540492bc62c8c0d8270902f5c2",
+    }),
     abstract_chain: Some(BlockHashVector {
         tx: "4572b72d765f07712cf571993fd805888ede9cd05107f65338defee02f7ea755",
         block_hash: "3bb255d468a552a75fc3f4916623b207ceb2d3074dfa14442ac03f0f73423708",
@@ -100,6 +110,8 @@ const TESTNET: GoldenSet = GoldenSet {
     arbitrum: None,
     polygon: None,
     hyper_evm: None,
+    avalanche: None,
+    adi: None,
     abstract_chain: Some(BlockHashVector {
         tx: "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
         block_hash: "4c93dd4a8f347e6480b0a44f8c2b7eecdfb31d711e8d542fd60112ea5d98fb02",
@@ -113,9 +125,9 @@ const TESTNET: GoldenSet = GoldenSet {
         block_hash: "0x1f33823b145e92ca069b90d3cfb012277762d9dd1dc2efb975b10a7c3d92875",
     }),
     aptos: Some(AptosVector {
-        tx: "b463d73b3a2e9c684caf9b27eb66a147348130c50fc8fa74a3f56e712c942773",
+        tx: "f2b7473ddd239c7df77bd3b07cc21a4c92b84b891c469b1dbbcfd8f9f8ed2ea9",
         event_type_tag: "0x1::block::NewBlockEvent",
-        event_sequence_number: 302_761_912,
+        event_sequence_number: 830_687_280,
     }),
     sui: Some(SuiVector {
         chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
@@ -196,6 +208,8 @@ mod tests {
                 set.arbitrum,
                 set.polygon,
                 set.hyper_evm,
+                set.avalanche,
+                set.adi,
                 set.abstract_chain,
                 set.bitcoin,
             ]

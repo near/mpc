@@ -1,18 +1,15 @@
 //! Public-key views: the domain public key, per-account derived keys, and the
 //! latest key version.
 
-use crate::crypto_shared::{
-    derive_key_secp256k1, kdf::derive_public_key_edwards_point_ed25519, types::PublicKeyExtended,
-};
-use crate::errors::Error;
-use crate::errors::PublicKeyError;
+use crate::crypto_shared::derive_key_secp256k1;
+use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
+use crate::crypto_shared::types::PublicKeyExtended;
+use crate::errors::{Error, PublicKeyError};
+use crate::{MpcContract, MpcContractExt};
+use dtos::{Curve, DomainId};
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{self as dtos};
-
-use dtos::{Curve, DomainId};
 use near_sdk::{AccountId, env, near};
-
-use crate::{MpcContract, MpcContractExt};
 
 #[near]
 impl MpcContract {

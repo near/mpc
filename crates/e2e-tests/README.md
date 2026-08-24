@@ -118,21 +118,34 @@ impl NearBlockchain {
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
     pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<NearKitCaller>;
+        -> anyhow::Result<NearKitCaller<ExecutedOptimistic>>;
 }
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
-client. It exposes `call`/`call_final` (from the contract account, used only
-for `init`), `handle_for` (a typed `MpcContractHandle` calling as a given
-`NearKitCaller`), `call_from_with_deposit` (untyped escape hatch for
-`prepay_attestation_storage`, which has no typed method yet), `view`, and
+client. It exposes `account_id()`, `call`/`call_final` (from the contract
+account, used only for `init`), `call_from_with_deposit` (untyped escape hatch
+for `prepay_attestation_storage`, which has no typed method yet), `view`, and
 `state()` (parsed `ProtocolContractState`).
 
-`NearKitCaller` binds a signer to a non-contract account (nodes voting, users
-submitting sign requests) and implements the `CallContract` transport trait,
-so typed calls go through `MpcContractHandle` — the single source of each
-method's wire format, gas, and deposit.
+#### `NearKitCaller<T>` — signer-bound caller (`caller` module)
+
+Binds a signer to a non-contract account (nodes voting, users submitting sign
+requests) and implements the `CallContract` transport trait, s.t. typed calls can go
+through `MpcContractHandle`
+The `T` parameter is the wait level: how far a call waits
+before returning (e.g. `Final`, `ExecutedOptimistic`,...).
+Finality influences the return type (`T::Response`).
+
+```rust
+pub trait CallMpc: Sized {
+    fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
+}
+
+pub trait WithWaitLevel {
+    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
+}
+```
 
 ### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 
