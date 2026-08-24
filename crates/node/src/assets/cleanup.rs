@@ -240,7 +240,6 @@ mod tests {
         let (mut start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
         let dir = tempfile::tempdir().unwrap();
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let client = new_test_client(all_participants.clone(), my_participant_id);
