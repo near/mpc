@@ -2,6 +2,9 @@ use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
 use time::OffsetDateTime;
 
+use dcap_qvl::policy::QuoteClaims;
+
+use crate::tcb_status::{self, Outcome, Report};
 use crate::verify::VerificationResult;
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
@@ -97,4 +100,79 @@ fn format_timestamp(unix_secs: u64) -> String {
         }
         Err(_) => format!("{unix_secs} (invalid timestamp)"),
     }
+}
+
+pub fn print_tcb_status(report: &Report) {
+    println!("=== MPC Node Platform TCB Status ===");
+
+    // Both rows judge the same quote, so its platform numbers are the same in
+    // each; whichever verified first will do. When neither did, the rejection
+    // reasons below say why.
+    match (&report.served, &report.standard) {
+        (Outcome::Verified { claims, .. }, _) | (_, Outcome::Verified { claims, .. }) => {
+            print_platform(claims);
+        }
+        _ => println!("\nThe platform's own numbers are unavailable: neither evaluation verified."),
+    }
+
+    print_outcome("served by the node", &report.served);
+    print_outcome("Intel `standard`", &report.standard);
+}
+
+fn print_outcome(label: &str, outcome: &Outcome) {
+    println!();
+    match outcome {
+        Outcome::Verified {
+            tcb_info,
+            claims,
+            shortfalls,
+        } => {
+            println!(
+                "--- {label}: TCB recovery set {}, issued {} ---",
+                tcb_info.tcb_evaluation_data_number, tcb_info.issue_date
+            );
+            println!("Status:                 {}", claims.tcb.status);
+            if !claims.tcb.advisory_ids.is_empty() {
+                println!(
+                    "Advisory IDs:           {}",
+                    claims.tcb.advisory_ids.join(", ")
+                );
+            }
+            for shortfall in shortfalls {
+                println!(
+                    "  {} is {}, needs {} -> {}",
+                    shortfall.component, shortfall.have, shortfall.needs, shortfall.remedy
+                );
+            }
+        }
+        Outcome::Rejected(reason) => {
+            println!("--- {label} ---");
+            println!("Rejected:               {reason}");
+        }
+    }
+}
+
+fn print_platform(claims: &QuoteClaims) {
+    // `evaluate` already established the report is TD10, so this never misses.
+    let Some(report) = claims.report.as_td10() else {
+        return;
+    };
+    let pck = &claims.platform.pck;
+    let (module, module_svn) = tcb_status::tdx_module(&report.tee_tcb_svn);
+
+    println!();
+    println!("--- Platform, as the quote reports it ---");
+    println!("FMSPC:                  {}", hex::encode_upper(pck.fmspc));
+    println!(
+        "tee_tcb_svn:            {}",
+        hex::encode(report.tee_tcb_svn)
+    );
+    println!(
+        "TDX module:             {} at ISV SVN {}",
+        module.as_deref().unwrap_or("unnamed"),
+        module_svn
+    );
+    println!("TDX TCB components:     {:?}", report.tee_tcb_svn);
+    println!("SGX TCB components:     {:?}", pck.cpu_svn);
+    println!("PCESVN:                 {}", pck.pce_svn);
 }

@@ -2,6 +2,8 @@
 
 Standalone verification tool for MPC node TEE attestations. It performs the same Intel TDX (DCAP) attestation verification that the NEAR contract and MPC nodes use, allowing external auditors, operators, and developers to independently validate that an MPC node is running trusted code inside genuine hardware.
 
+Two subcommands: `verify` answers "is this node's attestation acceptable?", and `tcb-status` answers "does this node's platform still clear Intel's TCB bar?".
+
 ## Building
 
 From the repository root:
@@ -37,7 +39,7 @@ Before running verification you need:
 ## Usage
 
 ```
-attestation-cli [OPTIONS]
+attestation-cli verify [OPTIONS]
 ```
 
 ### Required flags
@@ -65,7 +67,7 @@ attestation-cli [OPTIONS]
 ### Verify a live node
 
 ```bash
-attestation-cli \
+attestation-cli verify \
   --url http://<node-host>:8080/public_data \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
@@ -82,7 +84,7 @@ curl -o public_data.json http://<node-host>:8080/public_data
 Then verify offline:
 
 ```bash
-attestation-cli \
+attestation-cli verify \
   --file public_data.json \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml
@@ -91,7 +93,7 @@ attestation-cli \
 ### Multiple allowed image hashes
 
 ```bash
-attestation-cli \
+attestation-cli verify \
   --url http://<node-host>:8080/public_data \
   --allowed-image-hash abc123...def \
   --allowed-image-hash 789012...345 \
@@ -101,7 +103,7 @@ attestation-cli \
 ### Custom expected measurements
 
 ```bash
-attestation-cli \
+attestation-cli verify \
   --file public_data.json \
   --allowed-image-hash abc123...def \
   --launcher-compose-file launcher-compose.yaml \
@@ -173,7 +175,59 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 
 Attestation verification requires DCAP collateral (certificates, CRLs, TCB info) to validate the Intel TDX quote. The CLI uses the collateral **embedded in the node's attestation payload** (the same collateral that was fetched when the node generated its attestation). This is the same approach used by the MPC contract and node.
 
-The CLI does not currently support fetching fresh collateral from Intel's Provisioning Certification Service (PCS) or overriding CRLs. If the embedded collateral is stale, the verification may fail with a DCAP-related error. See [#2320](https://github.com/near/mpc/issues/2320) and [#2286](https://github.com/near/mpc/issues/2286) for planned improvements.
+`verify` does not currently support fetching fresh collateral from Intel's Provisioning Certification Service (PCS) or overriding CRLs. If the embedded collateral is stale, the verification may fail with a DCAP-related error. See [#2320](https://github.com/near/mpc/issues/2320) and [#2286](https://github.com/near/mpc/issues/2286) for planned improvements. `tcb-status` does fetch fresh collateral, so it is the way to tell a stale snapshot apart from a genuinely rejected platform.
+
+## `tcb-status`
+
+```
+attestation-cli tcb-status [OPTIONS]
+```
+
+Reports where a node's platform stands against Intel's TCB requirements. The contract accepts an attestation only when DCAP returns `UpToDate`, and that verdict depends on Intel's TCB info, which Intel revises on its own schedule: a node accepted yesterday can be rejected today with nothing changed on the operator's side.
+
+The node's quote is evaluated against two sets, and both are reported:
+
+| Set | What it tells you |
+|-----|-------------------|
+| served by the node | What the node's own boot-time collateral says. `/public_data` serves the attestation built at CVM boot, so this can lag reality by days. |
+| Intel `standard` | What the contract decides today. Collateral is fetched with no `update` parameter, exactly as the node does. |
+
+Both verdicts come from `dcap-qvl`, the same verification the contract runs. Contacting Intel is anonymous: no PCS subscription key and no node credentials.
+
+It takes the same `--url` / `--file` data source as `verify`, and nothing else.
+
+```bash
+attestation-cli tcb-status --url http://<node-host>:8080/public_data
+```
+
+```
+=== MPC Node Platform TCB Status ===
+
+--- Platform, as the quote reports it ---
+FMSPC:                  90C06F000000
+tee_tcb_svn:            06010300000000000000000000000000
+TDX module:             TDX_01 at ISV SVN 6
+TDX TCB components:     [6, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+SGX TCB components:     [3, 3, 2, 2, 4, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0]
+PCESVN:                 13
+
+--- served by the node: TCB recovery set 19, issued 2026-08-10T23:45:04Z ---
+Status:                 UpToDate
+
+--- Intel `standard`: TCB recovery set 20, issued 2026-08-24T11:12:32Z ---
+Status:                 OutOfDate
+Advisory IDs:           INTEL-SA-01192, INTEL-SA-01245, INTEL-SA-01312, INTEL-SA-01313
+  TDX module TDX_01 ISV SVN is 6, needs 11 -> update the TDX module (SEAM loader)
+  TDX TCB component 2 is 3, needs 4 -> update BIOS/microcode
+  SGX TCB component 0 is 3, needs 4 -> update BIOS/microcode
+  SGX TCB component 1 is 3, needs 4 -> update BIOS/microcode
+```
+
+The node above still serves an `UpToDate` set 19 while Intel has moved to 20, which is the lag that makes the served row alone unreliable.
+
+A quote is judged in two independent halves, and either can demote a platform. The TDX module half is `tee_tcb_svn[0]`, the module's ISV SVN, matched against the identity `tee_tcb_svn[1]` selects; a newer Intel TDX module (SEAM) raises it, usually shipped inside a vendor BIOS. The platform half is the rest of `tee_tcb_svn` plus the PCK certificate's SGX components and PCESVN; BIOS and CPU microcode raise those. The shortfall lines say which half is short, so you know which update you need.
+
+Exit code is 0 when Intel rates the platform `UpToDate` and 1 when it does not.
 
 ## Troubleshooting
 
@@ -191,6 +245,9 @@ The SHA256 of the `--launcher-compose-file` you provided does not match the comp
 
 **"failed to load expected measurements"**
 The `--expected-measurements` file could not be read or parsed. Ensure it is valid JSON in the `tcb_info.json` format.
+
+**`tcb-status` reports `Rejected` for "served by the node"**
+The collateral in the node's boot-time snapshot has expired. The Intel row is evaluated against freshly fetched collateral, so its verdict still stands; restart the CVM to make the served row meaningful again.
 
 **DCAP verification errors (quote validation, certificate chain, etc.)**
 These indicate the TDX attestation quote failed cryptographic verification. This could mean the attestation is invalid, expired, or the measurements do not match.
