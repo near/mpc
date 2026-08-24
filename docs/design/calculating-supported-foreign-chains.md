@@ -72,13 +72,13 @@ Foreign-tx signing must select participants that **cover** the requested chain
 (report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
-Implemented in two places. 
+Implemented in two places:
 1. Leader selection is chain- and quorum-aware: the
 pending-request queue narrows a request's eligible leaders to the supporters
 of `C`, and selects one only when at least a reconstruction threshold's worth
 of them is online (the same threshold that gates availability). Otherwise the request
 parks — no attempt is consumed, the `mpc_num_requests_without_refined_leader_total` metric counts the queue
-passes — until supporters come back or the request expires. 
+passes — until supporters come back or the request expires.
 2. On the
 presignature-selection side, the leader only takes a presignature whose
 participants are all alive **and** supporters of `C`, and as defense-in-depth

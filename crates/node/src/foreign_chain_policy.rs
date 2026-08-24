@@ -170,7 +170,13 @@ impl RefineEligibleLeaders<VerifyForeignTxRequest> for ForeignChainLeadersRefine
             None => return HashSet::new(),
         };
         match self.quorum {
-            None => HashSet::new(),
+            None => {
+                tracing::error!(
+                    chain = ?request.request.chain(),
+                    "chain has supporters but there is no ForeignTx domain, this should never happen"
+                );
+                refined
+            }
             Some(quorum) => {
                 if u64::try_from(refined.len()).is_ok_and(|count| count >= quorum.inner()) {
                     refined
