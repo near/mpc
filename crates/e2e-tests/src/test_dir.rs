@@ -20,7 +20,6 @@ pub struct TestDir {
 }
 
 struct TestDirState {
-    path: PathBuf,
     temp: tempfile::TempDir,
     keep_artifacts: KeepArtifacts,
     keep_requested: AtomicBool,
@@ -59,11 +58,9 @@ impl TestDir {
         }
         .context("failed to create e2e test directory")?;
 
-        let path = temp.path().to_path_buf();
-        tracing::info!(dir = %path.display(), "created e2e test directory");
+        tracing::info!(dir = %temp.path().display(), "created e2e test directory");
         Ok(Self {
             inner: Arc::new(TestDirState {
-                path,
                 temp,
                 keep_artifacts,
                 keep_requested: AtomicBool::new(false),
@@ -72,7 +69,7 @@ impl TestDir {
     }
 
     pub fn path(&self) -> &Path {
-        &self.inner.path
+        self.inner.temp.path()
     }
 
     /// Keeps the directory after the test ends, unless `E2E_KEEP_TMP` is falsy.
@@ -96,8 +93,9 @@ impl Drop for TestDirState {
         self.temp.disable_cleanup(true);
         // Printed as well as logged: the captured test output is where a
         // developer looks after a failure, whatever the `tracing` filter is.
-        eprintln!("e2e artifacts preserved in {}", self.path.display());
-        tracing::warn!(dir = %self.path.display(), "e2e artifacts preserved");
+        let path = self.temp.path().display();
+        eprintln!("e2e artifacts preserved in {path}");
+        tracing::warn!(dir = %path, "e2e artifacts preserved");
     }
 }
 
@@ -106,9 +104,12 @@ fn keep_artifacts_from_env() -> KeepArtifacts {
 }
 
 fn keep_artifacts_from(value: Option<&str>) -> KeepArtifacts {
-    match value.map(str::trim) {
+    match value
+        .map(|value| value.trim().to_ascii_lowercase())
+        .as_deref()
+    {
         None | Some("") => KeepArtifacts::OnFailure,
-        Some("0" | "false" | "no") => KeepArtifacts::Never,
+        Some("0" | "false" | "no" | "off") => KeepArtifacts::Never,
         Some(_) => KeepArtifacts::Always,
     }
 }
@@ -230,7 +231,10 @@ mod tests {
             (Some(""), KeepArtifacts::OnFailure),
             (Some("0"), KeepArtifacts::Never),
             (Some("false"), KeepArtifacts::Never),
+            (Some("FALSE"), KeepArtifacts::Never),
             (Some("no"), KeepArtifacts::Never),
+            (Some("No"), KeepArtifacts::Never),
+            (Some("off"), KeepArtifacts::Never),
             (Some("1"), KeepArtifacts::Always),
             (Some(" true "), KeepArtifacts::Always),
         ];

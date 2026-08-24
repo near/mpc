@@ -211,8 +211,9 @@ The returned cluster exposes:
   `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
-`Drop` kills all running nodes; the temp directory is held via `test_dir` and
-removed when the cluster is dropped.
+`Drop` kills all running nodes; the artifact directory is held via `test_dir` and
+removed when the cluster is dropped, unless the test failed (see
+[Debugging a failure](#debugging-a-failure)).
 
 ```rust
 pub struct MpcClusterConfig {
@@ -372,7 +373,7 @@ mpc-node 0 exited early, check /tmp/mpc-e2e-AbC123/node0/stderr.log
 
 | Variable | Effect |
 |---|---|
-| `E2E_KEEP_TMP=1` | Keep artifacts for passing tests too. `0`, `false` or `no` deletes them even for failing ones. |
+| `E2E_KEEP_TMP=1` | Keep artifacts for passing tests too. `0`, `false`, `no` or `off` (any case) deletes them even for failing ones. |
 | `E2E_HOME_BASE=<dir>` | Parent of the artifact directories, created if missing. Same as `MpcClusterConfig::home_base`, without editing the test. |
 | `MPC_NODE_LOG=<filter>` | `RUST_LOG` for the spawned mpc-node processes (default `DEBUG`). |
 | `MPC_NODE_BACKTRACE=<0\|1\|full>` | `RUST_BACKTRACE` for the spawned mpc-node processes (default `1`). |

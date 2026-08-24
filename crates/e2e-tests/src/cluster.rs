@@ -267,6 +267,7 @@ impl MpcCluster {
     /// create accounts, submit attestations, add domains, spawn mpc-node
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
+        config.validate()?;
         let test_dir = TestDir::new(config.home_base.as_deref())?;
         Self::start_in(&test_dir, config).await.map_err(|error| {
             test_dir.keep();
@@ -278,7 +279,6 @@ impl MpcCluster {
     }
 
     async fn start_in(test_dir: &TestDir, config: MpcClusterConfig) -> anyhow::Result<Self> {
-        config.validate()?;
         let threshold = config.threshold;
         let ports = TestPorts::e2e_tests(config.port_seed);
 
