@@ -789,7 +789,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
         .run(RunArgs {
             rpc_url: &cluster.sandbox.rpc_url(),
             chain_id: &cluster.sandbox.chain_id().expect("sandbox chain id"),
-            contract_account_id: &cluster.contract.contract_id(),
+            contract_account_id: cluster.contract.account_id().as_str(),
             node_migration_address: &source_migration_addr,
             node_p2p_key: &cluster.nodes[source_idx].p2p_public_key_str(),
             backup_encryption_key_hex: cluster.nodes[source_idx].backup_encryption_key_hex(),
