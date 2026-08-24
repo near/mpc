@@ -15,6 +15,8 @@ traits = [
     "dep:tokio-util",
     "dep:tracing",
 ]
+# A programmable `ViewContract` double, so each crate does not grow its own.
+test-utils = ["traits"]
 
 [dependencies]
 borsh = { workspace = true }
@@ -28,6 +30,10 @@ thiserror = { workspace = true }
 tracing = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

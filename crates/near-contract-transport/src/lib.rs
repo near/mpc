@@ -7,6 +7,8 @@
 mod monitoring;
 #[cfg(feature = "traits")]
 mod subscription;
+#[cfg(all(feature = "traits", any(test, feature = "test-utils")))]
+pub mod test_utils;
 #[cfg(feature = "traits")]
 mod traits;
 mod types;
