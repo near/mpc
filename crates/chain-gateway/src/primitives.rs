@@ -7,7 +7,6 @@
 use crate::types::LatestFinalBlockInfo;
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::future::Future;
-use std::time::Duration;
 
 pub(crate) trait FetchLatestFinalBlockInfo: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;

@@ -105,7 +105,7 @@ where
     T: Send + Clone,
 {
     // todo: generic deserializer here...
-    pub async fn subscribe(self) -> impl WatchContractState<T> + Send {
+    pub async fn subscribe(self) -> impl WatchContractState<T, Error = V::Error> + Send {
         ContractMethodSubscription::new(self.viewer, self.contract_id, self.args, self.decoder)
             .await
     }

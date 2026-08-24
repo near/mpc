@@ -22,7 +22,8 @@ use crate::deposits::{
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, GET_AVAILABLE_FOREIGN_CHAINS,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_AVAILABLE_FOREIGN_CHAINS,
     GET_FOREIGN_CHAIN_SUPPORT_BY_NODE, GET_FOREIGN_CHAINS_CONFIGS, GET_SUPPORTED_FOREIGN_CHAINS,
     GET_TEE_ACCOUNTS, MIGRATION_INFO, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAIN_SUPPORT, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, STATE,
@@ -34,7 +35,7 @@ use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, AvailableForeignChains, BackupServiceInfo,
     CKDAppPublicKey, CKDRequestArgs, ChainEntry, DestinationNodeInfo, DomainConfig,
     Ed25519PublicKey, EpochId, ForeignChain, ForeignChainSupportByNode, ForeignChainsConfigs,
-    MigrationInfo, NodeId, PayloadBytesError, ProposeUpdateArgs,
+    LauncherDockerComposeHash, MigrationInfo, NodeId, PayloadBytesError, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, ProtocolContractState, SignRequestArgs,
     SupportedForeignChains, VerifyForeignTransactionRequestArgs,
 };
@@ -364,6 +365,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     // todo: remove the get* prefix everywhere here
     pub fn get_allowed_docker_image_hashes(&self) -> ViewCall<C, Vec<AllowedMpcDockerImageHash>> {
         self.view(ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES))
+    }
+
+    pub fn allowed_launcher_compose_hashes(&self) -> ViewCall<C, Vec<LauncherDockerComposeHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_LAUNCHER_COMPOSE_HASHES))
     }
     /// The contract's only borsh-serialized view result.
     pub fn allowed_foreign_chain_providers(

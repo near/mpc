@@ -10,4 +10,4 @@ pub mod types;
 
 mod near_internals_wrapper;
 
-pub use chain_gateway::{ChainGateway, NodeHandle};
+pub use chain_gateway::{ChainGateway, NodeHandle, POLL_INTERVAL};

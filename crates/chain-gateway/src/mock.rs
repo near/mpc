@@ -1,7 +1,7 @@
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::types::LatestFinalBlockInfo;
 use near_account_id::AccountId;
-use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
+use near_contract_transport::{ObservedState, PollInterval, ViewArgs, ViewContract};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -137,6 +137,12 @@ impl MockChainStateBuilder {
 //        self.sync_response.lock().unwrap().clone()
 //    }
 //}
+
+impl PollInterval for MockChainState {
+    fn poll_interval() -> Duration {
+        crate::POLL_INTERVAL
+    }
+}
 
 impl ViewContract for MockChainState {
     type Error = MockError;
