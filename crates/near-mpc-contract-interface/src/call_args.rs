@@ -2,13 +2,19 @@
 
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse,
-    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, KeyEventId, Keyset,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, SupportedForeignChains, TeeVerifierCodeHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, GovernanceThresholdParameters,
+    InitConfig, KeyEventId, Keyset, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, SupportedForeignChains,
+    TeeVerifierCodeHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct InitArgs {
+    pub parameters: GovernanceThresholdParameters,
+    pub init_config: Option<InitConfig>,
+}
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct SignArgs {

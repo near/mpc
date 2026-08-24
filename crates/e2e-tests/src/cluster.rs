@@ -7,7 +7,7 @@ use std::{
 use anyhow::Context;
 use backon::{ConstantBuilder, Retryable};
 use ed25519_dalek::SigningKey;
-use near_kit::{AccountId, ExecutedOptimistic};
+use near_kit::{AccountId, ExecutedOptimistic, Final};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
@@ -16,8 +16,8 @@ use near_mpc_contract_interface::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        GovernanceThreshold, GovernanceThresholdParameters, MockAttestation, ParticipantId,
-        ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
+        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
         ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
     },
@@ -27,7 +27,7 @@ use serde_json::json;
 
 use crate::NearKitCaller;
 use crate::blockchain::{DeployedContract, NearBlockchain};
-use crate::caller::CallMpc;
+use crate::caller::{CallMpc, WithWaitLevel};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use test_port_allocator::TestPorts;
@@ -145,28 +145,16 @@ pub fn placeholder_chain_entry(chain: ForeignChain) -> ChainEntry {
 /// JSON wire format used for the contract's `init` call.
 ///
 /// Scaffold for cross-version compatibility: when a wire-breaking change to
-/// `init` lands, add a `Legacy*` variant emitting the now-old shape and
-/// branch on it in `init_parameters_json` so tests can still target the
-/// previous production contract. After the breaking change has rolled out to
-/// Mainnet/Testnet, drop the obsolete variant.
+/// `init` lands, add a `Legacy*` variant emitting the now-old shape as raw JSON
+/// ([`MpcContractHandle::init`] only speaks the current format) and branch on it
+/// in `init_contract` so tests can still target the previous production
+/// contract. After the breaking change has rolled out to Mainnet/Testnet, drop
+/// the obsolete variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ContractInitFormat {
     /// Current [`GovernanceThresholdParameters`] shape.
     #[default]
     Current,
-}
-
-impl ContractInitFormat {
-    /// JSON shape for the `parameters` argument of the contract's `init` call,
-    /// in the wire format that the targeted contract expects.
-    fn init_parameters_json(
-        self,
-        params: &GovernanceThresholdParameters,
-    ) -> serde_json::Result<serde_json::Value> {
-        match self {
-            Self::Current => serde_json::to_value(params),
-        }
-    }
 }
 
 impl MpcClusterConfig {
@@ -1359,16 +1347,22 @@ async fn init_contract(
         ?init_format,
         "initializing contract"
     );
-    let init_config = json!({ "key_event_timeout_blocks": KEY_EVENT_TIMEOUT_BLOCKS });
-    let parameters_json = init_format.init_parameters_json(&params)?;
+    let init_config = InitConfig {
+        key_event_timeout_blocks: Some(KEY_EVENT_TIMEOUT_BLOCKS),
+        ..InitConfig::default()
+    };
     // Final, not the default optimistic wait: `prepay_attestation_grants` reads `config()`
     // next, and a view resolves against the last final block.
-    let outcome = contract
-        .call_final(
-            method_names::INIT,
-            json!({ "parameters": parameters_json, "init_config": init_config }),
-        )
-        .await?;
+    let outcome = match init_format {
+        ContractInitFormat::Current => {
+            contract
+                .client()
+                .call_mpc(contract.account_id())
+                .with_wait_level::<Final>()
+                .init(params, Some(init_config))
+                .await?
+        }
+    };
     anyhow::ensure!(
         outcome.is_success(),
         "init failed: {:?}",
