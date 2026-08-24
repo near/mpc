@@ -2,8 +2,10 @@ use std::collections::HashSet;
 
 use anyhow::{Context, bail};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
+use foreign_chain_inspector::adi::inspector::AdiExtractor;
 use foreign_chain_inspector::aptos::inspector::{AptosExtractor, AptosFinality};
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumExtractor;
+use foreign_chain_inspector::avalanche::inspector::AvalancheExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
@@ -332,6 +334,50 @@ impl VerifyForeignTxProvider {
                 let transaction_id = request.tx_id.0.into();
                 let finality: EthereumFinality = request.finality.clone().try_into()?;
                 let extractors: Vec<PolygonExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Avalanche(request) => {
+                let inspector = self
+                    .inspectors
+                    .avalanche
+                    .as_ref()
+                    .context("no inspector configured for Avalanche")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<AvalancheExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
+            }
+            dtos::ForeignChainRpcRequest::Adi(request) => {
+                let inspector = self
+                    .inspectors
+                    .adi
+                    .as_ref()
+                    .context("no inspector configured for ADI")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<AdiExtractor> = request
                     .extractors
                     .iter()
                     .cloned()

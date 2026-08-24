@@ -54,6 +54,8 @@ struct MockServerUrls {
     base: String,
     arbitrum: String,
     hyper_evm: String,
+    avalanche: String,
+    adi: String,
     polygon: Vec<String>,
 }
 
@@ -114,6 +116,8 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
         )),
         arbitrum: Some(mock_chain(&urls.arbitrum, Default::default())),
         hyper_evm: Some(mock_chain(&urls.hyper_evm, Default::default())),
+        avalanche: Some(mock_chain(&urls.avalanche, Default::default())),
+        adi: Some(mock_chain(&urls.adi, Default::default())),
         polygon: Some(mock_chain_with_providers(
             common::build_providers_from_urls(&urls.polygon, "polygon"),
         )),
@@ -129,6 +133,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     let base_server = MockServer::start();
     let arbitrum_server = MockServer::start();
     let hyper_evm_server = MockServer::start();
+    let avalanche_server = MockServer::start();
+    let adi_server = MockServer::start();
 
     let bitcoin_mock_id = setup_bitcoin_mock(
         &bitcoin_server,
@@ -154,6 +160,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     setup_starknet_mock(&starknet_server, MockAuthExpectation::None);
     setup_evm_mock(&arbitrum_server, MockAuthExpectation::None);
     setup_evm_mock(&hyper_evm_server, MockAuthExpectation::None);
+    setup_evm_mock(&avalanche_server, MockAuthExpectation::None);
+    setup_evm_mock(&adi_server, MockAuthExpectation::None);
 
     // Polygon is configured with three RPC providers so the test can assert
     // that `FanOut` queries every one of them.
@@ -175,6 +183,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         base: base_server.url("/"),
         arbitrum: arbitrum_server.url("/"),
         hyper_evm: hyper_evm_server.url("/"),
+        avalanche: avalanche_server.url("/"),
+        adi: adi_server.url("/"),
         polygon: polygon_mocks.iter().map(|m| m.server.url("/")).collect(),
     };
 
@@ -186,6 +196,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         starknet_server,
         arbitrum_server,
         hyper_evm_server,
+        avalanche_server,
+        adi_server,
     ];
 
     let fc_config = build_foreign_chains_config(&urls);
@@ -198,6 +210,8 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         ForeignChain::Base,
         ForeignChain::Arbitrum,
         ForeignChain::HyperEvm,
+        ForeignChain::Avalanche,
+        ForeignChain::Adi,
         ForeignChain::Polygon,
     ]
     .into_iter()
@@ -487,6 +501,44 @@ async fn verify_hyper_evm(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
     verify_foreign_tx_response(&outcome)
 }
 
+async fn verify_avalanche(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.foreign_tx_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (Avalanche) failed")?;
+    verify_foreign_tx_response(&outcome)
+}
+
+async fn verify_adi(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
+    let request = VerifyForeignTransactionRequestArgs {
+        request: ForeignChainRpcRequest::Adi(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 0 }],
+            finality: EvmFinality::Finalized,
+        }),
+        domain_id: env.foreign_tx_domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+    };
+    let outcome = env
+        .cluster
+        .send_verify_foreign_transaction(&request)
+        .await
+        .context("verify_foreign_transaction (ADI) failed")?;
+    verify_foreign_tx_response(&outcome)
+}
+
 /// A successful verification implies the credentialed mock answered,
 /// so this is a backstop against the mock setup being loosened to answer unauthenticated requests.
 fn assert_authenticated_provider_was_queried(mock: &MockServerExt, provider: &str) {
@@ -541,7 +593,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
 #[expect(non_snake_case)]
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     // Given — 2-node cluster with Bitcoin, Abstract, BNB, Base, Starknet,
-    // Arbitrum, HyperEVM, and Polygon configured
+    // Arbitrum, HyperEVM, Avalanche, ADI, and Polygon configured
     let env = setup_foreign_tx_cluster()
         .await
         .expect("setup_foreign_tx_cluster failed");
@@ -570,6 +622,10 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     verify_hyper_evm(&env)
         .await
         .expect("hyper_evm verification failed");
+    verify_avalanche(&env)
+        .await
+        .expect("avalanche verification failed");
+    verify_adi(&env).await.expect("adi verification failed");
     verify_polygon(&env)
         .await
         .expect("polygon verification failed");

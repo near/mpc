@@ -256,6 +256,16 @@ expression: abi
                       12,
                       "Sui",
                       "ForeignChain__Sui"
+                    ],
+                    [
+                      13,
+                      "Avalanche",
+                      "ForeignChain__Avalanche"
+                    ],
+                    [
+                      14,
+                      "Adi",
+                      "ForeignChain__Adi"
                     ]
                   ]
                 }
@@ -263,10 +273,16 @@ expression: abi
               "ForeignChain__Abstract": {
                 "Struct": null
               },
+              "ForeignChain__Adi": {
+                "Struct": null
+              },
               "ForeignChain__Aptos": {
                 "Struct": null
               },
               "ForeignChain__Arbitrum": {
+                "Struct": null
+              },
+              "ForeignChain__Avalanche": {
                 "Struct": null
               },
               "ForeignChain__Base": {
@@ -428,6 +444,20 @@ expression: abi
             "type": "integer",
             "format": "uint32",
             "minimum": 0.0
+          }
+        }
+      },
+      {
+        "name": "cancel_node_migration",
+        "doc": " Cancels a previously started node migration for the calling account.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
           }
         }
       },
@@ -3089,6 +3119,16 @@ expression: abi
                           12,
                           "Sui",
                           "ForeignChain__Sui"
+                        ],
+                        [
+                          13,
+                          "Avalanche",
+                          "ForeignChain__Avalanche"
+                        ],
+                        [
+                          14,
+                          "Adi",
+                          "ForeignChain__Adi"
                         ]
                       ]
                     }
@@ -3096,10 +3136,16 @@ expression: abi
                   "ForeignChain__Abstract": {
                     "Struct": null
                   },
+                  "ForeignChain__Adi": {
+                    "Struct": null
+                  },
                   "ForeignChain__Aptos": {
                     "Struct": null
                   },
                   "ForeignChain__Arbitrum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Avalanche": {
                     "Struct": null
                   },
                   "ForeignChain__Base": {
@@ -4067,7 +4113,9 @@ expression: abi
             "HyperEvm",
             "Ton",
             "Aptos",
-            "Sui"
+            "Sui",
+            "Avalanche",
+            "Adi"
           ]
         },
         "ForeignChainConfiguration": {
@@ -4231,6 +4279,30 @@ expression: abi
               "properties": {
                 "Sui": {
                   "$ref": "#/definitions/SuiRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Avalanche"
+              ],
+              "properties": {
+                "Avalanche": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Adi"
+              ],
+              "properties": {
+                "Adi": {
+                  "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
               "additionalProperties": false

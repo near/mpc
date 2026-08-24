@@ -2,6 +2,7 @@ use clap::Parser;
 use cli::Cli;
 
 mod account;
+mod caller;
 mod cli;
 mod constants;
 mod contracts;
