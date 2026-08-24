@@ -5,6 +5,7 @@ use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
 use near_contract_transport::ObservedState;
 use near_contract_transport::TransportError;
 use near_contract_transport::ViewArgs;
+use near_contract_transport::WatchContractState;
 
 use crate::common::localnet::Localnet;
 
@@ -49,7 +50,7 @@ async fn test_subscription_receives_initial_value() {
 
     {
         let mut sub = observer_gw
-            .view::<String>(contract_id, args)
+            .view::<String>(contract_id, ViewArgs::no_args(VIEW_VALUE))
             .subscribe()
             .await;
 

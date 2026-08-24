@@ -121,7 +121,7 @@ impl LocalnetBuilder {
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_method(
+                .view(
                     localnet.contract.account_id.clone(),
                     ViewArgs::no_args(VIEW_VALUE),
                 )
