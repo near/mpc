@@ -167,7 +167,7 @@ impl MockChainStateBuilder {
 //}
 
 impl PollInterval for MockChainState {
-    fn poll_interval() -> Duration {
+    fn poll_interval(&self) -> Duration {
         crate::POLL_INTERVAL
     }
 }

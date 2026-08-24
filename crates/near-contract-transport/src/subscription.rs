@@ -1,11 +1,9 @@
 use std::error::Error;
 
+use crate::ObservedState;
 use crate::TransportError;
-use crate::monitoring::{MonitoringTask, make_monitoring_task};
+use crate::monitoring::Observations;
 use crate::traits::Decoder;
-use crate::{ObservedState, ViewArgs, ViewContract, traits::PollInterval};
-
-use near_account_id::AccountId;
 
 pub trait ViewError: Clone + Error + PartialEq + Send + Sync + 'static {}
 impl<T: Clone + Error + PartialEq + Send + Sync + 'static> ViewError for T {}
@@ -25,12 +23,25 @@ pub trait WatchContractState<T> {
     fn changed(&mut self) -> impl Future<Output = Result<(), TransportError<Self::Error>>> + Send;
 }
 
-/// Holds a Monitoring task and the latest cached value.
-/// This is useful such that we don't unnecessarily deserialize the same state multiple times.
+/// Holds the observations and the latest cached value, so the same bytes are
+/// not deserialized twice.
 pub(crate) struct ContractMethodSubscription<T, E> {
-    inner: MonitoringTask<E>,
+    inner: Observations<E>,
     cached: Result<ObservedState<T>, TransportError<E>>,
     decoder: Decoder<T>,
+}
+
+fn decode<T, E>(
+    observed: Result<ObservedState, E>,
+    decoder: Decoder<T>,
+) -> Result<ObservedState<T>, TransportError<E>> {
+    observed
+        .map_err(TransportError::ViewError)
+        .and_then(|value| {
+            decoder(value).map_err(|err| TransportError::Deserialization {
+                message: err.to_string(),
+            })
+        })
 }
 
 impl<T, E> ContractMethodSubscription<T, E>
@@ -38,14 +49,8 @@ where
     E: ViewError,
 {
     fn update_cache(&mut self) {
-        let observed = self.inner.last_observed.borrow_and_update().clone();
-        self.cached = observed
-            .map_err(|err| TransportError::ViewError(err))
-            .and_then(|value| {
-                (self.decoder)(value).map_err(|err| TransportError::Deserialization {
-                    message: err.to_string(),
-                })
-            });
+        let observed = self.inner.receiver_mut().borrow_and_update().clone();
+        self.cached = decode(observed, self.decoder);
     }
 }
 
@@ -55,11 +60,9 @@ where
     E: ViewError,
 {
     type Error = E;
-    /// The constructor marks the initial value as seen, so
-    /// `changed().await` will not fire until a genuinely new value arrives.
     async fn changed(&mut self) -> Result<(), TransportError<E>> {
         self.inner
-            .last_observed
+            .receiver_mut()
             .changed()
             .await
             .map_err(|_| TransportError::MonitoringClosed)?;
@@ -70,7 +73,7 @@ where
     fn latest(&mut self) -> Result<ObservedState<T>, TransportError<E>> {
         if self
             .inner
-            .last_observed
+            .receiver_mut()
             .has_changed()
             .map_err(|_| TransportError::MonitoringClosed)?
         {
@@ -81,30 +84,17 @@ where
 }
 
 impl<T, E> ContractMethodSubscription<T, E> {
-    pub(super) async fn new<V>(
-        viewer: V,
-        contract_id: AccountId,
-        view_args: ViewArgs,
-        decoder: Decoder<T>,
-    ) -> Self
+    /// Marks the initial observation as seen, so
+    /// [`changed`](WatchContractState::changed) will not fire until a genuinely
+    /// new value arrives.
+    pub(super) fn new(mut observations: Observations<E>, decoder: Decoder<T>) -> Self
     where
-        V: ViewContract<Error = E> + PollInterval + Send + 'static,
         E: ViewError,
     {
-        let mut task = make_monitoring_task(viewer, contract_id, view_args).await;
-        let cached: Result<ObservedState<T>, TransportError<E>> = task
-            .last_observed
-            .borrow_and_update()
-            .clone()
-            .map_err(|err| TransportError::ViewError(err))
-            .and_then(|value| {
-                (decoder)(value).map_err(|err| TransportError::Deserialization {
-                    message: err.to_string(),
-                })
-            });
+        let initial = observations.receiver_mut().borrow_and_update().clone();
         Self {
-            inner: task,
-            cached,
+            cached: decode(initial, decoder),
+            inner: observations,
             decoder,
         }
     }

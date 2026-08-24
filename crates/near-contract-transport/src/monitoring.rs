@@ -1,64 +1,84 @@
+use std::time::Duration;
+
 use near_account_id::AccountId;
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
-use crate::{ObservedState, ViewArgs, ViewContract, traits::PollInterval};
+use crate::{ObservedState, ViewArgs, ViewContract};
 
-pub(crate) struct MonitoringTask<E> {
-    _task_handle: JoinHandle<()>,
-    cancel_token: CancellationToken,
-    pub last_observed: tokio::sync::watch::Receiver<Result<ObservedState, E>>,
+/// A watch on the raw bytes of one view method, together with whatever keeps
+/// the producer alive.
+pub struct Observations<E> {
+    receiver: tokio::sync::watch::Receiver<Result<ObservedState, E>>,
+    /// Cancels the polling task once the last observer is dropped. `None` for a
+    /// backend that publishes its own updates.
+    _producer: Option<DropGuard>,
 }
 
-impl<E> Drop for MonitoringTask<E> {
-    fn drop(&mut self) {
-        self.cancel_token.cancel();
+impl<E> Observations<E> {
+    /// For a backend that publishes updates itself instead of being polled.
+    /// Feed `sender` through [`publish_if_changed`] so pushed and polled
+    /// subscriptions agree on what counts as a change.
+    pub fn pushed(receiver: tokio::sync::watch::Receiver<Result<ObservedState, E>>) -> Self {
+        Self {
+            receiver,
+            _producer: None,
+        }
+    }
+
+    pub(crate) fn receiver_mut(
+        &mut self,
+    ) -> &mut tokio::sync::watch::Receiver<Result<ObservedState, E>> {
+        &mut self.receiver
     }
 }
 
-/// Spawns a monitoring task with tokio.
-/// Cancels the spawned task when dropped.
-/// Note: this function returns only after the NEAR indexer has fully synced.
-pub(crate) async fn make_monitoring_task<V>(
+/// Re-reads `view_args` every `interval`, publishing only genuine changes and
+/// stopping once the returned [`Observations`] is dropped.
+///
+/// Returns after the first read, so a caller has a value without waiting out an
+/// interval.
+pub async fn poll_observations<V>(
     viewer: V,
     contract_id: AccountId,
     view_args: ViewArgs,
-) -> MonitoringTask<V::Error>
+    interval: Duration,
+) -> Observations<V::Error>
 where
-    V: PollInterval + ViewContract + Send + 'static,
+    V: ViewContract + Send + 'static,
     V::Error: Clone + PartialEq + Send + Sync,
 {
-    let observed_state = viewer.view_contract(&contract_id, view_args.clone()).await;
+    let initial = viewer.view_contract(&contract_id, view_args.clone()).await;
 
-    let (sender, last_observed) = tokio::sync::watch::channel(observed_state.clone());
+    let (sender, receiver) = tokio::sync::watch::channel(initial);
 
-    let cancel_token = CancellationToken::new();
-    let _task_handle = tokio::spawn(monitor(
+    let cancel = CancellationToken::new();
+    tokio::spawn(poll(
         viewer,
         contract_id,
         view_args,
+        interval,
         sender,
-        cancel_token.clone(),
+        cancel.clone(),
     ));
 
-    MonitoringTask {
-        _task_handle,
-        cancel_token,
-        last_observed,
+    Observations {
+        receiver,
+        _producer: Some(cancel.drop_guard()),
     }
 }
 
-async fn monitor<V>(
+async fn poll<V>(
     viewer: V,
     contract_id: AccountId,
     view_args: ViewArgs,
+    interval: Duration,
     sender: tokio::sync::watch::Sender<Result<ObservedState, V::Error>>,
     cancel: CancellationToken,
 ) where
-    V: PollInterval + ViewContract,
+    V: ViewContract,
     V::Error: PartialEq,
 {
-    let mut ticker = tokio::time::interval(V::poll_interval());
+    let mut ticker = tokio::time::interval(interval);
     // consume the first tick
     ticker.tick().await;
     loop {
@@ -72,11 +92,11 @@ async fn monitor<V>(
                 break;
             }
             _ = ticker.tick() => {
-                let val = viewer
+                let observed = viewer
                     .view_contract(&contract_id, view_args.clone())
                     .await;
 
-                if sender.send_if_modified(|existing| modify(existing, val)) {
+                if publish_if_changed(&sender, observed) {
                     tracing::debug!(
                         contract_id = ?contract_id,
                         method_name = ?view_args.method_name,
@@ -88,12 +108,27 @@ async fn monitor<V>(
     }
 }
 
+/// Publishes `next` only if it differs from the last observation, reporting
+/// whether it did. A block-height increase alone is not a change.
+///
+/// A backend that pushes its own updates should use this rather than
+/// [`watch::Sender::send`], so every backend notifies on the same condition.
+pub fn publish_if_changed<E>(
+    sender: &tokio::sync::watch::Sender<Result<ObservedState, E>>,
+    next: Result<ObservedState, E>,
+) -> bool
+where
+    E: PartialEq,
+{
+    sender.send_if_modified(|current| replace_if_changed(current, next))
+}
+
 /// Conditionally modifies `to_modify` in place and returns a bool indicating if it was modified.
 /// `to_modify` is modified if and only if one of the following holds:
 ///     - `to_modify` is Ok(_) and `update_value` is Err(_) or vice-versa
 ///     - if `to_modify` and `update_value` are both Ok(ObservedState) with differing value fields
 ///     - if `to_modify` and `update_value` are different errors
-fn modify<E>(
+fn replace_if_changed<E>(
     to_modify: &mut Result<ObservedState, E>,
     update_value: Result<ObservedState, E>,
 ) -> bool

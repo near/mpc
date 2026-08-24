@@ -9,6 +9,7 @@ use std::{future::IntoFuture, pin::Pin};
 use crate::FunctionCallArgs;
 use crate::TransportError;
 use crate::ViewArgs;
+use crate::monitoring::{Observations, poll_observations};
 use crate::subscription::ContractMethodSubscription;
 use crate::subscription::ViewError;
 use crate::subscription::WatchContractState;
@@ -97,17 +98,15 @@ where
     }
 }
 
-// polling: heavier bounds, confined to this block
 impl<V, T> ViewCall<V, T>
 where
-    V: ViewContract + PollInterval + Send + 'static,
+    V: ObserveContract,
     V::Error: ViewError,
     T: Send + Clone,
 {
-    // todo: generic deserializer here...
     pub async fn subscribe(self) -> impl WatchContractState<T, Error = V::Error> + Send {
-        ContractMethodSubscription::new(self.viewer, self.contract_id, self.args, self.decoder)
-            .await
+        let observations = self.viewer.observe(self.contract_id, self.args).await;
+        ContractMethodSubscription::new(observations, self.decoder)
     }
 }
 
@@ -151,8 +150,40 @@ pub trait ViewContract {
     ) -> impl Future<Output = Result<ObservedState<Vec<u8>>, Self::Error>> + Send;
 }
 
+/// How often a [`ViewContract`] backend should be re-read. Implementing this
+/// opts the backend into polling, which supplies [`ObserveContract`] for free.
+///
+/// A backend that publishes its own updates implements [`ObserveContract`]
+/// directly and must not implement this.
 pub trait PollInterval {
-    fn poll_interval() -> Duration;
+    fn poll_interval(&self) -> Duration;
+}
+
+/// A backend that can be watched, not just read.
+///
+/// Blanket-implemented for any [`ViewContract`] that reports a
+/// [`PollInterval`]. Implement it directly only to replace polling with a
+/// different notification mechanism.
+pub trait ObserveContract: ViewContract {
+    fn observe(
+        &self,
+        contract_id: AccountId,
+        view_args: ViewArgs,
+    ) -> impl Future<Output = Observations<Self::Error>> + Send;
+}
+
+impl<T> ObserveContract for T
+where
+    T: ViewContract + PollInterval + Clone + Send + Sync + 'static,
+    T::Error: ViewError,
+{
+    async fn observe(
+        &self,
+        contract_id: AccountId,
+        view_args: ViewArgs,
+    ) -> Observations<Self::Error> {
+        poll_observations(self.clone(), contract_id, view_args, self.poll_interval()).await
+    }
 }
 
 impl<T: ViewContract> ViewContract for &T {

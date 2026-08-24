@@ -12,9 +12,11 @@ mod traits;
 mod types;
 
 #[cfg(feature = "traits")]
+pub use monitoring::{Observations, poll_observations, publish_if_changed};
+#[cfg(feature = "traits")]
 pub use subscription::{ViewError, WatchContractState};
 #[cfg(feature = "traits")]
-pub use traits::{CallContract, PollInterval, ViewCall, ViewContract};
+pub use traits::{CallContract, ObserveContract, PollInterval, ViewCall, ViewContract};
 pub use types::{
     BlockHeight, FunctionCallArgs, NearGas, NearToken, ObservedState, TransportError, ViewArgs,
 };

@@ -6,7 +6,7 @@ pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::transaction_sender::{AccountCaller, SubmitFunctionCall, TransactionSigner};
 use near_account_id::AccountId;
-use near_contract_transport::{PollInterval, ViewContract, ViewError, WatchContractState};
+use near_contract_transport::{ObserveContract, ViewError, WatchContractState};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::{Attestation, Ed25519PublicKey};
 use tokio::sync::watch;
@@ -38,7 +38,7 @@ impl Drop for CancelOnDrop {
 
 impl<S> TeeContext<S>
 where
-    S: SubmitFunctionCall + ViewContract + PollInterval + Clone + Send + Sync + 'static,
+    S: SubmitFunctionCall + ObserveContract + Clone + Send + Sync + 'static,
     S::Error: ViewError,
 {
     /// Creates a new [`TeeContext`].
@@ -105,7 +105,7 @@ async fn spawn_hash_watcher<C>(
     cancel: CancellationToken,
 ) -> Result<watch::Receiver<AllowedTeeHashes>, TeeContextError>
 where
-    C: ViewContract + Clone + PollInterval + Send + 'static,
+    C: ObserveContract + Clone + Send + 'static,
     C::Error: ViewError,
 {
     let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
@@ -128,7 +128,7 @@ async fn watch_hashes<C>(
     tx: watch::Sender<AllowedTeeHashes>,
     cancel: CancellationToken,
 ) where
-    C: ViewContract + Clone + PollInterval + Send + 'static,
+    C: ObserveContract + Clone + Send + 'static,
     C::Error: ViewError,
 {
     let mut image_sub = mpc_view_handle

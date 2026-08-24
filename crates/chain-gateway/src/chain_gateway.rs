@@ -35,7 +35,7 @@ pub struct ChainGateway {
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(200);
 impl PollInterval for ChainGateway {
-    fn poll_interval() -> std::time::Duration {
+    fn poll_interval(&self) -> Duration {
         POLL_INTERVAL
     }
 }
