@@ -17,7 +17,7 @@ use crate::deposits::{
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
+    CANCEL_NODE_MIGRATION, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
     REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
     UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
     VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_UPDATE,
@@ -243,6 +243,18 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::new(
             START_NODE_MIGRATION,
             args,
+            MAX_GAS,
+            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
+        ))
+        .await
+    }
+
+    pub async fn cancel_node_migration(
+        &self,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::new(
+            CANCEL_NODE_MIGRATION,
+            b"{}".to_vec(),
             MAX_GAS,
             NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
         ))
@@ -527,6 +539,7 @@ mod tests {
             })
             .await
             .unwrap();
+        handle.cancel_node_migration().await.unwrap();
         handle
             .register_foreign_chain_support(BTreeSet::from([ForeignChain::Bitcoin]).into())
             .await
@@ -559,7 +572,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 18);
+        assert_eq!(calls.len(), 19);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))

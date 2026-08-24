@@ -87,6 +87,12 @@ deposit:  1 yoctoNEAR
 args:     {"destination_node_info":{"signer_account_pk":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx","destination_node_info":{"url":"http://localhost:7","tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}}}
 
 contract: mpc.near
+method:   cancel_node_migration
+gas:      300.0 Tgas
+deposit:  1 yoctoNEAR
+args:     {}
+
+contract: mpc.near
 method:   register_foreign_chain_support
 gas:      300.0 Tgas
 deposit:  0 NEAR
