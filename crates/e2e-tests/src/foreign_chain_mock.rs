@@ -75,8 +75,6 @@ impl MockServerExt {
     }
 }
 
-/// Answered by every EVM mock regardless of the chain it stands in for, so a test probing one has
-/// to expect Base's id.
 pub const MOCK_EVM_CHAIN_ID: u64 = 8453;
 pub const MOCK_BLOCK_HASH: &str =
     "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";

@@ -30,8 +30,6 @@ fn base_chain_config(rpc_url: &str, expected_network: u64, provider: &str) -> Fo
     }
 }
 
-/// Both nodes point one Base provider at the same mock and differ only in the fingerprint they
-/// expect, so the healthy gauge is the only one that separates them.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
