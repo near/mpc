@@ -188,6 +188,14 @@ impl RefineEligibleLeaders<VerifyForeignTxRequest> for ForeignChainLeadersRefine
     }
 }
 
+pub(crate) struct NoRefiner;
+
+impl<T> RefineEligibleLeaders<T> for NoRefiner {
+    fn refine(&self, _request: &T, eligible: &HashSet<ParticipantId>) -> HashSet<ParticipantId> {
+        eligible.clone()
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {

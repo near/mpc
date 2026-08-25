@@ -3,6 +3,7 @@ use super::queue::{
 };
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
+use crate::requests::queue::RefineEligibleLeaders;
 use crate::types::Request;
 use near_indexer_primitives::types::{BlockHeight, NumBlocks};
 use std::collections::{BinaryHeap, HashSet};
@@ -175,8 +176,11 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
-    for PendingRequests<RequestType, ChainRespondArgsType>
+impl<
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType>,
+> Debug for PendingRequests<RequestType, ChainRespondArgsType, Refiner>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut request_lines = Vec::new();

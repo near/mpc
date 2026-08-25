@@ -1,3 +1,4 @@
+use crate::foreign_chain_policy::NoRefiner;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -252,19 +253,23 @@ impl MpcClient {
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
-        let mut pending_signatures =
-            PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
-                Clock::real(),
-                self.client.all_participant_ids(),
-                self.client.my_participant_id(),
-                self.client.clone(),
-            );
-        let mut pending_ckds = PendingRequests::<CKDRequest, contract_args::CKDRespondArgs>::new(
+        let mut pending_signatures = PendingRequests::<
+            SignatureRequest,
+            contract_args::SignatureRespondArgs,
+            NoRefiner,
+        >::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let mut pending_ckds =
+            PendingRequests::<CKDRequest, contract_args::CKDRespondArgs, NoRefiner>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
 
         let eligible_leaders_refiner = self
             .verify_foreign_tx_provider
@@ -272,13 +277,14 @@ impl MpcClient {
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
+            _,
         >::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
         )
-        .with_eligible_leaders_refiner(Box::new(eligible_leaders_refiner));
+        .with_eligible_leaders_refiner(eligible_leaders_refiner);
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();

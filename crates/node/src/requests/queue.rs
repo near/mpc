@@ -66,7 +66,7 @@ pub trait RefineEligibleLeaders<RequestType>: Send {
 ///    the queue will adapt to the new state and attempt to find new leaders for the requests.
 ///  - If a request is too old so that it would have timed out on chain, it will be
 ///    discarded.
-pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs, Refiner> {
     pub(super) clock: near_time::Clock,
 
     /// All participants in the network, regardless of whether they are online.
@@ -84,7 +84,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 
     /// See [`RefineEligibleLeaders`].
-    pub(super) refine_eligible_leaders: Option<Box<dyn RefineEligibleLeaders<RequestType>>>,
+    pub(super) refine_eligible_leaders: Option<Refiner>,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -462,8 +462,8 @@ pub(super) struct EligibleLeadersAndHeights {
     pub my_indexer_height: u64,
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
-    PendingRequests<RequestType, ChainRespondArgsType>
+impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs, R>
+    PendingRequests<RequestType, ChainRespondArgsType, R>
 {
     pub fn new(
         clock: near_time::Clock,
@@ -480,15 +480,6 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             recently_completed_requests: CompletedRequests::default(),
             refine_eligible_leaders: None,
         }
-    }
-
-    /// Sets the per-request [`RefineEligibleLeaders`] hook.
-    pub fn with_eligible_leaders_refiner(
-        mut self,
-        refiner: Box<dyn RefineEligibleLeaders<RequestType>>,
-    ) -> Self {
-        self.refine_eligible_leaders = Some(refiner);
-        self
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -585,6 +576,19 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             maximum_height,
             my_indexer_height,
         }
+    }
+}
+
+impl<
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType>,
+> PendingRequests<RequestType, ChainRespondArgsType, Refiner>
+{
+    /// Sets the per-request [`RefineEligibleLeaders`] hook.
+    pub fn with_eligible_leaders_refiner(mut self, refiner: Refiner) -> Self {
+        self.refine_eligible_leaders = Some(refiner);
+        self
     }
 
     /// Returns the list of requests that we should attempt to generate a response for,
@@ -865,18 +869,22 @@ mod tests {
 
     impl TestSetup {
         const MY_INDEX: usize = 1;
-        fn new() -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
+        fn new() -> (
+            PendingRequests<TestRequest, TestRequestRespondArgs, TestRefiner>,
+            Self,
+        ) {
             let clock = FakeClock::default();
             let participants = into_participant_ids(&generate_participants(4));
             let my_participant_id = participants[Self::MY_INDEX];
             let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
-            let pending_requests = PendingRequests::<SignatureRequest, TestRequestRespondArgs>::new(
-                clock.clock(),
-                participants.clone(),
-                my_participant_id,
-                network_api.clone(),
-            );
+            let pending_requests =
+                PendingRequests::<SignatureRequest, TestRequestRespondArgs, TestRefiner>::new(
+                    clock.clock(),
+                    participants.clone(),
+                    my_participant_id,
+                    network_api.clone(),
+                );
             for participant in &participants {
                 network_api.set_height(*participant, 100);
             }
@@ -947,7 +955,7 @@ mod tests {
         /// the resulting update to `pending`. Returns the new block height.
         fn update(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, TestRefiner>,
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
@@ -971,7 +979,7 @@ mod tests {
         /// Like [`update`] but forks the current head, making a new canonical chain.
         fn update_canonical_fork(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, TestRefiner>,
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             if self.fork.is_none() {
@@ -1443,8 +1451,7 @@ mod tests {
         let (pending_requests, mut setup) = TestSetup::new();
         let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
         let refiner = TestRefiner::new(allowed);
-        let mut pending_requests =
-            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
         let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
@@ -1463,8 +1470,7 @@ mod tests {
         let (pending_requests, mut setup) = TestSetup::new();
         let refiner = TestRefiner::new(HashSet::new());
         let allowed = refiner.allowed.clone();
-        let mut pending_requests =
-            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
 
