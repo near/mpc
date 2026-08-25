@@ -30,7 +30,6 @@ use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
-use near_mpc_contract_interface::types::ForeignChain;
 
 pub use network::Network;
 pub use results::{ProviderResult, Status};
@@ -52,121 +51,76 @@ pub async fn check_all_providers(
     let mut out = Vec::new();
 
     if let Some(cfg) = &fc.base {
-        run_evm::<Base>(ForeignChain::Base, cfg, golden.base, network, &mut out).await;
+        run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Base, &mut out);
+        mark_not_configured("base", &mut out);
     }
     if let Some(cfg) = &fc.bnb {
-        run_evm::<Bnb>(ForeignChain::Bnb, cfg, golden.bnb, network, &mut out).await;
+        run_evm::<Bnb>("bnb", cfg, golden.bnb, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Bnb, &mut out);
+        mark_not_configured("bnb", &mut out);
     }
     if let Some(cfg) = &fc.arbitrum {
-        run_evm::<Arbitrum>(
-            ForeignChain::Arbitrum,
-            cfg,
-            golden.arbitrum,
-            network,
-            &mut out,
-        )
-        .await;
+        run_evm::<Arbitrum>("arbitrum", cfg, golden.arbitrum, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Arbitrum, &mut out);
+        mark_not_configured("arbitrum", &mut out);
     }
     if let Some(cfg) = &fc.polygon {
-        run_evm::<Polygon>(
-            ForeignChain::Polygon,
-            cfg,
-            golden.polygon,
-            network,
-            &mut out,
-        )
-        .await;
+        run_evm::<Polygon>("polygon", cfg, golden.polygon, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Polygon, &mut out);
+        mark_not_configured("polygon", &mut out);
     }
     if let Some(cfg) = &fc.hyper_evm {
-        run_evm::<HyperEvm>(
-            ForeignChain::HyperEvm,
-            cfg,
-            golden.hyper_evm,
-            network,
-            &mut out,
-        )
-        .await;
+        run_evm::<HyperEvm>("hyper_evm", cfg, golden.hyper_evm, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::HyperEvm, &mut out);
+        mark_not_configured("hyper_evm", &mut out);
     }
     if let Some(cfg) = &fc.avalanche {
-        run_evm::<Avalanche>(
-            ForeignChain::Avalanche,
-            cfg,
-            golden.avalanche,
-            network,
-            &mut out,
-        )
-        .await;
+        run_evm::<Avalanche>("avalanche", cfg, golden.avalanche, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Avalanche, &mut out);
+        mark_not_configured("avalanche", &mut out);
     }
     if let Some(cfg) = &fc.adi {
-        run_evm::<Adi>(ForeignChain::Adi, cfg, golden.adi, network, &mut out).await;
+        run_evm::<Adi>("adi", cfg, golden.adi, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Adi, &mut out);
+        mark_not_configured("adi", &mut out);
     }
     if let Some(cfg) = &fc.abstract_chain {
-        run_evm::<Abstract>(
-            ForeignChain::Abstract,
-            cfg,
-            golden.abstract_chain,
-            network,
-            &mut out,
-        )
-        .await;
+        run_evm::<Abstract>("abstract", cfg, golden.abstract_chain, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Abstract, &mut out);
+        mark_not_configured("abstract", &mut out);
     }
     if let Some(cfg) = &fc.bitcoin {
         run_bitcoin(cfg, golden.bitcoin, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Bitcoin, &mut out);
+        mark_not_configured("bitcoin", &mut out);
     }
     if let Some(cfg) = &fc.starknet {
         run_starknet(cfg, golden.starknet, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Starknet, &mut out);
+        mark_not_configured("starknet", &mut out);
     }
     if let Some(cfg) = &fc.aptos {
         run_aptos(cfg, golden.aptos, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Aptos, &mut out);
+        mark_not_configured("aptos", &mut out);
     }
     if let Some(cfg) = &fc.sui {
         run_sui(cfg, golden.sui, network, &mut out).await;
     } else {
-        mark_not_configured(ForeignChain::Sui, &mut out);
+        mark_not_configured("sui", &mut out);
     }
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
     if let Some(cfg) = &fc.ethereum {
-        mark_skipped(
-            ForeignChain::Ethereum,
-            cfg,
-            "not yet supported by the node",
-            &mut out,
-        );
+        mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
     } else {
-        mark_not_configured(ForeignChain::Ethereum, &mut out);
+        mark_not_configured("ethereum", &mut out);
     }
     if let Some(cfg) = &fc.solana {
-        mark_skipped(
-            ForeignChain::Solana,
-            cfg,
-            "not yet supported by the node",
-            &mut out,
-        );
+        mark_skipped("solana", cfg, "not yet supported by the node", &mut out);
     } else {
-        mark_not_configured(ForeignChain::Solana, &mut out);
+        mark_not_configured("solana", &mut out);
     }
 
     out
@@ -217,7 +171,7 @@ async fn run_check(timeout: Duration, fut: impl Future<Output = anyhow::Result<(
 }
 
 async fn run_evm<Chain: EvmChain + Send + Sync>(
-    chain: ForeignChain,
+    chain: &'static str,
     cfg: &ForeignChainConfig,
     vector: Option<BlockHashVector>,
     network: Network,
@@ -239,7 +193,7 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
             }
         };
         out.push(ProviderResult {
-            chain: chain.label(),
+            chain,
             provider: provider_name(name),
             status,
         });
@@ -253,12 +207,7 @@ async fn run_bitcoin(
     out: &mut Vec<ProviderResult>,
 ) {
     let Some(vector) = vector else {
-        mark_skipped(
-            ForeignChain::Bitcoin,
-            cfg,
-            &no_reference_reason(network),
-            out,
-        );
+        mark_skipped("bitcoin", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
@@ -273,7 +222,7 @@ async fn run_bitcoin(
             }
         };
         out.push(ProviderResult {
-            chain: ForeignChain::Bitcoin.label(),
+            chain: "bitcoin",
             provider: provider_name(name),
             status,
         });
@@ -287,12 +236,7 @@ async fn run_starknet(
     out: &mut Vec<ProviderResult>,
 ) {
     let Some(vector) = vector else {
-        mark_skipped(
-            ForeignChain::Starknet,
-            cfg,
-            &no_reference_reason(network),
-            out,
-        );
+        mark_skipped("starknet", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
@@ -307,7 +251,7 @@ async fn run_starknet(
             }
         };
         out.push(ProviderResult {
-            chain: ForeignChain::Starknet.label(),
+            chain: "starknet",
             provider: provider_name(name),
             status,
         });
@@ -321,7 +265,7 @@ async fn run_aptos(
     out: &mut Vec<ProviderResult>,
 ) {
     let Some(vector) = vector else {
-        mark_skipped(ForeignChain::Aptos, cfg, &no_reference_reason(network), out);
+        mark_skipped("aptos", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
@@ -346,7 +290,7 @@ async fn run_aptos(
             }
         };
         out.push(ProviderResult {
-            chain: ForeignChain::Aptos.label(),
+            chain: "aptos",
             provider: provider_name(name),
             status,
         });
@@ -364,7 +308,7 @@ async fn run_sui(
     out: &mut Vec<ProviderResult>,
 ) {
     let Some(vector) = vector else {
-        mark_skipped(ForeignChain::Sui, cfg, &no_reference_reason(network), out);
+        mark_skipped("sui", cfg, &no_reference_reason(network), out);
         return;
     };
     let timeout = timeout_of(cfg);
@@ -374,7 +318,7 @@ async fn run_sui(
             Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
         };
         out.push(ProviderResult {
-            chain: ForeignChain::Sui.label(),
+            chain: "sui",
             provider: provider_name(name),
             status,
         });
@@ -399,25 +343,21 @@ fn prepare_sui(
 }
 
 fn mark_skipped(
-    chain: ForeignChain,
+    chain: &'static str,
     cfg: &ForeignChainConfig,
     reason: &str,
     out: &mut Vec<ProviderResult>,
 ) {
     for name in cfg.providers.keys() {
-        out.push(ProviderResult::skipped(
-            chain.label(),
-            provider_name(name),
-            reason,
-        ));
+        out.push(ProviderResult::skipped(chain, provider_name(name), reason));
     }
 }
 
 /// A chain absent from the config has no providers to enumerate; emit one
 /// placeholder [`ProviderResult`] so it still appears in the returned results.
-fn mark_not_configured(chain: ForeignChain, out: &mut Vec<ProviderResult>) {
+fn mark_not_configured(chain: &'static str, out: &mut Vec<ProviderResult>) {
     out.push(ProviderResult::skipped(
-        chain.label(),
+        chain,
         "-".to_string(),
         "not configured",
     ));
