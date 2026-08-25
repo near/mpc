@@ -19,14 +19,14 @@ runs:
 
     - name: Restore and save repro-env packages
       if: inputs.save == 'true'
-      uses: WarpBuilds/cache@dad44e2487e9dc889ad6e6bd198e77bb2d828eee # v2.0.0
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/repro-env/pkgs
         key: ${{ steps.compute-key.outputs.key }}
 
     - name: Restore repro-env packages
       if: inputs.save != 'true'
-      uses: WarpBuilds/cache/restore@dad44e2487e9dc889ad6e6bd198e77bb2d828eee # v2.0.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/repro-env/pkgs
         key: ${{ steps.compute-key.outputs.key }}

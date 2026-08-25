@@ -34,9 +34,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y liblzma-dev repro-env
 
-      - name: Cache repro-env packages
-        uses: ./.github/actions/cache-repro-env-pkgs
-
       - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
