@@ -6,7 +6,7 @@ use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     aptos::{
-        AptosExtractedValue, AptosTransactionHash,
+        AptosExtractedValue, AptosTransactionHash, MAINNET_CHAIN_ID,
         inspector::{AptosExtractor, AptosFinality, AptosInspector},
     },
 };
@@ -260,8 +260,6 @@ async fn extract__should_reject_response_with_mismatched_hash() {
         Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
     );
 }
-
-const MAINNET_CHAIN_ID: u64 = 1;
 
 #[tokio::test]
 async fn network_fingerprint__should_ask_the_rest_root_for_the_ledger_chain_id() {
