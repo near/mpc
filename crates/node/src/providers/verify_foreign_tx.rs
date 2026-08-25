@@ -15,6 +15,7 @@ use foreign_chain_inspector::avalanche::inspector::AvalancheInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
+use foreign_chain_inspector::ethereum::inspector::EthereumInspector;
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
@@ -37,6 +38,7 @@ use tokio::sync::watch;
 /// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
     pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
+    pub ethereum: Option<FanOut<EthereumInspector<Client>>>,
     pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
     pub bnb: Option<FanOut<BnbInspector<Client>>>,
     pub starknet: Option<FanOut<StarknetInspector<Client>>>,
@@ -123,6 +125,10 @@ impl ForeignChainInspectors<HttpClient> {
             bitcoin: build_fanout(
                 config.bitcoin.as_ref(),
                 with_http_client(BitcoinInspector::new),
+            )?,
+            ethereum: build_fanout(
+                config.ethereum.as_ref(),
+                with_http_client(EthereumInspector::new),
             )?,
             abstract_chain: build_fanout(
                 config.abstract_chain.as_ref(),

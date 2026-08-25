@@ -9,6 +9,7 @@ use foreign_chain_inspector::avalanche::inspector::AvalancheExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
+use foreign_chain_inspector::ethereum::inspector::EthereumExtractor;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
 use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
@@ -187,8 +188,27 @@ impl VerifyForeignTxProvider {
             })?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
-            dtos::ForeignChainRpcRequest::Ethereum(_request) => {
-                bail!("ForeignChainRpcRequest::Ethereum is unsupported")
+            dtos::ForeignChainRpcRequest::Ethereum(request) => {
+                let inspector = self
+                    .inspectors
+                    .ethereum
+                    .as_ref()
+                    .context("no inspector configured for Ethereum")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<EthereumExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Solana(_request) => {
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
