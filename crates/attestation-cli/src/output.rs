@@ -2,9 +2,9 @@ use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
 use time::OffsetDateTime;
 
-use dcap_qvl::policy::QuoteClaims;
+use dcap_qvl::{policy::PckIdentity, quote::TDReport10};
 
-use crate::tcb_status::{self, Outcome, Report};
+use crate::tcb_status::{self, Report, TcbVerdict};
 use crate::verify::VerificationResult;
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
@@ -105,24 +105,26 @@ fn format_timestamp(unix_secs: u64) -> String {
 pub fn print_tcb_status(report: &Report) {
     println!("=== MPC Node Platform TCB Status ===");
 
-    // Both rows judge the same quote, so its platform numbers are the same in
-    // each; whichever verified first will do. When neither did, the rejection
-    // reasons below say why.
-    match (&report.served, &report.standard) {
-        (Outcome::Verified { claims, .. }, _) | (_, Outcome::Verified { claims, .. }) => {
-            print_platform(claims);
+    // The PCK numbers come from the certificate a successful verification read,
+    // not from the collateral, so both rows carry identical values and whichever
+    // verified will do. The verdicts themselves do differ, which is the point of
+    // showing two rows.
+    let pck = match (&report.served, &report.standard) {
+        (TcbVerdict::Verified { claims, .. }, _) | (_, TcbVerdict::Verified { claims, .. }) => {
+            Some(&claims.platform.pck)
         }
-        _ => println!("\nThe platform's own numbers are unavailable: neither evaluation verified."),
-    }
+        _ => None,
+    };
+    print_platform(&report.td_report, pck);
 
-    print_outcome("served by the node", &report.served);
-    print_outcome("Intel `standard`", &report.standard);
+    print_verdict("served by the node", &report.served);
+    print_verdict("Intel `standard`", &report.standard);
 }
 
-fn print_outcome(label: &str, outcome: &Outcome) {
+fn print_verdict(label: &str, verdict: &TcbVerdict) {
     println!();
-    match outcome {
-        Outcome::Verified {
+    match verdict {
+        TcbVerdict::Verified {
             tcb_info,
             claims,
             shortfalls,
@@ -145,24 +147,23 @@ fn print_outcome(label: &str, outcome: &Outcome) {
                 );
             }
         }
-        Outcome::Rejected(reason) => {
+        TcbVerdict::Rejected(reason) => {
             println!("--- {label} ---");
             println!("Rejected:               {reason}");
         }
     }
 }
 
-fn print_platform(claims: &QuoteClaims) {
-    // `evaluate` already established the report is TD10, so this never misses.
-    let Some(report) = claims.report.as_td10() else {
-        return;
-    };
-    let pck = &claims.platform.pck;
+/// `pck` is absent when neither collateral verified, which leaves only the half
+/// of the platform the quote describes on its own.
+fn print_platform(report: &TDReport10, pck: Option<&PckIdentity>) {
     let (module, module_svn) = tcb_status::tdx_module(&report.tee_tcb_svn);
 
     println!();
     println!("--- Platform, as the quote reports it ---");
-    println!("FMSPC:                  {}", hex::encode_upper(pck.fmspc));
+    if let Some(pck) = pck {
+        println!("FMSPC:                  {}", hex::encode_upper(pck.fmspc));
+    }
     println!(
         "tee_tcb_svn:            {}",
         hex::encode(report.tee_tcb_svn)
@@ -173,6 +174,14 @@ fn print_platform(claims: &QuoteClaims) {
         module_svn
     );
     println!("TDX TCB components:     {:?}", report.tee_tcb_svn);
-    println!("SGX TCB components:     {:?}", pck.cpu_svn);
-    println!("PCESVN:                 {}", pck.pce_svn);
+    match pck {
+        Some(pck) => {
+            println!("SGX TCB components:     {:?}", pck.cpu_svn);
+            println!("PCESVN:                 {}", pck.pce_svn);
+        }
+        None => {
+            println!("FMSPC, SGX components and PCESVN come from the PCK certificate,");
+            println!("which neither evaluation could read.");
+        }
+    }
 }

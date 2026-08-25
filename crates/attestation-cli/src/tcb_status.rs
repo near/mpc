@@ -15,8 +15,7 @@ use dcap_qvl::{
     tcb_info::TcbInfo,
     verify::QuoteVerifier,
 };
-use mpc_attestation::attestation::Attestation;
-use mpc_attestation::dcap_conversions::collateral_into_dcap;
+use mpc_attestation::{attestation::Attestation, dcap_conversions::collateral_into_dcap};
 use node_types::http_server::StaticWebData;
 
 /// Whole-fetch bound on the Intel PCS call. `with_default_http` builds a reqwest
@@ -39,7 +38,7 @@ pub struct Shortfall {
 
 #[expect(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum Outcome {
+pub enum TcbVerdict {
     /// DCAP's verdict and the TCB info it was reached against. The platform's
     /// own SVNs are in [`QuoteClaims`], under `platform.pck` and `report`.
     Verified {
@@ -54,19 +53,26 @@ pub enum Outcome {
 }
 
 pub struct Report {
+    /// Parsed from the quote itself, so the platform's own numbers survive even
+    /// when neither collateral verifies.
+    pub td_report: TDReport10,
     /// What the node's own boot-time collateral says, which can lag by days.
-    pub served: Outcome,
+    pub served: TcbVerdict,
     /// What the contract decides today, against collateral fetched just now.
-    pub standard: Outcome,
+    pub standard: TcbVerdict,
 }
 
 impl Report {
     pub fn is_up_to_date(&self) -> bool {
-        matches!(&self.standard, Outcome::Verified { claims, .. } if claims.tcb.status == TcbStatus::UpToDate)
+        matches!(&self.standard, TcbVerdict::Verified { claims, .. } if claims.tcb.status == TcbStatus::UpToDate)
     }
 }
 
-pub async fn run(static_data: &StaticWebData) -> anyhow::Result<Report> {
+/// `as_of` overrides the evaluation timestamp for collateral validity windows.
+/// Intel serves only current collateral, so it makes the served row readable for
+/// a saved quote whose snapshot has expired, and leaves the Intel row a
+/// present-day verdict evaluated at a past instant.
+pub async fn run(static_data: &StaticWebData, as_of: Option<u64>) -> anyhow::Result<Report> {
     let dstack = dstack_attestation(static_data)?;
     let quote = &dstack.quote.0;
     // A property of the quote, so it decides both rows at once rather than
@@ -76,37 +82,49 @@ pub async fn run(static_data: &StaticWebData) -> anyhow::Result<Report> {
         .report
         .as_td10()
         .context("the node's quote does not carry a TDX report")?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .context("system clock is before the UNIX epoch")?
-        .as_secs();
-
-    // Fetched with no `update` parameter, like the node, so this is Intel's
-    // `standard` set: what the contract will decide at the next re-attestation.
-    // The node reaches it through its PCCS, so the two can differ in cache
-    // freshness.
-    let client = CollateralClient::with_default_http(INTEL_PCS_URL)
-        .context("building the Intel PCS client")?;
-    let standard = tokio::time::timeout(PCS_TIMEOUT, client.fetch(quote))
-        .await
-        .with_context(|| format!("Intel's PCS did not respond within {PCS_TIMEOUT:?}"))?
-        .context("fetching collateral from Intel's PCS")?;
+    let now = match as_of {
+        Some(timestamp) => timestamp,
+        None => std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .context("system clock is before the UNIX epoch")?
+            .as_secs(),
+    };
 
     let served = collateral_into_dcap(dstack.collateral.clone());
+    // An unreachable PCS must not cost the operator the served row, which needs
+    // no network at all.
+    let standard = match fetch_standard(quote).await {
+        Ok(collateral) => evaluate(quote, &report, &collateral, now),
+        Err(err) => TcbVerdict::Rejected(format!("{err:#}")),
+    };
     Ok(Report {
+        td_report: report,
         served: evaluate(quote, &report, &served, now),
-        standard: evaluate(quote, &report, &standard, now),
+        standard,
     })
 }
 
-/// Both failure modes are per-collateral, so each becomes a [`Outcome::Rejected`]
+/// Fetched with no `update` parameter, like the node, so this is Intel's
+/// `standard` set: what the contract will decide at the next re-attestation.
+/// The node reaches it through its PCCS, so the two can differ in cache
+/// freshness.
+async fn fetch_standard(quote: &[u8]) -> anyhow::Result<QuoteCollateralV3> {
+    let client = CollateralClient::with_default_http(INTEL_PCS_URL)
+        .context("building the Intel PCS client")?;
+    tokio::time::timeout(PCS_TIMEOUT, client.fetch(quote))
+        .await
+        .with_context(|| format!("Intel's PCS did not respond within {PCS_TIMEOUT:?}"))?
+        .context("fetching collateral from Intel's PCS")
+}
+
+/// Both failure modes are per-collateral, so each becomes a [`TcbVerdict::Rejected`]
 /// row rather than aborting the other one.
 fn evaluate(
     quote: &[u8],
     report: &TDReport10,
     collateral: &QuoteCollateralV3,
     now: u64,
-) -> Outcome {
+) -> TcbVerdict {
     let claims = match QuoteVerifier::new_prod().verify_with_policy(
         quote,
         collateral,
@@ -114,15 +132,15 @@ fn evaluate(
         &QuotePolicy::claims_only(now),
     ) {
         Ok(claims) => claims,
-        Err(err) => return Outcome::Rejected(err.to_string()),
+        Err(err) => return TcbVerdict::Rejected(err.to_string()),
     };
     let tcb_info = match parse_tcb_info(collateral) {
         Ok(tcb_info) => tcb_info,
-        Err(err) => return Outcome::Rejected(err.to_string()),
+        Err(err) => return TcbVerdict::Rejected(err.to_string()),
     };
 
     let shortfalls = shortfalls(&tcb_info, &claims.platform.pck, report);
-    Outcome::Verified {
+    TcbVerdict::Verified {
         tcb_info,
         claims,
         shortfalls,
@@ -302,8 +320,10 @@ mod tests {
             &collateral,
             VALID_ATTESTATION_TIMESTAMP,
         ) {
-            Outcome::Verified { claims, .. } => claims,
-            Outcome::Rejected(reason) => panic!("the fixture collateral should verify: {reason}"),
+            TcbVerdict::Verified { claims, .. } => claims,
+            TcbVerdict::Rejected(reason) => {
+                panic!("the fixture collateral should verify: {reason}")
+            }
         }
     }
 
@@ -337,7 +357,7 @@ mod tests {
         let (quote, collateral) = served();
 
         // When
-        let outcome = evaluate(
+        let verdict = evaluate(
             &quote,
             &td_report(&quote),
             &collateral,
@@ -345,9 +365,9 @@ mod tests {
         );
 
         // Then
-        let Outcome::Verified {
+        let TcbVerdict::Verified {
             claims, shortfalls, ..
-        } = outcome
+        } = verdict
         else {
             panic!("the fixture collateral should verify");
         };
@@ -369,7 +389,7 @@ mod tests {
         let long_after_the_collateral_expired = VALID_ATTESTATION_TIMESTAMP + 365 * 24 * 60 * 60;
 
         // When
-        let outcome = evaluate(
+        let verdict = evaluate(
             &quote,
             &td_report(&quote),
             &collateral,
@@ -377,7 +397,7 @@ mod tests {
         );
 
         // Then
-        assert_matches!(outcome, Outcome::Rejected(_));
+        assert_matches!(verdict, TcbVerdict::Rejected(_));
     }
 
     #[test]

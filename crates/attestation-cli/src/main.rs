@@ -8,7 +8,7 @@ async fn main() -> anyhow::Result<()> {
     let command = Cli::parse().command;
     let source = match &command {
         Command::Verify(args) => &args.source,
-        Command::TcbStatus(source) => source,
+        Command::TcbStatus(args) => &args.source,
     };
     let static_data = data::load(source)
         .await
@@ -25,8 +25,8 @@ async fn main() -> anyhow::Result<()> {
                 bail!("attestation verification failed");
             }
         },
-        Command::TcbStatus(_) => {
-            let report = tcb_status::run(&static_data).await?;
+        Command::TcbStatus(args) => {
+            let report = tcb_status::run(&static_data, args.as_of).await?;
             output::print_tcb_status(&report);
             // The verdict and what to do about it are already printed; this
             // sets the exit code, at the cost of a second line on stderr.

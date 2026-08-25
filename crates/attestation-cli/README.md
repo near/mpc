@@ -187,14 +187,16 @@ Reports where a node's platform stands against Intel's TCB requirements. The con
 
 The node's quote is evaluated against two sets, and both are reported:
 
-| Set | What it tells you |
-|-----|-------------------|
+| Collateral source | What it tells you |
+|-------------------|-------------------|
 | served by the node | What the node's own boot-time collateral says. `/public_data` serves the attestation built at CVM boot, so this can lag reality by days. |
-| Intel `standard` | What the contract will decide the next time the node re-attests. Fetched with no `update` parameter, like the node, though straight from Intel rather than through the node's PCCS, so the two can differ in cache freshness. |
+| Intel `standard` | What the contract will decide the next time the node re-attests. Omitting the `update` parameter is what selects the `standard` tier, and it is what the node does too. The fetch goes straight to Intel rather than through the node's PCCS, so the two can differ in cache freshness. |
 
 Both verdicts come from `dcap-qvl`, the same verification the contract runs. Contacting Intel is anonymous: no PCS subscription key and no node credentials.
 
-It takes the same `--url` / `--file` data source as `verify`, and nothing else.
+It takes the same `--url` / `--file` data source as `verify`. Unlike `verify`, network access is always required: `--file` chooses where the quote comes from, not whether Intel is contacted.
+
+`--as-of <unix-timestamp>` evaluates collateral validity at a past instant instead of now. Intel serves only current collateral, so this is for reading a saved quote whose boot-time snapshot has since expired. The Intel row and the exit code stay present-day verdicts, so neither is meaningful with it set.
 
 ```bash
 attestation-cli tcb-status --url http://<node-host>:8080/public_data
@@ -223,9 +225,14 @@ Advisory IDs:           INTEL-SA-01192, INTEL-SA-01245, INTEL-SA-01312, INTEL-SA
   SGX TCB component 1 is 3, needs 4 -> update BIOS/microcode
 ```
 
-The node above still serves an `UpToDate` set 19 while Intel has moved to 20, which is the lag that makes the served row alone unreliable.
+The node above still serves an `UpToDate` set 19 while Intel has moved to 20. The node itself is not stuck: it re-attests to the contract every hour, each time with freshly fetched collateral. What is frozen is `/public_data`, which keeps returning the snapshot built at CVM boot. So a stale served row does not mean the node is submitting stale attestations, and the Intel row is the one that predicts what the next submission will be judged against.
 
-A quote is judged in two independent halves, and either can demote a platform. The TDX module half is `tee_tcb_svn[0]`, the module's ISV SVN, matched against the identity `tee_tcb_svn[1]` selects; a newer Intel TDX module (SEAM) raises it, usually shipped inside a vendor BIOS. The platform half is the rest of `tee_tcb_svn` plus the PCK certificate's SGX components and PCESVN; BIOS and CPU microcode raise those. The shortfall lines say which half is short, so you know which update you need.
+A quote is judged in two independent halves, and either one can demote the platform.
+
+- **TDX module half.** `tee_tcb_svn[0]`, the module's ISV SVN, matched against the identity that `tee_tcb_svn[1]` selects. A newer Intel TDX module (SEAM) raises it, usually shipped inside a vendor BIOS.
+- **Platform half.** The rest of `tee_tcb_svn`, plus the PCK certificate's SGX components and PCESVN. BIOS and CPU microcode raise those.
+
+The shortfall lines say which half is short, so you know which update you need.
 
 ## Troubleshooting
 

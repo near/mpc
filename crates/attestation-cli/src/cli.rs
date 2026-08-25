@@ -17,7 +17,20 @@ pub enum Command {
     Verify(VerifyArgs),
 
     /// Report where a node's platform stands against Intel's TCB requirements.
-    TcbStatus(Source),
+    TcbStatus(TcbStatusArgs),
+}
+
+#[derive(Args)]
+pub struct TcbStatusArgs {
+    #[command(flatten)]
+    pub source: Source,
+
+    /// Evaluate collateral validity as of this UNIX timestamp instead of now.
+    /// Intel serves only current collateral, so this makes the served row
+    /// readable for a saved quote whose snapshot has expired; the Intel row and
+    /// the exit code stay present-day verdicts and are not meaningful with it set.
+    #[arg(long = "as-of")]
+    pub as_of: Option<u64>,
 }
 
 /// Where to read the node's `/public_data` payload from.
