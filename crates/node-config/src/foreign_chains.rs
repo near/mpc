@@ -737,6 +737,8 @@ ckd:
             polygon: Some(section()),
             aptos: Some(section()),
             sui: Some(section()),
+            avalanche: Some(section()),
+            adi: Some(section()),
         };
 
         // When

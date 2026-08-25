@@ -15,7 +15,7 @@ const WRONG_NETWORK_PROVIDER: &str = "wrong-network";
 /// Any chain id the mock does not serve, so the probe reads a network mismatch.
 const ANOTHER_NETWORK: u64 = 1;
 
-fn base_config(rpc_url: &str, expected_network: u64, provider: &str) -> ForeignChainConfig {
+fn base_chain_config(rpc_url: &str, expected_network: u64, provider: &str) -> ForeignChainConfig {
     ForeignChainConfig {
         timeout_sec: NonZeroU64::new(10).unwrap(),
         max_retries: NonZeroU64::new(1).unwrap(),
@@ -30,16 +30,17 @@ fn base_config(rpc_url: &str, expected_network: u64, provider: &str) -> ForeignC
     }
 }
 
-/// Both nodes configure one provider, so only `healthy` separates them.
+/// Both nodes point one Base provider at the same mock and differ only in the fingerprint they
+/// expect, so the healthy gauge is the only one that separates them.
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
-    // given
+    // Given
     let server = MockServer::start();
     setup_evm_mock(&server, MockAuthExpectation::None);
     let url = server.url("/");
 
-    // when
+    // When
     let (cluster, _running) = common::must_setup_cluster(
         common::FOREIGN_CHAIN_PROBE_PORT_SEED,
         |c: &mut e2e_tests::MpcClusterConfig| {
@@ -47,11 +48,15 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
             c.threshold = 2;
             c.foreign_chains.node_configs = vec![
                 ForeignChainsConfig {
-                    base: Some(base_config(&url, MOCK_EVM_CHAIN_ID, HEALTHY_PROVIDER)),
+                    base: Some(base_chain_config(&url, MOCK_EVM_CHAIN_ID, HEALTHY_PROVIDER)),
                     ..Default::default()
                 },
                 ForeignChainsConfig {
-                    base: Some(base_config(&url, ANOTHER_NETWORK, WRONG_NETWORK_PROVIDER)),
+                    base: Some(base_chain_config(
+                        &url,
+                        ANOTHER_NETWORK,
+                        WRONG_NETWORK_PROVIDER,
+                    )),
                     ..Default::default()
                 },
             ];
@@ -59,7 +64,7 @@ async fn foreign_chain_probe__should_publish_provider_health_on_startup() {
     )
     .await;
 
-    // then
+    // Then
     common::wait_metric_on_nodes(
         &cluster,
         &[0, 1],
