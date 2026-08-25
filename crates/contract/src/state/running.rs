@@ -271,7 +271,9 @@ pub mod running_tests {
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
-    use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
+    use crate::primitives::thresholds::{
+        GovernanceThreshold, ProposedGovernanceThresholdParameters,
+    };
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
         gen_running_state, gen_running_state_with_params, gen_valid_params_proposal,
@@ -290,7 +292,7 @@ pub mod running_tests {
     fn setup_with_params(
         num_domains: usize,
         num_participants: usize,
-        governance_threshold: u64,
+        governance_threshold: impl Into<GovernanceThreshold>,
     ) -> (RunningContractState, Environment) {
         with_first_participant_signer(gen_running_state_with_params(
             num_domains,
