@@ -270,7 +270,8 @@ impl MpcClient {
         let eligible_leaders_refiner = ForeignChainLeadersRefiner::new(
             self.verify_foreign_tx_provider
                 .supporters_by_foreign_chain(),
-            self.verify_foreign_tx_provider.foreign_tx_quorum(),
+            self.verify_foreign_tx_provider
+                .foreign_tx_reconstruction_threshold(),
         );
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,

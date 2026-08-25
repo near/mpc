@@ -100,7 +100,10 @@ impl VerifyForeignTxProvider {
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
-            anyhow::bail!("this node does not support the requested chain {requested_chain:?}");
+            anyhow::bail!(
+                "selected as leader for a {requested_chain:?} request but this node no longer \
+                 supports that chain. Supporters must have changed since leader selection"
+            );
         }
 
         let response_payload = self

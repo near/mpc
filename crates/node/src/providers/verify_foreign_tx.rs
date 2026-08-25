@@ -164,7 +164,7 @@ pub struct VerifyForeignTxProvider {
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
     /// [`foreign_tx_reconstruction_threshold`](crate::foreign_chain_policy::foreign_tx_reconstruction_threshold)
     /// of the running domains; `None` when there is no ForeignTx domain.
-    foreign_tx_quorum: Option<ReconstructionThreshold>,
+    foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -187,7 +187,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
-        foreign_tx_quorum: Option<ReconstructionThreshold>,
+        foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -196,7 +196,7 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
-            foreign_tx_quorum,
+            foreign_tx_reconstruction_threshold,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         })
@@ -206,8 +206,8 @@ impl VerifyForeignTxProvider {
         self.supporters_by_foreign_chain.clone()
     }
 
-    pub(crate) fn foreign_tx_quorum(&self) -> Option<ReconstructionThreshold> {
-        self.foreign_tx_quorum
+    pub(crate) fn foreign_tx_reconstruction_threshold(&self) -> Option<ReconstructionThreshold> {
+        self.foreign_tx_reconstruction_threshold
     }
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {

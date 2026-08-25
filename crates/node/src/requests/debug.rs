@@ -1,5 +1,5 @@
 use super::queue::{
-    ComputationProgress, EligibleLeadersAndHeights, PendingRequests, QueuedRequest,
+    self, ComputationProgress, EligibleLeadersAndHeights, PendingRequests, QueuedRequest,
 };
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
@@ -189,7 +189,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         let indexer_heights = self.network_api.indexer_heights();
 
         for request in self.requests.values() {
-            let request_eligible_leaders = super::queue::eligible_leaders_for(
+            let request_eligible_leaders = queue::eligible_leaders_for(
                 self.refine_eligible_leaders.as_deref(),
                 &request.request,
                 &eligible_leaders,
