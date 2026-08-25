@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use foreign_chain_health_check::probe::{
-    ProbeReport, ProviderHealth, ProviderStatus, probe_all_providers,
+    ProbeReport, ProviderHealth, ProviderStatus, probe_all_providers, rpc_inspector,
 };
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::types as dtos;
@@ -21,7 +21,7 @@ pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     }
 
     info!("probing foreign-chain RPC providers");
-    let report = probe_all_providers(&foreign_chains).await;
+    let report = probe_all_providers(&foreign_chains, rpc_inspector).await;
     publish_metrics(&report);
     log_report(&report);
 }

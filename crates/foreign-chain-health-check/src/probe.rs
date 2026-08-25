@@ -11,15 +11,18 @@ use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
-use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
+use foreign_chain_inspector::evm::inspector::EvmInspector;
+use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{
-    FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
+    FanOut, ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintInspector,
+    ProviderFailure,
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
@@ -96,60 +99,36 @@ impl ProbeReport {
     }
 }
 
-/// Probe every configured provider concurrently.
+/// Probe every configured provider concurrently, building each provider's inspector with
+/// `new_inspector`. The node injects [`rpc_inspector`].
 ///
 /// Each provider is tried up to `max_retries` times, `timeout_sec` per try, and only for as long as
 /// the failures stay transient. This returns within the largest configured `timeout_sec *
 /// max_retries`, plus the [`foreign_chain_inspector::RETRY_BACKOFF`] between tries.
-///
-/// TODO(#4043): take the inspectors as a dependency instead
-pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
+pub async fn probe_all_providers<I>(
+    config: &ForeignChainsConfig,
+    new_inspector: impl Fn(
+        ForeignChain,
+        &ForeignChainConfig,
+        &ForeignChainProviderConfig,
+    ) -> anyhow::Result<I>
+    + Sync,
+) -> ProbeReport
+where
+    I: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+{
+    // A shared reference is Copy, so every per chain future can capture the closure.
+    let new_inspector = &new_inspector;
     let probe_attempts = config
         .iter_chains()
         .map(|(chain, chain_config)| async move {
-            match chain {
-                ForeignChain::Starknet => {
-                    probe_chain(chain, chain_config, |provider| {
-                        Ok(StarknetInspector::new(prepare_jsonrpc(provider)?))
-                    })
-                    .await
-                }
-                ForeignChain::Abstract => probe_evm::<Abstract>(chain, chain_config).await,
-                ForeignChain::Adi => probe_evm::<Adi>(chain, chain_config).await,
-                ForeignChain::Arbitrum => probe_evm::<Arbitrum>(chain, chain_config).await,
-                ForeignChain::Avalanche => probe_evm::<Avalanche>(chain, chain_config).await,
-                ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
-                ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
-                ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
-                ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
-                ForeignChain::Bitcoin => {
-                    probe_chain(chain, chain_config, |provider| {
-                        Ok(BitcoinInspector::new(prepare_jsonrpc(provider)?))
-                    })
-                    .await
-                }
-                ForeignChain::Aptos => {
-                    let timeout = timeout_of(chain_config);
-                    probe_chain(chain, chain_config, move |provider| {
-                        let (url, auth_header) = prepare_aptos(provider)?;
-                        Ok(AptosInspector::new(ReqwestAptosClient::new(
-                            url,
-                            auth_header,
-                            timeout,
-                        )))
-                    })
-                    .await
-                }
-                ForeignChain::Sui => {
-                    let timeout = timeout_of(chain_config);
-                    probe_chain(chain, chain_config, move |provider| {
-                        Ok(SuiInspector::new(prepare_sui(provider, timeout)?))
-                    })
-                    .await
-                }
-                // Ethereum, Solana and Ton have no inspector to probe them with.
-                _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
-            }
+            let Some(probe) = chain_probe(chain) else {
+                return rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented);
+            };
+            probe_chain(chain, chain_config, probe.canonicalize, |provider| {
+                new_inspector(chain, chain_config, provider)
+            })
+            .await
         });
 
     futures::future::join_all(probe_attempts)
@@ -158,28 +137,142 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
         .into()
 }
 
-async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> Vec<ProviderHealth>
-where
-    Chain: EvmChain + Clone + Send + Sync + 'static,
-{
-    probe_chain(chain, config, |provider| {
-        Ok(EvmInspector::<_, Chain>::new(prepare_jsonrpc(provider)?))
-    })
-    .await
+/// One match arm of [`chain_probe`] binds a chain's canonicalizer to its constructor, so the two
+/// cannot drift apart.
+struct ChainProbe {
+    canonicalize: fn(&str) -> NetworkFingerprint,
+    new_inspector:
+        fn(&ForeignChainConfig, &ForeignChainProviderConfig) -> anyhow::Result<RpcInspector>,
+}
+
+fn chain_probe(chain: ForeignChain) -> Option<ChainProbe> {
+    // The EVM chains differ only in their marker type; one probe shape serves them all.
+    macro_rules! evm_probe {
+        ($chain:ident) => {
+            Some(ChainProbe {
+                canonicalize: EvmInspector::<HttpClient, $chain>::canonical_fingerprint,
+                new_inspector: |_, provider| {
+                    Ok(RpcInspector::$chain(EvmInspector::new(prepare_jsonrpc(
+                        provider,
+                    )?)))
+                },
+            })
+        };
+    }
+
+    match chain {
+        ForeignChain::Starknet => Some(ChainProbe {
+            canonicalize: StarknetInspector::<HttpClient>::canonical_fingerprint,
+            new_inspector: |_, provider| {
+                Ok(RpcInspector::Starknet(StarknetInspector::new(
+                    prepare_jsonrpc(provider)?,
+                )))
+            },
+        }),
+        ForeignChain::Abstract => evm_probe!(Abstract),
+        ForeignChain::Adi => evm_probe!(Adi),
+        ForeignChain::Arbitrum => evm_probe!(Arbitrum),
+        ForeignChain::Avalanche => evm_probe!(Avalanche),
+        ForeignChain::Base => evm_probe!(Base),
+        ForeignChain::Bnb => evm_probe!(Bnb),
+        ForeignChain::HyperEvm => evm_probe!(HyperEvm),
+        ForeignChain::Polygon => evm_probe!(Polygon),
+        ForeignChain::Bitcoin => Some(ChainProbe {
+            canonicalize: BitcoinInspector::<HttpClient>::canonical_fingerprint,
+            new_inspector: |_, provider| {
+                Ok(RpcInspector::Bitcoin(BitcoinInspector::new(
+                    prepare_jsonrpc(provider)?,
+                )))
+            },
+        }),
+        ForeignChain::Aptos => Some(ChainProbe {
+            canonicalize: AptosInspector::<ReqwestAptosClient>::canonical_fingerprint,
+            new_inspector: |chain_config, provider| {
+                let (url, auth_header) = prepare_aptos(provider)?;
+                Ok(RpcInspector::Aptos(AptosInspector::new(
+                    ReqwestAptosClient::new(url, auth_header, timeout_of(chain_config)),
+                )))
+            },
+        }),
+        ForeignChain::Sui => Some(ChainProbe {
+            canonicalize: SuiInspector::<GrpcSuiClient>::canonical_fingerprint,
+            new_inspector: |chain_config, provider| {
+                Ok(RpcInspector::Sui(SuiInspector::new(prepare_sui(
+                    provider,
+                    timeout_of(chain_config),
+                )?)))
+            },
+        }),
+        // Ethereum, Solana and Ton have no inspector to probe them with.
+        _ => None,
+    }
+}
+
+/// The inspector for one provider, backed by a real RPC client, as [`rpc_inspector`] builds it.
+/// One variant per probeable chain, so [`probe_all_providers`] can hold providers of different
+/// chains behind a single type.
+#[derive(Clone)]
+pub enum RpcInspector {
+    Starknet(StarknetInspector<HttpClient>),
+    Abstract(EvmInspector<HttpClient, Abstract>),
+    Adi(EvmInspector<HttpClient, Adi>),
+    Arbitrum(EvmInspector<HttpClient, Arbitrum>),
+    Avalanche(EvmInspector<HttpClient, Avalanche>),
+    Base(EvmInspector<HttpClient, Base>),
+    Bnb(EvmInspector<HttpClient, Bnb>),
+    HyperEvm(EvmInspector<HttpClient, HyperEvm>),
+    Polygon(EvmInspector<HttpClient, Polygon>),
+    Bitcoin(BitcoinInspector<HttpClient>),
+    Aptos(AptosInspector<ReqwestAptosClient>),
+    Sui(SuiInspector<GrpcSuiClient>),
+}
+
+impl NetworkFingerprintInspector for RpcInspector {
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        match self {
+            Self::Starknet(inspector) => inspector.network_fingerprint().await,
+            Self::Abstract(inspector) => inspector.network_fingerprint().await,
+            Self::Adi(inspector) => inspector.network_fingerprint().await,
+            Self::Arbitrum(inspector) => inspector.network_fingerprint().await,
+            Self::Avalanche(inspector) => inspector.network_fingerprint().await,
+            Self::Base(inspector) => inspector.network_fingerprint().await,
+            Self::Bnb(inspector) => inspector.network_fingerprint().await,
+            Self::HyperEvm(inspector) => inspector.network_fingerprint().await,
+            Self::Polygon(inspector) => inspector.network_fingerprint().await,
+            Self::Bitcoin(inspector) => inspector.network_fingerprint().await,
+            Self::Aptos(inspector) => inspector.network_fingerprint().await,
+            Self::Sui(inspector) => inspector.network_fingerprint().await,
+        }
+    }
+}
+
+/// Build the inspector that asks a provider's real RPC endpoint for its network fingerprint.
+///
+/// This is the production argument to [`probe_all_providers`].
+pub fn rpc_inspector(
+    chain: ForeignChain,
+    chain_config: &ForeignChainConfig,
+    provider: &ForeignChainProviderConfig,
+) -> anyhow::Result<RpcInspector> {
+    let Some(probe) = chain_probe(chain) else {
+        anyhow::bail!("no probe exists for {chain:?}");
+    };
+    (probe.new_inspector)(chain_config, provider)
 }
 
 async fn probe_chain<I>(
     chain: ForeignChain,
     config: &ForeignChainConfig,
+    canonicalize: fn(&str) -> NetworkFingerprint,
     new_inspector: impl Fn(&ForeignChainProviderConfig) -> anyhow::Result<I>,
 ) -> Vec<ProviderHealth>
 where
-    I: foreign_chain_inspector::NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+    I: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
 {
     let Some(expected) = &config.expected_network_fingerprint else {
         return rows_of(chain, config, ProviderStatus::MissingExpectedFingerprint);
     };
-    let expected = I::canonical_fingerprint(expected);
+    let expected = canonicalize(expected);
 
     let mut inspectors = Vec::new();
     let mut rows = Vec::new();
@@ -265,6 +358,7 @@ fn classify(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use foreign_chain_inspector::mock::{ScriptedInspector, ScriptedReply};
     use foreign_chain_inspector::{
         abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, hyperevm, polygon,
         starknet, sui,
@@ -469,28 +563,11 @@ mod tests {
         mock_error_object(server, 200, -32601, "Method not found").await
     }
 
-    /// Throttling over HTTP 200, so only the JSON-RPC code tells the caller to back off.
-    async fn mock_throttled_over_http_200(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
-        mock_error_object(server, 200, -32005, "limit exceeded").await
-    }
-
     async fn mock_non_jsonrpc_body(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
         server
             .mock_async(|when, then| {
                 when.method(httpmock::Method::POST);
                 then.status(200).body("<html>gateway</html>");
-            })
-            .await
-    }
-
-    async fn mock_never_answers_in_time(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
-        let body = serde_json::json!({"jsonrpc": "2.0", "result": MAINNET, "id": 0});
-        server
-            .mock_async(|when, then| {
-                when.method(httpmock::Method::POST);
-                then.status(200)
-                    .json_body(body)
-                    .delay(Duration::from_secs(30));
             })
             .await
     }
@@ -506,6 +583,188 @@ mod tests {
             .clone()
     }
 
+    // The scripted tests below run under a paused tokio clock; see `foreign_chain_inspector::mock`
+    // for why that must never be combined with the httpmock or tonic tests in this module.
+
+    type NewScripted = Box<
+        dyn Fn(
+                ForeignChain,
+                &ForeignChainConfig,
+                &ForeignChainProviderConfig,
+            ) -> anyhow::Result<ScriptedInspector>
+            + Sync,
+    >;
+
+    /// A `new_inspector` for scripted tests: each provider gets the inspector scripted for its
+    /// URL, and a provider without one fails its setup.
+    fn scripted_by_url(inspectors: BTreeMap<String, ScriptedInspector>) -> NewScripted {
+        Box::new(move |_, _, provider| {
+            inspectors
+                .get(&provider.rpc_url)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("no inspector scripted for `{}`", provider.rpc_url))
+        })
+    }
+
+    fn scripted_one(url: &str, inspector: &ScriptedInspector) -> NewScripted {
+        scripted_by_url(BTreeMap::from([(url.to_string(), inspector.clone())]))
+    }
+
+    fn never_built(
+        _: ForeignChain,
+        _: &ForeignChainConfig,
+        _: &ForeignChainProviderConfig,
+    ) -> anyhow::Result<ScriptedInspector> {
+        unreachable!("no inspector may be built for a chain that cannot be probed")
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_report_a_provider_that_never_answers_as_timed_out_without_waiting()
+     {
+        // Given
+        let hung = ScriptedInspector::new([ScriptedReply::Hang]);
+        let config = starknet_only(chain_config(
+            Some(MAINNET),
+            one_provider("hung", "scripted://hung"),
+        ));
+        let started = tokio::time::Instant::now();
+
+        // When
+        let report = probe_all_providers(&config, scripted_one("scripted://hung", &hung)).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "hung"),
+            ProviderStatus::TimedOut
+        );
+        // The hang can end only by the configured 1s per try timeout.
+        assert_eq!(started.elapsed(), Duration::from_secs(1));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_report_a_provider_as_unreachable_after_its_last_retry() {
+        // Given
+        let failing = ScriptedInspector::new([
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+        ]);
+        let config = starknet_only(with_retries(
+            chain_config(Some(MAINNET), one_provider("failing", "scripted://failing")),
+            2,
+        ));
+
+        // When
+        let report =
+            probe_all_providers(&config, scripted_one("scripted://failing", &failing)).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "failing"),
+            ProviderStatus::Unreachable
+        );
+        assert_eq!(failing.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_retry_a_transient_failure_and_report_the_later_answer() {
+        // Given
+        let flaky = ScriptedInspector::new([
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+            ScriptedReply::Answer {
+                delay: Duration::ZERO,
+                fingerprint: MAINNET.to_string(),
+            },
+        ]);
+        let config = starknet_only(with_retries(
+            chain_config(Some(MAINNET), one_provider("flaky", "scripted://flaky")),
+            2,
+        ));
+
+        // When
+        let report = probe_all_providers(&config, scripted_one("scripted://flaky", &flaky)).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "flaky"),
+            ProviderStatus::Healthy
+        );
+        assert_eq!(flaky.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_report_setup_failures_next_to_probed_providers() {
+        // Given
+        // No inspector is scripted for `unbuildable`, so its setup fails.
+        let probed = ScriptedInspector::new([ScriptedReply::Answer {
+            delay: Duration::ZERO,
+            fingerprint: MAINNET.to_string(),
+        }]);
+        let mut providers = one_provider("probed", "scripted://probed");
+        providers.insert(
+            "unbuildable".to_string().into(),
+            provider("scripted://unbuildable"),
+        );
+        let config = starknet_only(chain_config(Some(MAINNET), providers));
+
+        // When
+        let report = probe_all_providers(&config, scripted_one("scripted://probed", &probed)).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "probed"),
+            ProviderStatus::Healthy
+        );
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "unbuildable"),
+            ProviderStatus::ClientSetupFailed
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_build_no_inspector_without_an_expected_fingerprint() {
+        // Given
+        let config = starknet_only(chain_config(
+            None,
+            one_provider("unchecked", "scripted://unchecked"),
+        ));
+
+        // When
+        let report = probe_all_providers(&config, never_built).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Starknet, "unchecked"),
+            ProviderStatus::MissingExpectedFingerprint
+        );
+    }
+
+    /// The probe of an unprobeable chain is reported as not implemented even when the chain also
+    /// has no expected fingerprint; the fingerprint check applies only to probeable chains.
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_report_an_unprobeable_chain_without_a_fingerprint_as_not_implemented()
+     {
+        // Given
+        let config = solana_only(chain_config(
+            None,
+            one_provider("unchecked", "scripted://unchecked"),
+        ));
+
+        // When
+        let report = probe_all_providers(&config, never_built).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Solana, "unchecked"),
+            ProviderStatus::ProbeNotImplemented
+        );
+    }
+
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_on_the_expected_network_as_healthy() {
         // Given
@@ -517,7 +776,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         mock.assert_async().await;
@@ -538,7 +797,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -561,35 +820,13 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_chain_without_an_expected_fingerprint_without_probing()
-     {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        let mock = mock_fingerprint(&server, MAINNET).await;
-        let config = starknet_only(chain_config(
-            None,
-            one_provider("publicnode", &server.base_url()),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::MissingExpectedFingerprint
-        );
-        mock.assert_calls_async(0).await;
     }
 
     #[tokio::test]
@@ -601,7 +838,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -621,7 +858,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -642,7 +879,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -662,32 +899,12 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::MalformedResponse
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_provider_that_does_not_answer_in_time() {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        mock_never_answers_in_time(&server).await;
-        let config = starknet_only(chain_config(
-            Some(MAINNET),
-            one_provider("slow", &server.base_url()),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "slow"),
-            ProviderStatus::TimedOut
         );
     }
 
@@ -702,7 +919,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -732,7 +949,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -750,7 +967,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -769,7 +986,7 @@ mod tests {
         let config = starknet_only(chain_config(Some(MAINNET), providers));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -799,7 +1016,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -826,7 +1043,7 @@ mod tests {
         };
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -861,7 +1078,7 @@ mod tests {
         }
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         for EvmMainnet { chain, .. } in EVM_MAINNETS {
@@ -887,7 +1104,7 @@ mod tests {
         );
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -910,7 +1127,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -930,7 +1147,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -969,7 +1186,7 @@ mod tests {
         };
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -992,7 +1209,7 @@ mod tests {
         };
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -1083,7 +1300,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
@@ -1101,34 +1318,13 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_eq!(
             must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::Unreachable
         );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_retry_a_provider_that_refused_with_a_rate_limit_code() {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        let mock = mock_throttled_over_http_200(&server).await;
-        let config = starknet_only(with_retries(
-            chain_config(Some(MAINNET), one_provider("keyed", &server.base_url())),
-            2,
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "keyed"),
-            ProviderStatus::Unreachable
-        );
-        mock.assert_calls_async(2).await;
     }
 
     #[tokio::test]
@@ -1143,7 +1339,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         let ProviderStatus::WrongNetwork { observed, .. } =
@@ -1181,7 +1377,7 @@ mod tests {
         let config = ForeignChainsConfig::default();
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert!(report.rows().is_empty());
@@ -1210,7 +1406,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config).await;
+        let report = probe_all_providers(&config, rpc_inspector).await;
 
         // Then
         assert_matches!(
