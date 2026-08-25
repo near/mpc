@@ -206,7 +206,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
-    // Check number of healthy foreign chain RPC providers, detached and diagnostic only
+    // Detached: the report is diagnostic, nothing downstream waits on it.
     root_runtime.spawn(crate::foreign_chain_probe::run_startup_probe(
         node_config.foreign_chains.clone(),
     ));

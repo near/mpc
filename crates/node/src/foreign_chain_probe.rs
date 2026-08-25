@@ -12,8 +12,8 @@ use tracing::{info, warn};
 
 use crate::metrics;
 
-/// Asks every configured RPC provider which network it serves and logs a line per provider plus an
-/// `x/y providers healthy` summary. Diagnostic only.
+/// Asks every configured RPC provider which network it serves and reports the verdicts as logs and
+/// metrics. Diagnostic only: nothing gates on the result.
 pub async fn run_startup_probe(foreign_chains: ForeignChainsConfig) {
     if foreign_chains.is_empty() {
         warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
@@ -30,6 +30,7 @@ fn is_probed(row: &ProviderHealth) -> bool {
     row.status != ProviderStatus::ProbeNotImplemented
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct Summary {
     probed: usize,
     healthy: usize,
@@ -70,7 +71,7 @@ fn log_report(report: &ProbeReport) {
         let chains: BTreeSet<&str> = rows.iter().map(|row| row.chain.label()).collect();
         warn!(
             ?chains,
-            "no RPC provider was checked at startup: the foreign chains configured cannot be checked by the node"
+            "no RPC provider was checked at startup: none of the configured foreign chains has a probe"
         );
         return;
     }
@@ -102,10 +103,10 @@ fn publish_metrics(report: &ProbeReport) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use foreign_chain_health_check::probe::ProviderCounts;
     use prometheus::core::Collector as _;
 
-    /// The chains a gauge holds a series for.
-    fn labelled_chains(gauge: &prometheus::IntGaugeVec) -> Vec<String> {
+    fn labelled_chains(gauge: &prometheus::IntGaugeVec) -> BTreeSet<String> {
         gauge
             .collect()
             .iter()
@@ -115,15 +116,15 @@ mod tests {
             .collect()
     }
 
-    fn counts(chain: &str) -> (i64, i64) {
-        (
-            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
+    fn gauges(chain: &str) -> ProviderCounts {
+        ProviderCounts {
+            configured: metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
                 .with_label_values(&[chain])
-                .get(),
-            metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
+                .get() as usize,
+            healthy: metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
                 .with_label_values(&[chain])
-                .get(),
-        )
+                .get() as usize,
+        }
     }
 
     fn row(chain: dtos::ForeignChain, provider: &str, status: ProviderStatus) -> ProviderHealth {
@@ -134,7 +135,6 @@ mod tests {
         }
     }
 
-    /// Solana has no probe, so its provider belongs in neither total.
     #[test]
     fn summarize__should_count_only_the_providers_a_probe_covers() {
         // Given
@@ -152,7 +152,13 @@ mod tests {
         let summary = summarize(&rows);
 
         // Then
-        assert_eq!((summary.healthy, summary.probed), (1, 2));
+        assert_eq!(
+            summary,
+            Summary {
+                probed: 2,
+                healthy: 1
+            }
+        );
     }
 
     #[test]
@@ -168,7 +174,13 @@ mod tests {
         let summary = summarize(&rows);
 
         // Then
-        assert_eq!(summary.probed, 0);
+        assert_eq!(
+            summary,
+            Summary {
+                probed: 0,
+                healthy: 0
+            }
+        );
     }
 
     /// `HyperEvm` is labelled `hyper_evm`, so the series is keyed by the config key rather than the
@@ -194,8 +206,20 @@ mod tests {
         publish_metrics(&report);
 
         // Then
-        assert_eq!(counts("hyper_evm"), (2, 1));
-        assert_eq!(counts("aptos"), (1, 0));
+        assert_eq!(
+            gauges("hyper_evm"),
+            ProviderCounts {
+                configured: 2,
+                healthy: 1
+            }
+        );
+        assert_eq!(
+            gauges("aptos"),
+            ProviderCounts {
+                configured: 1,
+                healthy: 0
+            }
+        );
     }
 
     /// A `0` healthy for a chain no probe covers would read as every provider failing.
@@ -216,7 +240,7 @@ mod tests {
 
         // Then
         let chains = labelled_chains(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED);
-        assert!(chains.contains(&"bnb".to_string()));
-        assert!(!chains.contains(&"solana".to_string()));
+        assert!(chains.contains("bnb"));
+        assert!(!chains.contains("solana"));
     }
 }

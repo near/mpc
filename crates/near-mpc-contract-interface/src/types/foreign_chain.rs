@@ -1390,6 +1390,7 @@ pub enum ForeignChain {
 }
 
 impl ForeignChain {
+    /// The chain's key in an operator's `foreign_chains` config, also used as its metric label.
     pub fn label(&self) -> &'static str {
         match self {
             Self::Solana => "solana",
