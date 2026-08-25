@@ -43,8 +43,12 @@ where
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
         Ok(NetworkFingerprint::new(genesis_hash.canonical_text()))
     }
+}
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+impl<Client> BitcoinInspector<Client> {
+    /// The canonical text form of Bitcoin's genesis block hash, as
+    /// [`NetworkFingerprintInspector::network_fingerprint`] reports it. Idempotent.
+    pub fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(GetBlockHashResponse(fingerprint.to_owned()).canonical_text())
     }
 }

@@ -54,8 +54,12 @@ where
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
         Ok(NetworkFingerprint::new(chain_id.canonical_text()))
     }
+}
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+impl<Client, Chain> EvmInspector<Client, Chain> {
+    /// The canonical text form of an EVM chain id, as
+    /// [`NetworkFingerprintInspector::network_fingerprint`] reports it. Idempotent.
+    pub fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(ChainIdResponse(fingerprint.to_owned()).canonical_text())
     }
 }

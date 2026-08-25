@@ -38,8 +38,12 @@ where
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
         Ok(Self::canonical_fingerprint(&chain_id.0))
     }
+}
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+impl<Client> StarknetInspector<Client> {
+    /// The canonical text form of Starknet's chain id, as
+    /// [`NetworkFingerprintInspector::network_fingerprint`] reports it. Idempotent.
+    pub fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(ChainIdResponse(fingerprint.to_owned()).canonical_text())
     }
 }

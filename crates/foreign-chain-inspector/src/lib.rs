@@ -76,16 +76,12 @@ impl NetworkFingerprint {
     }
 }
 
-/// Reports the [`NetworkFingerprint`] of the provider an inspector talks to, in the form
-/// [`Self::canonical_fingerprint`] produces.
+/// Reports the [`NetworkFingerprint`] of the provider an inspector talks to, in the chain's
+/// canonical text form.
 pub trait NetworkFingerprintInspector {
     fn network_fingerprint(
         &self,
     ) -> impl Future<Output = Result<NetworkFingerprint, ForeignChainInspectionError>> + Send;
-
-    /// Normalizes any spec-legal spelling of this chain's fingerprint into the single form the trait
-    /// compares. Idempotent.
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.

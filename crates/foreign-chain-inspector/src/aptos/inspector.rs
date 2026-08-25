@@ -43,8 +43,12 @@ where
             &ledger_info.chain_id.to_string(),
         ))
     }
+}
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+impl<Client> AptosInspector<Client> {
+    /// The canonical text form of Aptos' chain id, as
+    /// [`NetworkFingerprintInspector::network_fingerprint`] reports it. Idempotent.
+    pub fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(canonical_chain_id_text(fingerprint))
     }
 }

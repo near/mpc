@@ -11,15 +11,18 @@ use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
-use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
+use foreign_chain_inspector::evm::inspector::EvmInspector;
+use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{
-    FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
+    FanOut, ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintInspector,
+    ProviderFailure,
 };
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
@@ -107,49 +110,13 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
     let probe_attempts = config
         .iter_chains()
         .map(|(chain, chain_config)| async move {
-            match chain {
-                ForeignChain::Starknet => {
-                    probe_chain(chain, chain_config, |provider| {
-                        Ok(StarknetInspector::new(prepare_jsonrpc(provider)?))
-                    })
-                    .await
-                }
-                ForeignChain::Abstract => probe_evm::<Abstract>(chain, chain_config).await,
-                ForeignChain::Adi => probe_evm::<Adi>(chain, chain_config).await,
-                ForeignChain::Arbitrum => probe_evm::<Arbitrum>(chain, chain_config).await,
-                ForeignChain::Avalanche => probe_evm::<Avalanche>(chain, chain_config).await,
-                ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
-                ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
-                ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
-                ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
-                ForeignChain::Bitcoin => {
-                    probe_chain(chain, chain_config, |provider| {
-                        Ok(BitcoinInspector::new(prepare_jsonrpc(provider)?))
-                    })
-                    .await
-                }
-                ForeignChain::Aptos => {
-                    let timeout = timeout_of(chain_config);
-                    probe_chain(chain, chain_config, move |provider| {
-                        let (url, auth_header) = prepare_aptos(provider)?;
-                        Ok(AptosInspector::new(ReqwestAptosClient::new(
-                            url,
-                            auth_header,
-                            timeout,
-                        )))
-                    })
-                    .await
-                }
-                ForeignChain::Sui => {
-                    let timeout = timeout_of(chain_config);
-                    probe_chain(chain, chain_config, move |provider| {
-                        Ok(SuiInspector::new(prepare_sui(provider, timeout)?))
-                    })
-                    .await
-                }
-                // Ethereum, Solana and Ton have no inspector to probe them with.
-                _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
-            }
+            let Some(probe) = chain_probe(chain) else {
+                return rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented);
+            };
+            probe_chain(chain, chain_config, probe.canonicalize, |provider| {
+                (probe.new_inspector)(chain_config, provider)
+            })
+            .await
         });
 
     futures::future::join_all(probe_attempts)
@@ -158,28 +125,127 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
         .into()
 }
 
-async fn probe_evm<Chain>(chain: ForeignChain, config: &ForeignChainConfig) -> Vec<ProviderHealth>
-where
-    Chain: EvmChain + Clone + Send + Sync + 'static,
-{
-    probe_chain(chain, config, |provider| {
-        Ok(EvmInspector::<_, Chain>::new(prepare_jsonrpc(provider)?))
-    })
-    .await
+/// One match arm of [`chain_probe`] binds a chain's canonicalizer to its constructor, so the two
+/// cannot drift apart.
+struct ChainProbe {
+    canonicalize: fn(&str) -> NetworkFingerprint,
+    new_inspector:
+        fn(&ForeignChainConfig, &ForeignChainProviderConfig) -> anyhow::Result<RpcInspector>,
+}
+
+fn chain_probe(chain: ForeignChain) -> Option<ChainProbe> {
+    // The EVM chains differ only in their marker type; one probe shape serves them all.
+    macro_rules! evm_probe {
+        ($chain:ident) => {
+            Some(ChainProbe {
+                canonicalize: EvmInspector::<HttpClient, $chain>::canonical_fingerprint,
+                new_inspector: |_, provider| {
+                    Ok(RpcInspector::$chain(EvmInspector::new(prepare_jsonrpc(
+                        provider,
+                    )?)))
+                },
+            })
+        };
+    }
+
+    match chain {
+        ForeignChain::Starknet => Some(ChainProbe {
+            canonicalize: StarknetInspector::<HttpClient>::canonical_fingerprint,
+            new_inspector: |_, provider| {
+                Ok(RpcInspector::Starknet(StarknetInspector::new(
+                    prepare_jsonrpc(provider)?,
+                )))
+            },
+        }),
+        ForeignChain::Abstract => evm_probe!(Abstract),
+        ForeignChain::Adi => evm_probe!(Adi),
+        ForeignChain::Arbitrum => evm_probe!(Arbitrum),
+        ForeignChain::Avalanche => evm_probe!(Avalanche),
+        ForeignChain::Base => evm_probe!(Base),
+        ForeignChain::Bnb => evm_probe!(Bnb),
+        ForeignChain::HyperEvm => evm_probe!(HyperEvm),
+        ForeignChain::Polygon => evm_probe!(Polygon),
+        ForeignChain::Bitcoin => Some(ChainProbe {
+            canonicalize: BitcoinInspector::<HttpClient>::canonical_fingerprint,
+            new_inspector: |_, provider| {
+                Ok(RpcInspector::Bitcoin(BitcoinInspector::new(
+                    prepare_jsonrpc(provider)?,
+                )))
+            },
+        }),
+        ForeignChain::Aptos => Some(ChainProbe {
+            canonicalize: AptosInspector::<ReqwestAptosClient>::canonical_fingerprint,
+            new_inspector: |chain_config, provider| {
+                let (url, auth_header) = prepare_aptos(provider)?;
+                Ok(RpcInspector::Aptos(AptosInspector::new(
+                    ReqwestAptosClient::new(url, auth_header, timeout_of(chain_config)),
+                )))
+            },
+        }),
+        ForeignChain::Sui => Some(ChainProbe {
+            canonicalize: SuiInspector::<GrpcSuiClient>::canonical_fingerprint,
+            new_inspector: |chain_config, provider| {
+                Ok(RpcInspector::Sui(SuiInspector::new(prepare_sui(
+                    provider,
+                    timeout_of(chain_config),
+                )?)))
+            },
+        }),
+        // Ethereum, Solana and Ton have no inspector to probe them with.
+        _ => None,
+    }
+}
+
+/// The inspector for one provider, backed by a real RPC client. One variant per probeable
+/// chain, so [`chain_probe`] can name a single constructor type for every chain.
+#[derive(Clone)]
+enum RpcInspector {
+    Starknet(StarknetInspector<HttpClient>),
+    Abstract(EvmInspector<HttpClient, Abstract>),
+    Adi(EvmInspector<HttpClient, Adi>),
+    Arbitrum(EvmInspector<HttpClient, Arbitrum>),
+    Avalanche(EvmInspector<HttpClient, Avalanche>),
+    Base(EvmInspector<HttpClient, Base>),
+    Bnb(EvmInspector<HttpClient, Bnb>),
+    HyperEvm(EvmInspector<HttpClient, HyperEvm>),
+    Polygon(EvmInspector<HttpClient, Polygon>),
+    Bitcoin(BitcoinInspector<HttpClient>),
+    Aptos(AptosInspector<ReqwestAptosClient>),
+    Sui(SuiInspector<GrpcSuiClient>),
+}
+
+impl NetworkFingerprintInspector for RpcInspector {
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        match self {
+            Self::Starknet(inspector) => inspector.network_fingerprint().await,
+            Self::Abstract(inspector) => inspector.network_fingerprint().await,
+            Self::Adi(inspector) => inspector.network_fingerprint().await,
+            Self::Arbitrum(inspector) => inspector.network_fingerprint().await,
+            Self::Avalanche(inspector) => inspector.network_fingerprint().await,
+            Self::Base(inspector) => inspector.network_fingerprint().await,
+            Self::Bnb(inspector) => inspector.network_fingerprint().await,
+            Self::HyperEvm(inspector) => inspector.network_fingerprint().await,
+            Self::Polygon(inspector) => inspector.network_fingerprint().await,
+            Self::Bitcoin(inspector) => inspector.network_fingerprint().await,
+            Self::Aptos(inspector) => inspector.network_fingerprint().await,
+            Self::Sui(inspector) => inspector.network_fingerprint().await,
+        }
+    }
 }
 
 async fn probe_chain<I>(
     chain: ForeignChain,
     config: &ForeignChainConfig,
+    canonicalize: fn(&str) -> NetworkFingerprint,
     new_inspector: impl Fn(&ForeignChainProviderConfig) -> anyhow::Result<I>,
 ) -> Vec<ProviderHealth>
 where
-    I: foreign_chain_inspector::NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+    I: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
 {
     let Some(expected) = &config.expected_network_fingerprint else {
         return rows_of(chain, config, ProviderStatus::MissingExpectedFingerprint);
     };
-    let expected = I::canonical_fingerprint(expected);
+    let expected = canonicalize(expected);
 
     let mut inspectors = Vec::new();
     let mut rows = Vec::new();
