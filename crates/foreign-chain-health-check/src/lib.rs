@@ -14,6 +14,7 @@ mod results;
 use std::future::Future;
 use std::time::Duration;
 
+use foreign_chain_inspector::RpcAuthentication;
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::adi::inspector::Adi;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
@@ -21,12 +22,9 @@ use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bnb::inspector::Bnb;
 use foreign_chain_inspector::evm::inspector::EvmChain;
-use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
-use foreign_chain_inspector::{RpcAuthentication, build_http_client};
-use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
-use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
+use foreign_chain_rpc_auth::{auth_config_to_rpc_auth, http_client, sui_client};
 use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
@@ -141,12 +139,6 @@ fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
 }
 
-fn prepare_jsonrpc(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
-    let mut url = provider.rpc_url.clone();
-    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
-    build_http_client(url, auth).map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
-}
-
 fn prepare_aptos(
     provider: &ForeignChainProviderConfig,
 ) -> anyhow::Result<(String, Option<(HeaderName, HeaderValue)>)> {
@@ -185,7 +177,7 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
     let parsed =
         golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
+        let status = match (&parsed, http_client(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
@@ -214,7 +206,7 @@ async fn run_bitcoin(
     let parsed =
         golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
+        let status = match (&parsed, http_client(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
@@ -243,7 +235,7 @@ async fn run_starknet(
     let parsed = golden::felt32(vector.tx)
         .and_then(|tx| golden::felt32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, prepare_jsonrpc(provider)) {
+        let status = match (&parsed, http_client(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
@@ -313,7 +305,7 @@ async fn run_sui(
     };
     let timeout = timeout_of(cfg);
     for (name, provider) in cfg.providers.iter() {
-        let status = match prepare_sui(provider, timeout) {
+        let status = match sui_client(provider, timeout) {
             Err(e) => Status::Failed(format!("{e:#}")),
             Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
         };
@@ -323,23 +315,6 @@ async fn run_sui(
             status,
         });
     }
-}
-
-fn prepare_sui(
-    provider: &ForeignChainProviderConfig,
-    timeout: Duration,
-) -> anyhow::Result<GrpcSuiClient> {
-    let mut url = provider.rpc_url.clone();
-    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
-    let header = match auth {
-        RpcAuthentication::KeyInUrl => None,
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => Some((header_name, header_value)),
-    };
-    GrpcSuiClient::new(url, header, timeout)
-        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
 }
 
 fn mark_skipped(

@@ -1,7 +1,12 @@
+use std::time::Duration;
+
 use anyhow::Context;
-use foreign_chain_inspector::RpcAuthentication;
-use http::HeaderValue;
-use mpc_node_config::AuthConfig;
+use foreign_chain_inspector::http_client::HttpClient;
+use foreign_chain_inspector::{RpcAuthentication, build_http_client};
+use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
+use http::{HeaderName, HeaderValue};
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 /// Convert an [`AuthConfig`] into a [`foreign_chain_inspector::RpcAuthentication`].
 ///
@@ -50,6 +55,49 @@ pub fn auth_config_to_rpc_auth(
             Ok(RpcAuthentication::KeyInUrl)
         }
     }
+}
+
+/// The URL to dial and the header to install for a provider, with `Path` and `Query` auth
+/// already spliced into the URL.
+fn authenticated_endpoint(
+    provider: &ForeignChainProviderConfig,
+) -> anyhow::Result<(String, Option<(HeaderName, HeaderValue)>)> {
+    let mut url = provider.rpc_url.clone();
+    let header = match auth_config_to_rpc_auth(provider.auth.clone(), &mut url)? {
+        RpcAuthentication::KeyInUrl => None,
+        RpcAuthentication::CustomHeader {
+            header_name,
+            header_value,
+        } => Some((header_name, header_value)),
+    };
+    Ok((url, header))
+}
+
+/// The authenticated JSON-RPC client for a provider, used by every chain the node reaches over
+/// jsonrpsee. Carries no timeout: those chains are bounded by their caller's deadline.
+pub fn http_client(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
+    let mut url = provider.rpc_url.clone();
+    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
+    build_http_client(url, auth).map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
+}
+
+/// The authenticated Aptos REST client for a provider.
+pub fn aptos_client(
+    provider: &ForeignChainProviderConfig,
+    timeout: Duration,
+) -> anyhow::Result<ReqwestAptosClient> {
+    let (url, header) = authenticated_endpoint(provider)?;
+    Ok(ReqwestAptosClient::new(url, header, timeout))
+}
+
+/// The authenticated Sui gRPC client for a provider.
+pub fn sui_client(
+    provider: &ForeignChainProviderConfig,
+    timeout: Duration,
+) -> anyhow::Result<GrpcSuiClient> {
+    let (url, header) = authenticated_endpoint(provider)?;
+    GrpcSuiClient::new(url, header, timeout)
+        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
 }
 
 #[cfg(test)]

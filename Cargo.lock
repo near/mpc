@@ -4019,6 +4019,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "foreign-chain-inspector",
+ "foreign-chain-rpc-interfaces",
  "http",
  "mpc-node-config",
  "url",

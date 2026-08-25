@@ -7,6 +7,7 @@ use crate::providers::EcdsaSignatureProvider;
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
 use foreign_chain_inspector::adi::inspector::AdiInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
@@ -20,11 +21,12 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
-use foreign_chain_inspector::{FanOut, RpcAuthentication};
-use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
+use foreign_chain_rpc_auth::{aptos_client, http_client, sui_client};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
-use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
+use mpc_node_config::{
+    ConfigFile, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
+};
 use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,18 +56,14 @@ impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         fn build_fanout<I>(
             chain_config: Option<&ForeignChainConfig>,
-            new_inspector: impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I>,
+            new_inspector: impl Fn(&ForeignChainProviderConfig, Duration) -> anyhow::Result<I>,
         ) -> anyhow::Result<Option<FanOut<I>>> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
             let timeout = Duration::from_secs(c.timeout_sec.get());
             let inspectors = c.providers.try_map_to_vec(|name, p| {
-                // `Path`/`Query` auth is substituted into `url`; `Header` auth is returned
-                // as `RpcAuthentication::CustomHeader` for the client to install.
-                let mut url = p.rpc_url.clone();
-                let rpc_auth = auth_config_to_rpc_auth(p.auth.clone(), &mut url)?;
-                let inspector = new_inspector(url, rpc_auth, timeout)?;
+                let inspector = new_inspector(p, timeout)?;
                 anyhow::Ok((ProviderId(name.as_str().to_owned()), inspector))
             })?;
             Ok(Some(FanOut::new(inspectors)))
@@ -76,47 +74,8 @@ impl ForeignChainInspectors<HttpClient> {
         /// deadline in the signing flow, as they did before this adapter existed.
         fn with_http_client<I>(
             new_inspector: impl Fn(HttpClient) -> I,
-        ) -> impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I> {
-            move |url, rpc_auth, _timeout| {
-                let client = foreign_chain_inspector::build_http_client(url, rpc_auth)?;
-                Ok(new_inspector(client))
-            }
-        }
-
-        fn new_sui_inspector(
-            url: String,
-            rpc_auth: RpcAuthentication,
-            timeout: Duration,
-        ) -> anyhow::Result<SuiInspector<GrpcSuiClient>> {
-            let auth_header = match rpc_auth {
-                RpcAuthentication::KeyInUrl => None,
-                RpcAuthentication::CustomHeader {
-                    header_name,
-                    header_value,
-                } => Some((header_name, header_value)),
-            };
-            let client = GrpcSuiClient::new(url, auth_header, timeout)
-                .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))?;
-            Ok(SuiInspector::new(client))
-        }
-
-        fn new_aptos_inspector(
-            url: String,
-            rpc_auth: RpcAuthentication,
-            timeout: Duration,
-        ) -> anyhow::Result<AptosInspector<ReqwestAptosClient>> {
-            let auth_header = match rpc_auth {
-                RpcAuthentication::KeyInUrl => None,
-                RpcAuthentication::CustomHeader {
-                    header_name,
-                    header_value,
-                } => Some((header_name, header_value)),
-            };
-            Ok(AptosInspector::new(ReqwestAptosClient::new(
-                url,
-                auth_header,
-                timeout,
-            )))
+        ) -> impl Fn(&ForeignChainProviderConfig, Duration) -> anyhow::Result<I> {
+            move |provider, _timeout| Ok(new_inspector(http_client(provider)?))
         }
 
         Ok(Self {
@@ -151,8 +110,12 @@ impl ForeignChainInspectors<HttpClient> {
                 with_http_client(AvalancheInspector::new),
             )?,
             adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
-            aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
-            sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
+            aptos: build_fanout(config.aptos.as_ref(), |provider, timeout| {
+                Ok(AptosInspector::new(aptos_client(provider, timeout)?))
+            })?,
+            sui: build_fanout(config.sui.as_ref(), |provider, timeout| {
+                Ok(SuiInspector::new(sui_client(provider, timeout)?))
+            })?,
         })
     }
 }

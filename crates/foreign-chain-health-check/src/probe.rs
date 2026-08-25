@@ -27,7 +27,8 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
-use crate::{prepare_aptos, prepare_jsonrpc, prepare_sui, timeout_of};
+use crate::timeout_of;
+use foreign_chain_rpc_auth::{aptos_client, http_client, sui_client};
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,9 +147,9 @@ type NewRpcInspector =
 fn new_rpc_inspector(chain: ForeignChain) -> Option<NewRpcInspector> {
     Some(match chain {
         ForeignChain::Starknet => |_, provider| {
-            Ok(RpcInspector::Starknet(StarknetInspector::new(
-                prepare_jsonrpc(provider)?,
-            )))
+            Ok(RpcInspector::Starknet(StarknetInspector::new(http_client(
+                provider,
+            )?)))
         },
         ForeignChain::Abstract => |_, provider| Ok(RpcInspector::Abstract(new_evm(provider)?)),
         ForeignChain::Adi => |_, provider| Ok(RpcInspector::Adi(new_evm(provider)?)),
@@ -159,18 +160,18 @@ fn new_rpc_inspector(chain: ForeignChain) -> Option<NewRpcInspector> {
         ForeignChain::HyperEvm => |_, provider| Ok(RpcInspector::HyperEvm(new_evm(provider)?)),
         ForeignChain::Polygon => |_, provider| Ok(RpcInspector::Polygon(new_evm(provider)?)),
         ForeignChain::Bitcoin => |_, provider| {
-            Ok(RpcInspector::Bitcoin(BitcoinInspector::new(
-                prepare_jsonrpc(provider)?,
-            )))
+            Ok(RpcInspector::Bitcoin(BitcoinInspector::new(http_client(
+                provider,
+            )?)))
         },
         ForeignChain::Aptos => |chain_config, provider| {
-            let (url, auth_header) = prepare_aptos(provider)?;
-            Ok(RpcInspector::Aptos(AptosInspector::new(
-                ReqwestAptosClient::new(url, auth_header, timeout_of(chain_config)),
-            )))
+            Ok(RpcInspector::Aptos(AptosInspector::new(aptos_client(
+                provider,
+                timeout_of(chain_config),
+            )?)))
         },
         ForeignChain::Sui => |chain_config, provider| {
-            Ok(RpcInspector::Sui(SuiInspector::new(prepare_sui(
+            Ok(RpcInspector::Sui(SuiInspector::new(sui_client(
                 provider,
                 timeout_of(chain_config),
             )?)))
@@ -184,7 +185,7 @@ fn new_rpc_inspector(chain: ForeignChain) -> Option<NewRpcInspector> {
 fn new_evm<Chain: EvmChain>(
     provider: &ForeignChainProviderConfig,
 ) -> anyhow::Result<EvmInspector<HttpClient, Chain>> {
-    Ok(EvmInspector::new(prepare_jsonrpc(provider)?))
+    Ok(EvmInspector::new(http_client(provider)?))
 }
 
 /// The inspector for one provider, backed by a real RPC client, as [`rpc_inspector`] builds it.
