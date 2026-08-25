@@ -30,6 +30,7 @@ use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::{CallMpc, WithWaitLevel};
 use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
 use crate::near_sandbox::NearSandbox;
+use crate::test_dir::TestDir;
 use test_port_allocator::TestPorts;
 
 const SANDBOX_ROOT_ACCOUNT: &str = "sandbox";
@@ -97,7 +98,8 @@ pub struct MpcClusterConfig {
     pub presignatures_to_buffer: usize,
     /// Version of the `near-sandbox` binary (e.g. `"2.6.3"`, `"2.10.4"`).
     pub sandbox_version: String,
-    /// Root directory for all test artifacts (logs, configs, DB). If `None`, a temp dir is created.
+    /// Parent of the directory holding all test artifacts (logs, configs, DB).
+    /// If `None`, `E2E_HOME_BASE` is used, else the system temp dir.
     pub home_base: Option<PathBuf>,
     /// Indices (into the node array) of nodes that are initial participants.
     /// An empty vec means all nodes are participants. Set to a subset to start
@@ -250,8 +252,7 @@ pub struct MpcCluster {
     pub threshold: usize,
     pub user_accounts: HashMap<AccountId, SigningKey>,
     pub ports: TestPorts,
-    /// Held to keep the temp directory alive for the lifetime of the cluster.
-    pub test_dir: tempfile::TempDir,
+    pub test_dir: TestDir,
 }
 
 impl MpcCluster {
@@ -263,9 +264,19 @@ impl MpcCluster {
     /// binaries, and wait for Running state.
     pub async fn start(config: MpcClusterConfig) -> anyhow::Result<Self> {
         config.validate()?;
+        let test_dir = TestDir::new(config.home_base.as_deref())?;
+        Self::start_in(&test_dir, config).await.map_err(|error| {
+            test_dir.keep();
+            error.context(format!(
+                "cluster artifacts preserved in {}",
+                test_dir.path().display()
+            ))
+        })
+    }
+
+    async fn start_in(test_dir: &TestDir, config: MpcClusterConfig) -> anyhow::Result<Self> {
         let threshold = config.threshold;
         let ports = TestPorts::e2e_tests(config.port_seed);
-        let test_dir = create_test_dir(&config.home_base)?;
 
         let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
         let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
@@ -371,7 +382,7 @@ impl MpcCluster {
             threshold,
             user_accounts,
             ports,
-            test_dir,
+            test_dir: test_dir.clone(),
         })
     }
 
@@ -1192,16 +1203,6 @@ impl MpcNodeState {
     }
 }
 
-fn create_test_dir(home_base: &Option<PathBuf>) -> anyhow::Result<tempfile::TempDir> {
-    match home_base {
-        Some(base) => {
-            std::fs::create_dir_all(base)?;
-            Ok(tempfile::tempdir_in(base)?)
-        }
-        None => Ok(tempfile::tempdir()?),
-    }
-}
-
 fn generate_signing_keys(
     num_nodes: u64,
 ) -> (
@@ -1637,8 +1638,9 @@ async fn ensure_nodes_alive(nodes: &mut [MpcNodeState]) -> anyhow::Result<()> {
         if let MpcNodeState::Running(n) = node {
             anyhow::ensure!(
                 !n.has_exited(),
-                "mpc-node {i} exited early — check {}/{}",
+                "mpc-node {i} exited early, check {} ({} holds its logs, {} any panic)",
                 n.setup().home_dir().display(),
+                crate::mpc_node::STDOUT_LOG,
                 crate::mpc_node::STDERR_LOG
             );
         }
