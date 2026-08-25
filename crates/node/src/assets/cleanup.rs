@@ -246,7 +246,7 @@ mod tests {
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
             db.clone(),
-            &client,
+            client,
             reconstruction_threshold,
         )
         .unwrap();
@@ -311,7 +311,7 @@ mod tests {
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
             db.clone(),
-            &client,
+            client,
             reconstruction_threshold,
         )
         .unwrap();
@@ -366,7 +366,7 @@ mod tests {
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
             db.clone(),
-            &client,
+            client,
             reconstruction_threshold,
         )
         .unwrap();

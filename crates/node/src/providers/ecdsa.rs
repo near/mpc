@@ -58,7 +58,7 @@ impl EcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
 
         // cait-sith triple generation runs with exactly `t` parties, so keep one store per distinct reconstruction threshold.
         let mut triple_stores = HashMap::new();
@@ -66,7 +66,7 @@ impl EcdsaSignatureProvider {
         {
             triple_stores.insert(
                 t,
-                Arc::new(TripleStorage::new(clock.clone(), db.clone(), &client, t)?),
+                Arc::new(TripleStorage::new(clock.clone(), db.clone(), client.clone(), t)?),
             );
         }
 

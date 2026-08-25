@@ -56,7 +56,7 @@ impl TripleStorage {
     pub fn new(
         clock: Clock,
         db: Arc<SecretDB>,
-        client: &Arc<MeshNetworkClient>,
+        client: Arc<MeshNetworkClient>,
         reconstruction_threshold: ReconstructionThreshold,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
@@ -575,7 +575,7 @@ mod tests {
         TripleStorage::new(
             near_time::FakeClock::default().clock(),
             db,
-            &client,
+            client,
             reconstruction_threshold,
         )
         .unwrap()
