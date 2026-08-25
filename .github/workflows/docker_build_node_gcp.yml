@@ -40,6 +40,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y repro-env
 
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
+
       - name: Build and push node gcp image
         run: |
           export NODE_GCP_IMAGE_NAME=mpc-node-gcp
