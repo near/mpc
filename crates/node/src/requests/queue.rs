@@ -48,6 +48,19 @@ pub trait RefineEligibleLeaders<RequestType>: Send {
     ) -> HashSet<ParticipantId>;
 }
 
+/// Refiner for request kinds whose leadership is unrestricted.
+pub struct NoRefinement;
+
+impl<RequestType> RefineEligibleLeaders<RequestType> for NoRefinement {
+    fn refine(
+        &self,
+        _request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        eligible.clone()
+    }
+}
+
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
 ///  - Every block that comes from the indexer. For each block, we need the list of
@@ -84,7 +97,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 
     /// See [`RefineEligibleLeaders`].
-    pub(super) refine_eligible_leaders: Option<Box<dyn RefineEligibleLeaders<RequestType>>>,
+    pub(super) refine_eligible_leaders: RequestType::Refiner,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -470,6 +483,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         all_participants: Vec<ParticipantId>,
         my_participant_id: ParticipantId,
         network_api: Arc<dyn NetworkAPIForRequests>,
+        refine_eligible_leaders: RequestType::Refiner,
     ) -> Self {
         Self {
             clock,
@@ -478,17 +492,8 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
-            refine_eligible_leaders: None,
+            refine_eligible_leaders,
         }
-    }
-
-    /// Sets the per-request [`RefineEligibleLeaders`] hook.
-    pub fn with_eligible_leaders_refiner(
-        mut self,
-        refiner: Box<dyn RefineEligibleLeaders<RequestType>>,
-    ) -> Self {
-        self.refine_eligible_leaders = Some(refiner);
-        self
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -657,10 +662,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            let request_eligible_leaders = match &self.refine_eligible_leaders {
-                Some(refiner) => refiner.refine(&request.request, &eligible_leaders),
-                None => eligible_leaders.clone(),
-            };
+            let request_eligible_leaders = self
+                .refine_eligible_leaders
+                .refine(&request.request, &eligible_leaders);
             if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
                 metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
                     .with_label_values(&[&RequestType::get_type().to_string()])
@@ -758,7 +762,7 @@ mod tests {
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE, REQUEST_EXPIRATION_BLOCKS,
     };
     use crate::tests::into_participant_ids;
-    use crate::types::{RequestsUpdate, SignatureRequest};
+    use crate::types::{Request, RequestsUpdate, SignatureRequest};
     use chain_gateway::event_subscriber::recent_blocks_tracker::RecentBlocksTracker;
     use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::{
         TestBlock, TestBlockMaker,
@@ -876,6 +880,7 @@ mod tests {
                 participants.clone(),
                 my_participant_id,
                 network_api.clone(),
+                super::NoRefinement,
             );
             for participant in &participants {
                 network_api.set_height(*participant, 100);
@@ -949,6 +954,17 @@ mod tests {
             &mut self,
             pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
         ) -> u64 {
+            let requests = std::mem::take(&mut self.requests_to_submit);
+            self.update_queue_with(pending, requests)
+        }
+
+        /// Like [`Self::update`], but delivers explicitly provided requests to a
+        /// queue of any request type.
+        fn update_queue_with<R: Request + Clone>(
+            &mut self,
+            pending: &mut PendingRequests<R, TestRequestRespondArgs>,
+            requests: Vec<R>,
+        ) -> u64 {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
             let block_status = self
@@ -956,13 +972,11 @@ mod tests {
                 .add_block(&new_block.to_block_view())
                 .block_status;
             let update = RequestsUpdate {
-                requests: self.requests_to_submit.clone(),
-                completed_requests: self.responses_to_submit.clone(),
+                requests,
+                completed_requests: std::mem::take(&mut self.responses_to_submit),
                 block_height: new_height.into(),
                 block_status,
             };
-            self.requests_to_submit = Vec::new();
-            self.responses_to_submit = Vec::new();
             self.head = new_block;
             pending.notify_new_block(update);
             new_height
@@ -1416,10 +1430,10 @@ mod tests {
         allowed: Arc<Mutex<HashSet<ParticipantId>>>,
     }
 
-    impl super::RefineEligibleLeaders<TestRequest> for TestRefiner {
+    impl super::RefineEligibleLeaders<RefinedRequest> for TestRefiner {
         fn refine(
             &self,
-            _request: &TestRequest,
+            _request: &RefinedRequest,
             eligible: &HashSet<ParticipantId>,
         ) -> HashSet<ParticipantId> {
             eligible & &self.allowed.lock().unwrap()
@@ -1434,39 +1448,81 @@ mod tests {
         }
     }
 
+    /// A [`TestRequest`] whose leadership is narrowed by [`TestRefiner`].
+    #[derive(Clone)]
+    struct RefinedRequest(TestRequest);
+
+    impl Request for RefinedRequest {
+        type Refiner = TestRefiner;
+
+        fn get_id(&self) -> crate::types::RequestId {
+            self.0.get_id()
+        }
+
+        fn get_receipt_id(&self) -> CryptoHash {
+            self.0.get_receipt_id()
+        }
+
+        fn get_entropy(&self) -> [u8; 32] {
+            self.0.get_entropy()
+        }
+
+        fn get_timestamp_nanosec(&self) -> u64 {
+            self.0.get_timestamp_nanosec()
+        }
+
+        fn get_domain_id(&self) -> DomainId {
+            self.0.get_domain_id()
+        }
+
+        fn get_type() -> crate::types::RequestType {
+            TestRequest::get_type()
+        }
+    }
+
+    fn new_refined_pending_requests(
+        setup: &TestSetup,
+        refiner: TestRefiner,
+    ) -> PendingRequests<RefinedRequest, TestRequestRespondArgs> {
+        PendingRequests::new(
+            setup.clock.clock(),
+            setup.participant_ids.clone(),
+            setup.participant_ids[TestSetup::MY_INDEX],
+            setup.network_api.clone(),
+            refiner,
+        )
+    }
+
     /// A request's leader order starts with participant 0 and then us; the refiner
     /// excludes participant 0, so leadership falls to us and we attempt the request.
     #[test_log::test]
     #[expect(non_snake_case)]
     fn get_requests_to_attempt__should_reroute_leadership_when_refiner_excludes_first_leader() {
         // Given
-        let (pending_requests, mut setup) = TestSetup::new();
+        let (_, mut setup) = TestSetup::new();
         let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
-        let refiner = TestRefiner::new(allowed);
-        let mut pending_requests =
-            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
-        let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
-        setup.update(&mut pending_requests);
+        let mut pending_requests = new_refined_pending_requests(&setup, TestRefiner::new(allowed));
+        let req = make_request(&setup.participant_ids, &[0, TestSetup::MY_INDEX]);
+        setup.update_queue_with(&mut pending_requests, vec![RefinedRequest(req.clone())]);
 
         // When
         let to_attempt = pending_requests.get_requests_to_attempt();
 
         // Then
         assert_eq!(to_attempt.len(), 1);
-        assert_eq!(to_attempt[0].request.id, req.id);
+        assert_eq!(to_attempt[0].request.0.id, req.id);
     }
 
     #[test_log::test]
     #[expect(non_snake_case)]
     fn get_requests_to_attempt__should_park_request_until_refiner_allows_a_leader() {
         // Given
-        let (pending_requests, mut setup) = TestSetup::new();
+        let (_, mut setup) = TestSetup::new();
         let refiner = TestRefiner::new(HashSet::new());
         let allowed = refiner.allowed.clone();
-        let mut pending_requests =
-            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
-        let req = setup.add_request_leader();
-        setup.update(&mut pending_requests);
+        let mut pending_requests = new_refined_pending_requests(&setup, refiner);
+        let req = make_request(&setup.participant_ids, &[TestSetup::MY_INDEX]);
+        setup.update_queue_with(&mut pending_requests, vec![RefinedRequest(req.clone())]);
 
         // When
         let to_attempt = pending_requests.get_requests_to_attempt();
@@ -1482,6 +1538,6 @@ mod tests {
 
         // Then
         assert_eq!(to_attempt.len(), 1);
-        assert_eq!(to_attempt[0].request.id, req.id);
+        assert_eq!(to_attempt[0].request.0.id, req.id);
     }
 }

@@ -16,9 +16,11 @@ use near_mpc_contract_interface::types as dtos;
 
 use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 
+use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
 use crate::indexer::handler::{
     CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
 };
+use crate::requests::queue::{NoRefinement, RefineEligibleLeaders};
 
 pub(crate) struct RequestsUpdate<T> {
     pub(crate) requests: Vec<T>,
@@ -61,7 +63,11 @@ pub type RequestId = CryptoHash;
 
 /// The trait that defines common functionality of MPC requests:
 /// currently CKD and signatures
-pub trait Request {
+pub trait Request: Sized {
+    /// Narrows the eligible-leader set per request; [`NoRefinement`] when
+    /// leadership is unrestricted.
+    type Refiner: RefineEligibleLeaders<Self>;
+
     fn get_id(&self) -> RequestId;
     fn get_receipt_id(&self) -> CryptoHash;
     fn get_entropy(&self) -> [u8; 32];
@@ -190,6 +196,8 @@ impl FromChain<VerifyForeignTxRequestFromChain> for VerifyForeignTxRequest {
 }
 
 impl Request for CKDRequest {
+    type Refiner = NoRefinement;
+
     fn get_id(&self) -> RequestId {
         self.id
     }
@@ -216,6 +224,8 @@ impl Request for CKDRequest {
 }
 
 impl Request for SignatureRequest {
+    type Refiner = NoRefinement;
+
     fn get_id(&self) -> RequestId {
         self.id
     }
@@ -242,6 +252,8 @@ impl Request for SignatureRequest {
 }
 
 impl Request for VerifyForeignTxRequest {
+    type Refiner = ForeignChainLeadersRefiner;
+
     fn get_id(&self) -> RequestId {
         self.id
     }

@@ -13,7 +13,7 @@ use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTa
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
-    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
+    CHECK_EACH_REQUEST_INTERVAL, NoRefinement, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
@@ -258,17 +258,16 @@ impl MpcClient {
                 self.client.all_participant_ids(),
                 self.client.my_participant_id(),
                 self.client.clone(),
+                NoRefinement,
             );
         let mut pending_ckds = PendingRequests::<CKDRequest, contract_args::CKDRespondArgs>::new(
             Clock::real(),
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
+            NoRefinement,
         );
 
-        let eligible_leaders_refiner = self
-            .verify_foreign_tx_provider
-            .new_eligible_leaders_refiner();
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
@@ -277,8 +276,9 @@ impl MpcClient {
             self.client.all_participant_ids(),
             self.client.my_participant_id(),
             self.client.clone(),
-        )
-        .with_eligible_leaders_refiner(Box::new(eligible_leaders_refiner));
+            self.verify_foreign_tx_provider
+                .new_eligible_leaders_refiner(),
+        );
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();

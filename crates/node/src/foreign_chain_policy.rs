@@ -136,7 +136,7 @@ fn resolve_participant_ids(
 /// only elected when a quorum of supporters is eligible, so an under-quorum
 /// request parks instead of burning attempts that cannot find a compatible
 /// presignature.
-pub(crate) struct ForeignChainLeadersRefiner {
+pub struct ForeignChainLeadersRefiner {
     supporters_receiver: watch::Receiver<SupportersByForeignChain>,
     /// [`foreign_tx_reconstruction_threshold`] of the running domains, `None`
     /// when there is no ForeignTx domain (the snapshot is then always empty).
