@@ -17,35 +17,12 @@ use near_mpc_contract_interface::method_names::{
 use near_mpc_contract_interface::types::{
     AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey,
 };
-use serde::Deserialize;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 
-// TODO(#3751): drop this struct after upgrading the contract.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-enum AllowedDockerImageHashesResponse {
-    WithExpiry(Vec<AllowedMpcDockerImageHash>),
-    Legacy(Vec<DockerImageHash>),
-}
-
-impl AllowedDockerImageHashesResponse {
-    /// Entries newest first; [`Legacy`](AllowedDockerImageHashesResponse::Legacy) hashes have no expiry timestamp.
-    fn into_entries(self) -> Vec<AllowedMpcDockerImageHash> {
-        match self {
-            Self::WithExpiry(entries) => entries,
-            Self::Legacy(hashes) => hashes
-                .into_iter()
-                .map(|image_hash| AllowedMpcDockerImageHash {
-                    image_hash,
-                    expiry_timestamp_seconds: None,
-                })
-                .collect(),
-        }
-    }
-}
+type AllowedDockerImageHashesResponse = Vec<AllowedMpcDockerImageHash>;
 
 /// Shared TEE attestation lifecycle context.
 ///
@@ -191,7 +168,7 @@ async fn watch_hashes(
     };
 
     tx.send_modify(|h| {
-        h.allowed_docker_image_hashes = image.value.into_entries();
+        h.allowed_docker_image_hashes = image.value;
         h.allowed_launcher_compose_hashes = launcher.value;
     });
 
@@ -207,7 +184,7 @@ async fn watch_hashes(
                     break;
                 }
                 match image_sub.latest() {
-                    Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value.into_entries()),
+                    Ok(observed) => tx.send_modify(|h| h.allowed_docker_image_hashes = observed.value),
                     Err(err) => tracing::warn!(%err, "failed to read latest docker image hashes"),
                 }
             }
@@ -236,10 +213,11 @@ mod tests {
         types::LatestFinalBlockInfo,
     };
     use ed25519_dalek::SigningKey;
-    use mpc_primitives::hash::{DockerImageHash, LauncherDockerComposeHash};
+    use mpc_primitives::hash::LauncherDockerComposeHash;
     use near_account_id::AccountId;
     use near_contract_transport::ObservedState;
     use near_mpc_contract_interface::client::MpcContractHandleError;
+    use near_mpc_contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES;
     use near_mpc_contract_interface::types::{
         AllowedMpcDockerImageHash, Attestation, Ed25519PublicKey, MockAttestation,
     };
@@ -248,8 +226,12 @@ mod tests {
     /// Block height returned by [`MockChainState`] view responses.
     const MOCK_BLOCK_HEIGHT: u64 = 1;
 
-    /// Arbitrary 32-byte digests reused as both image and launcher hashes in tests.
-    const ALLOWED_HASH_BYTES: [[u8; 32]; 3] = [[1u8; 32], [2u8; 32], [3u8; 32]];
+    /// Arbitrary digests reused as both image and launcher hashes.
+    const ALLOWED_HASHES: [([u8; 32], Option<u64>); 3] = [
+        ([1u8; 32], None),
+        ([2u8; 32], Some(1)),
+        ([3u8; 32], Some(2)),
+    ];
 
     /// NEAR account ID of the governance contract used in tests.
     const GOVERNANCE_ACCOUNT: &str = "governance.testnet";
@@ -258,34 +240,35 @@ mod tests {
         GOVERNANCE_ACCOUNT.parse().unwrap()
     }
 
-    fn allowed_image_hashes() -> Vec<DockerImageHash> {
-        ALLOWED_HASH_BYTES.map(DockerImageHash::from).to_vec()
-    }
-
-    fn entries_without_expiry(hashes: Vec<DockerImageHash>) -> Vec<AllowedMpcDockerImageHash> {
-        hashes
-            .into_iter()
-            .map(|image_hash| AllowedMpcDockerImageHash {
-                image_hash,
-                expiry_timestamp_seconds: None,
+    fn allowed_image_hashes() -> Vec<AllowedMpcDockerImageHash> {
+        ALLOWED_HASHES
+            .map(|(hash, expiry)| AllowedMpcDockerImageHash {
+                image_hash: hash.into(),
+                expiry_timestamp_seconds: expiry,
             })
-            .collect()
-    }
-
-    fn allowed_launcher_hashes() -> Vec<LauncherDockerComposeHash> {
-        ALLOWED_HASH_BYTES
-            .map(LauncherDockerComposeHash::from)
             .to_vec()
     }
 
+    fn allowed_launcher_hashes() -> Vec<LauncherDockerComposeHash> {
+        ALLOWED_HASHES.map(|(hash, _)| hash.into()).to_vec()
+    }
+
     fn mock_chain() -> MockChainState {
-        MockChainStateBuilder::new()
+        let mock = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
             .with_view_response(Ok(ObservedState {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
                 value: serde_json::to_vec(&allowed_image_hashes()).unwrap(),
             }))
-            .build()
+            .build();
+        mock.set_view_response_for_method(
+            ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
+            }),
+        );
+        mock
     }
 
     fn test_signer() -> TransactionSigner {
@@ -313,13 +296,20 @@ mod tests {
             .with_latest_block(latest_block)
             .with_signed_transaction_submitter_response(submit_response)
             .build();
+        mock.set_view_response_for_method(
+            ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
+            }),
+        );
         TeeContext::new(mock, governance_account(), test_signer())
             .await
             .unwrap()
     }
 
     async fn create_test_context() -> (TeeContext<MockChainState>, MockChainState) {
-        let mock_chain_state = MockChainStateBuilder::new()
+        let mock = MockChainStateBuilder::new()
             .with_syncing_status(Ok(false))
             .with_view_response(Ok(ObservedState {
                 observed_at: MOCK_BLOCK_HEIGHT.into(),
@@ -328,14 +318,17 @@ mod tests {
             .with_latest_block(Ok(default_block_info()))
             .with_signed_transaction_submitter_response(Ok(()))
             .build();
-        let ctx = TeeContext::new(
-            mock_chain_state.clone(),
-            governance_account(),
-            test_signer(),
-        )
-        .await
-        .unwrap();
-        (ctx, mock_chain_state)
+        mock.set_view_response_for_method(
+            ALLOWED_LAUNCHER_COMPOSE_HASHES,
+            Ok(ObservedState {
+                observed_at: MOCK_BLOCK_HEIGHT.into(),
+                value: serde_json::to_vec(&allowed_launcher_hashes()).unwrap(),
+            }),
+        );
+        let ctx = TeeContext::new(mock.clone(), governance_account(), test_signer())
+            .await
+            .unwrap();
+        (ctx, mock)
     }
 
     macro_rules! assert_call_error {
@@ -357,7 +350,7 @@ mod tests {
         assert_eq!(
             *ctx.watch_allowed_tee_hashes().borrow(),
             AllowedTeeHashes {
-                allowed_docker_image_hashes: entries_without_expiry(allowed_image_hashes()),
+                allowed_docker_image_hashes: allowed_image_hashes(),
                 allowed_launcher_compose_hashes: allowed_launcher_hashes(),
             }
         );
@@ -504,12 +497,15 @@ mod tests {
         let (tx, mut rx) = watch::channel(AllowedTeeHashes::default());
 
         let updated_bytes = [99u8; 32];
-        let updated_image = vec![DockerImageHash::from(updated_bytes)];
+        let updated_image = vec![AllowedMpcDockerImageHash {
+            image_hash: updated_bytes.into(),
+            expiry_timestamp_seconds: Some(99),
+        }];
         let updated_launcher = vec![LauncherDockerComposeHash::from(updated_bytes)];
 
         let cancel_clone = cancel.clone();
         let mock_clone = mock.clone();
-        let expected_image = entries_without_expiry(updated_image.clone());
+        let expected_image = updated_image.clone();
         tokio::select! {
             _ = watch_hashes(mock, governance_account(), tx, cancel) => {}
             _ = async {
@@ -520,6 +516,13 @@ mod tests {
                     observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
                     value: serde_json::to_vec(&updated_image).unwrap(),
                 })).await;
+                mock_clone.set_view_response_for_method(
+                    ALLOWED_LAUNCHER_COMPOSE_HASHES,
+                    Ok(ObservedState {
+                        observed_at: (MOCK_BLOCK_HEIGHT + 1).into(),
+                        value: serde_json::to_vec(&updated_launcher).unwrap(),
+                    }),
+                );
                 tokio::time::sleep(chain_gateway::state_viewer::POLL_INTERVAL * 3).await;
                 rx.changed().await.unwrap();
                 cancel_clone.cancel();
