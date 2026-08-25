@@ -11,7 +11,7 @@ use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
-use foreign_chain_inspector::evm::inspector::EvmInspector;
+use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
@@ -122,10 +122,10 @@ where
     let probe_attempts = config
         .iter_chains()
         .map(|(chain, chain_config)| async move {
-            let Some(probe) = chain_probe(chain) else {
+            if new_rpc_inspector(chain).is_none() {
                 return rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented);
-            };
-            probe_chain(chain, chain_config, probe.canonicalize, |provider| {
+            }
+            probe_chain(chain, chain_config, |provider| {
                 new_inspector(chain, chain_config, provider)
             })
             .await
@@ -137,75 +137,54 @@ where
         .into()
 }
 
-/// One match arm of [`chain_probe`] binds a chain's canonicalizer to its constructor, so the two
-/// cannot drift apart.
-struct ChainProbe {
-    canonicalize: fn(&str) -> NetworkFingerprint,
-    new_inspector:
-        fn(&ForeignChainConfig, &ForeignChainProviderConfig) -> anyhow::Result<RpcInspector>,
+/// Builds one provider's inspector for a chain whose probe exists.
+type NewRpcInspector =
+    fn(&ForeignChainConfig, &ForeignChainProviderConfig) -> anyhow::Result<RpcInspector>;
+
+/// How to build a chain's inspector, or `None` when no probe exists for the chain. The single
+/// source of truth for which chains the probe covers.
+fn new_rpc_inspector(chain: ForeignChain) -> Option<NewRpcInspector> {
+    Some(match chain {
+        ForeignChain::Starknet => |_, provider| {
+            Ok(RpcInspector::Starknet(StarknetInspector::new(
+                prepare_jsonrpc(provider)?,
+            )))
+        },
+        ForeignChain::Abstract => |_, provider| Ok(RpcInspector::Abstract(new_evm(provider)?)),
+        ForeignChain::Adi => |_, provider| Ok(RpcInspector::Adi(new_evm(provider)?)),
+        ForeignChain::Arbitrum => |_, provider| Ok(RpcInspector::Arbitrum(new_evm(provider)?)),
+        ForeignChain::Avalanche => |_, provider| Ok(RpcInspector::Avalanche(new_evm(provider)?)),
+        ForeignChain::Base => |_, provider| Ok(RpcInspector::Base(new_evm(provider)?)),
+        ForeignChain::Bnb => |_, provider| Ok(RpcInspector::Bnb(new_evm(provider)?)),
+        ForeignChain::HyperEvm => |_, provider| Ok(RpcInspector::HyperEvm(new_evm(provider)?)),
+        ForeignChain::Polygon => |_, provider| Ok(RpcInspector::Polygon(new_evm(provider)?)),
+        ForeignChain::Bitcoin => |_, provider| {
+            Ok(RpcInspector::Bitcoin(BitcoinInspector::new(
+                prepare_jsonrpc(provider)?,
+            )))
+        },
+        ForeignChain::Aptos => |chain_config, provider| {
+            let (url, auth_header) = prepare_aptos(provider)?;
+            Ok(RpcInspector::Aptos(AptosInspector::new(
+                ReqwestAptosClient::new(url, auth_header, timeout_of(chain_config)),
+            )))
+        },
+        ForeignChain::Sui => |chain_config, provider| {
+            Ok(RpcInspector::Sui(SuiInspector::new(prepare_sui(
+                provider,
+                timeout_of(chain_config),
+            )?)))
+        },
+        // Ethereum, Solana and Ton have no inspector to probe them with.
+        _ => return None,
+    })
 }
 
-fn chain_probe(chain: ForeignChain) -> Option<ChainProbe> {
-    // The EVM chains differ only in their marker type; one probe shape serves them all.
-    macro_rules! evm_probe {
-        ($chain:ident) => {
-            Some(ChainProbe {
-                canonicalize: EvmInspector::<HttpClient, $chain>::canonical_fingerprint,
-                new_inspector: |_, provider| {
-                    Ok(RpcInspector::$chain(EvmInspector::new(prepare_jsonrpc(
-                        provider,
-                    )?)))
-                },
-            })
-        };
-    }
-
-    match chain {
-        ForeignChain::Starknet => Some(ChainProbe {
-            canonicalize: StarknetInspector::<HttpClient>::canonical_fingerprint,
-            new_inspector: |_, provider| {
-                Ok(RpcInspector::Starknet(StarknetInspector::new(
-                    prepare_jsonrpc(provider)?,
-                )))
-            },
-        }),
-        ForeignChain::Abstract => evm_probe!(Abstract),
-        ForeignChain::Adi => evm_probe!(Adi),
-        ForeignChain::Arbitrum => evm_probe!(Arbitrum),
-        ForeignChain::Avalanche => evm_probe!(Avalanche),
-        ForeignChain::Base => evm_probe!(Base),
-        ForeignChain::Bnb => evm_probe!(Bnb),
-        ForeignChain::HyperEvm => evm_probe!(HyperEvm),
-        ForeignChain::Polygon => evm_probe!(Polygon),
-        ForeignChain::Bitcoin => Some(ChainProbe {
-            canonicalize: BitcoinInspector::<HttpClient>::canonical_fingerprint,
-            new_inspector: |_, provider| {
-                Ok(RpcInspector::Bitcoin(BitcoinInspector::new(
-                    prepare_jsonrpc(provider)?,
-                )))
-            },
-        }),
-        ForeignChain::Aptos => Some(ChainProbe {
-            canonicalize: AptosInspector::<ReqwestAptosClient>::canonical_fingerprint,
-            new_inspector: |chain_config, provider| {
-                let (url, auth_header) = prepare_aptos(provider)?;
-                Ok(RpcInspector::Aptos(AptosInspector::new(
-                    ReqwestAptosClient::new(url, auth_header, timeout_of(chain_config)),
-                )))
-            },
-        }),
-        ForeignChain::Sui => Some(ChainProbe {
-            canonicalize: SuiInspector::<GrpcSuiClient>::canonical_fingerprint,
-            new_inspector: |chain_config, provider| {
-                Ok(RpcInspector::Sui(SuiInspector::new(prepare_sui(
-                    provider,
-                    timeout_of(chain_config),
-                )?)))
-            },
-        }),
-        // Ethereum, Solana and Ton have no inspector to probe them with.
-        _ => None,
-    }
+/// The EVM chains differ only in their marker type, which the caller's variant fixes.
+fn new_evm<Chain: EvmChain>(
+    provider: &ForeignChainProviderConfig,
+) -> anyhow::Result<EvmInspector<HttpClient, Chain>> {
+    Ok(EvmInspector::new(prepare_jsonrpc(provider)?))
 }
 
 /// The inspector for one provider, backed by a real RPC client, as [`rpc_inspector`] builds it.
@@ -244,6 +223,23 @@ impl NetworkFingerprintInspector for RpcInspector {
             Self::Sui(inspector) => inspector.network_fingerprint().await,
         }
     }
+
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
+        match self {
+            Self::Starknet(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Abstract(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Adi(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Arbitrum(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Avalanche(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Base(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Bnb(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::HyperEvm(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Polygon(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Bitcoin(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Aptos(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Sui(inspector) => inspector.canonical_fingerprint(fingerprint),
+        }
+    }
 }
 
 /// Build the inspector that asks a provider's real RPC endpoint for its network fingerprint.
@@ -254,16 +250,15 @@ pub fn rpc_inspector(
     chain_config: &ForeignChainConfig,
     provider: &ForeignChainProviderConfig,
 ) -> anyhow::Result<RpcInspector> {
-    let Some(probe) = chain_probe(chain) else {
+    let Some(new_inspector) = new_rpc_inspector(chain) else {
         anyhow::bail!("no probe exists for {chain:?}");
     };
-    (probe.new_inspector)(chain_config, provider)
+    new_inspector(chain_config, provider)
 }
 
 async fn probe_chain<I>(
     chain: ForeignChain,
     config: &ForeignChainConfig,
-    canonicalize: fn(&str) -> NetworkFingerprint,
     new_inspector: impl Fn(&ForeignChainProviderConfig) -> anyhow::Result<I>,
 ) -> Vec<ProviderHealth>
 where
@@ -272,7 +267,6 @@ where
     let Some(expected) = &config.expected_network_fingerprint else {
         return rows_of(chain, config, ProviderStatus::MissingExpectedFingerprint);
     };
-    let expected = canonicalize(expected);
 
     let mut inspectors = Vec::new();
     let mut rows = Vec::new();
@@ -291,6 +285,8 @@ where
     let Ok(inspectors) = NonEmptyVec::try_from(inspectors) else {
         return rows;
     };
+    // Every provider of a chain normalizes alike, so any one of them speaks for the chain.
+    let expected = inspectors.first().1.canonical_fingerprint(expected);
 
     let fingerprints = FanOut::new(inspectors)
         .network_fingerprints(timeout_of(config), config.max_retries)

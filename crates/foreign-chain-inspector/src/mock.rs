@@ -88,4 +88,9 @@ impl NetworkFingerprintInspector for ScriptedInspector {
             ScriptedReply::Hang => std::future::pending().await,
         }
     }
+
+    /// Identity: tests script the exact canonical string they assert.
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(fingerprint)
+    }
 }
