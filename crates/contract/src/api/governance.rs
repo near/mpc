@@ -143,7 +143,7 @@ mod tests {
         contract: &mut MpcContract,
         first_participant_id: &AccountId,
         participants: Participants,
-        threshold: GovernanceThreshold,
+        governance_threshold: GovernanceThreshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
@@ -153,7 +153,7 @@ mod tests {
         testing_env!(voting_context);
 
         let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, threshold).unwrap(),
+            GovernanceThresholdParameters::new(participants, governance_threshold).unwrap(),
             BTreeMap::new(),
         );
         contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
@@ -253,13 +253,13 @@ mod tests {
         );
     }
 
-    /// Builds a Running contract with `num_participants` participants, signing
-    /// threshold `threshold`, and a single CaitSith [`Sign`] domain whose
-    /// reconstruction threshold is `reconstruction_threshold`.
+    /// Builds a Running contract with `num_participants` participants, the given
+    /// governance threshold, and a single CaitSith [`Sign`] domain with the given
+    /// reconstruction threshold.
     fn setup_running_contract_with_domain(
         num_participants: usize,
-        threshold: u64,
-        reconstruction_threshold: u64,
+        governance_threshold: GovernanceThreshold,
+        reconstruction_threshold: ReconstructionThreshold,
     ) -> (MpcContract, Participants, AccountId, DomainId) {
         let participants = gen_participants(num_participants);
         let first_participant_id = participants.participants()[0].0.clone();
@@ -271,16 +271,13 @@ mod tests {
                 .build()
         );
 
-        let parameters = GovernanceThresholdParameters::new(
-            participants.clone(),
-            GovernanceThreshold::new(threshold),
-        )
-        .unwrap();
+        let parameters =
+            GovernanceThresholdParameters::new(participants.clone(), governance_threshold).unwrap();
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
             protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(reconstruction_threshold),
+            reconstruction_threshold,
             purpose: DomainPurpose::Sign,
         }];
         let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
@@ -317,8 +314,11 @@ mod tests {
     #[test]
     fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
-        let (mut contract, participants, signer, domain_id) =
-            setup_running_contract_with_domain(3, 2, 2);
+        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
         // ...and a proposal raising that domain's reconstruction threshold to 4.
         let mut per_domain = BTreeMap::new();
         per_domain.insert(domain_id, ReconstructionThreshold::new(4));
@@ -343,8 +343,11 @@ mod tests {
     #[test]
     fn vote_new_parameters__should_reject_when_shrinking_below_governance_threshold() {
         // Given: a Running contract with 4 participants and a GovernanceThreshold of 3.
-        let (mut contract, participants, signer, _domain_id) =
-            setup_running_contract_with_domain(4, 3, 3);
+        let (mut contract, participants, signer, _domain_id) = setup_running_contract_with_domain(
+            4,
+            GovernanceThreshold::new(3),
+            ReconstructionThreshold::new(3),
+        );
         // ...and a proposal that shrinks the participant set to 2 without touching
         // the per-domain thresholds.
         let proposal = ProposedGovernanceThresholdParameters::new(
@@ -372,8 +375,11 @@ mod tests {
     #[test]
     fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
-        let (mut contract, participants, signer, _domain_id) =
-            setup_running_contract_with_domain(3, 2, 2);
+        let (mut contract, participants, signer, _domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
         // ...and a proposal whose signing threshold (4) exceeds the participant set.
         let proposal = ProposedGovernanceThresholdParameters::new(
             GovernanceThresholdParameters::new_unvalidated(
@@ -396,8 +402,11 @@ mod tests {
     #[test]
     fn vote_new_parameters__should_accept_per_domain_threshold_within_participant_count() {
         // Given: a Running contract with 5 participants (GovernanceThreshold 4) and one domain.
-        let (mut contract, participants, signer, domain_id) =
-            setup_running_contract_with_domain(5, 4, 2);
+        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
+            5,
+            GovernanceThreshold::new(4),
+            ReconstructionThreshold::new(2),
+        );
         // ...and a proposal raising the domain's reconstruction threshold to 4,
         // which fits the 5 participants and does not exceed the GovernanceThreshold.
         let mut per_domain = BTreeMap::new();
@@ -418,8 +427,11 @@ mod tests {
     fn vote_new_parameters__should_reject_governance_below_max_reconstruction() {
         // Given: a Running contract with 5 participants, GovernanceThreshold 4, and a
         // domain whose reconstruction threshold is 4.
-        let (mut contract, participants, signer, _domain_id) =
-            setup_running_contract_with_domain(5, 4, 4);
+        let (mut contract, participants, signer, _domain_id) = setup_running_contract_with_domain(
+            5,
+            GovernanceThreshold::new(4),
+            ReconstructionThreshold::new(4),
+        );
         // ...and a proposal lowering the GovernanceThreshold to 3 (valid on its own)
         // while the domain keeps its reconstruction threshold of 4.
         let proposal = ProposedGovernanceThresholdParameters::new(
