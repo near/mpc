@@ -55,7 +55,7 @@ const MAX_ATTEMPTS_PER_REQUEST_AS_LEADER: u64 = 10;
 ///    the queue will adapt to the new state and attempt to find new leaders for the requests.
 ///  - If a request is too old so that it would have timed out on chain, it will be
 ///    discarded.
-pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub struct PendingRequests<RequestType, ChainRespondArgsType> {
     pub(super) clock: near_time::Clock,
 
     /// All participants in the network, regardless of whether they are online.
@@ -150,7 +150,7 @@ enum AggregateResponseStatus {
 }
 
 /// The state of a single request in the queue.
-pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub(super) struct QueuedRequest<RequestType, ChainRespondArgsType> {
     pub request: RequestType,
 
     /// Finality status of the block the request was included in.
@@ -185,7 +185,7 @@ pub(super) struct QueuedRequest<RequestType: Request, ChainRespondArgsType: Chai
 }
 
 /// Struct given to the response generation code.
-pub struct GenerationAttempt<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub struct GenerationAttempt<RequestType, ChainRespondArgsType> {
     /// The request we should attempt to generate for.
     pub request: RequestType,
     /// The progress of the computation. Writable and survives multiple attempts.
@@ -193,7 +193,7 @@ pub struct GenerationAttempt<RequestType: Request, ChainRespondArgsType: ChainRe
 }
 
 /// Progress that persists across attempts.
-pub struct ComputationProgress<ChainRespondArgsType: ChainRespondArgs> {
+pub struct ComputationProgress<ChainRespondArgsType> {
     /// Number of attempts that have been made to generate the request.
     /// This is used to abort after too many attempts.
     pub attempts: u64,
@@ -411,7 +411,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-enum RequestStatus<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+enum RequestStatus<RequestType, ChainRespondArgsType> {
     Drop(DropReason),
     Wait(&'static str),
     Attempt(Arc<GenerationAttempt<RequestType, ChainRespondArgsType>>),
