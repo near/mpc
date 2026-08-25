@@ -2,7 +2,7 @@ use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
 use time::OffsetDateTime;
 
-use dcap_qvl::{policy::PckIdentity, quote::TDReport10};
+use dcap_qvl::{TcbStatus, policy::PckIdentity, quote::TDReport10};
 
 use crate::tcb_status::{self, Report, TcbVerdict};
 use crate::verify::VerificationResult;
@@ -145,6 +145,24 @@ fn print_verdict(label: &str, verdict: &TcbVerdict) {
                     "  {} is {}, needs {} -> {}",
                     shortfall.component, shortfall.have, shortfall.needs, shortfall.remedy
                 );
+            }
+            // Demoted with nothing to raise: either Intel accepts no level for
+            // this platform, or every SVN clears one and the module identity's
+            // own advisories carry the status down.
+            if shortfalls.is_empty() && claims.tcb.status != TcbStatus::UpToDate {
+                if tcb_info
+                    .tcb_levels
+                    .iter()
+                    .all(|level| level.tcb_status != TcbStatus::UpToDate)
+                {
+                    println!(
+                        "  Intel publishes no UpToDate level for this platform, so no SVN upgrade reaches one."
+                    );
+                } else {
+                    println!(
+                        "  Every SVN clears an accepted level; the status comes from the advisories above."
+                    );
+                }
             }
         }
         TcbVerdict::Rejected(reason) => {

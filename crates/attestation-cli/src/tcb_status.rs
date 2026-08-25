@@ -44,7 +44,10 @@ pub enum TcbVerdict {
     Verified {
         tcb_info: TcbInfo,
         claims: QuoteClaims,
-        /// Empty when `UpToDate`, and when no level is accepted at all.
+        /// Empty in three cases: the platform clears an accepted level, Intel
+        /// accepts no level at all, or every SVN clears one and the module
+        /// identity's advisories carry the status down. Only the first is
+        /// `UpToDate`; the other two print a line saying nothing can be raised.
         shortfalls: Vec<Shortfall>,
     },
     /// No status at all. Usually expired collateral in a long-running node's
