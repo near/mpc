@@ -4,11 +4,9 @@ use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
 use ethereum_types::H256;
-use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use jsonrpsee::core::http_helpers::HttpError;
 use jsonrpsee::http_client::transport::Error as HttpTransportError;
-use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
 use thiserror::Error;
@@ -273,19 +271,6 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum RpcAuthentication {
-    /// The key is in the URL (e.g., Alchemy, QuickNode).
-    /// Example: `https://eth-mainnet.alchemyapi.io/v2/your-api-key`
-    KeyInUrl,
-    /// Custom header for providers like NOWNodes or GetBlock.
-    /// Example: key="x-api-key", value="your-secret-token"
-    CustomHeader {
-        header_name: HeaderName,
-        header_value: HeaderValue,
-    },
-}
-
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockConfirmations(u64);
 
@@ -503,32 +488,6 @@ pub enum ProviderFailure {
     /// The provider answered with something the caller could not use.
     Malformed,
     TimedOut,
-}
-
-/// Builds an HTTP client with the specified authentication method.
-/// This client can be used to construct a [`ForeignChainInspector`] such
-/// as [`bitcoin::inspector::BitcoinInspector`].
-pub fn build_http_client(
-    base_url: String,
-    rpc_authentication: RpcAuthentication,
-) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
-    let mut headers = HeaderMap::new();
-
-    match rpc_authentication {
-        RpcAuthentication::KeyInUrl => {}
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => {
-            headers.insert(header_name, header_value);
-        }
-    }
-
-    let client = HttpClientBuilder::default()
-        .set_headers(headers)
-        .build(&base_url)?;
-
-    Ok(client)
 }
 
 #[cfg(test)]

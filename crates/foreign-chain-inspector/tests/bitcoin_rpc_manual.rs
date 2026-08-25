@@ -1,11 +1,12 @@
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
+    BlockConfirmations, ForeignChainInspector, NetworkFingerprintInspector,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
         MAINNET_GENESIS_BLOCK_HASH,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
 };
+use foreign_chain_rpc_client::RpcAuthentication;
 use jsonrpsee::{core::client::ClientT, http_client::HttpClient};
 use rstest::rstest;
 use serde::Deserialize;
@@ -35,7 +36,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider(
     #[case] expected_block_hash: Option<&'static str>,
 ) {
     // given
-    let http_client = foreign_chain_inspector::build_http_client(
+    let http_client = foreign_chain_rpc_client::build_http_client(
         PUBLIC_NODE_URL.to_string(),
         RpcAuthentication::KeyInUrl,
     )
@@ -127,7 +128,7 @@ const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_GENESIS_BLOCK_HASH;
 #[ignore = "manual test to sanity check against live Bitcoin RPC provider"]
 async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
     // given
-    let http_client = foreign_chain_inspector::build_http_client(
+    let http_client = foreign_chain_rpc_client::build_http_client(
         PUBLIC_NODE_URL.to_string(),
         RpcAuthentication::KeyInUrl,
     )

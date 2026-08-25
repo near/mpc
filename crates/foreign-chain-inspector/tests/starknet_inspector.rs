@@ -8,12 +8,12 @@ use crate::common::{
 
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
-    RpcAuthentication, build_http_client,
     starknet::{
         MAINNET_CHAIN_ID, StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
+use foreign_chain_rpc_client::{RpcAuthentication, build_http_client};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::starknet::{

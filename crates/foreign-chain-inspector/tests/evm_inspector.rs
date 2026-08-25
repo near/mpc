@@ -8,11 +8,11 @@ use crate::common::{
 
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
-    NetworkFingerprintInspector, RpcAuthentication,
+    NetworkFingerprintInspector,
     base::inspector::Base,
-    build_http_client,
     evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
 };
+use foreign_chain_rpc_client::{RpcAuthentication, build_http_client};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::evm::{

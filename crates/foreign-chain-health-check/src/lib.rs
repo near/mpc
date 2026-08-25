@@ -14,7 +14,6 @@ mod results;
 use std::future::Future;
 use std::time::Duration;
 
-use foreign_chain_inspector::RpcAuthentication;
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::adi::inspector::Adi;
 use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
@@ -24,7 +23,9 @@ use foreign_chain_inspector::bnb::inspector::Bnb;
 use foreign_chain_inspector::evm::inspector::EvmChain;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
-use foreign_chain_rpc_auth::{auth_config_to_rpc_auth, http_client, sui_client};
+use foreign_chain_rpc_client::{
+    RpcAuthentication, auth_config_to_rpc_auth, http_client, sui_client,
+};
 use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};

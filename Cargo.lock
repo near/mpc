@@ -3971,7 +3971,7 @@ dependencies = [
  "bs58 0.5.1",
  "clap",
  "foreign-chain-inspector",
- "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-client",
  "foreign-chain-rpc-interfaces",
  "futures",
  "hex",
@@ -3994,6 +3994,7 @@ dependencies = [
  "bs58 0.5.1",
  "derive_more 2.1.1",
  "ethereum-types",
+ "foreign-chain-rpc-client",
  "foreign-chain-rpc-interfaces",
  "hex",
  "http",
@@ -4013,14 +4014,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "foreign-chain-rpc-auth"
+name = "foreign-chain-rpc-client"
 version = "3.14.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "foreign-chain-inspector",
  "foreign-chain-rpc-interfaces",
  "http",
+ "jsonrpsee",
  "mpc-node-config",
  "url",
 ]
@@ -6329,7 +6330,7 @@ dependencies = [
  "flume",
  "foreign-chain-health-check",
  "foreign-chain-inspector",
- "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-client",
  "foreign-chain-rpc-interfaces",
  "futures",
  "gcloud-sdk",

@@ -8,14 +8,14 @@ use crate::common::{
 
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
-    NetworkFingerprintInspector, RpcAuthentication,
+    NetworkFingerprintInspector,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
         MAINNET_GENESIS_BLOCK_HASH,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
-    build_http_client,
 };
+use foreign_chain_rpc_client::{RpcAuthentication, build_http_client};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::bitcoin::{

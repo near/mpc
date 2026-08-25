@@ -1,14 +1,56 @@
+//! Turns a foreign chain provider's configuration into a client that can talk to it, with the
+//! provider's credentials already applied.
+
 use std::time::Duration;
 
 use anyhow::Context;
-use foreign_chain_inspector::http_client::HttpClient;
-use foreign_chain_inspector::{RpcAuthentication, build_http_client};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
-use http::{HeaderName, HeaderValue};
+use http::{HeaderMap, HeaderName, HeaderValue};
+use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-/// Convert an [`AuthConfig`] into a [`foreign_chain_inspector::RpcAuthentication`].
+/// How a provider expects its API key to be presented.
+#[derive(Debug, Clone)]
+pub enum RpcAuthentication {
+    /// The key is in the URL (e.g., Alchemy, QuickNode).
+    /// Example: `https://eth-mainnet.alchemyapi.io/v2/your-api-key`
+    KeyInUrl,
+    /// Custom header for providers like NOWNodes or GetBlock.
+    /// Example: key="x-api-key", value="your-secret-token"
+    CustomHeader {
+        header_name: HeaderName,
+        header_value: HeaderValue,
+    },
+}
+
+/// Builds an HTTP client with the specified authentication method, for callers that already
+/// hold a resolved [`RpcAuthentication`]. Most callers want [`http_client`] instead, which
+/// resolves it from a provider's config.
+pub fn build_http_client(
+    base_url: String,
+    rpc_authentication: RpcAuthentication,
+) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
+    let mut headers = HeaderMap::new();
+
+    match rpc_authentication {
+        RpcAuthentication::KeyInUrl => {}
+        RpcAuthentication::CustomHeader {
+            header_name,
+            header_value,
+        } => {
+            headers.insert(header_name, header_value);
+        }
+    }
+
+    let client = HttpClientBuilder::default()
+        .set_headers(headers)
+        .build(&base_url)?;
+
+    Ok(client)
+}
+
+/// Convert an [`AuthConfig`] into an [`RpcAuthentication`].
 ///
 /// Shared by the MPC node and the foreign-chain config tester so both exercise the
 /// exact same URL/auth handling. It lives in its own crate (rather than the

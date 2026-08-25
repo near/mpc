@@ -1,11 +1,12 @@
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector,
     arbitrum::{
         ArbitrumBlockHash, ArbitrumTransactionHash, MAINNET_CHAIN_ID,
         inspector::{ArbitrumExtractedValue, ArbitrumExtractor, ArbitrumInspector},
     },
 };
+use foreign_chain_rpc_client::RpcAuthentication;
 
 const ARBITRUM_RPC_URL: &str = "https://arb1.arbitrum.io/rpc";
 
@@ -26,7 +27,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
             .parse()
             .unwrap();
 
-    let http_client = foreign_chain_inspector::build_http_client(
+    let http_client = foreign_chain_rpc_client::build_http_client(
         ARBITRUM_RPC_URL.to_string(),
         RpcAuthentication::KeyInUrl,
     )
@@ -66,7 +67,7 @@ const EXPECTED_NETWORK_FINGERPRINT: u64 = MAINNET_CHAIN_ID;
 #[ignore = "manual test to sanity check against live Arbitrum RPC provider"]
 async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
     // given
-    let http_client = foreign_chain_inspector::build_http_client(
+    let http_client = foreign_chain_rpc_client::build_http_client(
         ARBITRUM_RPC_URL.to_string(),
         RpcAuthentication::KeyInUrl,
     )

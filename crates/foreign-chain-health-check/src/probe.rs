@@ -28,7 +28,7 @@ use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
 use crate::timeout_of;
-use foreign_chain_rpc_auth::{aptos_client, http_client, sui_client};
+use foreign_chain_rpc_client::{aptos_client, http_client, sui_client};
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
