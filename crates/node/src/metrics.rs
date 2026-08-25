@@ -479,3 +479,22 @@ pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVe
 
 pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
 pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
+
+pub static MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_attestation_expiry_timestamp_seconds",
+            "Unix time at which the attestation stored on chain for this node's TLS key expires \
+             (-1 if the stored attestation carries no expiry, 0 if none is stored)"
+        )
+        .unwrap()
+    });
+
+pub static MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_attestation_last_landed_timestamp_seconds",
+            "Unix time at which this node last confirmed an attestation submission landed on chain"
+        )
+        .unwrap()
+    });

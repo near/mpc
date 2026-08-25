@@ -30,6 +30,15 @@ serves keyshares over the migration service to the backup service registered for
 | [`mpc_last_backup_served_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last keyshare set served to the backup service | should be recent. A large gap since the last resharing means backups are not being taken. Confirms the node served the keyshares, not that the backup service persisted them. |
 | [`mpc_current_epoch_id`](../../crates/node/src/metrics.rs) | epoch id of the keyset the contract currently holds | the reference point for `mpc_last_backup_served_epoch`. Increments on every resharing; unset until the first keyset exists. During a resharing it stays at the old epoch, which is the one still available to back up. |
 
+Attestation freshness, in [`metrics.rs`](../../crates/node/src/metrics.rs). Set from the
+on-chain confirmation of an attestation submission, in
+[`attestation_freshness_metrics.rs`](../../crates/node/src/tee/attestation_freshness_metrics.rs):
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. Only a confirmed landing advances it, so the gap to now is how long re-attestation has been failing, wherever it broke. One failed attempt is absorbed by the next tick; a growing gap ends in eviction from the participant set. |
+| [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time at which the attestation the contract stores for this node's TLS key expires | should sit a full expiry window ahead of chain time and step forward hourly. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry (legacy entries only; the contract stamps every attestation it accepts). Compare against `mpc_indexer_latest_block_timestamp_seconds`, the clock the contract expires entries against. |
+
 ## Recommended alerts
 
 ```promql
@@ -55,4 +64,28 @@ time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
 # been served to the backup service since. Also fires if the node has never served
 # a backup, since the gauge starts at 0.
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
+
+# Re-attestation stuck (warn): nothing landed in three re-attestation intervals.
+# A single failed attempt is absorbed by the next tick and never reaches this.
+time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 1h
+
+# Attestation about to expire (page): under 40% of the 7d window left before the
+# contract drops this node. Measured against chain time, the clock the contract
+# compares against. Keep the threshold a fraction of the configured window rather
+# than a fixed duration. `> 0` drops the sentinels so they are not read as
+# timestamps.
+mpc_attestation_expiry_timestamp_seconds > 0
+  and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
+      < 0.4 * 604800  for 15m
+
+# No attestation stored (page): the contract holds nothing for our TLS key, so this
+# node is out of the attested set. Also covers a node that never landed one.
+mpc_attestation_expiry_timestamp_seconds == 0  for 15m
+```
+
+One failing node or a fleet-wide cause (Intel's PCCS and its collateral, usually)? Count
+the affected nodes:
+
+```promql
+count(time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600)
 ```
