@@ -1,4 +1,3 @@
-use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
@@ -267,12 +266,9 @@ impl MpcClient {
             self.client.clone(),
         );
 
-        let eligible_leaders_refiner = ForeignChainLeadersRefiner::new(
-            self.verify_foreign_tx_provider
-                .supporters_by_foreign_chain(),
-            self.verify_foreign_tx_provider
-                .foreign_tx_reconstruction_threshold(),
-        );
+        let eligible_leaders_refiner = self
+            .verify_foreign_tx_provider
+            .new_eligible_leaders_refiner();
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,

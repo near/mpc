@@ -1,6 +1,6 @@
 mod sign;
 
-use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::EcdsaSignatureProvider;
@@ -202,12 +202,11 @@ impl VerifyForeignTxProvider {
         })
     }
 
-    pub(crate) fn supporters_by_foreign_chain(&self) -> watch::Receiver<SupportersByForeignChain> {
-        self.supporters_by_foreign_chain.clone()
-    }
-
-    pub(crate) fn foreign_tx_reconstruction_threshold(&self) -> Option<ReconstructionThreshold> {
-        self.foreign_tx_reconstruction_threshold
+    pub(crate) fn new_eligible_leaders_refiner(&self) -> ForeignChainLeadersRefiner {
+        ForeignChainLeadersRefiner::new(
+            self.supporters_by_foreign_chain.clone(),
+            self.foreign_tx_reconstruction_threshold,
+        )
     }
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
