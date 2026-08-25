@@ -119,7 +119,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         const NUM_PARTICIPANTS: usize = 4;
         const RECONSTRUCTION_THRESHOLD: usize = 3;
-        let reconstruction_threshold = ReconstructionThreshold::from(RECONSTRUCTION_THRESHOLD); 
+        let reconstruction_threshold = ReconstructionThreshold::from(RECONSTRUCTION_THRESHOLD);
         let participants = generate_participants_with_random_ids(NUM_PARTICIPANTS, &mut rng);
         let old_participants = into_participant_ids(&participants);
         let keygens: std::collections::HashMap<_, _> =
