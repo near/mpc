@@ -189,11 +189,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         let indexer_heights = self.network_api.indexer_heights();
 
         for request in self.requests.values() {
-            let request_eligible_leaders = super::queue::eligible_leaders_for(
-                self.refine_eligible_leaders.as_deref(),
-                &request.request,
-                &eligible_leaders,
-            );
+            let request_eligible_leaders = match &self.refine_eligible_leaders {
+                Some(refiner) => refiner.refine(&request.request, &eligible_leaders),
+                None => eligible_leaders.clone(),
+            };
             let debug_line = request.debug_print(
                 &self.clock,
                 self.my_participant_id,

@@ -10,7 +10,6 @@ use near_indexer_primitives::CryptoHash;
 use near_indexer_primitives::types::NumBlocks;
 use near_time::Duration;
 use sha3::Digest;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
@@ -47,18 +46,6 @@ pub trait RefineEligibleLeaders<RequestType>: Send {
         request: &RequestType,
         eligible: &HashSet<ParticipantId>,
     ) -> HashSet<ParticipantId>;
-}
-
-/// The eligible leaders for `request`: `eligible` narrowed by `refiner` when one is set.
-pub(super) fn eligible_leaders_for<'a, RequestType>(
-    refiner: Option<&dyn RefineEligibleLeaders<RequestType>>,
-    request: &RequestType,
-    eligible: &'a HashSet<ParticipantId>,
-) -> Cow<'a, HashSet<ParticipantId>> {
-    match refiner {
-        Some(refiner) => Cow::Owned(refiner.refine(request, eligible)),
-        None => Cow::Borrowed(eligible),
-    }
 }
 
 /// Manages the queue of requests that still need to be handled.
@@ -670,11 +657,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            let request_eligible_leaders = eligible_leaders_for(
-                self.refine_eligible_leaders.as_deref(),
-                &request.request,
-                &eligible_leaders,
-            );
+            let request_eligible_leaders = match &self.refine_eligible_leaders {
+                Some(refiner) => refiner.refine(&request.request, &eligible_leaders),
+                None => eligible_leaders.clone(),
+            };
             if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
                 metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
                     .with_label_values(&[&RequestType::get_type().to_string()])
