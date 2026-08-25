@@ -201,9 +201,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        let Some((description, outcome)) = tracking::first_task_exit(background_tasks).await else {
-            return Ok(());
-        };
+        let (description, outcome) = tracking::first_task_exit(background_tasks).await;
         // Generators never return, so any exit is a failure.
         let Err(join_error) = outcome;
         anyhow::bail!(

@@ -102,15 +102,18 @@ where
 }
 
 /// Resolves when the first of `tasks` exits, yielding its description and outcome and
-/// aborting the rest. `None` if `tasks` is empty.
+/// aborting the rest. Never resolves if `tasks` is empty.
 pub async fn first_task_exit<R>(
     tasks: Vec<(String, AutoAbortTask<R>)>,
-) -> Option<(String, Result<R, JoinError>)> {
+) -> (String, Result<R, JoinError>) {
     let mut running = tasks
         .into_iter()
         .map(|(description, task)| async move { (description, task.await) })
         .collect::<FuturesUnordered<_>>();
-    running.next().await
+    match running.next().await {
+        Some(exit) => exit,
+        None => std::future::pending().await,
+    }
 }
 
 /// A collection of tasks that should all be aborted when the collection itself
@@ -535,26 +538,27 @@ mod tests {
             // When we wait for the first exit,
             first_task_exit(tasks).await
         });
-        let exited = runtime.block_on(root);
+        let (description, outcome) = runtime.block_on(root);
 
         // Then it resolves to the panicking task rather than waiting on its sibling.
-        let (description, outcome) = exited.expect("a task exited");
         assert_eq!(description, "panics");
         assert!(outcome.expect_err("the task panicked").is_panic());
     }
 
     #[test]
     #[expect(non_snake_case)]
-    fn first_task_exit__should_resolve_to_none_when_there_are_no_tasks() {
+    fn first_task_exit__should_never_resolve_when_there_are_no_tasks() {
         // Given no tasks to wait on,
         let runtime = named_runtime("first-task-exit-empty");
         let tasks: Vec<(String, AutoAbortTask<()>)> = Vec::new();
 
         // When we wait for the first exit,
-        let exited = runtime.block_on(first_task_exit(tasks));
+        let exited = runtime.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_millis(50), first_task_exit(tasks)).await
+        });
 
-        // Then there is nothing to report.
-        assert!(exited.is_none());
+        // Then there is no exit to report.
+        exited.expect_err("first_task_exit resolved without any tasks");
     }
 }
 

@@ -249,9 +249,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        // One triple generator per distinct `t` this node serves; cait-sith
-        // triples are generated with exactly `t` parties, so each store is fed
-        // by a generator running at its own threshold.
+        // One triple generator per distinct `t`: cait-sith generates triples with
+        // exactly `t` parties, so each store is fed at its own threshold.
         let mut background_tasks = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
             let reconstruction_threshold_usize: usize = t.inner().try_into()?;
@@ -288,9 +287,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        let Some((description, outcome)) = tracking::first_task_exit(background_tasks).await else {
-            return Ok(());
-        };
+        let (description, outcome) = tracking::first_task_exit(background_tasks).await;
         // These tasks never return, so any exit is a failure.
         let Err(join_error) = outcome;
         anyhow::bail!("ecdsa background task \"{description}\" ended unexpectedly: {join_error}")
