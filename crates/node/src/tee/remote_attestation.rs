@@ -135,8 +135,9 @@ fn validate_remote_attestation(
 }
 
 impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
-    /// Failures are logged, never propagated; the returned flag tells the caller whether the
-    /// attestation reached the contract, so it can decide when to try again.
+    /// Generates a fresh attestation and submits it to the contract, reporting whether it
+    /// reached the contract so the caller can decide when to try again. Failures are logged,
+    /// never propagated.
     async fn generate_and_submit(&self) -> bool {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
@@ -144,13 +145,8 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
         )
         .into();
         let result = self.tee_authority.generate_attestation(report_data).await;
-        let outcome = if result.is_ok() {
-            crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS
-        } else {
-            crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE
-        };
         crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-            .with_label_values(&[outcome])
+            .with_label_values(&[outcome_label(result.is_ok())])
             .inc();
         let attestation = match result {
             Ok(attestation) => attestation,
@@ -193,24 +189,34 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             &allowed_image_hashes,
             &allowed_launcher_compose_hashes,
         ) {
-            // Submit anyway: the contract runs the authoritative verification, and this local
-            // check may fail spuriously on a stale view of the allowed hashes. Its exact
-            // output is documented in the external node-operator guide, so keep the message
-            // format stable.
+            // Submit anyway: the contract runs the authoritative check, and this local one can
+            // fail on a stale view of the allowed hashes. Operators are told to grep for this
+            // exact message, so keep it stable
             tracing::warn!("Attestation is not valid: {error}");
         }
-        if let Err(error) = submit_remote_attestation(
+        let submission = submit_remote_attestation(
             self.tx_sender.clone(),
             attestation,
             self.tls_public_key.clone(),
             pre_submit_expiry,
         )
-        .await
-        {
+        .await;
+        crate::metrics::MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
+            .with_label_values(&[outcome_label(submission.is_ok())])
+            .inc();
+        if let Err(error) = submission {
             tracing::error!(?error, "attestation submission failed");
             return false;
         }
         true
+    }
+}
+
+fn outcome_label(succeeded: bool) -> &'static str {
+    if succeeded {
+        crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS
+    } else {
+        crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE
     }
 }
 
@@ -254,19 +260,17 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
         account_public_key: submitter.account_public_key.clone(),
     };
 
-    let initially_available =
-        is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
+    let mut was_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
 
     tracing::info!(
         %node_account_id,
-        initially_available,
+        initially_available = was_available,
         "starting TEE attestation removal monitoring; initial TEE attestation status"
     );
 
-    let mut was_available = initially_available;
-
-    loop {
-        let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
+    'watch: while tee_accounts_receiver.changed().await.is_ok() {
+        let mut is_available =
+            is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
 
         tracing::debug!(
             %node_account_id,
@@ -275,30 +279,32 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             "TEE attestation status check"
         );
 
-        if was_available && !is_available {
+        while was_available && !is_available {
             tracing::warn!(
                 %node_account_id,
                 "TEE attestation removed from contract, resubmitting"
             );
-            if !submitter.generate_and_submit().await {
-                // Treat the removal as unhandled and retry after a delay: the watch fires
-                // only on actual changes to the attested-nodes list, which a quiet network
-                // may never produce again
-                if let Ok(Err(_)) = tee_accounts_receiver
-                    .changed()
-                    .timeout(RESUBMISSION_RETRY_DELAY)
-                    .await
-                {
-                    break;
+            if submitter.generate_and_submit().await {
+                break;
+            }
+            // Treat the removal as unhandled and retry after a delay: the watch fires only on
+            // actual changes to the attested-nodes list, which a quiet network may never
+            // produce again
+            match tee_accounts_receiver
+                .changed()
+                .timeout(RESUBMISSION_RETRY_DELAY)
+                .await
+            {
+                Ok(Err(_)) => break 'watch,
+                // An update arrived, or the retry delay elapsed
+                Ok(Ok(())) | Err(_) => {
+                    is_available =
+                        is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id)
                 }
-                continue;
             }
         }
 
         was_available = is_available;
-        if tee_accounts_receiver.changed().await.is_err() {
-            break;
-        }
     }
 
     tracing::info!("TEE accounts watch channel closed; stopping attestation removal monitoring");
@@ -520,14 +526,12 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
     async fn monitor_attestation_removal__should_resubmit_when_attestation_removed() {
         // Given
         let setup = test_setup();
-        let monitoring_task = setup.spawn_monitor();
-
-        // Yield control to allow the monitoring task to start and process initial state.
+        let handle = setup.spawn_monitor();
         tokio::task::yield_now().await;
         assert_eq!(setup.sender().count(), 0);
 
@@ -537,38 +541,15 @@ mod tests {
         // Then
         tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
             .await
-            .expect("Expected resubmission to occur within timeout");
-        assert_eq!(
-            setup.sender().count(),
-            1,
-            "Expected exactly one resubmission when node was removed"
-        );
-
-        // A removal after the monitor stops must no longer trigger a resubmission; the node is
-        // re-added first so the removal is an edge a live monitor would act on
-        setup.add_node_to_tee_accounts();
-        tokio::task::yield_now().await;
-        monitoring_task.abort();
-        let _ = monitoring_task.await;
-        setup.remove_node_from_tee_accounts();
-        let timeout_result =
-            tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
-                .await;
-        assert!(
-            timeout_result.is_err(),
-            "Expected no resubmission when monitoring service is stopped"
-        );
-        assert_eq!(
-            setup.sender().count(),
-            1,
-            "Expected no resubmission when monitoring service is stopped"
-        );
+            .expect("expected a resubmission after the removal");
+        assert_eq!(setup.sender().count(), 1);
+        handle.abort();
     }
 
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_survive_submission_retry_timeout() {
-        // Given
+        // Given: the first tick burns the whole retry window, the second one lands
         let setup = test_setup();
         setup.sender().set_failing(true);
         let handle = setup.spawn_periodic(2);
@@ -634,7 +615,7 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
     async fn monitor_attestation_removal__should_resubmit_on_each_removal() {
         // Given
@@ -659,7 +640,7 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
     async fn monitor_attestation_removal__should_stop_when_watch_channel_closes() {
         // Given

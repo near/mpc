@@ -477,5 +477,17 @@ pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVe
         .unwrap()
     });
 
+/// A node that cannot get its attestation onto the contract retries forever rather than giving
+/// up, so this counter is the only signal an operator has that the node is failing to attest.
+pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_tee_attestation_submissions_total",
+            "Total number of TEE attestation submissions to the MPC contract",
+            &["outcome"],
+        )
+        .unwrap()
+    });
+
 pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
 pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
