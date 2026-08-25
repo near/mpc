@@ -117,12 +117,13 @@ mod tests {
     #[tokio::test]
     async fn test_key_resharing() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
+        const RECONSTRUCTION_THRESHOLD: usize = 3;
+        let reconstruction_threshold = ReconstructionThreshold::from(RECONSTRUCTION_THRESHOLD); 
         let participants = generate_participants_with_random_ids(NUM_PARTICIPANTS, &mut rng);
         let old_participants = into_participant_ids(&participants);
         let keygens: std::collections::HashMap<_, _> =
-            run_keygen::<Ed25519Sha512, _>(&participants, THRESHOLD, &mut rng)
+            run_keygen::<Ed25519Sha512, _>(&participants, reconstruction_threshold, &mut rng)
                 .into_iter()
                 .collect();
         let mut new_participants = into_participant_ids(&participants);
@@ -156,9 +157,9 @@ mod tests {
                             .ok_or_else(|| anyhow::anyhow!("No channel"))?
                     };
                     let key = KeyResharingComputation {
-                        reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
+                        reconstruction_threshold,
                         old_participants,
-                        old_reconstruction_threshold: ReconstructionThreshold::from(THRESHOLD),
+                        old_reconstruction_threshold: reconstruction_threshold,
                         my_share: keyshare,
                         public_key: pubkey,
                     }
