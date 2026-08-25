@@ -736,4 +736,161 @@ mod tests {
         assert!(reported.ends_with(NetworkFingerprint::CUT_SHORT_MARKER));
         assert_eq!(reported.chars().count(), NetworkFingerprint::MAX_CHARS);
     }
+
+    // The tests below run under a paused tokio clock; see `crate::mock` for the rules.
+
+    use crate::mock::{ScriptedInspector, ScriptedReply};
+
+    fn fingerprint_of(chain: &str) -> String {
+        format!("fingerprint-of-{chain}")
+    }
+
+    fn one_scripted_provider(
+        replies: impl IntoIterator<Item = ScriptedReply>,
+    ) -> (FanOut<ScriptedInspector>, ScriptedInspector) {
+        let inspector = ScriptedInspector::new(replies);
+        let inspectors: NonEmptyVec<_> = vec![(ProviderId("only".to_string()), inspector.clone())]
+            .try_into()
+            .expect("one inspector");
+        (FanOut::new(inspectors), inspector)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_retry_a_transient_failure_and_report_the_later_success() {
+        // Given
+        let (fan_out, inspector) = one_scripted_provider([
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+            ScriptedReply::Answer {
+                delay: Duration::ZERO,
+                fingerprint: fingerprint_of("mainnet"),
+            },
+        ]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+            .await;
+
+        // Then
+        let fingerprint = results[0]
+            .1
+            .as_ref()
+            .expect("second attempt should succeed");
+        assert_eq!(fingerprint.to_string(), fingerprint_of("mainnet"));
+        assert_eq!(inspector.calls(), 2);
+        assert_eq!(started.elapsed(), RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_stop_after_the_configured_number_of_attempts() {
+        // Given
+        let (fan_out, inspector) = one_scripted_provider([
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+            ScriptedReply::TransientFailure {
+                delay: Duration::ZERO,
+            },
+        ]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+            .await;
+
+        // Then
+        assert_matches!(
+            results[0].1,
+            Err(ForeignChainInspectionError::RpcRequestFailed(_))
+        );
+        assert_eq!(inspector.calls(), 3);
+        assert_eq!(started.elapsed(), 2 * RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_not_retry_a_provider_that_refused_the_request() {
+        // Given
+        let (fan_out, inspector) = one_scripted_provider([ScriptedReply::Refusal {
+            delay: Duration::ZERO,
+        }]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(3).unwrap())
+            .await;
+
+        // Then
+        assert_matches!(
+            results[0].1,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
+        assert_eq!(inspector.calls(), 1);
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_retry_an_attempt_that_timed_out() {
+        // Given
+        let (fan_out, inspector) = one_scripted_provider([
+            ScriptedReply::Hang,
+            ScriptedReply::Answer {
+                delay: Duration::ZERO,
+                fingerprint: fingerprint_of("mainnet"),
+            },
+        ]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(2).unwrap())
+            .await;
+
+        // Then
+        let fingerprint = results[0]
+            .1
+            .as_ref()
+            .expect("second attempt should succeed");
+        assert_eq!(fingerprint.to_string(), fingerprint_of("mainnet"));
+        assert_eq!(inspector.calls(), 2);
+        assert_eq!(started.elapsed(), Duration::from_secs(1) + RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_probe_the_providers_concurrently() {
+        // Given
+        // One scripted instance per provider: clones share their script.
+        let slow = ScriptedInspector::new([ScriptedReply::Answer {
+            delay: Duration::from_secs(3),
+            fingerprint: fingerprint_of("slow"),
+        }]);
+        let fast = ScriptedInspector::new([ScriptedReply::Answer {
+            delay: Duration::from_secs(1),
+            fingerprint: fingerprint_of("fast"),
+        }]);
+        let inspectors: NonEmptyVec<_> = vec![
+            (ProviderId("slow".to_string()), slow),
+            (ProviderId("fast".to_string()), fast),
+        ]
+        .try_into()
+        .expect("two inspectors");
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = FanOut::new(inspectors)
+            .network_fingerprints(Duration::from_secs(5), NonZeroU64::new(1).unwrap())
+            .await;
+
+        // Then
+        assert!(results.iter().all(|(_, outcome)| outcome.is_ok()));
+        // The total is the slowest provider, not the sum.
+        assert_eq!(started.elapsed(), Duration::from_secs(3));
+    }
 }
