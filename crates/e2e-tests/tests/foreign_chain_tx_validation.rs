@@ -3,7 +3,7 @@ use std::num::NonZeroU64;
 
 use crate::common;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use e2e_tests::cluster::placeholder_chain_entry;
 use e2e_tests::foreign_chain_mock::{
     MOCK_BLOCK_HASH, MockAuthExpectation, MockServerExt, setup_bitcoin_mock, setup_evm_mock,
@@ -128,7 +128,7 @@ fn build_foreign_chains_config(urls: &MockServerUrls) -> ForeignChainsConfig {
     }
 }
 
-async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
+async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
     let bitcoin_server = MockServer::start();
     let abstract_server = MockServer::start();
     let bnb_server = MockServer::start();
@@ -246,43 +246,36 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
     cluster
         .wait_for_available_foreign_chains(&expected_chains)
         .await
-        .context("timed out waiting for all chains to become available")?;
+        .expect("timed out waiting for all chains to become available");
 
     // TODO(#3630): drop the legacy view once deprecated API is dropped.
     let supported = cluster
         .view_foreign_chains_supported_by_contract()
         .await
-        .context("failed to view supported chains")?;
-    anyhow::ensure!(
-        *supported == expected_chains,
-        "expected supported chains {expected_chains:?}, got {supported:?}"
-    );
+        .expect("failed to view supported chains");
+    assert_eq!(*supported, expected_chains, "supported chains mismatch");
     let allowed = cluster
         .view_allowed_foreign_chain_providers()
         .await
-        .context("failed to view allowed foreign chain providers")?;
-    anyhow::ensure!(
-        allowed == whitelist,
-        "expected allowed providers {whitelist:?}, got {allowed:?}"
-    );
+        .expect("failed to view allowed foreign chain providers");
+    assert_eq!(allowed, whitelist, "allowed providers mismatch");
 
     let state = cluster
         .get_contract_state()
         .await
-        .context("failed to get contract state")?;
-    let running = match &state {
-        near_mpc_contract_interface::types::ProtocolContractState::Running(r) => r,
-        _ => bail!("expected Running state"),
+        .expect("failed to get contract state");
+    let near_mpc_contract_interface::types::ProtocolContractState::Running(running) = &state else {
+        panic!("expected Running state, got {state:?}");
     };
     let foreign_tx_domain_id = running
         .domains
         .domains
         .iter()
         .find(|d| d.purpose == DomainPurpose::ForeignTx)
-        .context("no ForeignTx domain")?
+        .expect("no ForeignTx domain")
         .id;
 
-    Ok(ForeignTxTestEnv {
+    ForeignTxTestEnv {
         cluster,
         foreign_tx_domain_id,
         _mock_servers: mock_servers,
@@ -290,7 +283,7 @@ async fn setup_foreign_tx_cluster() -> anyhow::Result<ForeignTxTestEnv> {
         bitcoin_mock,
         base_mock,
         bnb_mock,
-    })
+    }
 }
 
 fn verify_foreign_tx_response(outcome: &near_kit::FinalExecutionOutcome) -> anyhow::Result<()> {
@@ -621,9 +614,7 @@ async fn verify_polygon(env: &ForeignTxTestEnv) -> anyhow::Result<()> {
 async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     // Given — 2-node cluster with Bitcoin, Abstract, BNB, Base, Starknet,
     // Arbitrum, HyperEVM, Avalanche, ADI, Ethereum, and Polygon configured
-    let env = setup_foreign_tx_cluster()
-        .await
-        .expect("setup_foreign_tx_cluster failed");
+    let env = must_setup_foreign_tx_cluster().await;
 
     // When/Then — all configured chains produce valid signed responses
     verify_bitcoin(&env)

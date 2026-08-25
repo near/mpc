@@ -18,7 +18,7 @@ use crate::requests::queue::{
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
-use crate::tracking::{self, AutoAbortTaskCollection};
+use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
@@ -152,12 +152,13 @@ impl MpcClient {
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
-        let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
-            loop {
-                client.emit_metrics();
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        });
+        let metrics_emitter: AutoAbortTask<anyhow::Result<()>> =
+            tracking::spawn("periodically emits metrics", async move {
+                loop {
+                    client.emit_metrics();
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
 
         let monitor_passive_channels = {
             tracking::spawn(
@@ -178,7 +179,7 @@ impl MpcClient {
             )
         };
 
-        let tee_verification_handle = {
+        let tee_verification_handle: AutoAbortTask<anyhow::Result<()>> = {
             let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn("tee_verification", async move {
                 loop {
@@ -186,11 +187,7 @@ impl MpcClient {
                         .send(ChainSendTransactionRequest::VerifyTee())
                         .await
                     {
-                        tracing::error!(
-                            "Receiver dropped, error sending VerifyTee request: {:?}",
-                            e
-                        );
-                        return;
+                        anyhow::bail!("receiver dropped, cannot send VerifyTee request: {e:?}");
                     }
                     metrics::VERIFY_TEE_REQUESTS_SENT.inc();
                     sleep(TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION).await;
@@ -231,14 +228,17 @@ impl MpcClient {
             self.ckd_provider.clone().spawn_background_tasks(),
         );
 
-        let _ = monitor_passive_channels.await?;
-        metrics_emitter.await?;
-        monitor_chain.await?;
-        let _ = robust_ecdsa_background_tasks.await?;
-        let _ = ecdsa_background_tasks.await?;
-        let _ = eddsa_background_tasks.await?;
-        let _ = ckd_background_tasks.await?;
-        tee_verification_handle.await?;
+        // `try_join!` surfaces the failure and aborts the rest on drop.
+        futures::try_join!(
+            async move { monitor_passive_channels.await? },
+            async move { metrics_emitter.await? },
+            async move { monitor_chain.await? },
+            async move { robust_ecdsa_background_tasks.await? },
+            async move { ecdsa_background_tasks.await? },
+            async move { eddsa_background_tasks.await? },
+            async move { ckd_background_tasks.await? },
+            async move { tee_verification_handle.await? },
+        )?;
 
         Ok(())
     }
@@ -250,7 +250,7 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -283,9 +283,7 @@ impl MpcClient {
                 }
                 block_update = block_update_receiver.recv() => {
                     let Some(block_update) = block_update else {
-                        // If this branch hits, it means the channel is closed, meaning the
-                        // indexer is being shutdown. So just quit this task.
-                        break;
+                        anyhow::bail!("block update channel closed, the indexer is shutting down");
                     };
 
                     self.client.update_indexer_height(block_update.block.height.into());
