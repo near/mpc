@@ -196,8 +196,7 @@ mod tests {
 
                     // When
                     let keyshares =
-                        build_keyshares::<Vec<u8>>(&Clock::real(), &db, client, keyshares)
-                            .unwrap();
+                        build_keyshares::<Vec<u8>>(&Clock::real(), &db, client, keyshares).unwrap();
 
                     // Then each domain keeps the threshold it was configured with
                     assert_eq!(keyshares[&low].reconstruction_threshold, low_threshold);
