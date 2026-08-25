@@ -150,6 +150,7 @@ impl MpcNode {
     }
 }
 
+pub const STDOUT_LOG: &str = "stdout.log";
 pub const STDERR_LOG: &str = "stderr.log";
 
 /// Guard that kills the child process on drop.
@@ -362,9 +363,9 @@ impl MpcNodeSetup {
             "starting mpc-node"
         );
 
-        let stdout_file = std::fs::File::create(self.home_dir.join("stdout.log"))
+        let stdout_file = std::fs::File::create(self.home_dir.join(STDOUT_LOG))
             .context("failed to create stdout log")?;
-        let stderr_file = std::fs::File::create(self.home_dir.join("stderr.log"))
+        let stderr_file = std::fs::File::create(self.home_dir.join(STDERR_LOG))
             .context("failed to create stderr log")?;
 
         let child = Command::new(&self.binary_path)

@@ -3,6 +3,7 @@
 //! so the vectors are network-specific; `None` means the chain is skipped.
 
 use anyhow::Context;
+use foreign_chain_inspector::sui;
 
 use crate::network::Network;
 
@@ -24,10 +25,8 @@ pub struct AptosVector {
 /// reference transaction — see [`check_sui`](crate::checks::check_sui).
 #[derive(Clone, Copy)]
 pub struct SuiVector {
-    /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
-    /// returns it (`sui.rpc.v2`: "the digest of the genesis checkpoint"). Its 4-byte
-    /// prefix is the well-known Sui chain identifier — mainnet `0x35834a8a`, testnet
-    /// `0x4c78adac` — which is the value to grep against Sui docs to verify these.
+    /// The network's genesis checkpoint digest, e.g.
+    /// [`sui::MAINNET_GENESIS_CHECKPOINT_DIGEST`].
     pub chain_id: &'static str,
 }
 
@@ -100,7 +99,7 @@ const MAINNET: GoldenSet = GoldenSet {
         event_sequence_number: 822_198_006,
     }),
     sui: Some(SuiVector {
-        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+        chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
     }),
 };
 
@@ -130,7 +129,7 @@ const TESTNET: GoldenSet = GoldenSet {
         event_sequence_number: 830_687_280,
     }),
     sui: Some(SuiVector {
-        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
+        chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
     }),
 };
 

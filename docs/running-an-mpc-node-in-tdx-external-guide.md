@@ -1349,7 +1349,7 @@ cargo install --path crates/attestation-cli
 **Online mode** — fetch and verify directly from the node:
 
 ```bash
-attestation-cli \
+attestation-cli verify \
   --url http://<IP>:8080/public_data \
   --allowed-image-hash <IMAGE_HASH> \
   --launcher-compose-file launcher_docker_compose.yaml
@@ -1362,7 +1362,7 @@ attestation-cli \
 curl -o public_data.json http://<IP>:8080/public_data
 
 # Verify from the saved file
-attestation-cli \
+attestation-cli verify \
   --file public_data.json \
   --allowed-image-hash <IMAGE_HASH> \
   --launcher-compose-file launcher_docker_compose.yaml

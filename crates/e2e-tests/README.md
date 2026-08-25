@@ -172,7 +172,8 @@ indexer state may be corrupt).
 The entry point for tests. `MpcCluster::start(config)` does everything:
 
 1. Create `TestPorts` via `TestPorts::e2e_tests(config.port_seed)`.
-2. Create a per-test temp directory.
+2. Create a per-test artifact directory (`TestDir`, kept on failure, see
+   [Debugging a failure](#debugging-a-failure)).
 3. Start the `NearSandbox`.
 4. Build a `NearBlockchain` signed as the sandbox root.
 5. Generate deterministic signing keys for each node (near signer, p2p, operator,
@@ -213,8 +214,9 @@ The returned cluster exposes:
   `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
-`Drop` kills all running nodes; the temp directory is held via `test_dir` and
-removed when the cluster is dropped.
+`Drop` kills all running nodes; the artifact directory is held via `test_dir` and
+removed when the cluster is dropped, unless the test failed (see
+[Debugging a failure](#debugging-a-failure)).
 
 ```rust
 pub struct MpcClusterConfig {
@@ -361,6 +363,30 @@ CI runs the same task via the `mpc-e2e-tests` job.
 
 ---
 
+## Debugging a failure
+
+Each test gets an artifact directory (`/tmp/mpc-e2e-<random>` by default) with a
+`node<i>/` subdirectory per node holding its config, secrets, RocksDB data, the
+embedded neard home, `stdout.log` (the node's tracing output) and `stderr.log`
+(panics only). `TestDir`
+(`src/test_dir.rs`) keeps it when the test failed and prints the path to the
+test's stderr; a startup failure also carries it in the error:
+
+```
+failed to start cluster: cluster artifacts preserved in /tmp/mpc-e2e-AbC123:
+mpc-node 0 exited early, check /tmp/mpc-e2e-AbC123/node0 (stdout.log holds its
+logs, stderr.log any panic)
+```
+
+| Variable | Effect |
+|---|---|
+| `E2E_KEEP_TMP=1` | Keep artifacts for passing tests too. `0`, `false`, `no` or `off` (any case) deletes them even for failing ones. |
+| `E2E_HOME_BASE=<dir>` | Parent of the artifact directories, created if missing. Same as `MpcClusterConfig::home_base`, without editing the test. |
+| `MPC_NODE_LOG=<filter>` | `RUST_LOG` for the spawned mpc-node processes (default `DEBUG`). |
+| `MPC_NODE_BACKTRACE=<0\|1\|full>` | `RUST_BACKTRACE` for the spawned mpc-node processes (default `1`). |
+
+---
+
 ## Test layout conventions
 
 - Follow the `<subject>__should_<assertion>` or `<subject>__<scenario>` naming
@@ -370,8 +396,8 @@ CI runs the same task via the `mpc-e2e-tests` job.
 - Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
   it initialises `tracing_subscriber` and waits for presignatures.
 - Tests must be deterministic across parallel execution. Use the port
-  allocator, the per-cluster temp directory, and the deterministic key
-  generation rather than creating state outside the cluster.
+  allocator, the per-cluster artifact directory (`cluster.test_dir`), and the
+  deterministic key generation rather than creating state outside the cluster.
 - Arithmetic in tests uses raw `+`/`-`/`*`/`/`; overflow panics are the
   desired failure mode (see `CLAUDE.md`).
 

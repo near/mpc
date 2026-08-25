@@ -13,7 +13,7 @@ use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use node_types::http_server::StaticWebData;
 use sha2::{Digest, Sha256};
 
-use crate::cli::Cli;
+use crate::cli::VerifyArgs;
 
 const KEY_PROVIDER_EVENT: &str = "key-provider";
 
@@ -31,19 +31,19 @@ pub struct VerificationResult {
 
 pub fn run_verification(
     static_data: &StaticWebData,
-    cli: &Cli,
+    args: &VerifyArgs,
 ) -> Result<VerificationResult, VerificationError> {
     let current_timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock before UNIX epoch")
         .as_secs();
 
-    verify_at_timestamp(static_data, cli, current_timestamp)
+    verify_at_timestamp(static_data, args, current_timestamp)
 }
 
 pub fn verify_at_timestamp(
     static_data: &StaticWebData,
-    cli: &Cli,
+    args: &VerifyArgs,
     timestamp_seconds: u64,
 ) -> Result<VerificationResult, VerificationError> {
     let attestation = static_data.tee_participant_info.as_ref().ok_or_else(|| {
@@ -61,12 +61,12 @@ pub fn verify_at_timestamp(
 
     // Compute allowed compose hash from the launcher compose file
     let allowed_compose_hash =
-        compute_allowed_compose_hash(&cli.launcher_compose_file).map_err(|e| {
+        compute_allowed_compose_hash(&args.launcher_compose_file).map_err(|e| {
             VerificationError::Custom(format!("failed to read launcher compose file: {e}"))
         })?;
 
     // Load measurements (custom file or compiled-in defaults)
-    let measurements = load_measurements(&cli.expected_measurements).map_err(|e| {
+    let measurements = load_measurements(&args.expected_measurements).map_err(|e| {
         VerificationError::Custom(format!("failed to load expected measurements: {e}"))
     })?;
 
@@ -77,7 +77,7 @@ pub fn verify_at_timestamp(
     } = attestation.verify_locally(
         report_data.into(),
         timestamp_seconds,
-        &cli.allowed_image_hashes,
+        &args.allowed_image_hashes,
         &[allowed_compose_hash],
         &measurements,
     )?;
