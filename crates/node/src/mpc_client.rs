@@ -266,9 +266,6 @@ impl MpcClient {
             self.client.clone(),
         );
 
-        let eligible_leaders_refiner = self
-            .verify_foreign_tx_provider
-            .new_eligible_leaders_refiner();
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
@@ -278,7 +275,10 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         )
-        .with_eligible_leaders_refiner(Box::new(eligible_leaders_refiner));
+        .with_eligible_leaders_refiner(
+            self.verify_foreign_tx_provider
+                .new_eligible_leaders_refiner(),
+        );
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();

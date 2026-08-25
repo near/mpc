@@ -48,6 +48,19 @@ pub trait RefineEligibleLeaders<RequestType>: Send {
     ) -> HashSet<ParticipantId>;
 }
 
+/// Refiner for request kinds whose leader refinement is identity function.
+pub struct NoRefinement;
+
+impl<RequestType> RefineEligibleLeaders<RequestType> for NoRefinement {
+    fn refine(
+        &self,
+        _request: &RequestType,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        eligible.clone()
+    }
+}
+
 /// Manages the queue of requests that still need to be handled.
 /// The inputs to this queue are:
 ///  - Every block that comes from the indexer. For each block, we need the list of
@@ -66,7 +79,11 @@ pub trait RefineEligibleLeaders<RequestType>: Send {
 ///    the queue will adapt to the new state and attempt to find new leaders for the requests.
 ///  - If a request is too old so that it would have timed out on chain, it will be
 ///    discarded.
-pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub struct PendingRequests<
+    RequestType: Request,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType> = NoRefinement,
+> {
     pub(super) clock: near_time::Clock,
 
     /// All participants in the network, regardless of whether they are online.
@@ -84,7 +101,7 @@ pub struct PendingRequests<RequestType: Request, ChainRespondArgsType: ChainResp
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
 
     /// See [`RefineEligibleLeaders`].
-    pub(super) refine_eligible_leaders: Option<Box<dyn RefineEligibleLeaders<RequestType>>>,
+    pub(super) refine_eligible_leaders: Refiner,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -462,7 +479,7 @@ pub(super) struct EligibleLeadersAndHeights {
     pub my_indexer_height: u64,
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
+impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     PendingRequests<RequestType, ChainRespondArgsType>
 {
     pub fn new(
@@ -478,17 +495,35 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
             requests: HashMap::new(),
             network_api,
             recently_completed_requests: CompletedRequests::default(),
-            refine_eligible_leaders: None,
+            refine_eligible_leaders: NoRefinement,
         }
     }
+}
 
-    /// Sets the per-request [`RefineEligibleLeaders`] hook.
-    pub fn with_eligible_leaders_refiner(
-        mut self,
-        refiner: Box<dyn RefineEligibleLeaders<RequestType>>,
-    ) -> Self {
-        self.refine_eligible_leaders = Some(refiner);
-        self
+impl<RequestType, ChainRespondArgsType, Refiner>
+    PendingRequests<RequestType, ChainRespondArgsType, Refiner>
+where
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType>,
+{
+    /// Replaces the per-request [`RefineEligibleLeaders`] hook.
+    pub fn with_eligible_leaders_refiner<NewRefiner>(
+        self,
+        refiner: NewRefiner,
+    ) -> PendingRequests<RequestType, ChainRespondArgsType, NewRefiner>
+    where
+        NewRefiner: RefineEligibleLeaders<RequestType>,
+    {
+        PendingRequests {
+            clock: self.clock,
+            all_participants: self.all_participants,
+            my_participant_id: self.my_participant_id,
+            requests: self.requests,
+            network_api: self.network_api,
+            recently_completed_requests: self.recently_completed_requests,
+            refine_eligible_leaders: refiner,
+        }
     }
 
     /// This must be called for every block that comes from the indexer.
@@ -657,10 +692,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 block_height = %request.block_height,
             )
             .entered();
-            let request_eligible_leaders = match &self.refine_eligible_leaders {
-                Some(refiner) => refiner.refine(&request.request, &eligible_leaders),
-                None => eligible_leaders.clone(),
-            };
+            let request_eligible_leaders = self
+                .refine_eligible_leaders
+                .refine(&request.request, &eligible_leaders);
             if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
                 metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
                     .with_label_values(&[&RequestType::get_type().to_string()])
@@ -945,9 +979,9 @@ mod tests {
 
         /// Builds the next canonical block, adds it to the shared tracker, and delivers
         /// the resulting update to `pending`. Returns the new block height.
-        fn update(
+        fn update<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
@@ -969,9 +1003,9 @@ mod tests {
         }
 
         /// Like [`update`] but forks the current head, making a new canonical chain.
-        fn update_canonical_fork(
+        fn update_canonical_fork<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs>,
+            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
         ) -> u64 {
             let new_height = self.max_known_height() + 1;
             if self.fork.is_none() {
@@ -1443,8 +1477,7 @@ mod tests {
         let (pending_requests, mut setup) = TestSetup::new();
         let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
         let refiner = TestRefiner::new(allowed);
-        let mut pending_requests =
-            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
         let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
@@ -1463,8 +1496,7 @@ mod tests {
         let (pending_requests, mut setup) = TestSetup::new();
         let refiner = TestRefiner::new(HashSet::new());
         let allowed = refiner.allowed.clone();
-        let mut pending_requests =
-            pending_requests.with_eligible_leaders_refiner(Box::new(refiner));
+        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
 
