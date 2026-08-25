@@ -113,16 +113,6 @@ mod tests {
     use crate::primitives::test_utils::{gen_authenticated_participants, gen_participants};
     use mpc_primitives::GovernanceThreshold;
 
-    fn threshold_params(
-        participants: &Participants,
-        threshold: u64,
-    ) -> GovernanceThresholdParameters {
-        GovernanceThresholdParameters::new_unvalidated(
-            participants.clone(),
-            GovernanceThreshold::new(threshold),
-        )
-    }
-
     fn proposal(account: &str, hash_byte: u8) -> VerifierChangeProposal {
         VerifierChangeProposal {
             candidate_account_id: account.parse().unwrap(),
@@ -130,24 +120,39 @@ mod tests {
         }
     }
 
-    /// Build 3 authenticated participants with the given signing threshold,
-    /// alongside fresh, empty pending votes.
-    fn setup_votes(
-        threshold: u64,
-    ) -> (
-        Participants,
-        GovernanceThresholdParameters,
-        Vec<AuthenticatedParticipantId>,
-        TeeVerifierVotes,
-    ) {
-        let (participants, voters) = gen_authenticated_participants(3);
-        let params = threshold_params(&participants, threshold);
-        (
-            participants.clone(),
-            params,
-            voters,
-            TeeVerifierVotes::default(),
-        )
+    /// 3 authenticated participants with the given governance threshold and
+    /// fresh, empty pending votes.
+    struct Voting {
+        participants: Participants,
+        params: GovernanceThresholdParameters,
+        voters: Vec<AuthenticatedParticipantId>,
+        votes: TeeVerifierVotes,
+    }
+
+    impl Voting {
+        fn with_threshold(governance_threshold: u64) -> Self {
+            let (participants, voters) = gen_authenticated_participants(3);
+            let params = GovernanceThresholdParameters::new_unvalidated(
+                participants.clone(),
+                GovernanceThreshold::new(governance_threshold),
+            );
+            Self {
+                participants,
+                params,
+                voters,
+                votes: TeeVerifierVotes::default(),
+            }
+        }
+
+        fn cast(&mut self, voter: usize, proposal: &VerifierChangeProposal) -> Option<AccountId> {
+            self.votes
+                .vote(proposal.clone(), self.voters[voter].clone(), &self.params)
+                .unwrap()
+        }
+
+        fn voter(&self, voter: usize) -> AuthenticatedParticipantId {
+            self.voters[voter].clone()
+        }
     }
 
     /// The expected pending-vote map: each `(proposal, voters)` pair becomes a
@@ -175,71 +180,55 @@ mod tests {
     #[test]
     fn vote__should_not_cross_below_threshold() {
         // Given 3 participants, threshold 2
-        let (_participants, params, voters, mut votes) = setup_votes(2);
+        let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
 
         // When one participant votes
-        let result = votes
-            .vote(proposal.clone(), voters[0].clone(), &params)
-            .unwrap();
+        let result = voting.cast(0, &proposal);
 
         // Then no candidate wins yet, and the single vote is recorded
         assert_eq!(result, None);
         assert_eq!(
-            votes.pending(),
-            expected_votes([(proposal, vec![voters[0].clone()])])
+            voting.votes.pending(),
+            expected_votes([(proposal, vec![voting.voter(0)])])
         );
     }
 
     #[test]
     fn vote__should_cross_threshold_and_clear_pending() {
         // Given 3 participants, threshold 2
-        let (_participants, params, voters, mut votes) = setup_votes(2);
+        let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
 
         // When two participants vote for the same (account, hash)
-        assert_eq!(
-            votes
-                .vote(proposal.clone(), voters[0].clone(), &params)
-                .unwrap(),
-            None
-        );
-        let result = votes
-            .vote(proposal.clone(), voters[1].clone(), &params)
-            .unwrap();
+        assert_eq!(voting.cast(0, &proposal), None);
+        let result = voting.cast(1, &proposal);
 
         // Then the candidate wins and all pending votes are cleared
         assert_eq!(result, Some(proposal.candidate_account_id));
-        assert_eq!(votes.pending(), BTreeMap::new());
+        assert_eq!(voting.votes.pending(), BTreeMap::new());
     }
 
     #[test]
     fn vote__should_not_combine_same_account_different_hashes() {
         // Given 3 participants, threshold 2
-        let (_participants, params, voters, mut votes) = setup_votes(2);
+        let mut voting = Voting::with_threshold(2);
         let candidate = "v.near";
         let proposal_hash_1 = proposal(candidate, 1);
         let proposal_hash_2 = proposal(candidate, 2);
 
         // When two participants vote for the same account but different code hashes
-        assert_eq!(
-            votes
-                .vote(proposal_hash_1.clone(), voters[0].clone(), &params)
-                .unwrap(),
-            None
-        );
-        let result = votes
-            .vote(proposal_hash_2.clone(), voters[1].clone(), &params)
-            .unwrap();
+        assert_eq!(voting.cast(0, &proposal_hash_1), None);
+        let result = voting.cast(1, &proposal_hash_2);
 
         // Then neither bucket reaches threshold: the two votes land in separate
         // (account, hash) buckets.
         assert_eq!(result, None);
         assert_eq!(
-            votes.pending(),
+            voting.votes.pending(),
             expected_votes([
-                (proposal_hash_1, vec![voters[0].clone()]),
-                (proposal_hash_2, vec![voters[1].clone()]),
+                (proposal_hash_1, vec![voting.voter(0)]),
+                (proposal_hash_2, vec![voting.voter(1)]),
             ])
         );
     }
@@ -247,85 +236,73 @@ mod tests {
     #[test]
     fn revote__should_replace_previous_vote() {
         // Given 3 participants, threshold 2
-        let (_participants, params, voters, mut votes) = setup_votes(2);
+        let mut voting = Voting::with_threshold(2);
         let first_proposal = proposal("a.near", 1);
         let second_proposal = proposal("b.near", 1);
 
         // When the same voter votes, then switches to a different candidate
-        votes
-            .vote(first_proposal, voters[0].clone(), &params)
-            .unwrap();
-        votes
-            .vote(second_proposal.clone(), voters[0].clone(), &params)
-            .unwrap();
+        voting.cast(0, &first_proposal);
+        voting.cast(0, &second_proposal);
 
         // Then only the b.near vote remains (the a.near bucket is gone); a
         // second voter on b.near then crosses.
         assert_eq!(
-            votes.pending(),
-            expected_votes([(second_proposal.clone(), vec![voters[0].clone()])])
+            voting.votes.pending(),
+            expected_votes([(second_proposal.clone(), vec![voting.voter(0)])])
         );
-        let result = votes
-            .vote(second_proposal.clone(), voters[1].clone(), &params)
-            .unwrap();
+        let result = voting.cast(1, &second_proposal);
         assert_eq!(result, Some(second_proposal.candidate_account_id));
     }
 
     #[test]
     fn withdraw__should_remove_caller_vote() {
         // Given 3 participants, threshold 2, and one recorded vote
-        let (_participants, params, voters, mut votes) = setup_votes(2);
+        let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
-        votes
-            .vote(proposal.clone(), voters[0].clone(), &params)
-            .unwrap();
+        voting.cast(0, &proposal);
         assert_eq!(
-            votes.pending(),
-            expected_votes([(proposal, vec![voters[0].clone()])])
+            voting.votes.pending(),
+            expected_votes([(proposal, vec![voting.voter(0)])])
         );
 
         // When the caller withdraws
-        votes.withdraw(&voters[0]);
+        voting.votes.withdraw(&voting.voters[0]);
 
         // Then their vote is removed
-        assert_eq!(votes.pending(), BTreeMap::new());
+        assert_eq!(voting.votes.pending(), BTreeMap::new());
 
         // When a voter who never voted withdraws, it is a no-op
-        votes.withdraw(&voters[1]);
-        assert_eq!(votes.pending(), BTreeMap::new());
+        voting.votes.withdraw(&voting.voters[1]);
+        assert_eq!(voting.votes.pending(), BTreeMap::new());
     }
 
     #[test]
     fn retain__should_keep_current_participants_and_drop_the_rest() {
         // Given 3 participants, threshold 3, and two voters sharing one bucket
-        let (participants, params, voters, mut votes) = setup_votes(3);
+        let mut voting = Voting::with_threshold(3);
         let proposal = proposal("v.near", 1);
-        votes
-            .vote(proposal.clone(), voters[0].clone(), &params)
-            .unwrap();
-        votes
-            .vote(proposal.clone(), voters[1].clone(), &params)
-            .unwrap();
+        voting.cast(0, &proposal);
+        voting.cast(1, &proposal);
         let both_voters =
-            expected_votes([(proposal.clone(), vec![voters[0].clone(), voters[1].clone()])]);
-        assert_eq!(votes.pending(), both_voters);
+            expected_votes([(proposal.clone(), vec![voting.voter(0), voting.voter(1)])]);
+        assert_eq!(voting.votes.pending(), both_voters);
 
         // When retaining against the same participant set
-        votes.retain(&participants);
+        voting.votes.retain(&voting.participants);
         // Then it is a no-op
-        assert_eq!(votes.pending(), both_voters);
+        assert_eq!(voting.votes.pending(), both_voters);
 
         // When retaining against a strict subset that excludes voter 0
-        votes.retain(&participants.subset(1..3));
+        voting.votes.retain(&voting.participants.subset(1..3));
         // Then voter 1 is kept and voter 0 is dropped
         assert_eq!(
-            votes.pending(),
-            expected_votes([(proposal, vec![voters[1].clone()])])
+            voting.votes.pending(),
+            expected_votes([(proposal, vec![voting.voter(1)])])
         );
 
         // When retaining against an empty set (no current participants)
-        votes.retain(&gen_participants(0));
+        voting.votes.retain(&gen_participants(0));
         // Then all votes are dropped
-        assert_eq!(votes.pending(), BTreeMap::new());
+        assert_eq!(voting.votes.pending(), BTreeMap::new());
     }
 }
