@@ -112,9 +112,7 @@ impl MpcContract {
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
+                let affine = *k256::PublicKey::try_from(&near_public_key)
                     .expect("stored key is always valid")
                     .as_affine();
                 let expected_public_key =
