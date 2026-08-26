@@ -50,6 +50,7 @@ use crate::tee::{
 };
 
 pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
+pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
@@ -207,8 +208,9 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     let _web_server_join_handle = root_runtime.spawn(web_server);
 
     // Detached: the report is diagnostic, nothing downstream waits on it.
-    root_runtime.spawn(crate::foreign_chain_probe::run_startup_probe(
+    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
         node_config.foreign_chains.clone(),
+        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
     ));
 
     // Create Indexer and wait for indexer to be synced.

@@ -494,7 +494,7 @@ pub static FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY: LazyLock<prometheus::IntGaugeVec
     LazyLock::new(|| {
         prometheus::register_int_gauge_vec!(
             "mpc_foreign_chain_rpc_providers_healthy",
-            "RPC providers that served the expected network at startup",
+            "RPC providers that served the expected network at the latest probe",
             &["chain"],
         )
         .unwrap()
