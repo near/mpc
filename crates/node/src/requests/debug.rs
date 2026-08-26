@@ -1,5 +1,6 @@
 use super::queue::{
     ComputationProgress, EligibleLeadersAndHeights, PendingRequests, QueuedRequest,
+    RefineEligibleLeaders,
 };
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
@@ -175,8 +176,12 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
-    for PendingRequests<RequestType, ChainRespondArgsType>
+impl<RequestType, ChainRespondArgsType, Refiner> Debug
+    for PendingRequests<RequestType, ChainRespondArgsType, Refiner>
+where
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut request_lines = Vec::new();
@@ -189,8 +194,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         let indexer_heights = self.network_api.indexer_heights();
 
         for request in self.requests.values() {
-            let debug_line =
-                request.debug_print(&self.clock, self.my_participant_id, &eligible_leaders);
+            let request_eligible_leaders = self
+                .refine_eligible_leaders
+                .refine(&request.request, &eligible_leaders);
+            let debug_line = request.debug_print(
+                &self.clock,
+                self.my_participant_id,
+                &request_eligible_leaders,
+            );
             request_lines.push((
                 request.block_height.into(),
                 request.request.get_id(),
