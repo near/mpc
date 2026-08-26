@@ -112,16 +112,13 @@ impl MpcContract {
                 dtos::SignatureResponse::Secp256k1(signature_response),
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-
                 let payload_hash: [u8; 32] = response.payload_hash.0;
 
                 // Check the signature is correct against the root public key
                 near_mpc_signature_verifier::verify_ecdsa_signature(
                     signature_response,
                     &payload_hash,
-                    &secp_pk,
+                    &near_public_key,
                 )
                 .is_ok()
             }
