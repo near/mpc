@@ -456,6 +456,20 @@ expression: abi
         }
       },
       {
+        "name": "cancel_node_migration",
+        "doc": " Cancels a previously started node migration for the calling account.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_foreign_chain_data",
         "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
@@ -3974,14 +3988,7 @@ expression: abi
           }
         },
         "Ed25519PublicKey": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
+          "type": "string"
         },
         "Ed25519Signature": {
           "type": "array",
@@ -5391,7 +5398,7 @@ expression: abi
                   ],
                   "properties": {
                     "near_public_key": {
-                      "type": "string"
+                      "$ref": "#/definitions/Secp256k1PublicKey"
                     }
                   }
                 }
@@ -5421,7 +5428,11 @@ expression: abi
                     },
                     "near_public_key_compressed": {
                       "description": "Serialized compressed Edwards-y point.",
-                      "type": "string"
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/Ed25519PublicKey"
+                        }
+                      ]
                     }
                   }
                 }
@@ -5441,7 +5452,7 @@ expression: abi
                   ],
                   "properties": {
                     "public_key": {
-                      "$ref": "#/definitions/PublicKey"
+                      "$ref": "#/definitions/Bls12381G2PublicKey"
                     }
                   }
                 }

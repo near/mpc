@@ -3,7 +3,7 @@ use std::time::Duration;
 use foreign_chain_inspector::{
     ForeignChainInspector,
     sui::{
-        SuiExtractedValue, SuiTransactionDigest,
+        MAINNET_GENESIS_CHECKPOINT_DIGEST, SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
 };
@@ -72,4 +72,29 @@ fn parse_tx_digest(digest: &str) -> SuiTransactionDigest {
         .try_into()
         .expect("transaction digest should be 32 bytes");
     SuiTransactionDigest::from(array)
+}
+
+/// As shipped in the node config `foreign_chains.sui.expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_GENESIS_CHECKPOINT_DIGEST;
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Sui RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let client = GrpcSuiClient::new(
+        PUBLIC_ARCHIVE_URL.to_string(),
+        None,
+        Duration::from_secs(10),
+    )
+    .unwrap();
+    let inspector = SuiInspector::new(client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(fingerprint.to_string(), EXPECTED_NETWORK_FINGERPRINT);
 }

@@ -346,7 +346,7 @@ near contract call-function as-read-only tee-verifier.test.near verify_quote fil
 Either outcome proves the DCAP path runs: a verified report while the fixture's
 collateral is still inside its validity window (it ends at the `nextUpdate` in
 `crates/test-utils/assets/collateral.json`), and `TCBInfo expired` once the live
-block clock passes it. Tests pin the verification clock instead
+block clock passes it. Tests set the VM block timestamp instead
 (`crates/tee-verifier/tests/verify_quote.rs`). Regenerate the
 fixture (after changing the quote/collateral fixtures) with:
 

@@ -279,13 +279,12 @@ fn parse_aptos_address(s: &str) -> Result<AptosAddress, String> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::aptos::{MAINNET_CHAIN_ID, TESTNET_CHAIN_ID};
     use assert_matches::assert_matches;
     use foreign_chain_rpc_interfaces::aptos::{
         AptosEventResponse, AptosRpcError, EventGuid, LedgerInfoResponse, TransactionResponse,
     };
     use rstest::rstest;
-
-    const MAINNET_CHAIN_ID: u64 = 1;
 
     struct MockAptosClient {
         response: Result<TransactionResponse, AptosRpcError>,
@@ -812,7 +811,6 @@ mod tests {
     #[tokio::test]
     async fn network_fingerprint__should_return_the_ledger_chain_id() {
         // Given
-        const TESTNET_CHAIN_ID: u64 = 2;
         let inspector = AptosInspector::new(MockAptosClient::on_chain(TESTNET_CHAIN_ID));
 
         // When

@@ -571,17 +571,18 @@ Once wired into node startup, each resolved provider gets its self-identifying R
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
-Not every chain has a fingerprint probe. The table lists the ones that do, with the RPC each probes. A chain absent from it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
+Every chain with an inspector is probed, each by the RPC below. `solana` has none, so it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
 
 | chain | probe |
 |---|---|
 | starknet | `starknet_chainId` |
-| base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
+| ethereum, base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
 | bitcoin | `getblockhash` at height 0 |
 | aptos | the ledger info at the REST root |
+| sui | `GetServiceInfo` |
 | solana, fogo | `getGenesisHash` |
 
-The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing. An SVM genesis hash is decoded from base58 and re-encoded, which absorbs surrounding whitespace; a value that is not 32 base58 bytes is compared as the provider spelled it.
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing, and Sui's base58 digest has a single spelling with nothing to normalize. An SVM genesis hash is decoded from base58 and re-encoded, which absorbs surrounding whitespace; a value that is not 32 base58 bytes is compared as the provider spelled it.
 
 An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
 
@@ -713,6 +714,7 @@ checkpoint digest — hence the neutral name.
 
 | chain | fingerprint | mainnet | testnet |
 |---|---|---|---|
+| ethereum | EIP-155 chain id, decimal | `"1"` | `"11155111"` (Sepolia) |
 | base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
 | bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
 | arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
@@ -736,9 +738,6 @@ separates the test networks from each other where a network *name* would not: te
 `"00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"`, and regtest
 `"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`. Aptos's one-byte id space
 separates mainnet from testnet, but two devnets can collide.
-
-`ethereum` is configurable but absent from the table: it has no inspector, so there is nothing
-about it to verify in the first place.
 
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,

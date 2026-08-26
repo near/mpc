@@ -24,6 +24,7 @@ pub mod base;
 pub mod bitcoin;
 pub mod bnb;
 pub mod contract_interface_conversions;
+pub mod ethereum;
 pub mod evm;
 pub mod hyperevm;
 pub mod polygon;

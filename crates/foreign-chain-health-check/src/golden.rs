@@ -3,6 +3,7 @@
 //! so the vectors are network-specific; `None` means the chain is skipped.
 
 use anyhow::Context;
+use foreign_chain_inspector::sui;
 
 use crate::network::Network;
 
@@ -24,10 +25,8 @@ pub struct AptosVector {
 /// reference transaction — see [`check_sui`](crate::checks::check_sui).
 #[derive(Clone, Copy)]
 pub struct SuiVector {
-    /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
-    /// returns it (`sui.rpc.v2`: "the digest of the genesis checkpoint"). Its 4-byte
-    /// prefix is the well-known Sui chain identifier — mainnet `0x35834a8a`, testnet
-    /// `0x4c78adac` — which is the value to grep against Sui docs to verify these.
+    /// The network's genesis checkpoint digest, e.g.
+    /// [`sui::MAINNET_GENESIS_CHECKPOINT_DIGEST`].
     pub chain_id: &'static str,
 }
 
@@ -41,6 +40,7 @@ pub struct SvmVector {
 }
 
 pub struct GoldenSet {
+    pub ethereum: Option<BlockHashVector>,
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
     pub arbitrum: Option<BlockHashVector>,
@@ -65,6 +65,10 @@ pub fn golden_set(network: Network) -> GoldenSet {
 }
 
 const MAINNET: GoldenSet = GoldenSet {
+    ethereum: Some(BlockHashVector {
+        tx: "7f1c6a58dc880438236d0b0a4ae166e9e9a038dbea8ec074149bd8b176332cac",
+        block_hash: "34e5a6cfbdbb84f7625df1de69d218ade4da72f4a2558064a156674e72e976c9",
+    }),
     base: Some(BlockHashVector {
         tx: "a11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1",
         block_hash: "b8488c9272c547c45e63ea76cc2d1c927c8f888e2721f790b14db996b6cc6aca",
@@ -111,7 +115,7 @@ const MAINNET: GoldenSet = GoldenSet {
         event_sequence_number: 822_198_006,
     }),
     sui: Some(SuiVector {
-        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+        chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
     }),
     solana: Some(SvmVector {
         genesis_hash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
@@ -122,6 +126,7 @@ const MAINNET: GoldenSet = GoldenSet {
 };
 
 const TESTNET: GoldenSet = GoldenSet {
+    ethereum: None,
     base: None,
     bnb: None,
     arbitrum: None,
@@ -147,7 +152,7 @@ const TESTNET: GoldenSet = GoldenSet {
         event_sequence_number: 830_687_280,
     }),
     sui: Some(SuiVector {
-        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
+        chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
     }),
     // Solana devnet, the network NEAR-testnet bridge deployments verify against.
     solana: Some(SvmVector {
@@ -227,6 +232,7 @@ mod tests {
         for network in [Network::Mainnet, Network::Testnet] {
             let set = golden_set(network);
             for v in [
+                set.ethereum,
                 set.base,
                 set.bnb,
                 set.arbitrum,

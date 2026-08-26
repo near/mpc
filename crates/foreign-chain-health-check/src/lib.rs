@@ -20,6 +20,7 @@ use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
 use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::ethereum::inspector::Ethereum;
 use foreign_chain_inspector::evm::inspector::EvmChain;
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
@@ -51,6 +52,11 @@ pub async fn check_all_providers(
     let golden = golden::golden_set(network);
     let mut out = Vec::new();
 
+    if let Some(cfg) = &fc.ethereum {
+        run_evm::<Ethereum>("ethereum", cfg, golden.ethereum, network, &mut out).await;
+    } else {
+        mark_not_configured("ethereum", &mut out);
+    }
     if let Some(cfg) = &fc.base {
         run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
     } else {
@@ -120,13 +126,6 @@ pub async fn check_all_providers(
         run_svm::<Fogo>("fogo", cfg, golden.fogo, network, &mut out).await;
     } else {
         mark_not_configured("fogo", &mut out);
-    }
-
-    // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
-    if let Some(cfg) = &fc.ethereum {
-        mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
-    } else {
-        mark_not_configured("ethereum", &mut out);
     }
 
     out
@@ -490,7 +489,7 @@ mod tests {
     async fn check_all_providers__should_skip_configured_but_unsupported_chains() {
         // Given a configured but not-yet-supported chain
         let fc = ForeignChainsConfig {
-            ethereum: Some(config_with_provider(AuthConfig::None)),
+            solana: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
         };
 
@@ -498,12 +497,12 @@ mod tests {
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
         // Then it is reported skipped as unsupported, not probed
-        let ethereum = results
+        let solana = results
             .iter()
-            .find(|r| r.chain == "ethereum")
-            .expect("ethereum row");
+            .find(|r| r.chain == "solana")
+            .expect("solana row");
         assert_matches!(
-            &ethereum.status,
+            &solana.status,
             Status::Skipped(reason) if reason.contains("not yet supported")
         );
     }
@@ -518,6 +517,7 @@ mod tests {
 
         // Then every known chain still appears, each with a "not configured" placeholder
         let expected = [
+            "ethereum",
             "base",
             "bnb",
             "arbitrum",
@@ -566,8 +566,11 @@ mod tests {
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
         // Then
-        assert_eq!(results[0].chain, "base");
-        let Status::Failed(reason) = &results[0].status else {
+        let base = results
+            .iter()
+            .find(|r| r.chain == "base")
+            .expect("base row");
+        let Status::Failed(reason) = &base.status else {
             panic!("expected Failed, got a pass/skip");
         };
         assert!(reason.contains("DEFINITELY_UNSET_TOKEN_ENV"));
@@ -640,7 +643,7 @@ mod tests {
                 expected_network_fingerprint: None,
                 providers,
             }),
-            ethereum: Some(config_with_provider(AuthConfig::None)),
+            solana: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
         };
 
@@ -658,6 +661,6 @@ mod tests {
         };
         assert_matches!(status("aptos", "healthy"), Status::Passed);
         assert_matches!(status("aptos", "broken"), Status::Failed(_));
-        assert_matches!(status("ethereum", "only"), Status::Skipped(_));
+        assert_matches!(status("solana", "only"), Status::Skipped(_));
     }
 }

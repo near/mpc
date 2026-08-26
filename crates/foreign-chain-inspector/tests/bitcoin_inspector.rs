@@ -11,6 +11,7 @@ use foreign_chain_inspector::{
     NetworkFingerprintInspector, RpcAuthentication,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
+        MAINNET_GENESIS_BLOCK_HASH,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
     build_http_client,
@@ -374,9 +375,6 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     assert_eq!(expected_extractions, extracted_values);
 }
 
-/// Bitcoin mainnet's genesis block hash, as block explorers render it.
-const GENESIS_HASH: &str = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
-
 #[tokio::test]
 async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zero() {
     // Given
@@ -389,7 +387,7 @@ async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zer
             then.status(200).json_body(serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": 0,
-                "result": GENESIS_HASH.to_ascii_uppercase(),
+                "result": MAINNET_GENESIS_BLOCK_HASH.to_ascii_uppercase(),
             }));
         })
         .await;
@@ -404,5 +402,5 @@ async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zer
 
     // Then
     genesis_height_request.assert_async().await;
-    assert_eq!(fingerprint.to_string(), GENESIS_HASH);
+    assert_eq!(fingerprint.to_string(), MAINNET_GENESIS_BLOCK_HASH);
 }

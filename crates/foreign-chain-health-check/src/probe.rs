@@ -2,7 +2,6 @@
 //! operator's `expected_network_fingerprint`.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use foreign_chain_inspector::abstract_chain::inspector::Abstract;
 use foreign_chain_inspector::adi::inspector::Adi;
@@ -12,10 +11,12 @@ use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::ethereum::inspector::Ethereum;
 use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
+use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::svm::inspector::{FogoInspector, SolanaInspector};
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
@@ -25,7 +26,7 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
-use crate::{prepare_aptos, prepare_jsonrpc};
+use crate::{prepare_aptos, prepare_jsonrpc, prepare_sui, timeout_of};
 
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +116,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                 ForeignChain::Avalanche => probe_evm::<Avalanche>(chain, chain_config).await,
                 ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
                 ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
+                ForeignChain::Ethereum => probe_evm::<Ethereum>(chain, chain_config).await,
                 ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
                 ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
                 ForeignChain::Bitcoin => {
@@ -124,7 +126,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 ForeignChain::Aptos => {
-                    let timeout = Duration::from_secs(chain_config.timeout_sec.get());
+                    let timeout = timeout_of(chain_config);
                     probe_chain(chain, chain_config, move |provider| {
                         let (url, auth_header) = prepare_aptos(provider)?;
                         Ok(AptosInspector::new(ReqwestAptosClient::new(
@@ -147,8 +149,15 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // TODO(#4003): probe Sui. Ethereum and Ton have no inspector, so there is
-                // nothing to probe them with.
+                ForeignChain::Sui => {
+                    let timeout = timeout_of(chain_config);
+                    probe_chain(chain, chain_config, move |provider| {
+                        Ok(SuiInspector::new(prepare_sui(provider, timeout)?))
+                    })
+                    .await
+                }
+                // TODO(#4003): Ton has no inspector, so there is
+                // nothing to probe them it.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -198,9 +207,8 @@ where
         return rows;
     };
 
-    let timeout = Duration::from_secs(config.timeout_sec.get());
     let fingerprints = FanOut::new(inspectors)
-        .network_fingerprints(timeout, config.max_retries)
+        .network_fingerprints(timeout_of(config), config.max_retries)
         .await;
     for (provider, reported) in fingerprints {
         rows.push(ProviderHealth {
@@ -267,28 +275,37 @@ mod tests {
     use crate::golden;
     use crate::network::Network;
     use assert_matches::assert_matches;
+    use foreign_chain_inspector::{
+        abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, ethereum, hyperevm,
+        polygon, starknet, sui,
+    };
+    use foreign_chain_rpc_interfaces::sui::Status;
+    use foreign_chain_rpc_interfaces::sui::proto::ledger_service_server::{
+        LedgerService, LedgerServiceServer,
+    };
+    use foreign_chain_rpc_interfaces::sui::proto::{GetServiceInfoRequest, GetServiceInfoResponse};
     use mpc_node_config::{AuthConfig, TokenConfig};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use rstest::rstest;
     use std::num::NonZeroU64;
+    use std::time::Duration;
 
-    /// Starknet mainnet's chain id, `SN_MAIN` in ASCII.
-    const MAINNET: &str = "0x534e5f4d41494e";
-    const SEPOLIA: &str = "0x534e5f5345504f4c4941";
+    const MAINNET: &str = starknet::MAINNET_CHAIN_ID;
+    const SEPOLIA: &str = starknet::SEPOLIA_CHAIN_ID;
     const PADDED_UPPERCASE_MAINNET: &str = "0x00534E5F4D41494E";
     /// Reserved as "discard", so nothing listens there.
     const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
     /// For a chain with no probe: the value is never read, only whether it is set at all.
     const ANY_FINGERPRINT: &str = "any-fingerprint";
+    const SUI_MAINNET: &str = sui::MAINNET_GENESIS_CHECKPOINT_DIGEST;
+    const SUI_TESTNET: &str = sui::TESTNET_GENESIS_CHECKPOINT_DIGEST;
     /// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
     /// the same number as text.
-    const APTOS_MAINNET: u64 = 1;
-    const APTOS_TESTNET: u64 = 2;
+    const APTOS_MAINNET: u64 = aptos::MAINNET_CHAIN_ID;
+    const APTOS_TESTNET: u64 = aptos::TESTNET_CHAIN_ID;
     const PROVIDER_NAME: &str = "publicnode";
-    /// Bitcoin's genesis block hash, which is what tells its networks apart.
-    const BITCOIN_MAINNET: &str =
-        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
-    const BITCOIN_TESTNET3: &str =
-        "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943";
+    const BITCOIN_MAINNET: &str = bitcoin::MAINNET_GENESIS_BLOCK_HASH;
+    const BITCOIN_TESTNET3: &str = bitcoin::TESTNET3_GENESIS_BLOCK_HASH;
 
     struct EvmMainnet {
         chain: ForeignChain,
@@ -308,38 +325,42 @@ mod tests {
     }
 
     /// Every EVM chain the probe covers, with its mainnet chain id.
-    const EVM_MAINNETS: [EvmMainnet; 8] = [
+    const EVM_MAINNETS: [EvmMainnet; 9] = [
         EvmMainnet {
             chain: ForeignChain::Abstract,
-            chain_id: 2741,
+            chain_id: abstract_chain::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Adi,
-            chain_id: 36900,
+            chain_id: adi::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Arbitrum,
-            chain_id: 42161,
+            chain_id: arbitrum::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Avalanche,
-            chain_id: 43114,
+            chain_id: avalanche::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Base,
-            chain_id: 8453,
+            chain_id: base::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Bnb,
-            chain_id: 56,
+            chain_id: bnb::MAINNET_CHAIN_ID,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Ethereum,
+            chain_id: ethereum::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::HyperEvm,
-            chain_id: 999,
+            chain_id: hyperevm::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::Polygon,
-            chain_id: 137,
+            chain_id: polygon::MAINNET_CHAIN_ID,
         },
     ];
 
@@ -415,6 +436,7 @@ mod tests {
             ForeignChain::Avalanche => &mut chains.avalanche,
             ForeignChain::Base => &mut chains.base,
             ForeignChain::Bnb => &mut chains.bnb,
+            ForeignChain::Ethereum => &mut chains.ethereum,
             ForeignChain::HyperEvm => &mut chains.hyper_evm,
             ForeignChain::Polygon => &mut chains.polygon,
             ForeignChain::Solana => &mut chains.solana,
@@ -1066,6 +1088,112 @@ mod tests {
                 expected: NetworkFingerprint::new(APTOS_MAINNET.to_string()),
                 observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
             }
+        );
+    }
+
+    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
+        ForeignChainsConfig {
+            sui: Some(config),
+            ..Default::default()
+        }
+    }
+
+    /// A gRPC ledger service answering whatever a test arms.
+    struct FakeSuiLedger(Result<GetServiceInfoResponse, Status>);
+
+    #[tonic::async_trait]
+    impl LedgerService for FakeSuiLedger {
+        async fn get_service_info(
+            &self,
+            _request: tonic::Request<GetServiceInfoRequest>,
+        ) -> Result<tonic::Response<GetServiceInfoResponse>, Status> {
+            self.0.clone().map(tonic::Response::new)
+        }
+    }
+
+    /// Serves a [`FakeSuiLedger`] on a loopback port until dropped.
+    struct FakeSuiServer {
+        url: String,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for FakeSuiServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn sui_answering(answer: Result<GetServiceInfoResponse, Status>) -> FakeSuiServer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(LedgerServiceServer::new(FakeSuiLedger(answer)))
+                .serve_with_incoming(tonic::transport::server::TcpIncoming::from(listener))
+                .await
+                .expect("the fake Sui ledger should keep serving until the test drops it");
+        });
+        FakeSuiServer { url, task }
+    }
+
+    #[rstest]
+    #[case::on_its_genesis_digest(
+        Ok(GetServiceInfoResponse::default().with_chain_id(SUI_MAINNET)),
+        ProviderStatus::Healthy
+    )]
+    #[case::on_another_network(
+        Ok(GetServiceInfoResponse::default().with_chain_id(SUI_TESTNET)),
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new(SUI_MAINNET),
+            observed: NetworkFingerprint::new(SUI_TESTNET),
+        }
+    )]
+    #[case::missing_chain_id(
+        Ok(GetServiceInfoResponse::default()),
+        ProviderStatus::MalformedResponse
+    )]
+    #[case::not_serving_the_api(
+        Err(Status::not_found("no such service")),
+        ProviderStatus::RequestRejected
+    )]
+    #[case::slow_answer(Err(Status::deadline_exceeded("too slow")), ProviderStatus::TimedOut)]
+    #[tokio::test]
+    async fn probe_all_providers__should_classify_the_sui_answer(
+        #[case] answer: Result<GetServiceInfoResponse, Status>,
+        #[case] expected: ProviderStatus,
+    ) {
+        // Given
+        let server = sui_answering(answer).await;
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, &server.url),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_all_providers__should_report_an_unreachable_sui_provider() {
+        // Given
+        let config = sui_only(chain_config(
+            Some(SUI_MAINNET),
+            one_provider(PROVIDER_NAME, CLOSED_PORT_URL),
+        ));
+
+        // When
+        let report = probe_all_providers(&config).await;
+
+        // Then
+        assert_eq!(
+            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            ProviderStatus::Unreachable
         );
     }
 
