@@ -549,12 +549,12 @@ Once wired into node startup, each resolved provider gets its self-identifying R
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
-Every chain with an inspector is probed, each by the RPC below. `solana` and `ethereum` have none, so they ignore `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
+Every chain with an inspector is probed, each by the RPC below. `solana` has none, so it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
 
 | chain | probe |
 |---|---|
 | starknet | `starknet_chainId` |
-| base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
+| ethereum, base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
 | bitcoin | `getblockhash` at height 0 |
 | aptos | the ledger info at the REST root |
 | sui | `GetServiceInfo` |
@@ -691,6 +691,7 @@ checkpoint digest — hence the neutral name.
 
 | chain | fingerprint | mainnet | testnet |
 |---|---|---|---|
+| ethereum | EIP-155 chain id, decimal | `"1"` | `"11155111"` (Sepolia) |
 | base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
 | bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
 | arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
@@ -713,8 +714,8 @@ separates the test networks from each other where a network *name* would not: te
 `"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`. Aptos's one-byte id space
 separates mainnet from testnet, but two devnets can collide.
 
-`solana` and `ethereum` are configurable but absent from the table: neither has an inspector, so
-there is nothing about them to verify in the first place.
+`solana` is configurable but absent from the table: it has no inspector, so
+there is nothing about it to verify in the first place.
 
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
@@ -722,7 +723,7 @@ including the fingerprints that look numeric.
 
 Every chain with an inspector is probed, and for those, leaving the field unset is not a silent
 skip: every provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads
-as healthy on a dashboard. `solana` and `ethereum` report `ProbeNotImplemented` whether the field is
+as healthy on a dashboard. `solana` reports `ProbeNotImplemented` whether the field is
 set or not.
 
 ## Risks

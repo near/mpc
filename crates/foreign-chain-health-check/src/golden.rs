@@ -31,6 +31,7 @@ pub struct SuiVector {
 }
 
 pub struct GoldenSet {
+    pub ethereum: Option<BlockHashVector>,
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
     pub arbitrum: Option<BlockHashVector>,
@@ -53,6 +54,10 @@ pub fn golden_set(network: Network) -> GoldenSet {
 }
 
 const MAINNET: GoldenSet = GoldenSet {
+    ethereum: Some(BlockHashVector {
+        tx: "7f1c6a58dc880438236d0b0a4ae166e9e9a038dbea8ec074149bd8b176332cac",
+        block_hash: "34e5a6cfbdbb84f7625df1de69d218ade4da72f4a2558064a156674e72e976c9",
+    }),
     base: Some(BlockHashVector {
         tx: "a11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1",
         block_hash: "b8488c9272c547c45e63ea76cc2d1c927c8f888e2721f790b14db996b6cc6aca",
@@ -104,6 +109,7 @@ const MAINNET: GoldenSet = GoldenSet {
 };
 
 const TESTNET: GoldenSet = GoldenSet {
+    ethereum: None,
     base: None,
     bnb: None,
     arbitrum: None,
@@ -202,6 +208,7 @@ mod tests {
         for network in [Network::Mainnet, Network::Testnet] {
             let set = golden_set(network);
             for v in [
+                set.ethereum,
                 set.base,
                 set.bnb,
                 set.arbitrum,
