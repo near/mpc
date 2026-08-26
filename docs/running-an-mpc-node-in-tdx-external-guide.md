@@ -1401,7 +1401,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 attestation-cli tcb-status --url http://<IP>:8080/public_data
 ```
 
-It needs no image hash or compose file, prints the platform's SVNs, and reports both the node's own verdict and the one Intel's current TCB info gives. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do about a demotion.
+It needs no image hash or compose file, prints the platform's SVNs, and reports both the node's own verdict and the one Intel's current TCB info gives. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do when your host is out of date.
 
 ### Add the Node Account Key to Your Account
 
@@ -2329,7 +2329,7 @@ Common messages:
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
-- **``TCB status `OutOfDate` is not up to date``** — Intel demoted your platform in a TCB recovery, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](./tdx-tcb-status.md), which also explains how to see the demotion coming.
+- **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](./tdx-tcb-status.md), which also explains how to see it coming.
 
 #### 2. NEAR runtime / pre-execution errors — in the node logs
 

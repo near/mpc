@@ -90,9 +90,10 @@ TCB info on its own schedule: when it publishes a *TCB recovery*, platforms that
 cleared the bar yesterday stop clearing it today, with nothing changed on your
 side.
 
-The failure is silent. The node keeps submitting hourly and the contract rejects
-every submission; the stored attestation expires 7 days after the last accepted
-one (`DEFAULT_EXPIRATION_DURATION_SECONDS`); `verify_tee` then drops the node
+Nothing stops to warn you. The node logs the rejection every attempt (see
+[Symptoms](#symptoms)) and keeps submitting hourly, the contract rejects every
+submission, the stored attestation expires 7 days after the last accepted one
+(`DEFAULT_EXPIRATION_DURATION_SECONDS`), and `verify_tee` then drops the node
 from the participant set and reshares without it. For several nodes at once, it
 becomes a network problem rather than only yours.
 
@@ -116,9 +117,9 @@ near contract call-function as-read-only \
   network-config testnet now
 ```
 
-A demotion can also stop the CVM from booting at all, because
-`gramine-sealing-key-provider` verifies a quote before releasing the disk
-sealing key. See
+A platform that has fallen behind can also stop the CVM from booting at all,
+because `gramine-sealing-key-provider` verifies a quote before releasing the
+disk sealing key. See
 [Quote verification fails](./running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
 
 ### What this check does not cover
