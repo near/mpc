@@ -39,7 +39,7 @@ fn public_key_extended_to_dto(key: &PublicKeyExtended) -> dtos::PublicKeyExtende
             edwards_point: edwards_point.to_bytes(),
         },
         PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKeyExtended::Bls12381 {
-            public_key: public_key.clone(),
+            public_key: dtos::PublicKey::Bls12381(public_key.clone()),
         },
     }
 }
@@ -52,11 +52,10 @@ mod tests {
     use mpc_primitives::domain::DomainId;
 
     fn sample_keyset() -> Keyset {
-        let near_public_key: near_sdk::PublicKey =
-            "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
-                .parse()
-                .unwrap();
-        let key = PublicKeyExtended::try_from(near_public_key).unwrap();
+        let public_key: dtos::PublicKey = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse()
+            .unwrap();
+        let key = PublicKeyExtended::try_from(public_key).unwrap();
         Keyset::new(
             EpochId::new(7),
             vec![KeyForDomain {

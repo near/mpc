@@ -14,8 +14,8 @@ pub use mpc_primitives::{AttemptId, EpochId, KeyEventId};
 // This is the contract-internal storage type, distinct from the DTO
 // [`near_mpc_contract_interface::types::KeyForDomain`] used over the wire.
 // They are kept separate because the contract stores public keys as
-// [`PublicKeyExtended`] (`near_sdk::PublicKey` plus a decompressed Edwards
-// point), while the DTO uses the JSON-friendly string/byte form.
+// [`PublicKeyExtended`], which caches the decompressed Edwards point
+// alongside the key, while the DTO carries only the compressed form.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeyForDomain {
