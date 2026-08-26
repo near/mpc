@@ -83,6 +83,9 @@ mpc_attestation_expiry_timestamp_seconds > 0
 mpc_attestation_expiry_timestamp_seconds == 0  for 15m
 ```
 
+A `-1` expiry satisfies neither expiry alert, so a node holding an attestation stored
+without one is covered by the staleness alert alone.
+
 One failing node or a fleet-wide cause (Intel's PCCS and its collateral, usually)? Count
 the affected nodes:
 

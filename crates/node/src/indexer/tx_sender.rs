@@ -311,7 +311,7 @@ async fn observe_tx_result(
             );
 
             Ok(if attestation_landed {
-                record_attestation_landed();
+                record_attestation_landed(&Clock::real());
                 TransactionStatus::Executed
             } else {
                 TransactionStatus::NotExecuted

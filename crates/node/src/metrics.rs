@@ -484,8 +484,9 @@ pub static MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGau
     LazyLock::new(|| {
         prometheus::register_int_gauge!(
             "mpc_attestation_expiry_timestamp_seconds",
-            "Unix time at which the attestation stored on chain for this node's TLS key expires \
-             (-1 if the stored attestation carries no expiry, 0 if none is stored)"
+            "Unix time at which the attestation stored on chain for this node's TLS key expires. \
+             -1 if the stored attestation carries no expiry; 0 if none is stored. Compare against \
+             mpc_indexer_latest_block_timestamp_seconds for the remaining time"
         )
         .unwrap()
     });
@@ -498,3 +499,14 @@ pub static MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS: LazyLock<prometheus::I
         )
         .unwrap()
     });
+
+/// Registers the attestation-freshness gauges, which are otherwise only touched once a submission
+/// reaches the chain.
+///
+/// A metric registers on first dereference, so without this a node that never gets that far
+/// exports no series at all — and an alert on an absent series never fires, in exactly the failure
+/// mode these gauges exist to catch.
+pub fn init_attestation_freshness_metrics() {
+    LazyLock::force(&MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS);
+    LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
+}

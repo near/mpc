@@ -2,8 +2,8 @@
 //!
 //! Both are absolute timestamps rather than remaining durations: a node that stops re-attesting
 //! also stops updating them, and only the absolute form keeps decaying towards now, so a staleness
-//! alert still fires on a frozen gauge. Each landed submission moves them, so at rest they
-//! advance hourly.
+//! alert still fires on a frozen gauge. At rest both advance hourly — the expiry is re-read on
+//! every submission observation, the landing timestamp only when one is confirmed.
 
 use near_mpc_contract_interface::types::VerifiedAttestation;
 use near_time::Clock;
@@ -19,8 +19,8 @@ pub(crate) fn record_stored_attestation_expiry(stored: Option<&VerifiedAttestati
     MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS.set(expiry_gauge_value(stored));
 }
 
-pub(crate) fn record_attestation_landed() {
-    MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.set(Clock::real().now_utc().unix_timestamp());
+pub(crate) fn record_attestation_landed(clock: &Clock) {
+    MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.set(clock.now_utc().unix_timestamp());
 }
 
 fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
@@ -36,6 +36,7 @@ fn expiry_gauge_value(stored: Option<&VerifiedAttestation>) -> i64 {
 mod tests {
     use super::*;
     use near_mpc_contract_interface::types::MockAttestation;
+    use near_time::{FakeClock, Utc};
     use rstest::rstest;
 
     const EXPIRES_AT: u64 = 1_754_000_000;
@@ -47,6 +48,21 @@ mod tests {
             expiry_timestamp_seconds,
             expected_measurements: None,
         })
+    }
+
+    #[test]
+    fn record_attestation_landed__should_set_the_gauge_to_the_landing_time() {
+        // Given
+        let landed_at = Utc::from_unix_timestamp(EXPIRES_AT as i64).unwrap();
+
+        // When
+        record_attestation_landed(&FakeClock::new(landed_at).clock());
+
+        // Then
+        assert_eq!(
+            MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS.get(),
+            EXPIRES_AT as i64
+        );
     }
 
     #[rstest]
