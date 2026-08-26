@@ -94,12 +94,16 @@ impl VerifyForeignTxProvider {
             snapshot.get(&requested_chain).cloned().unwrap_or_default()
         };
 
-        // If we don't support the foreign chain, we can't lead the computation.
-        // TODO(#3961): narrow leader selection to only chain supporters.
+        // Leader selection already narrows to chain supporters. Re-check as
+        // defense-in-depth, since the supporters snapshot may have changed
+        // between leader selection and this attempt.
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
-            anyhow::bail!("this node does not support the requested chain {requested_chain:?}");
+            anyhow::bail!(
+                "selected as leader for a {requested_chain:?} request but this node no longer \
+                 supports that chain. Supporters must have changed since leader selection"
+            );
         }
 
         let response_payload = self
