@@ -27,12 +27,13 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
+    SuiRpcRequest, SuiTxId, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
+    TonLog, TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -661,26 +662,46 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// registers a foreign chain configuration so the foreign chains are supported
-pub async fn register_foreign_chain_configuration(
-    chain: near_mpc_contract_interface::types::ForeignChain,
+/// Whitelists `chain` and registers it as covered by every node, making it available.
+pub async fn make_foreign_chain_available(
+    chain: dtos::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
-    for account in accounts {
-        let result = account
-            .call_mpc(contract.id())
-            .register_foreign_chain_support(node_foreign_chain_support.clone())
-            .await
-            .unwrap()
-            .into_result();
-        assert!(
-            result.is_ok(),
-            "{} should succeed",
-            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
-        );
-    }
+    let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
+    let threshold = assert_running_return_threshold(contract).await;
+    let votes = accounts.iter().take(threshold.0 as usize).map(|account| {
+        let batch = batch.clone();
+        async move {
+            let result = account
+                .call_mpc(contract.id())
+                .vote_update_foreign_chain_providers(batch)
+                .await
+                .unwrap()
+                .into_result();
+            assert!(result.is_ok(), "whitelist vote should succeed: {result:?}");
+        }
+    });
+    futures::future::join_all(votes).await;
+
+    let foreign_chains_config: dtos::ForeignChainsConfig = BTreeSet::from([chain]).into();
+    let registrations = accounts.iter().map(|account| {
+        let foreign_chains_config = foreign_chains_config.clone();
+        async move {
+            let result = account
+                .call_mpc(contract.id())
+                .register_foreign_chains_config(foreign_chains_config)
+                .await
+                .unwrap()
+                .into_result();
+            assert!(
+                result.is_ok(),
+                "{} should succeed: {result:?}",
+                method_names::REGISTER_FOREIGN_CHAINS_CONFIG
+            );
+        }
+    });
+    futures::future::join_all(registrations).await;
 }
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
