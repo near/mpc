@@ -676,7 +676,7 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
     );
     let failure = outcome.failure_message().unwrap_or_default();
     assert!(
-        failure.contains("Requested foreign chain, Ethereum, is not available"),
+        failure.contains("Requested foreign chain, Solana, is not available"),
         "expected 'is not available' error, got: {failure}"
     );
 
