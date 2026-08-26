@@ -40,9 +40,9 @@ use crate::golden::{AptosVector, BlockHashVector, SuiVector, SvmVector};
 
 /// Probe every configured provider against `network`'s golden reference
 /// transaction, one [`ProviderResult`] per provider, each checked independently.
-/// Chains with no reference for `network`, or configured but unsupported, are
-/// [`Status::Skipped`]; a chain absent from the config still yields a single
-/// placeholder [`Skipped`](Status::Skipped) result so its absence stays visible.
+/// Chains with no reference for `network` are [`Status::Skipped`]; a chain
+/// absent from the config still yields a single placeholder
+/// [`Skipped`](Status::Skipped) result so its absence stays visible.
 ///
 /// TODO(#3969): retire this route in favour of [`probe::probe_all_providers`].
 pub async fn check_all_providers(
@@ -486,24 +486,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_all_providers__should_skip_configured_but_unsupported_chains() {
-        // Given a configured but not-yet-supported chain
+    async fn check_all_providers__should_skip_a_configured_chain_with_no_reference_for_the_network()
+    {
+        // Given a chain with no testnet reference transaction
         let fc = ForeignChainsConfig {
-            solana: Some(config_with_provider(AuthConfig::None)),
+            ethereum: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results = check_all_providers(&fc, Network::Testnet).await;
 
-        // Then it is reported skipped as unsupported, not probed
-        let solana = results
+        // Then it is reported skipped, not probed
+        let ethereum = results
             .iter()
-            .find(|r| r.chain == "solana")
-            .expect("solana row");
+            .find(|r| r.chain == "ethereum")
+            .expect("ethereum row");
         assert_matches!(
-            &solana.status,
-            Status::Skipped(reason) if reason.contains("not yet supported")
+            &ethereum.status,
+            Status::Skipped(reason) if reason.contains("no testnet reference transaction")
         );
     }
 
@@ -532,7 +533,6 @@ mod tests {
             "sui",
             "solana",
             "fogo",
-            "ethereum",
         ];
         for chain in expected {
             let row = results
@@ -600,10 +600,10 @@ mod tests {
     #[tokio::test]
     async fn check_all_providers__should_report_pass_fail_and_skip_in_one_run() {
         // Given — one Aptos provider serves the golden event (pass), another a
-        // wrong event (fail), and a separate chain is unsupported (skip).
+        // wrong event (fail), and a separate chain has no testnet reference (skip).
         let healthy = MockServer::start_async().await;
         let broken = MockServer::start_async().await;
-        let aptos = golden::golden_set(Network::Mainnet).aptos.unwrap();
+        let aptos = golden::golden_set(Network::Testnet).aptos.unwrap();
         let tx = aptos.tx;
         healthy
             .mock_async(|when, then| {
@@ -643,12 +643,12 @@ mod tests {
                 expected_network_fingerprint: None,
                 providers,
             }),
-            solana: Some(config_with_provider(AuthConfig::None)),
+            ethereum: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
         };
 
         // When
-        let results = check_all_providers(&fc, Network::Mainnet).await;
+        let results = check_all_providers(&fc, Network::Testnet).await;
 
         // Then — the broken provider does not suppress the healthy one; pass,
         // fail, and skip all coexist in a single run.
@@ -661,6 +661,6 @@ mod tests {
         };
         assert_matches!(status("aptos", "healthy"), Status::Passed);
         assert_matches!(status("aptos", "broken"), Status::Failed(_));
-        assert_matches!(status("solana", "only"), Status::Skipped(_));
+        assert_matches!(status("ethereum", "only"), Status::Skipped(_));
     }
 }

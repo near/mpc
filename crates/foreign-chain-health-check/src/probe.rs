@@ -807,25 +807,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_all_providers__should_report_a_chain_with_no_fingerprint_probe_as_not_implemented()
-     {
-        // Given
-        let config = sui_only(chain_config(
-            Some(ANY_FINGERPRINT),
-            one_provider("publicnode", CLOSED_PORT_URL),
-        ));
-
-        // When
-        let report = probe_all_providers(&config).await;
-
-        // Then
-        assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
-            ProviderStatus::ProbeNotImplemented
-        );
-    }
-
-    #[tokio::test]
     async fn probe_all_providers__should_report_every_configured_chain_under_its_own_chain() {
         // Given
         let server = httpmock::MockServer::start_async().await;
@@ -835,7 +816,7 @@ mod tests {
                 Some(MAINNET),
                 one_provider("publicnode", &server.base_url()),
             )),
-            sui: Some(chain_config(
+            bitcoin: Some(chain_config(
                 Some(ANY_FINGERPRINT),
                 one_provider("publicnode", CLOSED_PORT_URL),
             )),
@@ -851,8 +832,8 @@ mod tests {
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, "publicnode"),
-            ProviderStatus::ProbeNotImplemented
+            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            ProviderStatus::Unreachable
         );
         assert_eq!(report.counts_per_chain().len(), 2);
     }
@@ -1089,13 +1070,6 @@ mod tests {
                 observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
             }
         );
-    }
-
-    fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
-        ForeignChainsConfig {
-            sui: Some(config),
-            ..Default::default()
-        }
     }
 
     /// A gRPC ledger service answering whatever a test arms.
