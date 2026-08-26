@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{Context, bail};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
 use foreign_chain_inspector::adi::inspector::AdiExtractor;
@@ -7,6 +9,7 @@ use foreign_chain_inspector::avalanche::inspector::AvalancheExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
+use foreign_chain_inspector::ethereum::inspector::EthereumExtractor;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
 use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
@@ -17,6 +20,7 @@ use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
+use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -29,6 +33,7 @@ use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
 const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const PRESIGNATURE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -57,21 +62,50 @@ fn build_signature_request(
     })
 }
 
+// Awaits on the future for specified grace duration, and calls on_slow
+// if grace period expires.
+async fn await_with_slow_hook<F: Future>(
+    grace: Duration,
+    fut: F,
+    on_slow: impl FnOnce(),
+) -> F::Output {
+    tokio::pin!(fut);
+    match timeout(grace, &mut fut).await {
+        Ok(output) => output,
+        Err(_) => {
+            on_slow();
+            fut.await
+        }
+    }
+}
+
 impl VerifyForeignTxProvider {
     pub(crate) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
+        let requested_chain = foreign_tx_request.request.chain();
 
-        // Also checked in `execute_foreign_chain_request`; checked early here
-        // because `take_owned` below irreversibly consumes a presignature. An
-        // availability flip between the two checks still costs one presignature.
-        ensure_chain_is_available(
-            &self.supporters_by_foreign_chain.borrow(),
-            &foreign_tx_request.request,
-        )
-        .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc())?;
+        let chain_supporters: HashSet<ParticipantId> = {
+            let snapshot = self.supporters_by_foreign_chain.borrow().clone();
+            ensure_chain_is_available(&snapshot, foreign_tx_request.request.chain()).inspect_err(
+                |_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc(),
+            )?;
+            snapshot.get(&requested_chain).cloned().unwrap_or_default()
+        };
+
+        // Leader selection already narrows to chain supporters. Re-check as
+        // defense-in-depth, since the supporters snapshot may have changed
+        // between leader selection and this attempt.
+        let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
+        if !chain_supporters.contains(&my_participant_id) {
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
+            anyhow::bail!(
+                "selected as leader for a {requested_chain:?} request but this node no longer \
+                 supports that chain. Supporters must have changed since leader selection"
+            );
+        }
 
         let response_payload = self
             .execute_foreign_chain_request(
@@ -87,7 +121,20 @@ impl VerifyForeignTxProvider {
         let keyshare = self
             .ecdsa_signature_provider
             .keyshare(foreign_tx_request.domain_id)?;
-        let (presignature_id, presignature) = keyshare.presignature_store.take_owned().await;
+        let (presignature_id, presignature) = await_with_slow_hook(
+            PRESIGNATURE_TAKE_GRACE_PERIOD,
+            keyshare
+                .presignature_store
+                .take_owned_matching(chain_supporters.iter().copied().collect()),
+            || {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_PRESIGNATURE_WAITS.inc();
+                tracing::warn!(
+                    ?requested_chain,
+                    "no chain-compatible presignatures available, waiting"
+                )
+            },
+        )
+        .await;
         let participants = presignature.participants.clone();
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
@@ -137,14 +184,35 @@ impl VerifyForeignTxProvider {
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request)
+        // Check that the requested chain is still available when this
+        // point is reached.
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
             .inspect_err(|_| {
                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
             })?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
-            dtos::ForeignChainRpcRequest::Ethereum(_request) => {
-                bail!("ForeignChainRpcRequest::Ethereum is unsupported")
+            dtos::ForeignChainRpcRequest::Ethereum(request) => {
+                let inspector = self
+                    .inspectors
+                    .ethereum
+                    .as_ref()
+                    .context("no inspector configured for Ethereum")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<EthereumExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Solana(_request) => {
                 bail!("ForeignChainRpcRequest::Solana is unsupported")
@@ -449,13 +517,14 @@ struct ChainNotAvailableError {
 /// participants supports it.
 fn ensure_chain_is_available(
     supporters_by_foreign_chain: &SupportersByForeignChain,
-    request: &dtos::ForeignChainRpcRequest,
+    foreign_chain: dtos::ForeignChain,
 ) -> Result<(), ChainNotAvailableError> {
-    let requested = request.chain();
-    if supporters_by_foreign_chain.contains_key(&requested) {
+    if supporters_by_foreign_chain.contains_key(&foreign_chain) {
         Ok(())
     } else {
-        Err(ChainNotAvailableError { requested })
+        Err(ChainNotAvailableError {
+            requested: foreign_chain,
+        })
     }
 }
 
@@ -510,7 +579,7 @@ mod tests {
 
         // When, then
         assert_matches!(
-            ensure_chain_is_available(&supporters, &bitcoin_request()),
+            ensure_chain_is_available(&supporters, bitcoin_request().chain()),
             Ok(_)
         );
     }
@@ -527,7 +596,7 @@ mod tests {
 
         // When, then
         assert_matches!(
-            ensure_chain_is_available(&supporters, &ethereum_request),
+            ensure_chain_is_available(&supporters, ethereum_request.chain()),
             Err(ChainNotAvailableError {
                 requested: dtos::ForeignChain::Ethereum
             })

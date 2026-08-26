@@ -38,8 +38,10 @@ pub mod types {
 
     pub use updates::{PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash};
 
-    // Re-export hash types used in attestation DTO fields
-    pub use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
+    // Re-export hash types used in DTO fields
+    pub use mpc_primitives::hash::{
+        LauncherDockerComposeHash, NodeImageHash, Sha384Digest, TeeVerifierCodeHash,
+    };
 
     // Re-export crypto types from near-mpc-crypto-types
     pub use near_mpc_crypto_types::{
