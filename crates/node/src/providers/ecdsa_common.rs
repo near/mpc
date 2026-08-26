@@ -48,7 +48,7 @@ where
     pub fn new(
         clock: Clock,
         db: Arc<SecretDB>,
-        client: &Arc<MeshNetworkClient>,
+        client: Arc<MeshNetworkClient>,
         domain_id: DomainId,
     ) -> anyhow::Result<Self> {
         Ok(Self(DistributedAssetStorage::<
@@ -94,17 +94,16 @@ where
 
 /// The "are all these participants still alive?" query both the presignature and triple stores use.
 pub fn active_participants_query(
-    client: &Arc<MeshNetworkClient>,
+    client: Arc<MeshNetworkClient>,
 ) -> Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync> {
-    let network_client = client.clone();
-    Arc::new(move || network_client.all_alive_participant_ids())
+    Arc::new(move || client.all_alive_participant_ids())
 }
 
 /// Attaches a freshly-created presignature store to each domain's [`DomainKeyshare`].
 pub fn build_keyshares<P>(
     clock: &Clock,
     db: &Arc<SecretDB>,
-    client: &Arc<MeshNetworkClient>,
+    client: Arc<MeshNetworkClient>,
     keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
 ) -> anyhow::Result<HashMap<DomainId, EcdsaKeyshare<P>>>
 where
@@ -115,7 +114,7 @@ where
         let presignature_store = Arc::new(PresignatureStorage::new(
             clock.clone(),
             db.clone(),
-            client,
+            client.clone(),
             domain_id,
         )?);
         result.insert(
@@ -197,8 +196,7 @@ mod tests {
 
                     // When
                     let keyshares =
-                        build_keyshares::<Vec<u8>>(&Clock::real(), &db, &client, keyshares)
-                            .unwrap();
+                        build_keyshares::<Vec<u8>>(&Clock::real(), &db, client, keyshares).unwrap();
 
                     // Then each domain keeps the threshold it was configured with
                     assert_eq!(keyshares[&low].reconstruction_threshold, low_threshold);
