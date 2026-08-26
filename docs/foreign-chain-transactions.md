@@ -324,8 +324,9 @@ back here rather than redefining them.
   (`ChainEntry.quorum`), voted in alongside the provider list. A runtime knob; distinct from the
   *signing threshold*.
 - **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
-  domain (`self.threshold()`): how many participants must produce signature shares to sign an
-  observation. Distinct from the RPC quorum.
+  domain (`DomainConfig.reconstruction_threshold`; the max across `ForeignTx` domains if there are
+  several): how many participants must produce signature shares to sign an observation. Distinct
+  from the RPC quorum and from the governance threshold (`self.threshold()`) used for votes.
 - **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
   of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
   on-chain via `register_available_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this

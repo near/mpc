@@ -669,8 +669,13 @@ pub async fn make_foreign_chain_available(
     accounts: &[Account],
 ) {
     let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
-    let threshold = assert_running_return_threshold(contract).await;
-    let votes = accounts.iter().take(threshold.0 as usize).map(|account| {
+    let threshold = assert_running_return_threshold(contract).await.0 as usize;
+    assert!(
+        accounts.len() >= threshold,
+        "need at least {threshold} accounts to whitelist a chain, got {}",
+        accounts.len()
+    );
+    let votes = accounts.iter().take(threshold).map(|account| {
         let batch = batch.clone();
         async move {
             let result = account

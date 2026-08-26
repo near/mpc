@@ -268,7 +268,13 @@ pub(crate) fn forwarded_participant_call_contract() -> MpcContract {
 pub(crate) fn whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
     let batch = NonEmptyBTreeMap::new(chain, ::test_utils::contract_types::dummy_chain_entry());
     let threshold = contract.threshold().unwrap().value() as usize;
-    for account_id in participant_account_ids(contract).iter().take(threshold) {
+    let participants = participant_account_ids(contract);
+    assert!(
+        participants.len() >= threshold,
+        "need at least {threshold} participants to whitelist a chain, got {}",
+        participants.len()
+    );
+    for account_id in participants.iter().take(threshold) {
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(account_id.clone())
