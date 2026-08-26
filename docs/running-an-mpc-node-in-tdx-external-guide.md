@@ -1825,11 +1825,11 @@ There are three types of upgrades, with different frequencies and operator effor
 | :--- | :--- | :--- | :--- |
 | MPC node image | High (~monthly) | Vote + restart CVM | No |
 | Launcher / CVM | Low | Vote + deploy new CVM + migrate key shares | Yes |
-| Host BIOS / microcode / TDX module | Whenever Intel publishes a TCB recovery | Vendor firmware update + reboot | Yes (microcode moves CPUSVN) |
+| Host BIOS / microcode / TDX module | Whenever Intel publishes a TCB recovery | Vendor firmware update + reboot + deploy a new CVM and move the key shares into it | Yes (microcode moves CPUSVN) |
 
 When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
-The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. See [TDX platform TCB status](./tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
+The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](./tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
 
 ## MPC Node Image Upgrade
 

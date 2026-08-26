@@ -146,8 +146,12 @@ release actually carries the fixes.
 ### 4. Reboot, then confirm
 
 **Reboot the host.** TCB SVNs are latched at platform reset, so nothing takes
-effect without one. Start the CVM again too, since `/public_data` serves the
-quote generated at CVM boot. `tcb-status` answers as soon as the node is up,
+effect without one. Whether the CVM then starts on its existing disk depends on
+the update: if it moved CPUSVN, the sealing key moved with it and that disk will
+never unseal again, so deploy a fresh CVM and restore the step 1 backup into it
+per the [node migration guide](./node-migration-guide.md). Either way a CVM has
+to be running before you can check anything, since `/public_data` serves the
+quote generated at CVM boot, and `tcb-status` answers as soon as the node is up,
 with no need to wait for it to sync. Then:
 
 - `tcb-status` must read `UpToDate` on the Intel row, and `tee_tcb_svn` must
