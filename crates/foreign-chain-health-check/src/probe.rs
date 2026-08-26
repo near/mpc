@@ -157,7 +157,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     .await
                 }
                 // TODO(#4003): Ton has no inspector, so there is
-                // nothing to probe them it.
+                // nothing to probe it with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });

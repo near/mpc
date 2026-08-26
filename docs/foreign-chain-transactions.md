@@ -571,7 +571,7 @@ Once wired into node startup, each resolved provider gets its self-identifying R
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
-Every chain in the table below is probed, each by the RPC beside it. `solana`'s inspector has a fingerprint probe (`getGenesisHash`) that the health check does not call yet, so `solana` still ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
+Every chain in the table below is probed, each by the RPC beside it. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
 
 | chain | probe |
 |---|---|
@@ -745,7 +745,6 @@ including the fingerprints that look numeric.
 
 For every probed chain, leaving the field unset is not a silent skip: every provider of the chain
 is reported as `MissingExpectedFingerprint`, because silence reads as healthy on a dashboard.
-`solana` reports `ProbeNotImplemented` whether the field is set or not.
 
 ## Risks
 
