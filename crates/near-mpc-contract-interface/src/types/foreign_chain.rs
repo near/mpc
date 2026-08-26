@@ -1676,9 +1676,7 @@ pub struct SvmTxId(
 );
 
 /// Hex-string schema for a 64-byte array, which schemars has no
-/// [`JsonSchema`](schemars::JsonSchema) impl for. The `{64}` in the pattern restates the length of
-/// [`SvmTxId`]'s array and has to be kept in step with it by hand: overriding the schema also
-/// overrides the ABI snapshot's view of it, so nothing catches the two disagreeing.
+/// [`JsonSchema`](schemars::JsonSchema) impl for.
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 struct Hex64Schema;
 
