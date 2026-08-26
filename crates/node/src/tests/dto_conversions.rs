@@ -50,11 +50,9 @@ mod tests {
     use super::*;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId};
     use mpc_primitives::domain::DomainId;
+    use rstest::rstest;
 
-    fn sample_keyset() -> Keyset {
-        let public_key: dtos::PublicKey = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
-            .parse()
-            .unwrap();
+    fn sample_keyset(public_key: dtos::PublicKey) -> Keyset {
         let key = PublicKeyExtended::try_from(public_key).unwrap();
         Keyset::new(
             EpochId::new(7),
@@ -68,11 +66,19 @@ mod tests {
 
     /// The DTO produced by `keyset_to_dto` must serialize identically to the
     /// internal [`Keyset`], guarding against drift from the contract's own
-    /// [`IntoInterfaceType`] impl.
-    #[test]
-    fn keyset_to_dto__should_match_internal_serialization() {
+    /// [`IntoInterfaceType`] impl. This is what pins the `conclude_node_migration`
+    /// and `init_running` wire format, so it covers every curve.
+    #[rstest]
+    #[case::ed25519(
+        "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+            .parse::<dtos::PublicKey>()
+            .unwrap()
+    )]
+    #[case::secp256k1(dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey([3u8; 64])))]
+    #[case::bls12381(dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey([5u8; 96])))]
+    fn keyset_to_dto__should_match_internal_serialization(#[case] public_key: dtos::PublicKey) {
         // Given
-        let internal = sample_keyset();
+        let internal = sample_keyset(public_key);
 
         // When
         let dto = keyset_to_dto(&internal);

@@ -208,10 +208,6 @@ impl From<OldRunningContractState> for RunningContractState {
     }
 }
 
-/// Shadow of the `3.14.0` [`ProtocolContractState`]. Only the `Running` variant has a
-/// verified shadow: Initializing/Resharing reuse current types and would fail to
-/// deserialize old data, which matches the pre-existing "migration panics if not Running"
-/// policy enforced in [`From<MpcContract>`](MpcContract).
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 enum OldProtocolContractState {
     NotInitialized,
@@ -295,8 +291,11 @@ mod tests {
     use crate::primitives::test_utils::bogus_ed25519_public_key_extended;
     use rstest::rstest;
 
-    /// Returns an old-layout key together with the key material it must migrate to.
-    fn old_ed25519_key() -> (OldPublicKeyExtended, dtos::PublicKey) {
+    /// An old-layout key, the key material it must migrate to, and the bytes `3.14.0` wrote
+    /// for it: the variant tag followed by each field encoded by the type that held it.
+    type OldKeyCase = (OldPublicKeyExtended, dtos::PublicKey, Vec<u8>);
+
+    fn old_ed25519_key() -> OldKeyCase {
         let PublicKeyExtended::Ed25519 {
             near_public_key_compressed,
             edwards_point,
@@ -304,41 +303,71 @@ mod tests {
         else {
             unreachable!("helper always builds an ed25519 key")
         };
+        let near_key = near_sdk::PublicKey::from(near_public_key_compressed.clone());
 
+        let bytes = [
+            vec![1u8],
+            borsh::to_vec(&near_key).unwrap(),
+            borsh::to_vec(&edwards_point).unwrap(),
+        ]
+        .concat();
         let old = OldPublicKeyExtended::Ed25519 {
-            near_public_key_compressed: near_sdk::PublicKey::from(
-                near_public_key_compressed.clone(),
-            ),
+            near_public_key_compressed: near_key,
             edwards_point,
         };
-        (old, dtos::PublicKey::Ed25519(near_public_key_compressed))
+        (
+            old,
+            dtos::PublicKey::Ed25519(near_public_key_compressed),
+            bytes,
+        )
     }
 
-    fn old_secp256k1_key() -> (OldPublicKeyExtended, dtos::PublicKey) {
+    fn old_secp256k1_key() -> OldKeyCase {
         let key = dtos::Secp256k1PublicKey([3u8; 64]);
+        let near_key = near_sdk::PublicKey::from(key.clone());
+
+        let bytes = [vec![0u8], borsh::to_vec(&near_key).unwrap()].concat();
         let old = OldPublicKeyExtended::Secp256k1 {
-            near_public_key: near_sdk::PublicKey::from(key.clone()),
+            near_public_key: near_key,
         };
-        (old, dtos::PublicKey::Secp256k1(key))
+        (old, dtos::PublicKey::Secp256k1(key), bytes)
     }
 
-    fn old_bls12381_key() -> (OldPublicKeyExtended, dtos::PublicKey) {
+    fn old_bls12381_key() -> OldKeyCase {
         let key = dtos::Bls12381G2PublicKey([5u8; 96]);
-        let old = OldPublicKeyExtended::Bls12381 {
-            public_key: dtos::PublicKey::Bls12381(key.clone()),
-        };
-        (old, dtos::PublicKey::Bls12381(key))
+        let inner = dtos::PublicKey::Bls12381(key.clone());
+
+        let bytes = [vec![2u8], borsh::to_vec(&inner).unwrap()].concat();
+        let old = OldPublicKeyExtended::Bls12381 { public_key: inner };
+        (old, dtos::PublicKey::Bls12381(key), bytes)
     }
 
-    /// The migration must reproduce the exact key bytes the `3.14.0` contract stored, for
-    /// every curve. `Bls12381` has no other coverage: the sandbox upgrade tests only add a
-    /// CKD domain after the upgrade, so no BLS key crosses the migration there.
+    /// Pins the shadow's variant tags and field types against the types `3.14.0` stored, so a
+    /// wrong shadow fails here instead of round-tripping through itself. `Bls12381` has no
+    /// other coverage: the sandbox upgrade tests only add a CKD domain after the upgrade, so
+    /// no BLS key crosses the migration there.
+    #[rstest]
+    #[case::secp256k1(old_secp256k1_key())]
+    #[case::ed25519(old_ed25519_key())]
+    #[case::bls12381(old_bls12381_key())]
+    fn old_public_key_extended__should_encode_as_the_3_14_0_layout(
+        #[case] (old, _, expected_bytes): OldKeyCase,
+    ) {
+        // Given / When
+        let bytes = borsh::to_vec(&old).unwrap();
+
+        // Then
+        assert_eq!(bytes, expected_bytes);
+    }
+
+    /// The migration must reproduce the exact key material the `3.14.0` contract stored, for
+    /// every curve.
     #[rstest]
     #[case::secp256k1(old_secp256k1_key())]
     #[case::ed25519(old_ed25519_key())]
     #[case::bls12381(old_bls12381_key())]
     fn old_public_key_extended__should_migrate_to_the_same_key(
-        #[case] (old, expected): (OldPublicKeyExtended, dtos::PublicKey),
+        #[case] (old, expected, _): OldKeyCase,
     ) {
         // Given the old-layout bytes as the `3.14.0` contract wrote them.
         let bytes = borsh::to_vec(&old).unwrap();
