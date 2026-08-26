@@ -1401,7 +1401,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 attestation-cli tcb-status --url http://<IP>:8080/public_data
 ```
 
-It needs no image hash or compose file, prints the platform's SVNs, and reports both the node's own verdict and the one Intel's current TCB info gives. It exits non-zero unless that second verdict is `UpToDate`, so it works as a cron check. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do about a demotion.
+It needs no image hash or compose file, prints the platform's SVNs, and reports both the node's own verdict and the one Intel's current TCB info gives. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do about a demotion.
 
 ### Add the Node Account Key to Your Account
 
@@ -2294,9 +2294,10 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
   current TDX module. Check the loaded module with
   `sudo dmesg | grep -i "tdx module"`; the fix is a **vendor BIOS/firmware
   update** that bundles a newer Intel TDX module — an `intel-microcode` update
-  alone won't move it. To see exactly which SVN is short and by how much, run
-  `attestation-cli tcb-status`; [TDX platform TCB status](./tdx-tcb-status.md)
-  walks through the update.
+  alone won't move it. `attestation-cli tcb-status --file public_data.json` names
+  which SVN is short and by how much, if you captured the node's `/public_data`
+  while it was still up; [TDX platform TCB status](./tdx-tcb-status.md) walks
+  through the update either way.
 
 > Confirmed in the field: a Granite Rapids host with this signature was fixed by
 > a vendor BIOS update bundling a newer Intel TDX module.

@@ -8,8 +8,7 @@ cargo install --path crates/attestation-cli   # from the repository root
 attestation-cli tcb-status --url http://<node-host>:8080/public_data
 ```
 
-Flags and exit codes:
-[`tcb-status`](../crates/attestation-cli/README.md#tcb-status) in the
+Flags: [`tcb-status`](../crates/attestation-cli/README.md#tcb-status) in the
 attestation-cli README.
 
 `/public_data` is served by the mpc-node inside the CVM, so the check needs a
@@ -57,15 +56,14 @@ near contract call-function as-read-only \
 A demotion can also stop the CVM from booting at all, because
 `gramine-sealing-key-provider` verifies a quote before releasing the disk
 sealing key. See
-[`gramine-sealing-key-provider` failures](./running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
+[Quote verification fails](./running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
 
 ## Reading `tcb-status`
 
 `attestation-cli tcb-status` reads a node's `/public_data` and runs the
 contract's own DCAP verification twice: against the collateral the node served,
 and against collateral fetched from Intel just now. Its output for a demoted
-platform, which is what Intel's promotion of set 19 to set 20 on 2026-08-13
-looked like:
+platform, which is what Intel's promotion of set 19 to set 20 looked like:
 
 ```text
 === MPC Node Platform TCB Status ===
@@ -160,8 +158,11 @@ with no need to wait for it to sync. Then:
   7 days out, meaning the contract accepted a submission.
 
 If collateral fetches start failing instead, your PCCS may not have a PCK
-certificate for the platform's new TCB level yet. See
-[Self-hosting a local PCCS](./running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs).
+certificate for the platform's new TCB level yet. The node then starts with no
+attestation at all and keeps retrying, so `tcb-status` reports that the node is
+not running in a TEE rather than naming a TCB problem. See
+[Self-hosting a local PCCS](./running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs),
+and restart the CVM once the PCCS can serve the new level.
 
 ## What this check does not cover
 
