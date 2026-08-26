@@ -276,9 +276,9 @@ impl DstackAttestation {
         expected: &ReportData,
         actual: &TDReport10,
     ) -> Result<(), VerificationError> {
-        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
-        // proves that tls_public_key was included in the quote's report_data by an app running
-        // inside a TDX enclave.
+        // Check if SHA3-384(tls_public_key || account_public_key) matches the hash in report_data.
+        // This check effectively proves that both keys were included in the quote's report_data by
+        // an app running inside a TDX enclave.
         compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
     }
 
