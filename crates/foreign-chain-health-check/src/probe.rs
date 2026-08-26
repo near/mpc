@@ -143,7 +143,8 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // Solana and Ton have no inspector to probe them with.
+                // TODO(#4003): probe Solana and Fogo. Ton has no inspector, so there is
+                // nothing to probe it with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
