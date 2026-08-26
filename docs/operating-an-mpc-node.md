@@ -57,6 +57,9 @@ Upgrades are a regular part of operating a node — expect a new MPC release rou
 ### Node upgrades
 Follow our [reproducible builds guide](./reproducible-builds.md) to verify the docker image hashes, then upgrade your nodes to the requested version.
 
+### Host firmware upgrades
+For TEE nodes, keeping the host's BIOS, CPU microcode and TDX module current is part of the job, and it isn't something we can coordinate for you: Intel raises the TCB bar on its own schedule, historically about every six months, and a platform below it has its attestation rejected until the host is updated. Check where your host stands and update it following [TDX platform TCB status](./tdx-tcb-status.md). Doing this proactively, rather than after an attestation failure, is what keeps the network from losing several participants at once.
+
 ### Contract upgrades & voting
 Contract upgrades happen through voting. Just like with nodes, reproduce the contract build to verify the code before voting.
 
