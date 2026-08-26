@@ -649,6 +649,27 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Requested foreign chain, Bitcoin, is not available.")]
+    fn verify_foreign_tx__should_reject_whitelisted_chain_covered_by_fewer_than_threshold() {
+        // Given: 4 participants, ForeignTx reconstruction threshold 3; only 2 cover Bitcoin.
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, _sk) =
+            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        for account_id in participant_account_ids(&contract).iter().take(2) {
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
+        }
+        testing_env!(context.clone());
+
+        // When
+        contract.verify_foreign_transaction(bitcoin_request_args());
+    }
+
+    #[test]
     fn verify_foreign_tx__should_accept_chain_covered_by_threshold_of_participants() {
         // Given: 4 participants, ForeignTx reconstruction threshold 3; only 3 cover Bitcoin.
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
