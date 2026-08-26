@@ -266,6 +266,11 @@ expression: abi
                       14,
                       "Adi",
                       "ForeignChain__Adi"
+                    ],
+                    [
+                      15,
+                      "Fogo",
+                      "ForeignChain__Fogo"
                     ]
                   ]
                 }
@@ -295,6 +300,9 @@ expression: abi
                 "Struct": null
               },
               "ForeignChain__Ethereum": {
+                "Struct": null
+              },
+              "ForeignChain__Fogo": {
                 "Struct": null
               },
               "ForeignChain__HyperEvm": {
@@ -3129,6 +3137,11 @@ expression: abi
                           14,
                           "Adi",
                           "ForeignChain__Adi"
+                        ],
+                        [
+                          15,
+                          "Fogo",
+                          "ForeignChain__Fogo"
                         ]
                       ]
                     }
@@ -3158,6 +3171,9 @@ expression: abi
                     "Struct": null
                   },
                   "ForeignChain__Ethereum": {
+                    "Struct": null
+                  },
+                  "ForeignChain__Fogo": {
                     "Struct": null
                   },
                   "ForeignChain__HyperEvm": {
@@ -4108,7 +4124,8 @@ expression: abi
             "Aptos",
             "Sui",
             "Avalanche",
-            "Adi"
+            "Adi",
+            "Fogo"
           ]
         },
         "ForeignChainConfiguration": {
@@ -4151,7 +4168,7 @@ expression: abi
               ],
               "properties": {
                 "Solana": {
-                  "$ref": "#/definitions/SolanaRpcRequest"
+                  "$ref": "#/definitions/SvmRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -4296,6 +4313,18 @@ expression: abi
               "properties": {
                 "Adi": {
                   "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Fogo"
+              ],
+              "properties": {
+                "Fogo": {
+                  "$ref": "#/definitions/SvmRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -5736,92 +5765,6 @@ expression: abi
             }
           ]
         },
-        "SolanaExtractor": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "SolanaProgramIdIndex"
-              ],
-              "properties": {
-                "SolanaProgramIdIndex": {
-                  "type": "object",
-                  "required": [
-                    "ix_index"
-                  ],
-                  "properties": {
-                    "ix_index": {
-                      "type": "integer",
-                      "format": "uint32",
-                      "minimum": 0.0
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "SolanaDataHash"
-              ],
-              "properties": {
-                "SolanaDataHash": {
-                  "type": "object",
-                  "required": [
-                    "ix_index"
-                  ],
-                  "properties": {
-                    "ix_index": {
-                      "type": "integer",
-                      "format": "uint32",
-                      "minimum": 0.0
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "SolanaFinality": {
-          "type": "string",
-          "enum": [
-            "Processed",
-            "Confirmed",
-            "Finalized"
-          ]
-        },
-        "SolanaRpcRequest": {
-          "type": "object",
-          "required": [
-            "extractors",
-            "finality",
-            "tx_id"
-          ],
-          "properties": {
-            "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/SolanaExtractor"
-              }
-            },
-            "finality": {
-              "$ref": "#/definitions/SolanaFinality"
-            },
-            "tx_id": {
-              "$ref": "#/definitions/SolanaTxId"
-            }
-          }
-        },
-        "SolanaTxId": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          }
-        },
         "StarknetExtractor": {
           "oneOf": [
             {
@@ -5956,6 +5899,95 @@ expression: abi
             "$ref": "#/definitions/ForeignChain"
           },
           "uniqueItems": true
+        },
+        "SvmAddress": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "SvmExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "InnerInstruction"
+              ],
+              "properties": {
+                "InnerInstruction": {
+                  "type": "object",
+                  "required": [
+                    "inner_instruction_index",
+                    "instruction_index"
+                  ],
+                  "properties": {
+                    "inner_instruction_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    },
+                    "instruction_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "AccountState"
+              ],
+              "properties": {
+                "AccountState": {
+                  "type": "object",
+                  "required": [
+                    "pubkey"
+                  ],
+                  "properties": {
+                    "pubkey": {
+                      "$ref": "#/definitions/SvmAddress"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "SvmFinality": {
+          "type": "string",
+          "enum": [
+            "Confirmed",
+            "Finalized"
+          ]
+        },
+        "SvmRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SvmExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/SvmFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/SvmTxId"
+            }
+          }
+        },
+        "SvmTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2}){64}$"
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",

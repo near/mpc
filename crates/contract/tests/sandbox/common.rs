@@ -32,8 +32,9 @@ use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality,
-    TonLog, TonRpcRequest, TonTxId,
+    SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
+    SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -961,4 +962,33 @@ pub fn sui_request() -> ForeignChainRpcRequest {
         finality: SuiFinality::Checkpointed,
         extractors: vec![SuiExtractor::Event { event_index: 0 }],
     })
+}
+
+pub fn solana_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Solana(svm_rpc_request())
+}
+
+pub fn fogo_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Fogo(svm_rpc_request())
+}
+
+fn svm_rpc_request() -> SvmRpcRequest {
+    SvmRpcRequest {
+        tx_id: SvmTxId([0xbb; 64]),
+        finality: SvmFinality::Finalized,
+        extractors: vec![SvmExtractor::InnerInstruction {
+            instruction_index: 0,
+            inner_instruction_index: 0,
+        }],
+    }
+}
+
+pub fn svm_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::SvmExtractedValue(
+        SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+            program_id: SvmAddress([1; 32]),
+            accounts: vec![SvmAddress([2; 32]), SvmAddress([3; 32])],
+            data: vec![0xde, 0xad, 0xbe, 0xef],
+        }),
+    )]
 }

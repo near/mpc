@@ -19,8 +19,8 @@ use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, DomainConfig, DomainId,
     DomainPurpose, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ForeignChain,
     ForeignChainRpcRequest, ForeignTxPayloadVersion, Protocol, ReconstructionThreshold,
-    SolanaFinality, SolanaRpcRequest, SolanaTxId, StarknetExtractor, StarknetFelt,
-    StarknetFinality, StarknetRpcRequest, StarknetTxId, VerifyForeignTransactionRequestArgs,
+    StarknetExtractor, StarknetFelt, StarknetFinality, StarknetRpcRequest, StarknetTxId,
+    SvmFinality, SvmRpcRequest, SvmTxId, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
 };
 use near_mpc_sdk::foreign_chain::ForeignChainRequestBuilder;
@@ -654,9 +654,9 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
 
     // When — requesting Solana, which is not in the foreign chain config
     let request = VerifyForeignTransactionRequestArgs {
-        request: ForeignChainRpcRequest::Solana(SolanaRpcRequest {
-            tx_id: SolanaTxId([0xbb; 64]),
-            finality: SolanaFinality::Finalized,
+        request: ForeignChainRpcRequest::Solana(SvmRpcRequest {
+            tx_id: SvmTxId([0xbb; 64]),
+            finality: SvmFinality::Finalized,
             extractors: vec![],
         }),
         domain_id: env.foreign_tx_domain_id,
