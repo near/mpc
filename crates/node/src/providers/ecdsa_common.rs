@@ -37,9 +37,7 @@ impl<P> HasParticipants for PresignOutputWithParticipants<P> {
 
 /// Per-domain presignature store, keyed on disk by `domain_id` under [`crate::db::DBCol::Presignature`].
 #[derive(derive_more::Deref)]
-pub struct PresignatureStorage<P>(DistributedAssetStorage<PresignOutputWithParticipants<P>>)
-where
-    P: Serialize + DeserializeOwned + Send + 'static;
+pub struct PresignatureStorage<P>(DistributedAssetStorage<PresignOutputWithParticipants<P>>);
 
 impl<P> PresignatureStorage<P>
 where
@@ -69,10 +67,7 @@ where
 
 /// A domain's [`DomainKeyshare`] material plus a presignature store, which is runtime state the
 /// coordinator can't provide and so is built here.
-pub struct EcdsaKeyshare<P>
-where
-    P: Serialize + DeserializeOwned + Send + 'static,
-{
+pub struct EcdsaKeyshare<P> {
     pub keygen_output: KeygenOutput,
     pub presignature_store: Arc<PresignatureStorage<P>>,
     pub reconstruction_threshold: ReconstructionThreshold,
