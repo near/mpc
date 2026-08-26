@@ -629,6 +629,8 @@ This works because:
 -   The sealing key is derived from:
     -   The Launcher's docker-compose measurements.
     -   The OS measurements.
+    -   The platform TCB, through CPUSVN, which `EGETKEY` mixes into every
+        derived key. Host BIOS and CPU microcode updates raise it.
 -   The MPC node hash itself is **not** part of the sealing key
     derivation material.
 
@@ -656,6 +658,7 @@ Therefore, CVM upgrades require a controlled migration process.
 | MPC Node Image  | High              | No                  |
 | Launcher Image  | Low               | Yes                 |
 | OS Measurements | Very Low          | Yes                 |
+| Host firmware (BIOS / CPU microcode) | Whenever Intel publishes a TCB recovery | Yes |
 
 ## Governance Changes
 
