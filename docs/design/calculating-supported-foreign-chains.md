@@ -66,14 +66,34 @@ result as non-retryable. (Open: whether a sub-quorum from purely *transient*
 failures — timeouts, finality not reached — should still retry, vs. only genuine
 disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
 
-## Participant election
+## Participant selection
 
-Foreign-tx signing must elect participants that **cover** the requested chain
+Foreign-tx signing must select participants that **cover** the requested chain
 (report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
-Implementation requirement, not current behavior: today the signing set is inherited
-from a presignature, whose
-participants were chosen for liveness, not chain coverage.
+
+Implemented in two places:
+1. Leader selection is chain- and quorum-aware: the
+pending-request queue narrows a request's eligible leaders to the supporters
+of `C`, and selects one only when at least a reconstruction threshold's worth
+of them is online (the same threshold that gates availability). Otherwise the request
+parks — no attempt is consumed, the `mpc_num_requests_without_refined_leader_total` metric counts the queue
+passes — until supporters come back or the request expires.
+2. On the
+presignature-selection side, the leader only takes a presignature whose
+participants are all alive **and** supporters of `C`, and as defense-in-depth
+refuses to lead a request for a chain it does not itself support (every owned
+presignature includes the leader).
+
+Residual limitation, accepted as-is: presignature generation remains
+liveness-driven, so participant sets are random `t`-subsets of the alive set.
+When not all alive participants support `C`, many presignatures are
+incompatible, and a request may wait until a compatible one is generated or
+the request times out. We do not plan chain-aware generation, the
+`mpc_num_verify_foreign_tx_presignature_waits` metric (plus a warning log)
+makes such waits observable. A broader redesign of asset selection and the
+underlying queue — which could subsume this limitation — is tracked in
+[#377](https://github.com/near/mpc/issues/377).
 
 ## Per-node registration
 
@@ -109,13 +129,17 @@ chain leaves the available set only when more than `n − signing_threshold` nod
 it. This strictly improves on the intersection rule, where one non-registering node
 dropped a chain to zero availability.
 
-## Known tradeoff
+## Known limitations
 
-A node that's up but not covering a chain only sidelines the `ForeignTx` **presignatures** it co-owns
-(discarded if they stay offline long enough). Its **triples are not lost** — they're shared across
-domains and stay in use, so triples go offline only if the node is genuinely down. Mitigation is
-operational: alerting keeps coverage high and operators are expected to configure every node for
-every chain.
+A node that's up but not covering a chain `C` shrinks the eligible presignature
+pool for `C`: presignatures it co-owns are excluded from selection for `C`'s
+requests (they stay usable for chains the node does cover), and the smaller
+the supporter set, the fewer generated presignatures qualify (see
+[Participant selection](#participant-selection)). Its **triples are
+not lost** — they're shared across domains and stay in use, so triples go
+offline only if the node is genuinely down. Mitigation is operational:
+alerting keeps coverage high and operators are expected to configure every
+node for every chain.
 
 ## Migration
 

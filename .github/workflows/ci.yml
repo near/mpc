@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -55,6 +55,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y repro-env
+
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build MPC Node binary and image
         run: |
@@ -77,7 +82,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -88,6 +93,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y liblzma-dev repro-env
+
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
 
       - name: Build Rust launcher docker image
         shell: bash
@@ -128,7 +136,7 @@ jobs:
     steps:
       - name: Checkout repository
         if: needs.changes.outputs.code_changed != 'false'
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -145,7 +153,7 @@ jobs:
         if: needs.changes.outputs.code_changed != 'false'
       - name: Cache Rust dependencies
         if: needs.changes.outputs.code_changed != 'false'
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -166,7 +174,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -201,7 +209,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -229,7 +237,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -242,7 +250,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -262,7 +270,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -275,7 +283,7 @@ jobs:
 
       - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
@@ -295,11 +303,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      - name: Build tee-verifier
+        run: nix develop --command cargo make build-tee-verifier-optimized
+
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
-        run: nix develop --command cargo build -p backup-cli --release --locked
+        run: nix develop --command cargo make build-backup-cli
 
       - name: Run E2E tests
         run: nix develop --command cargo make e2e-tests-skip-build
@@ -315,7 +326,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -337,7 +348,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

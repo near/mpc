@@ -10,7 +10,7 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, InitConfig, Protocol, ProtocolContractState,
-    ReconstructionThreshold,
+    ReconstructionThreshold, Secp256k1PublicKey,
 };
 use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
 use std::str::FromStr;
@@ -39,13 +39,13 @@ pub fn init_contract(
     parameters: &GovernanceThresholdParameters,
     init_config: Option<InitConfig>,
 ) -> MpcContract {
-    let near_public_key =
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
     let keyset = Keyset::new(
         EpochId::new(5),
         vec![KeyForDomain {
             domain_id: DomainId::default(),
-            key: PublicKeyExtended::Secp256k1 { near_public_key },
+            key: PublicKeyExtended::Secp256k1 {
+                near_public_key: Secp256k1PublicKey([1u8; 64]),
+            },
             attempt: AttemptId::new(),
         }],
     );

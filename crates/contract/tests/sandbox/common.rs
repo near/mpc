@@ -132,13 +132,9 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call(method_names::INIT)
-        .args_json(json!({
-            "parameters": params,
-            "init_config": init_config,
-        }))
-        .gas(GAS_FOR_INIT)
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(params.into(), init_config)
         .await
         .unwrap();
     assert!(result.is_success(), "init failed: {:?}", result);
