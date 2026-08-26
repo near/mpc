@@ -190,8 +190,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             &allowed_launcher_compose_hashes,
         ) {
             // Submit anyway: the contract runs the authoritative check, and this local one can
-            // fail on a stale view of the allowed hashes. Operators are told to grep for this
-            // exact message, so keep it stable
+            // fail on a stale view of the allowed hashes
             tracing::warn!("Attestation is not valid: {error}");
         }
         let submission = submit_remote_attestation(
@@ -268,9 +267,22 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
         "starting TEE attestation removal monitoring; initial TEE attestation status"
     );
 
-    'watch: while tee_accounts_receiver.changed().await.is_ok() {
-        let mut is_available =
-            is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
+    let mut retry_delay = None;
+
+    loop {
+        let changed = match retry_delay.take() {
+            Some(delay) => tee_accounts_receiver
+                .changed()
+                .timeout(delay)
+                .await
+                .unwrap_or(Ok(())),
+            None => tee_accounts_receiver.changed().await,
+        };
+        if changed.is_err() {
+            break;
+        }
+
+        let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
 
         tracing::debug!(
             %node_account_id,
@@ -279,28 +291,14 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             "TEE attestation status check"
         );
 
-        while was_available && !is_available {
+        if was_available && !is_available {
             tracing::warn!(
                 %node_account_id,
                 "TEE attestation removed from contract, resubmitting"
             );
-            if submitter.generate_and_submit().await {
-                break;
-            }
-            // Treat the removal as unhandled and retry after a delay: the watch fires only on
-            // actual changes to the attested-nodes list, which a quiet network may never
-            // produce again
-            match tee_accounts_receiver
-                .changed()
-                .timeout(RESUBMISSION_RETRY_DELAY)
-                .await
-            {
-                Ok(Err(_)) => break 'watch,
-                // An update arrived, or the retry delay elapsed
-                Ok(Ok(())) | Err(_) => {
-                    is_available =
-                        is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id)
-                }
+            if !submitter.generate_and_submit().await {
+                retry_delay = Some(RESUBMISSION_RETRY_DELAY);
+                continue;
             }
         }
 
