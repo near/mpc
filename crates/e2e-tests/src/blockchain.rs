@@ -1,10 +1,11 @@
+use std::marker::PhantomData;
+
 use ed25519_dalek::SigningKey;
-use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_kit::{Final, FinalExecutionOutcome};
-use near_mpc_contract_interface::client::MpcContractHandle;
+use near_kit::{ExecutedOptimistic, Final, FinalExecutionOutcome, WaitLevel};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use serde::de::DeserializeOwned;
 
+use crate::NearKitCaller;
 use crate::conversions::ToNearKey;
 
 const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
@@ -17,31 +18,6 @@ const MAX_GAS: near_kit::Gas = near_kit::Gas::from_tgas(1000);
 pub struct NearBlockchain {
     root_client: near_kit::Near,
     rpc_url: String,
-}
-
-/// A [`near_kit::Near`] client bound to a specific account: the e2e
-/// [`CallContract`] backend.
-pub struct NearKitCaller {
-    inner: near_kit::Near,
-}
-
-impl CallContract for NearKitCaller {
-    type Output = FinalExecutionOutcome;
-    type Error = near_kit::Error;
-
-    async fn call_contract(
-        &self,
-        contract_id: &near_kit::AccountId,
-        call_args: FunctionCallArgs,
-    ) -> Result<Self::Output, Self::Error> {
-        self.inner
-            .call(contract_id, &call_args.method_name)
-            .args_raw(call_args.args)
-            .gas(call_args.gas)
-            .deposit(call_args.deposit)
-            .send()
-            .await
-    }
 }
 
 impl NearBlockchain {
@@ -108,9 +84,14 @@ impl NearBlockchain {
         })
     }
 
-    pub fn client_for(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<NearKitCaller> {
+    pub fn client_for(
+        &self,
+        account_id: &str,
+        key: &SigningKey,
+    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
         Ok(NearKitCaller {
             inner: self.make_client(account_id, key)?,
+            _wait_level: PhantomData,
         })
     }
 
@@ -133,12 +114,15 @@ pub struct DeployedContract {
 }
 
 impl DeployedContract {
-    pub fn contract_id(&self) -> String {
-        self.contract_id.to_string()
+    pub fn account_id(&self) -> &near_account_id::AccountId {
+        &self.contract_id
     }
 
-    pub fn handle_for(&self, caller: NearKitCaller) -> MpcContractHandle<NearKitCaller> {
-        MpcContractHandle::new(caller, self.contract_id.clone())
+    pub fn client(&self) -> NearKitCaller<ExecutedOptimistic> {
+        NearKitCaller {
+            inner: self.client.clone(),
+            _wait_level: PhantomData,
+        }
     }
 
     pub async fn call(
@@ -155,30 +139,14 @@ impl DeployedContract {
             .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
     }
 
-    /// Like [`Self::call`], but waits for the block to be final, so a `view` issued
-    /// afterwards sees the state this call wrote.
-    pub async fn call_final(
+    pub async fn call_from_with_deposit<T: WaitLevel>(
         &self,
-        method: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
-        self.client
-            .call(&self.contract_id, method)
-            .args(args)
-            .gas(MAX_GAS)
-            .wait_until::<Final>()
-            .await
-            .map_err(|e| anyhow::anyhow!("contract call `{method}` failed: {e}"))
-    }
-
-    pub async fn call_from_with_deposit(
-        &self,
-        client: &NearKitCaller,
+        client: &NearKitCaller<T>,
         method: &str,
         args: serde_json::Value,
         gas: near_kit::Gas,
         deposit: near_kit::NearToken,
-    ) -> anyhow::Result<FinalExecutionOutcome> {
+    ) -> anyhow::Result<T::Response> {
         client
             .inner
             .call(&self.contract_id, method)
@@ -186,6 +154,7 @@ impl DeployedContract {
             .gas(gas)
             .deposit(deposit)
             .send()
+            .wait_until::<T>()
             .await
             .map_err(|e| anyhow::anyhow!("contract call `{method}` (with deposit) failed: {e}"))
     }

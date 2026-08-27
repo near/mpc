@@ -1,7 +1,7 @@
 use foreign_chain_inspector::{
     ForeignChainInspector, RpcAuthentication,
     starknet::{
-        StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
+        MAINNET_CHAIN_ID, StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
@@ -109,8 +109,8 @@ fn parse_starknet_felt_hash<T: core::str::FromStr<Err = mpc_primitives::hash::Ha
         .map_err(|e| format!("invalid felt hash {value}: {e}"))
 }
 
-/// Starknet mainnet's chain id (`SN_MAIN`), as shipped in `expected_network_fingerprint`.
-const EXPECTED_NETWORK_FINGERPRINT: &str = "0x534e5f4d41494e";
+/// As shipped in `expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_CHAIN_ID;
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Starknet RPC provider"]

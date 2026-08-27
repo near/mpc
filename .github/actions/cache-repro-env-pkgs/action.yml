@@ -1,0 +1,32 @@
+name: Cache repro-env packages
+description: |
+  Restore repro-env's content-addressed package store, so `repro-env build`
+  finds every pinned `.deb` on disk and never contacts snapshot.debian.org,
+  which throttles and times out under the connect/read timeouts hardcoded in
+  repro-env.
+inputs:
+  save:
+    description: Whether this job should save the cache after running.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Compute repro-env cache key
+      id: compute-key
+      shell: bash
+      run: echo "key=repro-env-pkgs-${{ runner.os }}-${{ hashFiles('repro-env.lock') }}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore and save repro-env packages
+      if: inputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/repro-env/pkgs
+        key: ${{ steps.compute-key.outputs.key }}
+
+    - name: Restore repro-env packages
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/repro-env/pkgs
+        key: ${{ steps.compute-key.outputs.key }}

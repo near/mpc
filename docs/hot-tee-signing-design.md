@@ -406,7 +406,7 @@ The initial governor set and vote threshold are configured at contract deploymen
 | `allowed_launcher_image_hashes()` | View | Archive Signer | Query approved launcher image hashes |
 | `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher compose hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
-| `get_supported_foreign_chains()` | View | Archive Signer |  Query active foreign chains (opt-in)  |
+| `get_available_foreign_chains()` | View | Archive Signer | Query foreign chains accepted by `verify_foreign_transaction` |
 
 ### Launcher Compose Hash Derivation
 
@@ -466,7 +466,7 @@ sequenceDiagram
         Note over OP: Operator restarts CVM with correct image
     end
 
-    loop Every 7 days
+    loop Every hour
         APP ->> APP: Generate fresh attestation quote
         APP ->> HC: submit_participant_info(attestation, tls_pk)
     end

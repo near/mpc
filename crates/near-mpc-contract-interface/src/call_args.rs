@@ -1,13 +1,20 @@
 //! Argument types for the NEAR MPC signer contract function calls.
 
 use crate::types::{
-    Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, DestinationNodeInfo,
-    DomainConfig, Ed25519PublicKey, EpochId, KeyEventId, Keyset,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, SupportedForeignChains, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse,
+    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, GovernanceThresholdParameters,
+    InitConfig, KeyEventId, Keyset, ProposedGovernanceThresholdParameters, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, SupportedForeignChains,
+    TeeVerifierCodeHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct InitArgs {
+    pub parameters: GovernanceThresholdParameters,
+    pub init_config: Option<InitConfig>,
+}
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct SignArgs {
@@ -38,6 +45,12 @@ pub struct VoteNewParametersArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteCancelKeygenArgs {
     pub next_domain_id: u64,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteTeeVerifierChangeArgs {
+    pub candidate_account_id: AccountId,
+    pub expected_code_hash: TeeVerifierCodeHash,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

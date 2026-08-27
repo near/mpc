@@ -1,5 +1,6 @@
 use super::queue::{
     ComputationProgress, EligibleLeadersAndHeights, PendingRequests, QueuedRequest,
+    RefineEligibleLeaders,
 };
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
@@ -14,7 +15,7 @@ const NUM_COMPLETED_REQUESTS_TO_KEEP: usize = 100;
 
 /// A completed request, kept for surfacing on the queue's debug
 /// endpoints (`/debug/signatures`, `/debug/ckds`).
-pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub(super) struct CompletedRequest<RequestType, ChainRespondArgsType> {
     pub request: RequestType,
     pub progress: Arc<Mutex<ComputationProgress<ChainRespondArgsType>>>,
     pub indexed_block_height: BlockHeight,
@@ -26,12 +27,12 @@ pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: C
 /// A buffer of completed requests, surfaced on the queue's debug
 /// endpoints (`/debug/signatures`, `/debug/ckds`). Keeps the most
 /// recent `NUM_COMPLETED_REQUESTS_TO_KEEP` requests.
-pub(super) struct CompletedRequests<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> {
+pub(super) struct CompletedRequests<RequestType, ChainRespondArgsType> {
     /// Min-heap, so that the oldest requests are at the front to be removed.
     requests: BinaryHeap<CompletedRequest<RequestType, ChainRespondArgsType>>,
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Default
+impl<RequestType: Request, ChainRespondArgsType> Default
     for CompletedRequests<RequestType, ChainRespondArgsType>
 {
     fn default() -> Self {
@@ -41,7 +42,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Default
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialEq
+impl<RequestType: Request, ChainRespondArgsType> PartialEq
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn eq(&self, other: &Self) -> bool {
@@ -50,12 +51,12 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialEq
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Eq
+impl<RequestType: Request, ChainRespondArgsType> Eq
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialOrd
+impl<RequestType: Request, ChainRespondArgsType> PartialOrd
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -63,7 +64,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> PartialOrd
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Ord
+impl<RequestType: Request, ChainRespondArgsType> Ord
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -88,7 +89,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
+impl<RequestType: Request, ChainRespondArgsType> Debug
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -175,8 +176,12 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
-    for PendingRequests<RequestType, ChainRespondArgsType>
+impl<RequestType, ChainRespondArgsType, Refiner> Debug
+    for PendingRequests<RequestType, ChainRespondArgsType, Refiner>
+where
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Refiner: RefineEligibleLeaders<RequestType>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut request_lines = Vec::new();
@@ -189,8 +194,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         let indexer_heights = self.network_api.indexer_heights();
 
         for request in self.requests.values() {
-            let debug_line =
-                request.debug_print(&self.clock, self.my_participant_id, &eligible_leaders);
+            let request_eligible_leaders = self
+                .refine_eligible_leaders
+                .refine(&request.request, &eligible_leaders);
+            let debug_line = request.debug_print(
+                &self.clock,
+                self.my_participant_id,
+                &request_eligible_leaders,
+            );
             request_lines.push((
                 request.block_height.into(),
                 request.request.get_id(),

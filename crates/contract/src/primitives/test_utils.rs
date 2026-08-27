@@ -75,14 +75,9 @@ fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) 
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let (edwards_point, compressed_edwards_point) = gen_random_edwards_point();
-    let near_public_key_compressed = near_sdk::PublicKey::from_parts(
-        near_sdk::CurveType::ED25519,
-        compressed_edwards_point.as_bytes().into(),
-    )
-    .unwrap();
 
     PublicKeyExtended::Ed25519 {
-        near_public_key_compressed,
+        near_public_key_compressed: Ed25519PublicKey::from(compressed_edwards_point),
         edwards_point,
     }
 }

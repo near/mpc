@@ -24,17 +24,20 @@ fn make_quote_bytes() -> QuoteBytes {
     QuoteBytes(Vec::from(quote()))
 }
 
-/// Sets a VM context whose block timestamp makes the fixture's collateral
-/// current, so DCAP verification of the valid fixture succeeds.
-fn set_valid_timestamp_context() {
+fn set_timestamp_context(now: Duration) {
     let block_timestamp_ns =
-        u64::try_from(Duration::from_secs(VALID_ATTESTATION_TIMESTAMP).as_nanos())
-            .expect("fixture timestamp in nanoseconds fits in u64");
+        u64::try_from(now.as_nanos()).expect("timestamp in nanoseconds fits in u64");
     testing_env!(
         VMContextBuilder::new()
             .block_timestamp(block_timestamp_ns)
             .build()
     );
+}
+
+/// Sets a VM context whose block timestamp makes the fixture's collateral
+/// current, so DCAP verification of the valid fixture succeeds.
+fn set_valid_timestamp_context() {
+    set_timestamp_context(Duration::from_secs(VALID_ATTESTATION_TIMESTAMP));
 }
 
 #[test]
@@ -102,6 +105,28 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
         },
     };
     assert_eq!(result, VerificationResult::Verified(expected_report));
+}
+
+#[test]
+fn verify_quote__should_reject_valid_fixture_when_block_time_is_past_collateral_validity() {
+    // Given: block time far past the fixture collateral's validity window
+    let ten_years = Duration::from_secs(10 * 365 * 24 * 60 * 60);
+    set_timestamp_context(Duration::from_secs(VALID_ATTESTATION_TIMESTAMP) + ten_years);
+    let contract = TeeVerifier::default();
+    let quote = make_quote_bytes();
+    let collateral = collateral();
+
+    // When
+    let result = contract.verify_quote(quote, collateral);
+
+    // Then
+    let VerificationResult::Rejected(VerifierError::DcapVerification(reason)) = result else {
+        panic!("expected Rejected(DcapVerification(_)), got {result:?}");
+    };
+    assert!(
+        reason.to_lowercase().contains("expired"),
+        "expected a time-driven rejection, got: {reason}"
+    );
 }
 
 #[test]
