@@ -477,8 +477,6 @@ pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVe
         .unwrap()
     });
 
-/// A node that cannot get its attestation onto the contract retries forever rather than giving
-/// up, so this counter is the only signal an operator has that the node is failing to attest.
 pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
