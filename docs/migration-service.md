@@ -442,7 +442,7 @@ The contract provides the following methods:
     - Removes the `OngoingNodeMigration` record for the node operator's account.
     - Useful if the new node is not functioning correctly or wrong information was provided
 
-- **`conclude_node_migration(keyset: &Keyset)`** - Finalizes a node migration:
+- **`conclude_node_migration(keyset: Keyset)`** - Finalizes a node migration:
     - Called by the new node after receiving keyshares from backup service
     - Verifies the provided `keyset` matches the expected key event IDs for this epoch
     - Replaces the old node's `ParticipantInfo` with the new node's info in the current participant set

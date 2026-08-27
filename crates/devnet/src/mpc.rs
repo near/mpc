@@ -27,7 +27,7 @@ use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, NodeImageHash,
     ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, protocol_state_to_string,
+    ReconstructionThreshold, UpdateId, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -533,7 +533,7 @@ impl MpcVoteUpdateCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let handle = setup.accounts.account(account_id).call_mpc(&contract);
-            futs.push(async move { handle.vote_update(self.update_id).await });
+            futs.push(async move { handle.vote_update(UpdateId(self.update_id)).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {

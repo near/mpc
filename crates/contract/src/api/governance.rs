@@ -292,9 +292,14 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            None,
+        )
+        .unwrap();
         (contract, participants, first_participant_id, domain_id)
     }
 

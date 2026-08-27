@@ -17,6 +17,7 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol, ReconstructionThreshold,
+    UpdateId,
 };
 use near_workspaces::Account;
 use sha2::Digest;
@@ -40,7 +41,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // Propose update and have first 2 participants vote on it
     let code = vec![1u8; 1000];
-    let update_id: u64 = mpc_signer_accounts[0]
+    let update_id: UpdateId = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .propose_update(ProposeUpdateArgs {
             code: Some(code.clone()),
@@ -236,7 +237,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
 
 pub fn assert_expected_proposed_update(
     actual_proposed_updates: &dtos::ProposedUpdates,
-    expected_update_id: u64,
+    expected_update_id: UpdateId,
     expected_update_code: &[u8],
     expected_voter_accounts: &[Account],
 ) {
@@ -247,7 +248,7 @@ pub fn assert_expected_proposed_update(
     expected_votes.sort();
 
     // Build expected votes map
-    let expected_votes_map: BTreeMap<dtos::AccountId, u64> = expected_votes
+    let expected_votes_map: BTreeMap<dtos::AccountId, UpdateId> = expected_votes
         .into_iter()
         .map(|account_id| (account_id, expected_update_id))
         .collect();

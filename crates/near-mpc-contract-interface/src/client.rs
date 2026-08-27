@@ -28,7 +28,7 @@ use crate::types::{
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
     GovernanceThresholdParameters, InitConfig, PayloadBytesError, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, SignRequestArgs, SupportedForeignChains,
-    TeeVerifierCodeHash, VerifyForeignTransactionRequestArgs,
+    TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -157,7 +157,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn vote_update(
         &self,
-        id: u64,
+        id: UpdateId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
         self.call(FunctionCallArgs::no_deposit(
@@ -389,7 +389,7 @@ mod tests {
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
-        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
         VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
@@ -535,7 +535,7 @@ mod tests {
             })
             .await
             .unwrap();
-        handle.vote_update(7).await.unwrap();
+        handle.vote_update(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
                 id: DomainId(0),
