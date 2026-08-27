@@ -120,8 +120,6 @@ mod tests {
         }
     }
 
-    /// 3 authenticated participants with the given governance threshold and
-    /// fresh, empty pending votes.
     struct Voting {
         participants: Participants,
         params: GovernanceThresholdParameters,
@@ -183,7 +181,7 @@ mod tests {
 
     #[test]
     fn vote__should_not_cross_below_threshold() {
-        // Given 3 participants, threshold 2
+        // Given 3 participants, governance threshold 2
         let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
 
@@ -200,7 +198,7 @@ mod tests {
 
     #[test]
     fn vote__should_cross_threshold_and_clear_pending() {
-        // Given 3 participants, threshold 2
+        // Given 3 participants, governance threshold 2
         let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
 
@@ -215,7 +213,7 @@ mod tests {
 
     #[test]
     fn vote__should_not_combine_same_account_different_hashes() {
-        // Given 3 participants, threshold 2
+        // Given 3 participants, governance threshold 2
         let mut voting = Voting::with_threshold(2);
         let candidate = "v.near";
         let proposal_hash_1 = proposal(candidate, 1);
@@ -239,7 +237,7 @@ mod tests {
 
     #[test]
     fn revote__should_replace_previous_vote() {
-        // Given 3 participants, threshold 2
+        // Given 3 participants, governance threshold 2
         let mut voting = Voting::with_threshold(2);
         let first_proposal = proposal("a.near", 1);
         let second_proposal = proposal("b.near", 1);
@@ -260,7 +258,7 @@ mod tests {
 
     #[test]
     fn withdraw__should_remove_caller_vote() {
-        // Given 3 participants, threshold 2, and one recorded vote
+        // Given 3 participants, governance threshold 2, and one recorded vote
         let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
         voting.must_cast(0, &proposal);
@@ -270,19 +268,19 @@ mod tests {
         );
 
         // When the caller withdraws
-        voting.votes.withdraw(&voting.voters[0]);
+        voting.votes.withdraw(&voting.voter(0));
 
         // Then their vote is removed
         assert_eq!(voting.votes.pending(), BTreeMap::new());
 
         // When a voter who never voted withdraws, it is a no-op
-        voting.votes.withdraw(&voting.voters[1]);
+        voting.votes.withdraw(&voting.voter(1));
         assert_eq!(voting.votes.pending(), BTreeMap::new());
     }
 
     #[test]
     fn retain__should_keep_current_participants_and_drop_the_rest() {
-        // Given 3 participants, threshold 3, and two voters sharing one bucket
+        // Given 3 participants, governance threshold 3, and two voters sharing one bucket
         let mut voting = Voting::with_threshold(3);
         let proposal = proposal("v.near", 1);
         voting.must_cast(0, &proposal);
