@@ -8,7 +8,7 @@ use crate::sandbox::utils::{
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
-    transactions::CallMpcContract,
+    transactions::{CallMpcContract, execute_async_handle_calls},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -676,38 +676,24 @@ pub async fn make_foreign_chain_available(
         "need at least {threshold} accounts to whitelist a chain, got {}",
         accounts.len()
     );
-    let votes = accounts.iter().take(threshold).map(|account| {
+    execute_async_handle_calls(&accounts[..threshold], contract, |handle| {
         let batch = batch.clone();
-        async move {
-            let result = account
-                .call_mpc(contract.id())
-                .vote_update_foreign_chain_providers(batch)
-                .await
-                .unwrap()
-                .into_result();
-            assert!(result.is_ok(), "whitelist vote should succeed: {result:?}");
-        }
-    });
-    futures::future::join_all(votes).await;
+        async move { handle.vote_update_foreign_chain_providers(batch).await }
+    })
+    .await
+    .expect("whitelist vote should succeed");
 
-    let foreign_chains_config: dtos::ForeignChainsConfig = BTreeSet::from([chain]).into();
-    let registrations = accounts.iter().map(|account| {
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let foreign_chains_config: dtos::ForeignChainsConfig = BTreeSet::from([chain]).into();
         let foreign_chains_config = foreign_chains_config.clone();
         async move {
-            let result = account
-                .call_mpc(contract.id())
+            handle
                 .register_foreign_chains_config(foreign_chains_config)
                 .await
-                .unwrap()
-                .into_result();
-            assert!(
-                result.is_ok(),
-                "{} should succeed: {result:?}",
-                method_names::REGISTER_FOREIGN_CHAINS_CONFIG
-            );
         }
-    });
-    futures::future::join_all(registrations).await;
+    })
+    .await
+    .expect("foreign chains config registration should succeed");
 }
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).

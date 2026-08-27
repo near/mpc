@@ -21,9 +21,8 @@ impl MpcContract {
     /// set); panics in [`NotInitialized`](ProtocolContractState::NotInitialized) or when the caller is not a participant. Entries for
     /// accounts that are no longer participants are pruned after resharing by
     /// [`Self::clean_foreign_chain_data`].
-    #[deprecated(
-        note = "superseded by register_foreign_chains_config; feeds only the legacy get_supported_foreign_chains view (https://github.com/near/mpc/issues/3434)"
-    )]
+    #[deprecated(note = "TODO(#3630): drop this. This is superseded by
+        register_foreign_chains_config, and feeds only the legacy get_supported_foreign_chains")]
     #[handle_result]
     pub fn register_foreign_chain_support(
         &mut self,
@@ -114,7 +113,7 @@ impl MpcContract {
     }
 
     #[deprecated(
-        note = "https://github.com/near/mpc/issues/3079. Nodes register via register_foreign_chains_config instead"
+        note = "TODO(#3630): drop this. Nodes register via register_foreign_chains_config instead"
     )]
     #[expect(deprecated)]
     #[handle_result]
@@ -243,7 +242,7 @@ impl MpcContract {
     }
 
     #[deprecated(
-        note = "superseded by get_available_foreign_chains, which gates verify_foreign_transaction (https://github.com/near/mpc/issues/3434)"
+        note = "TODO(#3630): drop this. It's superseded by get_available_foreign_chains, which gates verify_foreign_transaction"
     )]
     pub fn get_supported_foreign_chains(&self) -> dtos::SupportedForeignChains {
         let active_participant_account_ids = self
@@ -289,9 +288,7 @@ impl MpcContract {
             .into()
     }
 
-    #[deprecated(
-        note = "superseded by get_foreign_chains_configs (https://github.com/near/mpc/issues/3434)"
-    )]
+    #[deprecated(note = "TODO(#3630): drop this, it's deprecated.")]
     pub fn get_foreign_chain_support_by_node(&self) -> dtos::ForeignChainSupportByNode {
         self.node_foreign_chain_support.to_dto()
     }
