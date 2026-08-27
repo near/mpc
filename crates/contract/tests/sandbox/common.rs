@@ -8,7 +8,7 @@ use crate::sandbox::utils::{
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
-    transactions::CallMpcContract,
+    transactions::{CallMpcContract, execute_async_handle_calls},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -27,11 +27,13 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, SupportedForeignChains, TonAddress, TonCellBody, TonExtractedValue,
+    SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
+    SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
     TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
 };
 use near_mpc_contract_interface::{
@@ -131,13 +133,9 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .call(method_names::INIT)
-        .args_json(json!({
-            "parameters": params,
-            "init_config": init_config,
-        }))
-        .gas(GAS_FOR_INIT)
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(params.into(), init_config)
         .await
         .unwrap();
     assert!(result.is_success(), "init failed: {:?}", result);
@@ -665,26 +663,37 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// registers a foreign chain configuration so the foreign chains are supported
-pub async fn register_foreign_chain_configuration(
-    chain: near_mpc_contract_interface::types::ForeignChain,
+/// Whitelists `chain` and registers it as covered by every node, making it available.
+pub async fn make_foreign_chain_available(
+    chain: dtos::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
-    for account in accounts {
-        let result = account
-            .call_mpc(contract.id())
-            .register_foreign_chain_support(node_foreign_chain_support.clone())
-            .await
-            .unwrap()
-            .into_result();
-        assert!(
-            result.is_ok(),
-            "{} should succeed",
-            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
-        );
-    }
+    let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
+    let threshold = assert_running_return_threshold(contract).await.0 as usize;
+    assert!(
+        accounts.len() >= threshold,
+        "need at least {threshold} accounts to whitelist a chain, got {}",
+        accounts.len()
+    );
+    execute_async_handle_calls(&accounts[..threshold], contract, |handle| {
+        let batch = batch.clone();
+        async move { handle.vote_update_foreign_chain_providers(batch).await }
+    })
+    .await
+    .expect("whitelist vote should succeed");
+
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let foreign_chains_config: dtos::ForeignChainsConfig = BTreeSet::from([chain]).into();
+        let foreign_chains_config = foreign_chains_config.clone();
+        async move {
+            handle
+                .register_foreign_chains_config(foreign_chains_config)
+                .await
+        }
+    })
+    .await
+    .expect("foreign chains config registration should succeed");
 }
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).
@@ -897,6 +906,22 @@ pub fn polygon_evm_request() -> ForeignChainRpcRequest {
     })
 }
 
+pub fn avalanche_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
+pub fn adi_evm_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Adi(EvmRpcRequest {
+        tx_id: EvmTxId([0xbb; 32]),
+        extractors: vec![EvmExtractor::BlockHash],
+        finality: EvmFinality::Finalized,
+    })
+}
+
 pub fn ton_request() -> ForeignChainRpcRequest {
     ForeignChainRpcRequest::Ton(TonRpcRequest {
         tx_id: TonTxId([0xbb; 32]),
@@ -923,4 +948,33 @@ pub fn sui_request() -> ForeignChainRpcRequest {
         finality: SuiFinality::Checkpointed,
         extractors: vec![SuiExtractor::Event { event_index: 0 }],
     })
+}
+
+pub fn solana_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Solana(svm_rpc_request())
+}
+
+pub fn fogo_request() -> ForeignChainRpcRequest {
+    ForeignChainRpcRequest::Fogo(svm_rpc_request())
+}
+
+fn svm_rpc_request() -> SvmRpcRequest {
+    SvmRpcRequest {
+        tx_id: SvmTxId([0xbb; 64]),
+        finality: SvmFinality::Finalized,
+        extractors: vec![SvmExtractor::InnerInstruction {
+            instruction_index: 0,
+            inner_instruction_index: 0,
+        }],
+    }
+}
+
+pub fn svm_extracted_values() -> Vec<ExtractedValue> {
+    vec![ExtractedValue::SvmExtractedValue(
+        SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+            program_id: SvmAddress([1; 32]),
+            accounts: vec![SvmAddress([2; 32]), SvmAddress([3; 32])],
+            data: vec![0xde, 0xad, 0xbe, 0xef],
+        }),
+    )]
 }

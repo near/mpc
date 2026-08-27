@@ -3,6 +3,7 @@
 //! so the vectors are network-specific; `None` means the chain is skipped.
 
 use anyhow::Context;
+use foreign_chain_inspector::sui;
 
 use crate::network::Network;
 
@@ -24,19 +25,20 @@ pub struct AptosVector {
 /// reference transaction — see [`check_sui`](crate::checks::check_sui).
 #[derive(Clone, Copy)]
 pub struct SuiVector {
-    /// Base58 of the 32-byte genesis checkpoint digest, exactly as `get_service_info`
-    /// returns it (`sui.rpc.v2`: "the digest of the genesis checkpoint"). Its 4-byte
-    /// prefix is the well-known Sui chain identifier — mainnet `0x35834a8a`, testnet
-    /// `0x4c78adac` — which is the value to grep against Sui docs to verify these.
+    /// The network's genesis checkpoint digest, e.g.
+    /// [`sui::MAINNET_GENESIS_CHECKPOINT_DIGEST`].
     pub chain_id: &'static str,
 }
 
 pub struct GoldenSet {
+    pub ethereum: Option<BlockHashVector>,
     pub base: Option<BlockHashVector>,
     pub bnb: Option<BlockHashVector>,
     pub arbitrum: Option<BlockHashVector>,
     pub polygon: Option<BlockHashVector>,
     pub hyper_evm: Option<BlockHashVector>,
+    pub avalanche: Option<BlockHashVector>,
+    pub adi: Option<BlockHashVector>,
     pub abstract_chain: Option<BlockHashVector>,
     pub bitcoin: Option<BlockHashVector>,
     pub starknet: Option<BlockHashVector>,
@@ -52,6 +54,10 @@ pub fn golden_set(network: Network) -> GoldenSet {
 }
 
 const MAINNET: GoldenSet = GoldenSet {
+    ethereum: Some(BlockHashVector {
+        tx: "7f1c6a58dc880438236d0b0a4ae166e9e9a038dbea8ec074149bd8b176332cac",
+        block_hash: "34e5a6cfbdbb84f7625df1de69d218ade4da72f4a2558064a156674e72e976c9",
+    }),
     base: Some(BlockHashVector {
         tx: "a11eaa1236e80f26ddc7aca164f2ba4c6c2726405cb12b1aa8f52c520bad99e1",
         block_hash: "b8488c9272c547c45e63ea76cc2d1c927c8f888e2721f790b14db996b6cc6aca",
@@ -72,6 +78,14 @@ const MAINNET: GoldenSet = GoldenSet {
         tx: "4d94e2c9c33c533f125bd28a788e80ee24c108356e8fa8a7878f642cf94dcf4a",
         block_hash: "657b2ee81add87e3f654840425baca06a06d5876f6d2d873197e70f00f6762e6",
     }),
+    avalanche: Some(BlockHashVector {
+        tx: "51f5b652c9917189b64a5abb5e1814d3bd0a58dbe433f3f7a58e9b0d20f40bb5",
+        block_hash: "ce5c4ceb1b1c14ba8a0d58f23545106934278390446466810991245a9cff2a43",
+    }),
+    adi: Some(BlockHashVector {
+        tx: "df89849ce8e1b4cf390560395198a10f1bd0498822c6880346a8ce28869ec8e5",
+        block_hash: "e49e64cb14a417a1356929043dc87559c57afb540492bc62c8c0d8270902f5c2",
+    }),
     abstract_chain: Some(BlockHashVector {
         tx: "4572b72d765f07712cf571993fd805888ede9cd05107f65338defee02f7ea755",
         block_hash: "3bb255d468a552a75fc3f4916623b207ceb2d3074dfa14442ac03f0f73423708",
@@ -90,16 +104,19 @@ const MAINNET: GoldenSet = GoldenSet {
         event_sequence_number: 822_198_006,
     }),
     sui: Some(SuiVector {
-        chain_id: "4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S",
+        chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
     }),
 };
 
 const TESTNET: GoldenSet = GoldenSet {
+    ethereum: None,
     base: None,
     bnb: None,
     arbitrum: None,
     polygon: None,
     hyper_evm: None,
+    avalanche: None,
+    adi: None,
     abstract_chain: Some(BlockHashVector {
         tx: "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
         block_hash: "4c93dd4a8f347e6480b0a44f8c2b7eecdfb31d711e8d542fd60112ea5d98fb02",
@@ -118,7 +135,7 @@ const TESTNET: GoldenSet = GoldenSet {
         event_sequence_number: 830_687_280,
     }),
     sui: Some(SuiVector {
-        chain_id: "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
+        chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
     }),
 };
 
@@ -191,11 +208,14 @@ mod tests {
         for network in [Network::Mainnet, Network::Testnet] {
             let set = golden_set(network);
             for v in [
+                set.ethereum,
                 set.base,
                 set.bnb,
                 set.arbitrum,
                 set.polygon,
                 set.hyper_evm,
+                set.avalanche,
+                set.adi,
                 set.abstract_chain,
                 set.bitcoin,
             ]

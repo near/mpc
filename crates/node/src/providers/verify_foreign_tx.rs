@@ -1,6 +1,6 @@
 mod sign;
 
-use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::EcdsaSignatureProvider;
@@ -8,11 +8,14 @@ use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
+use foreign_chain_inspector::adi::inspector::AdiInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::arbitrum::inspector::ArbitrumInspector;
+use foreign_chain_inspector::avalanche::inspector::AvalancheInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
+use foreign_chain_inspector::ethereum::inspector::EthereumInspector;
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
@@ -23,6 +26,7 @@ use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
+use mpc_primitives::ReconstructionThreshold;
 use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,6 +39,7 @@ use tokio::sync::watch;
 /// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
     pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
+    pub ethereum: Option<FanOut<EthereumInspector<Client>>>,
     pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
     pub bnb: Option<FanOut<BnbInspector<Client>>>,
     pub starknet: Option<FanOut<StarknetInspector<Client>>>,
@@ -42,6 +47,8 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
     pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
     pub polygon: Option<FanOut<PolygonInspector<Client>>>,
+    pub avalanche: Option<FanOut<AvalancheInspector<Client>>>,
+    pub adi: Option<FanOut<AdiInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
     pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
 }
@@ -120,6 +127,10 @@ impl ForeignChainInspectors<HttpClient> {
                 config.bitcoin.as_ref(),
                 with_http_client(BitcoinInspector::new),
             )?,
+            ethereum: build_fanout(
+                config.ethereum.as_ref(),
+                with_http_client(EthereumInspector::new),
+            )?,
             abstract_chain: build_fanout(
                 config.abstract_chain.as_ref(),
                 with_http_client(AbstractInspector::new),
@@ -142,6 +153,11 @@ impl ForeignChainInspectors<HttpClient> {
                 config.polygon.as_ref(),
                 with_http_client(PolygonInspector::new),
             )?,
+            avalanche: build_fanout(
+                config.avalanche.as_ref(),
+                with_http_client(AvalancheInspector::new),
+            )?,
+            adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
             aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
             sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
         })
@@ -152,6 +168,9 @@ pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+    /// [`foreign_tx_reconstruction_threshold`](crate::foreign_chain_policy::foreign_tx_reconstruction_threshold)
+    /// of the running domains; `None` when there is no ForeignTx domain.
+    foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -174,6 +193,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+        foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -182,9 +202,17 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
+            foreign_tx_reconstruction_threshold,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         })
+    }
+
+    pub(crate) fn new_eligible_leaders_refiner(&self) -> ForeignChainLeadersRefiner {
+        ForeignChainLeadersRefiner::new(
+            self.supporters_by_foreign_chain.clone(),
+            self.foreign_tx_reconstruction_threshold,
+        )
     }
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
