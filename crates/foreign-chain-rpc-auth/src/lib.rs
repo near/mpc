@@ -1,3 +1,5 @@
+pub mod inspectors;
+
 use anyhow::Context;
 use foreign_chain_inspector::RpcAuthentication;
 use http::HeaderValue;
