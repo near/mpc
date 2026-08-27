@@ -86,9 +86,7 @@ impl ReportDataV1 {
         );
     };
 
-    /// Computes a SHA3-384 hash over two public keys.
-    ///
-    /// Returns SHA3-384(tls_public_key || account_public_key)
+    /// Returns SHA3-384(tls_public_key || account_public_key).
     fn compute_public_keys_hash(
         tls_public_key: impl AsRef<[u8]>,
         account_public_key: impl AsRef<[u8]>,
