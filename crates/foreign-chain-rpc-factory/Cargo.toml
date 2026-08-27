@@ -9,7 +9,6 @@ anyhow = { workspace = true }
 foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 http = { workspace = true }
-jsonrpsee = { workspace = true }
 mpc-node-config = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 url = { workspace = true }

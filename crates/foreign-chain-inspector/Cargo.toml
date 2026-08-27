@@ -8,6 +8,7 @@ license.workspace = true
 test-utils = []
 
 [dependencies]
+anyhow = { workspace = true }
 bs58 = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
@@ -15,6 +16,7 @@ foreign-chain-rpc-interfaces = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
+mpc-node-config = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }

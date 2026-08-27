@@ -9,8 +9,9 @@ use jsonrpsee::core::client::error::Error as RpcClientError;
 use jsonrpsee::core::http_helpers::HttpError;
 use jsonrpsee::http_client::transport::Error as HttpTransportError;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use mpc_node_config::ForeignChainProviderConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
-use near_mpc_contract_interface::types::ProviderId;
+use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -235,6 +236,26 @@ where
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
 
 impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
+
+/// Builds the inspector for one of a chain's providers. `Sync` because a caller that probes
+/// several chains at once shares one factory across them.
+///
+/// A test implements this and answers for the inspectors directly, building no client at all
+/// (see [`mock`]).
+pub trait BuildInspectors: Sync {
+    type Inspector: ChainInspector;
+
+    /// `None` when no inspector exists to probe the chain.
+    ///
+    /// `timeout` reaches the transports that can hold one; the JSON-RPC chains take their deadline
+    /// from the caller instead.
+    fn build(
+        &self,
+        chain: ForeignChain,
+        provider: &ForeignChainProviderConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<Self::Inspector>>;
+}
 
 /// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);

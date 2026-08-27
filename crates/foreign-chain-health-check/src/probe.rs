@@ -4,9 +4,8 @@
 use std::collections::BTreeMap;
 
 use foreign_chain_inspector::{
-    FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
+    BuildInspectors, FanOut, ForeignChainInspectionError, NetworkFingerprint, ProviderFailure,
 };
-use foreign_chain_rpc_factory::inspectors::BuildInspectors;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
@@ -212,9 +211,7 @@ fn classify(
 mod tests {
     use foreign_chain_inspector::mock::{ScriptedInspector, ScriptedReply};
 
-    /// Hands the probe a scripted inspector per provider URL, so nothing builds a client. Do not
-    /// put the httpmock tests above under paused time: the clock jumps while a real socket is
-    /// silent.
+    /// Hands the probe a scripted inspector per provider URL, so nothing builds a client.
     struct ScriptedInspectors(std::collections::BTreeMap<String, ScriptedInspector>);
 
     impl ScriptedInspectors {
@@ -250,7 +247,6 @@ mod tests {
         abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, ethereum, hyperevm,
         polygon, starknet, sui,
     };
-    use foreign_chain_rpc_factory::clients::RpcClientFactory;
     use foreign_chain_rpc_factory::inspectors::InspectorFactory;
     use foreign_chain_rpc_interfaces::sui::Status;
     use foreign_chain_rpc_interfaces::sui::proto::ledger_service_server::{
@@ -530,7 +526,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -551,7 +547,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -570,7 +566,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -614,7 +610,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -634,7 +630,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -672,7 +668,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -702,7 +698,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -720,7 +716,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -739,7 +735,7 @@ mod tests {
         let config = starknet_only(chain_config(Some(MAINNET), providers));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -769,7 +765,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -796,7 +792,7 @@ mod tests {
         };
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -831,7 +827,7 @@ mod tests {
         }
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         for EvmMainnet { chain, .. } in EVM_MAINNETS {
@@ -857,7 +853,7 @@ mod tests {
         );
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -880,7 +876,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -900,7 +896,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -939,7 +935,7 @@ mod tests {
         };
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -962,7 +958,7 @@ mod tests {
         };
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -1053,7 +1049,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -1071,7 +1067,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_eq!(
@@ -1125,7 +1121,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         let ProviderStatus::WrongNetwork { observed, .. } =
@@ -1163,7 +1159,7 @@ mod tests {
         let config = ForeignChainsConfig::default();
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert!(report.rows().is_empty());
@@ -1192,7 +1188,7 @@ mod tests {
         ));
 
         // When
-        let report = probe_all_providers(&config, &InspectorFactory::new(RpcClientFactory)).await;
+        let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
         assert_matches!(

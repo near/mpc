@@ -10,40 +10,35 @@ use crate::bitcoin::inspector::BitcoinInspector;
 use crate::bnb::inspector::Bnb;
 use crate::ethereum::inspector::Ethereum;
 use crate::evm::inspector::EvmInspector;
+use crate::http_client::HttpClient;
 use crate::hyperevm::inspector::HyperEvm;
 use crate::polygon::inspector::Polygon;
 use crate::starknet::inspector::StarknetInspector;
 use crate::sui::inspector::SuiInspector;
 use crate::{ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintInspector};
-use foreign_chain_rpc_interfaces::aptos::AptosRpcClient;
-use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
-use jsonrpsee::core::client::ClientT;
+use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 
 /// [`NetworkFingerprintInspector`] is not dyn compatible, so a caller that spans chains needs an
 /// enum rather than a trait object.
 #[derive(Clone)]
-pub enum RpcInspector<JsonRpc, Aptos, Sui> {
-    Abstract(EvmInspector<JsonRpc, Abstract>),
-    Adi(EvmInspector<JsonRpc, Adi>),
-    Aptos(AptosInspector<Aptos>),
-    Arbitrum(EvmInspector<JsonRpc, Arbitrum>),
-    Avalanche(EvmInspector<JsonRpc, Avalanche>),
-    Base(EvmInspector<JsonRpc, Base>),
-    Bitcoin(BitcoinInspector<JsonRpc>),
-    Bnb(EvmInspector<JsonRpc, Bnb>),
-    Ethereum(EvmInspector<JsonRpc, Ethereum>),
-    HyperEvm(EvmInspector<JsonRpc, HyperEvm>),
-    Polygon(EvmInspector<JsonRpc, Polygon>),
-    Starknet(StarknetInspector<JsonRpc>),
-    Sui(SuiInspector<Sui>),
+pub enum RpcInspector {
+    Abstract(EvmInspector<HttpClient, Abstract>),
+    Adi(EvmInspector<HttpClient, Adi>),
+    Aptos(AptosInspector<ReqwestAptosClient>),
+    Arbitrum(EvmInspector<HttpClient, Arbitrum>),
+    Avalanche(EvmInspector<HttpClient, Avalanche>),
+    Base(EvmInspector<HttpClient, Base>),
+    Bitcoin(BitcoinInspector<HttpClient>),
+    Bnb(EvmInspector<HttpClient, Bnb>),
+    Ethereum(EvmInspector<HttpClient, Ethereum>),
+    HyperEvm(EvmInspector<HttpClient, HyperEvm>),
+    Polygon(EvmInspector<HttpClient, Polygon>),
+    Starknet(StarknetInspector<HttpClient>),
+    Sui(SuiInspector<GrpcSuiClient>),
 }
 
-impl<JsonRpc, Aptos, Sui> NetworkFingerprintInspector for RpcInspector<JsonRpc, Aptos, Sui>
-where
-    JsonRpc: ClientT + Send + Sync,
-    Aptos: AptosRpcClient + Send + Sync,
-    Sui: SuiRpcClient + Send + Sync,
-{
+impl NetworkFingerprintInspector for RpcInspector {
     async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
         match self {
             Self::Abstract(inspector) => inspector.network_fingerprint().await,

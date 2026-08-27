@@ -7,7 +7,6 @@ use std::future::Future;
 use foreign_chain_health_check::probe::{
     ProbeReport, ProviderHealth, ProviderStatus, probe_all_providers,
 };
-use foreign_chain_rpc_factory::clients::RpcClientFactory;
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use near_mpc_contract_interface::types as dtos;
@@ -24,8 +23,11 @@ pub async fn run_periodic_probe(foreign_chains: ForeignChainsConfig, ticker: imp
         return;
     }
 
-    let inspectors = InspectorFactory::new(RpcClientFactory);
-    probe_periodically(|| probe_all_providers(&foreign_chains, &inspectors), ticker).await;
+    probe_periodically(
+        || probe_all_providers(&foreign_chains, &InspectorFactory),
+        ticker,
+    )
+    .await;
 }
 
 async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
