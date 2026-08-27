@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+test-utils = []
+
 [dependencies]
 bs58 = { workspace = true }
 derive_more = { workspace = true }

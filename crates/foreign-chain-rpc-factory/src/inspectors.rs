@@ -1,16 +1,16 @@
 //! Building a chain's inspector for one of its providers.
 //!
-//! Injecting [`BuildInspectors`] settles which inspectors a caller gets. Anything that builds
-//! clients gets the real ones for free, through the blanket implementation over
-//! [`BuildRpcClients`]; a caller that needs to answer for the inspectors themselves, a test most of
-//! all, implements this instead and never builds a client at all.
+//! Injecting [`BuildInspectors`] settles which inspectors a caller gets. [`InspectorFactory`] is
+//! the one that builds real inspectors, and is itself injected with the clients to build them
+//! over; a caller that needs to answer for the inspectors themselves, a test most of all,
+//! implements [`BuildInspectors`] on its own type and builds no client at all.
 
 use std::time::Duration;
 
-use foreign_chain_inspector::NetworkFingerprintInspector;
+use foreign_chain_inspector::ChainInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
-use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
+use foreign_chain_inspector::evm::inspector::EvmInspector;
 use foreign_chain_inspector::rpc_inspector::RpcInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
@@ -19,144 +19,159 @@ use near_mpc_contract_interface::types::ForeignChain;
 
 use crate::clients::BuildRpcClients;
 
-/// What every inspector this builds must satisfy: probe a provider, and survive being held and
-/// shared for as long as the caller keeps it.
-pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
-
-impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
-
-/// One method per inspector shape rather than per chain: the EVM chains differ only in the marker
-/// type the caller fixes.
-///
-/// `timeout` is the provider's configured deadline. The chains reached over JSON-RPC take it in the
-/// inspection deadline instead, so their implementations may ignore it.
-pub trait BuildInspectors {
-    type Evm<Chain: EvmChain + Clone + Send + Sync + 'static>: ChainInspector;
-    type Starknet: ChainInspector;
-    type Bitcoin: ChainInspector;
-    type Aptos: ChainInspector;
-    type Sui: ChainInspector;
-    /// One type covering every chain, for a caller that holds inspectors of several at once.
-    type Any: ChainInspector;
-
-    fn evm<Chain: EvmChain + Clone + Send + Sync + 'static>(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Evm<Chain>>;
-
-    fn starknet(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Starknet>;
-
-    fn bitcoin(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Bitcoin>;
-
-    fn aptos(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Aptos>;
-
-    fn sui(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Sui>;
+/// `Sync` because a caller that probes several chains at once shares one factory across them.
+pub trait BuildInspectors: Sync {
+    /// One type covering every chain, so a caller that spans them can hold their inspectors
+    /// together.
+    type Inspector: ChainInspector;
 
     /// The inspector for whichever chain `chain` is, or `None` when none exists to probe it.
-    fn any(
+    ///
+    /// `timeout` is the provider's configured deadline. The chains reached over JSON-RPC take it in
+    /// the inspection deadline instead, so an implementation may ignore it for those.
+    fn build(
         &self,
         chain: ForeignChain,
         provider: &ForeignChainProviderConfig,
         timeout: Duration,
-    ) -> anyhow::Result<Option<Self::Any>>;
+    ) -> anyhow::Result<Option<Self::Inspector>>;
 }
 
-/// Choosing the clients is enough to settle the inspectors: each is its chain's inspector over the
-/// client that reaches it.
-impl<Clients: BuildRpcClients> BuildInspectors for Clients {
-    type Aptos = AptosInspector<Clients::Aptos>;
-    type Bitcoin = BitcoinInspector<Clients::JsonRpc>;
-    type Evm<Chain: EvmChain + Clone + Send + Sync + 'static> =
-        EvmInspector<Clients::JsonRpc, Chain>;
-    type Starknet = StarknetInspector<Clients::JsonRpc>;
-    type Any = RpcInspector<Clients::JsonRpc, Clients::Aptos, Clients::Sui>;
-    type Sui = SuiInspector<Clients::Sui>;
+/// Builds each chain's inspector over the client that reaches it, whichever clients it was given.
+pub struct InspectorFactory<Clients> {
+    clients: Clients,
+}
 
-    fn evm<Chain: EvmChain + Clone + Send + Sync + 'static>(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        _timeout: Duration,
-    ) -> anyhow::Result<Self::Evm<Chain>> {
-        Ok(EvmInspector::new(self.json_rpc(provider)?))
+impl<Clients> InspectorFactory<Clients> {
+    pub fn new(clients: Clients) -> Self {
+        Self { clients }
     }
+}
 
-    fn starknet(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        _timeout: Duration,
-    ) -> anyhow::Result<Self::Starknet> {
-        Ok(StarknetInspector::new(self.json_rpc(provider)?))
-    }
+impl<Clients: BuildRpcClients + Sync> BuildInspectors for InspectorFactory<Clients> {
+    type Inspector = RpcInspector<Clients::JsonRpc, Clients::Aptos, Clients::Sui>;
 
-    fn bitcoin(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        _timeout: Duration,
-    ) -> anyhow::Result<Self::Bitcoin> {
-        Ok(BitcoinInspector::new(self.json_rpc(provider)?))
-    }
-
-    fn aptos(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Aptos> {
-        Ok(AptosInspector::new(BuildRpcClients::aptos(
-            self, provider, timeout,
-        )?))
-    }
-
-    fn sui(
-        &self,
-        provider: &ForeignChainProviderConfig,
-        timeout: Duration,
-    ) -> anyhow::Result<Self::Sui> {
-        Ok(SuiInspector::new(BuildRpcClients::sui(
-            self, provider, timeout,
-        )?))
-    }
-
-    fn any(
+    fn build(
         &self,
         chain: ForeignChain,
         provider: &ForeignChainProviderConfig,
         timeout: Duration,
-    ) -> anyhow::Result<Option<Self::Any>> {
+    ) -> anyhow::Result<Option<Self::Inspector>> {
         Ok(Some(match chain {
-            ForeignChain::Abstract => RpcInspector::Abstract(self.evm(provider, timeout)?),
-            ForeignChain::Adi => RpcInspector::Adi(self.evm(provider, timeout)?),
-            ForeignChain::Aptos => {
-                RpcInspector::Aptos(BuildInspectors::aptos(self, provider, timeout)?)
+            ForeignChain::Abstract => {
+                RpcInspector::Abstract(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
             }
-            ForeignChain::Arbitrum => RpcInspector::Arbitrum(self.evm(provider, timeout)?),
-            ForeignChain::Avalanche => RpcInspector::Avalanche(self.evm(provider, timeout)?),
-            ForeignChain::Base => RpcInspector::Base(self.evm(provider, timeout)?),
-            ForeignChain::Bitcoin => RpcInspector::Bitcoin(self.bitcoin(provider, timeout)?),
-            ForeignChain::Bnb => RpcInspector::Bnb(self.evm(provider, timeout)?),
-            ForeignChain::Ethereum => RpcInspector::Ethereum(self.evm(provider, timeout)?),
-            ForeignChain::HyperEvm => RpcInspector::HyperEvm(self.evm(provider, timeout)?),
-            ForeignChain::Polygon => RpcInspector::Polygon(self.evm(provider, timeout)?),
-            ForeignChain::Starknet => RpcInspector::Starknet(self.starknet(provider, timeout)?),
-            ForeignChain::Sui => RpcInspector::Sui(BuildInspectors::sui(self, provider, timeout)?),
-            // Solana, Ton and Fogo have no inspector to probe them with.
+            ForeignChain::Adi => {
+                RpcInspector::Adi(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::Aptos => {
+                RpcInspector::Aptos(AptosInspector::new(self.clients.aptos(provider, timeout)?))
+            }
+            ForeignChain::Arbitrum => {
+                RpcInspector::Arbitrum(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::Avalanche => RpcInspector::Avalanche(EvmInspector::new(
+                self.clients.json_rpc(provider, timeout)?,
+            )),
+            ForeignChain::Base => {
+                RpcInspector::Base(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::Bitcoin => RpcInspector::Bitcoin(BitcoinInspector::new(
+                self.clients.json_rpc(provider, timeout)?,
+            )),
+            ForeignChain::Bnb => {
+                RpcInspector::Bnb(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::Ethereum => {
+                RpcInspector::Ethereum(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::HyperEvm => {
+                RpcInspector::HyperEvm(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::Polygon => {
+                RpcInspector::Polygon(EvmInspector::new(self.clients.json_rpc(provider, timeout)?))
+            }
+            ForeignChain::Starknet => RpcInspector::Starknet(StarknetInspector::new(
+                self.clients.json_rpc(provider, timeout)?,
+            )),
+            ForeignChain::Sui => {
+                RpcInspector::Sui(SuiInspector::new(self.clients.sui(provider, timeout)?))
+            }
+            // No inspector exists for other chains.
             _ => return Ok(None),
         }))
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use mpc_node_config::{
+        AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
+    };
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+
+    use super::*;
+    use crate::clients::RpcClientFactory;
+
+    /// Every chain a config can hold is set, so a chain added later has to be listed here too, and
+    /// whoever adds it has to say whether an inspector covers it.
+    fn every_configurable_chain() -> ForeignChainsConfig {
+        let section = || {
+            Some(ForeignChainConfig {
+                timeout_sec: NonZeroU64::new(1).unwrap(),
+                max_retries: NonZeroU64::new(1).unwrap(),
+                expected_network_fingerprint: None,
+                providers: NonEmptyBTreeMap::new(
+                    "only".to_string().into(),
+                    ForeignChainProviderConfig {
+                        rpc_url: "http://127.0.0.1:9".to_string(),
+                        auth: AuthConfig::None,
+                    },
+                ),
+            })
+        };
+        ForeignChainsConfig {
+            solana: section(),
+            bitcoin: section(),
+            ethereum: section(),
+            abstract_chain: section(),
+            starknet: section(),
+            bnb: section(),
+            base: section(),
+            arbitrum: section(),
+            hyper_evm: section(),
+            polygon: section(),
+            aptos: section(),
+            sui: section(),
+            avalanche: section(),
+            adi: section(),
+        }
+    }
+
+    // The Sui client is built on a gRPC channel, which needs a reactor to exist.
+    #[tokio::test]
+    async fn build__should_cover_every_configurable_chain_that_has_an_inspector() {
+        // Given
+        let config = every_configurable_chain();
+        let factory = InspectorFactory::new(RpcClientFactory);
+
+        // When
+        let uncovered: Vec<_> = config
+            .iter_chains()
+            .filter(|(chain, chain_config)| {
+                let provider = chain_config.providers.iter().next().expect("a provider").1;
+                factory
+                    .build(*chain, provider, Duration::from_secs(1))
+                    .expect("the provider is well formed")
+                    .is_none()
+            })
+            .map(|(chain, _)| chain)
+            .collect();
+
+        // Then
+        assert_eq!(uncovered, vec![ForeignChain::Solana]);
     }
 }

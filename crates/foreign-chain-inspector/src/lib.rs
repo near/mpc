@@ -27,6 +27,8 @@ pub mod contract_interface_conversions;
 pub mod ethereum;
 pub mod evm;
 pub mod hyperevm;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock;
 pub mod polygon;
 pub mod rpc_inspector;
 pub mod starknet;
@@ -229,12 +231,18 @@ where
     }
 }
 
+/// What a caller that holds an inspector needs of it: probe a provider, and survive being held and
+/// shared for as long as the caller keeps it.
+pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
+
+impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
+
 /// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
 impl<Inspector> FanOut<Inspector>
 where
-    Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+    Inspector: ChainInspector,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the

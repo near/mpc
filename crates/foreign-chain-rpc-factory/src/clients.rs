@@ -11,17 +11,21 @@ use mpc_node_config::ForeignChainProviderConfig;
 
 use crate::auth_config_to_rpc_auth;
 
-/// The transports a chain is reached over. [`RpcClients`] reaches the real providers; a caller that
-/// needs something else, a test most of all, implements this instead.
+/// The transports a chain is reached over. [`RpcClientFactory`] reaches the real providers; a
+/// caller that needs something else, a test most of all, implements this instead.
 ///
-/// Injecting it also settles which inspectors get built, since
-/// [`crate::inspectors`] puts them on whatever this returns.
+/// An [`crate::inspectors::InspectorFactory`] is built over one of these, so the choice also
+/// settles what the inspectors it hands out are talking to.
 pub trait BuildRpcClients {
     type JsonRpc: ClientT + Clone + Send + Sync + 'static;
     type Aptos: AptosRpcClient + Clone + Send + Sync + 'static;
     type Sui: SuiRpcClient + Clone + Send + Sync + 'static;
 
-    fn json_rpc(&self, provider: &ForeignChainProviderConfig) -> anyhow::Result<Self::JsonRpc>;
+    fn json_rpc(
+        &self,
+        provider: &ForeignChainProviderConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Self::JsonRpc>;
 
     fn aptos(
         &self,
@@ -36,11 +40,11 @@ pub trait BuildRpcClients {
     ) -> anyhow::Result<Self::Sui>;
 }
 
-/// Resolves the provider's credentials and reaches it over the network.
+/// Reaches the real providers over the network, with each one's credentials applied.
 #[derive(Clone, Copy)]
-pub struct RpcClients;
+pub struct RpcClientFactory;
 
-impl RpcClients {
+impl RpcClientFactory {
     /// Applies the provider's credentials, leaving them in the URL or in a header as its auth
     /// config asks.
     fn authenticate(
@@ -63,12 +67,19 @@ impl RpcClients {
     }
 }
 
-impl BuildRpcClients for RpcClients {
+impl BuildRpcClients for RpcClientFactory {
     type Aptos = ReqwestAptosClient;
     type JsonRpc = HttpClient;
     type Sui = GrpcSuiClient;
 
-    fn json_rpc(&self, provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
+    /// The deadline is not handed to jsonrpsee: these chains are bounded by the caller's own
+    /// deadline, as they were before this factory existed. It stays in the signature so a caller
+    /// building its own clients can honour it.
+    fn json_rpc(
+        &self,
+        provider: &ForeignChainProviderConfig,
+        _timeout: Duration,
+    ) -> anyhow::Result<HttpClient> {
         let (url, auth) = Self::authenticate(provider)?;
         Ok(build_http_client(url, auth)?)
     }
