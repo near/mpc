@@ -669,15 +669,15 @@ async fn verify_foreign_transaction__should_sign_all_supported_chains() {
         .await
         .expect("call should succeed at the RPC level");
 
-    // Then — the contract rejects the unsupported chain
+    // Then — the contract rejects the unavailable chain
     assert!(
         !outcome.is_success(),
-        "expected verify_foreign_transaction to fail for unsupported chain"
+        "expected verify_foreign_transaction to fail for unavailable chain"
     );
     let failure = outcome.failure_message().unwrap_or_default();
     assert!(
-        failure.contains("not supported"),
-        "expected 'not supported' error, got: {failure}"
+        failure.contains("Requested foreign chain, Solana, is not available"),
+        "expected 'is not available' error, got: {failure}"
     );
 
     // When — requesting a non-existent domain
