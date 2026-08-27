@@ -1,7 +1,7 @@
 //! Participant voting for the trusted `tee-verifier` contract account.
 //!
 //! `mpc-contract` verifies quotes against a single trusted verifier contract
-//! account, chosen by a threshold vote of active participants, each committing
+//! account, chosen by a governance-threshold vote of active participants, each committing
 //! to the `(account_id, code_hash)` pair they audited off-chain.
 
 use crate::{
@@ -58,7 +58,7 @@ impl Default for TeeVerifierVotes {
 
 impl TeeVerifierVotes {
     /// Records the participant's vote for the proposal. Returns the winning
-    /// candidate account once it crosses the signing threshold (votes from
+    /// candidate account once it crosses the governance threshold (votes from
     /// dropped participants don't count); on a win, all pending votes are
     /// cleared and the caller must apply the new verifier account.
     pub fn vote(
@@ -67,7 +67,7 @@ impl TeeVerifierVotes {
         participant: AuthenticatedParticipantId,
         threshold_parameters: &GovernanceThresholdParameters,
     ) -> Result<Option<AccountId>, Error> {
-        let protocol_threshold = threshold_parameters.threshold().value();
+        let governance_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
         let proposal_hash: ProposalHash = proposal.clone().into();
 
@@ -79,7 +79,7 @@ impl TeeVerifierVotes {
             reason: format!("vote count {count_usize} does not fit in u64: {e}"),
         })?;
 
-        if count >= protocol_threshold {
+        if count >= governance_threshold {
             self.pending.clear();
             Ok(Some(proposal.candidate_account_id))
         } else {
