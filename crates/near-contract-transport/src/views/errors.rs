@@ -1,4 +1,4 @@
-use crate::views::call::DeserializationError;
+use crate::views::deserialize::DeserializationError;
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum TransportError<C> {
