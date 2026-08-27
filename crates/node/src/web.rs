@@ -49,6 +49,7 @@ impl IntoResponse for AnyhowErrorWrapper {
 pub(crate) async fn metrics() -> String {
     // Ensure build info metric is always set before gathering metrics
     crate::metrics::init_build_info_metric();
+    crate::metrics::init_attestation_freshness_metrics();
 
     let metric_families = default_registry().gather();
     let mut buffer = vec![];
@@ -154,6 +155,10 @@ struct ForeignChainsProviderCounts {
     aptos: usize,
     #[serde(skip_serializing_if = "is_zero")]
     sui: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    avalanche: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    adi: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
@@ -171,6 +176,8 @@ impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
             polygon: config.polygon.map_or(0, |c| c.providers.len()),
             aptos: config.aptos.map_or(0, |c| c.providers.len()),
             sui: config.sui.map_or(0, |c| c.providers.len()),
+            avalanche: config.avalanche.map_or(0, |c| c.providers.len()),
+            adi: config.adi.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -410,6 +417,8 @@ mod tests {
     const POLYGON_RPC_URL: &str = "https://polygon-bor-rpc.publicnode.com";
     const APTOS_RPC_URL: &str = "https://aptos-mainnet.nodereal.io/v1/";
     const SUI_RPC_URL: &str = "https://fullnode.mainnet.sui.io/";
+    const AVALANCHE_RPC_URL: &str = "https://api.avax.network/ext/bc/C/rpc";
+    const ADI_RPC_URL: &str = "https://rpc.adifoundation.ai";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
@@ -532,6 +541,12 @@ mod tests {
                 )),
                 aptos: Some(test_chain(PROVIDER_PUBLIC, APTOS_RPC_URL, AuthConfig::None)),
                 sui: Some(test_chain(PROVIDER_PUBLIC, SUI_RPC_URL, AuthConfig::None)),
+                avalanche: Some(test_chain(
+                    PROVIDER_PUBLIC,
+                    AVALANCHE_RPC_URL,
+                    AuthConfig::None,
+                )),
+                adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -571,6 +586,8 @@ mod tests {
             "polygon",
             "aptos",
             "sui",
+            "avalanche",
+            "adi",
         ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),
@@ -598,6 +615,8 @@ mod tests {
             POLYGON_RPC_URL,
             APTOS_RPC_URL,
             SUI_RPC_URL,
+            AVALANCHE_RPC_URL,
+            ADI_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,

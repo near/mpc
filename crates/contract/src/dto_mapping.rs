@@ -683,7 +683,7 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
                 edwards_point: edwards_point.to_bytes(),
             },
             PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKeyExtended::Bls12381 {
-                public_key: public_key.clone(),
+                public_key: dtos::PublicKey::Bls12381(public_key.clone()),
             },
         }
     }

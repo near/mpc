@@ -12,6 +12,7 @@ use crate::sandbox::{
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
+        transactions::CallMpcContract,
     },
 };
 use mpc_contract::primitives::{
@@ -56,15 +57,14 @@ async fn init_old_contract(
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = GovernanceThreshold::new(threshold);
-    let threshold_parameters =
-        GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-
+    let threshold_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
+        GovernanceThresholdParameters::new(participants.clone(), threshold)
+            .unwrap()
+            .into();
     contract
-        .call(method_names::INIT)
-        .args_json(serde_json::json!({
-            "parameters": &threshold_parameters,
-        }))
-        .transact()
+        .as_account()
+        .call_mpc(contract.id())
+        .init(threshold_parameters, None)
         .await?
         .into_result()?;
     Ok((accounts, participants))

@@ -731,26 +731,6 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "MpcPublicKey": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Secp256k1",
-                    "Secp256k1PublicKey",
-                ),
-                (
-                    1,
-                    "Ed25519",
-                    "Ed25519PublicKey",
-                ),
-                (
-                    2,
-                    "Bls12381",
-                    "Bls12381G2PublicKey",
-                ),
-            ],
-        },
         "MrtdHash": Struct {
             fields: UnnamedFields(
                 [
@@ -985,16 +965,6 @@ BorshSchemaContainer {
         "Protocol__Frost": Struct {
             fields: Empty,
         },
-        "PublicKey": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "data",
-                        "Vec<u8>",
-                    ),
-                ],
-            ),
-        },
         "PublicKeyExtended": Enum {
             tag_width: 1,
             variants: [
@@ -1020,7 +990,7 @@ BorshSchemaContainer {
                 [
                     (
                         "public_key",
-                        "MpcPublicKey",
+                        "Bls12381G2PublicKey",
                     ),
                 ],
             ),
@@ -1030,7 +1000,7 @@ BorshSchemaContainer {
                 [
                     (
                         "near_public_key_compressed",
-                        "PublicKey",
+                        "Ed25519PublicKey",
                     ),
                     (
                         "edwards_point",
@@ -1044,7 +1014,7 @@ BorshSchemaContainer {
                 [
                     (
                         "near_public_key",
-                        "PublicKey",
+                        "Secp256k1PublicKey",
                     ),
                 ],
             ),
