@@ -91,7 +91,7 @@ The backup service persists its TLS and account keys to dstack's encrypted disk,
 
 ### Periodic Resubmission
 
-The backup service resubmits its attestation every hour with a fresh TDX quote using the same keys. [`add_participant()`][add-participant] overwrites the existing entry for the same TLS key.
+The backup service resubmits its attestation every 7 days with a fresh TDX quote using the same keys. [`add_participant()`][add-participant] overwrites the existing entry for the same TLS key.
 
 ## End-to-End Flows
 
@@ -107,7 +107,7 @@ The following walkthroughs show how the attestation data defined above is used i
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
 3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Bootstrapping](./securing-mpc-with-tee-design-doc.md#bootstrapping)).
 
-**Attestation registration (periodic — every hour, starting on first boot):**
+**Attestation registration (periodic — every 7 days, starting on first boot):**
 
 4. Backup service constructs [`ReportDataV1::new(tls_pk_bytes, account_pk_bytes)`][report-data-v1] and generates a fresh TDX quote.
 5. Backup service calls `register_backup_service(BackupServiceInfo { public_key, attestation })`. The contract verifies the attestation and stores/overwrites the entry in `backup_service_tee_state`.
