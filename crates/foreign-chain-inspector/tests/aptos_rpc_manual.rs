@@ -1,7 +1,7 @@
 use foreign_chain_inspector::{
     ForeignChainInspector,
     aptos::{
-        AptosExtractedValue, AptosTransactionHash,
+        AptosExtractedValue, AptosTransactionHash, MAINNET_CHAIN_ID,
         inspector::{AptosExtractor, AptosFinality, AptosInspector},
     },
 };
@@ -59,4 +59,28 @@ fn parse_tx_hash(hash: &str) -> AptosTransactionHash {
         .try_into()
         .expect("transaction hash should be 32 bytes");
     AptosTransactionHash::from(array)
+}
+
+/// As shipped in the node config `foreign_chains.aptos.expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: u64 = MAINNET_CHAIN_ID;
+
+#[tokio::test]
+#[ignore = "manual test to sanity check against live Aptos RPC provider"]
+async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
+    // given
+    let client =
+        ReqwestAptosClient::new(PUBLIC_NODE_URL.to_string(), None, Duration::from_secs(10));
+    let inspector = AptosInspector::new(client);
+
+    // when
+    let fingerprint =
+        foreign_chain_inspector::NetworkFingerprintInspector::network_fingerprint(&inspector)
+            .await
+            .expect("network_fingerprint should succeed");
+
+    // then
+    assert_eq!(
+        fingerprint.to_string(),
+        EXPECTED_NETWORK_FINGERPRINT.to_string()
+    );
 }

@@ -74,6 +74,7 @@ operations:
 |--------|-------------|
 | `add_owned(id, value)` | Stores a newly generated asset as owned. Persists to `RocksDB` and pushes to the in-memory queue. |
 | `take_owned()` | Blocks until an online asset is available, removes it from storage, and returns it. |
+| `take_owned_matching(eligible)` | Like `take_owned()`, but only returns an asset whose borrowers are additionally all in `eligible`. Used by the verify-foreign-tx leader with the requested chain's supporters. |
 | `maybe_discard_owned(n)` | Examines up to `n` assets. Discards those with offline borrowers; keeps online ones aside as ready. |
 | `add_unowned(id, value)` | Stores another owner's asset share in `RocksDB`. |
 | `take_unowned(id)` | Looks up an unowned asset by ID, removes it from `RocksDB`, and returns it. Fails if not found. |
@@ -85,7 +86,8 @@ operations:
 
 ### Properties of an asset taken from the queue
 
-When `take_owned()` returns an asset, the following holds:
+When `take_owned()` or `take_owned_matching(eligible)` returns an asset,
+the following holds:
 
 1. **All borrowers were online at check time.** The queue verifies
    that the asset is online by the time it is taken from the queue
@@ -94,9 +96,13 @@ When `take_owned()` returns an asset, the following holds:
 2. **The asset has not been used before.** It is removed from storage
    atomically on retrieval. Each asset is consumed exactly once.
 
-`take_unowned(id)` does not guarantee either property — it performs a
-plain database lookup with no liveness check. Borrowers trust the
-owner's choice.
+3. **All borrowers are in `eligible`** — `take_owned_matching` only.
+   The asset's borrowers are checked against the caller-supplied set at
+   the same time as the liveness classification.
+
+`take_unowned(id)` does not guarantee any of these properties — it
+performs a plain database lookup with no liveness check. Borrowers trust
+the owner's choice.
 
 **Remark: No real-time liveness guarantee.** A participant can go offline
 between the liveness check and the start of the protocol. If that
@@ -142,8 +148,9 @@ The `DoubleQueue` that holds owned assets has two layers:
 ### Hot queue
 
 An unbounded multi-producer multi-consumer (MPMC) channel. Newly generated assets are pushed here by
-`add_owned()`. The hot queue is drained into the cold queue the first
-time an asset is needed.
+`add_owned()`. Takers move buffered hot-queue assets into the cold queue
+while searching for a usable asset; a take stops as soon as it finds one,
+so assets may remain buffered in the hot queue.
 
 ### Cold queue
 
@@ -173,6 +180,13 @@ become usable again when participants reconnect. However, `take_owned()`
 will never return an offline asset — if all owned assets are offline, it
 blocks and re-checks the set of online participants every second until
 an asset comes back online.
+
+### take_first_matching()
+
+Backing `take_owned_matching`, this is the exception to the cold queue's
+front/back access: it removes the first online asset also matching the
+caller's set from *any* position before `cold_available`, shifting the
+barriers past the removal point down by one.
 
 ### take_owned() flow
 
@@ -245,7 +259,9 @@ Unlike triples and presignatures, signatures are not pre-generated.
 When a signature request arrives:
 
 1. **Leader** calls `presignature_store.take_owned()` for the relevant
-   domain, consuming one presignature.
+   domain, consuming one presignature. Verify-foreign-tx leaders call
+   `take_owned_matching(supporters)` instead, so the borrowers can all
+   inspect the requested chain.
 2. Leader opens a network channel with the presignature's borrowers
    and broadcasts the presignature ID along with the signature request.
 3. **Followers** call `presignature_store.take_unowned(id)` to retrieve

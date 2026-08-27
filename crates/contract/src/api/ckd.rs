@@ -85,9 +85,8 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
-        let PublicKeyExtended::Bls12381 {
-            public_key: dtos::PublicKey::Bls12381(public_key),
-        } = self.public_key_extended(request.domain_id)?
+        let PublicKeyExtended::Bls12381 { public_key } =
+            self.public_key_extended(request.domain_id)?
         else {
             env::panic_str("Domain is not compatible with CKD (expected Bls12381 curve)");
         };

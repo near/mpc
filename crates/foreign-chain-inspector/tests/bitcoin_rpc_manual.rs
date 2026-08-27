@@ -2,6 +2,7 @@ use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
+        MAINNET_GENESIS_BLOCK_HASH,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
 };
@@ -119,10 +120,8 @@ struct GetBlockVerbosityOneResponse {
     tx: Vec<String>,
 }
 
-/// Bitcoin mainnet's genesis block hash, as shipped in the node config file
-/// `foreign_chains.bitcoin.expected_network_fingerprint`.
-const EXPECTED_NETWORK_FINGERPRINT: &str =
-    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+/// As shipped in the node config `foreign_chains.bitcoin.expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_GENESIS_BLOCK_HASH;
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Bitcoin RPC provider"]

@@ -111,28 +111,40 @@ contract interaction, account creation, and WASM deployment goes through it.
 pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
-    pub fn new(rpc_url: &str, root_account: &str, root_secret: near_kit::SecretKey)
-        -> anyhow::Result<Self>;
+    pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
+        root_secret: near_kit::SecretKey) -> anyhow::Result<Self>;
     pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
     pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<NearKitCaller>;
+        -> anyhow::Result<NearKitCaller<ExecutedOptimistic>>;
 }
 ```
 
 `DeployedContract` wraps the contract's account ID plus its own `near-kit`
-client. It exposes `call`/`call_final` (from the contract account, used only
-for `init`), `handle_for` (a typed `MpcContractHandle` calling as a given
-`NearKitCaller`), `call_from_with_deposit` (untyped escape hatch for
-`prepay_attestation_storage`, which has no typed method yet), `view`, and
-`state()` (parsed `ProtocolContractState`).
+client. It exposes `account_id()`, `client()`, `call` (signed by the contract
+account), `call_from_with_deposit` (untyped escape hatch for calls with no typed
+method yet), `view`, and `state()` (parsed `ProtocolContractState`).
 
-`NearKitCaller` binds a signer to a non-contract account (nodes voting, users
-submitting sign requests) and implements the `CallContract` transport trait,
-so typed calls go through `MpcContractHandle` — the single source of each
-method's wire format, gas, and deposit.
+#### `NearKitCaller<T>` — signer-bound caller (`caller` module)
+
+Binds a signer to a non-contract account (nodes voting, users submitting sign
+requests) and implements the `CallContract` transport trait, s.t. typed calls can go
+through `MpcContractHandle`
+The `T` parameter is the wait level: how far a call waits
+before returning (e.g. `Final`, `ExecutedOptimistic`,...).
+Finality influences the return type (`T::Response`).
+
+```rust
+pub trait CallMpc: Sized {
+    fn call_mpc(self, contract_id: &AccountId) -> MpcContractHandle<Self>;
+}
+
+pub trait WithWaitLevel {
+    fn with_wait_level<U: WaitLevel>(self) -> MpcContractHandle<NearKitCaller<U>>;
+}
+```
 
 ### 3. `MpcNode` / `MpcNodeSetup` — node process manager
 
@@ -160,7 +172,8 @@ indexer state may be corrupt).
 The entry point for tests. `MpcCluster::start(config)` does everything:
 
 1. Create `TestPorts` via `TestPorts::e2e_tests(config.port_seed)`.
-2. Create a per-test temp directory.
+2. Create a per-test artifact directory (`TestDir`, kept on failure, see
+   [Debugging a failure](#debugging-a-failure)).
 3. Start the `NearSandbox`.
 4. Build a `NearBlockchain` signed as the sandbox root.
 5. Generate deterministic signing keys for each node (near signer, p2p, operator,
@@ -171,12 +184,16 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 8. Call `init()` on the contract with the initial participants.
 9. Call `submit_participant_info` for each initial participant (with a
    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
-10. Spawn the `mpc-node` binaries (start *before* adding domains so key
+10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
+    every participant, for topology parity with production. Mock attestations
+    are verified without calling it, so the verifier stays idle; the
+    cross-contract flow is covered by the mpc-contract sandbox tests.
+11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
-11. Sleep briefly and assert no node exited early.
-12. If `config.domains` is non-empty, vote `add_domains` from each participant
+12. Sleep briefly and assert no node exited early.
+13. If `config.domains` is non-empty, vote `add_domains` from each participant
     and wait for `Running` state.
-13. Create user accounts for signing/CKD/verify requests.
+14. Create user accounts for signing/CKD/verify requests.
 
 The returned cluster exposes:
 
@@ -185,7 +202,7 @@ The returned cluster exposes:
 - **Contract state:** `get_contract_state`, `wait_for_state`,
   `wait_for_node_healthy`, `get_tee_accounts`.
 - **Resharing:** `start_resharing`, `start_resharing_and_wait`,
-  `vote_cancel_resharing_from`, `add_domains`.
+  `vote_cancel_resharing_from`, `add_domains_and_wait`, `start_add_domains`.
 - **Metrics:** `get_metric_all_nodes`, `wait_for_metric_all_nodes`.
 - **Data management:** `wipe_db`, `set_block_ingestion`.
 - **Request submission:** `send_sign_request`, `send_ckd_request`,
@@ -197,8 +214,9 @@ The returned cluster exposes:
   `wait_for_foreign_chains_registrations`, `wait_for_available_foreign_chains`
 - **User accounts:** `user_client`, `default_user_account`.
 
-`Drop` kills all running nodes; the temp directory is held via `test_dir` and
-removed when the cluster is dropped.
+`Drop` kills all running nodes; the artifact directory is held via `test_dir` and
+removed when the cluster is dropped, unless the test failed (see
+[Debugging a failure](#debugging-a-failure)).
 
 ```rust
 pub struct MpcClusterConfig {
@@ -207,6 +225,7 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     pub binary_paths: Vec<PathBuf>,             // one or num_nodes
     pub contract_wasm: Vec<u8>,                 // pre-compiled by the test
+    pub tee_verifier_wasm: Vec<u8>,             // pre-compiled by the test
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub presignatures_to_buffer: usize,
@@ -220,11 +239,11 @@ pub struct MpcClusterConfig {
 
 pub struct ForeignChainsClusterConfig {
     pub node_configs: Vec<ForeignChainsConfig>, // per-node; empty = default for all
-    pub whitelisted_chains: BTreeSet<ForeignChain>, // voted in during setup
+    pub whitelist: BTreeMap<ForeignChain, ChainEntry>, // voted in during setup
 }
 
 impl MpcClusterConfig {
-    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>) -> Self;
+    pub fn default_for_test(port_seed: u16, contract_wasm: Vec<u8>, tee_verifier_wasm: Vec<u8>) -> Self;
     pub fn participant_indices(&self) -> Vec<usize>;
 }
 ```
@@ -330,16 +349,41 @@ so any nextest filter or flag works (substring filters, `-E` expressions,
 runs with the `ci-e2e` profile. Do not put flags after a `--` separator: it is
 forwarded verbatim, and nextest only accepts filters, not flags, after `--`.
 
-The task runner builds three things before tests run: the mpc-node binary
-with the `network-hardship-simulation` feature, the MPC contract WASM, and
-the test parallel contract WASM. Paths are passed to tests via the
-`MPC_CONTRACT_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment variables
-read by `must_load_contract_wasm` / `must_load_parallel_contract_wasm` in
-`tests/common.rs`; if the env var is unset and no pre-built WASM is found,
+The task runner builds five things before tests run: the mpc-node binary with
+the `network-hardship-simulation` feature, the MPC contract WASM, the
+tee-verifier WASM, the test parallel contract WASM, and the backup CLI. WASM
+paths are passed to tests via the `MPC_CONTRACT_WASM`,
+`MPC_TEE_VERIFIER_WASM` and `MPC_PARALLEL_CONTRACT_WASM` environment
+variables, read by the `must_load_*` helpers in `tests/common.rs`; if the
+env var is unset and no pre-built WASM is found,
 `test-utils::contract_build::ContractBuilder` builds it on the fly (useful for
 local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
+
+---
+
+## Debugging a failure
+
+Each test gets an artifact directory (`/tmp/mpc-e2e-<random>` by default) with a
+`node<i>/` subdirectory per node holding its config, secrets, RocksDB data, the
+embedded neard home, `stdout.log` (the node's tracing output) and `stderr.log`
+(panics only). `TestDir`
+(`src/test_dir.rs`) keeps it when the test failed and prints the path to the
+test's stderr; a startup failure also carries it in the error:
+
+```
+failed to start cluster: cluster artifacts preserved in /tmp/mpc-e2e-AbC123:
+mpc-node 0 exited early, check /tmp/mpc-e2e-AbC123/node0 (stdout.log holds its
+logs, stderr.log any panic)
+```
+
+| Variable | Effect |
+|---|---|
+| `E2E_KEEP_TMP=1` | Keep artifacts for passing tests too. `0`, `false`, `no` or `off` (any case) deletes them even for failing ones. |
+| `E2E_HOME_BASE=<dir>` | Parent of the artifact directories, created if missing. Same as `MpcClusterConfig::home_base`, without editing the test. |
+| `MPC_NODE_LOG=<filter>` | `RUST_LOG` for the spawned mpc-node processes (default `DEBUG`). |
+| `MPC_NODE_BACKTRACE=<0\|1\|full>` | `RUST_BACKTRACE` for the spawned mpc-node processes (default `1`). |
 
 ---
 
@@ -352,8 +396,8 @@ CI runs the same task via the `mpc-e2e-tests` job.
 - Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
   it initialises `tracing_subscriber` and waits for presignatures.
 - Tests must be deterministic across parallel execution. Use the port
-  allocator, the per-cluster temp directory, and the deterministic key
-  generation rather than creating state outside the cluster.
+  allocator, the per-cluster artifact directory (`cluster.test_dir`), and the
+  deterministic key generation rather than creating state outside the cluster.
 - Arithmetic in tests uses raw `+`/`-`/`*`/`/`; overflow panics are the
   desired failure mode (see `CLAUDE.md`).
 

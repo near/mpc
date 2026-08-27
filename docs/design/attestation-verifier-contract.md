@@ -12,7 +12,7 @@ This document narrows the scope to the one piece that benefits every team — th
 
 ### Current State
 
-[`mpc-contract`](../../crates/contract) accepts TEE attestations from participant nodes through [`submit_participant_info`](../../crates/contract/src/lib.rs). The method runs cryptographic Intel TDX quote verification synchronously inside the contract by calling `dcap_qvl::verify::verify`, which links `dcap-qvl` and its `ring` / `webpki` / `x509-cert` transitive dependencies into the contract's WASM.
+[`mpc-contract`](../../crates/contract) accepts TEE attestations from participant nodes through [`submit_participant_info`](../../crates/contract/src/api/attestation.rs). The method runs cryptographic Intel TDX quote verification synchronously inside the contract by calling `dcap_qvl::verify::verify`, which links `dcap-qvl` and its `ring` / `webpki` / `x509-cert` transitive dependencies into the contract's WASM.
 
 The current flow, in one diagram:
 
@@ -353,7 +353,7 @@ pub struct MpcContract {
 }
 ```
 
-After a resharing changes the participant set, votes from accounts that lost participant status are swept by calling `tee_verifier_votes.retain(new_participants)`. This is invoked by a `#[private]` cleanup method the contract schedules as a self-Promise once resharing completes — same mechanism as the existing [`clean_foreign_chain_data`](../../crates/contract/src/lib.rs) does for `ProviderVotes`.
+After a resharing changes the participant set, votes from accounts that lost participant status are swept by calling `tee_verifier_votes.retain(new_participants)`. This is invoked by a `#[private]` cleanup method the contract schedules as a self-Promise once resharing completes — same mechanism as the existing [`clean_foreign_chain_data`](../../crates/contract/src/api/foreign_chain_support.rs) does for `ProviderVotes`.
 
 There's a small race worth naming, and it is benign. A `submit_participant_info` call schedules its cross-contract call to the current verifier, and then — before that call executes — a `vote_tee_verifier_change` passes and updates `tee_verifier_account_id` to a different address. The in-flight verification does not redirect to the new verifier: the target account of a cross-contract call is fixed when the call is scheduled, not re-read when it executes. So the in-flight call still goes to the old verifier, completes normally, and `resolve_verification` stores the entry exactly as it would have without the rotation. Nothing special happens to that entry — it is a normal stored attestation that ages out within the expiration window like any other old-verifier entry, and the submitting node's next hourly `periodic_attestation_submission` re-attests through the new verifier well before the window closes. There is no sweep to race and no per-entry verifier bookkeeping to get right.
 
@@ -611,11 +611,13 @@ The yield-resume split adds four resolution branches the synchronous version nev
 
 The verifier-rotation design changes the test surface in three ways. First, the expiration window itself: an entry whose `expiry_timestamp_seconds` is in the past must be rejected by `re_verify` even when every post-DCAP allowlist invariant still holds, and an entry within the (shortened) window must still pass — this is the existing expiry check, now exercised against the lowered `DEFAULT_EXPIRATION_DURATION_SECONDS`. Second, rotation routing: after `vote_tee_verifier_change` crosses threshold, the next `submit_participant_info` must call `verify_quote` on the new `tee_verifier_account_id`, and existing stored entries must remain present (no purge) until they expire. Third, the in-flight case: a verification scheduled against the old verifier that resolves after the vote crosses threshold must still be stored as a normal entry — it is not treated specially and ages out via the same expiration window as any other entry.
 
-To make that practical, we introduce a stub `tee-verifier` crate: same `tee-verifier-interface` DTOs as the real verifier, but `verify_quote` returns whatever `VerificationResult` (`Verified` or `Rejected`) the test asks for — and a stub that panics, or an undeployed account, covers the no-verdict path. Sandbox tests deploy the stub like any other verifier candidate — lock its account, then call `vote_tee_verifier_change` from the test setup to point `mpc-contract` at the stub. This runs the same code path as production; nothing in `mpc-contract` knows or cares whether it's talking to the real verifier or the stub.
+Status: the stub verifier this section originally proposed was dropped during implementation, because a second contract mirroring the real one duplicated it for little gain. What shipped:
 
-E2E tests in `crates/e2e-tests` deploy either the real `tee-verifier` (when the test wants real `dcap-qvl` against a fixture quote) or the stub (for everything else). The change is one extra `deploy` call in the setup helper.
+Sandbox tests in `crates/contract/tests/sandbox/tee_verifier.rs` deploy the real `tee-verifier` WASM and drive each verdict through `vote_tee_verifier_change` + `submit_participant_info`: `Rejected` with a malformed quote, no-verdict with an undeployed verifier account, and `Verified` with the fixture quote. `Verified` needs the verifier built with its clock pinned to the fixture instant, which takes two deliberate switches: disabling the default `block-clock` feature and setting the `TEE_VERIFIER_PINNED_NOW_SECONDS` build-time environment variable (the fixture collateral is valid only inside a fixed window, while sandbox time is wall-clock and forward-only). Either switch alone leaves block time in place, and the reproducible release build uses the default feature set and passes no environment through (`passed_env = []`), so no release artifact can carry the pin.
 
-`Attestation::Mock` stays in this iteration. The stub eventually supersedes it — both let tests bypass real `dcap-qvl` — but removing `Mock` is a separate cleanup, not in scope here.
+E2E tests in `crates/e2e-tests` deploy the real `tee-verifier` and vote it in during cluster startup for topology parity; nodes there submit mock attestations, which the MPC contract verifies without calling the verifier, so the cross-contract flow is covered at the sandbox layer.
+
+`Attestation::Mock` stays in this iteration; removing it is a separate cleanup, not in scope here.
 
 [nep-509]: https://github.com/near/NEPs/blob/master/neps/nep-0509.md
 [re-verify]: https://github.com/near/mpc/blob/5e47bfe93b398cb2343681fa2c0f2691d02c7285/crates/mpc-attestation/src/attestation.rs#L93
