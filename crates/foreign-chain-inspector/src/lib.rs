@@ -231,8 +231,7 @@ where
     }
 }
 
-/// What a caller that holds an inspector needs of it: probe a provider, and survive being held and
-/// shared for as long as the caller keeps it.
+/// What a caller needs of an inspector to hold it, clone it into tasks and keep it alive.
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
 
 impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
@@ -670,9 +669,9 @@ mod tests {
     fn classify_rpc_client_error__should_keep_the_rpc_url_out_of_the_message() {
         // Given
         let url_carrying_a_key = "http://provider.example/v2/super-secret".to_string();
-        let error = transport(HttpTransportError::Url(url_carrying_a_key));
 
         // When
+        let error = transport(HttpTransportError::Url(url_carrying_a_key));
         let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
 
         // Then

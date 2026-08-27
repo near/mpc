@@ -13,9 +13,6 @@ use crate::auth_config_to_rpc_auth;
 
 /// The transports a chain is reached over. [`RpcClientFactory`] reaches the real providers; a
 /// caller that needs something else, a test most of all, implements this instead.
-///
-/// An [`crate::inspectors::InspectorFactory`] is built over one of these, so the choice also
-/// settles what the inspectors it hands out are talking to.
 pub trait BuildRpcClients {
     type JsonRpc: ClientT + Clone + Send + Sync + 'static;
     type Aptos: AptosRpcClient + Clone + Send + Sync + 'static;
@@ -45,8 +42,6 @@ pub trait BuildRpcClients {
 pub struct RpcClientFactory;
 
 impl RpcClientFactory {
-    /// Applies the provider's credentials, leaving them in the URL or in a header as its auth
-    /// config asks.
     fn authenticate(
         provider: &ForeignChainProviderConfig,
     ) -> anyhow::Result<(String, RpcAuthentication)> {
@@ -55,7 +50,6 @@ impl RpcClientFactory {
         Ok((url, auth))
     }
 
-    /// The gRPC and REST clients carry credentials in request metadata rather than the URL.
     fn auth_header(auth: RpcAuthentication) -> Option<(http::HeaderName, http::HeaderValue)> {
         match auth {
             RpcAuthentication::KeyInUrl => None,
@@ -72,9 +66,9 @@ impl BuildRpcClients for RpcClientFactory {
     type JsonRpc = HttpClient;
     type Sui = GrpcSuiClient;
 
-    /// The deadline is not handed to jsonrpsee: these chains are bounded by the caller's own
-    /// deadline, as they were before this factory existed. It stays in the signature so a caller
-    /// building its own clients can honour it.
+    /// jsonrpsee never sees the deadline: these chains stay bounded by the caller's own, as they
+    /// were before this factory existed. It stays in the signature for an implementation that
+    /// does want it.
     fn json_rpc(
         &self,
         provider: &ForeignChainProviderConfig,

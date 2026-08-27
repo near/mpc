@@ -1,9 +1,7 @@
 //! Building a chain's inspector for one of its providers.
 //!
-//! Injecting [`BuildInspectors`] settles which inspectors a caller gets. [`InspectorFactory`] is
-//! the one that builds real inspectors, and is itself injected with the clients to build them
-//! over; a caller that needs to answer for the inspectors themselves, a test most of all,
-//! implements [`BuildInspectors`] on its own type and builds no client at all.
+//! A caller that wants to answer for the inspectors themselves, a test most of all, implements
+//! [`BuildInspectors`] and builds no client at all.
 
 use std::time::Duration;
 
@@ -21,14 +19,12 @@ use crate::clients::BuildRpcClients;
 
 /// `Sync` because a caller that probes several chains at once shares one factory across them.
 pub trait BuildInspectors: Sync {
-    /// One type covering every chain, so a caller that spans them can hold their inspectors
-    /// together.
     type Inspector: ChainInspector;
 
-    /// The inspector for whichever chain `chain` is, or `None` when none exists to probe it.
+    /// `None` when no inspector exists to probe the chain.
     ///
-    /// `timeout` is the provider's configured deadline. The chains reached over JSON-RPC take it in
-    /// the inspection deadline instead, so an implementation may ignore it for those.
+    /// `timeout` reaches the transports that can hold one; the JSON-RPC chains take their deadline
+    /// from the caller instead.
     fn build(
         &self,
         chain: ForeignChain,
@@ -37,7 +33,7 @@ pub trait BuildInspectors: Sync {
     ) -> anyhow::Result<Option<Self::Inspector>>;
 }
 
-/// Builds each chain's inspector over the client that reaches it, whichever clients it was given.
+/// Builds each chain's inspector over the clients it was given.
 pub struct InspectorFactory<Clients> {
     clients: Clients,
 }
@@ -97,7 +93,8 @@ impl<Clients: BuildRpcClients + Sync> BuildInspectors for InspectorFactory<Clien
             ForeignChain::Sui => {
                 RpcInspector::Sui(SuiInspector::new(self.clients.sui(provider, timeout)?))
             }
-            // No inspector exists for other chains.
+            // `ForeignChain` is `non_exhaustive`, so the chains left without an inspector cannot
+            // be listed here.
             _ => return Ok(None),
         }))
     }
@@ -116,8 +113,7 @@ mod tests {
     use super::*;
     use crate::clients::RpcClientFactory;
 
-    /// Every chain a config can hold is set, so a chain added later has to be listed here too, and
-    /// whoever adds it has to say whether an inspector covers it.
+    /// Set exhaustively, so a chain added to the config has to be answered for here too.
     fn every_configurable_chain() -> ForeignChainsConfig {
         let section = || {
             Some(ForeignChainConfig {
@@ -151,7 +147,6 @@ mod tests {
         }
     }
 
-    // The Sui client is built on a gRPC channel, which needs a reactor to exist.
     #[tokio::test]
     async fn build__should_cover_every_configurable_chain_that_has_an_inspector() {
         // Given

@@ -143,8 +143,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__header_auth_without_scheme_uses_raw_token() {
-        // Given: providers like Tatum (`x-api-key`) and NowNodes (`api-key`) use
-        // the raw token as the header value, with no scheme prefix.
+        // Given
         let auth = AuthConfig::Header {
             name: http::HeaderName::from_static("x-api-key"),
             scheme: None,
@@ -189,7 +188,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_without_query() {
-        // Given: providers like Helius use `?api-key=<KEY>` on a URL with no query.
+        // Given
         let auth = AuthConfig::Query {
             name: "api-key".to_string(),
             token: TokenConfig::Val {
@@ -208,8 +207,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_with_existing_query() {
-        // Given: dRPC's `?network=ethereum&dkey=<KEY>` form — the URL already has
-        // query parameters and the auth key must be appended with `&`.
+        // Given
         let auth = AuthConfig::Query {
             name: "dkey".to_string(),
             token: TokenConfig::Val {
@@ -231,7 +229,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__query_auth_url_encodes_special_characters() {
-        // Given: tokens may contain characters that must be URL-encoded.
+        // Given
         let auth = AuthConfig::Query {
             name: "api-key".to_string(),
             token: TokenConfig::Val {

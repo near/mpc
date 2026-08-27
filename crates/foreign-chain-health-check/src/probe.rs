@@ -83,7 +83,7 @@ impl ProbeReport {
     }
 }
 
-/// Probe every configured provider concurrently, with the inspectors `inspectors` builds.
+/// Probe every configured provider concurrently.
 ///
 /// Each provider is tried up to `max_retries` times, `timeout_sec` per try, and only for as long as
 /// the failures stay transient. This returns within the largest configured `timeout_sec *
@@ -124,7 +124,7 @@ where
     for (name, provider) in config.providers.iter() {
         let provider_id = ProviderId(name.as_str().to_owned());
         match build_new_inspector(provider) {
-            // No inspector covers the chain, so none of its providers can be asked.
+            // No inspector for the chain, so none of its providers can be asked.
             Ok(None) => return rows_of(chain, config, ProviderStatus::ProbeNotImplemented),
             Ok(Some(inspector)) => inspectors.push((provider_id, inspector)),
             Err(error) => rows.push(ProviderHealth {
@@ -143,7 +143,8 @@ where
         return rows;
     };
     // Any of the chain's inspectors normalizes the same way; the first one that built is enough.
-    let expected = inspectors.first().1.canonical_fingerprint(expected);
+    let (_, inspector) = inspectors.first();
+    let expected = inspector.canonical_fingerprint(expected);
 
     let fingerprints = FanOut::new(inspectors)
         .network_fingerprints(timeout_of(config), config.max_retries)
@@ -211,9 +212,9 @@ fn classify(
 mod tests {
     use foreign_chain_inspector::mock::{ScriptedInspector, ScriptedReply};
 
-    /// Hands the probe a scripted inspector per provider URL, so nothing builds a client and
-    /// every delay is a virtual timer. Never combine this with the httpmock tests above under
-    /// paused time: the runtime advances the clock while a real socket is silent.
+    /// Hands the probe a scripted inspector per provider URL, so nothing builds a client. Do not
+    /// put the httpmock tests above under paused time: the clock jumps while a real socket is
+    /// silent.
     struct ScriptedInspectors(std::collections::BTreeMap<String, ScriptedInspector>);
 
     impl ScriptedInspectors {

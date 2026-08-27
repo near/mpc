@@ -1,4 +1,4 @@
-//! Holding any chain's inspector behind one type.
+//! One type holding any chain's inspector.
 
 use crate::abstract_chain::inspector::Abstract;
 use crate::adi::inspector::Adi;
@@ -19,8 +19,8 @@ use foreign_chain_rpc_interfaces::aptos::AptosRpcClient;
 use foreign_chain_rpc_interfaces::sui::SuiRpcClient;
 use jsonrpsee::core::client::ClientT;
 
-/// One provider's inspector, whichever chain it serves. Lets a caller that spans chains, as the
-/// probe does, hold them behind a single type.
+/// [`NetworkFingerprintInspector`] is not dyn compatible, so a caller that spans chains needs an
+/// enum rather than a trait object.
 #[derive(Clone)]
 pub enum RpcInspector<JsonRpc, Aptos, Sui> {
     Abstract(EvmInspector<JsonRpc, Abstract>),
