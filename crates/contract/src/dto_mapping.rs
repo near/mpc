@@ -1095,9 +1095,6 @@ mod tests {
         assert_eq!(internal_json, dto_json);
     }
 
-    /// The keyset the contract stores and the keyset callers send over the wire must be two
-    /// views of the same value: converting either way must be lossless, and both must produce
-    /// the same JSON.
     #[rstest]
     #[case(dtos::Curve::Secp256k1)]
     #[case(dtos::Curve::Edwards25519)]
@@ -1126,8 +1123,6 @@ mod tests {
         );
     }
 
-    /// The DTO carries the Edwards point next to the compressed key, so a caller can send a
-    /// pair that disagrees. Accepting it would break the contract type's invariant.
     #[test]
     fn public_key_extended__should_reject_an_edwards_point_that_is_not_the_compressed_key() {
         // Given
@@ -1155,8 +1150,6 @@ mod tests {
         );
     }
 
-    /// The variant tag is not what decides the curve — the `<curve>:` prefix inside the key
-    /// string is. A pair that disagrees must be rejected, not silently reinterpreted.
     #[rstest]
     #[case::ed25519_tag_holding_a_secp256k1_key(dtos::PublicKeyExtended::Ed25519 {
         near_public_key_compressed: String::from(&dtos::Secp256k1PublicKey([1u8; 64])),
