@@ -1,8 +1,8 @@
 //! Participant voting for the trusted `tee-verifier` contract account.
 //!
 //! `mpc-contract` verifies quotes against a single trusted verifier contract
-//! account, chosen by a governance-threshold vote of active participants, each committing
-//! to the `(account_id, code_hash)` pair they audited off-chain.
+//! account, chosen by a governance-threshold vote of active participants, each
+//! committing to the `(account_id, code_hash)` pair they audited off-chain.
 
 use crate::{
     errors::{ConversionError, Error},

@@ -2848,7 +2848,7 @@ expression: abi
       },
       {
         "name": "vote_tee_verifier_change",
-        "doc": " Vote for a candidate account to become the trusted verifier contract\n account, committing to the code hash the voter audited. When the proposal\n crosses the signing threshold, the trusted verifier account is updated\n and all pending verifier-change votes are cleared.",
+        "doc": " Vote for a candidate account to become the trusted verifier contract\n account, committing to the code hash the voter audited. When the proposal\n crosses the governance threshold, the trusted verifier account is updated\n and all pending verifier-change votes are cleared.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
