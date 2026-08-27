@@ -33,6 +33,7 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
 const BACKOFF_FACTOR: f32 = 1.5;
 const RESUBMISSION_RETRY_DELAY: Duration = Duration::from_secs(60 * 10); // 10 minutes.
+const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
 
 /// Shared inputs for the attestation-submission background tasks
 /// ([`periodic_attestation_submission`] and [`monitor_attestation_removal`]).
@@ -224,10 +225,18 @@ fn outcome_label(succeeded: bool) -> &'static str {
     }
 }
 
+pub async fn run_periodic_attestation_submission<T: TransactionSender + Clone>(
+    submitter: AttestationSubmitter<T>,
+) {
+    let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    periodic_attestation_submission(submitter, interval).await
+}
+
 /// Periodically regenerates and submits this node's attestation. Generation and submission
 /// failures are logged and retried on the next tick; this task never returns.
 #[tracing::instrument(skip_all)]
-pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
+async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     submitter: AttestationSubmitter<T>,
     mut interval_ticker: I,
 ) {
@@ -314,7 +323,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
 }
 
 /// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
-pub trait Tick {
+trait Tick {
     async fn tick(&mut self);
 }
 
