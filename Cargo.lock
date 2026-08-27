@@ -4023,6 +4023,7 @@ dependencies = [
  "http",
  "jsonrpsee",
  "mpc-node-config",
+ "near-mpc-contract-interface",
  "url",
 ]
 

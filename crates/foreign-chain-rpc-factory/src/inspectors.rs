@@ -11,11 +11,19 @@ use foreign_chain_inspector::NetworkFingerprintInspector;
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
+use foreign_chain_inspector::rpc_inspector::RpcInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
 use mpc_node_config::ForeignChainProviderConfig;
+use near_mpc_contract_interface::types::ForeignChain;
 
 use crate::clients::BuildRpcClients;
+
+/// What every inspector this builds must satisfy: probe a provider, and survive being held and
+/// shared for as long as the caller keeps it.
+pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
+
+impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
 
 /// One method per inspector shape rather than per chain: the EVM chains differ only in the marker
 /// type the caller fixes.
@@ -23,15 +31,13 @@ use crate::clients::BuildRpcClients;
 /// `timeout` is the provider's configured deadline. The chains reached over JSON-RPC take it in the
 /// inspection deadline instead, so their implementations may ignore it.
 pub trait BuildInspectors {
-    type Evm<Chain: EvmChain + Clone + Send + Sync + 'static>: NetworkFingerprintInspector
-        + Clone
-        + Send
-        + Sync
-        + 'static;
-    type Starknet: NetworkFingerprintInspector + Clone + Send + Sync + 'static;
-    type Bitcoin: NetworkFingerprintInspector + Clone + Send + Sync + 'static;
-    type Aptos: NetworkFingerprintInspector + Clone + Send + Sync + 'static;
-    type Sui: NetworkFingerprintInspector + Clone + Send + Sync + 'static;
+    type Evm<Chain: EvmChain + Clone + Send + Sync + 'static>: ChainInspector;
+    type Starknet: ChainInspector;
+    type Bitcoin: ChainInspector;
+    type Aptos: ChainInspector;
+    type Sui: ChainInspector;
+    /// One type covering every chain, for a caller that holds inspectors of several at once.
+    type Any: ChainInspector;
 
     fn evm<Chain: EvmChain + Clone + Send + Sync + 'static>(
         &self,
@@ -62,6 +68,14 @@ pub trait BuildInspectors {
         provider: &ForeignChainProviderConfig,
         timeout: Duration,
     ) -> anyhow::Result<Self::Sui>;
+
+    /// The inspector for whichever chain `chain` is, or `None` when none exists to probe it.
+    fn any(
+        &self,
+        chain: ForeignChain,
+        provider: &ForeignChainProviderConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<Self::Any>>;
 }
 
 /// Choosing the clients is enough to settle the inspectors: each is its chain's inspector over the
@@ -72,6 +86,7 @@ impl<Clients: BuildRpcClients> BuildInspectors for Clients {
     type Evm<Chain: EvmChain + Clone + Send + Sync + 'static> =
         EvmInspector<Clients::JsonRpc, Chain>;
     type Starknet = StarknetInspector<Clients::JsonRpc>;
+    type Any = RpcInspector<Clients::JsonRpc, Clients::Aptos, Clients::Sui>;
     type Sui = SuiInspector<Clients::Sui>;
 
     fn evm<Chain: EvmChain + Clone + Send + Sync + 'static>(
@@ -116,5 +131,32 @@ impl<Clients: BuildRpcClients> BuildInspectors for Clients {
         Ok(SuiInspector::new(BuildRpcClients::sui(
             self, provider, timeout,
         )?))
+    }
+
+    fn any(
+        &self,
+        chain: ForeignChain,
+        provider: &ForeignChainProviderConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<Self::Any>> {
+        Ok(Some(match chain {
+            ForeignChain::Abstract => RpcInspector::Abstract(self.evm(provider, timeout)?),
+            ForeignChain::Adi => RpcInspector::Adi(self.evm(provider, timeout)?),
+            ForeignChain::Aptos => {
+                RpcInspector::Aptos(BuildInspectors::aptos(self, provider, timeout)?)
+            }
+            ForeignChain::Arbitrum => RpcInspector::Arbitrum(self.evm(provider, timeout)?),
+            ForeignChain::Avalanche => RpcInspector::Avalanche(self.evm(provider, timeout)?),
+            ForeignChain::Base => RpcInspector::Base(self.evm(provider, timeout)?),
+            ForeignChain::Bitcoin => RpcInspector::Bitcoin(self.bitcoin(provider, timeout)?),
+            ForeignChain::Bnb => RpcInspector::Bnb(self.evm(provider, timeout)?),
+            ForeignChain::Ethereum => RpcInspector::Ethereum(self.evm(provider, timeout)?),
+            ForeignChain::HyperEvm => RpcInspector::HyperEvm(self.evm(provider, timeout)?),
+            ForeignChain::Polygon => RpcInspector::Polygon(self.evm(provider, timeout)?),
+            ForeignChain::Starknet => RpcInspector::Starknet(self.starknet(provider, timeout)?),
+            ForeignChain::Sui => RpcInspector::Sui(BuildInspectors::sui(self, provider, timeout)?),
+            // Solana, Ton and Fogo have no inspector to probe them with.
+            _ => return Ok(None),
+        }))
     }
 }

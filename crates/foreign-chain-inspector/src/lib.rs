@@ -28,6 +28,7 @@ pub mod ethereum;
 pub mod evm;
 pub mod hyperevm;
 pub mod polygon;
+pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
 
@@ -86,7 +87,7 @@ pub trait NetworkFingerprintInspector {
 
     /// Normalizes any spec-legal spelling of this chain's fingerprint into the single form the trait
     /// compares. Idempotent.
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint;
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.

@@ -181,8 +181,6 @@ where
     let Some(expected) = &config.expected_network_fingerprint else {
         return rows_of(chain, config, ProviderStatus::MissingExpectedFingerprint);
     };
-    let expected = I::canonical_fingerprint(expected);
-
     let mut inspectors = Vec::new();
     let mut rows = Vec::new();
     for (name, provider) in config.providers.iter() {
@@ -200,6 +198,8 @@ where
     let Ok(inspectors) = NonEmptyVec::try_from(inspectors) else {
         return rows;
     };
+    // Any of the chain's inspectors normalizes the same way; the first one that built is enough.
+    let expected = inspectors.first().1.canonical_fingerprint(expected);
 
     let fingerprints = FanOut::new(inspectors)
         .network_fingerprints(timeout_of(config), config.max_retries)
