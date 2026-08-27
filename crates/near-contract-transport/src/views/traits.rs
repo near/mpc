@@ -6,7 +6,7 @@ use crate::{
     TransportError,
     views::{
         args::ViewArgs,
-        result::{ObservedState, SerializedObservation},
+        observation::{ObservedState, SerializedObservation},
     },
 };
 
