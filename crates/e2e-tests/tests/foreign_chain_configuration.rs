@@ -96,12 +96,12 @@ async fn supported_foreign_chains__should_require_all_participants_to_register()
 
     // when — node 2 registers Solana directly on the contract.
     let outcome = cluster
-        .register_foreign_chain_config(2, &solana_foreign_chain_support_dto())
+        .register_legacy_foreign_chain_support(2, &solana_foreign_chain_support_dto())
         .await
         .expect("failed to register foreign chain config from node 2");
     assert!(
         outcome.is_success(),
-        "register_foreign_chain_config failed: {:?}",
+        "register_legacy_foreign_chain_support failed: {:?}",
         outcome.failure_message()
     );
 

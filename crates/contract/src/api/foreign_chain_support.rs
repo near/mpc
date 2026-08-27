@@ -21,6 +21,8 @@ impl MpcContract {
     /// set); panics in [`NotInitialized`](ProtocolContractState::NotInitialized) or when the caller is not a participant. Entries for
     /// accounts that are no longer participants are pruned after resharing by
     /// [`Self::clean_foreign_chain_data`].
+    #[deprecated(note = "TODO(#3630): drop this. This is superseded by
+        register_foreign_chains_config, and feeds only the legacy get_supported_foreign_chains")]
     #[handle_result]
     pub fn register_foreign_chain_support(
         &mut self,
@@ -111,8 +113,9 @@ impl MpcContract {
     }
 
     #[deprecated(
-        note = "https://github.com/near/mpc/issues/3079. Node will be upgraded to use register_foreign_chain_support instead"
+        note = "TODO(#3630): drop this. Nodes register via register_foreign_chains_config instead"
     )]
+    #[expect(deprecated)]
     #[handle_result]
     pub fn register_foreign_chain_config(
         &mut self,
@@ -238,6 +241,9 @@ impl MpcContract {
         Ok(())
     }
 
+    #[deprecated(
+        note = "TODO(#3630): drop this. It's superseded by get_available_foreign_chains, which gates verify_foreign_transaction"
+    )]
     pub fn get_supported_foreign_chains(&self) -> dtos::SupportedForeignChains {
         let active_participant_account_ids = self
             .protocol_state
@@ -282,6 +288,7 @@ impl MpcContract {
             .into()
     }
 
+    #[deprecated(note = "TODO(#3630): drop this, it's deprecated.")]
     pub fn get_foreign_chain_support_by_node(&self) -> dtos::ForeignChainSupportByNode {
         self.node_foreign_chain_support.to_dto()
     }
@@ -306,7 +313,8 @@ mod tests {
     use super::*;
     use crate::api::test_utils::{
         basic_setup, basic_setup_with_protocol, forwarded_participant_call_contract,
-        make_public_key_for_curve, participant_account_ids,
+        make_public_key_for_curve, participant_account_ids, register_foreign_chains_config_for,
+        whitelist_chain,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
@@ -691,59 +699,6 @@ mod tests {
         let _ = contract.vote_update_foreign_chain_providers(batch);
     }
 
-    /// Votes `chain` into the on-chain RPC whitelist using the signing threshold of
-    /// participants (so the chain becomes whitelisted).
-    fn whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
-        let entry = dtos::ChainEntry {
-            providers: NonEmptyBTreeMap::new(
-                dtos::ProviderId("alchemy".to_string()),
-                dtos::ProviderConfig {
-                    base_url: "https://provider.example.com".to_string(),
-                    auth_scheme: dtos::AuthScheme::None,
-                    chain_routing: dtos::ChainRouting::Embedded,
-                },
-            ),
-            quorum: 1,
-        };
-        let batch = NonEmptyBTreeMap::new(chain, entry);
-        let threshold = contract.threshold().unwrap().value() as usize;
-        for account_id in participant_account_ids(contract).iter().take(threshold) {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
-            contract
-                .vote_update_foreign_chain_providers(batch.clone())
-                .expect("vote should succeed");
-        }
-    }
-
-    fn register_foreign_chain_config(
-        contract: &mut MpcContract,
-        account_id: &AccountId,
-        chains: impl IntoIterator<Item = dtos::ForeignChain>,
-    ) {
-        let foreign_chains_config: dtos::ForeignChainsConfig =
-            chains.into_iter().collect::<BTreeSet<_>>().into();
-        // In mock setup, account_public_key == tls_public_key.
-        let tls_key = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .info(account_id)
-            .expect("account must be a participant")
-            .tls_public_key
-            .clone();
-        let mut env = Environment::new(None, Some(account_id.clone()), None);
-        env.set_pk(near_sdk::PublicKey::from(tls_key));
-        contract
-            .register_foreign_chains_config(foreign_chains_config)
-            .expect("register should succeed");
-    }
-
     #[test]
     // Setup with 4 participants, first 3 supporting 4 chains, 4th one supports only 2.
     // Node operator of 4th node spins up new node, and registers config that supports all 4 chains.
@@ -793,12 +748,12 @@ mod tests {
 
         // Nodes 1-3 cover all 4 chains.
         for account_id in participant_ids.iter().take(3) {
-            register_foreign_chain_config(&mut contract, account_id, all_chains);
+            register_foreign_chains_config_for(&mut contract, account_id, all_chains);
         }
 
         // Node 4 (active participant) only covers 2 chains.
         let operator4 = &participant_ids[3];
-        register_foreign_chain_config(&mut contract, operator4, partial_chains);
+        register_foreign_chains_config_for(&mut contract, operator4, partial_chains);
 
         // Operator 4's new migration node (not yet a participant) covers all 4 chains and registers.
         let new_tls_key = dtos::Ed25519PublicKey([99u8; 32]);
@@ -891,10 +846,10 @@ mod tests {
         }
         let participant_ids = participant_account_ids(&contract);
         for account_id in participant_ids.iter().take(3) {
-            register_foreign_chain_config(&mut contract, account_id, all_chains);
+            register_foreign_chains_config_for(&mut contract, account_id, all_chains);
         }
         let operator4 = &participant_ids[3];
-        register_foreign_chain_config(&mut contract, operator4, partial_chains);
+        register_foreign_chains_config_for(&mut contract, operator4, partial_chains);
 
         let available = contract.get_available_foreign_chains();
         assert_eq!(
@@ -965,7 +920,11 @@ mod tests {
 
         // When: exactly the threshold (3) of 4 participants cover Bitcoin — one node does not.
         for account_id in participants.iter().take(3) {
-            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
         }
 
         // Then: Bitcoin is available. A single non-covering node cannot take it down — the
@@ -985,7 +944,11 @@ mod tests {
 
         // When: only 2 of 4 (< threshold) cover Bitcoin.
         for account_id in participants.iter().take(2) {
-            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
         }
 
         // Then: Bitcoin is not available.
@@ -1003,7 +966,11 @@ mod tests {
 
         // When: all 4 participants cover Bitcoin.
         for account_id in &participants {
-            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
         }
 
         // Then: Bitcoin is still not available — `available` is a subset of `whitelisted`.
@@ -1026,7 +993,7 @@ mod tests {
         // - Bitcoin: covered by 3 participants (whitelisted + threshold) -> available.
         // - Ethereum: covered by 1 participant (whitelisted but under threshold) -> not available.
         // - Solana: covered by all 4 (threshold met but not whitelisted) -> not available.
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[0],
             [
@@ -1035,17 +1002,17 @@ mod tests {
                 dtos::ForeignChain::Solana,
             ],
         );
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[1],
             [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Solana],
         );
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[2],
             [dtos::ForeignChain::Bitcoin, dtos::ForeignChain::Solana],
         );
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[3],
             [dtos::ForeignChain::Solana],
@@ -1070,7 +1037,11 @@ mod tests {
         // GovernanceThreshold (3) participants already cover Bitcoin — but the chain is not whitelisted,
         // so the cache must be empty.
         for account_id in participants.iter().take(3) {
-            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
         }
         assert!(contract.get_available_foreign_chains().is_empty());
 
@@ -1092,7 +1063,11 @@ mod tests {
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participants.iter().take(3) {
-            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
         }
         assert!(
             contract
@@ -1151,7 +1126,11 @@ mod tests {
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participants.iter().take(2) {
-            register_foreign_chain_config(&mut contract, account_id, [dtos::ForeignChain::Bitcoin]);
+            register_foreign_chains_config_for(
+                &mut contract,
+                account_id,
+                [dtos::ForeignChain::Bitcoin],
+            );
         }
         assert!(contract.get_available_foreign_chains().is_empty());
 
@@ -1171,7 +1150,7 @@ mod tests {
         contract.protocol_state = ProtocolContractState::Resharing(resharing);
 
         // When: the 3rd participant (from the old running set) registers during Resharing.
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[2],
             [dtos::ForeignChain::Bitcoin],
@@ -1221,12 +1200,12 @@ mod tests {
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
         // When: exactly 2 participants register Bitcoin (meets domain threshold=2, below governance threshold=3).
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[0],
             [dtos::ForeignChain::Bitcoin],
         );
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[1],
             [dtos::ForeignChain::Bitcoin],
@@ -1288,18 +1267,18 @@ mod tests {
                 .get_available_foreign_chains()
                 .contains(&dtos::ForeignChain::Bitcoin)
         };
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[0],
             [dtos::ForeignChain::Bitcoin],
         );
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[1],
             [dtos::ForeignChain::Bitcoin],
         );
         let available_below_threshold = bitcoin_available(&contract);
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             &participants[2],
             [dtos::ForeignChain::Bitcoin],
@@ -1409,7 +1388,7 @@ mod tests {
         );
 
         // When: node A (the registered participant node) registers its config.
-        register_foreign_chain_config(
+        register_foreign_chains_config_for(
             &mut contract,
             operator_account,
             [dtos::ForeignChain::Bitcoin],

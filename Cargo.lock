@@ -11905,6 +11905,7 @@ dependencies = [
  "hex",
  "mpc-attestation",
  "mpc-primitives",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-sdk",
  "serde_json",

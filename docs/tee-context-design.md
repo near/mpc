@@ -110,21 +110,28 @@ let tee_ctx = TeeContext::new(viewer, node_identity, governance_contract, transa
 // Write hashes to disk for the Launcher whenever they change.
 let mut hashes_rx = tee_ctx.watch_allowed_tee_hashes();
 tokio::spawn(async move {
-    loop {
-        hashes_rx.changed().await?;
+    while hashes_rx.changed().await.is_ok() {
         let hashes = hashes_rx.borrow().clone();
-        write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await?;
+        if let Err(error) = write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await {
+            tracing::error!(%error, "writing the allowed hashes to disk failed");
+        }
     }
 });
 
-// Periodic attestation submission (every 7 days).
+// Periodic attestation submission (every hour); failures are logged and retried on the
+// next interval, so the task never dies.
 tokio::spawn({
     let tee_ctx = tee_ctx.clone();
     async move {
         loop {
-            let quote = tee_authority.generate_quote(&report_data)?;
-            tee_ctx.submit_attestation(quote).await?;
-            tokio::time::sleep(Duration::from_secs(7 * 24 * 3600)).await;
+            let submission = async {
+                let quote = tee_authority.generate_quote(&report_data)?;
+                tee_ctx.submit_attestation(quote).await
+            };
+            if let Err(error) = submission.await {
+                tracing::error!(%error, "attestation submission failed");
+            }
+            tokio::time::sleep(Duration::from_secs(3600)).await;
         }
     }
 });

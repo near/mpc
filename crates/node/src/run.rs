@@ -45,13 +45,11 @@ use tracing::info;
 use crate::tee::{
     AllowedImageHashesFile, monitor_allowed_image_hashes,
     remote_attestation::{
-        AttestationSubmitter, monitor_attestation_removal, periodic_attestation_submission,
+        AttestationSubmitter, monitor_attestation_removal, run_periodic_attestation_submission,
     },
 };
 
-pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
-
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 
@@ -365,33 +363,6 @@ where
         }),
     };
 
-    // Spawn periodic attestation submission task
-    let submitter = AttestationSubmitter {
-        tee_authority: tee_authority.clone(),
-        tx_sender: indexer_api.txn_sender.clone(),
-        tls_public_key: tls_public_key.clone(),
-        account_public_key: account_public_key.clone(),
-        allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
-        allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        attestation_reader: indexer_api.attestation_reader.clone(),
-    };
-    tokio::spawn(async move {
-        if let Err(e) = periodic_attestation_submission(
-            submitter,
-            tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
-        )
-        .await
-        {
-            tracing::error!(
-                error = ?e,
-                "periodic attestation submission task failed"
-            );
-        }
-    });
-
-    // Spawn TEE attestation monitoring task
-    let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
-    let account_id_clone = config.my_near_account_id.clone();
     let submitter = AttestationSubmitter {
         tee_authority,
         tx_sender: indexer_api.txn_sender.clone(),
@@ -401,16 +372,12 @@ where
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
-    tokio::spawn(async move {
-        if let Err(e) =
-            monitor_attestation_removal(submitter, account_id_clone, tee_accounts_receiver).await
-        {
-            tracing::error!(
-                error = ?e,
-                "attestation removal monitoring task failed"
-            );
-        }
-    });
+    tokio::spawn(run_periodic_attestation_submission(submitter.clone()));
+    tokio::spawn(monitor_attestation_removal(
+        submitter,
+        config.my_near_account_id.clone(),
+        indexer_api.attested_nodes_receiver.clone(),
+    ));
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();
