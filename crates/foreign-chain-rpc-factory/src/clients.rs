@@ -1,16 +1,7 @@
-//! Building a chain's inspector for one of its providers.
-//!
-//! What a caller injects is [`BuildRpcClients`]. Choosing it chooses the transport, and by
-//! extension every inspector built over it, so a caller can put the whole set on clients it
-//! controls without the code that uses the inspectors knowing.
+//! Building the client that talks to one provider, with the provider's credentials applied.
 
 use std::time::Duration;
 
-use foreign_chain_inspector::aptos::inspector::AptosInspector;
-use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
-use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
-use foreign_chain_inspector::starknet::inspector::StarknetInspector;
-use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{RpcAuthentication, build_http_client};
 use foreign_chain_rpc_interfaces::aptos::{AptosRpcClient, ReqwestAptosClient};
 use foreign_chain_rpc_interfaces::sui::{GrpcSuiClient, SuiRpcClient};
@@ -20,8 +11,11 @@ use mpc_node_config::ForeignChainProviderConfig;
 
 use crate::auth_config_to_rpc_auth;
 
-/// The transports inspectors are built over. [`RpcClients`] reaches the real providers; a caller
-/// that needs inspectors on something else implements this instead.
+/// The transports a chain is reached over. [`RpcClients`] reaches the real providers; a caller that
+/// needs something else, a test most of all, implements this instead.
+///
+/// Injecting it also settles which inspectors get built, since
+/// [`crate::inspectors`] puts them on whatever this returns.
 pub trait BuildRpcClients {
     type JsonRpc: ClientT + Clone + Send + Sync + 'static;
     type Aptos: AptosRpcClient + Clone + Send + Sync + 'static;
@@ -101,42 +95,4 @@ impl BuildRpcClients for RpcClients {
         GrpcSuiClient::new(url, Self::auth_header(auth), timeout)
             .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
     }
-}
-
-/// The EVM chains differ only in their marker type, which the caller fixes.
-pub fn evm_inspector<Clients: BuildRpcClients, Chain: EvmChain>(
-    clients: &Clients,
-    provider: &ForeignChainProviderConfig,
-) -> anyhow::Result<EvmInspector<Clients::JsonRpc, Chain>> {
-    Ok(EvmInspector::new(clients.json_rpc(provider)?))
-}
-
-pub fn starknet_inspector<Clients: BuildRpcClients>(
-    clients: &Clients,
-    provider: &ForeignChainProviderConfig,
-) -> anyhow::Result<StarknetInspector<Clients::JsonRpc>> {
-    Ok(StarknetInspector::new(clients.json_rpc(provider)?))
-}
-
-pub fn bitcoin_inspector<Clients: BuildRpcClients>(
-    clients: &Clients,
-    provider: &ForeignChainProviderConfig,
-) -> anyhow::Result<BitcoinInspector<Clients::JsonRpc>> {
-    Ok(BitcoinInspector::new(clients.json_rpc(provider)?))
-}
-
-pub fn aptos_inspector<Clients: BuildRpcClients>(
-    clients: &Clients,
-    provider: &ForeignChainProviderConfig,
-    timeout: Duration,
-) -> anyhow::Result<AptosInspector<Clients::Aptos>> {
-    Ok(AptosInspector::new(clients.aptos(provider, timeout)?))
-}
-
-pub fn sui_inspector<Clients: BuildRpcClients>(
-    clients: &Clients,
-    provider: &ForeignChainProviderConfig,
-    timeout: Duration,
-) -> anyhow::Result<SuiInspector<Clients::Sui>> {
-    Ok(SuiInspector::new(clients.sui(provider, timeout)?))
 }

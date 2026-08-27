@@ -1,3 +1,8 @@
+//! Building what talks to a foreign chain, from one provider's configuration: its credentials
+//! resolved here, the client that carries them in [`clients`], and the inspector over that client
+//! in [`inspectors`].
+
+pub mod clients;
 pub mod inspectors;
 
 use anyhow::Context;

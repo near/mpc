@@ -26,7 +26,7 @@ use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
 use foreign_chain_inspector::{RpcAuthentication, build_http_client};
-use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
+use foreign_chain_rpc_factory::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use http::{HeaderName, HeaderValue};
 use mpc_node_config::foreign_chains::RpcProviderName;

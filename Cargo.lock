@@ -3971,7 +3971,7 @@ dependencies = [
  "bs58 0.5.1",
  "clap",
  "foreign-chain-inspector",
- "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
  "futures",
  "hex",
@@ -4013,7 +4013,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "foreign-chain-rpc-auth"
+name = "foreign-chain-rpc-factory"
 version = "3.14.0"
 dependencies = [
  "anyhow",
@@ -6330,7 +6330,7 @@ dependencies = [
  "flume",
  "foreign-chain-health-check",
  "foreign-chain-inspector",
- "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
  "futures",
  "gcloud-sdk",

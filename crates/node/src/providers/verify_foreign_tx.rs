@@ -22,7 +22,7 @@ use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
 use foreign_chain_inspector::{FanOut, RpcAuthentication};
-use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
+use foreign_chain_rpc_factory::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{ConfigFile, ForeignChainConfig, ForeignChainsConfig};
