@@ -25,7 +25,7 @@ type Sha256Digest = [u8; 32];
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(schemars::JsonSchema)
 )]
 pub struct UpdateId(pub u64);
 

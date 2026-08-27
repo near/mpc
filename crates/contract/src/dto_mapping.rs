@@ -18,7 +18,7 @@ use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
-    crypto_shared::types::PublicKeyExtended,
+    crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
@@ -682,35 +682,53 @@ impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
 impl TryIntoContractType<PublicKeyExtended> for dtos::PublicKeyExtended {
     type Error = Error;
     fn try_into_contract_type(self) -> Result<PublicKeyExtended, Self::Error> {
-        let public_key =
-            dtos::PublicKey::try_from(&self).map_err(|err| ConversionError::DataConversion {
-                reason: format!("Failed to parse public key: {err}"),
-            })?;
-        let extended: PublicKeyExtended =
-            public_key
-                .try_into()
-                .map_err(|err| ConversionError::DataConversion {
-                    reason: format!("Failed to extend public key: {err}"),
-                })?;
+        let parse_failed = |err| ConversionError::DataConversion {
+            reason: format!("Failed to parse public key: {err}"),
+        };
 
-        // The DTO carries the Edwards point alongside the compressed key; the contract type
-        // derives it instead, so reject a pair that disagrees rather than silently dropping it.
-        if let (
-            dtos::PublicKeyExtended::Ed25519 { edwards_point, .. },
-            PublicKeyExtended::Ed25519 {
-                edwards_point: derived,
-                ..
-            },
-        ) = (&self, &extended)
-            && derived.to_bytes() != *edwards_point
-        {
-            return Err(ConversionError::DataConversion {
-                reason: "The Edwards point does not match the compressed public key.".to_string(),
+        match self {
+            dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
+                Ok(PublicKeyExtended::Secp256k1 {
+                    near_public_key: near_public_key.parse().map_err(parse_failed)?,
+                })
             }
-            .into());
-        }
+            dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                edwards_point,
+            } => {
+                let near_public_key_compressed: dtos::Ed25519PublicKey =
+                    near_public_key_compressed.parse().map_err(parse_failed)?;
+                let derived = SerializableEdwardsPoint::from_bytes(&near_public_key_compressed)
+                    .into_option()
+                    .ok_or_else(|| ConversionError::DataConversion {
+                        reason: "The compressed key is not a valid Edwards point.".to_string(),
+                    })?;
+                // The DTO carries the Edwards point alongside the compressed key; the contract
+                // type derives it, so a pair that disagrees is rejected rather than dropped.
+                if derived.to_bytes() != edwards_point {
+                    return Err(ConversionError::DataConversion {
+                        reason: "The Edwards point does not match the compressed public key."
+                            .to_string(),
+                    }
+                    .into());
+                }
 
-        Ok(extended)
+                Ok(PublicKeyExtended::Ed25519 {
+                    near_public_key_compressed,
+                    edwards_point: derived,
+                })
+            }
+            dtos::PublicKeyExtended::Bls12381 { public_key } => {
+                let dtos::PublicKey::Bls12381(public_key) = public_key else {
+                    return Err(ConversionError::DataConversion {
+                        reason: "Expected a bls12381g2 public key.".to_string(),
+                    }
+                    .into());
+                };
+
+                Ok(PublicKeyExtended::Bls12381 { public_key })
+            }
+        }
     }
 }
 
@@ -1125,6 +1143,31 @@ mod tests {
             edwards_point: bogus_ed25519_public_key().0,
         };
 
+        // When
+        let result: Result<PublicKeyExtended, Error> = dto.try_into_contract_type();
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::ConversionError(
+                ConversionError::DataConversion { .. }
+            ))
+        );
+    }
+
+    /// The variant tag is not what decides the curve — the `<curve>:` prefix inside the key
+    /// string is. A pair that disagrees must be rejected, not silently reinterpreted.
+    #[rstest]
+    #[case::ed25519_tag_holding_a_secp256k1_key(dtos::PublicKeyExtended::Ed25519 {
+        near_public_key_compressed: String::from(&dtos::Secp256k1PublicKey([1u8; 64])),
+        edwards_point: [0u8; 32],
+    })]
+    #[case::bls12381_tag_holding_an_ed25519_key(dtos::PublicKeyExtended::Bls12381 {
+        public_key: dtos::PublicKey::Ed25519(bogus_ed25519_public_key()),
+    })]
+    fn public_key_extended__should_reject_a_variant_tag_that_disagrees_with_the_key(
+        #[case] dto: dtos::PublicKeyExtended,
+    ) {
         // When
         let result: Result<PublicKeyExtended, Error> = dto.try_into_contract_type();
 

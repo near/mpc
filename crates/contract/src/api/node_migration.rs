@@ -169,6 +169,7 @@ impl MpcContract {
     /// Returns the following errors:
     /// - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state
     /// - [`InvalidState::NotParticipant`]: if caller is not a current participant
+    /// - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key
     /// - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset
     /// - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller
     /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node

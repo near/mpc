@@ -495,11 +495,11 @@ impl MpcProposeUpdateContractCmd {
             .await
             .into_return_value()
             .expect("Failed to propose update");
-        let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
+        let update_id: UpdateId = serde_json::from_slice(&result).expect(&format!(
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
         ));
-        println!("Proposed update with ID {}", update_id);
+        println!("Proposed update with ID {}", update_id.0);
         println!("Run the following command to vote for the update:");
         let self_exe = std::env::current_exe()
             .expect("Failed to get current executable path")
@@ -508,7 +508,7 @@ impl MpcProposeUpdateContractCmd {
             .to_string();
         println!(
             "{} mpc {} vote-update --update-id={}",
-            self_exe, name, update_id
+            self_exe, name, update_id.0
         );
     }
 }
