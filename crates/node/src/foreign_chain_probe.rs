@@ -105,10 +105,10 @@ fn publish_metrics(report: &ProbeReport) {
         }
         metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED
             .with_label_values(&[chain.label()])
-            .set(counts.configured as i64);
+            .set(i64::try_from(counts.configured).expect("provider count never exceeds i64"));
         metrics::FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY
             .with_label_values(&[chain.label()])
-            .set(counts.healthy as i64);
+            .set(i64::try_from(counts.healthy).expect("provider count never exceeds i64"));
     }
 }
 
