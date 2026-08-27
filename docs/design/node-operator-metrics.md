@@ -36,8 +36,8 @@ on-chain confirmation of an attestation submission, in
 
 | Metric | Measures | How to interpret |
 | --- | --- | --- |
-| [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. Only a confirmed landing advances it, so the gap to now is how long re-attestation has been failing, wherever it broke. One failed attempt is absorbed by the next tick; a growing gap ends in eviction from the participant set. |
-| [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time at which the attestation the contract stores for this node's TLS key expires | should sit a full expiry window ahead of chain time and step forward hourly. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry (legacy entries only; the contract stamps every attestation it accepts). Compare against `mpc_indexer_latest_block_timestamp_seconds`, the clock the contract expires entries against. |
+| [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. A sustained gap ends in this node being dropped from the participant set. |
+| [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | NEAR block time at which the attestation the contract stores for this node's TLS key expires | subtract `mpc_indexer_latest_block_timestamp_seconds` — the clock the contract expires entries against, not wall clock — for the runway before this node is dropped from the participant set. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry. |
 
 ## Recommended alerts
 
@@ -66,17 +66,19 @@ time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
 
 # Re-attestation stuck (warn): nothing landed in three re-attestation intervals.
-# A single failed attempt is absorbed by the next tick and never reaches this.
-time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 1h
+# The primary signal — it fires within hours, while the expiry alert below only
+# does so days later.
+time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
-# Attestation about to expire (page): under 40% of the 7d window left before the
-# contract drops this node. Measured against chain time, the clock the contract
-# compares against. Keep the threshold a fraction of the configured window rather
-# than a fixed duration. `> 0` drops the sentinels so they are not read as
-# timestamps.
+# Attestation runway low (page): under 3 days before the contract drops this node
+# from the participant set. Backstop for the alert above, and reached only about
+# four days after submissions stop landing. The threshold is a plain duration
+# rather than a fraction of the expiry window (7 days today): keep it below the
+# window, and revisit if the window changes. `> 0` drops the sentinels so they are
+# not read as timestamps.
 mpc_attestation_expiry_timestamp_seconds > 0
   and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
-      < 0.4 * 604800  for 15m
+      < 3 * 86400  for 15m
 
 # No attestation stored (page): the contract holds nothing for our TLS key, so this
 # node is out of the attested set. Also covers a node that never landed one.
@@ -85,10 +87,3 @@ mpc_attestation_expiry_timestamp_seconds == 0  for 15m
 
 A `-1` expiry satisfies neither expiry alert, so a node holding an attestation stored
 without one is covered by the staleness alert alone.
-
-One failing node or a fleet-wide cause (Intel's PCCS and its collateral, usually)? Count
-the affected nodes:
-
-```promql
-count(time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600)
-```
