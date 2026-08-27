@@ -39,7 +39,8 @@ Not all extractors can be satisfied by a single RPC method call.
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`, plus `eth_getBlockByNumber` for the finality-head and canonical-chain checks.
   * **BlockHash (Bitcoin)**: `getrawtransaction` (verbose) for the containing `blockhash` and confirmation count, then `getblockheader` + `getblockhash` for the canonical-chain defense-in-depth check.
   * **BlockHash (Starknet)**: `starknet_getTransactionReceipt` for `block_hash` + `finality_status`, then `starknet_getBlockWithTxHashes` for the canonical-chain defense-in-depth check.
-  * **SolanaProgramIdIndex / SolanaDataHash**: `getTransaction` to access `transaction.message` + `meta` and instruction data.
+  * **InnerInstruction (SVM)**: `getTransaction` for `meta.innerInstructions`, the account keys and the loaded lookup-table addresses, plus `getSlot` for the finality check when `Finalized` is requested.
+  * **AccountState (SVM)**: `getAccountInfo` for the account's owner and data, alongside the `getTransaction` gates above.
 * **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
 
 To keep behavior predictable and auditable, each extractor family must have a fixed, well-specified set of RPC methods it may invoke, with strict timeouts and response-size limits.
@@ -134,8 +135,9 @@ Omitting the field preserves the old unbound behavior.
 ```rust
 pub enum ForeignChainRpcRequest {
     Ethereum(EvmRpcRequest),
-    Solana(SolanaRpcRequest),
+    Solana(SvmRpcRequest),
     Bitcoin(BitcoinRpcRequest),
+    Fogo(SvmRpcRequest),
     // Future chains...
 }
 
@@ -145,10 +147,11 @@ pub struct EvmRpcRequest {
     pub finality: EvmFinality,
 }
 
-pub struct SolanaRpcRequest {
-    pub tx_id: SolanaTxId, // This is the payload we're signing
-    pub finality: SolanaFinality, // Optimistic or Final
-    pub extractors: Vec<SolanaExtractor>,
+// Shared by every SVM chain (Solana, Fogo), like EvmRpcRequest is shared by EVM chains.
+pub struct SvmRpcRequest {
+    pub tx_id: SvmTxId, // The 64-byte transaction signature
+    pub finality: SvmFinality,
+    pub extractors: Vec<SvmExtractor>,
 }
 
 pub struct BitcoinRpcRequest {
@@ -162,8 +165,9 @@ pub enum EvmFinality {
     Safe,
     Finalized,
 }
-pub enum SolanaFinality {
-    Processed,
+pub enum SvmFinality {
+    // `processed` is deliberately absent: getTransaction does not serve it. `Confirmed` is
+    // not rooted, so callers that need irreversibility ask for `Finalized`.
     Confirmed,
     Finalized,
 }
@@ -221,11 +225,11 @@ pub enum EthereumExtractor {
     BlockHash,
 }
 
-pub enum SolanaExtractor {
-    // Resolves instruction.programIdIndex to the actual program pubkey via account keys.
-    SolanaProgramIdIndex { ix_index: u32 },
-    // Hash of the instruction data bytes for ix_index.
-    SolanaDataHash { ix_index: u32 },
+pub enum SvmExtractor {
+    // One inner (CPI) instruction, with program id and account indices resolved to pubkeys.
+    InnerInstruction { instruction_index: u64, inner_instruction_index: u64 },
+    // Current owner and data of the account at `pubkey`.
+    AccountState { pubkey: SvmAddress },
 }
 
 pub enum BitcoinExtractor {
@@ -233,15 +237,32 @@ pub enum BitcoinExtractor {
 }
 ```
 
-#### Solana extractor details (context from RPC responses)
+#### SVM extractor details (context from RPC responses)
 
-Solana transaction RPC responses encode the instruction’s program as an index (`programIdIndex`) into the
-transaction’s account list. To make the value useful on-chain, `SolanaProgramIdIndex` **resolves the index**
-to the actual 32-byte program pubkey using the `accountKeys` / loaded addresses arrays from `getTransaction`.
-This avoids relying on caller-side mapping and keeps the extracted value self-contained.
+SVM transaction RPC responses encode an instruction's program and accounts as indices into the
+transaction's account list. To make the value useful on-chain, `InnerInstruction` **resolves the
+indices** to the actual 32-byte pubkeys using `accountKeys` followed by the addresses loaded from
+lookup tables (`meta.loadedAddresses.writable`, then `.readonly`), and base58-decodes the
+instruction data. `instruction_index` addresses the top-level instruction (the `index` field of a
+`meta.innerInstructions` entry); `inner_instruction_index` is the position within that entry's
+flattened inner-instruction list. The extracted value is
+`SvmInnerInstruction { program_id, accounts, data }`, self-contained and provider-independent.
 
-`SolanaDataHash` hashes the raw instruction data bytes for the requested `ix_index` so large instruction payloads
-never appear on-chain. The hash function is fixed by the extractor definition and is **sha256**.
+Message-level instructions are not addressable: the initial set covers CPI instructions only. It
+replaces the previously defined `SolanaProgramIdIndex` / `SolanaDataHash`, which no inspector ever
+implemented. `SvmExtractor` is `#[non_exhaustive]`, so a message-level variant can be added later.
+
+`AccountState` reads the account at `pubkey` via `getAccountInfo` at the request's commitment and
+extracts `SvmAccount { owner, data }`. The lamport balance is deliberately left out: anyone can
+credit any account with a bare transfer, so binding the balance in would let a third party
+permanently break verification of a chosen account for one lamport. SVM RPC has no historical
+account reads, so the
+value reflects the state at query time, which makes it the one extractor whose result is not a
+function of `(tx_id, finality, extractors)` alone. It therefore only suits accounts that no longer
+change. If an account does change, two failure modes follow and only the first is diagnosed: one
+node's own providers disagreeing is caught by the fan-out as a response mismatch, whereas two
+*nodes* observing different states is caught by nothing — they derive different payload hashes and
+the signing session dies, surfacing to the caller as a timeout.
 
 ## Domain Separation
 
@@ -317,15 +338,16 @@ back here rather than redefining them.
 - **Whitelisted chain** — a chain the network has voted into the on-chain RPC whitelist
   (`foreign_chain_rpc_whitelist`): there is a `ChainEntry` for it (trusted provider list + RPC
   quorum). The policy set every node is expected to cover; **no single operator can add or remove a
-  chain — only a threshold vote can**. Returned by `get_whitelisted_foreign_chains()`. See
+  chain — only a threshold vote can**. Keys of `allowed_foreign_chain_providers()`. See
   [On-chain RPC Provider Whitelist](#on-chain-rpc-provider-whitelist).
 - **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of a node's configured
   providers must return the same response for that node to accept a verification result
   (`ChainEntry.quorum`), voted in alongside the provider list. A runtime knob; distinct from the
   *signing threshold*.
 - **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
-  domain (`self.threshold()`): how many participants must produce signature shares to sign an
-  observation. Distinct from the RPC quorum.
+  domain (`DomainConfig.reconstruction_threshold`; the max across `ForeignTx` domains if there are
+  several): how many participants must produce signature shares to sign an observation. Distinct
+  from the RPC quorum and from the governance threshold (`self.threshold()`) used for votes.
 - **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
   of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
   on-chain via `register_available_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this
@@ -341,7 +363,7 @@ back here rather than redefining them.
 
 ## Contract State (Foreign Chain Configurations)
 
-The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed by `get_whitelisted_foreign_chains()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
+The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed as the keys of `allowed_foreign_chain_providers()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 
 ```rust
 pub struct ForeignChainSupportByNode {
@@ -366,7 +388,7 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_available_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method (formerly `register_foreign_chain_config`; old name kept as a deprecated wrapper). The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
+* `allowed_foreign_chain_providers() -> BTreeMap<ForeignChain, ChainEntry>` — Borsh-encoded view method. Returns the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`); its keys are the whitelisted chains. (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
 * `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
 * `get_available_foreign_chain_by_node() -> ForeignChainSupportByNode` — view method (formerly `get_foreign_chain_support_by_node`; old name kept as a deprecated wrapper). Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
@@ -548,15 +570,17 @@ Once wired into node startup, each resolved provider gets its self-identifying R
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
-Not every chain has a fingerprint probe. The table lists the ones that do, with the RPC each probes. A chain absent from it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
+Every chain with an inspector is probed, each by the RPC below. `solana` has none, so it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
 
 | chain | probe |
 |---|---|
 | starknet | `starknet_chainId` |
-| base, bnb, arbitrum, polygon, hyper_evm, abstract | `eth_chainId` |
+| ethereum, base, bnb, arbitrum, polygon, hyper_evm, avalanche, adi, abstract | `eth_chainId` |
 | bitcoin | `getblockhash` at height 0 |
+| aptos | the ledger info at the REST root |
+| sui | `GetServiceInfo` |
 
-The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash.
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing, and Sui's base58 digest has a single spelling with nothing to normalize.
 
 An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
 
@@ -626,7 +650,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_available_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* `get_whitelisted_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
+* `allowed_foreign_chain_providers()` returns the on-chain RPC whitelist, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 * `get_available_foreign_chain_by_node()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
 
 ### Configuration (Node)
@@ -688,11 +712,14 @@ checkpoint digest — hence the neutral name.
 
 | chain | fingerprint | mainnet | testnet |
 |---|---|---|---|
+| ethereum | EIP-155 chain id, decimal | `"1"` | `"11155111"` (Sepolia) |
 | base | EIP-155 chain id, decimal | `"8453"` | `"84532"` (Sepolia) |
 | bnb | EIP-155 chain id, decimal | `"56"` | `"97"` |
 | arbitrum | EIP-155 chain id, decimal | `"42161"` | `"421614"` (Sepolia) |
 | polygon | EIP-155 chain id, decimal | `"137"` | `"80002"` (Amoy) |
 | hyper_evm | EIP-155 chain id, decimal | `"999"` | `"998"` |
+| avalanche | EIP-155 chain id, decimal | `"43114"` | `"43113"` (Fuji) |
+| adi | EIP-155 chain id, decimal | `"36900"` | `"99999"` (AB testnet) |
 | abstract | EIP-155 chain id, decimal | `"2741"` | `"11124"` |
 | starknet | chain id felt, lowercase `0x` hex | `"0x534e5f4d41494e"` | `"0x534e5f5345504f4c4941"` (Sepolia) |
 | bitcoin | genesis block hash, lowercase hex | `"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"` | `"000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"` (testnet3) |
@@ -708,18 +735,17 @@ separates the test networks from each other where a network *name* would not: te
 `"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`. Aptos's one-byte id space
 separates mainnet from testnet, but two devnets can collide.
 
-`solana` and `ethereum` are configurable but absent from the table: neither has an inspector, so
-there is nothing about them to verify in the first place.
+`solana` is configurable but absent from the table: it has no inspector, so
+there is nothing about it to verify in the first place.
 
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
 
-Only the chains with a fingerprint probe read the field at all — starknet, bitcoin and the EVM
-chains today, the rest as their probes are written. For those chains, leaving it unset is not a silent skip: every
-provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads as healthy
-on a dashboard. A chain with no probe yet reports `ProbeNotImplemented` whether the field is set or
-not.
+Every chain with an inspector is probed, and for those, leaving the field unset is not a silent
+skip: every provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads
+as healthy on a dashboard. `solana` reports `ProbeNotImplemented` whether the field is
+set or not.
 
 ## Risks
 
