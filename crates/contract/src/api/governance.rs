@@ -166,14 +166,14 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_with_default_tee_status() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = GovernanceThreshold::new(2);
+        let governance_threshold = GovernanceThreshold::new(2);
 
         // No attestations submitted - all participants have default TEE status None
         let result = setup_voting_context_and_vote(
             &mut contract,
             &first_participant_id,
             participants,
-            threshold,
+            governance_threshold,
         );
         assert!(
             result.is_ok(),
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = GovernanceThreshold::new(2);
+        let governance_threshold = GovernanceThreshold::new(2);
 
         // Submit valid attestations for all participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -198,7 +198,7 @@ mod tests {
             &mut contract,
             &first_participant_id,
             participants,
-            threshold,
+            governance_threshold,
         );
         assert!(
             result.is_ok(),
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
-        let threshold = GovernanceThreshold::new(3);
+        let governance_threshold = GovernanceThreshold::new(3);
 
         // Submit valid attestations for first 3 participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
@@ -245,7 +245,7 @@ mod tests {
             &mut contract,
             &first_participant_id,
             participants,
-            threshold,
+            governance_threshold,
         );
         assert!(
             result.is_ok(),
@@ -459,9 +459,9 @@ mod tests {
         // Given: a participant whose vote is forwarded through another contract,
         // so signer_account_id (the participant) != predecessor_account_id (the forwarder).
         let (mut contract, participants, first_participant_id) = setup_tee_test_contract(3, 2);
-        let threshold = GovernanceThreshold::new(2);
+        let governance_threshold = GovernanceThreshold::new(2);
         let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, threshold).unwrap(),
+            GovernanceThresholdParameters::new(participants, governance_threshold).unwrap(),
             BTreeMap::new(),
         );
 

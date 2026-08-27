@@ -1071,9 +1071,12 @@ name = "attestation-cli"
 version = "3.14.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "attestation",
  "bs58 0.5.1",
  "clap",
+ "dcap-qvl",
+ "hex",
  "mpc-attestation",
  "mpc-primitives",
  "near-mpc-crypto-types",
@@ -11737,7 +11740,6 @@ dependencies = [
  "near-account-id",
  "near-contract-transport",
  "near-mpc-contract-interface",
- "serde",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",

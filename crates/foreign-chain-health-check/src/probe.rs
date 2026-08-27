@@ -11,6 +11,7 @@ use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::ethereum::inspector::Ethereum;
 use foreign_chain_inspector::evm::inspector::{EvmChain, EvmInspector};
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
@@ -114,6 +115,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                 ForeignChain::Avalanche => probe_evm::<Avalanche>(chain, chain_config).await,
                 ForeignChain::Base => probe_evm::<Base>(chain, chain_config).await,
                 ForeignChain::Bnb => probe_evm::<Bnb>(chain, chain_config).await,
+                ForeignChain::Ethereum => probe_evm::<Ethereum>(chain, chain_config).await,
                 ForeignChain::HyperEvm => probe_evm::<HyperEvm>(chain, chain_config).await,
                 ForeignChain::Polygon => probe_evm::<Polygon>(chain, chain_config).await,
                 ForeignChain::Bitcoin => {
@@ -141,7 +143,7 @@ pub async fn probe_all_providers(config: &ForeignChainsConfig) -> ProbeReport {
                     })
                     .await
                 }
-                // Ethereum, Solana and Ton have no inspector to probe them with.
+                // Solana and Ton have no inspector to probe them with.
                 _ => rows_of(chain, chain_config, ProviderStatus::ProbeNotImplemented),
             }
         });
@@ -258,8 +260,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use foreign_chain_inspector::{
-        abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, hyperevm, polygon,
-        starknet, sui,
+        abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, ethereum, hyperevm,
+        polygon, starknet, sui,
     };
     use foreign_chain_rpc_interfaces::sui::Status;
     use foreign_chain_rpc_interfaces::sui::proto::ledger_service_server::{
@@ -307,7 +309,7 @@ mod tests {
     }
 
     /// Every EVM chain the probe covers, with its mainnet chain id.
-    const EVM_MAINNETS: [EvmMainnet; 8] = [
+    const EVM_MAINNETS: [EvmMainnet; 9] = [
         EvmMainnet {
             chain: ForeignChain::Abstract,
             chain_id: abstract_chain::MAINNET_CHAIN_ID,
@@ -331,6 +333,10 @@ mod tests {
         EvmMainnet {
             chain: ForeignChain::Bnb,
             chain_id: bnb::MAINNET_CHAIN_ID,
+        },
+        EvmMainnet {
+            chain: ForeignChain::Ethereum,
+            chain_id: ethereum::MAINNET_CHAIN_ID,
         },
         EvmMainnet {
             chain: ForeignChain::HyperEvm,
@@ -414,6 +420,7 @@ mod tests {
             ForeignChain::Avalanche => &mut chains.avalanche,
             ForeignChain::Base => &mut chains.base,
             ForeignChain::Bnb => &mut chains.bnb,
+            ForeignChain::Ethereum => &mut chains.ethereum,
             ForeignChain::HyperEvm => &mut chains.hyper_evm,
             ForeignChain::Polygon => &mut chains.polygon,
             other => panic!("no config slot wired for `{other:?}`"),
