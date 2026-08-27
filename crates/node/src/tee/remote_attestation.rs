@@ -1,9 +1,14 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     indexer::{
+        ReadAttestationExpiry,
         tx_sender::{TransactionSender, TransactionStatus},
         types::ChainSendTransactionRequest,
+    },
+    metrics::{
+        MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
+        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
@@ -39,7 +44,7 @@ pub struct AttestationSubmitter<T> {
     pub account_public_key: Ed25519PublicKey,
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub attestation_reader: std::sync::Arc<dyn crate::indexer::ReadAttestationExpiry>,
+    pub attestation_reader: Arc<dyn ReadAttestationExpiry>,
 }
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until
@@ -145,7 +150,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
         )
         .into();
         let result = self.tee_authority.generate_attestation(report_data).await;
-        crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+        MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
             .with_label_values(&[outcome_label(result.is_ok())])
             .inc();
         let attestation = match result {
@@ -200,7 +205,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             pre_submit_expiry,
         )
         .await;
-        crate::metrics::MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
+        MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
             .with_label_values(&[outcome_label(submission.is_ok())])
             .inc();
         if let Err(error) = submission {
@@ -213,9 +218,9 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
 
 fn outcome_label(succeeded: bool) -> &'static str {
     if succeeded {
-        crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS
+        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS
     } else {
-        crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE
+        MPC_TEE_ATTESTATION_OUTCOME_FAILURE
     }
 }
 
@@ -358,7 +363,7 @@ mod tests {
         fail: bool,
     }
 
-    impl crate::indexer::ReadAttestationExpiry for StubAttestationExpiryReader {
+    impl ReadAttestationExpiry for StubAttestationExpiryReader {
         fn read_stored_attestation_expiry<'a>(
             &'a self,
             _tls_public_key: &'a Ed25519PublicKey,
