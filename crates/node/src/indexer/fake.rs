@@ -1203,7 +1203,6 @@ impl FakeIndexerManager {
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
             allowed_launcher_compose_receiver,
-            attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),

@@ -24,20 +24,17 @@ use tee_authority::tee_authority::{AttestationError, TeeAuthority};
 use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
-use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args as contract_args;
-use near_mpc_contract_interface::types::NodeId;
 use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
 const BACKOFF_FACTOR: f32 = 1.5;
-const RESUBMISSION_RETRY_DELAY: Duration = Duration::from_secs(60 * 10); // 10 minutes.
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
 
-/// Shared inputs for the attestation-submission background tasks
-/// ([`periodic_attestation_submission`] and [`monitor_attestation_removal`]).
+/// Inputs for the attestation-submission background task
+/// [`run_periodic_attestation_submission`].
 #[derive(Clone)]
 pub struct AttestationSubmitter<T> {
     pub tee_authority: TeeAuthority,
@@ -67,8 +64,6 @@ pub async fn submit_remote_attestation(
         tls_public_key,
     );
 
-    // TODO(#3746): retries the same attestation and errors on timeout, so a late success can store
-    // a stale one; #3746 splits this into a submit loop and an outer regenerate loop.
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
         let propose_join_args_clone = submit_participant_info_args.clone();
@@ -247,82 +242,6 @@ async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     }
 }
 
-/// Checks if TEE attestation is available for the given node in the TEE accounts list.
-fn is_node_in_contract_tee_accounts(
-    tee_accounts_receiver: &mut watch::Receiver<Vec<NodeId>>,
-    node_id: &NodeId,
-) -> bool {
-    let tee_accounts = tee_accounts_receiver.borrow_and_update();
-    tee_accounts.contains(node_id)
-}
-
-/// Monitors the contract for TEE attestation removal and triggers resubmission when needed.
-///
-/// This function watches TEE account changes in the contract and resubmits attestations when
-/// the node's TEE attestation is no longer available. A failed resubmission is retried after
-/// a fixed delay, or sooner on the next TEE-accounts update; this task returns only when the
-/// watch channel closes.
-#[tracing::instrument(skip_all)]
-pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
-    submitter: AttestationSubmitter<T>,
-    node_account_id: AccountId,
-    mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
-) {
-    let node_id = NodeId {
-        account_id: node_account_id.clone(),
-        tls_public_key: submitter.tls_public_key.clone(),
-        account_public_key: submitter.account_public_key.clone(),
-    };
-
-    let mut was_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
-
-    tracing::info!(
-        %node_account_id,
-        initially_available = was_available,
-        "starting TEE attestation removal monitoring; initial TEE attestation status"
-    );
-
-    let mut retry_delay = None;
-
-    loop {
-        let changed = match retry_delay.take() {
-            Some(delay) => tee_accounts_receiver
-                .changed()
-                .timeout(delay)
-                .await
-                .unwrap_or(Ok(())),
-            None => tee_accounts_receiver.changed().await,
-        };
-        if changed.is_err() {
-            break;
-        }
-
-        let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
-
-        tracing::debug!(
-            %node_account_id,
-            is_available,
-            was_available,
-            "TEE attestation status check"
-        );
-
-        if was_available && !is_available {
-            tracing::warn!(
-                %node_account_id,
-                "TEE attestation removed from contract, resubmitting"
-            );
-            if !submitter.generate_and_submit().await {
-                retry_delay = Some(RESUBMISSION_RETRY_DELAY);
-                continue;
-            }
-        }
-
-        was_available = is_available;
-    }
-
-    tracing::info!("TEE accounts watch channel closed; stopping attestation removal monitoring");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,7 +256,6 @@ mod tests {
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
-    const TEST_RESUBMISSION_WAIT: Duration = Duration::from_millis(100);
 
     struct StubAttestationExpiryReader {
         fail: bool,
@@ -413,21 +331,12 @@ mod tests {
     }
 
     struct TestSetup {
-        node_id: NodeId,
-        tee_accounts_sender: watch::Sender<Vec<NodeId>>,
         submitter: AttestationSubmitter<MockSender>,
     }
 
-    /// Builds an [`AttestationSubmitter`] around a [`MockSender`], with the node initially
-    /// present in the TEE accounts watch channel.
+    /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
     fn test_setup() -> TestSetup {
         let (tls_public_key, account_public_key) = test_keys();
-        let node_id = NodeId {
-            account_id: "test_node.near".parse().unwrap(),
-            tls_public_key: tls_public_key.clone(),
-            account_public_key: account_public_key.clone(),
-        };
-        let (tee_accounts_sender, _) = watch::channel(vec![node_id.clone()]);
         let (_, allowed_image_hashes) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes) = watch::channel(vec![]);
         let submitter = AttestationSubmitter {
@@ -439,11 +348,7 @@ mod tests {
             allowed_launcher_compose_hashes,
             attestation_reader: Arc::new(StubAttestationExpiryReader { fail: false }),
         };
-        TestSetup {
-            node_id,
-            tee_accounts_sender,
-            submitter,
-        }
+        TestSetup { submitter }
     }
 
     impl TestSetup {
@@ -456,23 +361,6 @@ mod tests {
                 self.submitter.clone(),
                 MockTicker::new(ticks),
             ))
-        }
-
-        fn spawn_monitor(&self) -> tokio::task::JoinHandle<()> {
-            tokio::spawn(monitor_attestation_removal(
-                self.submitter.clone(),
-                self.node_id.account_id.clone(),
-                self.tee_accounts_sender.subscribe(),
-            ))
-        }
-
-        fn remove_node_from_tee_accounts(&self) {
-            self.tee_accounts_sender.send_replace(vec![]);
-        }
-
-        fn add_node_to_tee_accounts(&self) {
-            self.tee_accounts_sender
-                .send_replace(vec![self.node_id.clone()]);
         }
     }
 
@@ -511,26 +399,6 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_resubmit_when_attestation_removed() {
-        // Given
-        let setup = test_setup();
-        let handle = setup.spawn_monitor();
-        tokio::task::yield_now().await;
-        assert_eq!(setup.sender().count(), 0);
-
-        // When
-        setup.remove_node_from_tee_accounts();
-
-        // Then
-        tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a resubmission after the removal");
-        assert_eq!(setup.sender().count(), 1);
-        handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_survive_submission_retry_timeout() {
         // Given: the first tick burns the whole retry window, the second one lands
         let setup = test_setup();
@@ -547,98 +415,6 @@ mod tests {
             .expect("expected a successful submission after the first retry window timed out");
         assert_eq!(setup.sender().count(), 1);
         handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_retry_failed_resubmission_without_further_updates()
-    {
-        // Given: the node is removed and the resubmission burns its whole retry window
-        let setup = test_setup();
-        setup.sender().set_failing(true);
-        let handle = setup.spawn_monitor();
-        tokio::task::yield_now().await;
-        setup.remove_node_from_tee_accounts();
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
-
-        // When: the submission starts succeeding, with no further TEE-accounts updates
-        setup.sender().set_failing(false);
-
-        // Then: the monitor retries on its own delay
-        tokio::time::timeout(
-            RESUBMISSION_RETRY_DELAY + Duration::from_secs(1),
-            setup.sender().wait_for_submission(),
-        )
-        .await
-        .expect("expected a resubmission after the retry delay with no further updates");
-        assert_eq!(setup.sender().count(), 1);
-        handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_retry_failed_resubmission_on_next_update() {
-        // Given: the node is removed and the resubmission burns its whole retry window
-        let setup = test_setup();
-        setup.sender().set_failing(true);
-        let handle = setup.spawn_monitor();
-        tokio::task::yield_now().await;
-        setup.remove_node_from_tee_accounts();
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
-
-        // When: a TEE-accounts update arrives while the node is still absent
-        setup.sender().set_failing(false);
-        setup.remove_node_from_tee_accounts();
-
-        // Then: the update triggers the retry well before the fixed retry delay
-        tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a resubmission on the update after a failed one");
-        assert_eq!(setup.sender().count(), 1);
-        handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_resubmit_on_each_removal() {
-        // Given
-        let setup = test_setup();
-        let handle = setup.spawn_monitor();
-        tokio::task::yield_now().await;
-
-        // When: the node is removed, re-added, and removed again
-        setup.remove_node_from_tee_accounts();
-        tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a resubmission after the first removal");
-        setup.add_node_to_tee_accounts();
-        tokio::task::yield_now().await;
-        setup.remove_node_from_tee_accounts();
-
-        // Then
-        tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a resubmission after the second removal");
-        assert_eq!(setup.sender().count(), 2);
-        handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_stop_when_watch_channel_closes() {
-        // Given
-        let setup = test_setup();
-        let handle = setup.spawn_monitor();
-        tokio::task::yield_now().await;
-
-        // When
-        drop(setup.tee_accounts_sender);
-
-        // Then
-        tokio::time::timeout(TEST_RESUBMISSION_WAIT, handle)
-            .await
-            .expect("expected the monitor to stop when the watch channel closed")
-            .unwrap();
     }
 
     async fn validate_locally_generated_attestation(
