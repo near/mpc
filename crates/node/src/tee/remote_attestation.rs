@@ -10,6 +10,7 @@ use crate::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
         MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
+    tick::Tick,
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
 use anyhow::Context;
@@ -322,21 +323,11 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     tracing::info!("TEE accounts watch channel closed; stopping attestation removal monitoring");
 }
 
-/// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
-trait Tick {
-    async fn tick(&mut self);
-}
-
-impl Tick for tokio::time::Interval {
-    async fn tick(&mut self) {
-        self.tick().await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
+    use crate::tick::MockTicker;
     use ed25519_dalek::SigningKey;
     use rand::SeedableRng;
     use std::sync::{
@@ -347,26 +338,6 @@ mod tests {
 
     const TEST_SUBMISSION_COUNT: usize = 2;
     const TEST_RESUBMISSION_WAIT: Duration = Duration::from_millis(100);
-
-    struct MockTicker {
-        count: usize,
-    }
-
-    impl MockTicker {
-        fn new(count: usize) -> Self {
-            Self { count }
-        }
-    }
-
-    impl Tick for MockTicker {
-        async fn tick(&mut self) {
-            if self.count > 0 {
-                self.count -= 1;
-            } else {
-                std::future::pending::<()>().await;
-            }
-        }
-    }
 
     struct StubAttestationExpiryReader {
         fail: bool,
