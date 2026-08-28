@@ -3,6 +3,9 @@
 //! [`dcap_qvl`] builds the collateral URLs internally and always lands on the
 //! `standard` set. The HTTP client is the caller's, so the set is chosen here,
 //! by rewriting the `update` query parameter on the way out.
+//!
+//! TODO(#4288): this file shrinks to the transport adapter, or goes away
+//! entirely, once `dcap-qvl` exposes a selector for the set.
 
 use std::{collections::BTreeMap, time::Duration};
 
