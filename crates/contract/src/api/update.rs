@@ -301,7 +301,7 @@ mod tests {
         let mut config_update = {
             let update_config = dummy_config(1);
             let config_hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
-            let config_update_obj = Update::Config(update_config.clone());
+            let config_update_obj = Update::Config(update_config.try_into().unwrap());
             let config_update_id = UpdateId(1);
             let config_votes = propose_and_vote(&mut contract, config_update_obj, config_update_id);
             TestUpdate {
