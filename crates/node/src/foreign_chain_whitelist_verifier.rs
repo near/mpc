@@ -187,14 +187,14 @@ fn compare_provider(
 /// Path-boundary-aware prefix check. `https://api.example.com/v2` matches `/v2`,
 /// `/v2/eth`, `/v2?key=x`, `/v2#frag` — but not `/v2-evil`.
 ///
-/// A `{}` in `base` matches exactly one host label (`[A-Za-z0-9-]+`), for providers that put
-/// a per-operator slug in the hostname (e.g. Quicknode).
+/// A `{}` in `base` matches one run of `[A-Za-z0-9-]` — a single host label in the bases we
+/// use, where a provider puts a per-operator slug in the hostname (e.g. Quicknode).
 fn base_url_matches(local: &str, base: &str) -> bool {
     let l = local.trim_end_matches('/');
     let b = base.trim_end_matches('/');
 
     let Some((prefix, suffix)) = b.split_once("{}") else {
-        return starts_at_boundary(l, b);
+        return starts_with_at_boundary(l, b);
     };
     let Some(rest) = l.strip_prefix(prefix) else {
         return false;
@@ -202,15 +202,15 @@ fn base_url_matches(local: &str, base: &str) -> bool {
     let label_len = rest
         .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
         .unwrap_or(rest.len());
-    label_len > 0 && starts_at_boundary(&rest[label_len..], suffix)
+    label_len > 0 && starts_with_at_boundary(&rest[label_len..], suffix)
 }
 
-/// `l` equals `b`, or continues past it at a path, query or fragment boundary.
-fn starts_at_boundary(l: &str, b: &str) -> bool {
-    if l == b {
+/// Like [`str::starts_with`], but `prefix` must end where a URL component does.
+fn starts_with_at_boundary(s: &str, prefix: &str) -> bool {
+    if s == prefix {
         return true;
     }
-    l.strip_prefix(b)
+    s.strip_prefix(prefix)
         .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#'))
 }
 

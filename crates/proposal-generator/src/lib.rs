@@ -183,6 +183,28 @@ mod tests {
     }
 
     #[test]
+    fn testnet_rpc_whitelist__should_be_a_valid_proposal() {
+        // Given
+        let config: ProposalConfig =
+            toml::from_str(include_str!("../proposals/testnet-rpc-whitelist.toml")).unwrap();
+
+        // When
+        let batch = build_batch(config).unwrap();
+
+        // Then
+        assert_eq!(
+            batch.keys().copied().collect::<Vec<_>>(),
+            vec![
+                ForeignChain::Bitcoin,
+                ForeignChain::Abstract,
+                ForeignChain::Starknet,
+                ForeignChain::Aptos,
+                ForeignChain::Sui,
+            ]
+        );
+    }
+
+    #[test]
     fn proposal_config__should_reject_config_without_chains() {
         // Given
         let toml = "[chains]";

@@ -16,7 +16,7 @@ base_url = "https://abstract-testnet.g.alchemy.com/v2/"
 auth_scheme = { Path = { placeholder = "{API_KEY}" } }
 chain_routing = "Embedded"
 
-[chains.Abstract.providers.public]
+[chains.Abstract.providers.abstract-testnet]
 base_url = "https://api.testnet.abs.xyz"
 auth_scheme = "None"
 chain_routing = "Embedded"
@@ -34,7 +34,7 @@ base_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/"
 auth_scheme = { Path = { placeholder = "{API_KEY}" } }
 chain_routing = "Embedded"
 
-[chains.Starknet.providers.public]
+[chains.Starknet.providers.publicnode]
 base_url = "https://starknet-sepolia-rpc.publicnode.com"
 auth_scheme = "None"
 chain_routing = "Embedded"
@@ -65,4 +65,22 @@ chain_routing = "Embedded"
 [chains.Aptos.providers.quicknode]
 base_url = "https://{}.aptos-testnet.quiknode.pro"
 auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Sui]
+quorum = 3
+
+[chains.Sui.providers.alchemy]
+base_url = "https://sui-testnet.g.alchemy.com"
+auth_scheme = { Header = { name = "Authorization", scheme = "Bearer" } }
+chain_routing = "Embedded"
+
+[chains.Sui.providers.public]
+base_url = "https://archive.testnet.sui.io"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Sui.providers.quicknode]
+base_url = "https://{}.sui-testnet.quiknode.pro"
+auth_scheme = { Header = { name = "x-token" } }
 chain_routing = "Embedded"
