@@ -197,7 +197,7 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::foreign_chain::test_utils::{
-        must_register_foreign_chains_config_for, must_whitelist_chain,
+        register_foreign_chains_config_for, whitelist_chain,
     };
     use crate::api::test_utils::{
         SharedSecretKey, basic_setup_with_protocol, participant_account_ids,
@@ -228,10 +228,10 @@ mod tests {
     ) {
         let chains: Vec<_> = chains.into_iter().collect();
         for chain in &chains {
-            must_whitelist_chain(contract, *chain);
+            whitelist_chain(contract, *chain);
         }
         for account_id in participant_account_ids(contract) {
-            must_register_foreign_chains_config_for(contract, &account_id, chains.iter().copied());
+            register_foreign_chains_config_for(contract, &account_id, chains.iter().copied());
         }
     }
 
@@ -635,7 +635,7 @@ mod tests {
         let (context, mut contract, _sk) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
         for account_id in participant_account_ids(&contract) {
-            must_register_foreign_chains_config_for(
+            register_foreign_chains_config_for(
                 &mut contract,
                 &account_id,
                 [dtos::ForeignChain::Bitcoin],
@@ -654,9 +654,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
-        must_whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participant_account_ids(&contract).iter().take(2) {
-            must_register_foreign_chains_config_for(
+            register_foreign_chains_config_for(
                 &mut contract,
                 account_id,
                 [dtos::ForeignChain::Bitcoin],
@@ -674,9 +674,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
             basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
-        must_whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participant_account_ids(&contract).iter().take(3) {
-            must_register_foreign_chains_config_for(
+            register_foreign_chains_config_for(
                 &mut contract,
                 account_id,
                 [dtos::ForeignChain::Bitcoin],

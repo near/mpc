@@ -9,7 +9,7 @@ use near_sdk::testing_env;
 use std::collections::BTreeSet;
 
 /// Votes `chain` into the on-chain RPC whitelist with the signing threshold of participants.
-pub(super) fn must_whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
+pub(super) fn whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
     let batch = NonEmptyBTreeMap::new(chain, ::test_utils::contract_types::dummy_chain_entry());
     let threshold = contract.threshold().unwrap().value() as usize;
     let participants = participant_account_ids(contract);
@@ -31,7 +31,7 @@ pub(super) fn must_whitelist_chain(contract: &mut MpcContract, chain: dtos::Fore
     }
 }
 
-pub(super) fn must_register_foreign_chains_config_for(
+pub(super) fn register_foreign_chains_config_for(
     contract: &mut MpcContract,
     account_id: &AccountId,
     chains: impl IntoIterator<Item = dtos::ForeignChain>,
