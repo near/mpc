@@ -1,34 +1,7 @@
 use blstrs::G1Projective;
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::kdf::derive_app_id;
-use near_mpc_contract_interface::types::{CKDResponse, DomainId};
-use near_sdk::{env, near};
-
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub struct CKDRequest {
-    /// The app ephemeral public key
-    pub app_public_key: dtos::CKDAppPublicKey,
-    pub app_id: dtos::CkdAppId,
-    pub domain_id: DomainId,
-}
-
-impl CKDRequest {
-    pub fn new(
-        app_public_key: dtos::CKDAppPublicKey,
-        domain_id: DomainId,
-        predecessor_id: &AccountId,
-        derivation_path: &str,
-    ) -> Self {
-        let app_id = derive_app_id(predecessor_id, derivation_path);
-        Self {
-            app_public_key,
-            app_id,
-            domain_id,
-        }
-    }
-}
+use near_mpc_contract_interface::types::CKDResponse;
+use near_sdk::env;
 
 /// Uncompressed encoding of the G1 generator.
 const G1_GENERATOR_UNCOMPRESSED: [u8; 96] = [
@@ -130,6 +103,9 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group as _;
     use elliptic_curve::group::Curve as _;
+    use near_account_id::AccountId;
+    use near_mpc_contract_interface::types::kdf::derive_app_id;
+    use near_mpc_contract_interface::types::{CKDRequest, CKDResponse, DomainId};
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
