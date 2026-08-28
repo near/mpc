@@ -2,6 +2,10 @@
 //!
 //! Every verdict comes from [`dcap_qvl`], the same verification the contract
 //! runs; this module only chooses which collateral it runs against.
+//!
+//! TODO(#4288): choosing the evaluation data set needs a local shim over
+//! `dcap-qvl`'s collateral client, which goes away once upstream exposes a
+//! selector for it.
 
 use std::time::Duration;
 
