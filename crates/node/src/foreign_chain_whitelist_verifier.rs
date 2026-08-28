@@ -186,16 +186,32 @@ fn compare_provider(
 
 /// Path-boundary-aware prefix check. `https://api.example.com/v2` matches `/v2`,
 /// `/v2/eth`, `/v2?key=x`, `/v2#frag` — but not `/v2-evil`.
+///
+/// A `{}` in `base` matches exactly one host label (`[A-Za-z0-9-]+`), for providers that put
+/// a per-operator slug in the hostname (e.g. Quicknode).
 fn base_url_matches(local: &str, base: &str) -> bool {
     let l = local.trim_end_matches('/');
     let b = base.trim_end_matches('/');
+
+    let Some((prefix, suffix)) = b.split_once("{}") else {
+        return starts_at_boundary(l, b);
+    };
+    let Some(rest) = l.strip_prefix(prefix) else {
+        return false;
+    };
+    let label_len = rest
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+        .unwrap_or(rest.len());
+    label_len > 0 && starts_at_boundary(&rest[label_len..], suffix)
+}
+
+/// `l` equals `b`, or continues past it at a path, query or fragment boundary.
+fn starts_at_boundary(l: &str, b: &str) -> bool {
     if l == b {
         return true;
     }
-    let Some(rest) = l.strip_prefix(b) else {
-        return false;
-    };
-    rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#')
+    l.strip_prefix(b)
+        .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#'))
 }
 
 enum RoutingCheck {
@@ -1040,6 +1056,55 @@ mod tests {
         assert!(!base_url_matches(
             "https://eth.alchemy.com/v2foo.attacker.example/",
             "https://eth.alchemy.com/v2"
+        ));
+    }
+
+    const WILDCARD: &str = "https://{}.abstract-testnet.quiknode.pro";
+
+    #[test]
+    fn base_url_matches__should_accept_any_single_host_label_for_a_wildcard_base() {
+        assert!(base_url_matches(
+            "https://misty-fabled-sunset.abstract-testnet.quiknode.pro/abc123",
+            WILDCARD
+        ));
+        assert!(base_url_matches(
+            "https://acme7.abstract-testnet.quiknode.pro/{api_key}",
+            WILDCARD
+        ));
+        assert!(base_url_matches(
+            "https://acme7.abstract-testnet.quiknode.pro",
+            WILDCARD
+        ));
+    }
+
+    #[test]
+    fn base_url_matches__should_reject_wildcard_spanning_a_label_boundary() {
+        // The wildcard must not swallow `/`, `.`, or `?` — each would let the pinned domain
+        // suffix land somewhere other than the host.
+        assert!(!base_url_matches(
+            "https://evil.example.com/.abstract-testnet.quiknode.pro/",
+            WILDCARD
+        ));
+        assert!(!base_url_matches(
+            "https://a.b.abstract-testnet.quiknode.pro/",
+            WILDCARD
+        ));
+        assert!(!base_url_matches(
+            "https://evil.com?x=.abstract-testnet.quiknode.pro",
+            WILDCARD
+        ));
+        // An empty label, and a suffix that is not where the host ends.
+        assert!(!base_url_matches(
+            "https://.abstract-testnet.quiknode.pro/",
+            WILDCARD
+        ));
+        assert!(!base_url_matches(
+            "https://acme7.abstract-testnet.quiknode.pro.evil.io/",
+            WILDCARD
+        ));
+        assert!(!base_url_matches(
+            "https://acme7.abstract-testnet.quiknode.proevil/",
+            WILDCARD
         ));
     }
 }
