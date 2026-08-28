@@ -362,7 +362,7 @@ where
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
-    tokio::spawn(run_periodic_attestation_submission(submitter.clone()));
+    tokio::spawn(run_periodic_attestation_submission(submitter));
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();

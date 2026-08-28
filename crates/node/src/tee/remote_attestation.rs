@@ -33,7 +33,7 @@ const BACKOFF_FACTOR: f32 = 1.5;
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
 
 /// Inputs for the attestation-submission background task
-/// [`periodic_attestation_submission`].
+/// [`run_periodic_attestation_submission`].
 #[derive(Clone)]
 pub struct AttestationSubmitter<T> {
     pub tee_authority: TeeAuthority,
@@ -363,8 +363,7 @@ mod tests {
         submitter: AttestationSubmitter<MockSender>,
     }
 
-    /// Builds an [`AttestationSubmitter`] around a [`MockSender`], with the node initially
-    /// present in the TEE accounts watch channel.
+    /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
     fn test_setup() -> TestSetup {
         let (tls_public_key, account_public_key) = test_keys();
         let (_, allowed_image_hashes) = watch::channel(vec![]);
