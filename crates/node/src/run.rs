@@ -34,6 +34,7 @@ use std::{
     collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
+    time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
 use tokio::signal::unix::{SignalKind, signal};
@@ -46,6 +47,7 @@ use crate::tee::{
     remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
 };
 
+pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 
@@ -200,6 +202,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         .context("Failed to create web server.")?;
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
+
+    // Detached: the report is diagnostic, nothing downstream waits on it.
+    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
+        node_config.foreign_chains.clone(),
+        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
+    ));
 
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();

@@ -1389,6 +1389,30 @@ pub enum ForeignChain {
     Fogo,
 }
 
+impl ForeignChain {
+    /// The chain's key in an operator's `foreign_chains` config, also used as its metric label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Solana => "solana",
+            Self::Bitcoin => "bitcoin",
+            Self::Ethereum => "ethereum",
+            Self::Base => "base",
+            Self::Bnb => "bnb",
+            Self::Arbitrum => "arbitrum",
+            Self::Abstract => "abstract",
+            Self::Starknet => "starknet",
+            Self::Polygon => "polygon",
+            Self::HyperEvm => "hyper_evm",
+            Self::Ton => "ton",
+            Self::Aptos => "aptos",
+            Self::Sui => "sui",
+            Self::Avalanche => "avalanche",
+            Self::Adi => "adi",
+            Self::Fogo => "fogo",
+        }
+    }
+}
+
 #[derive(
     Debug,
     Clone,
