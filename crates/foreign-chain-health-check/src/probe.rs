@@ -408,7 +408,7 @@ mod tests {
         }
     }
 
-    fn must_put_chain(
+    fn put_chain(
         chains: &mut ForeignChainsConfig,
         chain: ForeignChain,
         config: ForeignChainConfig,
@@ -495,7 +495,7 @@ mod tests {
     }
 
     /// Keyed by chain too: provider names repeat across chains in real configs.
-    fn must_status_of(report: &ProbeReport, chain: ForeignChain, provider: &str) -> ProviderStatus {
+    fn status_of(report: &ProbeReport, chain: ForeignChain, provider: &str) -> ProviderStatus {
         report
             .rows()
             .iter()
@@ -521,7 +521,7 @@ mod tests {
         // Then
         mock.assert_async().await;
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -541,7 +541,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new(MAINNET),
                 observed: NetworkFingerprint::new(SEPOLIA),
@@ -564,7 +564,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -585,7 +585,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::MissingExpectedFingerprint
         );
         mock.assert_calls_async(0).await;
@@ -604,7 +604,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Unreachable
         );
     }
@@ -624,7 +624,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "keyed"),
+            status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::RequestRejected
         );
         mock.assert_calls_async(1).await;
@@ -645,7 +645,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::RequestRejected
         );
     }
@@ -665,7 +665,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::MalformedResponse
         );
     }
@@ -685,7 +685,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "slow"),
+            status_of(&report, ForeignChain::Starknet, "slow"),
             ProviderStatus::TimedOut
         );
     }
@@ -705,7 +705,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -735,7 +735,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "keyed"),
+            status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::AuthTokenUnresolved
         );
     }
@@ -753,7 +753,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "wrong-scheme"),
+            status_of(&report, ForeignChain::Starknet, "wrong-scheme"),
             ProviderStatus::ClientSetupFailed
         );
     }
@@ -772,11 +772,11 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "healthy"),
+            status_of(&report, ForeignChain::Starknet, "healthy"),
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "broken"),
+            status_of(&report, ForeignChain::Starknet, "broken"),
             ProviderStatus::Unreachable
         );
         assert_eq!(
@@ -802,7 +802,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Solana, "publicnode"),
+            status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
     }
@@ -829,11 +829,11 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "publicnode"),
+            status_of(&report, ForeignChain::Starknet, "publicnode"),
             ProviderStatus::Healthy
         );
         assert_eq!(
-            must_status_of(&report, ForeignChain::Solana, "publicnode"),
+            status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::ProbeNotImplemented
         );
         assert_eq!(report.counts_per_chain().len(), 2);
@@ -848,7 +848,7 @@ mod tests {
         for mainnet in EVM_MAINNETS {
             let server = httpmock::MockServer::start_async().await;
             mock_fingerprint(&server, &mainnet.answered()).await;
-            must_put_chain(
+            put_chain(
                 &mut config,
                 mainnet.chain,
                 chain_config(
@@ -865,7 +865,7 @@ mod tests {
         // Then
         for EvmMainnet { chain, .. } in EVM_MAINNETS {
             assert_eq!(
-                must_status_of(&report, chain, "publicnode"),
+                status_of(&report, chain, "publicnode"),
                 ProviderStatus::Healthy,
                 "{chain:?}"
             );
@@ -879,7 +879,7 @@ mod tests {
         let server = httpmock::MockServer::start_async().await;
         mock_fingerprint(&server, "0x14a34").await;
         let mut config = ForeignChainsConfig::default();
-        must_put_chain(
+        put_chain(
             &mut config,
             ForeignChain::Base,
             chain_config(Some("8453"), one_provider("publicnode", &server.base_url())),
@@ -890,7 +890,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Base, "publicnode"),
+            status_of(&report, ForeignChain::Base, "publicnode"),
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new("8453"),
                 observed: NetworkFingerprint::new("84532"),
@@ -913,7 +913,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            status_of(&report, ForeignChain::Bitcoin, "publicnode"),
             ProviderStatus::Healthy
         );
     }
@@ -933,7 +933,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Bitcoin, "publicnode"),
+            status_of(&report, ForeignChain::Bitcoin, "publicnode"),
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new(BITCOIN_MAINNET),
                 observed: NetworkFingerprint::new(BITCOIN_TESTNET3),
@@ -972,7 +972,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
+            status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
             ProviderStatus::Healthy
         );
     }
@@ -995,7 +995,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
+            status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
             ProviderStatus::WrongNetwork {
                 expected: NetworkFingerprint::new(APTOS_MAINNET.to_string()),
                 observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
@@ -1086,7 +1086,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             expected
         );
     }
@@ -1104,7 +1104,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
+            status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             ProviderStatus::Unreachable
         );
     }
@@ -1124,7 +1124,7 @@ mod tests {
 
         // Then
         assert_eq!(
-            must_status_of(&report, ForeignChain::Starknet, "keyed"),
+            status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::Unreachable
         );
         mock.assert_calls_async(2).await;
@@ -1146,7 +1146,7 @@ mod tests {
 
         // Then
         let ProviderStatus::WrongNetwork { observed, .. } =
-            must_status_of(&report, ForeignChain::Starknet, "publicnode")
+            status_of(&report, ForeignChain::Starknet, "publicnode")
         else {
             panic!("expected the flood to read as the wrong network");
         };
@@ -1213,7 +1213,7 @@ mod tests {
 
         // Then
         assert_matches!(
-            must_status_of(&report, ForeignChain::Starknet, "keyed"),
+            status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::WrongNetwork { .. }
         );
         let rendered = format!("{report:?}");

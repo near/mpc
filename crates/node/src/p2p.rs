@@ -1473,17 +1473,17 @@ mod tests {
         (server, client)
     }
 
-    fn must_make_signing_key() -> SigningKey {
+    fn make_signing_key() -> SigningKey {
         SigningKey::generate(&mut StdRng::seed_from_u64(42))
     }
 
-    fn must_make_client_config() -> Arc<ClientConfig> {
-        let (_server_config, client_config) = configure_tls(&must_make_signing_key()).unwrap();
+    fn make_client_config() -> Arc<ClientConfig> {
+        let (_server_config, client_config) = configure_tls(&make_signing_key()).unwrap();
         Arc::new(client_config)
     }
 
-    fn must_make_tls_acceptor() -> TlsAcceptor {
-        let (server_config, _client_config) = configure_tls(&must_make_signing_key()).unwrap();
+    fn make_tls_acceptor() -> TlsAcceptor {
+        let (server_config, _client_config) = configure_tls(&make_signing_key()).unwrap();
         TlsAcceptor::from(Arc::new(server_config))
     }
 
@@ -1500,7 +1500,7 @@ mod tests {
         let result = timeout(
             Duration::from_secs(60),
             OutgoingConnection::new(
-                must_make_client_config(),
+                make_client_config(),
                 &target_address,
                 ParticipantId::from_raw(1),
                 &ParticipantIdentities::default(),
@@ -1526,7 +1526,7 @@ mod tests {
     async fn persistent_connection__should_keep_retrying_when_dial_attempt_hangs() {
         // Given a listener that accepts TCP connections but never responds.
         let (target_address, mut accept_rx, listener_task) = must_spawn_silent_listener().await;
-        let client_config = must_make_client_config();
+        let client_config = make_client_config();
         let my_id = ParticipantId::from_raw(0);
         let target_id = ParticipantId::from_raw(1);
 
@@ -1570,7 +1570,7 @@ mod tests {
         // Given
         let (addr_a, mut accept_a, task_a) = must_spawn_silent_listener().await;
         let (addr_b, mut accept_b, task_b) = must_spawn_silent_listener().await;
-        let client_config = must_make_client_config();
+        let client_config = make_client_config();
         let my_id = ParticipantId::from_raw(0);
         let target_id = ParticipantId::from_raw(1);
         let resolved_address = Arc::new(Mutex::new(addr_a.clone()));
@@ -1622,7 +1622,7 @@ mod tests {
     {
         // Given
         let (tcp_stream, _silent_client) = must_accept_silent_connection().await;
-        let tls_acceptor = must_make_tls_acceptor();
+        let tls_acceptor = make_tls_acceptor();
         let (message_sender, _message_receiver) = mpsc::unbounded_channel();
         let my_id = ParticipantId::from_raw(0);
         let connectivities = Arc::new(AllNodeConnectivities::<

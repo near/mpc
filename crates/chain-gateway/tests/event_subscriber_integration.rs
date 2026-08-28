@@ -24,9 +24,7 @@ use rstest::rstest;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn must_recv_block_update(
-    receiver: &mut tokio::sync::mpsc::Receiver<BlockUpdate>,
-) -> BlockUpdate {
+async fn recv_block_update(receiver: &mut tokio::sync::mpsc::Receiver<BlockUpdate>) -> BlockUpdate {
     tokio::time::timeout(EVENT_TIMEOUT, receiver.recv())
         .await
         .expect("expected a block update before timeout")
@@ -92,7 +90,7 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
         .unwrap();
 
     // Then: expect a matching block update
-    let BlockUpdate { events, .. } = must_recv_block_update(&mut receiver).await;
+    let BlockUpdate { events, .. } = recv_block_update(&mut receiver).await;
 
     assert_eq!(events.len(), 1);
 
@@ -243,7 +241,7 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
         .unwrap();
 
     // Then: expect a matching block update
-    let BlockUpdate { events, .. } = must_recv_block_update(&mut receiver).await;
+    let BlockUpdate { events, .. } = recv_block_update(&mut receiver).await;
 
     assert_eq!(events.len(), 1);
 
@@ -286,7 +284,7 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
         .unwrap();
 
     // Then: expect a matching block update
-    let BlockUpdate { events, .. } = must_recv_block_update(&mut receiver).await;
+    let BlockUpdate { events, .. } = recv_block_update(&mut receiver).await;
 
     assert_eq!(events.len(), 1);
 
@@ -355,7 +353,7 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
     drop(watch_value);
 
     for _ in 0..expected_received {
-        must_recv_block_update(&mut receiver).await;
+        recv_block_update(&mut receiver).await;
     }
     receiver
         .try_recv()
@@ -388,7 +386,7 @@ async fn test_block_status_handle_becomes_final() {
         .await
         .unwrap();
 
-    let BlockUpdate { status, .. } = must_recv_block_update(&mut receiver).await;
+    let BlockUpdate { status, .. } = recv_block_update(&mut receiver).await;
 
     // Sync on the state viewer observing the finalised state change.
     let mut watch_value = observer_gw
