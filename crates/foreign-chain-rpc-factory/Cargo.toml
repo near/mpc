@@ -15,8 +15,6 @@ url = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-near-mpc-bounded-collections = { workspace = true }
-tokio = { workspace = true }
 
 [lints]
 workspace = true
