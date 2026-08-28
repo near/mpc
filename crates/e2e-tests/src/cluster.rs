@@ -19,7 +19,7 @@ use near_mpc_contract_interface::{
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -1091,7 +1091,7 @@ impl MpcCluster {
             "propose_update failed: {:?}",
             outcome.failure_message()
         );
-        let proposal_id: u64 = outcome
+        let proposal_id: UpdateId = outcome
             .json()
             .context("propose_update did not return a JSON update id")?;
 

@@ -1028,7 +1028,7 @@ mod tests {
         let mut contract = MpcContract::init_running(
             domains.clone(),
             1,
-            keyset.clone(),
+            (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             None,
         )
@@ -1149,9 +1149,14 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let mut contract =
-            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains,
+            1,
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            None,
+        )
+        .unwrap();
 
         // Expire the last participant's attestation so a kickout drops the set to 4.
         let participant_list: Vec<_> = participants.participants().to_vec();

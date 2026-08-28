@@ -2,7 +2,7 @@
 //! migration to new hardware, and updating a participant's URL.
 
 use crate::api::common::require_deposit;
-use crate::dto_mapping::IntoContractType;
+use crate::dto_mapping::{IntoContractType, TryIntoContractType};
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::Keyset;
 use crate::primitives::participants::ParticipantInfo;
@@ -169,12 +169,13 @@ impl MpcContract {
     /// Returns the following errors:
     /// - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state
     /// - [`InvalidState::NotParticipant`]: if caller is not a current participant
+    /// - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key
     /// - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset
     /// - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller
     /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
     #[handle_result]
-    pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
+    pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
         let signer_pk = env::signer_account_pk();
         log!(
@@ -194,10 +195,12 @@ impl MpcContract {
             .into());
         }
 
+        // Converted after the participant/state validation so those errors take precedence.
+        let keyset: Keyset = keyset.try_into_contract_type()?;
         let expected_keyset = &running_state.keyset;
-        if expected_keyset != keyset {
+        if *expected_keyset != keyset {
             return Err(errors::NodeMigrationError::KeysetMismatch {
-                found: keyset.clone(),
+                found: keyset,
                 expected: expected_keyset.clone(),
             }
             .into());
@@ -310,6 +313,7 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT: NearToken =
 mod tests {
     use super::*;
     use crate::api::test_utils::NUM_DOMAINS;
+    use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::NodeMigrationError;
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
@@ -929,7 +933,7 @@ mod tests {
             test_env.set_signer(&self.signer_account_id);
             test_env.set_pk(self.signer_account_pk.clone());
 
-            let res = contract.conclude_node_migration(keyset);
+            let res = contract.conclude_node_migration(keyset.into_dto_type());
 
             if let Some(check) = &self.expected_error_check {
                 let err = res.unwrap_err();

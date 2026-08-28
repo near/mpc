@@ -16,7 +16,7 @@ use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::{AttemptId, EpochId},
         participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{
@@ -34,7 +34,7 @@ use near_mpc_contract_interface::types::{
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
     SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
     SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, UpdateId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -147,7 +147,7 @@ pub async fn init_contract_running(
     contract: &Contract,
     domains: Vec<DomainConfig>,
     next_domain_id: u64,
-    keyset: Keyset,
+    keyset: dtos::Keyset,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
@@ -263,7 +263,7 @@ impl SandboxTestSetupBuilder {
                 }
                 _ => ReconstructionThreshold::new(cluster_threshold),
             };
-            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let key: PublicKeyExtended = pk.clone().try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 protocol: *protocol,
@@ -273,13 +273,13 @@ impl SandboxTestSetupBuilder {
             keys.push(DomainKey {
                 domain_config: config.clone(),
                 domain_secret_key: sk,
-                domain_public_key: key.clone(),
+                domain_public_key: key,
             });
             domain_configs.push(config);
-            key_for_domains.push(KeyForDomain {
+            key_for_domains.push(dtos::KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
-                key,
+                key: pk.into(),
             });
         }
 
@@ -288,7 +288,7 @@ impl SandboxTestSetupBuilder {
             let (pk, sk) = make_key_for_domain(Curve::Secp256k1);
             let domain_id = DomainId(domain_configs.len() as u64);
 
-            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let key: PublicKeyExtended = pk.clone().try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 protocol: Protocol::CaitSith,
@@ -298,19 +298,19 @@ impl SandboxTestSetupBuilder {
             keys.push(DomainKey {
                 domain_config: config.clone(),
                 domain_secret_key: sk,
-                domain_public_key: key.clone(),
+                domain_public_key: key,
             });
             domain_configs.push(config);
-            key_for_domains.push(KeyForDomain {
+            key_for_domains.push(dtos::KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
-                key,
+                key: pk.into(),
             });
         }
 
         if !domain_configs.is_empty() {
             let next_domain_id = domain_configs.len() as u64;
-            let keyset = Keyset::new(EpochId::new(5), key_for_domains);
+            let keyset = dtos::Keyset::new(EpochId::new(5), key_for_domains);
             init_contract_running(
                 &contract,
                 domain_configs,
@@ -365,7 +365,7 @@ pub async fn propose_and_vote_contract_binary(
         "propose update call failed"
     );
 
-    let proposal_id: u64 = propose_update_execution.json().unwrap();
+    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -391,7 +391,7 @@ pub async fn propose_and_vote_contract_binary(
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: u64,
+    proposal_id: UpdateId,
 ) {
     for voter in accounts {
         let execution = voter

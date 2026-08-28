@@ -901,7 +901,7 @@ mod tests {
         let mut env = Environment::new(None, Some(operator4.clone()), None);
         env.set_pk(new_signer_near_pk);
         contract
-            .conclude_node_migration(&keyset)
+            .conclude_node_migration((&keyset).into_dto_type())
             .expect("migration should succeed");
 
         // Then: all 4 chains available — no manual recompute needed.
@@ -1193,9 +1193,14 @@ mod tests {
         let parameters =
             GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
                 .unwrap();
-        let mut contract =
-            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains,
+            1,
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            None,
+        )
+        .unwrap();
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -1255,9 +1260,14 @@ mod tests {
         let parameters =
             GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
                 .unwrap();
-        let mut contract =
-            MpcContract::init_running(domains, 2, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains,
+            2,
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            None,
+        )
+        .unwrap();
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
