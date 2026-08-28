@@ -1,5 +1,3 @@
-//! One type holding any chain's inspector.
-
 use crate::abstract_chain::inspector::Abstract;
 use crate::adi::inspector::Adi;
 use crate::aptos::inspector::AptosInspector;
@@ -19,8 +17,6 @@ use crate::{ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintI
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 
-/// [`NetworkFingerprintInspector`] is not dyn compatible, so a caller that spans chains needs an
-/// enum rather than a trait object.
 #[derive(Clone)]
 pub enum RpcInspector {
     Abstract(EvmInspector<HttpClient, Abstract>),

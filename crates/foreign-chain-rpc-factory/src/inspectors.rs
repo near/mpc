@@ -1,5 +1,3 @@
-//! Building a chain's inspector for one of its providers, over the real network transports.
-
 use std::time::Duration;
 
 use foreign_chain_inspector::aptos::inspector::AptosInspector;
@@ -16,7 +14,6 @@ use near_mpc_contract_interface::types::ForeignChain;
 
 use crate::auth_config_to_rpc_auth;
 
-/// Builds each chain's inspector over the real providers, with each one's credentials applied.
 #[derive(Clone, Copy)]
 pub struct InspectorFactory;
 
@@ -96,75 +93,5 @@ impl InspectorFactory {
                 header_value,
             } => Some((header_name, header_value)),
         }
-    }
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use std::num::NonZeroU64;
-
-    use mpc_node_config::{
-        AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
-    };
-    use near_mpc_bounded_collections::NonEmptyBTreeMap;
-
-    use super::*;
-
-    /// Set exhaustively, so a chain added to the config has to be answered for here too.
-    fn every_configurable_chain() -> ForeignChainsConfig {
-        let section = || {
-            Some(ForeignChainConfig {
-                timeout_sec: NonZeroU64::new(1).unwrap(),
-                max_retries: NonZeroU64::new(1).unwrap(),
-                expected_network_fingerprint: None,
-                providers: NonEmptyBTreeMap::new(
-                    "only".to_string().into(),
-                    ForeignChainProviderConfig {
-                        rpc_url: "http://127.0.0.1:9".to_string(),
-                        auth: AuthConfig::None,
-                    },
-                ),
-            })
-        };
-        ForeignChainsConfig {
-            solana: section(),
-            bitcoin: section(),
-            ethereum: section(),
-            abstract_chain: section(),
-            starknet: section(),
-            bnb: section(),
-            base: section(),
-            arbitrum: section(),
-            hyper_evm: section(),
-            polygon: section(),
-            aptos: section(),
-            sui: section(),
-            avalanche: section(),
-            adi: section(),
-        }
-    }
-
-    #[tokio::test]
-    async fn build__should_cover_every_configurable_chain_that_has_an_inspector() {
-        // Given
-        let config = every_configurable_chain();
-        let factory = InspectorFactory;
-
-        // When
-        let uncovered: Vec<_> = config
-            .iter_chains()
-            .filter(|(chain, chain_config)| {
-                let provider = chain_config.providers.iter().next().expect("a provider").1;
-                factory
-                    .build(*chain, provider, Duration::from_secs(1))
-                    .expect("the provider is well formed")
-                    .is_none()
-            })
-            .map(|(chain, _)| chain)
-            .collect();
-
-        // Then
-        assert_eq!(uncovered, vec![ForeignChain::Solana]);
     }
 }

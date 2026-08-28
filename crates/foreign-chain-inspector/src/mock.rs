@@ -1,8 +1,7 @@
-//! Scripted test doubles for the network fingerprint probe.
+//! Test doubles for the Foreign Tx Inspectors.
 //!
-//! Scripted delays are virtual timers under `#[tokio::test(start_paused = true)]`, so retry,
-//! backoff and timeout run in microseconds. Never mix paused time with a real socket (httpmock,
-//! tonic): the runtime advances the clock while the socket is silent and fires the timeout first.
+//! Use `#[tokio::test(start_paused = true)]` if test case simulates network latency.
+//! Never use with real sockets, tokio paused clock will fire timeouts instantly.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,37 +10,51 @@ use std::time::Duration;
 
 use crate::{ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintInspector};
 
-/// One scripted attempt. Outcomes are built per attempt because [`ForeignChainInspectionError`]
-/// is not `Clone`.
 #[derive(Debug)]
-pub enum ScriptedReply {
-    /// Keep `fingerprint` under [`NetworkFingerprint`]'s length cap, or it is truncated on the
-    /// way out.
+pub enum MockReply {
     Answer {
         delay: Duration,
         fingerprint: String,
     },
-    /// [`FanOut`](crate::FanOut) retries a transient failure.
-    TransientFailure { delay: Duration },
-    /// [`FanOut`](crate::FanOut) does not retry a refusal.
-    Refusal { delay: Duration },
-    /// Never resolves; only the caller's timeout ends the attempt.
+    Fail {
+        delay: Duration,
+        error: ForeignChainInspectionError,
+    },
+    /// Never resolves
     Hang,
 }
 
-/// Answers from a queue of [`ScriptedReply`]s and panics past the end of the script, so an
-/// unexpected extra attempt fails loudly. Clones share the queue and the counter, so give each
-/// provider its own and keep a clone for [`ScriptedInspector::calls`].
+impl MockReply {
+    pub fn fail(delay: Duration, error: ForeignChainInspectionError) -> Self {
+        Self::Fail { delay, error }
+    }
+
+    pub fn transient(delay: Duration) -> Self {
+        Self::fail(
+            delay,
+            ForeignChainInspectionError::RpcRequestFailed("mock transient failure".to_string()),
+        )
+    }
+
+    pub fn refusal(delay: Duration) -> Self {
+        Self::fail(
+            delay,
+            ForeignChainInspectionError::RpcRequestRejected("mock refusal".to_string()),
+        )
+    }
+}
+
+/// Answers from a queue of [`MockReply`]s; panics on a call past the end of the queue.
 #[derive(Clone)]
-pub struct ScriptedInspector {
-    script: Arc<Mutex<VecDeque<ScriptedReply>>>,
+pub struct MockInspector {
+    replies: Arc<Mutex<VecDeque<MockReply>>>,
     calls: Arc<AtomicUsize>,
 }
 
-impl ScriptedInspector {
-    pub fn new(replies: impl IntoIterator<Item = ScriptedReply>) -> Self {
+impl MockInspector {
+    pub fn new(replies: impl IntoIterator<Item = MockReply>) -> Self {
         Self {
-            script: Arc::new(Mutex::new(replies.into_iter().collect())),
+            replies: Arc::new(Mutex::new(replies.into_iter().collect())),
             calls: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -51,33 +64,25 @@ impl ScriptedInspector {
     }
 }
 
-impl NetworkFingerprintInspector for ScriptedInspector {
+impl NetworkFingerprintInspector for MockInspector {
     async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let reply = self
-            .script
+            .replies
             .lock()
-            .expect("script mutex poisoned")
+            .expect("replies mutex poisoned")
             .pop_front()
-            .expect("call beyond the script");
+            .expect("call beyond the queued replies");
         match reply {
-            ScriptedReply::Answer { delay, fingerprint } => {
+            MockReply::Answer { delay, fingerprint } => {
                 tokio::time::sleep(delay).await;
                 Ok(NetworkFingerprint::new(fingerprint))
             }
-            ScriptedReply::TransientFailure { delay } => {
+            MockReply::Fail { delay, error } => {
                 tokio::time::sleep(delay).await;
-                Err(ForeignChainInspectionError::RpcRequestFailed(
-                    "scripted transient failure".to_string(),
-                ))
+                Err(error)
             }
-            ScriptedReply::Refusal { delay } => {
-                tokio::time::sleep(delay).await;
-                Err(ForeignChainInspectionError::RpcRequestRejected(
-                    "scripted refusal".to_string(),
-                ))
-            }
-            ScriptedReply::Hang => std::future::pending().await,
+            MockReply::Hang => std::future::pending().await,
         }
     }
 

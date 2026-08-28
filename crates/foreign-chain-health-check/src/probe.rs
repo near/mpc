@@ -10,8 +10,6 @@ use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignCha
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
-use crate::timeout_of;
-
 /// One provider's verdict. Anything other than [`ProviderStatus::Healthy`] is unhealthy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderStatus {
@@ -95,7 +93,7 @@ where
     InspectorFactory: BuildInspectors,
 {
     let probe_attempts = config.iter_chains().map(|(chain, chain_config)| {
-        let timeout = timeout_of(chain_config);
+        let timeout = chain_config.timeout_duration();
         async move {
             probe_chain(chain, chain_config, |provider| {
                 inspectors.build(chain, provider, timeout)
@@ -123,7 +121,7 @@ where
     for (name, provider) in config.providers.iter() {
         let provider_id = ProviderId(name.as_str().to_owned());
         match build_new_inspector(provider) {
-            // No inspector for the chain, so none of its providers can be asked.
+            // Inspector not implemented for the chain
             Ok(None) => return rows_of(chain, config, ProviderStatus::ProbeNotImplemented),
             Ok(Some(inspector)) => inspectors.push((provider_id, inspector)),
             Err(error) => rows.push(ProviderHealth {
@@ -146,7 +144,7 @@ where
     let expected = inspector.canonical_fingerprint(expected);
 
     let fingerprints = FanOut::new(inspectors)
-        .network_fingerprints(timeout_of(config), config.max_retries)
+        .network_fingerprints(config.timeout_duration(), config.max_retries)
         .await;
     for (provider, reported) in fingerprints {
         rows.push(ProviderHealth {
@@ -209,15 +207,15 @@ fn classify(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use foreign_chain_inspector::mock::{ScriptedInspector, ScriptedReply};
+    use foreign_chain_inspector::mock::{MockInspector, MockReply};
 
-    /// Hands the probe a scripted inspector per provider URL, so nothing builds a client.
-    struct ScriptedInspectors(std::collections::BTreeMap<String, ScriptedInspector>);
+    /// Hands the probe a mock inspector per provider URL.
+    struct MockInspectors(std::collections::BTreeMap<String, MockInspector>);
 
-    impl ScriptedInspectors {
-        fn new<'a>(scripts: impl IntoIterator<Item = (&'a str, ScriptedInspector)>) -> Self {
+    impl MockInspectors {
+        fn new<'a>(inspectors: impl IntoIterator<Item = (&'a str, MockInspector)>) -> Self {
             Self(
-                scripts
+                inspectors
                     .into_iter()
                     .map(|(url, inspector)| (url.to_string(), inspector))
                     .collect(),
@@ -225,19 +223,19 @@ mod tests {
         }
     }
 
-    impl BuildInspectors for ScriptedInspectors {
-        type Inspector = ScriptedInspector;
+    impl BuildInspectors for MockInspectors {
+        type Inspector = MockInspector;
 
         fn build(
             &self,
             _chain: ForeignChain,
             provider: &ForeignChainProviderConfig,
             _timeout: std::time::Duration,
-        ) -> anyhow::Result<Option<ScriptedInspector>> {
+        ) -> anyhow::Result<Option<MockInspector>> {
             let inspector = self
                 .0
                 .get(&provider.rpc_url)
-                .unwrap_or_else(|| panic!("no inspector scripted for `{}`", provider.rpc_url));
+                .unwrap_or_else(|| panic!("no mock inspector for `{}`", provider.rpc_url));
             Ok(Some(inspector.clone()))
         }
     }
@@ -457,8 +455,8 @@ mod tests {
             .await
     }
 
-    fn answering(fingerprint: &str) -> ScriptedReply {
-        ScriptedReply::Answer {
+    fn answering(fingerprint: &str) -> MockReply {
+        MockReply::Answer {
             delay: std::time::Duration::ZERO,
             fingerprint: fingerprint.to_string(),
         }
@@ -478,10 +476,10 @@ mod tests {
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_on_the_expected_network_as_healthy() {
         // Given
-        let url = "http://scripted.invalid/only";
+        let url = "http://mock.invalid/only";
         let config = starknet_only(chain_config(Some(MAINNET), one_provider("publicnode", url)));
-        let inspector = ScriptedInspector::new([answering(MAINNET)]);
-        let inspectors = ScriptedInspectors::new([(url, inspector.clone())]);
+        let inspector = MockInspector::new([answering(MAINNET)]);
+        let inspectors = MockInspectors::new([(url, inspector.clone())]);
 
         // When
         let report = probe_all_providers(&config, &inspectors).await;
@@ -497,10 +495,9 @@ mod tests {
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_on_another_network_as_wrong_network() {
         // Given
-        let url = "http://scripted.invalid/only";
+        let url = "http://mock.invalid/only";
         let config = starknet_only(chain_config(Some(MAINNET), one_provider("publicnode", url)));
-        let inspectors =
-            ScriptedInspectors::new([(url, ScriptedInspector::new([answering(SEPOLIA)]))]);
+        let inspectors = MockInspectors::new([(url, MockInspector::new([answering(SEPOLIA)]))]);
 
         // When
         let report = probe_all_providers(&config, &inspectors).await;
@@ -578,15 +575,13 @@ mod tests {
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_refusing_the_request_without_retrying() {
         // Given
-        let url = "http://scripted.invalid/only";
-        let inspector = ScriptedInspector::new([ScriptedReply::Refusal {
-            delay: std::time::Duration::ZERO,
-        }]);
+        let url = "http://mock.invalid/only";
+        let inspector = MockInspector::new([MockReply::refusal(std::time::Duration::ZERO)]);
         let config = starknet_only(with_retries(
             chain_config(Some(MAINNET), one_provider("keyed", url)),
             3,
         ));
-        let inspectors = ScriptedInspectors::new([(url, inspector.clone())]);
+        let inspectors = MockInspectors::new([(url, inspector.clone())]);
 
         // When
         let report = probe_all_providers(&config, &inspectors).await;
@@ -642,10 +637,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn probe_all_providers__should_report_a_provider_that_does_not_answer_in_time() {
         // Given
-        let url = "http://scripted.invalid/slow";
+        let url = "http://mock.invalid/slow";
         let config = starknet_only(chain_config(Some(MAINNET), one_provider("slow", url)));
-        let inspectors =
-            ScriptedInspectors::new([(url, ScriptedInspector::new([ScriptedReply::Hang]))]);
+        let inspectors = MockInspectors::new([(url, MockInspector::new([MockReply::Hang]))]);
 
         // When
         let report = probe_all_providers(&config, &inspectors).await;
@@ -1079,20 +1073,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn probe_all_providers__should_retry_a_provider_that_refused_with_a_rate_limit_code() {
         // Given
-        let url = "http://scripted.invalid/keyed";
-        let inspector = ScriptedInspector::new([
-            ScriptedReply::TransientFailure {
-                delay: std::time::Duration::from_millis(10),
-            },
-            ScriptedReply::TransientFailure {
-                delay: std::time::Duration::from_millis(10),
-            },
+        let url = "http://mock.invalid/keyed";
+        let inspector = MockInspector::new([
+            MockReply::transient(std::time::Duration::from_millis(10)),
+            MockReply::transient(std::time::Duration::from_millis(10)),
         ]);
         let config = starknet_only(with_retries(
             chain_config(Some(MAINNET), one_provider("keyed", url)),
             2,
         ));
-        let inspectors = ScriptedInspectors::new([(url, inspector.clone())]);
+        let inspectors = MockInspectors::new([(url, inspector.clone())]);
 
         // When
         let report = probe_all_providers(&config, &inspectors).await;

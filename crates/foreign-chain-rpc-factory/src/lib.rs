@@ -1,6 +1,3 @@
-//! Building what talks to a foreign chain, from one provider's configuration: its credentials
-//! resolved here, and the inspector that carries them in [`inspectors`].
-
 pub mod inspectors;
 
 use anyhow::Context;

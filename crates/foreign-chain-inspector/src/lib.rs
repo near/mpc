@@ -241,7 +241,7 @@ impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspec
 /// several chains at once shares one factory across them.
 ///
 /// A test implements this and answers for the inspectors directly, building no client at all
-/// (see [`mock`]).
+/// (see the `mock` module).
 pub trait BuildInspectors: Sync {
     type Inspector: ChainInspector;
 

@@ -134,10 +134,6 @@ fn no_reference_reason(network: Network) -> String {
     )
 }
 
-fn timeout_of(cfg: &ForeignChainConfig) -> Duration {
-    Duration::from_secs(cfg.timeout_sec.get())
-}
-
 fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
 }
@@ -182,7 +178,7 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
         mark_skipped(chain, cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed =
         golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
@@ -211,7 +207,7 @@ async fn run_bitcoin(
         mark_skipped("bitcoin", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed =
         golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
@@ -240,7 +236,7 @@ async fn run_starknet(
         mark_skipped("starknet", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed = golden::felt32(vector.tx)
         .and_then(|tx| golden::felt32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
@@ -269,7 +265,7 @@ async fn run_aptos(
         mark_skipped("aptos", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed_tx = golden::hex32(vector.tx);
     for (name, provider) in cfg.providers.iter() {
         let status = match (&parsed_tx, prepare_aptos(provider)) {
@@ -312,7 +308,7 @@ async fn run_sui(
         mark_skipped("sui", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     for (name, provider) in cfg.providers.iter() {
         let status = match prepare_sui(provider, timeout) {
             Err(e) => Status::Failed(format!("{e:#}")),
