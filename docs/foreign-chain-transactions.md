@@ -338,15 +338,16 @@ back here rather than redefining them.
 - **Whitelisted chain** — a chain the network has voted into the on-chain RPC whitelist
   (`foreign_chain_rpc_whitelist`): there is a `ChainEntry` for it (trusted provider list + RPC
   quorum). The policy set every node is expected to cover; **no single operator can add or remove a
-  chain — only a threshold vote can**. Returned by `get_whitelisted_foreign_chains()`. See
+  chain — only a threshold vote can**. Keys of `allowed_foreign_chain_providers()`. See
   [On-chain RPC Provider Whitelist](#on-chain-rpc-provider-whitelist).
 - **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of a node's configured
   providers must return the same response for that node to accept a verification result
   (`ChainEntry.quorum`), voted in alongside the provider list. A runtime knob; distinct from the
   *signing threshold*.
 - **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
-  domain (`self.threshold()`): how many participants must produce signature shares to sign an
-  observation. Distinct from the RPC quorum.
+  domain (`DomainConfig.reconstruction_threshold`; the max across `ForeignTx` domains if there are
+  several): how many participants must produce signature shares to sign an observation. Distinct
+  from the RPC quorum and from the governance threshold (`self.threshold()`) used for votes.
 - **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
   of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
   on-chain via `register_available_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this
@@ -362,7 +363,7 @@ back here rather than redefining them.
 
 ## Contract State (Foreign Chain Configurations)
 
-The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed by `get_whitelisted_foreign_chains()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
+The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed as the keys of `allowed_foreign_chain_providers()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 
 ```rust
 pub struct ForeignChainSupportByNode {
@@ -387,7 +388,7 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_available_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method (formerly `register_foreign_chain_config`; old name kept as a deprecated wrapper). The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
+* `allowed_foreign_chain_providers() -> BTreeMap<ForeignChain, ChainEntry>` — Borsh-encoded view method. Returns the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`); its keys are the whitelisted chains. (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
 * `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
 * `get_available_foreign_chain_by_node() -> ForeignChainSupportByNode` — view method (formerly `get_foreign_chain_support_by_node`; old name kept as a deprecated wrapper). Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
@@ -649,7 +650,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_available_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* `get_whitelisted_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
+* `allowed_foreign_chain_providers()` returns the on-chain RPC whitelist, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 * `get_available_foreign_chain_by_node()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
 
 ### Configuration (Node)

@@ -7,10 +7,11 @@
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
 use crate::call_args::{
-    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs,
-    SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateArgs,
+    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs,
+    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs,
+    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
+    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
+    VoteUpdateArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -18,17 +19,18 @@ use crate::deposits::{
 };
 use crate::method_names::{
     CANCEL_NODE_MIGRATION, INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAIN_SUPPORT, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION,
-    SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
-    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
-    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REQUEST_APP_PRIVATE_KEY, SIGN,
+    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
+    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, PayloadBytesError, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, SignRequestArgs, SupportedForeignChains,
-    TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
+    ForeignChainsConfig, GovernanceThresholdParameters, InitConfig, PayloadBytesError,
+    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
+    SupportedForeignChains, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -298,6 +300,20 @@ impl<C: CallContract> MpcContractHandle<C> {
             serde_json::to_vec(&RegisterForeignChainSupportArgs::new(foreign_chain_support))?;
         self.call(FunctionCallArgs::no_deposit(
             REGISTER_FOREIGN_CHAIN_SUPPORT,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn register_foreign_chains_config(
+        &self,
+        foreign_chains_config: ForeignChainsConfig,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args =
+            serde_json::to_vec(&RegisterForeignChainsConfigArgs::new(foreign_chains_config))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REGISTER_FOREIGN_CHAINS_CONFIG,
             args,
             MAX_GAS,
         ))
