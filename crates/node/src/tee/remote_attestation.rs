@@ -30,9 +30,7 @@ use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
-const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
 const BACKOFF_FACTOR: f32 = 1.5;
-const RESUBMISSION_RETRY_DELAY: Duration = Duration::from_secs(60 * 10); // 10 minutes.
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
 
 /// Shared inputs for the attestation-submission background tasks
@@ -49,7 +47,8 @@ pub struct AttestationSubmitter<T> {
 }
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until
-/// success or until a fixed retry window elapses, whichever comes first.
+/// success or until one resubmission interval elapses, whichever comes first; by then the
+/// periodic task submits a freshly generated attestation anyway.
 ///
 /// This function repeatedly attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
@@ -66,8 +65,6 @@ pub async fn submit_remote_attestation(
         tls_public_key,
     );
 
-    // TODO(#3746): retries the same attestation and errors on timeout, so a late success can store
-    // a stale one; #3746 splits this into a submit loop and an outer regenerate loop.
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
         let propose_join_args_clone = submit_participant_info_args.clone();
@@ -111,7 +108,7 @@ pub async fn submit_remote_attestation(
                 "failed to submit attestation"
             );
         })
-        .timeout(MAX_RETRY_DURATION)
+        .timeout(ATTESTATION_RESUBMISSION_INTERVAL)
         .await
         .context("failed to submit attestation after multiple retry attempts")?
 }
@@ -141,10 +138,9 @@ fn validate_remote_attestation(
 }
 
 impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
-    /// Generates a fresh attestation and submits it to the contract, reporting whether it
-    /// reached the contract so the caller can decide when to try again. Failures are logged,
-    /// never propagated.
-    async fn generate_and_submit(&self) -> bool {
+    /// Generates a fresh attestation and submits it to the contract. Failures are logged,
+    /// never propagated: the periodic task resubmits within one interval anyway.
+    async fn generate_and_submit(&self) {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
             *self.account_public_key.as_bytes(),
@@ -158,11 +154,11 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             Ok(attestation) => attestation,
             Err(error @ AttestationError::CollateralFetch(_)) => {
                 tracing::warn!(%error, "TEE attestation generation failed");
-                return false;
+                return;
             }
             Err(error) => {
                 tracing::error!(%error, "TEE attestation generation failed");
-                return false;
+                return;
             }
         };
         let allowed_image_hashes: Vec<_> = self
@@ -211,9 +207,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             .inc();
         if let Err(error) = submission {
             tracing::error!(?error, "attestation submission failed");
-            return false;
         }
-        true
     }
 }
 
@@ -229,7 +223,9 @@ pub async fn run_periodic_attestation_submission<T: TransactionSender + Clone>(
     submitter: AttestationSubmitter<T>,
 ) {
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // Delay keeps generations one interval apart after an overrun; skipping instead would
+    // re-anchor to the original schedule and could fire the next generation almost immediately.
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     periodic_attestation_submission(submitter, interval).await
 }
 
@@ -258,8 +254,8 @@ fn is_node_in_contract_tee_accounts(
 /// Monitors the contract for TEE attestation removal and triggers resubmission when needed.
 ///
 /// This function watches TEE account changes in the contract and resubmits attestations when
-/// the node's TEE attestation is no longer available. A failed resubmission is retried after
-/// a fixed delay, or sooner on the next TEE-accounts update; this task returns only when the
+/// the node's TEE attestation is no longer available. A failed resubmission is not retried
+/// here; the periodic task covers it within one interval. This task returns only when the
 /// watch channel closes.
 #[tracing::instrument(skip_all)]
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
@@ -281,18 +277,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
         "starting TEE attestation removal monitoring; initial TEE attestation status"
     );
 
-    let mut retry_delay = None;
-
     loop {
-        let changed = match retry_delay.take() {
-            Some(delay) => tee_accounts_receiver
-                .changed()
-                .timeout(delay)
-                .await
-                .unwrap_or(Ok(())),
-            None => tee_accounts_receiver.changed().await,
-        };
-        if changed.is_err() {
+        if tee_accounts_receiver.changed().await.is_err() {
             break;
         }
 
@@ -310,10 +296,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 %node_account_id,
                 "TEE attestation removed from contract, resubmitting"
             );
-            if !submitter.generate_and_submit().await {
-                retry_delay = Some(RESUBMISSION_RETRY_DELAY);
-                continue;
-            }
+            submitter.generate_and_submit().await;
         }
 
         was_available = is_available;
@@ -567,63 +550,42 @@ mod tests {
         let handle = setup.spawn_periodic(2);
 
         // When
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL + Duration::from_secs(1)).await;
         setup.sender().set_failing(false);
 
         // Then
-        tokio::time::timeout(MAX_RETRY_DURATION, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a successful submission after the first retry window timed out");
+        tokio::time::timeout(
+            ATTESTATION_RESUBMISSION_INTERVAL,
+            setup.sender().wait_for_submission(),
+        )
+        .await
+        .expect("expected a successful submission after the first retry window timed out");
         assert_eq!(setup.sender().count(), 1);
         handle.abort();
     }
 
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_retry_failed_resubmission_without_further_updates()
-    {
+    async fn monitor_attestation_removal__should_not_retry_failed_resubmission() {
         // Given: the node is removed and the resubmission burns its whole retry window
         let setup = test_setup();
         setup.sender().set_failing(true);
         let handle = setup.spawn_monitor();
         tokio::task::yield_now().await;
         setup.remove_node_from_tee_accounts();
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL + Duration::from_secs(1)).await;
 
         // When: the submission starts succeeding, with no further TEE-accounts updates
         setup.sender().set_failing(false);
 
-        // Then: the monitor retries on its own delay
+        // Then: the monitor stays passive; the periodic task owns the retry
         tokio::time::timeout(
-            RESUBMISSION_RETRY_DELAY + Duration::from_secs(1),
+            ATTESTATION_RESUBMISSION_INTERVAL,
             setup.sender().wait_for_submission(),
         )
         .await
-        .expect("expected a resubmission after the retry delay with no further updates");
-        assert_eq!(setup.sender().count(), 1);
-        handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
-    async fn monitor_attestation_removal__should_retry_failed_resubmission_on_next_update() {
-        // Given: the node is removed and the resubmission burns its whole retry window
-        let setup = test_setup();
-        setup.sender().set_failing(true);
-        let handle = setup.spawn_monitor();
-        tokio::task::yield_now().await;
-        setup.remove_node_from_tee_accounts();
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
-
-        // When: a TEE-accounts update arrives while the node is still absent
-        setup.sender().set_failing(false);
-        setup.remove_node_from_tee_accounts();
-
-        // Then: the update triggers the retry well before the fixed retry delay
-        tokio::time::timeout(TEST_RESUBMISSION_WAIT, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a resubmission on the update after a failed one");
-        assert_eq!(setup.sender().count(), 1);
+        .expect_err("expected no resubmission without further TEE-accounts updates");
+        assert_eq!(setup.sender().count(), 0);
         handle.abort();
     }
 

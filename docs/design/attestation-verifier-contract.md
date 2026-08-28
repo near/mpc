@@ -103,7 +103,7 @@ sequenceDiagram
 
 #### Caller-side impact
 
-The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at 12 h). That polling-based success criterion is what makes the sync→async change transparent. Under yield-resume the returned `Promise` also resolves with the actual outcome — success, a verifier-rejection error, or a post-DCAP-failure error (each as soon as the verifier answers), or a timeout error after ~200 blocks if it never does — so any future caller that wants to await the result synchronously can, without changing the contract.
+The only caller of `submit_participant_info` in production is `mpc-node`'s `periodic_attestation_submission` task, which resubmits on a 1-hour cadence and on attestation-removal events. It already polls contract state to confirm the attestation is actually stored, with exponential backoff (100 ms → 60 s, capped at the 1-hour resubmission interval). That polling-based success criterion is what makes the sync→async change transparent. Under yield-resume the returned `Promise` also resolves with the actual outcome — success, a verifier-rejection error, or a post-DCAP-failure error (each as soon as the verifier answers), or a timeout error after ~200 blocks if it never does — so any future caller that wants to await the result synchronously can, without changing the contract.
 
 #### Handling failures
 
