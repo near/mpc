@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 impl MpcContract {
     /// Vote for a candidate account to become the trusted verifier contract
     /// account, committing to the code hash the voter audited. When the proposal
-    /// crosses the signing threshold, the trusted verifier account is updated
+    /// crosses the governance threshold, the trusted verifier account is updated
     /// and all pending verifier-change votes are cleared.
     #[handle_result]
     pub fn vote_tee_verifier_change(
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn vote_tee_verifier_change__should_apply_candidate_when_threshold_reached() {
-        // Given a running contract with 3 participants, signing threshold 2,
+        // Given a running contract with 3 participants, governance threshold 2,
         // starting unconfigured.
         let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
         assert_eq!(contract.tee_verifier_account_id, None);
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn remove_non_participant_tee_verifier_votes__should_drop_votes_from_dropped_participants() {
-        // Given a running contract with 3 participants, signing threshold 3, where
+        // Given a running contract with 3 participants, governance threshold 3, where
         // two participants have cast votes for distinct candidates (neither crosses
         // threshold, so both stay pending).
         let (mut contract, participants, _) = setup_tee_test_contract(3, 3);
