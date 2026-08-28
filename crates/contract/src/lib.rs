@@ -33,13 +33,12 @@ pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
     foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
-    primitives::ckd::CKDRequest,
     tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes,
     update::ProposedUpdates,
 };
 use config::Config;
-use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
+use near_mpc_contract_interface::types::{CKDRequest, VerifyForeignTransactionRequest};
 
 use near_sdk::{
     AccountId, env, near,

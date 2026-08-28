@@ -20,7 +20,6 @@ use crate::{
     foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
     node_migrations::NodeMigrations,
     primitives::{
-        ckd::CKDRequest,
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         signature::{SignatureRequest, YieldIndex},
@@ -226,7 +225,7 @@ enum OldProtocolContractState {
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
-    pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
+    pending_ckd_requests: LookupMap<dtos::CKDRequest, Vec<YieldIndex>>,
     /// The deployed `3.14.0` keys predate `expected_payload_hash`, so this type parameter
     /// does not describe their borsh layout — do not read entries through this map. Not
     /// shadowed because `LookupMap`'s own borsh form is just the storage prefix: the type

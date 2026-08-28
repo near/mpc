@@ -12,10 +12,7 @@ use k256::{
 };
 use mpc_contract::{
     errors,
-    primitives::{
-        ckd::CKDRequest,
-        signature::{SignatureRequest, YieldIndex},
-    },
+    primitives::signature::{SignatureRequest, YieldIndex},
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
@@ -26,7 +23,7 @@ use near_mpc_contract_interface::types::kdf::{derive_app_id, derive_tweak};
 use near_mpc_contract_interface::types::{
     self as dtos, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs,
 };
-use near_mpc_contract_interface::types::{CKDResponse, DomainId, Payload};
+use near_mpc_contract_interface::types::{CKDRequest, CKDResponse, DomainId, Payload};
 use near_mpc_sdk::sign::{Ed25519Signature, K256Signature};
 use near_mpc_sdk::sign::{SignRequestArgs, SignRequestBuilder, SignatureRequestResponse};
 use near_workspaces::{Account, Contract, Worker, network::Sandbox, operations::TransactionStatus};

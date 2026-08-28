@@ -66,8 +66,8 @@ mod tests {
 
     /// The DTO produced by `keyset_to_dto` must serialize identically to the
     /// internal [`Keyset`], guarding against drift from the contract's own
-    /// [`IntoInterfaceType`] impl. This is what pins the `conclude_node_migration`
-    /// and `init_running` wire format, so it covers every curve.
+    /// conversion: the fake indexer compares the keyset a node submits against
+    /// this conversion of its contract state, so it covers every curve.
     #[rstest]
     #[case::ed25519(
         "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"

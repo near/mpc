@@ -549,7 +549,7 @@ expression: abi
       },
       {
         "name": "conclude_node_migration",
-        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid",
+        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2877,7 +2877,7 @@ expression: abi
       },
       {
         "name": "vote_update",
-        "doc": " Vote for a proposed update given the [`UpdateId`] of the update.\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
+        "doc": " Vote for a proposed update, given the id returned by [`Self::propose_update`].\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3548,6 +3548,7 @@ expression: abi
           }
         },
         "CKDRequest": {
+          "description": "CKD request with derived app_id.",
           "type": "object",
           "required": [
             "app_id",
@@ -3559,12 +3560,7 @@ expression: abi
               "$ref": "#/definitions/CkdAppId"
             },
             "app_public_key": {
-              "description": "The app ephemeral public key",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/CKDAppPublicKey"
-                }
-              ]
+              "$ref": "#/definitions/CKDAppPublicKey"
             },
             "domain_id": {
               "$ref": "#/definitions/DomainId"
@@ -4617,7 +4613,7 @@ expression: abi
             "generated_keys": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/KeyForDomain2"
+                "$ref": "#/definitions/KeyForDomain"
               }
             },
             "generating_key": {
@@ -4732,7 +4728,7 @@ expression: abi
             "public_key": {
               "anyOf": [
                 {
-                  "$ref": "#/definitions/PublicKeyExtended2"
+                  "$ref": "#/definitions/PublicKeyExtended"
                 },
                 {
                   "type": "null"
@@ -4781,41 +4777,6 @@ expression: abi
             }
           }
         },
-        "KeyForDomain2": {
-          "description": "The identification of a specific distributed key, based on which a node would know exactly what keyshare it has corresponds to this distributed key. (A distributed key refers to a specific set of keyshares that nodes have which can be pieced together to form the secret key.)",
-          "type": "object",
-          "required": [
-            "attempt",
-            "domain_id",
-            "key"
-          ],
-          "properties": {
-            "attempt": {
-              "description": "The attempt ID that generated (initially or as a result of resharing) this distributed key. Nodes may have made multiple attempts to generate the distributed key, and this uniquely identifies which one should ultimately be used.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/AttemptId"
-                }
-              ]
-            },
-            "domain_id": {
-              "description": "Identifies the domain this key is intended for.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/DomainId"
-                }
-              ]
-            },
-            "key": {
-              "description": "Identifies the public key. Although technically redundant given that we have the AttemptId, we keep it here in the contract so that it can be verified against and queried.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/PublicKeyExtended2"
-                }
-              ]
-            }
-          }
-        },
         "KeyProviderEventDigest": {
           "type": "string",
           "maxLength": 96,
@@ -4834,25 +4795,6 @@ expression: abi
               "type": "array",
               "items": {
                 "$ref": "#/definitions/KeyForDomain"
-              }
-            },
-            "epoch_id": {
-              "$ref": "#/definitions/EpochId"
-            }
-          }
-        },
-        "Keyset2": {
-          "description": "Represents a key for every domain in a specific epoch.",
-          "type": "object",
-          "required": [
-            "domains",
-            "epoch_id"
-          ],
-          "properties": {
-            "domains": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/KeyForDomain2"
               }
             },
             "epoch_id": {
@@ -5279,9 +5221,7 @@ expression: abi
             "votes": {
               "type": "object",
               "additionalProperties": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/UpdateId"
               }
             }
           }
@@ -5384,84 +5324,6 @@ expression: abi
           ]
         },
         "PublicKeyExtended": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Secp256k1"
-              ],
-              "properties": {
-                "Secp256k1": {
-                  "type": "object",
-                  "required": [
-                    "near_public_key"
-                  ],
-                  "properties": {
-                    "near_public_key": {
-                      "$ref": "#/definitions/Secp256k1PublicKey"
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Ed25519"
-              ],
-              "properties": {
-                "Ed25519": {
-                  "type": "object",
-                  "required": [
-                    "edwards_point",
-                    "near_public_key_compressed"
-                  ],
-                  "properties": {
-                    "edwards_point": {
-                      "description": "Decompressed Edwards point used for curve arithmetic operations.",
-                      "allOf": [
-                        {
-                          "$ref": "#/definitions/SerializableEdwardsPoint"
-                        }
-                      ]
-                    },
-                    "near_public_key_compressed": {
-                      "description": "Serialized compressed Edwards-y point.",
-                      "allOf": [
-                        {
-                          "$ref": "#/definitions/Ed25519PublicKey"
-                        }
-                      ]
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Bls12381"
-              ],
-              "properties": {
-                "Bls12381": {
-                  "type": "object",
-                  "required": [
-                    "public_key"
-                  ],
-                  "properties": {
-                    "public_key": {
-                      "$ref": "#/definitions/Bls12381G2PublicKey"
-                    }
-                  }
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "PublicKeyExtended2": {
           "description": "Extended public key representation for different signature schemes.",
           "oneOf": [
             {
@@ -5581,7 +5443,7 @@ expression: abi
             "reshared_keys": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/KeyForDomain2"
+                "$ref": "#/definitions/KeyForDomain"
               }
             },
             "resharing_key": {
@@ -5636,7 +5498,7 @@ expression: abi
               "$ref": "#/definitions/DomainRegistry"
             },
             "keyset": {
-              "$ref": "#/definitions/Keyset2"
+              "$ref": "#/definitions/Keyset"
             },
             "parameters": {
               "$ref": "#/definitions/GovernanceThresholdParameters"
@@ -5658,16 +5520,6 @@ expression: abi
         },
         "Secp256k1PublicKey": {
           "type": "string"
-        },
-        "SerializableEdwardsPoint": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
         },
         "Sha384Digest": {
           "type": "string",

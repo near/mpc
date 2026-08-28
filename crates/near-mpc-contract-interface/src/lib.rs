@@ -36,7 +36,9 @@ pub mod types {
     };
     pub use tee::{AllowedMpcDockerImageHash, NodeId};
 
-    pub use updates::{PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash};
+    pub use updates::{
+        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash, UpdateId,
+    };
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{

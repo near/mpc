@@ -74,7 +74,22 @@ pub struct CKDAppPublicKeyPV {
 }
 
 /// CKD request with derived app_id.
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
 pub struct CKDRequest {
     pub app_public_key: CKDAppPublicKey,
     pub app_id: CkdAppId,
@@ -94,5 +109,27 @@ impl CKDRequest {
             app_id,
             domain_id,
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::{Bls12381G1PublicKey, CKDAppPublicKey, CKDRequest};
+    use near_account_id::AccountId;
+
+    #[test]
+    fn ckd_request_new__should_derives_app_id_deterministically() {
+        let account_id: AccountId = "alice.near".parse().unwrap();
+        let pk = CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey([1u8; 48]));
+        let domain_id = DomainId(0);
+
+        let r1 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
+        let r2 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
+        assert_eq!(r1.app_id, r2.app_id);
+
+        let r3 = CKDRequest::new(pk, domain_id, &account_id, "path/b");
+        assert_ne!(r1.app_id, r3.app_id);
     }
 }

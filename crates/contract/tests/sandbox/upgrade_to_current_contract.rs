@@ -16,7 +16,7 @@ use crate::sandbox::{
     },
 };
 use mpc_contract::primitives::{
-    key_state::{EpochId, Keyset},
+    key_state::EpochId,
     participants::Participants,
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
@@ -477,7 +477,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
     let init_running_args = serde_json::json!({
             "domains": [],
             "next_domain_id": 0,
-            "keyset": Keyset::new(EpochId::new(2), vec![]),
+            "keyset": dtos::Keyset::new(EpochId::new(2), vec![]),
             "parameters": threshold_parameters,
     });
 
