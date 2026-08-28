@@ -142,7 +142,7 @@ mod tests {
             }
         }
 
-        fn must_cast(
+        fn cast_votes(
             &mut self,
             voter: usize,
             proposal: &VerifierChangeProposal,
@@ -186,7 +186,7 @@ mod tests {
         let proposal = proposal("v.near", 1);
 
         // When one participant votes
-        let result = voting.must_cast(0, &proposal);
+        let result = voting.cast_votes(0, &proposal);
 
         // Then no candidate wins yet, and the single vote is recorded
         assert_eq!(result, None);
@@ -203,8 +203,8 @@ mod tests {
         let proposal = proposal("v.near", 1);
 
         // When two participants vote for the same (account, hash)
-        assert_eq!(voting.must_cast(0, &proposal), None);
-        let result = voting.must_cast(1, &proposal);
+        assert_eq!(voting.cast_votes(0, &proposal), None);
+        let result = voting.cast_votes(1, &proposal);
 
         // Then the candidate wins and all pending votes are cleared
         assert_eq!(result, Some(proposal.candidate_account_id));
@@ -220,8 +220,8 @@ mod tests {
         let proposal_hash_2 = proposal(candidate, 2);
 
         // When two participants vote for the same account but different code hashes
-        assert_eq!(voting.must_cast(0, &proposal_hash_1), None);
-        let result = voting.must_cast(1, &proposal_hash_2);
+        assert_eq!(voting.cast_votes(0, &proposal_hash_1), None);
+        let result = voting.cast_votes(1, &proposal_hash_2);
 
         // Then neither bucket reaches threshold: the two votes land in separate
         // (account, hash) buckets.
@@ -243,8 +243,8 @@ mod tests {
         let second_proposal = proposal("b.near", 1);
 
         // When the same voter votes, then switches to a different candidate
-        voting.must_cast(0, &first_proposal);
-        voting.must_cast(0, &second_proposal);
+        voting.cast_votes(0, &first_proposal);
+        voting.cast_votes(0, &second_proposal);
 
         // Then only the b.near vote remains (the a.near bucket is gone); a
         // second voter on b.near then crosses.
@@ -252,7 +252,7 @@ mod tests {
             voting.votes.pending(),
             expected_votes([(second_proposal.clone(), vec![voting.voter(0)])])
         );
-        let result = voting.must_cast(1, &second_proposal);
+        let result = voting.cast_votes(1, &second_proposal);
         assert_eq!(result, Some(second_proposal.candidate_account_id));
     }
 
@@ -261,7 +261,7 @@ mod tests {
         // Given 3 participants, governance threshold 2, and one recorded vote
         let mut voting = Voting::with_threshold(2);
         let proposal = proposal("v.near", 1);
-        voting.must_cast(0, &proposal);
+        voting.cast_votes(0, &proposal);
         assert_eq!(
             voting.votes.pending(),
             expected_votes([(proposal, vec![voting.voter(0)])])
@@ -283,8 +283,8 @@ mod tests {
         // Given 3 participants, governance threshold 3, and two voters sharing one bucket
         let mut voting = Voting::with_threshold(3);
         let proposal = proposal("v.near", 1);
-        voting.must_cast(0, &proposal);
-        voting.must_cast(1, &proposal);
+        voting.cast_votes(0, &proposal);
+        voting.cast_votes(1, &proposal);
         let both_voters =
             expected_votes([(proposal.clone(), vec![voting.voter(0), voting.voter(1)])]);
         assert_eq!(voting.votes.pending(), both_voters);
