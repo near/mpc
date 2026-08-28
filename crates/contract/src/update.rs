@@ -205,9 +205,10 @@ impl ProposedUpdates {
                 // the value `contract_upgrade_deposit_tera_gas` from the config
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+                let dto_config = config.into_dto_type();
                 promise = promise.function_call(
                     method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&config,)).unwrap(),
+                    serde_json::to_vec(&(&dto_config,)).unwrap(),
                     NearToken::from_near(0),
                     new_config_gas_value,
                 );
