@@ -580,12 +580,12 @@ mod tests {
         assert!(shortfalls.is_empty());
     }
 
-    /// The two sets coincide between a promotion and the next publication, so
-    /// only `>=` holds. It guards that asking for the early set still reaches
-    /// Intel.
+    /// Guards that the `update` parameter still reaches Intel: were it ignored
+    /// or renamed, both fetches would return the same set. Fails if Intel ever
+    /// promotes the early set before publishing the next one.
     #[tokio::test]
     #[cfg(feature = "external-services-tests")]
-    async fn fetch_from_intel__should_serve_an_early_set_at_or_ahead_of_the_standard_one() {
+    async fn fetch_from_intel__should_serve_an_early_set_ahead_of_the_standard_one() {
         // Given
         let (quote, _) = served();
 
@@ -602,7 +602,10 @@ mod tests {
                 .tcb_evaluation_data_number
         };
         let (standard, early) = (set_number(standard), set_number(early));
-        assert!(early >= standard, "early set {early} is behind {standard}");
+        assert!(
+            early > standard,
+            "early set {early} is not ahead of {standard}"
+        );
     }
 
     #[test]
