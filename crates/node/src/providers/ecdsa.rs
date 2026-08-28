@@ -16,9 +16,7 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
-use crate::providers::DomainKeyshare;
-use crate::providers::SignatureProvider;
-use crate::providers::ecdsa_common;
+use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 use mpc_node_config::ConfigFile;
@@ -60,7 +58,7 @@ impl EcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
 
         // cait-sith triple generation runs with exactly `t` parties, so keep one store per distinct reconstruction threshold.
         let mut triple_stores = HashMap::new();
@@ -71,8 +69,7 @@ impl EcdsaSignatureProvider {
                 Arc::new(TripleStorage::new(
                     clock.clone(),
                     db.clone(),
-                    client.my_participant_id(),
-                    ecdsa_common::active_participants_query(&client),
+                    client.clone(),
                     t,
                 )?),
             );
@@ -253,15 +250,16 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        // One triple generator per distinct `t`: cait-sith generates triples with
-        // exactly `t` parties, so each store is fed at its own threshold.
-        let mut background_tasks = Vec::new();
+        // One triple generator per distinct `t` this node serves; cait-sith
+        // triples are generated with exactly `t` parties, so each store is fed
+        // by a generator running at its own threshold.
+        let mut generate_triples = Vec::new();
         for (&t, triple_store) in &self.triple_stores {
             let reconstruction_threshold_usize: usize = t.inner().try_into()?;
             let reconstruction_threshold_bound =
                 TSReconstructionThreshold::from(reconstruction_threshold_usize);
-            background_tasks.push(tracking::spawn_described(
-                format!("generate triples for t={}", t.inner()),
+            generate_triples.push(tracking::spawn(
+                &format!("generate triples for t={}", t.inner()),
                 Self::run_background_triple_generation(
                     self.client.clone(),
                     self.mpc_config.clone(),
@@ -272,15 +270,18 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        background_tasks.push(tracking::spawn_described(
-            "report triple metrics".to_string(),
+        // Held outside the join group below: this reporter never completes, so
+        // joining it would mask generator failures. Aborted on drop when this returns.
+        let _metrics_task = tracking::spawn(
+            "report triple metrics",
             Self::run_triple_metrics_reporting(self.triple_stores.values().cloned().collect()),
-        ));
+        );
 
+        let mut generate_presignatures = Vec::new();
         for (domain_id, data) in &self.keyshares {
             let triple_store = self.triple_store_for_t(data.reconstruction_threshold)?;
-            background_tasks.push(tracking::spawn_described(
-                format!("generate presignatures for domain {}", domain_id.0),
+            generate_presignatures.push(tracking::spawn(
+                &format!("generate presignatures for domain {}", domain_id.0),
                 Self::run_background_presignature_generation(
                     self.client.clone(),
                     self.config.presignature.clone().into(),
@@ -291,9 +292,15 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        let (description, outcome) = tracking::first_task_exit(background_tasks).await;
-        // These tasks never return, so any exit is a failure.
-        let Err(join_error) = outcome;
-        anyhow::bail!("ecdsa background task \"{description}\" ended unexpectedly: {join_error}")
+        for Err(join_error) in futures::future::join_all(generate_triples).await {
+            tracing::error!(
+                "ecdsa background triple generation task ended unexpectedly: {join_error}"
+            );
+        }
+        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
+            tracing::error!("ecdsa background presignature task ended unexpectedly: {join_error}");
+        }
+
+        Ok(())
     }
 }

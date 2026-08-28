@@ -4,12 +4,12 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use node_types::http_server::StaticWebData;
 
-use crate::cli::Cli;
+use crate::cli::Source;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn load(cli: &Cli) -> anyhow::Result<StaticWebData> {
-    match (&cli.url, &cli.file) {
+pub async fn load(source: &Source) -> anyhow::Result<StaticWebData> {
+    match (&source.url, &source.file) {
         (Some(url), None) => fetch(url).await,
         (None, Some(path)) => read(path),
         (None, None) => bail!("either --url or --file must be provided"),

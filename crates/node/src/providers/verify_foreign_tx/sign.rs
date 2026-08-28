@@ -9,6 +9,7 @@ use foreign_chain_inspector::avalanche::inspector::AvalancheExtractor;
 use foreign_chain_inspector::base::inspector::BaseExtractor;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
 use foreign_chain_inspector::bnb::inspector::BnbExtractor;
+use foreign_chain_inspector::ethereum::inspector::EthereumExtractor;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
 use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
@@ -94,12 +95,16 @@ impl VerifyForeignTxProvider {
             snapshot.get(&requested_chain).cloned().unwrap_or_default()
         };
 
-        // If we don't support the foreign chain, we can't lead the computation.
-        // TODO(#3961): narrow leader selection to only chain supporters.
+        // Leader selection already narrows to chain supporters. Re-check as
+        // defense-in-depth, since the supporters snapshot may have changed
+        // between leader selection and this attempt.
         let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
         if !chain_supporters.contains(&my_participant_id) {
             metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
-            anyhow::bail!("this node does not support the requested chain {requested_chain:?}");
+            anyhow::bail!(
+                "selected as leader for a {requested_chain:?} request but this node no longer \
+                 supports that chain. Supporters must have changed since leader selection"
+            );
         }
 
         let response_payload = self
@@ -187,8 +192,27 @@ impl VerifyForeignTxProvider {
             })?;
 
         let values: Vec<dtos::ExtractedValue> = match request {
-            dtos::ForeignChainRpcRequest::Ethereum(_request) => {
-                bail!("ForeignChainRpcRequest::Ethereum is unsupported")
+            dtos::ForeignChainRpcRequest::Ethereum(request) => {
+                let inspector = self
+                    .inspectors
+                    .ethereum
+                    .as_ref()
+                    .context("no inspector configured for Ethereum")?;
+
+                let transaction_id = request.tx_id.0.into();
+                let finality: EthereumFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<EthereumExtractor> = request
+                    .extractors
+                    .iter()
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+                values.into_iter().map(Into::into).collect()
             }
             dtos::ForeignChainRpcRequest::Solana(_request) => {
                 bail!("ForeignChainRpcRequest::Solana is unsupported")

@@ -4,6 +4,7 @@ use near_account_id::AccountId;
 use near_contract_transport::{BlockHeight, ObservedState};
 use near_contract_transport::{ViewArgs, ViewContract};
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
@@ -20,6 +21,7 @@ pub struct MockChainState {
 
 pub struct MockViewState {
     pub response: Result<ObservedState, MockError>,
+    pub responses_by_method: HashMap<String, Result<ObservedState, MockError>>,
     pub submitted: Vec<Call>,
 }
 
@@ -48,6 +50,15 @@ impl MockChainState {
     pub async fn set_view_response(&self, value: Result<ObservedState, MockError>) {
         let mut inner = self.view_state.lock().unwrap();
         inner.response = value;
+    }
+
+    pub fn set_view_response_for_method(
+        &self,
+        method_name: impl Into<String>,
+        value: Result<ObservedState, MockError>,
+    ) {
+        let mut inner = self.view_state.lock().unwrap();
+        inner.responses_by_method.insert(method_name.into(), value);
     }
 
     /// Wait for the next view_contract call (polls submitted.len() every 10ms).
@@ -118,6 +129,7 @@ impl MockChainStateBuilder {
             sync_response: Arc::new(Mutex::new(self.sync_response)),
             view_state: Arc::new(Mutex::new(MockViewState {
                 response: self.view_response,
+                responses_by_method: HashMap::new(),
                 submitted: Vec::new(),
             })),
             read_notify: Arc::new(Notify::new()),
@@ -148,12 +160,16 @@ impl ViewContract for MockChainState {
         view_args: ViewArgs,
     ) -> Result<ObservedState, Self::Error> {
         let mut inner = self.view_state.lock().unwrap();
+        let response = inner
+            .responses_by_method
+            .get(&view_args.method_name)
+            .unwrap_or(&inner.response)
+            .clone();
         inner.submitted.push(Call {
             contract_id: contract_id.clone(),
             method_name: view_args.method_name,
             args: view_args.args,
         });
-        let response = inner.response.clone();
         drop(inner);
         self.read_notify.notify_waiters();
         response

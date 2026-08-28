@@ -42,9 +42,7 @@ impl MpcContract {
 
         let derived_public_key: dtos::PublicKey = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
+                let affine = *k256::PublicKey::try_from(&near_public_key)
                     .expect("stored key is always valid")
                     .as_affine();
                 let derived_public_key =
@@ -56,7 +54,7 @@ impl MpcContract {
                     derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
                 dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
             }
-            PublicKeyExtended::Bls12381 { public_key } => public_key,
+            PublicKeyExtended::Bls12381 { public_key } => public_key.into(),
         };
 
         Ok(derived_public_key)

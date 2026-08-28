@@ -56,6 +56,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y repro-env
 
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Build MPC Node binary and image
         run: |
           export NODE_IMAGE_NAME=test_image_tag_ci
@@ -88,6 +93,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y liblzma-dev repro-env
+
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
 
       - name: Build Rust launcher docker image
         shell: bash

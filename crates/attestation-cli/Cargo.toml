@@ -13,6 +13,8 @@ anyhow = { workspace = true }
 attestation = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
+dcap-qvl = { workspace = true, features = ["report"] }
+hex = { workspace = true }
 mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-primitives = { workspace = true }
 node-types = { workspace = true }
@@ -24,6 +26,7 @@ tokio = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 near-mpc-crypto-types = { workspace = true }
 tempfile = { workspace = true }
 test-utils = { workspace = true }
