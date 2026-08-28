@@ -232,23 +232,18 @@ where
     }
 }
 
-/// What a caller needs of an inspector to hold it, clone it into tasks and keep it alive.
+/// An inspector a caller can hold, clone and share across chains.
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
 
 impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
 
-/// Builds the inspector for one of a chain's providers. `Sync` because a caller that probes
-/// several chains at once shares one factory across them.
-///
-/// A test implements this and answers for the inspectors directly, building no client at all
-/// (see the `mock` module).
+/// Builds the inspector for one of a chain's providers. `Sync` so one factory serves all the
+/// chains a caller probes at once; tests implement it to answer without a network (see `mock`).
 pub trait BuildInspectors: Sync {
     type Inspector: ChainInspector;
 
-    /// `None` when no inspector exists to probe the chain.
-    ///
-    /// `timeout` reaches the transports that can hold one; the JSON-RPC chains take their deadline
-    /// from the caller instead.
+    /// `None` when the chain has no inspector to probe. `timeout` reaches the transports that can
+    /// hold one; the JSON-RPC chains take their deadline from the caller instead.
     fn build(
         &self,
         chain: ForeignChain,
