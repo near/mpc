@@ -52,19 +52,6 @@ This function contains an `.unwrap()`, but we can still guarantee that
 this function will never ever panic. Therefore it's not violating
 the "Don't panic" principle.
 
-### `must_` prefix for panicking test helpers
-
-In test code, plumbing helpers (loading WASM artifacts, resolving binary
-paths, extracting setup data from a known-good state) should panic on
-failure instead of returning `Result`: the failure means the test wasn't
-built or wired correctly, not that the system under test misbehaved, so
-there's no useful error path. Such helpers must be prefixed with `must_`
-(e.g. `must_load_contract_wasm`, `must_get_bls_public_key`) so callers
-can see at the call site that the function will panic on failure.
-
-Helpers whose failure could be a meaningful test outcome (network calls,
-state observations) should still return `Result`.
-
 ## Maintain Local Reasonability
 It's often tempting to write code that has implicit sequential dependencies.
 In these scenarios, the correctness of one expression depends on
@@ -218,6 +205,17 @@ fn <system_under_test>__should_<test_assertion>(){
 the system under test (SUT) can be many things, but typically this would be a function,
 method or a struct.
 
+### Use the `must_` prefix for plumbing test helpers
+
+In test code, plumbing helpers (loading WASM artifacts, resolving binary
+paths, extracting setup data from a known-good state) can depend on setup
+external to the system under test.
+Such helpers may panic even if the system under test is implemented correctly.
+
+Prefix these functions with `must_` (e.g. `must_load_contract_wasm`,
+`must_get_bls_public_key`) to signal at the call site that they require the
+test to be built and wired correctly.
+
 ## Measure performance
 It's easy to get stuck in arguments about what's faster or more expensive
 when comparing different approaches. In these scenarios, we should strive
@@ -370,4 +368,3 @@ but reviewers are the only safeguard. When a backticked word merely looks
 like an item but is not one (an algorithm name, a type in a crate we
 deliberately do not depend on, a `cfg(test)` item rustdoc cannot see),
 leave it as a plain code span.
-
