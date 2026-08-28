@@ -1,34 +1,7 @@
 use blstrs::G1Projective;
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
-use near_mpc_contract_interface::types::kdf::derive_app_id;
-use near_mpc_contract_interface::types::{CKDResponse, DomainId};
-use near_sdk::{env, near};
-
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[near(serializers=[borsh, json])]
-pub struct CKDRequest {
-    /// The app ephemeral public key
-    pub app_public_key: dtos::CKDAppPublicKey,
-    pub app_id: dtos::CkdAppId,
-    pub domain_id: DomainId,
-}
-
-impl CKDRequest {
-    pub fn new(
-        app_public_key: dtos::CKDAppPublicKey,
-        domain_id: DomainId,
-        predecessor_id: &AccountId,
-        derivation_path: &str,
-    ) -> Self {
-        let app_id = derive_app_id(predecessor_id, derivation_path);
-        Self {
-            app_public_key,
-            app_id,
-            domain_id,
-        }
-    }
-}
+use near_mpc_contract_interface::types::CKDResponse;
+use near_sdk::env;
 
 /// Uncompressed encoding of the G1 generator.
 const G1_GENERATOR_UNCOMPRESSED: [u8; 96] = [
@@ -130,6 +103,8 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group as _;
     use elliptic_curve::group::Curve as _;
+    use near_mpc_contract_interface::types::CKDResponse;
+    use near_mpc_contract_interface::types::kdf::derive_app_id;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
@@ -558,19 +533,5 @@ mod tests {
 
         // Then
         assert!(!accepted);
-    }
-
-    #[test]
-    fn ckd_request_new_derives_app_id_deterministically() {
-        let account_id: AccountId = "alice.near".parse().unwrap();
-        let pk = dtos::CKDAppPublicKey::AppPublicKey(dtos::Bls12381G1PublicKey([1u8; 48]));
-        let domain_id = DomainId(0);
-
-        let r1 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
-        let r2 = CKDRequest::new(pk.clone(), domain_id, &account_id, "path/a");
-        assert_eq!(r1.app_id, r2.app_id);
-
-        let r3 = CKDRequest::new(pk, domain_id, &account_id, "path/b");
-        assert_ne!(r1.app_id, r3.app_id);
     }
 }

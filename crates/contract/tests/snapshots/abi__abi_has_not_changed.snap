@@ -3548,6 +3548,7 @@ expression: abi
           }
         },
         "CKDRequest": {
+          "description": "CKD request with derived app_id.",
           "type": "object",
           "required": [
             "app_id",
@@ -3559,12 +3560,7 @@ expression: abi
               "$ref": "#/definitions/CkdAppId"
             },
             "app_public_key": {
-              "description": "The app ephemeral public key",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/CKDAppPublicKey"
-                }
-              ]
+              "$ref": "#/definitions/CKDAppPublicKey"
             },
             "domain_id": {
               "$ref": "#/definitions/DomainId"
