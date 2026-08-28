@@ -311,10 +311,12 @@ impl MpcContract {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::api::foreign_chain::test_utils::{
+        register_foreign_chains_config_for, whitelist_chain,
+    };
     use crate::api::test_utils::{
         basic_setup, basic_setup_with_protocol, forwarded_participant_call_contract,
-        make_public_key_for_curve, participant_account_ids, register_foreign_chains_config_for,
-        whitelist_chain,
+        make_public_key_for_curve, participant_account_ids,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
