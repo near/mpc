@@ -432,8 +432,42 @@ impl IntoInterfaceType<dtos::UpdateHash> for &Update {
         match self {
             Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code)),
             Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
-                serde_json::to_vec(config).expect("serde serialization must succeed"),
+                serde_json::to_vec(&config.into_dto_type())
+                    .expect("serde serialization must succeed"),
             )),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::Config> for &Config {
+    fn into_dto_type(self) -> dtos::Config {
+        dtos::Config {
+            key_event_timeout_blocks: self.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: self.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: self.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: self
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: self
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: self
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: self
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: self.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: self.fail_attestation_submission_tera_gas,
+            clean_tee_status_tera_gas: self.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: self.clean_invalid_attestations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: self
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: self
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: self.clean_foreign_chain_data_tera_gas,
+            remove_non_participant_tee_verifier_votes_tera_gas: self
+                .remove_non_participant_tee_verifier_votes_tera_gas,
+            verifier_tera_gas: self.verifier_tera_gas,
+            resolve_verification_tera_gas: self.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: self.launcher_hash_unused_ttl_seconds,
+            attestation_storage_fee_millinear: self.attestation_storage_fee_millinear,
         }
     }
 }

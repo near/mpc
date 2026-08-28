@@ -6327,6 +6327,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "elliptic-curve 0.13.8",
  "flume",
+ "foreign-chain-health-check",
  "foreign-chain-inspector",
  "foreign-chain-rpc-auth",
  "foreign-chain-rpc-interfaces",
