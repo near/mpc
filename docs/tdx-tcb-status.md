@@ -13,6 +13,14 @@ attestation-cli tcb-status --url http://<node-host>:8080/public_data
 Flags: [`tcb-status`](../crates/attestation-cli/README.md#tcb-status) in the
 attestation-cli README.
 
+## When you are about to be out of date
+
+A demoted `Intel early` row under an `UpToDate` `Intel standard` row is this same
+problem before it lands: Intel has published the evaluation data set your
+platform fails and has not yet promoted it. Nothing is rejected and the command
+still exits 0, but everything below applies, and Intel announces no promotion
+dates, so treat the row as the notice.
+
 ## When you are out of date
 
 ### 1. Protect your key share first
@@ -69,7 +77,8 @@ with no need to wait for it to sync. Then:
   against collateral it fetches from Intel as it runs, and `tee_tcb_svn` must
   differ from before, which is what confirms the platform moved and not just the
   collateral. Re-running the step 2 commands says whether the firmware itself
-  changed.
+  changed. Check the `Intel early` row while you are there: an update that
+  clears only the current set leaves you doing this again at the next promotion.
 - Within the hour, `get_attestation` should show `expiry_timestamp_seconds` about
   7 days out, meaning the contract accepted a submission.
 
@@ -90,12 +99,14 @@ TCB info on its own schedule: when it publishes a *TCB recovery*, platforms that
 cleared the bar yesterday stop clearing it today, with nothing changed on your
 side.
 
-Nothing stops to warn you. The node logs the rejection every attempt (see
-[Symptoms](#symptoms)) and keeps submitting hourly, the contract rejects every
-submission, the stored attestation expires 7 days after the last accepted one
-(`DEFAULT_EXPIRATION_DURATION_SECONDS`), and `verify_tee` then drops the node
-from the participant set and reshares without it. For several nodes at once, it
-becomes a network problem rather than only yours.
+Nothing reaches out to warn you: the `Intel early` row is the advance notice,
+and only when someone runs the check. Once the promotion lands, the node logs
+the rejection every attempt (see [Symptoms](#symptoms)) and keeps submitting
+hourly, the contract rejects every submission, the stored attestation expires 7
+days after the last accepted one (`DEFAULT_EXPIRATION_DURATION_SECONDS`), and
+`verify_tee` then drops the node from the participant set and reshares without
+it. For several nodes at once, it becomes a network problem rather than only
+yours.
 
 ### Symptoms
 

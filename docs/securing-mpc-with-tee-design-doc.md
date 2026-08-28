@@ -456,9 +456,11 @@ Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — T
 
 - **TLS trust.** PCCS endpoints use standard public-CA trust roots by default. Each entry optionally accepts a TLS override: `tls.override = "ca_cert_pem"` (with a `tls.ca_cert_pem` PEM body) adds a self-signed root as an additional trust anchor — the default public-CA roots remain active. `tls.override = "insecure"` disables TLS validation entirely. Both overrides are intended for self-hosted local PCCS deployments only.
 
-- **Freshness validation.** Collateral older than 7 days is rejected. The threshold applies uniformly to `tcb_info.issueDate`, `qe_identity.issueDate`, and the PCK CRL `thisUpdate`. A stale response from one endpoint causes the node to fall back to the next.
+- **Freshness validation.** Collateral older than 31 days is rejected, just past Intel's 30-day re-issuance window. The threshold applies uniformly to `tcb_info.issueDate`, `qe_identity.issueDate`, and the PCK CRL `thisUpdate`. A stale response from one endpoint causes the node to fall back to the next.
 
-- **Freshness threshold is part of the attested image.** The 7-day value is hard-coded in the node binary rather than in operator config. Governance voters approve an image hash that already encodes this policy, so an operator cannot relax freshness without going through image-hash voting.
+- **Freshness threshold is part of the attested image.** That value is hard-coded in the node binary rather than in operator config. Governance voters approve an image hash that already encodes this policy, so an operator cannot relax freshness without going through image-hash voting.
+
+- **Evaluation data set.** The fetch sends no `update` parameter, so it gets Intel's `standard` TCB evaluation data set, the one the contract judges a submission against. Intel publishes the next set under `update=early`; a node has no reason to submit collateral judged more strictly than the contract requires, so only the [`attestation-cli tcb-status`](../crates/attestation-cli/README.md#tcb-status) diagnostic fetches it, as advance warning that a coming promotion will demote the platform.
 
 For the operator-facing setup details (TOML schema, self-hosted PCCS recipe), see [Customizing PCCS endpoints](running-an-mpc-node-in-tdx-external-guide.md#customizing-pccs-endpoints-optional) and [Appendix: Self-hosting a local PCCS](running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs) in the operator deployment guide.
 

@@ -10,6 +10,7 @@ use attestation::attestation::DstackAttestation;
 use dcap_qvl::{
     QuoteCollateralV3, TcbLevel, TcbStatus,
     collateral::{CollateralClient, INTEL_PCS_URL},
+    configs::DefaultConfig,
     policy::{PckIdentity, QuoteClaims, QuotePolicy},
     quote::{Quote, TDReport10},
     tcb_info::TcbInfo,
@@ -18,10 +19,11 @@ use dcap_qvl::{
 use mpc_attestation::{attestation::Attestation, dcap_conversions::collateral_into_dcap};
 use node_types::http_server::StaticWebData;
 
-/// Whole-fetch bound on the Intel PCS call. `with_default_http` builds a reqwest
-/// client with a 180s timeout of its own, far too long to leave an interactive
-/// command hanging on, and `dcap-qvl` keeps that client out of its public API.
-/// `tee-authority` bounds the same call the same way.
+use crate::pcs::{IntelPcsHttpClient, TcbEvaluationDataSet};
+
+/// Timeout for reaching Intel's PCS. Used twice: as the HTTP client's
+/// per-request timeout, and around a whole collateral fetch, which makes
+/// several requests.
 const PCS_TIMEOUT: Duration = Duration::from_secs(30);
 
 const UPDATE_TDX_MODULE: &str = "update the TDX module (SEAM loader)";
@@ -55,30 +57,55 @@ pub enum TcbVerdict {
     Rejected(String),
 }
 
+impl TcbVerdict {
+    fn status_and_set(&self) -> Option<(TcbStatus, u32)> {
+        match self {
+            Self::Verified {
+                tcb_info, claims, ..
+            } => Some((claims.tcb.status, tcb_info.tcb_evaluation_data_number)),
+            Self::Rejected(_) => None,
+        }
+    }
+}
+
 pub struct Report {
     /// Parsed from the quote itself, so the platform's own numbers survive even
-    /// when neither collateral verifies.
+    /// when no collateral verifies.
     pub td_report: TDReport10,
     /// What the node's own boot-time collateral says, which can lag by days.
     pub served: TcbVerdict,
     /// What the contract decides today, against collateral fetched just now.
     pub standard: TcbVerdict,
+    /// What it will decide once Intel promotes the set it publishes early.
+    pub early: TcbVerdict,
 }
 
 impl Report {
     pub fn is_up_to_date(&self) -> bool {
         matches!(&self.standard, TcbVerdict::Verified { claims, .. } if claims.tcb.status == TcbStatus::UpToDate)
     }
+
+    /// `Some((standard, early))` TCB recovery set numbers only when the platform
+    /// clears the standard set but not the early one, the set Intel publishes
+    /// and has yet to promote. `None` in all other cases.
+    pub fn early_demotion(&self) -> Option<(u32, u32)> {
+        let (Some((TcbStatus::UpToDate, standard_set)), Some((early, early_set))) =
+            (self.standard.status_and_set(), self.early.status_and_set())
+        else {
+            return None;
+        };
+        (early != TcbStatus::UpToDate).then_some((standard_set, early_set))
+    }
 }
 
 /// `as_of` overrides the evaluation timestamp for collateral validity windows.
 /// Intel serves only current collateral, so it makes the served row readable for
-/// a saved quote whose snapshot has expired, and leaves the Intel row a
-/// present-day verdict evaluated at a past instant.
+/// a saved quote whose snapshot has expired, and leaves the Intel rows
+/// present-day verdicts evaluated at a past instant.
 pub async fn run(static_data: &StaticWebData, as_of: Option<u64>) -> anyhow::Result<Report> {
     let dstack = dstack_attestation(static_data)?;
     let quote = &dstack.quote.0;
-    // A property of the quote, so it decides both rows at once rather than
+    // A property of the quote, so it decides every row at once rather than
     // failing one of them.
     let report = *Quote::parse(quote)
         .context("parsing the node's quote")?
@@ -94,26 +121,31 @@ pub async fn run(static_data: &StaticWebData, as_of: Option<u64>) -> anyhow::Res
     };
 
     let served = collateral_into_dcap(dstack.collateral.clone());
+    let (standard, early) = tokio::join!(
+        fetch_from_intel(quote, TcbEvaluationDataSet::Standard),
+        fetch_from_intel(quote, TcbEvaluationDataSet::Early),
+    );
     // An unreachable PCS must not cost the operator the served row, which needs
     // no network at all.
-    let standard = match fetch_standard(quote).await {
+    let verdict_for = |collateral: anyhow::Result<QuoteCollateralV3>| match collateral {
         Ok(collateral) => evaluate(quote, &report, &collateral, now),
         Err(err) => TcbVerdict::Rejected(format!("{err:#}")),
     };
     Ok(Report {
         td_report: report,
         served: evaluate(quote, &report, &served, now),
-        standard,
+        standard: verdict_for(standard),
+        early: verdict_for(early),
     })
 }
 
-/// Fetched with no `update` parameter, like the node, so this is Intel's
-/// `standard` set: what the contract will decide at the next re-attestation.
-/// The node reaches it through its PCCS, so the two can differ in cache
-/// freshness.
-async fn fetch_standard(quote: &[u8]) -> anyhow::Result<QuoteCollateralV3> {
-    let client = CollateralClient::with_default_http(INTEL_PCS_URL)
+async fn fetch_from_intel(
+    quote: &[u8],
+    evaluation_data_set: TcbEvaluationDataSet,
+) -> anyhow::Result<QuoteCollateralV3> {
+    let http = IntelPcsHttpClient::new(evaluation_data_set, PCS_TIMEOUT)
         .context("building the Intel PCS client")?;
+    let client = CollateralClient::<DefaultConfig, _>::new(http, INTEL_PCS_URL);
     tokio::time::timeout(PCS_TIMEOUT, client.fetch(quote))
         .await
         .with_context(|| format!("Intel's PCS did not respond within {PCS_TIMEOUT:?}"))?
@@ -294,7 +326,11 @@ fn parse_tcb_info(collateral: &QuoteCollateralV3) -> anyhow::Result<TcbInfo> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use rstest::rstest;
     use test_utils::attestation::{TEST_PUBLIC_DATA_STRING, VALID_ATTESTATION_TIMESTAMP};
+
+    const STANDARD_SET: u32 = 20;
+    const EARLY_SET: u32 = 22;
 
     fn td_report(quote: &[u8]) -> TDReport10 {
         *Quote::parse(quote)
@@ -352,6 +388,70 @@ mod tests {
             }
         }
         tcb_info
+    }
+
+    fn verdict(status: TcbStatus, evaluation_data_set: u32) -> TcbVerdict {
+        let mut claims = fixture_claims();
+        claims.tcb.status = status;
+        let mut tcb_info = parse_tcb_info(&served().1).expect("fixture TCB info parses");
+        tcb_info.tcb_evaluation_data_number = evaluation_data_set;
+        TcbVerdict::Verified {
+            tcb_info,
+            claims,
+            shortfalls: vec![],
+        }
+    }
+
+    fn rejected() -> TcbVerdict {
+        TcbVerdict::Rejected("Intel's PCS did not respond".to_owned())
+    }
+
+    fn report(standard: TcbVerdict, early: TcbVerdict) -> Report {
+        let (quote, _) = served();
+        Report {
+            td_report: td_report(&quote),
+            served: TcbVerdict::Rejected("not under test".to_owned()),
+            standard,
+            early,
+        }
+    }
+
+    #[rstest]
+    #[case(TcbStatus::UpToDate, TcbStatus::OutOfDate, Some((STANDARD_SET, EARLY_SET)))]
+    #[case(TcbStatus::UpToDate, TcbStatus::SWHardeningNeeded, Some((STANDARD_SET, EARLY_SET)))]
+    #[case(TcbStatus::UpToDate, TcbStatus::UpToDate, None)]
+    #[case(TcbStatus::OutOfDate, TcbStatus::OutOfDate, None)]
+    #[case(TcbStatus::OutOfDate, TcbStatus::UpToDate, None)]
+    fn early_demotion__should_report_the_two_sets_only_when_the_early_one_alone_demotes(
+        #[case] standard: TcbStatus,
+        #[case] early: TcbStatus,
+        #[case] expected: Option<(u32, u32)>,
+    ) {
+        // Given
+        let report = report(verdict(standard, STANDARD_SET), verdict(early, EARLY_SET));
+
+        // When
+        let demotion = report.early_demotion();
+
+        // Then
+        assert_eq!(demotion, expected);
+    }
+
+    #[rstest]
+    #[case(verdict(TcbStatus::UpToDate, STANDARD_SET), rejected())]
+    #[case(rejected(), verdict(TcbStatus::OutOfDate, EARLY_SET))]
+    fn early_demotion__should_be_absent_when_a_set_was_not_fetched(
+        #[case] standard: TcbVerdict,
+        #[case] early: TcbVerdict,
+    ) {
+        // Given
+        let report = report(standard, early);
+
+        // When
+        let demotion = report.early_demotion();
+
+        // Then
+        assert_eq!(demotion, None);
     }
 
     #[test]
@@ -474,6 +574,31 @@ mod tests {
 
         // Then
         assert!(shortfalls.is_empty());
+    }
+
+    /// The two sets coincide between a promotion and the next publication, so
+    /// only `>=` holds. It guards that asking for the early set still reaches
+    /// Intel.
+    #[tokio::test]
+    #[cfg(feature = "external-services-tests")]
+    async fn fetch_from_intel__should_serve_an_early_set_at_or_ahead_of_the_standard_one() {
+        // Given
+        let (quote, _) = served();
+
+        // When
+        let (standard, early) = tokio::join!(
+            fetch_from_intel(&quote, TcbEvaluationDataSet::Standard),
+            fetch_from_intel(&quote, TcbEvaluationDataSet::Early),
+        );
+
+        // Then
+        let set_number = |collateral: anyhow::Result<QuoteCollateralV3>| {
+            parse_tcb_info(&collateral.expect("Intel serves the set"))
+                .expect("TCB info parses")
+                .tcb_evaluation_data_number
+        };
+        let (standard, early) = (set_number(standard), set_number(early));
+        assert!(early >= standard, "early set {early} is behind {standard}");
     }
 
     #[test]

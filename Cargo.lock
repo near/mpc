@@ -1082,6 +1082,7 @@ dependencies = [
  "near-mpc-crypto-types",
  "node-types",
  "reqwest 0.13.4",
+ "rstest",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",

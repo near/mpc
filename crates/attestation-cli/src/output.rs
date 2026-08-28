@@ -106,19 +106,29 @@ pub fn print_tcb_status(report: &Report) {
     println!("=== MPC Node Platform TCB Status ===");
 
     // The PCK numbers come from the certificate a successful verification read,
-    // not from the collateral, so both rows carry identical values and whichever
-    // verified will do. The verdicts themselves do differ, which is the point of
-    // showing two rows.
-    let pck = match (&report.served, &report.standard) {
-        (TcbVerdict::Verified { claims, .. }, _) | (_, TcbVerdict::Verified { claims, .. }) => {
-            Some(&claims.platform.pck)
-        }
+    // not from the collateral, so every row carries identical values and
+    // whichever verified will do. The verdicts themselves do differ, which is
+    // the point of showing three rows.
+    let pck = match (&report.served, &report.standard, &report.early) {
+        (TcbVerdict::Verified { claims, .. }, _, _)
+        | (_, TcbVerdict::Verified { claims, .. }, _)
+        | (_, _, TcbVerdict::Verified { claims, .. }) => Some(&claims.platform.pck),
         _ => None,
     };
     print_platform(&report.td_report, pck);
 
     print_verdict("served by the node", &report.served);
     print_verdict("Intel `standard`", &report.standard);
+    print_verdict("Intel `early`", &report.early);
+
+    if let Some((standard_set, early_set)) = report.early_demotion() {
+        println!();
+        println!(
+            "This platform clears TCB recovery set {standard_set} but not set {early_set}, which \
+             Intel publishes and has yet to promote. The `early` shortfall lines say what to \
+             update before it does."
+        );
+    }
 }
 
 fn print_verdict(label: &str, verdict: &TcbVerdict) {

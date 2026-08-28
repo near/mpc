@@ -52,3 +52,7 @@ jobs:
       - name: Run tee-authority tests
         if: always()
         run: cargo nextest run -p tee-authority --features external-services-tests --cargo-profile test-release --locked -E 'test(test_fetch_collateral_from_pccs)'
+
+      - name: Run attestation-cli tests
+        if: always()
+        run: cargo nextest run -p attestation-cli --features external-services-tests --cargo-profile test-release --locked -E 'test(fetch_from_intel)'

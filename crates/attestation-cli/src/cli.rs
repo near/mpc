@@ -27,7 +27,7 @@ pub struct TcbStatusArgs {
 
     /// Evaluate collateral validity as of this UNIX timestamp instead of now.
     /// Intel serves only current collateral, so this makes the served row
-    /// readable for a saved quote whose snapshot has expired; the Intel row and
+    /// readable for a saved quote whose snapshot has expired; the Intel rows and
     /// the exit code stay present-day verdicts and are not meaningful with it set.
     #[arg(long = "as-of")]
     pub as_of: Option<u64>,

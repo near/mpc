@@ -2,7 +2,7 @@
 
 Standalone verification tool for MPC node TEE attestations. It performs the same Intel TDX (DCAP) attestation verification that the NEAR contract and MPC nodes use, allowing external auditors, operators, and developers to independently validate that an MPC node is running trusted code inside genuine hardware.
 
-Two subcommands: `verify` answers "is this node's attestation acceptable?", and `tcb-status` answers "does this node's platform still clear Intel's TCB bar?".
+Two subcommands: `verify` answers "is this node's attestation acceptable?", and `tcb-status` answers "does this node's platform still clear Intel's TCB bar, and will it clear the next one?".
 
 ## Building
 
@@ -185,18 +185,21 @@ attestation-cli tcb-status [OPTIONS]
 
 Reports where a node's platform stands against Intel's TCB requirements. The contract accepts an attestation only when DCAP returns `UpToDate`, and that verdict depends on Intel's TCB info, which Intel revises on its own schedule: a node accepted yesterday can be rejected today with nothing changed on the operator's side.
 
-The node's quote is evaluated against two sets, and both are reported:
+The node's quote is evaluated against three sets, and all three are reported:
 
 | Collateral source | What it tells you |
 |-------------------|-------------------|
 | served by the node | What the node's own boot-time collateral says. `/public_data` serves the attestation built at CVM boot, so this can lag reality by days. |
 | Intel `standard` | What the contract will decide the next time the node re-attests. Omitting the `update` parameter is what selects the `standard` tier, and it is what the node does too. The fetch goes straight to Intel rather than through the node's PCCS, so the two can differ in cache freshness. |
+| Intel `early` | What the contract will decide once Intel promotes the set it already publishes under `update=early`. A platform demoted here is still accepted today, which is the point: it is the only advance warning of a TCB recovery. The early set can be more than one ahead of `standard`, so the demotion lands at some upcoming promotion, not necessarily the next. |
 
-Both verdicts come from `dcap-qvl`, the same verification the contract runs. Contacting Intel is anonymous: no PCS subscription key and no node credentials.
+All three verdicts come from `dcap-qvl`, the same verification the contract runs. Contacting Intel is anonymous: no PCS subscription key and no node credentials.
+
+The exit code follows the `standard` row alone, so a demoted `early` row still exits 0: the platform is accepted until Intel promotes.
 
 It takes the same `--url` / `--file` data source as `verify`. Unlike `verify`, network access is always required: `--file` chooses where the quote comes from, not whether Intel is contacted.
 
-`--as-of <unix-timestamp>` evaluates collateral validity at a past instant instead of now. Intel serves only current collateral, so this is for reading a saved quote whose boot-time snapshot has since expired. The Intel row and the exit code stay present-day verdicts, so neither is meaningful with it set.
+`--as-of <unix-timestamp>` evaluates collateral validity at a past instant instead of now. Intel serves only current collateral, so this is for reading a saved quote whose boot-time snapshot has since expired. The Intel rows and the exit code stay present-day verdicts, so neither is meaningful with it set.
 
 ```bash
 attestation-cli tcb-status --url http://<node-host>:8080/public_data
@@ -206,26 +209,34 @@ attestation-cli tcb-status --url http://<node-host>:8080/public_data
 === MPC Node Platform TCB Status ===
 
 --- Platform, as the quote reports it ---
-FMSPC:                  90C06F000000
-tee_tcb_svn:            06010300000000000000000000000000
-TDX module:             TDX_01 at ISV SVN 6
-TDX TCB components:     [6, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-SGX TCB components:     [3, 3, 2, 2, 4, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0]
+FMSPC:                  00A06D080000
+tee_tcb_svn:            07030600000000000000000000000000
+TDX module:             TDX_03 at ISV SVN 7
+TDX TCB components:     [7, 3, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+SGX TCB components:     [4, 4, 2, 2, 4, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]
 PCESVN:                 13
 
---- served by the node: TCB recovery set 19, issued 2026-08-10T23:45:04Z ---
+--- served by the node: TCB recovery set 20, issued 2026-08-27T00:44:44Z ---
 Status:                 UpToDate
 
---- Intel `standard`: TCB recovery set 20, issued 2026-08-24T11:12:32Z ---
+--- Intel `standard`: TCB recovery set 20, issued 2026-08-28T10:19:36Z ---
+Status:                 UpToDate
+
+--- Intel `early`: TCB recovery set 22, issued 2026-08-28T10:15:47Z ---
 Status:                 OutOfDate
-Advisory IDs:           INTEL-SA-01192, INTEL-SA-01245, INTEL-SA-01312, INTEL-SA-01313
-  TDX module TDX_01 ISV SVN is 6, needs 11 -> update the TDX module (SEAM loader)
-  TDX TCB component 2 is 3, needs 4 -> update BIOS/microcode
-  SGX TCB component 0 is 3, needs 4 -> update BIOS/microcode
-  SGX TCB component 1 is 3, needs 4 -> update BIOS/microcode
+Advisory IDs:           INTEL-SA-01379, INTEL-SA-01404, INTEL-SA-01428, INTEL-SA-01439, INTEL-SA-01442, INTEL-SA-01419, INTEL-SA-01436
+  TDX module TDX_03 ISV SVN is 7, needs 9 -> update the TDX module (SEAM loader)
+  TDX TCB component 2 is 6, needs 8 -> update BIOS/microcode
+  SGX TCB component 0 is 4, needs 8 -> update BIOS/microcode
+  SGX TCB component 1 is 4, needs 8 -> update BIOS/microcode
+  SGX TCB component 4 is 4, needs 7 -> update BIOS/microcode
+
+This platform clears TCB recovery set 20 but not set 22, which Intel publishes and has yet to promote. The `early` shortfall lines say what to update before it does.
 ```
 
-The node above still serves an `UpToDate` set 19 while Intel has moved to 20. The node itself is not stuck: it re-attests to the contract every hour, each time with freshly fetched collateral. What is frozen is `/public_data`, which keeps returning the snapshot built at CVM boot. So a stale served row does not mean the node is submitting stale attestations, and the Intel row is the one that predicts what the next submission will be judged against.
+The node above is accepted today and stops being accepted when Intel promotes set 22, with nothing changed on the operator's side. That is the point of the third row: the firmware update it calls for takes planning, and the two rows above it only ever report a demotion that has already happened.
+
+The served row can also lag the `standard` row by days, or by a whole set. The node itself is not stuck when it does: it re-attests every hour with freshly fetched collateral. What is frozen is `/public_data`, which keeps returning the snapshot built at CVM boot. So a stale served row does not mean the node is submitting stale attestations, and the `standard` row is the one that predicts what the next submission will be judged against.
 
 A quote is judged in two independent halves, and either one can demote the platform.
 
@@ -252,7 +263,7 @@ The SHA256 of the `--launcher-compose-file` you provided does not match the comp
 The `--expected-measurements` file could not be read or parsed. Ensure it is valid JSON in the `tcb_info.json` format.
 
 **`tcb-status` reports `Rejected` for "served by the node"**
-The collateral in the node's boot-time snapshot has expired. The Intel row is evaluated against freshly fetched collateral, so its verdict still stands; restart the CVM to make the served row meaningful again.
+The collateral in the node's boot-time snapshot has expired. The Intel rows are evaluated against freshly fetched collateral, so their verdicts still stand; restart the CVM to make the served row meaningful again.
 
 **DCAP verification errors (quote validation, certificate chain, etc.)**
 These indicate the TDX attestation quote failed cryptographic verification. This could mean the attestation is invalid, expired, or the measurements do not match.
