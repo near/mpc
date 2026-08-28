@@ -43,9 +43,7 @@ use tracing::info;
 
 use crate::tee::{
     AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{
-        AttestationSubmitter, monitor_attestation_removal, run_periodic_attestation_submission,
-    },
+    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
 };
 
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
@@ -365,11 +363,6 @@ where
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter.clone()));
-    tokio::spawn(monitor_attestation_removal(
-        submitter,
-        config.my_near_account_id.clone(),
-        indexer_api.attested_nodes_receiver.clone(),
-    ));
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();
