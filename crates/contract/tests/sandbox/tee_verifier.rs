@@ -19,7 +19,7 @@ use crate::sandbox::{
         transactions::execute_async_handle_calls,
     },
 };
-use attestation::measurements::Measurements;
+use attestation_types::Measurements;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
     errors::TeeError,
@@ -438,8 +438,17 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     // The stored measurements are the allowlist entry the fixture matched; select
     // the expected entry by the fixture report's rtmrs, so the expectation stays
     // independent of what was stored.
-    let fixture_rtmrs =
-        Measurements::try_from(verified_report()).expect("fixture quote carries a TD report");
+    let report = verified_report();
+    let td10 = report
+        .report
+        .as_td10()
+        .expect("fixture quote carries a TD report");
+    let fixture_rtmrs = Measurements {
+        mrtd: td10.mr_td,
+        rtmr0: td10.rt_mr0,
+        rtmr1: td10.rt_mr1,
+        rtmr2: td10.rt_mr2,
+    };
     let matched = default_measurements()
         .iter()
         .find(|m| m.rtmrs == fixture_rtmrs)

@@ -93,7 +93,7 @@ impl<const N: usize> borsh::BorshSchema for HexBytes<N> {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum HexBytesOrEmpty<const N: usize> {
+pub(crate) enum HexBytesOrEmpty<const N: usize> {
     #[serde(untagged)]
     Some(HexBytes<N>),
     #[serde(untagged)]
@@ -227,7 +227,6 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use rstest::rstest;
-    use serde_json;
 
     /// [`TcbInfo`] holds both `HexBytes<48>` and `HexBytes<32>`; schema
     /// generation panics if their declarations collide.

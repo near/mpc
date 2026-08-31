@@ -2,12 +2,11 @@ use alloc::vec::Vec;
 pub use attestation::attestation::{
     AcceptedDstackAttestation, DstackAttestation, VerificationError,
 };
-pub use attestation::measurements::{ExpectedMeasurements, Measurements};
 use attestation::{
-    app_compose::AppCompose,
+    AppCompose, ReportData,
     attestation::{GetSingleEvent as _, OrErr as _},
-    report_data::ReportData,
 };
+pub use attestation::{ExpectedMeasurements, Measurements};
 
 use include_measurements::include_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};

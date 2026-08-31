@@ -1,7 +1,7 @@
 use mpc_attestation::{
+    TcbInfo,
     attestation::{Attestation, DstackAttestation},
     quote::QuoteBytes,
-    tcb_info::TcbInfo,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::types::HexVec;
