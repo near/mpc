@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use attestation_types::measurements::{ExpectedMeasurements, Measurements};
+use attestation_types::{ExpectedMeasurements, Measurements};
 use include_measurements::include_measurements;
 
 #[test]

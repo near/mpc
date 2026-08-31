@@ -6,12 +6,12 @@
 
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
+    EventLog, HexBytes, TcbInfo,
     attestation::{
         Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
         VerifiedAttestation,
     },
     collateral::Collateral,
-    tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;

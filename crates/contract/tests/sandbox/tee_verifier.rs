@@ -19,7 +19,7 @@ use crate::sandbox::{
         transactions::execute_async_handle_calls,
     },
 };
-use attestation_types::measurements::Measurements;
+use attestation_types::Measurements;
 use mpc_attestation::attestation::{DEFAULT_EXPIRATION_DURATION_SECONDS, default_measurements};
 use mpc_contract::{
     errors::TeeError,

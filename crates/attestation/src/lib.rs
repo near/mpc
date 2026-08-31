@@ -8,4 +8,7 @@ pub mod collateral;
 pub mod dcap_conversions;
 pub mod quote;
 
-pub use attestation_types::{app_compose, measurements, report_data, tcb_info};
+pub use attestation_types::{
+    AppCompose, DockerComposeString, EventLog, ExpectedMeasurements, HexBytes, Measurements,
+    ParsingError, REPORT_DATA_SIZE, ReportData, TcbInfo,
+};

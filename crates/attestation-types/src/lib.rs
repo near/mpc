@@ -5,7 +5,12 @@
 
 extern crate alloc;
 
-pub mod app_compose;
-pub mod measurements;
-pub mod report_data;
-pub mod tcb_info;
+mod app_compose;
+mod measurements;
+mod report_data;
+mod tcb_info;
+
+pub use app_compose::{AppCompose, DockerComposeString};
+pub use measurements::{ExpectedMeasurements, Measurements};
+pub use report_data::{REPORT_DATA_SIZE, ReportData};
+pub use tcb_info::{EventLog, HexBytes, ParsingError, TcbInfo};
