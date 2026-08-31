@@ -1947,8 +1947,7 @@ pub struct ProviderConfig {
     /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
     /// is chain-agnostic and `chain_routing` carries the chain marker.
     ///
-    /// A single `{}` stands for one operator-chosen host label, for providers that
-    /// put a per-operator slug in the hostname (e.g. QuickNode's
+    /// A single `{}` allows per-operator slug (e.g. QuickNode's
     /// `https://{}.sui-testnet.quiknode.pro`); nodes match it against exactly one
     /// label of the local URL, keeping the rest of the host pinned.
     pub base_url: String,

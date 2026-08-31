@@ -189,10 +189,7 @@ fn compare_provider(
 ///
 /// The first `{}` in `base` matches one non-empty run of `[A-Za-z0-9-]` — a single host
 /// label in the bases we use, where a provider puts a per-operator slug in the hostname
-/// (e.g. QuickNode's `https://{}.sui-testnet.quiknode.pro`). The run is consumed greedily
-/// with no backtracking, so a base whose `{}` is directly followed by another label
-/// character (e.g. `https://api-{}-v2.example.com`) never matches; a second `{}` is
-/// matched literally.
+/// (e.g. QuickNode's `https://{}.sui-testnet.quiknode.pro`).
 fn base_url_matches(local: &str, base: &str) -> bool {
     let l = local.trim_end_matches('/');
     let b = base.trim_end_matches('/');
