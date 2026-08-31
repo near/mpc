@@ -1,17 +1,26 @@
+use anyhow::Context;
+use http::{HeaderMap, HeaderName, HeaderValue};
+use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
+
 pub mod inspectors;
 
-use anyhow::Context;
-use foreign_chain_inspector::RpcAuthentication;
-use http::HeaderValue;
-use mpc_node_config::AuthConfig;
+#[derive(Debug, Clone)]
+pub(crate) enum RpcAuthentication {
+    /// The key is in the URL (e.g., Alchemy, QuickNode).
+    /// Example: `https://eth-mainnet.alchemyapi.io/v2/your-api-key`
+    KeyInUrl,
+    /// Custom header for providers like NOWNodes or GetBlock.
+    /// Example: key="x-api-key", value="your-secret-token"
+    CustomHeader {
+        header_name: HeaderName,
+        header_value: HeaderValue,
+    },
+}
 
-/// Convert an [`AuthConfig`] into a [`foreign_chain_inspector::RpcAuthentication`].
-///
-/// Shared by the MPC node and the foreign-chain config tester so both exercise the
-/// exact same URL/auth handling. It lives in its own crate (rather than the
-/// lightweight `mpc-node-config`) to keep `foreign-chain-inspector` out of the
-/// config crate's dependency tree.
-pub fn auth_config_to_rpc_auth(
+/// Convert an [`AuthConfig`] into a [`RpcAuthentication`], substituting `Path`/`Query` tokens
+/// into `rpc_url` as it goes.
+fn auth_config_to_rpc_auth(
     auth: AuthConfig,
     rpc_url: &mut String,
 ) -> anyhow::Result<RpcAuthentication> {
@@ -27,7 +36,8 @@ pub fn auth_config_to_rpc_auth(
                 Some(scheme) => format!("{scheme} {token_value}"),
                 None => token_value,
             };
-            let mut header_value = HeaderValue::from_str(&header_value_str)?;
+            let mut header_value = HeaderValue::from_str(&header_value_str)
+                .map_err(|e| anyhow::anyhow!("invalid header value: {e}"))?;
             // Redacts the token from `Debug` output and excludes it from HPACK
             // dynamic-table indexing on h2 connections.
             header_value.set_sensitive(true);
@@ -52,6 +62,40 @@ pub fn auth_config_to_rpc_auth(
             Ok(RpcAuthentication::KeyInUrl)
         }
     }
+}
+
+pub fn resolve_provider_auth(
+    provider: &ForeignChainProviderConfig,
+) -> anyhow::Result<(String, Option<(HeaderName, HeaderValue)>)> {
+    let mut url = provider.rpc_url.clone();
+    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
+    Ok((
+        url,
+        match auth {
+            RpcAuthentication::KeyInUrl => None,
+            RpcAuthentication::CustomHeader {
+                header_name,
+                header_value,
+            } => Some((header_name, header_value)),
+        },
+    ))
+}
+
+/// Builds an HTTP client for a configured provider, resolving its URL and authentication.
+/// This client can be used to construct a [`foreign_chain_inspector::ForeignChainInspector`].
+pub fn build_http_client(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
+    let (url, auth) = resolve_provider_auth(provider)?;
+    let mut headers = HeaderMap::new();
+
+    if let Some((header_name, header_value)) = auth {
+        headers.insert(header_name, header_value);
+    }
+
+    let client = HttpClientBuilder::default()
+        .set_headers(headers)
+        .build(&url)?;
+
+    Ok(client)
 }
 
 #[cfg(test)]
@@ -98,7 +142,7 @@ mod tests {
     fn auth_config_to_rpc_auth__header_auth_leaves_url_unchanged() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
+            name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Val {
                 val: "secret".to_string(),
@@ -118,7 +162,7 @@ mod tests {
     fn auth_config_to_rpc_auth__header_auth_with_scheme_prepends_scheme() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
+            name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Val {
                 val: "secret".to_string(),
@@ -140,7 +184,7 @@ mod tests {
     fn auth_config_to_rpc_auth__header_auth_without_scheme_uses_raw_token() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("x-api-key"),
+            name: HeaderName::from_static("x-api-key"),
             scheme: None,
             token: TokenConfig::Val {
                 val: "raw-token-value".to_string(),
@@ -162,7 +206,7 @@ mod tests {
     fn auth_config_to_rpc_auth__should_mark_header_value_sensitive() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
+            name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Val {
                 val: "secret".to_string(),

@@ -8,11 +8,12 @@ use crate::common::{
 
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
-    NetworkFingerprintInspector, RpcAuthentication,
+    NetworkFingerprintInspector,
     base::inspector::Base,
-    build_http_client,
     evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
 };
+use foreign_chain_rpc_factory::build_http_client;
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::evm::{
@@ -383,8 +384,11 @@ macro_rules! evm_inspector_tests {
                     });
                 });
 
-                let client =
-                    build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+                let client = build_http_client(&ForeignChainProviderConfig {
+                    rpc_url: server.url("/"),
+                    auth: AuthConfig::None,
+                })
+                .unwrap();
                 let inspector = Inspector::new(client);
 
                 // when
@@ -764,7 +768,11 @@ async fn network_fingerprint__should_ask_the_provider_for_its_chain_id() {
             }));
         })
         .await;
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = EvmInspector::<_, Base>::new(client);
 
     // When
