@@ -34,24 +34,6 @@ pub struct ChainGateway {
     expected_block_time: Duration,
 }
 
-/// This is a floor in case we run a localnet with a super short block time.
-const MIN_CHAIN_GATEWAY_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const MAX_POLLS_PER_BLOCK: u32 = 2;
-
-fn poll_interval(expected_block_time: Duration) -> PollInterval {
-    PollInterval::new(max(
-        expected_block_time / MAX_POLLS_PER_BLOCK,
-        MIN_CHAIN_GATEWAY_POLL_INTERVAL,
-    ))
-    .expect("at least the 50ms floor")
-}
-
-impl HasPollInterval for ChainGateway {
-    fn poll_interval(&self) -> PollInterval {
-        poll_interval(self.expected_block_time)
-    }
-}
-
 impl IsSyncing for ChainGateway {
     type Error = NearClientError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
@@ -89,6 +71,26 @@ impl SubmitSignedTransaction for ChainGateway {
         self.rpc_handler
             .submit_signed_transaction(transaction)
             .await
+    }
+}
+
+/// This is a floor in case we run a localnet with a super short block time.
+const MIN_CHAIN_GATEWAY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const MAX_POLLS_PER_BLOCK: u32 = 2;
+
+fn poll_interval(expected_block_time: Duration) -> PollInterval {
+    PollInterval::new(max(
+        expected_block_time
+            .checked_div(MAX_POLLS_PER_BLOCK)
+            .unwrap_or(Duration::ZERO),
+        MIN_CHAIN_GATEWAY_POLL_INTERVAL,
+    ))
+    .expect("at least the 50ms floor")
+}
+
+impl HasPollInterval for ChainGateway {
+    fn poll_interval(&self) -> PollInterval {
+        poll_interval(self.expected_block_time)
     }
 }
 
