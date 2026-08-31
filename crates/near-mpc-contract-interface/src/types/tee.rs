@@ -289,4 +289,21 @@ mod tests {
         // Then
         assert_eq!(json["vote_by_account"]["7"]["Add"], "ab".repeat(32));
     }
+
+    #[test]
+    fn code_hashes_votes__should_serialize_participant_ids_as_object_keys() {
+        // Given
+        let votes = CodeHashesVotes {
+            proposal_by_account: BTreeMap::from([(
+                AuthenticatedParticipantId(ParticipantId::new(7)),
+                NodeImageHash::from([0xAB; 32]),
+            )]),
+        };
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json["proposal_by_account"]["7"], "ab".repeat(32));
+    }
 }

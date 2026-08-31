@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 use crate::dto_mapping::IntoContractType as _;
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
+/// Contract-side [`MeasurementVotes`](near_mpc_contract_interface::types::MeasurementVotes),
+/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
+/// the participant set.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MeasurementVotes {

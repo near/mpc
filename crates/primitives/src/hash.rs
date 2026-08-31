@@ -209,7 +209,8 @@ define_hash!(
 );
 
 define_hash!(
-    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
+    /// SHA-384 digest of the MRTD (Measurement Register for the Trust Domain), the
+    /// build-time measurement of the TD image.
     MrtdHash,
     48
 );
