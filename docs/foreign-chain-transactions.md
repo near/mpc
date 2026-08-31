@@ -531,7 +531,7 @@ Providers use three mutually-exclusive conventions to identify which chain a req
 - **Path segment** (Ankr): `https://rpc.ankr.com/eth/…`
 - **Query param** (dRPC): `https://lb.drpc.org/ogrpc?network=ethereum&…`
 
-If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value*; they have no way to inject extra path components or query keys.
+If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value* — plus, for providers with per-operator hostnames, the one host label a `{}` in the voted `base_url` stands for; they have no way to inject extra path components or query keys.
 
 #### Why each `(chain, provider_id)` gets its own `ProviderEntry`
 
