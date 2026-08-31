@@ -230,7 +230,6 @@ where
     }
 }
 
-/// An inspector a caller can hold, clone and share across chains.
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
 
 impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
