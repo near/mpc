@@ -161,8 +161,6 @@ fn ensure_hash_matches(
 }
 
 impl AptosExtractor {
-    /// The extracted value, or [`None`] when the transaction has no event at the requested
-    /// index — a [`Verdict::LogIndexOutOfBounds`] verdict, which is the caller's to return.
     fn extract_value(
         &self,
         tx: &TransactionResponse,
@@ -173,8 +171,7 @@ impl AptosExtractor {
                     return Ok(None);
                 };
 
-                // An unparseable field is a deterministic property of the response — the
-                // provider's own fault, not the transaction's state.
+                // An unparseable field is a deterministic property of the response, not a hiccup.
                 let account_address =
                     parse_aptos_address(&event.guid.account_address).map_err(|reason| {
                         ForeignChainInspectionError::MalformedRpcResponse(format!(
