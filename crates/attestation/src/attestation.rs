@@ -1,10 +1,6 @@
 use crate::{
-    app_compose::AppCompose,
-    collateral::Collateral,
-    measurements::{ExpectedMeasurements, MeasurementsError},
+    AppCompose, EventLog, ExpectedMeasurements, ReportData, TcbInfo, collateral::Collateral,
     quote::QuoteBytes,
-    report_data::ReportData,
-    tcb_info::{EventLog, TcbInfo},
 };
 
 use alloc::{
@@ -56,8 +52,6 @@ pub struct AcceptedDstackAttestation {
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum VerificationError {
-    #[error("could not parse embedded measurements: {0}")]
-    EmbeddedMeasurementsParsing(MeasurementsError),
     #[error("dcap verification failed: {0}")]
     DcapVerification(String),
     #[error("verification report is not TD10")]
