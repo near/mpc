@@ -44,33 +44,27 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
 }
 
-/// The settled answer one inspection produced: the requested values, or a final statement about
-/// the transaction that rules them out. Distinct from [`ForeignChainInspectionError`], which is a
-/// failure to obtain a verdict at all — a verdict, even a failing one, is the inspection
-/// succeeding.
+/// The settled answer one inspection produced. A verdict that rules the transaction out is
+/// still the inspection succeeding; failing to obtain any verdict is a
+/// [`ForeignChainInspectionError`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict<V> {
-    /// The requested values, extracted from a transaction that satisfied every check.
     Extracted(Vec<V>),
-    /// The transaction executed and did not succeed.
+    /// Executed and did not succeed.
     TransactionFailed,
-    /// The chain has no such transaction.
     TransactionNotFound,
-    /// The transaction's block is not on the canonical chain.
     NonCanonicalBlock {
         block_number: u64,
         receipt_hash: HexBytes,
         canonical_hash: HexBytes,
     },
-    /// The transaction has no log at a requested index.
     LogIndexOutOfBounds,
 }
 
 impl<V: PartialEq> Verdict<V> {
-    /// Two verdicts agree when they extracted the same values, or ruled the transaction out for
-    /// the same reason. Failing verdicts are compared at the variant level: two providers
-    /// reporting [`Verdict::NonCanonicalBlock`] agree even when they disagree on the canonical
-    /// hash itself.
+    /// Deliberately weaker than [`PartialEq`]: failing verdicts are compared at the variant
+    /// level, so two providers reporting [`Verdict::NonCanonicalBlock`] agree even when they
+    /// disagree on the canonical hash itself.
     fn agrees_with(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Extracted(left), Self::Extracted(right)) => left == right,
@@ -320,8 +314,7 @@ pub enum EthereumFinality {
 }
 
 /// A failure to obtain a [`Verdict`]: the provider failed the caller, or the transaction's state
-/// has not settled yet. A final answer about the transaction itself is a [`Verdict`], not an
-/// error.
+/// has not settled yet.
 #[derive(Error, Debug)]
 pub enum ForeignChainInspectionError {
     /// Transient provider failure (transport error, timeout, rate limit, 5xx).
