@@ -2,7 +2,7 @@ mod block_processor;
 mod config;
 
 use block_processor::listen_blocks;
-use config::StreamerConfig;
+pub(crate) use config::StreamerConfig;
 use near_indexer::StreamerMessage;
 
 use crate::{
@@ -16,27 +16,54 @@ use super::{
     subscriber::BlockEventSubscriptions,
 };
 
+pub(crate) struct StartedStreamer {
+    pub(crate) config: StreamerConfig,
+    pub(crate) block_tx: tokio::sync::mpsc::Sender<BlockUpdate>,
+    pub(crate) block_rx: tokio::sync::mpsc::Receiver<BlockUpdate>,
+}
+
 pub(crate) async fn start(
     block_event_subscriber: BlockEventSubscriptions,
     stream: tokio::sync::mpsc::Receiver<StreamerMessage>,
     info_fetcher: impl FetchLatestFinalBlockInfo,
-) -> Result<tokio::sync::mpsc::Receiver<BlockUpdate>, ChainGatewayError> {
-    let StreamerConfig {
-        buffer_size,
-        block_events,
-    } = block_event_subscriber.into();
+) -> Result<StartedStreamer, ChainGatewayError> {
+    let config: StreamerConfig = block_event_subscriber.into();
+    let (block_tx, block_rx) = tokio::sync::mpsc::channel(config.buffer_size);
+    spawn_feed(config.clone(), stream, info_fetcher, block_tx.clone());
+    Ok(StartedStreamer {
+        config,
+        block_tx,
+        block_rx,
+    })
+}
+
+pub(crate) fn reconnect(
+    config: StreamerConfig,
+    stream: tokio::sync::mpsc::Receiver<StreamerMessage>,
+    info_fetcher: impl FetchLatestFinalBlockInfo,
+    block_tx: tokio::sync::mpsc::Sender<BlockUpdate>,
+) {
+    spawn_feed(config, stream, info_fetcher, block_tx);
+}
+
+fn spawn_feed(
+    config: StreamerConfig,
+    stream: tokio::sync::mpsc::Receiver<StreamerMessage>,
+    info_fetcher: impl FetchLatestFinalBlockInfo,
+    block_tx: tokio::sync::mpsc::Sender<BlockUpdate>,
+) {
     let number_of_tracked_blocks = DEFAULT_NUMBER_OF_TRACKED_BLOCKS.max(
-        buffer_size
+        config
+            .buffer_size
             .try_into()
             .expect("usize is expected to fit into u64"),
     );
     let (stats_tx, stats_rx) = tokio::sync::watch::channel(IndexerStats::new());
-    let (block_tx, block_rx) = tokio::sync::mpsc::channel(buffer_size);
 
     tokio::spawn(async move {
         if let Err(err) = listen_blocks(
             stream,
-            block_events,
+            config.block_events,
             stats_tx,
             block_tx,
             number_of_tracked_blocks,
@@ -47,6 +74,4 @@ pub(crate) async fn start(
         }
     });
     tokio::spawn(indexer_logger(stats_rx, info_fetcher));
-
-    Ok(block_rx)
 }
