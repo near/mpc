@@ -56,8 +56,9 @@ misconfigured for a chain — an operational anomaly that alerting surfaces (see
 ## Verification behavior
 
 Each node fans the query out to its whitelisted providers for `C` and accepts a
-result only when ≥ `rpc_quorum(C)` return the same response. If fewer agree, the node
-errors out and produces no signature share.
+result only when every provider that reached a verdict reached the same one; providers
+that fail to answer are tolerated. On any disagreement the node errors out and produces
+no signature share.
 
 **This sub-quorum outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue

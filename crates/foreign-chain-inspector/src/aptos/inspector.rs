@@ -538,7 +538,7 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — transient, so the fan-out keeps retrying until it commits.
+        // Then: transient, worth retrying once the transaction commits.
         assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
         assert!(result.unwrap_err().is_transient());
     }
@@ -738,8 +738,8 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — non-transient: retrying cannot change a deterministic rejection, and the
-        // fan-out must not validate on the remaining providers alone.
+        // Then: not transient, since retrying cannot change a deterministic rejection. The
+        // fan out tolerates it as the provider's own fault rather than a verdict.
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::RpcRequestRejected(_))

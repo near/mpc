@@ -215,6 +215,31 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
 }
 
 #[tokio::test]
+async fn extract__should_return_the_not_found_verdict_for_an_unknown_transaction_hash() {
+    // given: the `TXN_HASH_NOT_FOUND` error code from the Starknet API spec.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            29,
+            "Transaction hash not found",
+            None::<()>,
+        )))
+    });
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            StarknetTransactionHash::from([9; 32]),
+            StarknetFinality::AcceptedOnL2,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
+}
+
+#[tokio::test]
 async fn extract__should_classify_rpc_client_errors() {
     // given
     let tx_id = StarknetTransactionHash::from([9; 32]);
@@ -244,7 +269,7 @@ async fn extract__should_classify_rpc_client_errors() {
 }
 
 #[tokio::test]
-async fn extract__should_return_error_when_log_index_out_of_bounds() {
+async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_log_index() {
     // given
     let tx_id = StarknetTransactionHash::from([1; 32]);
 

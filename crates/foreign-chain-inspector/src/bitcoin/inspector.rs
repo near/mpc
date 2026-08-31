@@ -1,4 +1,5 @@
 use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::client::error::Error as RpcClientError;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
 use crate::{
@@ -22,6 +23,10 @@ const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 
 /// Bitcoin has no chain id, so the genesis block is what tells the networks apart.
 const GENESIS_BLOCK_HEIGHT: u64 = 0;
+
+/// `RPC_INVALID_ADDRESS_OR_KEY`, which `getrawtransaction` answers as "No such mempool or
+/// blockchain transaction".
+const NO_SUCH_TRANSACTION_CODE: i32 = -5;
 
 #[derive(Clone)]
 pub struct BitcoinInspector<Client> {
@@ -70,11 +75,16 @@ where
         };
 
         // TODO(#1978): add retry mechanism if the error from the request is transient
-        let rpc_response: GetRawTransactionVerboseResponse = self
+        let rpc_response: GetRawTransactionVerboseResponse = match self
             .client
             .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
             .await
-            .classified()?;
+        {
+            Err(RpcClientError::Call(object)) if object.code() == NO_SUCH_TRANSACTION_CODE => {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
 
         let transaction_block_confirmation = rpc_response.confirmations.into();
         let enough_block_confirmations =

@@ -178,33 +178,47 @@ where
             match result {
                 Ok(verdict) => verdicts.push((provider, verdict)),
                 Err(err) => {
-                    tracing::warn!(
-                        %provider,
-                        error = %err,
-                        "fan-out inspector failed to reach a verdict",
-                    );
+                    // Unusable data is a louder signal than an outage: the provider is
+                    // misbehaving rather than being down.
+                    if err.provider_failure() == Some(ProviderFailure::Malformed) {
+                        tracing::error!(
+                            %provider,
+                            error = %err,
+                            "fan-out inspector answered with unusable data",
+                        );
+                    } else {
+                        tracing::warn!(
+                            %provider,
+                            error = %err,
+                            "fan-out inspector failed to reach a verdict",
+                        );
+                    }
                     first_error.get_or_insert(err);
                 }
             }
         }
 
-        let Some((_, first_verdict)) = verdicts.first() else {
+        let mut verdicts = verdicts.into_iter();
+        let Some((first_provider, first_verdict)) = verdicts.next() else {
             return Err(first_error.expect(
                 "inspectors is a `NonEmptyVec`, so with no verdicts at least one error must \
                  have been recorded",
             ));
         };
 
-        let all_verdicts_agree = verdicts.iter().all(|(_, verdict)| verdict == first_verdict);
-        if !all_verdicts_agree {
+        let disagreeing: Vec<_> = verdicts
+            .filter(|(_, verdict)| *verdict != first_verdict)
+            .collect();
+        if !disagreeing.is_empty() {
             tracing::error!(
-                ?verdicts,
+                %first_provider,
+                ?first_verdict,
+                ?disagreeing,
                 "fan-out: inspectors returned mismatching verdicts",
             );
             return Err(ForeignChainInspectionError::InspectorResponseMismatch);
         }
 
-        let (_, first_verdict) = verdicts.into_iter().next().expect("checked non-empty");
         Ok(first_verdict)
     }
 }

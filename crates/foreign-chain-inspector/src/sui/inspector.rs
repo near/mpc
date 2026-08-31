@@ -289,7 +289,7 @@ mod tests {
     use assert_matches::assert_matches;
     use rstest::rstest;
 
-    fn read_as_transaction(status: Status) -> ForeignChainInspectionError {
+    fn classify(status: Status) -> ForeignChainInspectionError {
         Result::<(), _>::Err(status).classified().unwrap_err()
     }
 
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn classified__should_name_a_deadline_exceeded_as_a_timeout() {
         // Given / When
-        let classified = read_as_transaction(Status::new(Code::DeadlineExceeded, "too slow"));
+        let classified = classify(Status::new(Code::DeadlineExceeded, "too slow"));
 
         // Then
         assert_matches!(classified, ForeignChainInspectionError::Timeout);
@@ -326,7 +326,7 @@ mod tests {
     #[case::unknown(Code::Unknown)]
     fn classified__should_keep_provider_hiccups_transient(#[case] code: Code) {
         // Given / When
-        let classified = read_as_transaction(Status::new(code, "provider hiccup"));
+        let classified = classify(Status::new(code, "provider hiccup"));
 
         // Then — the provider is dropped from the quorum instead of blocking it.
         assert_matches!(classified, ForeignChainInspectionError::RpcRequestFailed(_));
@@ -340,10 +340,10 @@ mod tests {
     #[case::unimplemented(Code::Unimplemented)]
     fn classified__should_reject_deterministic_errors(#[case] code: Code) {
         // Given / When
-        let classified = read_as_transaction(Status::new(code, "deterministic rejection"));
+        let classified = classify(Status::new(code, "deterministic rejection"));
 
-        // Then — non-transient: retrying cannot change it, and the fan-out must not
-        // validate on the remaining providers alone.
+        // Then: not transient, since retrying cannot change a deterministic rejection. The
+        // fan out tolerates it as the provider's own fault rather than a verdict.
         assert_matches!(
             classified,
             ForeignChainInspectionError::RpcRequestRejected(_)

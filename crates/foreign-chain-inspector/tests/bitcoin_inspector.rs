@@ -149,6 +149,31 @@ async fn extract_returns_empty_when_no_extractors_provided() {
 }
 
 #[tokio::test]
+async fn extract__should_return_the_not_found_verdict_for_an_unknown_transaction() {
+    // given: bitcoind answers `getrawtransaction` for an unknown txid with code -5.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -5,
+            "No such mempool or blockchain transaction",
+            None::<()>,
+        )))
+    });
+    let inspector = BitcoinInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            BitcoinTransactionHash::from([9; 32]),
+            BlockConfirmations::from(1u64),
+            vec![BitcoinExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
+}
+
+#[tokio::test]
 async fn extract__should_classify_rpc_client_errors() {
     // given
     let tx_id = BitcoinTransactionHash::from([9; 32]);

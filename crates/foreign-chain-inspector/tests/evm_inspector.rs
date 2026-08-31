@@ -197,7 +197,7 @@ macro_rules! evm_inspector_tests {
             }
 
             #[tokio::test]
-            async fn extract_returns_error_when_transaction_failed() {
+            async fn extract_returns_the_transaction_failed_verdict() {
                 // given
                 let tx_id = TxHash::from([1; 32]);
 
@@ -279,6 +279,27 @@ macro_rules! evm_inspector_tests {
                 // then
                 let expected_extractions: Vec<ExtractedValue> = vec![];
                 assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
+            }
+
+            #[tokio::test]
+            async fn extract_returns_the_not_found_verdict_when_the_receipt_is_null() {
+                // given: `eth_getTransactionReceipt` answers `null` for an unknown transaction.
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&serde_json::Value::Null)
+                    .build();
+                let inspector = Inspector::new(mock_client);
+
+                // when
+                let response = inspector
+                    .extract(
+                        TxHash::from([9; 32]),
+                        EthereumFinality::Finalized,
+                        vec![EvmExtractor::BlockHash],
+                    )
+                    .await;
+
+                // then
+                assert_matches!(response, Ok(Verdict::TransactionNotFound));
             }
 
             #[tokio::test]

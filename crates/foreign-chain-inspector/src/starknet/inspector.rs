@@ -9,11 +9,15 @@ use foreign_chain_rpc_interfaces::starknet::{
     StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::client::error::Error as RpcClientError;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
 const CHAIN_ID_METHOD: &str = "starknet_chainId";
+
+/// `TXN_HASH_NOT_FOUND` in the Starknet API spec
+const TRANSACTION_HASH_NOT_FOUND_CODE: i32 = 29;
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -63,11 +67,18 @@ where
             transaction_hash: H256(transaction.into()),
         };
 
-        let rpc_response: GetTransactionReceiptResponse = self
+        let rpc_response: GetTransactionReceiptResponse = match self
             .client
             .request(GET_TRANSACTION_RECEIPT_METHOD, &request_parameters)
             .await
-            .classified()?;
+        {
+            Err(RpcClientError::Call(object))
+                if object.code() == TRANSACTION_HASH_NOT_FOUND_CODE =>
+            {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
 
         let actual_finality = parse_finality_status(&rpc_response.finality_status)?;
 

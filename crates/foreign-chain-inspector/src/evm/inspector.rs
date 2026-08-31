@@ -79,7 +79,7 @@ where
         let get_transaction_receipt_args = GetTransactionReceiptARgs {
             transaction_hash: H256(transaction.into()),
         };
-        let transaction_receipt: GetTransactionReceiptResponse = self
+        let transaction_receipt: Option<GetTransactionReceiptResponse> = self
             .client
             .request(
                 GET_TRANSACTION_RECEIPT_METHOD,
@@ -87,6 +87,9 @@ where
             )
             .await
             .classified()?;
+        let Some(transaction_receipt) = transaction_receipt else {
+            return Ok(Verdict::TransactionNotFound);
+        };
 
         // Defensive: `eth_getTransactionReceipt` looks the receipt up *by hash*, so a
         // well-behaved backend always echoes back the hash we queried.
