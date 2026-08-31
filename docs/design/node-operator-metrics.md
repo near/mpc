@@ -39,6 +39,15 @@ on-chain confirmation of an attestation submission, in
 | [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. A sustained gap ends in this node being dropped from the participant set. |
 | [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | NEAR block time at which the attestation the contract stores for this node's TLS key expires | subtract `mpc_indexer_latest_block_timestamp_seconds` — the clock the contract expires entries against, not wall clock — for the runway before this node is dropped from the participant set. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry. |
 
+Foreign-chain RPC providers, in [`metrics.rs`](../../crates/node/src/metrics.rs). Recorded by the
+verify fan-out, labelled by `chain` and `provider`:
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_foreign_chain_provider_inspection_seconds`](../../crates/node/src/metrics.rs) | how long one provider took to answer one verify request | compare providers of the same chain against each other. One drifting up toward the top bucket is approaching the node's inspection deadline, past which it stops answering at all. |
+| [`mpc_foreign_chain_provider_errors_total`](../../crates/node/src/metrics.rs) | requests a provider itself failed to answer, by `kind` | should be near zero. `non_transient` is the one to act on first: the provider is refusing requests or answering with something unusable, and retrying will fix neither. See [Provider Metrics](../foreign-chain-transactions.md#provider-metrics). |
+
+
 ## Recommended alerts
 
 ```promql
@@ -55,6 +64,14 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 # Signature timeouts (warn): the node failed to produce a signature within the
 # deadline. Downstream symptom; cross-check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Provider refusing or garbling answers (warn): a dead API key, a chain the plan
+# does not cover, or a backend serving unusable responses. Needs an operator.
+increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
+
+# Provider not answering (warn): one provider stops answering while its peers on
+# the same chain keep up. Tolerated by the fan-out, so it is silent otherwise.
+increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0  for 15m
 
 # Backups stale (warn): no keyshares served to the backup service recently. Only
 # meaningful once backups are being taken against this node.

@@ -1,6 +1,7 @@
 mod sign;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
+use crate::metrics;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::EcdsaSignatureProvider;
@@ -21,7 +22,9 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
-use foreign_chain_inspector::{FanOut, RpcAuthentication};
+use foreign_chain_inspector::{
+    FanOut, ProviderCallOutcome, ProviderFailure, RecordProviderCall, RpcAuthentication,
+};
 use foreign_chain_rpc_auth::auth_config_to_rpc_auth;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
@@ -38,27 +41,88 @@ use tokio::sync::watch;
 /// Built once at startup so that request handling fans out over ready clients instead of re-parsing
 /// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
-    pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
-    pub ethereum: Option<FanOut<EthereumInspector<Client>>>,
-    pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
-    pub bnb: Option<FanOut<BnbInspector<Client>>>,
-    pub starknet: Option<FanOut<StarknetInspector<Client>>>,
-    pub base: Option<FanOut<BaseInspector<Client>>>,
-    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
-    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
-    pub polygon: Option<FanOut<PolygonInspector<Client>>>,
-    pub avalanche: Option<FanOut<AvalancheInspector<Client>>>,
-    pub adi: Option<FanOut<AdiInspector<Client>>>,
-    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
-    pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
+    pub bitcoin: Option<FanOut<BitcoinInspector<Client>, ProviderCallMetrics>>,
+    pub ethereum: Option<FanOut<EthereumInspector<Client>, ProviderCallMetrics>>,
+    pub abstract_chain: Option<FanOut<AbstractInspector<Client>, ProviderCallMetrics>>,
+    pub bnb: Option<FanOut<BnbInspector<Client>, ProviderCallMetrics>>,
+    pub starknet: Option<FanOut<StarknetInspector<Client>, ProviderCallMetrics>>,
+    pub base: Option<FanOut<BaseInspector<Client>, ProviderCallMetrics>>,
+    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>, ProviderCallMetrics>>,
+    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>, ProviderCallMetrics>>,
+    pub polygon: Option<FanOut<PolygonInspector<Client>, ProviderCallMetrics>>,
+    pub avalanche: Option<FanOut<AvalancheInspector<Client>, ProviderCallMetrics>>,
+    pub adi: Option<FanOut<AdiInspector<Client>, ProviderCallMetrics>>,
+    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>, ProviderCallMetrics>>,
+    pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>, ProviderCallMetrics>>,
+}
+
+/// Reports the verify fan-out's provider calls into [`crate::metrics`].
+pub(crate) struct ProviderCallMetrics;
+
+impl ProviderCallMetrics {
+    /// Creates a provider's series up front, so an idle node reports zero rather than nothing at
+    /// all and every configured provider is visible before its first request.
+    fn declare(chain: &str, provider: &ProviderId) {
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .with_label_values(&[chain, &provider.0]);
+        for kind in metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_KINDS {
+            metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL.with_label_values(&[
+                chain,
+                &provider.0,
+                kind,
+            ]);
+        }
+    }
+}
+
+impl RecordProviderCall for ProviderCallMetrics {
+    fn record(
+        &self,
+        chain: &str,
+        provider: &ProviderId,
+        elapsed: Duration,
+        outcome: ProviderCallOutcome,
+    ) {
+        // An abandoned call's elapsed time measures whatever cut it off, not the provider.
+        if outcome != ProviderCallOutcome::Abandoned {
+            metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+                .with_label_values(&[chain, &provider.0])
+                .observe(elapsed.as_secs_f64());
+        }
+
+        if let Some(kind) = error_kind(outcome) {
+            metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
+                .with_label_values(&[chain, &provider.0, kind])
+                .inc();
+        }
+    }
+}
+
+/// The `kind` label for [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`], or [`None`] when the
+/// provider is not at fault.
+fn error_kind(outcome: ProviderCallOutcome) -> Option<&'static str> {
+    match outcome {
+        ProviderCallOutcome::Answered => None,
+        ProviderCallOutcome::Failed(ProviderFailure::Unreachable) => {
+            Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT)
+        }
+        ProviderCallOutcome::Failed(ProviderFailure::Rejected | ProviderFailure::Malformed) => {
+            Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT)
+        }
+        ProviderCallOutcome::Failed(ProviderFailure::TimedOut) | ProviderCallOutcome::Abandoned => {
+            Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT)
+        }
+    }
 }
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
+        /// `chain` is the metric label for these providers.
         fn build_fanout<I>(
+            chain: &'static str,
             chain_config: Option<&ForeignChainConfig>,
             new_inspector: impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I>,
-        ) -> anyhow::Result<Option<FanOut<I>>> {
+        ) -> anyhow::Result<Option<FanOut<I, ProviderCallMetrics>>> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
@@ -71,7 +135,12 @@ impl ForeignChainInspectors<HttpClient> {
                 let inspector = new_inspector(url, rpc_auth, timeout)?;
                 anyhow::Ok((ProviderId(name.as_str().to_owned()), inspector))
             })?;
-            Ok(Some(FanOut::new(inspectors)))
+            for (provider, _) in inspectors.iter() {
+                ProviderCallMetrics::declare(chain, provider);
+            }
+            Ok(Some(
+                FanOut::new(inspectors).measuring(chain, Arc::new(ProviderCallMetrics)),
+            ))
         }
 
         /// Adapts an inspector constructor over a jsonrpsee [`HttpClient`] to `build_fanout`'s
@@ -124,42 +193,62 @@ impl ForeignChainInspectors<HttpClient> {
 
         Ok(Self {
             bitcoin: build_fanout(
+                "bitcoin",
                 config.bitcoin.as_ref(),
                 with_http_client(BitcoinInspector::new),
             )?,
             ethereum: build_fanout(
+                "ethereum",
                 config.ethereum.as_ref(),
                 with_http_client(EthereumInspector::new),
             )?,
             abstract_chain: build_fanout(
+                "abstract",
                 config.abstract_chain.as_ref(),
                 with_http_client(AbstractInspector::new),
             )?,
-            base: build_fanout(config.base.as_ref(), with_http_client(BaseInspector::new))?,
-            bnb: build_fanout(config.bnb.as_ref(), with_http_client(BnbInspector::new))?,
+            base: build_fanout(
+                "base",
+                config.base.as_ref(),
+                with_http_client(BaseInspector::new),
+            )?,
+            bnb: build_fanout(
+                "bnb",
+                config.bnb.as_ref(),
+                with_http_client(BnbInspector::new),
+            )?,
             starknet: build_fanout(
+                "starknet",
                 config.starknet.as_ref(),
                 with_http_client(StarknetInspector::new),
             )?,
             arbitrum: build_fanout(
+                "arbitrum",
                 config.arbitrum.as_ref(),
                 with_http_client(ArbitrumInspector::new),
             )?,
             hyper_evm: build_fanout(
+                "hyper_evm",
                 config.hyper_evm.as_ref(),
                 with_http_client(HyperEvmInspector::new),
             )?,
             polygon: build_fanout(
+                "polygon",
                 config.polygon.as_ref(),
                 with_http_client(PolygonInspector::new),
             )?,
             avalanche: build_fanout(
+                "avalanche",
                 config.avalanche.as_ref(),
                 with_http_client(AvalancheInspector::new),
             )?,
-            adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
-            aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
-            sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
+            adi: build_fanout(
+                "adi",
+                config.adi.as_ref(),
+                with_http_client(AdiInspector::new),
+            )?,
+            aptos: build_fanout("aptos", config.aptos.as_ref(), new_aptos_inspector)?,
+            sui: build_fanout("sui", config.sui.as_ref(), new_sui_inspector)?,
         })
     }
 }
@@ -233,5 +322,113 @@ impl VerifyForeignTxProvider {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use prometheus::Encoder;
+    use rstest::rstest;
+
+    const PROVIDER: &str = "a-provider";
+
+    fn timed(chain: &str) -> u64 {
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .with_label_values(&[chain, PROVIDER])
+            .get_sample_count()
+    }
+
+    fn counted(chain: &str, kind: &str) -> u64 {
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
+            .with_label_values(&[chain, PROVIDER, kind])
+            .get()
+    }
+
+    /// The registry is process-global, so each case measures under its own `chain`.
+    #[rstest]
+    #[case::answered("answered", ProviderCallOutcome::Answered, 1, None)]
+    #[case::unreachable(
+        "unreachable",
+        ProviderCallOutcome::Failed(ProviderFailure::Unreachable),
+        1,
+        Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT)
+    )]
+    #[case::rejected(
+        "rejected",
+        ProviderCallOutcome::Failed(ProviderFailure::Rejected),
+        1,
+        Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT)
+    )]
+    #[case::malformed(
+        "malformed",
+        ProviderCallOutcome::Failed(ProviderFailure::Malformed),
+        1,
+        Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT)
+    )]
+    #[case::timed_out(
+        "timed-out",
+        ProviderCallOutcome::Failed(ProviderFailure::TimedOut),
+        1,
+        Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT)
+    )]
+    // Abandoned calls are counted but not timed; see `ProviderCallMetrics::record`.
+    #[case::abandoned(
+        "abandoned",
+        ProviderCallOutcome::Abandoned,
+        0,
+        Some(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT)
+    )]
+    fn provider_call_metrics__should_time_answers_and_count_only_provider_failures(
+        #[case] chain: &str,
+        #[case] outcome: ProviderCallOutcome,
+        #[case] expected_timed: u64,
+        #[case] expected_kind: Option<&str>,
+    ) {
+        // When
+        ProviderCallMetrics.record(
+            chain,
+            &ProviderId(PROVIDER.to_string()),
+            Duration::from_millis(10),
+            outcome,
+        );
+
+        // Then
+        assert_eq!(timed(chain), expected_timed);
+        for kind in metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_KINDS {
+            let expected = u64::from(Some(kind) == expected_kind);
+            assert_eq!(counted(chain, kind), expected, "kind={kind}");
+        }
+    }
+
+    #[test]
+    fn provider_call_metrics_declare__should_publish_a_providers_series_before_its_first_call() {
+        // Given
+        let chain = "declared";
+
+        // When
+        ProviderCallMetrics::declare(chain, &ProviderId(PROVIDER.to_string()));
+
+        // Then
+        let mut buffer = Vec::new();
+        prometheus::TextEncoder::new()
+            .encode(&prometheus::default_registry().gather(), &mut buffer)
+            .expect("the default registry encodes");
+        let exposed = String::from_utf8(buffer).expect("prometheus text is utf-8");
+        let published: Vec<&str> = exposed
+            .lines()
+            .filter(|line| line.contains(&format!(r#"chain="{chain}""#)))
+            .collect();
+
+        for metric in [
+            "mpc_foreign_chain_provider_inspection_seconds",
+            "mpc_foreign_chain_provider_errors_total",
+        ] {
+            assert!(
+                published.iter().any(|line| line.starts_with(metric)),
+                "{metric} was not published; exposed: {published:?}"
+            );
+        }
     }
 }

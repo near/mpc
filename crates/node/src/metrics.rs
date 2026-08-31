@@ -537,3 +537,42 @@ pub fn init_attestation_freshness_metrics() {
     LazyLock::force(&MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS);
     LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
 }
+
+/// One observation is a whole inspection at one provider, which is one to three serialized RPC
+/// calls depending on the chain and on where the inspection stopped — not a single round trip.
+pub static MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_foreign_chain_provider_inspection_seconds",
+            "Time one foreign chain RPC provider took to answer a verify request, until it \
+             answered, failed, or timed out. A call abandoned by the node is counted, but not \
+             timed",
+            &["chain", "provider"],
+            // Top bucket matches the node's inspection deadline, so +Inf only catches the rare
+            // call that overruns it.
+            vec![0.025, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.5, 5.0],
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_foreign_chain_provider_errors_total",
+            "Verify requests a foreign chain RPC provider itself failed to answer. A verdict about \
+             the transaction — not final, not found, reverted — is an answer, and is not counted \
+             here",
+            &["chain", "provider", "kind"],
+        )
+        .unwrap()
+    });
+
+pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT: &str = "transient";
+pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT: &str = "non_transient";
+pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT: &str = "timeout";
+
+pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_KINDS: [&str; 3] = [
+    MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT,
+    MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT,
+    MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT,
+];

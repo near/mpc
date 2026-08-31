@@ -1,5 +1,6 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
+use std::sync::Arc;
 use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
@@ -111,18 +112,161 @@ pub trait NetworkFingerprintInspector {
 /// the same failure mode (e.g. [`NonCanonicalBlock`](ForeignChainInspectionError::NonCanonicalBlock))
 /// are considered to agree even if the
 /// inner fields differ.
-#[derive(Clone, derive_more::Constructor)]
-pub struct FanOut<Inspector> {
+pub struct FanOut<Inspector, Recorder: RecordProviderCall = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
+    measurement: Option<Measurement<Recorder>>,
 }
 
-impl<Inspector> ForeignChainInspector for FanOut<Inspector>
+impl<Inspector: Clone, Recorder: RecordProviderCall> Clone for FanOut<Inspector, Recorder> {
+    fn clone(&self) -> Self {
+        Self {
+            inspectors: self.inspectors.clone(),
+            measurement: self.measurement.clone(),
+        }
+    }
+}
+
+impl<Inspector> FanOut<Inspector, ()> {
+    /// Creates a fan-out whose provider calls are not measured.
+    pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
+        Self {
+            inspectors,
+            measurement: None,
+        }
+    }
+
+    /// Reports every provider call [`FanOut::extract`] makes, under the label `chain`.
+    ///
+    /// [`FanOut::network_fingerprints`] is never measured: probe traffic shares these providers
+    /// and would drown the verify latencies.
+    pub fn measuring<Recorder: RecordProviderCall>(
+        self,
+        chain: &'static str,
+        record_call: Arc<Recorder>,
+    ) -> FanOut<Inspector, Recorder> {
+        FanOut {
+            inspectors: self.inspectors,
+            measurement: Some(Measurement { chain, record_call }),
+        }
+    }
+}
+
+/// Times one provider call made by [`FanOut::extract`] and reports how long it took and how it
+/// ended. Implemented by the node to record Prometheus metrics; the unit type implements it as
+/// a no-op for fan-outs without measurement.
+pub trait RecordProviderCall: Send + Sync {
+    fn record(
+        &self,
+        chain: &str,
+        provider: &ProviderId,
+        elapsed: Duration,
+        outcome: ProviderCallOutcome,
+    );
+}
+
+/// How one provider's call ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderCallOutcome {
+    /// The provider answered, whether with extracted values or with a verdict about the
+    /// transaction itself. See [`ForeignChainInspectionError::provider_failure`].
+    Answered,
+    Failed(ProviderFailure),
+    /// The call was still in flight when the caller dropped the fan-out, so no answer will ever
+    /// arrive.
+    Abandoned,
+}
+
+impl ProviderCallOutcome {
+    fn of<T>(result: &Result<T, ForeignChainInspectionError>) -> Self {
+        match result {
+            Ok(_) => Self::Answered,
+            Err(error) => error
+                .provider_failure()
+                .map_or(Self::Answered, Self::Failed),
+        }
+    }
+}
+
+impl RecordProviderCall for () {
+    fn record(
+        &self,
+        _chain: &str,
+        _provider: &ProviderId,
+        _elapsed: Duration,
+        _outcome: ProviderCallOutcome,
+    ) {
+    }
+}
+
+struct Measurement<Recorder: RecordProviderCall> {
+    chain: &'static str,
+    record_call: Arc<Recorder>,
+}
+
+impl<Recorder: RecordProviderCall> Clone for Measurement<Recorder> {
+    fn clone(&self) -> Self {
+        Self {
+            chain: self.chain,
+            record_call: Arc::clone(&self.record_call),
+        }
+    }
+}
+
+/// Times one provider's call and reports it once, from [`Drop`]: a caller's deadline aborts the
+/// spawned task mid-call, so no ordinary return path runs for a provider that never answers.
+#[derive(Clone)]
+struct TimedCall<Recorder: RecordProviderCall> {
+    measurement: Option<Measurement<Recorder>>,
+    provider: ProviderId,
+    /// tokio's, so a paused clock in a test drives the reported duration.
+    started: tokio::time::Instant,
+    outcome: Option<ProviderCallOutcome>,
+}
+
+impl<Recorder: RecordProviderCall> TimedCall<Recorder> {
+    fn start(measurement: Option<Measurement<Recorder>>, provider: ProviderId) -> Self {
+        Self {
+            measurement,
+            provider,
+            started: tokio::time::Instant::now(),
+            outcome: None,
+        }
+    }
+
+    fn ended<T>(&mut self, result: &Result<T, ForeignChainInspectionError>) {
+        self.outcome = Some(ProviderCallOutcome::of(result));
+    }
+}
+
+impl<Recorder: RecordProviderCall> Drop for TimedCall<Recorder> {
+    fn drop(&mut self) {
+        // A panicking inspector unwinds through this guard: the call was torn down, not
+        // abandoned, and recording mid-unwind risks a double panic.
+        if std::thread::panicking() {
+            return;
+        }
+        let Some(measurement) = &self.measurement else {
+            return;
+        };
+        measurement.record_call.record(
+            measurement.chain,
+            &self.provider,
+            self.started.elapsed(),
+            self.outcome.unwrap_or(ProviderCallOutcome::Abandoned),
+        );
+    }
+}
+
+impl<Inspector, Recorder: RecordProviderCall> ForeignChainInspector for FanOut<Inspector, Recorder>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
     Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
+    // The spawned task must stay alive until every call has been reported, so `Recorder` must
+    // not outlive it.
+    Recorder: 'static,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -142,11 +286,12 @@ where
             let extractors = extractors.clone();
             let inspector = inspector.clone();
             let provider = provider.clone();
+            let measurement = self.measurement.clone();
             join_set.spawn(async move {
-                (
-                    provider,
-                    inspector.extract(tx_id, finality, extractors).await,
-                )
+                let mut call = TimedCall::start(measurement, provider.clone());
+                let result = inspector.extract(tx_id, finality, extractors).await;
+                call.ended(&result);
+                (provider, result)
             });
         }
 
@@ -231,9 +376,10 @@ where
 /// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
-impl<Inspector> FanOut<Inspector>
+impl<Inspector, Recorder: RecordProviderCall> FanOut<Inspector, Recorder>
 where
     Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+    Recorder: 'static,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
@@ -395,6 +541,12 @@ impl ForeignChainInspectionError {
 
     /// Maps a raw RPC client error to an error with context.
     pub fn classify_rpc_client_error(error: RpcClientError) -> Self {
+        Self::from_rpc_client_error(&error)
+    }
+
+    /// Never produces a [`Self::ClientError`], so [`Self::provider_failure`] can call it on the
+    /// wrapped error without recursing.
+    fn from_rpc_client_error(error: &RpcClientError) -> Self {
         match error {
             RpcClientError::Call(object) => {
                 let code = object.code();
@@ -435,10 +587,14 @@ impl ForeignChainInspectionError {
     }
 
     /// How the provider failed, or [`None`] when the provider did not: the remaining variants
-    /// report the transaction's own state, which is an answer rather than a fault.
+    /// report what the provider answered — the transaction's own state, or a request it could not
+    /// serve — rather than a fault of its own.
     pub fn provider_failure(&self) -> Option<ProviderFailure> {
         match self {
-            Self::ClientError(_) | Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
+            // Only the fingerprint probe classifies; transaction inspection lets the raw client
+            // error through, so without this every fault there would look like an unreachable host.
+            Self::ClientError(error) => Self::from_rpc_client_error(error).provider_failure(),
+            Self::RpcRequestFailed(_) => Some(ProviderFailure::Unreachable),
             Self::Timeout => Some(ProviderFailure::TimedOut),
             Self::RpcRequestRejected(_) => Some(ProviderFailure::Rejected),
             Self::MalformedRpcResponse(_)
@@ -724,6 +880,24 @@ mod tests {
         expected: BlockConfirmations::from(6),
         got: BlockConfirmations::from(1),
     }, None)]
+    // Transaction inspection lets the raw client error through unclassified, so the
+    // classification has to survive the round trip through `ClientError` too.
+    #[case(
+        ForeignChainInspectionError::ClientError(transport(HttpTransportError::Rejected {
+            status_code: 401,
+        })),
+        Some(ProviderFailure::Rejected)
+    )]
+    #[case(
+        ForeignChainInspectionError::ClientError(transport(HttpTransportError::Rejected {
+            status_code: 503,
+        })),
+        Some(ProviderFailure::Unreachable)
+    )]
+    #[case(
+        ForeignChainInspectionError::ClientError(RpcClientError::RequestTimeout),
+        Some(ProviderFailure::TimedOut)
+    )]
     fn provider_failure__should_name_only_the_failures_the_provider_owns(
         #[case] error: ForeignChainInspectionError,
         #[case] expected: Option<ProviderFailure>,
@@ -733,6 +907,115 @@ mod tests {
 
         // Then
         assert_eq!(failure, expected);
+    }
+
+    #[derive(Default)]
+    struct RecordedCalls(std::sync::Mutex<Vec<(String, ProviderId, ProviderCallOutcome)>>);
+
+    impl RecordedCalls {
+        fn taken(&self) -> Vec<(String, ProviderId, ProviderCallOutcome)> {
+            std::mem::take(&mut self.0.lock().unwrap())
+        }
+    }
+
+    impl RecordProviderCall for RecordedCalls {
+        fn record(
+            &self,
+            chain: &str,
+            provider: &ProviderId,
+            _elapsed: Duration,
+            outcome: ProviderCallOutcome,
+        ) {
+            self.0
+                .lock()
+                .unwrap()
+                .push((chain.to_owned(), provider.clone(), outcome));
+        }
+    }
+
+    fn measured_call(recorded: &Arc<RecordedCalls>) -> TimedCall<RecordedCalls> {
+        TimedCall::start(
+            Some(Measurement {
+                chain: "testchain",
+                record_call: Arc::clone(recorded),
+            }),
+            ProviderId("only".to_string()),
+        )
+    }
+
+    #[test]
+    fn timed_call__should_report_the_outcome_the_call_ended_with() {
+        // Given
+        let recorded = Arc::new(RecordedCalls::default());
+        let mut call = measured_call(&recorded);
+
+        // When
+        call.ended(&Err::<(), _>(ForeignChainInspectionError::Timeout));
+        drop(call);
+
+        // Then
+        assert_eq!(
+            recorded.taken(),
+            vec![(
+                "testchain".to_string(),
+                ProviderId("only".to_string()),
+                ProviderCallOutcome::Failed(ProviderFailure::TimedOut),
+            )]
+        );
+    }
+
+    #[test]
+    fn timed_call__should_report_a_call_that_never_ended_as_abandoned() {
+        // Given: a call whose task the caller's deadline aborted mid-flight.
+        let recorded = Arc::new(RecordedCalls::default());
+        let call = measured_call(&recorded);
+
+        // When
+        drop(call);
+
+        // Then
+        assert_matches!(
+            recorded.taken()[..],
+            [(_, _, ProviderCallOutcome::Abandoned)]
+        );
+    }
+
+    #[test]
+    fn timed_call__should_report_nothing_while_its_task_is_panicking() {
+        // Given
+        let recorded = Arc::new(RecordedCalls::default());
+
+        // When: the inspector panics, so the guard drops as part of the unwind.
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _call = measured_call(&recorded);
+            panic!("the inspector blew up");
+        }));
+
+        // Then
+        assert!(panicked.is_err());
+        assert_eq!(recorded.taken(), vec![]);
+    }
+
+    #[rstest]
+    #[case(Ok(()), ProviderCallOutcome::Answered)]
+    #[case(
+        Err(ForeignChainInspectionError::RpcRequestFailed("_".to_string())),
+        ProviderCallOutcome::Failed(ProviderFailure::Unreachable)
+    )]
+    // A verdict about the transaction is an answer, so the provider is not at fault.
+    #[case(
+        Err(ForeignChainInspectionError::NotFinalized),
+        ProviderCallOutcome::Answered
+    )]
+    fn provider_call_outcome_of__should_blame_the_provider_only_for_its_own_failures(
+        #[case] result: Result<(), ForeignChainInspectionError>,
+        #[case] expected: ProviderCallOutcome,
+    ) {
+        // When
+        let outcome = ProviderCallOutcome::of(&result);
+
+        // Then
+        assert_eq!(outcome, expected);
     }
 
     #[test]

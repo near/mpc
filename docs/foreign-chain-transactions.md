@@ -11,7 +11,7 @@ This feature lets the MPC network sign payloads only after verifying a specific 
 
 ## Scope
 
-* In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain-family extractors.
+* In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, querying every configured provider, and extensible per-chain-family extractors.
 * Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results.
 
 ## Overview
@@ -33,7 +33,7 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 
 Not all extractors can be satisfied by a single RPC method call.
 
-* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain configurations.
+* **Provider selection**: The request does **not** specify an RPC URL. Nodes query every allowed provider they have configured from the on-chain foreign-chain configurations.
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`, plus `eth_getBlockByNumber` for the finality-head and canonical-chain checks.
@@ -598,19 +598,13 @@ If an operator's `foreign_chains.yaml` references a `provider_id` not on the whi
 - **Moving `sample_tx_id` on chain.** Stays in operator config for now; promoting it (so the whole network probes the same tx) is a candidate follow-up if operators start disagreeing on which tx to probe.
 - **Adding testnet `ForeignChain` variants** (`Sepolia`, `Goerli`, `Holesky`). The whitelist design doesn't need them and doesn't prevent them.
 
-## Deterministic Provider Selection
+## Provider Agreement
 
-Each node selects a provider using a deterministic hash of the provider identity (RPC URL):
-
-```
-hash = sha256(participant_id || request_id || provider_rpc_url)
-```
-
-Providers are sorted by this hash to build a deterministic ordering:
-
-* **Primary provider** = first in the ordering.
-
-This ensures different nodes query different providers for the same request while preserving determinism.
+A node queries **every** provider it has configured for the chain, concurrently, and compares what
+they return. Providers that agree — on the extracted values, or on the same kind of substantive
+failure — settle the request. Providers that disagree fail it with an inspector mismatch, and
+providers that fail transiently are tolerated, so a single unavailable RPC does not take the node
+out of signing.
 
 ## Failure and Timeout Behavior
 
@@ -647,6 +641,47 @@ flowchart TD
 
 ### Contract State (Types)
 See "Contract State (Foreign Chain Configurations)" above.
+
+## Provider Metrics
+
+The verify fan-out measures each provider it queries and exposes two series on the node's
+`/metrics` endpoint. Both carry a `chain` label — the key the chain is configured under
+(`bitcoin`, `hyper_evm`, ...) — and a `provider` label, its configured provider name.
+
+| Metric | Measures |
+| --- | --- |
+| `mpc_foreign_chain_provider_inspection_seconds` | Histogram of how long one provider took to answer one verify request. One observation is a whole inspection, which is one to three serialized RPC calls depending on the chain and on where the inspection stopped — not a single round trip. The top bucket is the node's inspection deadline, so nothing can be observed beyond it. |
+| `mpc_foreign_chain_provider_errors_total` | Requests the provider itself failed to answer, by `kind`. |
+
+`kind` is one of:
+
+* `transient` — no answer arrived: transport failure, 5xx, or rate limiting.
+* `non_transient` — the provider answered and refused, or answered with something unusable.
+  Retrying cannot change either.
+* `timeout` — the provider did not answer before the node gave up on it. This also covers a call
+  the node itself tore down, which happens to whatever is in flight when the node shuts down or
+  the participant set changes.
+
+Each provider's series is published when the node starts, so a healthy idle node reports zero
+rather than nothing at all.
+
+What the provider answered is not counted as an error, even when it ends the verification: a
+transaction that is not final yet, has too few confirmations, is absent, reverted, or sits on a
+non-canonical block is an answer. Without that split, every healthy provider would be counted as
+failing whenever a caller asks about a transaction before it is final.
+
+Some things worth knowing before building an alert on these:
+
+* A call the node abandons is counted, but not timed. How far it got is bounded by whatever cut it
+  off rather than by the provider, so timing it would drag the quantiles toward the deadline.
+* A verify request that never reaches a provider — the chain is unavailable, no inspector is
+  configured for it, or the request itself is malformed — is in neither series.
+* The leader and every follower run their own inspection, so one user request produces one
+  inspection per participating node, and one observation per provider within each.
+* `solana` can be configured but has no inspector, so it never appears.
+
+CLI probe traffic is deliberately excluded: probes share their providers with the verify path, and
+their latencies would drown the ones an operator is looking at.
 
 ## Node Configuration and Contract Registration
 

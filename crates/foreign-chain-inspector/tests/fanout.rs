@@ -8,14 +8,17 @@
 
 #![expect(non_snake_case)]
 
-use std::{io, sync::Arc};
+use std::{io, num::NonZeroU64, pin::Pin, sync::Arc, time::Duration};
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     BlockConfirmations, FanOut, ForeignChainInspectionError, ForeignChainInspector,
+    NetworkFingerprint, NetworkFingerprintInspector, ProviderCallOutcome, ProviderFailure,
+    RecordProviderCall,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
+use tokio::sync::mpsc;
 
 mockall::mock! {
     Inspector {}
@@ -42,23 +45,10 @@ mockall::mock! {
 type ResponseFn =
     Arc<dyn Fn() -> Result<Vec<u32>, ForeignChainInspectionError> + Send + Sync + 'static>;
 
-/// Builds a mock that returns [`response()`] whenever `extract` is called, and
-/// whose [`clone()`] produces another mock with the same behaviour.
-///
-/// [`FanOut::extract`] calls [`clone()`] on the inspector and only `extract` on the
-/// resulting clone; the inverse never happens. We allow `times(0..)` on both
-/// expectations so a single helper covers both "original" and "cloned" roles
-/// without surprising the test author with expectation failures on drop.
+/// Answers with `response()` whenever `extract` is called, and clones into another mock that
+/// does the same.
 fn mock_returning(response: ResponseFn) -> MockInspector {
-    let mut m = MockInspector::new();
-    let for_extract = Arc::clone(&response);
-    m.expect_extract()
-        .returning(move |_, _, _| Box::pin(std::future::ready(for_extract())))
-        .times(0..);
-    m.expect_clone()
-        .returning(move || mock_returning(Arc::clone(&response)))
-        .times(0..);
-    m
+    mock_awaiting(Arc::new(move || Box::pin(std::future::ready(response()))))
 }
 
 /// Strict variant of [`mock_returning`]: the original is cloned exactly once,
@@ -79,6 +69,43 @@ fn mock_called_once(response: ResponseFn) -> MockInspector {
         })
         .times(1);
     original
+}
+
+type Response = Pin<Box<dyn Future<Output = Result<Vec<u32>, ForeignChainInspectionError>> + Send>>;
+type ResponseFutureFn = Arc<dyn Fn() -> Response + Send + Sync>;
+
+/// Answers with `respond()` whenever `extract` is called, and clones into another mock that
+/// does the same.
+fn mock_awaiting(respond: ResponseFutureFn) -> MockInspector {
+    let mut m = MockInspector::new();
+    let for_extract = Arc::clone(&respond);
+    m.expect_extract()
+        .returning(move |_, _, _| for_extract())
+        .times(0..);
+    m.expect_clone()
+        .returning(move || mock_awaiting(Arc::clone(&respond)))
+        .times(0..);
+    m
+}
+
+/// tokio rounds timer deadlines up to the millisecond, so keep `delay` whole milliseconds.
+fn mock_answering_after(delay: Duration) -> MockInspector {
+    mock_awaiting(Arc::new(move || {
+        Box::pin(async move {
+            tokio::time::sleep(delay).await;
+            Ok(vec![1])
+        })
+    }))
+}
+
+fn mock_never_answering(asked: mpsc::UnboundedSender<()>) -> MockInspector {
+    mock_awaiting(Arc::new(move || {
+        let asked = asked.clone();
+        Box::pin(async move {
+            let _ = asked.send(());
+            std::future::pending().await
+        })
+    }))
 }
 
 /// Sugar for a [`ResponseFn`] that always returns `Ok(values)`.
@@ -103,6 +130,163 @@ fn fan_out_of(inspectors: Vec<MockInspector>) -> FanOut<MockInspector> {
         .try_into()
         .expect("test must provide at least one inspector");
     FanOut::new(inspectors)
+}
+
+/// Written out rather than mocked: [`NetworkFingerprintInspector::canonical_fingerprint`] takes no
+/// `self`, which `mockall` can only mock through global state.
+impl NetworkFingerprintInspector for MockInspector {
+    async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
+        Ok(NetworkFingerprint::new("1"))
+    }
+
+    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+        NetworkFingerprint::new(fingerprint)
+    }
+}
+
+const CHAIN: &str = "testchain";
+
+type ReportedCall = (String, ProviderId, Duration, ProviderCallOutcome);
+
+/// Forwards what the fan-out reports to the test. A channel rather than a shared [`Vec`], so a
+/// test can await a call reported from a task it does not hold.
+struct ReportedCalls(mpsc::UnboundedSender<ReportedCall>);
+
+impl RecordProviderCall for ReportedCalls {
+    fn record(
+        &self,
+        chain: &str,
+        provider: &ProviderId,
+        elapsed: Duration,
+        outcome: ProviderCallOutcome,
+    ) {
+        let _ = self
+            .0
+            .send((chain.to_owned(), provider.clone(), elapsed, outcome));
+    }
+}
+
+fn measured_fan_out_of(
+    inspectors: Vec<MockInspector>,
+) -> (
+    FanOut<MockInspector, ReportedCalls>,
+    mpsc::UnboundedReceiver<ReportedCall>,
+) {
+    let (calls, reported) = mpsc::unbounded_channel();
+    let fan_out = fan_out_of(inspectors).measuring(CHAIN, Arc::new(ReportedCalls(calls)));
+    (fan_out, reported)
+}
+
+fn reported_by_provider(reported: &mut mpsc::UnboundedReceiver<ReportedCall>) -> Vec<ReportedCall> {
+    let mut calls = Vec::new();
+    while let Ok(call) = reported.try_recv() {
+        calls.push(call);
+    }
+    calls.sort_by(|left, right| left.1.cmp(&right.1));
+    calls
+}
+
+fn outcomes(calls: &[ReportedCall]) -> Vec<ProviderCallOutcome> {
+    calls.iter().map(|(_, _, _, outcome)| *outcome).collect()
+}
+
+mod measurement {
+    use super::*;
+
+    #[tokio::test]
+    async fn fan_out_extract__should_report_one_call_per_provider() {
+        // Given
+        let make = || mock_returning(ok(vec![1]));
+        let (fan_out, mut reported) = measured_fan_out_of(vec![make(), make(), make()]);
+
+        // When
+        fan_out.extract((), (), vec![]).await.unwrap();
+
+        // Then
+        let calls = reported_by_provider(&mut reported);
+        let providers: Vec<&str> = calls
+            .iter()
+            .map(|(_, provider, _, _)| provider.0.as_str())
+            .collect();
+        assert_eq!(providers, ["provider-0", "provider-1", "provider-2"]);
+        assert!(calls.iter().all(|(chain, _, _, _)| chain == CHAIN));
+        assert_eq!(outcomes(&calls), vec![ProviderCallOutcome::Answered; 3]);
+    }
+
+    #[tokio::test]
+    async fn fan_out_extract__should_report_the_outcome_each_provider_returned() {
+        // Given: one provider at fault, one reporting the transaction's own state.
+        let unreachable = mock_returning(err(|| {
+            ForeignChainInspectionError::RpcRequestFailed("connection refused".to_string())
+        }));
+        let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
+        let (fan_out, mut reported) = measured_fan_out_of(vec![unreachable, not_finalized]);
+
+        // When
+        let _ = fan_out.extract((), (), vec![]).await;
+
+        // Then
+        assert_eq!(
+            outcomes(&reported_by_provider(&mut reported)),
+            vec![
+                ProviderCallOutcome::Failed(ProviderFailure::Unreachable),
+                ProviderCallOutcome::Answered,
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fan_out_extract__should_report_how_long_the_provider_took_to_answer() {
+        // Given
+        let answers_in = Duration::from_millis(750);
+        let (fan_out, mut reported) = measured_fan_out_of(vec![mock_answering_after(answers_in)]);
+
+        // When
+        fan_out.extract((), (), vec![]).await.unwrap();
+
+        // Then
+        assert_matches!(
+            reported_by_provider(&mut reported)[..],
+            [(_, _, elapsed, _)] if elapsed == answers_in
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn fan_out_extract__should_report_an_abandoned_call_when_the_caller_gives_up() {
+        // Given: a provider that is asked and then never answers.
+        let (asked, mut was_asked) = mpsc::unbounded_channel();
+        let (fan_out, mut reported) = measured_fan_out_of(vec![mock_never_answering(asked)]);
+
+        let mut extract = Box::pin(fan_out.extract((), (), vec![]));
+        tokio::select! {
+            _ = &mut extract => panic!("the provider never answers"),
+            _ = was_asked.recv() => {}
+        }
+
+        // When: the caller drops the call.
+        drop(extract);
+
+        // Then
+        let call = tokio::time::timeout(Duration::from_secs(5), reported.recv())
+            .await
+            .expect("the abandoned call must be reported");
+        assert_matches!(call, Some((_, _, _, ProviderCallOutcome::Abandoned)));
+    }
+
+    #[tokio::test]
+    async fn fan_out_network_fingerprints__should_report_nothing() {
+        // Given
+        let make = || mock_returning(ok(vec![1]));
+        let (fan_out, mut reported) = measured_fan_out_of(vec![make(), make()]);
+
+        // When
+        fan_out
+            .network_fingerprints(Duration::from_secs(1), NonZeroU64::new(1).unwrap())
+            .await;
+
+        // Then
+        assert_eq!(reported_by_provider(&mut reported), vec![]);
+    }
 }
 
 mod all_succeed {
