@@ -10,8 +10,8 @@ pub mod client;
 pub mod method_names;
 pub mod types {
     pub use attestation::{
-        AppCompose, Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation,
-        TcbInfo, VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
+        Attestation, Collateral, DstackAttestation, EventLog, HexVec, MockAttestation, TcbInfo,
+        VerifiedAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
@@ -34,7 +34,10 @@ pub mod types {
         ReconstructionThreshold, ResharingContractState, RunningContractState,
         protocol_state_to_string,
     };
-    pub use tee::{AllowedMpcDockerImageHash, NodeId};
+    pub use tee::{
+        AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherHashVotes,
+        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
+    };
 
     pub use updates::{
         PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash, UpdateId,
@@ -42,7 +45,8 @@ pub mod types {
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
-        LauncherDockerComposeHash, NodeImageHash, Sha384Digest, TeeVerifierCodeHash,
+        KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
+        NodeImageHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

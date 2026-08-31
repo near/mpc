@@ -1,12 +1,10 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
-    tee::measurements::{
-        AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
-    },
+    tee::measurements::{AllowedMeasurements, MeasurementVotes},
     tee::proposal::{
         AllowedLauncherImageInsertion, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
-        LauncherVoteAction, NodeImageHash, StoredDockerImageHashes,
+        NodeImageHash, StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -18,7 +16,10 @@ use mpc_attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use near_mpc_contract_interface::types::{self as dtos, AccountId, Ed25519PublicKey};
+use near_mpc_contract_interface::types::{
+    self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
+    MeasurementVoteAction,
+};
 use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
@@ -434,19 +435,19 @@ impl TeeState {
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
-    pub fn add_measurement(&mut self, measurement: ContractExpectedMeasurements) -> bool {
+    pub fn add_measurement(&mut self, measurement: ExpectedMeasurements) -> bool {
         self.measurement_votes.clear_votes();
         self.allowed_measurements.add(measurement)
     }
 
     /// Removes a measurement set from the allowed list. Clears measurement votes.
-    pub fn remove_measurement(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
+    pub fn remove_measurement(&mut self, measurement: &ExpectedMeasurements) -> bool {
         self.measurement_votes.clear_votes();
         self.allowed_measurements.remove(measurement)
     }
 
     /// Returns all allowed OS measurements.
-    pub fn get_allowed_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+    pub fn get_allowed_measurements(&self) -> Vec<ExpectedMeasurements> {
         self.allowed_measurements.entries().to_vec()
     }
 
