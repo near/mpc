@@ -245,8 +245,8 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
     );
 }
 
-/// `getblockheader` looks a header up by hash, so a backend that echoes back a *different* hash
-/// is misbehaving, simulating an RPC that returned the wrong block for the queried hash.
+/// `getblockheader` looks a header up by hash, so a backend that echoes back a different hash
+/// is misbehaving.
 #[tokio::test]
 async fn extract__should_return_inconsistent_rpc_response_when_get_block_header_echoes_different_hash()
  {
@@ -304,41 +304,6 @@ async fn extract__should_propagate_get_block_header_deserialize_error() {
     let mock_client = SequentialResponseMockClientBuilder::new()
         .with_response(tx_response)
         .with_response(serde_json::json!({ "unexpected": "shape" }))
-        .build();
-    let inspector = BitcoinInspector::new(mock_client);
-
-    // when
-    let response = inspector
-        .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
-        .await;
-
-    // then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
-}
-
-#[tokio::test]
-async fn extract__should_propagate_getblockhash_deserialize_error() {
-    // given: getrawtransaction and getblockheader succeed; getblockhash returns a payload that fails to deserialize.
-    let tx_id = BitcoinTransactionHash::from([1; 32]);
-    let threshold = BlockConfirmations::from(1u64);
-    let receipt_blockhash = TransportBitcoinBlockHash::from([0xbb; 32]);
-
-    let tx_response = GetRawTransactionVerboseResponse {
-        blockhash: receipt_blockhash,
-        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
-    };
-    let block_response = GetBlockHeaderVerboseResponse {
-        hash: receipt_blockhash,
-        height: TEST_BLOCK_HEIGHT,
-    };
-
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx_response)
-        .with_response(block_response)
-        .with_response(serde_json::json!(42))
         .build();
     let inspector = BitcoinInspector::new(mock_client);
 

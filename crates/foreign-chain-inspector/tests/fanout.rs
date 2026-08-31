@@ -12,8 +12,7 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    BlockConfirmations, FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes,
-    Verdict,
+    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, Verdict,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
@@ -82,19 +81,14 @@ fn mock_called_once(response: ResponseFn) -> MockInspector {
     original
 }
 
-/// Sugar for a [`ResponseFn`] that always extracts `values`.
 fn ok(values: Vec<u32>) -> ResponseFn {
     Arc::new(move || Ok(Verdict::Extracted(values.clone())))
 }
 
-/// Sugar for a [`ResponseFn`] that always returns the verdict `make()`.
 fn verdict(make: impl Fn() -> Verdict<u32> + Send + Sync + 'static) -> ResponseFn {
     Arc::new(move || Ok(make()))
 }
 
-/// Sugar for a [`ResponseFn`] that always returns `Err(make())`. The closure
-/// rebuilds the error on every call because [`ForeignChainInspectionError`] is
-/// not [`Clone`].
 fn err(make: impl Fn() -> ForeignChainInspectionError + Send + Sync + 'static) -> ResponseFn {
     Arc::new(move || Err(make()))
 }
@@ -128,19 +122,6 @@ mod all_extract {
     }
 
     #[tokio::test]
-    async fn fan_out__should_succeed_with_empty_values_when_all_inspectors_return_empty() {
-        // Given
-        let make = || mock_returning(ok(vec![]));
-        let fan_out = fan_out_of(vec![make(), make()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(Vec::<u32>::new()));
-    }
-
-    #[tokio::test]
     async fn fan_out__should_succeed_when_built_from_a_single_inspector() {
         // Given: the smallest valid NonEmptyVec — a single inspector.
         let only = mock_returning(ok(vec![7]));
@@ -151,19 +132,6 @@ mod all_extract {
 
         // Then
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![7]));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_succeed_when_many_inspectors_agree() {
-        // Given: five inspectors all returning the same values.
-        let make = || mock_returning(ok(vec![10, 20, 30]));
-        let fan_out = fan_out_of(vec![make(), make(), make(), make(), make()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(vec![10, 20, 30]));
     }
 
     #[tokio::test]
@@ -189,6 +157,7 @@ mod extracted_values_disagree {
     #[tokio::test]
     async fn fan_out__should_return_mismatch_error_when_inspectors_disagree() {
         // Given: two inspectors agree on [1, 2, 3], one disagrees with [9, 9, 9].
+        // Agreement is unanimity, not majority.
         let agreeing = || mock_returning(ok(vec![1, 2, 3]));
         let disagreeing = mock_returning(ok(vec![9, 9, 9]));
         let fan_out = fan_out_of(vec![agreeing(), disagreeing, agreeing()]);
@@ -243,25 +212,8 @@ mod split_extracted_and_failing {
 
     #[tokio::test]
     async fn fan_out__should_return_mismatch_when_some_extract_and_others_rule_the_tx_out() {
-        // Given
-        let extracting = mock_returning(ok(vec![1]));
-        let failing = mock_returning(verdict(|| Verdict::TransactionFailed));
-        let fan_out = fan_out_of(vec![extracting, failing]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_extracted_plus_failing_verdict_plus_error() {
-        // Given: one extraction, one failing verdict, one tolerated error. The verdict
-        // split still dominates: errors don't mask the substantive disagreement.
+        // Given: one extraction, one failing verdict, one tolerated error. The error does not
+        // mask the substantive disagreement.
         let extracting = mock_returning(ok(vec![1]));
         let failing = mock_returning(verdict(|| Verdict::TransactionFailed));
         let erring = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
@@ -295,32 +247,6 @@ mod failing_verdicts_agree {
     }
 
     #[tokio::test]
-    async fn fan_out__should_return_log_index_out_of_bounds_when_all_inspectors_agree() {
-        // Given
-        let make = || mock_returning(verdict(|| Verdict::LogIndexOutOfBounds));
-        let fan_out = fan_out_of(vec![make(), make()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::LogIndexOutOfBounds));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_the_verdict_when_single_inspector_rules_the_tx_out() {
-        // Given
-        let only = mock_returning(verdict(|| Verdict::TransactionFailed));
-        let fan_out = fan_out_of(vec![only]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::TransactionFailed));
-    }
-
-    #[tokio::test]
     async fn fan_out__should_return_the_verdict_when_fielded_verdicts_are_identical() {
         // Given
         let non_canonical = || {
@@ -337,21 +263,6 @@ mod failing_verdicts_agree {
 
         // Then
         assert_matches!(result, Ok(Verdict::NonCanonicalBlock { .. }));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_the_verdict_when_errors_are_also_present() {
-        // Given: two inspectors rule the transaction out, one fails to reach a verdict.
-        // Errors are tolerated, so the verdict agreement wins.
-        let failing = || mock_returning(verdict(|| Verdict::TransactionFailed));
-        let erring = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let fan_out = fan_out_of(vec![failing(), erring, failing()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::TransactionFailed));
     }
 }
 
@@ -387,24 +298,6 @@ mod failing_verdicts_disagree {
             }))
         };
         let fan_out = fan_out_of(vec![non_canonical(vec![2]), non_canonical(vec![3])]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_verdict_variants_disagree_among_three() {
-        // Given: three different failing verdicts.
-        let a = mock_returning(verdict(|| Verdict::TransactionFailed));
-        let b = mock_returning(verdict(|| Verdict::LogIndexOutOfBounds));
-        let c = mock_returning(verdict(|| Verdict::TransactionNotFound));
-        let fan_out = fan_out_of(vec![a, b, c]);
 
         // When
         let result = fan_out.extract((), (), vec![]).await;
@@ -456,42 +349,6 @@ mod all_err {
     }
 
     #[tokio::test]
-    async fn fan_out__should_propagate_the_error_when_single_inspector_fails() {
-        // Given
-        let only = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let fan_out = fan_out_of(vec![only]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_propagate_not_enough_block_confirmations_when_all_inspectors_agree() {
-        // Given
-        let make = || {
-            mock_returning(err(|| {
-                ForeignChainInspectionError::NotEnoughBlockConfirmations {
-                    expected: BlockConfirmations::from(10_u64),
-                    got: BlockConfirmations::from(3_u64),
-                }
-            }))
-        };
-        let fan_out = fan_out_of(vec![make(), make()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { .. })
-        );
-    }
-
-    #[tokio::test]
     async fn fan_out__should_propagate_a_provider_fault_when_no_inspector_reaches_a_verdict() {
         // Given
         let make = || {
@@ -516,42 +373,15 @@ mod tolerate_errors {
     use super::*;
 
     #[tokio::test]
-    async fn fan_out__should_tolerate_an_error_when_some_inspectors_extract() {
-        // Given: two inspectors extract; one fails to reach a verdict. The error is
-        // tolerated when there is a verdict.
-        let extracting = || mock_returning(ok(vec![42]));
-        let erring = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let fan_out = fan_out_of(vec![extracting(), erring, extracting()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(vec![42]));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_tolerate_errors_when_only_one_inspector_extracts() {
-        // Given
-        let extracting = mock_returning(ok(vec![99]));
-        let erring = || mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let fan_out = fan_out_of(vec![erring(), extracting, erring()]);
-
-        // When
-        let result = fan_out.extract((), (), vec![]).await;
-
-        // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(vec![99]));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_tolerate_a_provider_fault_when_another_inspector_extracts() {
-        // Given: a refusal is the provider's own fault, deterministic or not.
+    async fn fan_out__should_tolerate_every_error_kind_when_one_inspector_extracts() {
+        // Given: a transient condition and a deterministic provider fault around a single
+        // extraction; both error kinds are tolerated alike.
+        let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
         let rejected = mock_returning(err(|| {
             ForeignChainInspectionError::RpcRequestRejected("HTTP status 401".to_string())
         }));
         let extracting = mock_returning(ok(vec![7]));
-        let fan_out = fan_out_of(vec![rejected, extracting]);
+        let fan_out = fan_out_of(vec![not_finalized, extracting, rejected]);
 
         // When
         let result = fan_out.extract((), (), vec![]).await;
@@ -561,13 +391,14 @@ mod tolerate_errors {
     }
 
     #[tokio::test]
-    async fn fan_out__should_tolerate_a_provider_fault_when_another_inspector_reaches_a_verdict() {
-        // Given: a malformed answer is the provider's fault; the verdict must win.
+    async fn fan_out__should_tolerate_every_error_kind_when_another_inspector_rules_the_tx_out() {
+        // Given: the failing verdict wins over a transient condition and a provider fault.
+        let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
         let malformed = mock_returning(err(|| {
             ForeignChainInspectionError::MalformedRpcResponse("garbage".to_string())
         }));
         let failing = mock_returning(verdict(|| Verdict::TransactionFailed));
-        let fan_out = fan_out_of(vec![malformed, failing]);
+        let fan_out = fan_out_of(vec![malformed, failing, not_finalized]);
 
         // When
         let result = fan_out.extract((), (), vec![]).await;

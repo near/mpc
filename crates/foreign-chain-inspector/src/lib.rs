@@ -178,8 +178,6 @@ where
             match result {
                 Ok(verdict) => verdicts.push((provider, verdict)),
                 Err(err) => {
-                    // Unusable data is a louder signal than an outage: the provider is
-                    // misbehaving rather than being down.
                     if err.provider_failure() == Some(ProviderFailure::Malformed) {
                         tracing::error!(
                             %provider,
@@ -310,7 +308,7 @@ pub enum EthereumFinality {
     Latest,
 }
 
-/// A failure to obtain a [`Verdict`]: the provider failed the caller, or the transaction's state
+/// A failure to obtain a [`Verdict`]: the RPC request failed or the transaction's state
 /// has not settled yet.
 #[derive(Error, Debug)]
 pub enum ForeignChainInspectionError {
@@ -354,8 +352,6 @@ pub enum ForeignChainInspectionError {
         receipt_block_hash: HexBytes,
         receipt_block_number: u64,
     },
-    #[error("failed to borsh serialize log event")]
-    EventLogFailedBorshSerialization(std::io::Error),
     #[error("inspector clients returned mismatching extracted values")]
     InspectorResponseMismatch,
 }
@@ -423,7 +419,6 @@ impl ForeignChainInspectionError {
             Self::MalformedRpcResponse(_)
             | Self::InconsistentRpcResponse { .. }
             | Self::LogNotBoundToReceipt { .. }
-            | Self::EventLogFailedBorshSerialization(_)
             | Self::InspectorResponseMismatch => Some(ProviderFailure::Malformed),
             Self::NotFinalized | Self::NotEnoughBlockConfirmations { .. } => None,
         }
