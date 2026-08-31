@@ -25,7 +25,7 @@ use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_mpc_contract_interface::call_args as contract_args;
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Instant};
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -46,17 +46,18 @@ pub struct AttestationSubmitter<T> {
 }
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until
-/// success or until [`ATTESTATION_RESUBMISSION_INTERVAL`] elapses, whichever comes first.
+/// success or until the given deadline, whichever comes first.
 ///
 /// This function repeatedly attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
 /// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
 /// is observed. Returns an error if no attempt succeeds within the retry window.
-pub async fn submit_remote_attestation(
+async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
     pre_submit_expiry: Option<u64>,
+    deadline: Instant,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
         attestation.into_contract_interface_type(),
@@ -106,7 +107,7 @@ pub async fn submit_remote_attestation(
                 "failed to submit attestation"
             );
         })
-        .timeout(ATTESTATION_RESUBMISSION_INTERVAL)
+        .timeout_at(deadline)
         .await
         .context("failed to submit attestation after multiple retry attempts")?
 }
@@ -138,7 +139,7 @@ fn validate_remote_attestation(
 impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
     /// Generates a fresh attestation and submits it to the contract. Failures are logged, never
     /// propagated.
-    async fn generate_and_submit(&self) {
+    async fn generate_and_submit(&self, deadline: Instant) {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
             *self.account_public_key.as_bytes(),
@@ -198,6 +199,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             attestation,
             self.tls_public_key.clone(),
             pre_submit_expiry,
+            deadline,
         )
         .await;
         MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL
@@ -233,8 +235,8 @@ async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     mut interval_ticker: I,
 ) {
     loop {
-        interval_ticker.tick().await;
-        submitter.generate_and_submit().await;
+        let deadline = interval_ticker.tick().await;
+        submitter.generate_and_submit(deadline).await;
     }
 }
 
@@ -244,7 +246,6 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::tick::MockTicker;
     use ed25519_dalek::SigningKey;
-    use mpc_attestation::attestation::MockAttestation;
     use rand::SeedableRng;
     use std::sync::{
         Arc, Mutex,
@@ -356,7 +357,7 @@ mod tests {
         fn spawn_periodic(&self, ticks: usize) -> tokio::task::JoinHandle<()> {
             tokio::spawn(periodic_attestation_submission(
                 self.submitter.clone(),
-                MockTicker::new(ticks),
+                MockTicker::new(ticks).with_period(ATTESTATION_RESUBMISSION_INTERVAL),
             ))
         }
     }
@@ -419,24 +420,17 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
-    async fn submit_remote_attestation__should_stop_retrying_after_one_resubmission_interval() {
+    async fn generate_and_submit__should_stop_retrying_at_the_deadline() {
         // Given
         let setup = test_setup();
         setup.sender().set_failing(true);
-        let started_at = tokio::time::Instant::now();
+        let deadline = Instant::now() + ATTESTATION_RESUBMISSION_INTERVAL;
 
         // When
-        let result = submit_remote_attestation(
-            setup.sender().clone(),
-            Attestation::Mock(MockAttestation::Valid),
-            setup.submitter.tls_public_key.clone(),
-            None,
-        )
-        .await;
+        setup.submitter.generate_and_submit(deadline).await;
 
         // Then
-        result.expect_err("the retry window must elapse");
-        assert_eq!(started_at.elapsed(), ATTESTATION_RESUBMISSION_INTERVAL);
+        assert_eq!(Instant::now(), deadline);
     }
 
     async fn validate_locally_generated_attestation(
