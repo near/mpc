@@ -460,7 +460,7 @@ Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — T
 
 - **Freshness threshold is part of the attested image.** That value is hard-coded in the node binary rather than in operator config. Governance voters approve an image hash that already encodes this policy, so an operator cannot relax freshness without going through image-hash voting.
 
-- **Evaluation data set.** The fetch sends no `update` parameter, so it gets Intel's `standard` TCB evaluation data set, the one the contract judges a submission against. Intel publishes the next set under `update=early`; a node has no reason to submit collateral judged more strictly than the contract requires, so only the [`attestation-cli tcb-status`](../crates/attestation-cli/README.md#tcb-status) diagnostic fetches it, as advance warning that a coming promotion will demote the platform.
+- **Evaluation data set.** The fetch asks for Intel's `standard` TCB evaluation data set, the one the contract judges a submission against. Intel publishes the next set under `update=early`; a node has no reason to submit collateral judged more strictly than the contract requires, so only the [`attestation-cli tcb-status`](../crates/attestation-cli/README.md#tcb-status) diagnostic fetches it, as advance warning that a coming promotion will demote the platform.
 
 For the operator-facing setup details (TOML schema, self-hosted PCCS recipe), see [Customizing PCCS endpoints](running-an-mpc-node-in-tdx-external-guide.md#customizing-pccs-endpoints-optional) and [Appendix: Self-hosting a local PCCS](running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs) in the operator deployment guide.
 
