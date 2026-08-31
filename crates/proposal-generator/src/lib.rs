@@ -16,7 +16,6 @@ pub struct ProposalConfig {
 #[error("chain {chain:?}: {source}")]
 pub struct ConfigError {
     pub chain: ForeignChain,
-    #[source]
     pub source: ChainEntryValidationError,
 }
 
