@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 
 use dcap_qvl::{TcbStatus, policy::PckIdentity, quote::TDReport10};
 
-use crate::tcb_status::{self, Report, TcbVerdict};
+use crate::tcb_status::{self, EarlyDemotion, Report, TcbVerdict};
 use crate::verify::VerificationResult;
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
@@ -111,22 +111,25 @@ pub fn print_tcb_status(report: &Report) {
     // the point of showing three rows.
     let pck = match (&report.served, &report.standard, &report.early) {
         (TcbVerdict::Verified { claims, .. }, _, _)
-        | (_, TcbVerdict::Verified { claims, .. }, _)
-        | (_, _, TcbVerdict::Verified { claims, .. }) => Some(&claims.platform.pck),
+        | (_, Some(TcbVerdict::Verified { claims, .. }), _)
+        | (_, _, Some(TcbVerdict::Verified { claims, .. })) => Some(&claims.platform.pck),
         _ => None,
     };
     print_platform(&report.td_report, pck);
 
     print_verdict("served by the node", &report.served);
-    print_verdict("Intel `standard`", &report.standard);
-    print_verdict("Intel `early`", &report.early);
+    if let Some(standard) = &report.standard {
+        print_verdict("Intel `standard`", standard);
+    }
+    if let Some(early) = &report.early {
+        print_verdict("Intel `early`", early);
+    }
 
-    if let Some((standard_set, early_set)) = report.early_demotion() {
+    if let Some(EarlyDemotion { cleared, demoted }) = report.early_demotion() {
         println!();
         println!(
-            "This platform clears TCB recovery set {standard_set} but not set {early_set}, which \
-             Intel publishes and has yet to promote. The `early` shortfall lines say what to \
-             update before it does."
+            "This platform clears TCB recovery set {cleared} but not set {demoted}, which Intel \
+             publishes and has yet to promote."
         );
     }
 }

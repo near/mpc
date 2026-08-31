@@ -171,6 +171,8 @@ On failure the output includes the error details and ends with `Verdict: FAIL`.
 | 0 | Verification passed |
 | 1 | Verification failed or input error |
 
+`tcb-status` has an exit-code rule of its own, described [below](#tcb-status).
+
 ## Collateral handling
 
 Attestation verification requires DCAP collateral (certificates, CRLs, TCB info) to validate the Intel TDX quote. The CLI uses the collateral **embedded in the node's attestation payload** (the same collateral that was fetched when the node generated its attestation). This is the same approach used by the MPC contract and node.
@@ -195,9 +197,11 @@ The node's quote is evaluated against three sets, and all three are reported:
 
 All three verdicts come from `dcap-qvl`, the same verification the contract runs. Contacting Intel is anonymous: no PCS subscription key and no node credentials.
 
-The exit code follows the `standard` row alone, so a demoted `early` row still exits 0: the platform is accepted until Intel promotes.
+The command exits 0 when the deciding Intel row reads `UpToDate`, and 1 otherwise, including when that row's collateral could not be fetched or did not verify.
 
 It takes the same `--url` / `--file` data source as `verify`. Unlike `verify`, network access is always required: `--file` chooses where the quote comes from, not whether Intel is contacted.
+
+`--evaluation-data-set <standard|early>` evaluates only that set, which then decides the exit code. Left out, both are evaluated and `standard` decides, so a demoted `early` row still exits 0: the platform is accepted until Intel promotes.
 
 `--as-of <unix-timestamp>` evaluates collateral validity at a past instant instead of now. Intel serves only current collateral, so this is for reading a saved quote whose boot-time snapshot has since expired. The Intel rows and the exit code stay present-day verdicts, so neither is meaningful with it set.
 
@@ -231,10 +235,19 @@ Advisory IDs:           INTEL-SA-01379, INTEL-SA-01404, INTEL-SA-01428, INTEL-SA
   SGX TCB component 1 is 4, needs 8 -> update BIOS/microcode
   SGX TCB component 4 is 4, needs 7 -> update BIOS/microcode
 
-This platform clears TCB recovery set 20 but not set 22, which Intel publishes and has yet to promote. The `early` shortfall lines say what to update before it does.
+This platform clears TCB recovery set 20 but not set 22, which Intel publishes and has yet to promote.
 ```
 
-The node above is accepted today and stops being accepted when Intel promotes set 22, with nothing changed on the operator's side. That is the point of the third row: the firmware update it calls for takes planning, and the two rows above it only ever report a demotion that has already happened.
+The node above is accepted today and stops being accepted when Intel promotes set 22, with nothing changed on the operator's side. That is the point of the third row: the firmware update its shortfall lines call for takes planning, and the two rows above it only ever report a demotion that has already happened. [What to do about it](../../docs/tdx-tcb-status.md#when-you-are-about-to-be-out-of-date).
+
+For a scheduled check, evaluate the early set alone, so the demotion that has yet to land is what fails the check:
+
+```bash
+attestation-cli tcb-status --url http://<node-host>:8080/public_data \
+  --evaluation-data-set early
+```
+
+A non-zero exit there means the platform will be demoted at some upcoming promotion, not that it is rejected today.
 
 The served row can also lag the `standard` row by days, or by a whole set. The node itself is not stuck when it does: it re-attests every hour with freshly fetched collateral. What is frozen is `/public_data`, which keeps returning the snapshot built at CVM boot. So a stale served row does not mean the node is submitting stale attestations, and the `standard` row is the one that predicts what the next submission will be judged against.
 

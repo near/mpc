@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use mpc_primitives::hash::NodeImageHash;
 
+use crate::tcb_status::EvaluationDataSet;
+
 #[derive(Parser)]
 #[command(name = "attestation-cli")]
 #[command(about = "Standalone verification tool for MPC node TEE attestations")]
@@ -24,6 +26,11 @@ pub enum Command {
 pub struct TcbStatusArgs {
     #[command(flatten)]
     pub source: Source,
+
+    /// Evaluate only this Intel TCB evaluation data set. Left out, every set is
+    /// evaluated.
+    #[arg(long = "evaluation-data-set", value_name = "SET")]
+    pub evaluation_data_set: Option<EvaluationDataSet>,
 
     /// Evaluate collateral validity as of this UNIX timestamp instead of now.
     /// Intel serves only current collateral, so this makes the served row

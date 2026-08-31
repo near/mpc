@@ -77,8 +77,9 @@ with no need to wait for it to sync. Then:
   against collateral it fetches from Intel as it runs, and `tee_tcb_svn` must
   differ from before, which is what confirms the platform moved and not just the
   collateral. Re-running the step 2 commands says whether the firmware itself
-  changed. Check the `Intel early` row while you are there: an update that
-  clears only the current set leaves you doing this again at the next promotion.
+  changed. Check the `Intel early` row while you are there, or re-run with
+  `--evaluation-data-set early` for a plain pass or fail: an update that clears
+  only the current set leaves you doing this again at the next promotion.
 - Within the hour, `get_attestation` should show `expiry_timestamp_seconds` about
   7 days out, meaning the contract accepted a submission.
 
