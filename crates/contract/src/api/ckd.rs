@@ -2,17 +2,16 @@
 
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState, TeeError};
-use crate::primitives::ckd::{CKDRequest, app_public_key_check, ckd_output_check};
+use crate::primitives::ckd::{app_public_key_check, ckd_output_check};
 use crate::primitives::signature::YieldIndex;
 use crate::{MpcContract, MpcContractExt, pending_requests};
-use dtos::{DomainId, DomainPurpose};
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{self as dtos, CKDRequestArgs, CKDResponse};
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
 
 #[near]
 impl MpcContract {
-    fn add_ckd_request(&mut self, request: CKDRequest, data_id: CryptoHash) {
+    fn add_ckd_request(&mut self, request: dtos::CKDRequest, data_id: CryptoHash) {
         pending_requests::push_pending_yield(&mut self.pending_ckd_requests, request, data_id);
     }
 
@@ -25,17 +24,17 @@ impl MpcContract {
     /// where the derived key is intentionally public (no encryption).
     #[handle_result]
     #[payable]
-    pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
+    pub fn request_app_private_key(&mut self, request: dtos::CKDRequestArgs) {
         log!(
             "request_app_private_key: predecessor={:?}, request={:?}",
             env::predecessor_account_id(),
             request
         );
 
-        let domain_id: DomainId = request.domain_id;
+        let domain_id = request.domain_id;
         let (_, predecessor) = self.check_request_preconditions(
             domain_id,
-            DomainPurpose::CKD,
+            dtos::DomainPurpose::CKD,
             Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas),
             MINIMUM_CKD_REQUEST_DEPOSIT,
         );
@@ -49,7 +48,7 @@ impl MpcContract {
             }
         }
 
-        let request = CKDRequest::new(
+        let request = dtos::CKDRequest::new(
             request.app_public_key,
             domain_id,
             &predecessor,
@@ -71,7 +70,11 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
+    pub fn respond_ckd(
+        &mut self,
+        request: dtos::CKDRequest,
+        response: dtos::CKDResponse,
+    ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
@@ -112,7 +115,7 @@ impl MpcContract {
     /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
     /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
     /// `Some`/`None` distinction is meaningful.
-    pub fn get_pending_ckd_request(&self, request: &CKDRequest) -> Option<YieldIndex> {
+    pub fn get_pending_ckd_request(&self, request: &dtos::CKDRequest) -> Option<YieldIndex> {
         self.pending_ckd_requests
             .get(request)
             .and_then(|q| q.first().cloned())
@@ -129,9 +132,9 @@ impl MpcContract {
     #[private]
     pub fn return_ck_and_clean_state_on_success(
         &mut self,
-        request: CKDRequest,
-        #[callback_result] ck: Result<CKDResponse, PromiseError>,
-    ) -> PromiseOrValue<CKDResponse> {
+        request: dtos::CKDRequest,
+        #[callback_result] ck: Result<dtos::CKDResponse, PromiseError>,
+    ) -> PromiseOrValue<dtos::CKDResponse> {
         match ck {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
@@ -166,7 +169,10 @@ mod tests {
     };
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
     use crate::state::ProtocolContractState;
-    use dtos::{Attestation, Curve, MockAttestation, Protocol};
+    use dtos::{
+        Attestation, CKDRequest, CKDRequestArgs, CKDResponse, Curve, DomainPurpose,
+        MockAttestation, Protocol,
+    };
     use elliptic_curve::{Field as _, Group};
     use k256::{self, elliptic_curve};
     use near_mpc_contract_interface::types::CKDAppPublicKey;

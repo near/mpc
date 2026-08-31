@@ -90,6 +90,8 @@ struct ProviderEntry {
     // Provider's stable base. When `chain_routing == Embedded`, the chain identifier is
     // already encoded in `base_url` (subdomain or path prefix). Otherwise `base_url` is
     // chain-agnostic and `chain_routing` carries the chain marker.
+    // A single `{}` stands for one operator-chosen host label (QuickNode-style
+    // per-operator slugs, e.g. `https://{}.sui-testnet.quiknode.pro`).
     base_url: String,
     auth_scheme: AuthScheme,   // Header / Path / Query / None — where the operator's token gets injected
     chain_routing: ChainRouting, // Embedded / PathSegment / QueryParam — exactly one
@@ -106,7 +108,7 @@ struct ChainVote {
 This shape differs from earlier sketches of this design in two important ways:
 
 - **Per-chain keying**, not a global `BTreeSet<RpcProvider>` + URL prefix match. A provider voted in for `Ethereum` is structurally invisible when the node loads its `Polygon` section, so cross-chain confusion (e.g. an Ethereum-mainnet URL accidentally accepted under a testnet bucket) is impossible at lookup time.
-- **Connection config on chain.** `base_url`, `auth_scheme`, and `chain_routing` live in the whitelist entry instead of being supplied by the operator. The operator only picks `provider_id` and supplies the API token via env. This removes the operator's syntactic surface to inject extra path/query components that could redirect the call.
+- **Connection config on chain.** `base_url`, `auth_scheme`, and `chain_routing` live in the whitelist entry instead of being supplied by the operator. The operator only picks `provider_id` and supplies the API token via env. This removes the operator's syntactic surface to inject extra path/query components that could redirect the call. For providers that embed a per-operator slug in the hostname, the voted `base_url` carries a `{}` in the slug's place: the operator chooses that one host label, and every other label stays pinned by the vote.
 
 ### Nodes checking if local configuration is valid
 
@@ -114,7 +116,7 @@ On startup, the node validates that every `provider_id` it references in its loc
 
 Drop-and-log rather than hard-crash so that a single hostile vote-removal participant can't take a node offline by removing a provider that node depends on — operators see the dropped providers in logs/alerts and react.
 
-Since the nodes are running in a Trusted Execution Environment (TEE), this functionality lets the node guard against operators that might otherwise point the binary at a malicious RPC URL. The full URL is assembled from on-chain `base_url` + `chain_routing` + operator-supplied token via `auth_scheme`, so the operator never writes a URL directly.
+Since the nodes are running in a Trusted Execution Environment (TEE), this functionality lets the node guard against operators that might otherwise point the binary at a malicious RPC URL. The full URL is assembled from on-chain `base_url` + `chain_routing` + operator-supplied token via `auth_scheme`, so the operator never writes a URL directly — for `{}` bases, the operator's slug fills exactly one host label under the domain suffix the vote pinned.
 
 ### Individual node quorum of RPC providers for verification requests
 

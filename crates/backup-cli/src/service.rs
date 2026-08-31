@@ -418,7 +418,7 @@ mod tests {
             .expect("the service should read local storage on startup")
     }
 
-    async fn must_back_up_if_needed(
+    async fn back_up_if_needed(
         service: &mut TestService,
         state: &ProtocolContractState,
     ) -> BackupOutcome {
@@ -434,7 +434,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -456,7 +456,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(6)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(6)).await;
 
         // Then
         assert_eq!(
@@ -477,7 +477,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -498,7 +498,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -518,7 +518,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -537,7 +537,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &resharing_state()).await;
+        let outcome = back_up_if_needed(&mut service, &resharing_state()).await;
 
         // Then
         assert_eq!(
@@ -565,7 +565,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), FakeKeyshareStorage::empty()).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &contract_state).await;
+        let outcome = back_up_if_needed(&mut service, &contract_state).await;
 
         // Then
         assert_eq!(
@@ -602,7 +602,7 @@ mod tests {
         .await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(
@@ -623,7 +623,7 @@ mod tests {
         let mut service = service(FakeP2PClient::new(), storage).await;
 
         // When
-        let outcome = must_back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
+        let outcome = back_up_if_needed(&mut service, &running_state_with_epoch(5)).await;
 
         // Then
         assert_eq!(

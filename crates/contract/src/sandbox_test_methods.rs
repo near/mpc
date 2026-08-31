@@ -9,8 +9,8 @@
 //! costs of internal operations; the methods here are behavioral introspection hooks.
 
 use crate::MpcContract;
-use crate::primitives::ckd::CKDRequest;
 use crate::primitives::signature::SignatureRequest;
+use near_mpc_contract_interface::types::CKDRequest;
 use near_sdk::near;
 
 // Import the generated extension trait from near

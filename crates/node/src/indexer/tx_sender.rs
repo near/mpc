@@ -3,6 +3,9 @@ use super::IndexerState;
 use super::tx_signer::{TransactionSigner, TransactionSigners};
 use crate::config::RespondConfig;
 use crate::metrics;
+use crate::tee::attestation_freshness_metrics::{
+    record_attestation_landed, record_stored_attestation_expiry,
+};
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
     SubmittedTxMetadata,
@@ -284,6 +287,8 @@ async fn observe_tx_result(
                 .get_participant_attestation(&indexer_state.mpc_contract_id, &args.tls_public_key)
                 .await?;
 
+            record_stored_attestation_expiry(stored_attestation.as_ref());
+
             let Some(stored_attestation) = stored_attestation else {
                 tracing::debug!(
                     "no attestation stored on chain for our key; submission not yet landed"
@@ -306,6 +311,7 @@ async fn observe_tx_result(
             );
 
             Ok(if attestation_landed {
+                record_attestation_landed(&Clock::real());
                 TransactionStatus::Executed
             } else {
                 TransactionStatus::NotExecuted

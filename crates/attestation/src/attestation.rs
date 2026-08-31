@@ -270,15 +270,15 @@ impl DstackAttestation {
         Ok(report.advisory_ids.clone())
     }
 
-    /// Verifies report data matches expected values.
+    /// Verifies the quote's report data matches `expected`.
+    ///
+    /// Matching the full blob proves the caller's expected report data was bound into the quote
+    /// by an app running inside a TDX enclave. Its layout is the caller's concern.
     fn verify_report_data(
         &self,
         expected: &ReportData,
         actual: &TDReport10,
     ) -> Result<(), VerificationError> {
-        // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
-        // proves that tls_public_key was included in the quote's report_data by an app running
-        // inside a TDX enclave.
         compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
     }
 

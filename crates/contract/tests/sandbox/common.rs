@@ -8,7 +8,7 @@ use crate::sandbox::utils::{
     },
     shared_key_utils::{DomainKey, make_key_for_domain},
     sign_utils::{PendingSignRequest, make_and_submit_requests},
-    transactions::CallMpcContract,
+    transactions::{CallMpcContract, execute_async_handle_calls},
 };
 use digest::Digest;
 use dtos::ProtocolContractState;
@@ -16,7 +16,7 @@ use k256::ecdsa::SigningKey;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::{AttemptId, EpochId},
         participants::{ParticipantInfo, Participants},
         test_utils::{bogus_ed25519_public_key, infer_purpose_from_protocol},
         thresholds::{
@@ -27,13 +27,14 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use near_account_id::AccountId;
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
     ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, SupportedForeignChains, SvmAddress, SvmExtractedValue, SvmExtractor,
-    SvmFinality, SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody,
-    TonExtractedValue, TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId,
+    SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
+    SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
+    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, UpdateId,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -146,7 +147,7 @@ pub async fn init_contract_running(
     contract: &Contract,
     domains: Vec<DomainConfig>,
     next_domain_id: u64,
-    keyset: Keyset,
+    keyset: dtos::Keyset,
     params: GovernanceThresholdParameters,
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
@@ -262,7 +263,7 @@ impl SandboxTestSetupBuilder {
                 }
                 _ => ReconstructionThreshold::new(cluster_threshold),
             };
-            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let key: PublicKeyExtended = pk.clone().try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 protocol: *protocol,
@@ -272,13 +273,13 @@ impl SandboxTestSetupBuilder {
             keys.push(DomainKey {
                 domain_config: config.clone(),
                 domain_secret_key: sk,
-                domain_public_key: key.clone(),
+                domain_public_key: key,
             });
             domain_configs.push(config);
-            key_for_domains.push(KeyForDomain {
+            key_for_domains.push(dtos::KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
-                key,
+                key: pk.into(),
             });
         }
 
@@ -287,7 +288,7 @@ impl SandboxTestSetupBuilder {
             let (pk, sk) = make_key_for_domain(Curve::Secp256k1);
             let domain_id = DomainId(domain_configs.len() as u64);
 
-            let key: PublicKeyExtended = pk.try_into().unwrap();
+            let key: PublicKeyExtended = pk.clone().try_into().unwrap();
             let config = DomainConfig {
                 id: domain_id,
                 protocol: Protocol::CaitSith,
@@ -297,19 +298,19 @@ impl SandboxTestSetupBuilder {
             keys.push(DomainKey {
                 domain_config: config.clone(),
                 domain_secret_key: sk,
-                domain_public_key: key.clone(),
+                domain_public_key: key,
             });
             domain_configs.push(config);
-            key_for_domains.push(KeyForDomain {
+            key_for_domains.push(dtos::KeyForDomain {
                 attempt: AttemptId::new(),
                 domain_id,
-                key,
+                key: pk.into(),
             });
         }
 
         if !domain_configs.is_empty() {
             let next_domain_id = domain_configs.len() as u64;
-            let keyset = Keyset::new(EpochId::new(5), key_for_domains);
+            let keyset = dtos::Keyset::new(EpochId::new(5), key_for_domains);
             init_contract_running(
                 &contract,
                 domain_configs,
@@ -364,7 +365,7 @@ pub async fn propose_and_vote_contract_binary(
         "propose update call failed"
     );
 
-    let proposal_id: u64 = propose_update_execution.json().unwrap();
+    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
 
     // Try calling into state and see if it works.
     let state_request_execution = accounts[0]
@@ -390,7 +391,7 @@ pub async fn propose_and_vote_contract_binary(
 pub async fn vote_update_till_completion(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: u64,
+    proposal_id: UpdateId,
 ) {
     for voter in accounts {
         let execution = voter
@@ -662,26 +663,37 @@ fn hash(code: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// registers a foreign chain configuration so the foreign chains are supported
-pub async fn register_foreign_chain_configuration(
-    chain: near_mpc_contract_interface::types::ForeignChain,
+/// Whitelists `chain` and registers it as covered by every node, making it available.
+pub async fn make_foreign_chain_available(
+    chain: dtos::ForeignChain,
     contract: &Contract,
     accounts: &[Account],
 ) {
-    let node_foreign_chain_support = SupportedForeignChains::from(BTreeSet::from([chain]));
-    for account in accounts {
-        let result = account
-            .call_mpc(contract.id())
-            .register_foreign_chain_support(node_foreign_chain_support.clone())
-            .await
-            .unwrap()
-            .into_result();
-        assert!(
-            result.is_ok(),
-            "{} should succeed",
-            method_names::REGISTER_FOREIGN_CHAIN_SUPPORT
-        );
-    }
+    let batch = NonEmptyBTreeMap::new(chain, test_utils::contract_types::dummy_chain_entry());
+    let threshold = assert_running_return_threshold(contract).await.0 as usize;
+    assert!(
+        accounts.len() >= threshold,
+        "need at least {threshold} accounts to whitelist a chain, got {}",
+        accounts.len()
+    );
+    execute_async_handle_calls(&accounts[..threshold], contract, |handle| {
+        let batch = batch.clone();
+        async move { handle.vote_update_foreign_chain_providers(batch).await }
+    })
+    .await
+    .expect("whitelist vote should succeed");
+
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let foreign_chains_config: dtos::ForeignChainsConfig = BTreeSet::from([chain]).into();
+        let foreign_chains_config = foreign_chains_config.clone();
+        async move {
+            handle
+                .register_foreign_chains_config(foreign_chains_config)
+                .await
+        }
+    })
+    .await
+    .expect("foreign chains config registration should succeed");
 }
 
 /// Poll the contract until a pending foreign-tx request appears (or panic after timeout).

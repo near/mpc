@@ -74,10 +74,7 @@ pub struct EcdsaKeyshare<P> {
 }
 
 // Manual `Clone` so callers don't need `P: Clone` — every field is `Clone` regardless of `P`.
-impl<P> Clone for EcdsaKeyshare<P>
-where
-    P: Serialize + DeserializeOwned + Send + 'static,
-{
+impl<P> Clone for EcdsaKeyshare<P> {
     fn clone(&self) -> Self {
         Self {
             keygen_output: self.keygen_output.clone(),
@@ -128,10 +125,7 @@ where
 pub fn lookup_keyshare<P>(
     keyshares: &HashMap<DomainId, EcdsaKeyshare<P>>,
     domain_id: DomainId,
-) -> anyhow::Result<EcdsaKeyshare<P>>
-where
-    P: Serialize + DeserializeOwned + Send + 'static,
-{
+) -> anyhow::Result<EcdsaKeyshare<P>> {
     keyshares
         .get(&domain_id)
         .cloned()

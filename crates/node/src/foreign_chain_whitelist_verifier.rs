@@ -187,8 +187,9 @@ fn compare_provider(
 /// Path-boundary-aware prefix check. `https://api.example.com/v2` matches `/v2`,
 /// `/v2/eth`, `/v2?key=x`, `/v2#frag` — but not `/v2-evil`.
 ///
-/// A `{}` in `base` matches one run of `[A-Za-z0-9-]` — a single host label in the bases we
-/// use, where a provider puts a per-operator slug in the hostname (e.g. Quicknode).
+/// The first `{}` in `base` matches one non-empty run of `[A-Za-z0-9-]` — a single host
+/// label in the bases we use, where a provider puts a per-operator slug in the hostname
+/// (e.g. QuickNode's `https://{}.sui-testnet.quiknode.pro`).
 fn base_url_matches(local: &str, base: &str) -> bool {
     let l = local.trim_end_matches('/');
     let b = base.trim_end_matches('/');
@@ -1093,7 +1094,6 @@ mod tests {
             "https://evil.com?x=.abstract-testnet.quiknode.pro",
             WILDCARD
         ));
-        // An empty label, and a suffix that is not where the host ends.
         assert!(!base_url_matches(
             "https://.abstract-testnet.quiknode.pro/",
             WILDCARD
@@ -1104,6 +1104,11 @@ mod tests {
         ));
         assert!(!base_url_matches(
             "https://acme7.abstract-testnet.quiknode.proevil/",
+            WILDCARD
+        ));
+        // Userinfo trick: the whole whitelisted host as `user@` of an attacker host.
+        assert!(!base_url_matches(
+            "https://acme7.abstract-testnet.quiknode.pro@evil.com/",
             WILDCARD
         ));
     }

@@ -1389,6 +1389,30 @@ pub enum ForeignChain {
     Fogo,
 }
 
+impl ForeignChain {
+    /// The chain's key in an operator's `foreign_chains` config, also used as its metric label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Solana => "solana",
+            Self::Bitcoin => "bitcoin",
+            Self::Ethereum => "ethereum",
+            Self::Base => "base",
+            Self::Bnb => "bnb",
+            Self::Arbitrum => "arbitrum",
+            Self::Abstract => "abstract",
+            Self::Starknet => "starknet",
+            Self::Polygon => "polygon",
+            Self::HyperEvm => "hyper_evm",
+            Self::Ton => "ton",
+            Self::Aptos => "aptos",
+            Self::Sui => "sui",
+            Self::Avalanche => "avalanche",
+            Self::Adi => "adi",
+            Self::Fogo => "fogo",
+        }
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -1922,6 +1946,10 @@ pub struct ProviderConfig {
     /// Provider's stable base. When `chain_routing == Embedded`, the chain identifier
     /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
     /// is chain-agnostic and `chain_routing` carries the chain marker.
+    ///
+    /// A single `{}` allows per-operator slug (e.g. QuickNode's
+    /// `https://{}.sui-testnet.quiknode.pro`); nodes match it against exactly one
+    /// label of the local URL, keeping the rest of the host pinned.
     pub base_url: String,
     pub auth_scheme: AuthScheme,
     pub chain_routing: ChainRouting,

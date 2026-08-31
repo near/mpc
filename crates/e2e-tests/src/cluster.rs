@@ -19,7 +19,7 @@ use near_mpc_contract_interface::{
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -896,7 +896,7 @@ impl MpcCluster {
             .await
             .context("failed to register backup service")
     }
-    /// View the foreign chains the contract accepts requests for.
+    /// View the legacy supported-chains set; requests are gated on the available set instead.
     pub async fn view_foreign_chains_supported_by_contract(
         &self,
     ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
@@ -914,8 +914,8 @@ impl MpcCluster {
             .await
     }
 
-    /// Register foreign chain support on the contract for a specific node.
-    pub async fn register_foreign_chain_config(
+    /// Registers on the legacy supported-chains pipeline, which no longer gates requests.
+    pub async fn register_legacy_foreign_chain_support(
         &self,
         node_index: usize,
         foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
@@ -1091,7 +1091,7 @@ impl MpcCluster {
             "propose_update failed: {:?}",
             outcome.failure_message()
         );
-        let proposal_id: u64 = outcome
+        let proposal_id: UpdateId = outcome
             .json()
             .context("propose_update did not return a JSON update id")?;
 

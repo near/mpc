@@ -9,6 +9,7 @@ cargo-near-build = { workspace = true }
 hex = { workspace = true }
 mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
 mpc-primitives = { workspace = true }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
 serde_json = { workspace = true }

@@ -338,15 +338,16 @@ back here rather than redefining them.
 - **Whitelisted chain** — a chain the network has voted into the on-chain RPC whitelist
   (`foreign_chain_rpc_whitelist`): there is a `ChainEntry` for it (trusted provider list + RPC
   quorum). The policy set every node is expected to cover; **no single operator can add or remove a
-  chain — only a threshold vote can**. Returned by `get_whitelisted_foreign_chains()`. See
+  chain — only a threshold vote can**. Keys of `allowed_foreign_chain_providers()`. See
   [On-chain RPC Provider Whitelist](#on-chain-rpc-provider-whitelist).
 - **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of a node's configured
   providers must return the same response for that node to accept a verification result
   (`ChainEntry.quorum`), voted in alongside the provider list. A runtime knob; distinct from the
   *signing threshold*.
 - **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
-  domain (`self.threshold()`): how many participants must produce signature shares to sign an
-  observation. Distinct from the RPC quorum.
+  domain (`DomainConfig.reconstruction_threshold`; the max across `ForeignTx` domains if there are
+  several): how many participants must produce signature shares to sign an observation. Distinct
+  from the RPC quorum and from the governance threshold (`self.threshold()`) used for votes.
 - **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
   of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
   on-chain via `register_available_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this
@@ -362,7 +363,7 @@ back here rather than redefining them.
 
 ## Contract State (Foreign Chain Configurations)
 
-The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed by `get_whitelisted_foreign_chains()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
+The **whitelisted** set is derived from the **on-chain RPC whitelist** (`foreign_chain_rpc_whitelist`): a chain is whitelisted iff the network has voted in a `ChainEntry` for it, exposed as the keys of `allowed_foreign_chain_providers()`. The **available** set — the chains ≥ signing threshold active nodes currently cover — is computed from the per-participant registrations and exposed by `get_available_foreign_chains()`; `verify_foreign_transaction` gates on it. The per-participant registration also drives alerting (detecting an active node that does not cover a whitelisted chain). See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 
 ```rust
 pub struct ForeignChainSupportByNode {
@@ -387,7 +388,7 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_available_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method (formerly `register_foreign_chain_config`; old name kept as a deprecated wrapper). The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `get_whitelisted_foreign_chains() -> WhitelistedForeignChains` — view method. Returns the chains present in the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`). (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
+* `allowed_foreign_chain_providers() -> BTreeMap<ForeignChain, ChainEntry>` — Borsh-encoded view method. Returns the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`); its keys are the whitelisted chains. (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
 * `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
 * `get_available_foreign_chain_by_node() -> ForeignChainSupportByNode` — view method (formerly `get_foreign_chain_support_by_node`; old name kept as a deprecated wrapper). Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
@@ -406,10 +407,10 @@ The per-participant registration model above leaves the network with no shared n
 | Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)` — each `ChainVote` is a full per-chain snapshot (provider list + RPC response quorum). The chain's stored state is replaced when the protocol's signing threshold of participants holds the same canonical proposal.                                                            |
 | Where the RPC URL lives                | Operator's `foreign_chains.yaml`, as a full string with auth placeholders                   | Contract `ProviderEntry`: `base_url` + `auth_scheme` + `chain_routing` enum (`Embedded` / `PathSegment` / `QueryParam` — exactly one). Node assembles the final URL at startup.                  |
 | Where the operator's API key lives     | Operator's yaml, via `TokenConfig::env`                                                     | Operator's yaml, via `TokenConfig::env` *(unchanged)*                                                                                                                                          |
-| What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference                                                                                                                                                        |
+| What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference. When the voted `base_url` carries a `{}`, it is meant for operator specific slug                                                              |
 | Adding a new provider                  | Every operator updates their yaml; the network effectively supports a chain once enough do  | Threshold of participants vote in `(chain, ProviderEntry)`; operators reference it by `provider_id` only                                                                                       |
 | Removing a compromised provider        | Every operator manually edits their yaml; coordination problem                              | Threshold of participants vote remove; nodes pick up the change via the indexer and drop the provider on next reconfigure                                                                       |
-| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a startup *network fingerprint probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_network_fingerprint` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
+| Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a recurring *network fingerprint probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_network_fingerprint` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
 
 ### Whitelist storage shape
 
@@ -474,7 +475,7 @@ pub struct ForeignChainRpcWhitelist {
 
 ### Example URL assembly
 
-The node assembles the final URL deterministically: start from `base_url`, apply `chain_routing` (no-op for `Embedded`, append segment for `PathSegment`, merge param for `QueryParam`), then apply `auth_scheme` to inject the token.
+The node assembles the final URL deterministically: start from `base_url`, fill a `{}` (if present) with the operator-specific host label (`SLUG` in the table below), apply `chain_routing` (no-op for `Embedded`, append segment for `PathSegment`, merge param for `QueryParam`), then apply `auth_scheme` to inject the token.
 
 | Vote                  | base_url                                | chain_routing                                  | auth_scheme       | Assembled URL                                              |
 |-----------------------|------------------------------------------|------------------------------------------------|-------------------|------------------------------------------------------------|
@@ -483,6 +484,7 @@ The node assembles the final URL deterministically: start from `base_url`, apply
 | `(Sepolia, ankr)`     | `https://rpc.ankr.com`                   | `PathSegment { segment: "eth_sepolia" }`       | `Path("")`        | `https://rpc.ankr.com/eth_sepolia/TOKEN`                   |
 | `(Ethereum, drpc)`    | `https://lb.drpc.org/ogrpc`              | `QueryParam { name: "network", value: "ethereum" }` | `Query("dkey")` | `https://lb.drpc.org/ogrpc?network=ethereum&dkey=TOKEN`  |
 | `(Ethereum, infura)`  | `https://mainnet.infura.io/v3/`          | `Embedded`                                     | `Path("")`        | `https://mainnet.infura.io/v3/TOKEN`                       |
+| `(Sui, quicknode)`    | `https://{}.sui-mainnet.quiknode.pro`    | `Embedded`                                     | `Path("")`        | `https://SLUG.sui-mainnet.quiknode.pro/TOKEN`              |
 
 ### Vote semantics
 
@@ -530,7 +532,7 @@ Providers use three mutually-exclusive conventions to identify which chain a req
 - **Path segment** (Ankr): `https://rpc.ankr.com/eth/…`
 - **Query param** (dRPC): `https://lb.drpc.org/ogrpc?network=ethereum&…`
 
-If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value*; they have no way to inject extra path components or query keys.
+If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value* — plus, for providers with per-operator hostnames, the one host label a `{}` in the voted `base_url` stands for; they have no way to inject extra path components or query keys.
 
 #### Why each `(chain, provider_id)` gets its own `ProviderEntry`
 
@@ -565,7 +567,9 @@ Voting uses the protocol's existing signing threshold (`self.threshold()?.value(
 
 The per-chain map key prevents *lookup* confusion: when the node resolves the operator's `ethereum:` section, only `entries[Ethereum]` is consulted, never `entries[Sepolia]`. What it doesn't prevent is a `ChainVote { chain: Ethereum, providers: [ProviderEntry { provider_id: "ankr", chain_routing: PathSegment { segment: "eth_sepolia" }, … }, …], threshold: _ }` getting voted in — the contract just stores what threshold consensus produces; it can't tell whether `"eth_sepolia"` actually corresponds to Ethereum mainnet. Threshold voter review is the first line of defense; the fan-out across a chain's providers is the structural one. The network fingerprint probe is a per-node diagnostic on top of both.
 
-Once wired into node startup, each resolved provider gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a boot-time network blip should not take a chain out of signing.
+At startup and every hour after that, every provider of a chain the node can identify gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a network blip should not take a chain out of signing. It runs detached, so it never delays startup. Repeating it turns a single snapshot taken at boot into a signal that also catches a provider that starts serving another network, or goes down, while the node is up. A node with no foreign chain configured at all is warned once at startup instead, because it cannot verify foreign-chain transactions.
+
+The result of each round is a line per provider, an `x/y providers healthy` summary counting only the providers a probe covers, and two gauges labelled by chain, which carry the verdicts of the round that ran last: `mpc_foreign_chain_rpc_providers_configured` and `mpc_foreign_chain_rpc_providers_healthy`. The gauges are per chain rather than per provider, because a provider name is operator chosen and would put an unbounded label on a time series. A chain whose providers cannot be identified, such as Solana, is left out of both the summary and the gauges: reporting `0` healthy against its configured count would read as every provider failing.
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
@@ -581,7 +585,7 @@ Every chain with an inspector is probed, each by the RPC below. `solana` has non
 
 The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing, and Sui's base58 digest has a single spelling with nothing to normalize.
 
-An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into logs and metric labels.
+An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into the logs.
 
 #### Why drop-and-log on local-config mismatch, not hard-crash
 
@@ -590,7 +594,7 @@ If an operator's `foreign_chains.yaml` references a `provider_id` not on the whi
 ### Out of scope / deferred
 
 - **Per-chain quorum policy** (`RpcPolicy.quorum_threshold` from the precursor design doc). This is the number of providers a node must independently agree with on a verification result — distinct from the per-chain voting threshold for add/remove. A follow-up under the same milestone.
-- **Hostname templating** for Alchemy / Infura. Chain identity for subdomain-encoded providers stays inside `base_url` rather than being structurally extracted; symmetric extraction was rejected as over-engineering with no concrete attack benefit.
+- **Chain-identity hostname templating** for Alchemy / Infura. Chain identity for subdomain-encoded providers stays inside `base_url` rather than being structurally extracted; symmetric extraction was rejected as over-engineering with no concrete attack benefit. This is distinct from the supported `{}` wildcard, which stands for an operator-chosen slug and carries no chain identity.
 - **Moving `sample_tx_id` on chain.** Stays in operator config for now; promoting it (so the whole network probes the same tx) is a candidate follow-up if operators start disagreeing on which tx to probe.
 - **Adding testnet `ForeignChain` variants** (`Sepolia`, `Goerli`, `Holesky`). The whitelist design doesn't need them and doesn't prevent them.
 
@@ -649,7 +653,7 @@ See "Contract State (Foreign Chain Configurations)" above.
 * Node config contains chain RPC providers and timeouts (API keys stay local).
 * On startup, each node submits a single `register_available_foreign_chain_config` transaction derived from its local configuration. The call is idempotent.
 * Nodes do **not** vote, poll, or wait for network-wide consensus — the transaction is sent and startup continues.
-* `get_whitelisted_foreign_chains()` returns the on-chain RPC whitelist's chains, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
+* `allowed_foreign_chain_providers()` returns the on-chain RPC whitelist, not these registrations: a chain is *whitelisted* once the network votes in a `ChainEntry`, and no single node can change it. It is *available* — actually served — only while ≥ signing threshold active nodes cover it (`get_available_foreign_chains()`); `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. See [Calculating the whitelisted and available foreign-chain sets](design/calculating-supported-foreign-chains.md).
 * `get_available_foreign_chain_by_node()` exposes per-participant registrations, which feed the availability check and the coverage alerting.
 
 ### Configuration (Node)
@@ -742,9 +746,9 @@ each value must match the network of the `rpc_url` beside it. The value is alway
 including the fingerprints that look numeric.
 
 Every chain with an inspector is probed, and for those, leaving the field unset is not a silent
-skip: every provider of the chain is reported as `MissingExpectedFingerprint`, because silence reads
-as healthy on a dashboard. `solana` reports `ProbeNotImplemented` whether the field is
-set or not.
+skip: every provider of the chain is reported as `MissingExpectedFingerprint` and counts against the
+chain's healthy total, because silence reads as healthy on a dashboard. `solana` has no inspector, so
+its providers are never asked and no health is reported for it, whether the field is set or not.
 
 ## Risks
 

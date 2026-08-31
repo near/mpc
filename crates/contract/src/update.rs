@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::{
+    config::Config,
     dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
     primitives::participants::Participants,
@@ -23,7 +24,6 @@ use near_sdk::{
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
 #[derive(
@@ -71,9 +71,9 @@ impl From<u64> for UpdateId {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub enum Update {
+pub(crate) enum Update {
     Contract(Vec<u8>),
-    Config(near_mpc_contract_interface::types::Config),
+    Config(Config),
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -83,13 +83,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
         let ProposeUpdateArgs { code, config } = value;
         let update = match (code, config) {
             (Some(contract), None) => Update::Contract(contract),
-            (None, Some(config)) => {
-                // Reject unusable configs at proposal time: `update_config` runs in its own
-                // receipt, so a validation failure at apply time cannot roll back `do_update`
-                // (which has already cleared the pending proposals in the caller's receipt).
-                let _: crate::config::Config = config.clone().try_into()?;
-                Update::Config(config)
-            }
+            (None, Some(config)) => Update::Config(config.try_into()?),
             (Some(_), Some(_)) => {
                 return Err(ConversionError::DataConversion {
                     reason: "Code and config updates are not allowed at the same time".into(),
@@ -134,7 +128,7 @@ pub(super) struct UpdateVotes {
 
 #[near(serializers=[borsh ])]
 #[derive(Debug)]
-pub struct ProposedUpdates {
+pub(crate) struct ProposedUpdates {
     pub(super) vote_by_participant: IterableMap<AccountId, UpdateId>,
     pub(super) entries: IterableMap<UpdateId, UpdateEntry>,
     pub(super) id: UpdateId,
@@ -211,9 +205,10 @@ impl ProposedUpdates {
                 // the value `contract_upgrade_deposit_tera_gas` from the config
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+                let dto_config = config.into_dto_type();
                 promise = promise.function_call(
                     method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&config,)).unwrap(),
+                    serde_json::to_vec(&(&dto_config,)).unwrap(),
                     NearToken::from_near(0),
                     new_config_gas_value,
                 );
@@ -272,22 +267,22 @@ impl ProposedUpdates {
 }
 
 fn bytes_used(update: &Update) -> u128 {
-    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+    let mut n_bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
 
     // Assume a high max of 128 participant votes per update entry.
-    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+    n_bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
 
     match update {
         Update::Contract(code) => {
-            bytes_used += code.len() as u128;
+            n_bytes_used += code.len() as u128;
         }
         Update::Config(config) => {
             let bytes = serde_json::to_vec(&config).unwrap();
-            bytes_used += bytes.len() as u128;
+            n_bytes_used += bytes.len() as u128;
         }
     }
 
-    bytes_used
+    n_bytes_used
 }
 
 #[cfg(test)]
@@ -571,7 +566,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(dummy_config(1));
+        let update_2 = Update::Config(dummy_config(1).try_into().unwrap());
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -665,7 +660,7 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(dummy_config(2));
+        let update_2 = Update::Config(dummy_config(2).try_into().unwrap());
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);
 
