@@ -60,8 +60,6 @@ pub(crate) struct ForeignChainInspectors<Client> {
 pub(crate) struct ProviderCallMetrics;
 
 impl ProviderCallMetrics {
-    /// Creates a provider's series up front, so an idle node reports zero rather than nothing at
-    /// all and every configured provider is visible before its first request.
     fn declare(chain: &str, provider: &ProviderId) {
         metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
             .with_label_values(&[chain, &provider.0]);
