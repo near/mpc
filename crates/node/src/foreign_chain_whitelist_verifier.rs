@@ -205,6 +205,7 @@ fn base_url_matches(local: &str, base: &str) -> bool {
     let label_len = rest
         .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
         .unwrap_or(rest.len());
+    let (_, rest) = rest.split_at(label_len);
     label_len > 0 && starts_with_at_boundary(&rest[label_len..], suffix)
 }
 
