@@ -178,8 +178,6 @@ fn ensure_digest_matches(
 }
 
 impl SuiExtractor {
-    /// The extracted value, or [`None`] when the transaction has no event at the requested
-    /// index — a [`Verdict::LogIndexOutOfBounds`] verdict, which is the caller's to return.
     fn extract_value(
         &self,
         tx: &ExecutedTransaction,

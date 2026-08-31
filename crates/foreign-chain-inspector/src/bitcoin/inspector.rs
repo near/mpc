@@ -87,11 +87,19 @@ where
             });
         }
 
-        if let Some(non_canonical) = self
-            .non_canonical_block_verdict(rpc_response.blockhash)
-            .await?
-        {
-            return Ok(non_canonical);
+        let (block_height, canonical_blockhash) = self
+            .canonical_blockhash_at_height_of(rpc_response.blockhash)
+            .await?;
+        if canonical_blockhash != rpc_response.blockhash {
+            // Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so
+            // the bytes recorded here are reversed relative to the on-chain orientation a block
+            // explorer expects. A triager reading this verdict needs to reverse the hex to look
+            // the block up.
+            return Ok(Verdict::NonCanonicalBlock {
+                block_number: block_height,
+                receipt_hash: (*rpc_response.blockhash).to_vec().into(),
+                canonical_hash: (*canonical_blockhash).to_vec().into(),
+            });
         }
 
         let extracted_values = extractors
@@ -111,12 +119,10 @@ where
         Self { client }
     }
 
-    /// Checks that the receipt's block is on the canonical chain by resolving its height via
-    /// `getblockheader` and then asking the RPC for the canonical hash at that height via
-    /// `getblockhash`, returning the [`Verdict::NonCanonicalBlock`] verdict on a mismatch and
-    /// [`None`] when the block is canonical. `getblockhash` only ever returns canonical blocks,
-    /// so a mismatch means the `getrawtransaction` response was anchored to a side block (stale
-    /// tx index, partially-applied reorg, divergent RPC backend, etc.).
+    /// The height of the receipt's block, resolved via `getblockheader`, and the canonical
+    /// hash at that height via `getblockhash`. `getblockhash` only ever returns canonical
+    /// blocks, so a receipt block disagreeing with it was anchored to a side block (stale tx
+    /// index, partially-applied reorg, divergent RPC backend, etc.).
     ///
     /// The two RPC calls are necessarily sequential — `getblockhash`'s height parameter
     /// depends on `getblockheader`'s response — so a reorg landing between them could in
@@ -127,10 +133,10 @@ where
     /// surface as [`RpcRequestRejected`](crate::ForeignChainInspectionError::RpcRequestRejected)
     /// rather than [`Verdict::NonCanonicalBlock`]; mapping those error messages to a more
     /// specific outcome is left to a follow-up.
-    async fn non_canonical_block_verdict(
+    async fn canonical_blockhash_at_height_of(
         &self,
         receipt_blockhash: TransportBitcoinBlockHash,
-    ) -> Result<Option<Verdict<BitcoinExtractedValue>>, ForeignChainInspectionError> {
+    ) -> Result<(u64, TransportBitcoinBlockHash), ForeignChainInspectionError> {
         let get_block_header_args = GetBlockHeaderArgs {
             blockhash: receipt_blockhash,
             verbose: VERBOSE_RESPONSE,
@@ -159,29 +165,7 @@ where
             .await
             .classified()?;
 
-        if canonical_blockhash != receipt_blockhash {
-            return Ok(Some(non_canonical_block_verdict(
-                block.height,
-                receipt_blockhash,
-                canonical_blockhash,
-            )));
-        }
-        Ok(None)
-    }
-}
-
-fn non_canonical_block_verdict(
-    block_number: u64,
-    receipt_blockhash: TransportBitcoinBlockHash,
-    canonical_blockhash: TransportBitcoinBlockHash,
-) -> Verdict<BitcoinExtractedValue> {
-    // Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so the
-    // bytes recorded here are reversed relative to the on-chain orientation a block explorer
-    // expects. A triager reading this verdict needs to reverse the hex to look the block up.
-    Verdict::NonCanonicalBlock {
-        block_number,
-        receipt_hash: (*receipt_blockhash).to_vec().into(),
-        canonical_hash: (*canonical_blockhash).to_vec().into(),
+        Ok((block.height, canonical_blockhash))
     }
 }
 

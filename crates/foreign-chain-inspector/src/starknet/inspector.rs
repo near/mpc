@@ -80,11 +80,15 @@ where
             return Err(ForeignChainInspectionError::NotFinalized);
         }
 
-        if let Some(non_canonical) = self
-            .non_canonical_block_verdict(rpc_response.block_number, rpc_response.block_hash)
-            .await?
-        {
-            return Ok(non_canonical);
+        let canonical = self.canonical_block_at(rpc_response.block_number).await?;
+        let hash_matches = canonical.block_hash == rpc_response.block_hash;
+        let height_matches = canonical.block_number == rpc_response.block_number;
+        if !hash_matches || !height_matches {
+            return Ok(Verdict::NonCanonicalBlock {
+                block_number: rpc_response.block_number,
+                receipt_hash: rpc_response.block_hash.into(),
+                canonical_hash: canonical.block_hash.into(),
+            });
         }
 
         if rpc_response.execution_status != StarknetExecutionStatus::Succeeded {
@@ -110,42 +114,22 @@ where
         Self { client }
     }
 
-    /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
-    /// block at `receipt_block_number` and comparing hashes, returning the
-    /// [`Verdict::NonCanonicalBlock`] verdict on a mismatch and [`None`] when the block is
-    /// canonical. `starknet_getBlockWithTxHashes` only ever resolves to a canonical block, so a
-    /// mismatch means the receipt was indexed against a side block (stale tx index,
-    /// partially-applied reorg, divergent RPC backend, etc.).
-    ///
-    /// The canonical block's height is also asserted against the requested one — a divergent
-    /// RPC that returns a hash from a different height would otherwise sneak past a
-    /// hash-only check.
-    async fn non_canonical_block_verdict(
+    /// The canonical block at `block_number`. `starknet_getBlockWithTxHashes` only ever
+    /// resolves to a canonical block, so a receipt whose block disagrees with it was indexed
+    /// against a side block (stale tx index, partially-applied reorg, divergent RPC backend,
+    /// etc.). The caller compares the height too — a divergent RPC that returns a hash from a
+    /// different height would otherwise sneak past a hash-only check.
+    async fn canonical_block_at(
         &self,
-        receipt_block_number: u64,
-        receipt_block_hash: H256,
-    ) -> Result<Option<Verdict<StarknetExtractedValue>>, ForeignChainInspectionError> {
+        block_number: u64,
+    ) -> Result<GetBlockWithTxHashesResponse, ForeignChainInspectionError> {
         let args = GetBlockWithTxHashesArgs {
-            block_id: BlockId::Number {
-                block_number: receipt_block_number,
-            },
+            block_id: BlockId::Number { block_number },
         };
-        let canonical: GetBlockWithTxHashesResponse = self
-            .client
+        self.client
             .request(GET_BLOCK_WITH_TX_HASHES_METHOD, &args)
             .await
-            .classified()?;
-
-        let hash_matches = canonical.block_hash == receipt_block_hash;
-        let height_matches = canonical.block_number == receipt_block_number;
-        if !hash_matches || !height_matches {
-            return Ok(Some(Verdict::NonCanonicalBlock {
-                block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash.into(),
-                canonical_hash: canonical.block_hash.into(),
-            }));
-        }
-        Ok(None)
+            .classified()
     }
 }
 
@@ -166,8 +150,6 @@ pub enum StarknetExtractor {
 }
 
 impl StarknetExtractor {
-    /// The extracted value, or [`None`] when the receipt has no event at the requested index —
-    /// a [`Verdict::LogIndexOutOfBounds`] verdict, which is the caller's to return.
     fn extract_value(
         &self,
         rpc_response: &GetTransactionReceiptResponse,

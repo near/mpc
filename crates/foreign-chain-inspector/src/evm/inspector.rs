@@ -99,14 +99,18 @@ where
 
         self.verify_finality_level(transaction_receipt.block_number, finality)
             .await?;
-        if let Some(non_canonical) = self
-            .non_canonical_block_verdict(
-                transaction_receipt.block_number,
-                transaction_receipt.block_hash,
-            )
-            .await?
-        {
-            return Ok(non_canonical);
+
+        let canonical = self
+            .canonical_block_at(transaction_receipt.block_number)
+            .await?;
+        let hash_matches = canonical.hash == transaction_receipt.block_hash;
+        let height_matches = canonical.number == transaction_receipt.block_number;
+        if !hash_matches || !height_matches {
+            return Ok(Verdict::NonCanonicalBlock {
+                block_number: transaction_receipt.block_number.as_u64(),
+                receipt_hash: transaction_receipt.block_hash.into(),
+                canonical_hash: canonical.hash.into(),
+            });
         }
 
         let transaction_success = transaction_receipt.status == U64::one();
@@ -166,41 +170,23 @@ where
         Ok(())
     }
 
-    /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
-    /// block at `receipt_block_number` and comparing hashes, returning the
-    /// [`Verdict::NonCanonicalBlock`] verdict on a mismatch and [`None`] when the block is
-    /// canonical. `eth_getBlockByNumber` only ever resolves to a canonical block, so a mismatch
-    /// means the receipt was indexed against a side block (stale tx index, partially-applied
-    /// reorg, divergent RPC backend, etc.).
-    ///
-    /// The canonical block's height is also asserted against the requested one — a divergent
-    /// RPC that returns a hash from a different height would otherwise sneak past a
-    /// hash-only check.
-    async fn non_canonical_block_verdict(
+    /// The canonical block at `block_number`. `eth_getBlockByNumber` only ever resolves to a
+    /// canonical block, so a receipt whose block disagrees with it was indexed against a side
+    /// block (stale tx index, partially-applied reorg, divergent RPC backend, etc.). The caller
+    /// compares the height too — a divergent RPC that returns a hash from a different height
+    /// would otherwise sneak past a hash-only check.
+    async fn canonical_block_at(
         &self,
-        receipt_block_number: U64,
-        receipt_block_hash: H256,
-    ) -> Result<Option<Verdict<EvmExtractedValue<Chain>>>, ForeignChainInspectionError> {
+        block_number: U64,
+    ) -> Result<GetBlockByNumberResponse, ForeignChainInspectionError> {
         let args = GetBlockByNumberArgs::new(
-            BlockNumberOrTag::Number(receipt_block_number),
+            BlockNumberOrTag::Number(block_number),
             ReturnFullTransactionObjects::from(false),
         );
-        let canonical: GetBlockByNumberResponse = self
-            .client
+        self.client
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
             .await
-            .classified()?;
-
-        let hash_matches = canonical.hash == receipt_block_hash;
-        let height_matches = canonical.number == receipt_block_number;
-        if !hash_matches || !height_matches {
-            return Ok(Some(Verdict::NonCanonicalBlock {
-                block_number: receipt_block_number.as_u64(),
-                receipt_hash: receipt_block_hash.into(),
-                canonical_hash: canonical.hash.into(),
-            }));
-        }
-        Ok(None)
+            .classified()
     }
 }
 
@@ -217,8 +203,6 @@ pub enum EvmExtractor {
 }
 
 impl EvmExtractor {
-    /// The extracted value, or [`None`] when the receipt has no log at the requested index —
-    /// a [`Verdict::LogIndexOutOfBounds`] verdict, which is the caller's to return.
     fn extract_value<Chain: EvmChain>(
         &self,
         rpc_response: &GetTransactionReceiptResponse,
