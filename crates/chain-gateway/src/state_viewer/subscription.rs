@@ -1,50 +1,28 @@
-use super::monitoring::{MonitoringTask, make_monitoring_task};
-use super::traits::{ViewRaw, WatchContractState, deserialize_observed};
-use crate::errors::ChainGatewayError;
-use near_account_id::AccountId;
-use near_contract_transport::ObservedState;
-use near_contract_transport::ViewArgs;
-use serde::de::DeserializeOwned;
+use super::monitoring::MonitoringTask;
+use near_contract_transport::WatchContractState;
+use near_contract_transport::{ObservedState, TransportError};
 
-/// Holds a Monitoring task and the latest cached value.
-/// This is useful such that we don't unnecessarily deserialize the same state multiple times.
-pub(crate) struct ContractMethodSubscription<Res> {
-    inner: MonitoringTask,
-    cached: Result<ObservedState<Res>, ChainGatewayError>,
-}
-
-impl<Res> ContractMethodSubscription<Res>
+impl<T, ViewError> WatchContractState<T, ViewError> for MonitoringTask<T, ViewError>
 where
-    Res: DeserializeOwned,
+    T: Clone + Send + Sync,
+    ViewError: Clone + Send + Sync,
 {
-    fn update_cache(&mut self) {
-        let observed = self.inner.last_observed.borrow_and_update().clone();
-        self.cached = observed.and_then(|value| deserialize_observed(value));
-    }
-}
-
-impl<Res> WatchContractState<Res> for ContractMethodSubscription<Res>
-where
-    Res: DeserializeOwned + Send + Clone,
-{
-    /// The constructor marks the initial value as seen, so
-    /// `changed().await` will not fire until a genuinely new value arrives.
-    async fn changed(&mut self) -> Result<(), ChainGatewayError> {
-        self.inner
-            .last_observed
+    /// The initial observation counts as already seen: this future completes only if a new value
+    /// is seen.
+    async fn changed(&mut self) -> Result<(), TransportError<ViewError>> {
+        self.last_observed
             .changed()
             .await
-            .map_err(|_| ChainGatewayError::MonitoringClosed)?;
+            .map_err(|_| TransportError::MonitoringClosed)?;
         self.update_cache();
         Ok(())
     }
 
-    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError> {
+    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<ViewError>> {
         if self
-            .inner
             .last_observed
             .has_changed()
-            .map_err(|_| ChainGatewayError::MonitoringClosed)?
+            .map_err(|_| TransportError::MonitoringClosed)?
         {
             self.update_cache();
         }
@@ -52,58 +30,34 @@ where
     }
 }
 
-impl<Res> ContractMethodSubscription<Res>
-where
-    Res: DeserializeOwned,
-{
-    pub(super) async fn new<V: ViewRaw>(
-        viewer: V,
-        contract_id: AccountId,
-        view_args: ViewArgs,
-    ) -> Self {
-        let mut task = make_monitoring_task(viewer, contract_id, view_args).await;
-        let cached: Result<ObservedState<Res>, ChainGatewayError> = task
-            .last_observed
-            .borrow_and_update()
-            .clone()
-            .and_then(|value| deserialize_observed(value));
-        Self {
-            inner: task,
-            cached,
-        }
-    }
-}
-
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
     use near_contract_transport::ViewArgs;
+    use near_contract_transport::{HasPollInterval, TransportError, WatchContractState};
 
-    use super::ContractMethodSubscription;
-    use crate::errors::ChainGatewayError;
-    use crate::mock::{MockChainState, MockError};
-    use crate::state_viewer::WatchContractState;
-    use crate::state_viewer::monitoring::POLL_INTERVAL;
+    use crate::mock::{MockViewContract, MockViewError};
+    use crate::state_viewer::monitoring::MonitoringTask;
+    use crate::state_viewer::view_call::ViewCall;
     use near_contract_transport::ObservedState;
     use std::time::Duration;
 
+    fn contract_id() -> AccountId {
+        "test.testnet".parse().unwrap()
+    }
+    fn view_args() -> ViewArgs {
+        ViewArgs::no_args("get_value")
+    }
     #[tokio::test]
-    async fn test_subscription_constructor_deserializes_initial_value() {
-        let viewer = MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: 42.into(),
-                value: serde_json::to_vec(&"hello").unwrap(),
-            }))
-            .build();
-
-        let mut sub = ContractMethodSubscription::<String>::new(
-            viewer,
-            "test.testnet".parse().unwrap(),
-            ViewArgs::no_args("get_value"),
-        )
-        .await;
+    async fn subscription__should_deserialize_the_initial_value() {
+        let viewer = MockViewContract::new(Ok(ObservedState {
+            observed_at: 42.into(),
+            value: serde_json::to_vec(&"hello").unwrap(),
+        }));
+        let view_call = ViewCall::json(viewer, contract_id(), view_args());
+        let mut sub = MonitoringTask::<String, _>::new(view_call).await;
 
         let state = sub.latest().unwrap();
         assert_eq!(state.value, "hello");
@@ -111,116 +65,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_subscription_constructor_propagates_view_error() {
+    async fn subscription__should_propagate_a_view_error() {
         let account_id: AccountId = "test.testnet".parse().unwrap();
         let method_name = "get_value".to_string();
-        let viewer = MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Err(MockError::ViewClientError))
-            .build();
+        let viewer = MockViewContract::new(Err(MockViewError("view failed")));
 
-        let mut sub = ContractMethodSubscription::<String>::new(
-            viewer,
-            account_id.clone(),
-            ViewArgs::no_args(&method_name),
-        )
-        .await;
+        let call = ViewCall::json(viewer, account_id.clone(), ViewArgs::no_args(&method_name));
+        let mut sub = MonitoringTask::<String, _>::new(call).await;
 
         assert_eq!(
             sub.latest().unwrap_err(),
-            ChainGatewayError::ViewError {
-                op: crate::errors::ChainGatewayOp::ViewQuery {
-                    account_id: account_id.to_string(),
-                    method_name
-                },
-                message: MockError::ViewClientError.to_string(),
-            }
+            TransportError::View(MockViewError("view failed"))
         );
     }
 
     #[tokio::test]
-    async fn test_subscription_constructor_returns_deserialization_error_on_bad_json() {
-        let viewer = MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: 1.into(),
-                value: b"not json".to_vec(),
-            }))
-            .build();
+    async fn subscription__should_return_a_deserialization_error_on_bad_json() {
+        let viewer = MockViewContract::new(Ok(ObservedState {
+            observed_at: 1.into(),
+            value: b"not json".to_vec(),
+        }));
 
-        let contract_id: AccountId = "test.testnet".parse().unwrap();
-        let method_name: String = "get_value".into();
-        let mut sub = ContractMethodSubscription::<String>::new(
-            viewer,
-            contract_id.clone(),
-            ViewArgs::no_args(&method_name),
-        )
-        .await;
+        let call = ViewCall::json(viewer, contract_id(), view_args());
+        let mut sub = MonitoringTask::<String, _>::new(call).await;
 
         let err = sub.latest().unwrap_err();
-        assert_matches!(err, ChainGatewayError::Deserialization { .. });
+        assert_matches!(err, TransportError::Deserialization(_));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_subscription_latest_updates_on_value_change() {
-        let viewer = MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: 1.into(),
-                value: serde_json::to_vec(&"initial").unwrap(),
-            }))
-            .build();
-
-        let mut sub = ContractMethodSubscription::<String>::new(
-            viewer.clone(),
-            "test.testnet".parse().unwrap(),
-            ViewArgs::no_args("get_value"),
-        )
-        .await;
+    async fn subscription_latest__should_update_on_value_change() {
+        let viewer = MockViewContract::new(Ok(ObservedState {
+            observed_at: 1.into(),
+            value: serde_json::to_vec(&"initial").unwrap(),
+        }));
+        let call = ViewCall::json(viewer.clone(), contract_id(), view_args());
+        let mut sub = MonitoringTask::<String, _>::new(call).await;
         assert_eq!(sub.latest().unwrap().value, "initial");
 
-        viewer
-            .set_view_response(Ok(ObservedState {
-                observed_at: 2.into(),
-                value: serde_json::to_vec(&"updated").unwrap(),
-            }))
-            .await;
+        viewer.set_response(Ok(ObservedState {
+            observed_at: 2.into(),
+            value: serde_json::to_vec(&"updated").unwrap(),
+        }));
 
         // Advance past poll interval
-        tokio::time::sleep(2 * POLL_INTERVAL).await;
+        tokio::time::sleep(2 * Duration::from(viewer.poll_interval())).await;
 
         let found = sub.latest().unwrap();
         assert_eq!(found.value, "updated");
         assert_eq!(found.observed_at, 2.into());
-        let found = sub.cached.unwrap();
-        assert_eq!(found.value, "updated");
-        assert_eq!(found.observed_at, 2.into());
+
+        let cached = sub.cached.unwrap();
+        assert_eq!(cached.value, "updated");
+        assert_eq!(cached.observed_at, 2.into());
     }
 
     #[tokio::test(start_paused = true)]
-    async fn test_subscription_changed_resolves_and_updates_cache() {
-        let viewer = MockChainState::builder()
-            .with_syncing_status(Ok(false))
-            .with_view_response(Ok(ObservedState {
-                observed_at: 1.into(),
-                value: serde_json::to_vec(&"before").unwrap(),
-            }))
-            .build();
+    async fn subscription_changed__should_resolve_and_update_the_cache() {
+        let viewer = MockViewContract::new(Ok(ObservedState {
+            observed_at: 1.into(),
+            value: serde_json::to_vec(&"before").unwrap(),
+        }));
 
-        let mut sub = ContractMethodSubscription::<String>::new(
-            viewer.clone(),
-            "test.testnet".parse().unwrap(),
-            ViewArgs::no_args("get_value"),
-        )
-        .await;
+        let call = ViewCall::json(viewer.clone(), contract_id(), view_args());
+        let mut sub = MonitoringTask::<String, _>::new(call).await;
         assert_eq!(sub.latest().unwrap().value, "before");
 
-        viewer
-            .set_view_response(Ok(ObservedState {
-                observed_at: 5.into(),
-                value: serde_json::to_vec(&"after").unwrap(),
-            }))
-            .await;
+        viewer.set_response(Ok(ObservedState {
+            observed_at: 5.into(),
+            value: serde_json::to_vec(&"after").unwrap(),
+        }));
 
         tokio::time::timeout(Duration::from_secs(2), sub.changed())
             .await

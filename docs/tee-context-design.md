@@ -1,89 +1,51 @@
 # TEE Context
 
-The TEE Context is a shared crate for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node already implements these operations today; they will be extracted into a standalone crate reusable by all services. The MPC node depends on both the MPC Context (for protocol orchestration) and the TEE Context (for attestation) as separate, parallel components. Other services (Archive Signer, Backup Service) use the TEE Context directly.
+The TEE Context is a shared crate (`crates/tee-context`) for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node depends on both the MPC Context (for protocol orchestration) and the TEE Context (for attestation) as separate, parallel components. Other services (Archive Signer, Backup Service) use the TEE Context directly.
 
 ## Interface
 
 ```rust
 /// Allowed TEE hashes fetched from the governance contract.
 pub struct AllowedTeeHashes {
-    pub allowed_docker_image_hashes: Vec<DockerImageHash>,
+    pub allowed_docker_image_hashes: Vec<AllowedMpcDockerImageHash>,
     pub allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
 }
 
-/// Identity of this node within the TEE network.
-pub struct TeeNodeIdentity {
-    pub node_account_id: AccountId,
-    pub account_public_key: Ed25519PublicKey,
-}
+/// Generic over the chain backend: `S` is any `ViewContract` +
+/// `SubmitFunctionCall` + `HasPollInterval` (the chain gateway in
+/// production, a mock in tests).
+pub struct TeeContext<S> { .. }
 
-/// The background task spawned by `new()` owns the `watch::Sender` and the
-/// `ContractMethodSubscription` (not `Clone` — holds `JoinHandle`).
-#[derive(Clone)]
-pub struct TeeContext {
-    node_identity: TeeNodeIdentity,
-    governance_contract: AccountId,
-    allowed_hashes_rx: watch::Receiver<AllowedTeeHashes>,
-    transaction_sender: TransactionSender,
-}
-
-impl TeeContext {
-    /// Creates a new `TeeContext`. Spawns a background task that owns the
-    /// `ContractMethodSubscription`, polls the governance contract, and
-    /// sends updates via a `watch` channel. Waits for the first successful
-    /// poll before returning.
+impl<S> TeeContext<S> {
+    /// Subscribes to the governance contract's allowed image and launcher
+    /// hash view methods, waits for the first successful poll of each, then
+    /// spawns a background task that merges updates into a single
+    /// `AllowedTeeHashes` watch channel. The task is cancelled when the
+    /// `TeeContext` is dropped.
     pub async fn new(
-        viewer: impl ViewRaw,
-        node_identity: TeeNodeIdentity,
+        chain_gateway: S,
         // e.g. v1.signer (MPC node) or the HOT governance contract (Archive Signer).
         governance_contract: AccountId,
-        transaction_sender: TransactionSender,
-    ) -> Result<Self, Error> {
-        // `ContractMethodSubscription` is not `Clone` (holds `JoinHandle`),
-        // so it stays inside the background task.
-        let mut subscription = ContractMethodSubscription::<AllowedTeeHashes>::new(
-            viewer,
-            governance_contract.clone(),
-            "allowed_docker_image_hashes",
-            b"{}".to_vec(),
-        ).await;
-
-        // First value is already available after construction.
-        let initial = subscription.latest()?.value;
-        let (allowed_hashes_tx, allowed_hashes_rx) = watch::channel(initial);
-
-        // Background task: owns the Sender and the subscription.
-        tokio::spawn(async move {
-            loop {
-                subscription.changed().await?;
-                let new_hashes = subscription.latest()?.value;
-                allowed_hashes_tx.send_replace(new_hashes);
-            }
-        });
-
-        Ok(Self {
-            node_identity,
-            governance_contract,
-            allowed_hashes_rx,
-            transaction_sender,
-        })
-    }
+        signer: TransactionSigner,
+    ) -> Result<Self, TeeContextError>;
 
     /// Returns a `watch::Receiver` for the allowed TEE hashes.
     /// Use `.borrow()` to read the latest value, `.changed()` to wait for updates.
     pub fn watch_allowed_tee_hashes(&self) -> watch::Receiver<AllowedTeeHashes>;
 
     /// Submits an attestation to the governance contract via
-    /// submit_participant_info(). The caller builds its own ReportData
-    /// (e.g. the MPC node includes its TLS public key, the Archive Signer
-    /// does not) and generates the attestation quote via tee-authority.
-    /// TeeContext just submits it.
-    pub async fn submit_attestation(&self, attestation: Attestation) -> Result<(), Error>;
+    /// submit_participant_info(). The caller generates the attestation
+    /// quote via tee-authority; TeeContext just submits it.
+    pub async fn submit_attestation(
+        &self,
+        attestation: Attestation,
+        tls_public_key: Ed25519PublicKey,
+    ) -> Result<(), TeeContextError>;
 
     /// Calls verify_tee() on the governance contract, triggering on-chain
     /// re-validation of all stored attestations. The caller is responsible
     /// for scheduling (e.g., every 2 days).
-    pub async fn verify_tee(&self) -> Result<(), Error>;
+    pub async fn verify_tee(&self) -> Result<(), TeeContextError>;
 }
 ```
 
@@ -105,7 +67,7 @@ Every TEE service follows the same pattern: start the TEE Context, spawn a watch
 [launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ```rust
-let tee_ctx = TeeContext::new(viewer, node_identity, governance_contract, transaction_sender).await?;
+let tee_ctx = TeeContext::new(chain_gateway, governance_contract, signer).await?;
 
 // Write hashes to disk for the Launcher whenever they change.
 let mut hashes_rx = tee_ctx.watch_allowed_tee_hashes();
