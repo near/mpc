@@ -6270,7 +6270,6 @@ dependencies = [
  "rand 0.8.8",
  "rand_core 0.6.4",
  "rstest",
- "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_with",

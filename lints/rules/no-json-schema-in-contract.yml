@@ -1,0 +1,20 @@
+id: no-json-schema-in-contract
+language: rust
+severity: error
+message: "`JsonSchema` derived on a contract-internal type"
+note: |
+  The ABI must be generated from the `near-mpc-contract-interface` DTOs alone: a
+  contract-internal type of the same name makes `schemars` emit a duplicate
+  `2`-suffixed definition (near/mpc#2061). `#[near(serializers=[borsh, json])]`
+  derives `JsonSchema` under the `abi` feature, so use `#[near(serializers=[borsh])]`
+  and keep the JSON-facing type in the DTO crate.
+files:
+  - "crates/contract/**/*.rs"
+rule:
+  any:
+    - kind: attribute_item
+      regex: 'schemars|JsonSchema'
+    - kind: attribute_item
+      regex: 'near\(serializers\s*=\s*\[[^]]*json'
+    - kind: use_declaration
+      regex: 'schemars'

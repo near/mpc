@@ -58,18 +58,10 @@ impl From<u64> for UpdateId {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-)]
+#[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub(crate) enum Update {
     Contract(Vec<u8>),
@@ -101,18 +93,10 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    borsh::BorshSerialize,
-    borsh::BorshDeserialize,
-)]
+#[derive(Clone, Debug, PartialEq, borsh::BorshSerialize, borsh::BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub(crate) struct UpdateEntry {
     pub(super) update: Update,
@@ -277,7 +261,7 @@ fn bytes_used(update: &Update) -> u128 {
             n_bytes_used += code.len() as u128;
         }
         Update::Config(config) => {
-            let bytes = serde_json::to_vec(&config).unwrap();
+            let bytes = serde_json::to_vec(&config.clone().into_dto_type()).unwrap();
             n_bytes_used += bytes.len() as u128;
         }
     }

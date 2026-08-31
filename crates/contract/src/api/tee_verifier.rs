@@ -8,7 +8,6 @@ use crate::primitives::votes::ProposalHash;
 use crate::state::ProtocolContractState;
 use crate::tee::verifier_votes::VerifierChangeProposal;
 use crate::{MpcContract, MpcContractExt};
-use mpc_primitives::hash::TeeVerifierCodeHash;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{AccountId, env, log, near};
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,7 +22,7 @@ impl MpcContract {
     pub fn vote_tee_verifier_change(
         &mut self,
         candidate_account_id: AccountId,
-        expected_code_hash: TeeVerifierCodeHash,
+        expected_code_hash: dtos::TeeVerifierCodeHash,
     ) -> Result<(), Error> {
         log!(
             "vote_tee_verifier_change: signer={}, candidate={}, expected_code_hash={}",
@@ -141,7 +140,7 @@ mod tests {
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
         let candidate: AccountId = "verifier.near".parse().unwrap();
-        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
 
         let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
             testing_env!(
@@ -171,7 +170,7 @@ mod tests {
         let (mut contract, _, _) = setup_tee_test_contract(3, 2);
         let voters = participant_account_ids(&contract);
         let candidate: AccountId = "verifier.near".parse().unwrap();
-        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
 
         let vote_as = |contract: &mut MpcContract, account_id: &AccountId| {
             Environment::new(None, Some(account_id.clone()), None);
@@ -198,7 +197,7 @@ mod tests {
         // threshold, so both stay pending).
         let (mut contract, participants, _) = setup_tee_test_contract(3, 3);
         let voters = participant_account_ids(&contract);
-        let code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+        let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
 
         // Vote as `account_id` for `candidate`, returning that voter's authenticated id.
         let vote_as =
