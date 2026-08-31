@@ -4,8 +4,8 @@ use std::hash::Hash;
 use jsonrpsee::core::client::ClientT;
 
 use crate::{
-    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS,
-    NetworkFingerprint, NetworkFingerprintInspector,
+    ClassifyRpcOutcome, EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
+    NO_PARAMS, NetworkFingerprint, NetworkFingerprintInspector, Verdict,
 };
 
 use foreign_chain_rpc_interfaces::evm::{
@@ -51,7 +51,7 @@ where
             .client
             .request(CHAIN_ID_METHOD, NO_PARAMS)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+            .classified()?;
         Ok(NetworkFingerprint::new(chain_id.canonical_text()))
     }
 
@@ -75,7 +75,7 @@ where
         transaction: Chain::TransactionHash,
         finality: EthereumFinality,
         extractors: Vec<EvmExtractor>,
-    ) -> Result<Vec<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
         let get_transaction_receipt_args = GetTransactionReceiptARgs {
             transaction_hash: H256(transaction.into()),
         };
@@ -85,7 +85,8 @@ where
                 GET_TRANSACTION_RECEIPT_METHOD,
                 &get_transaction_receipt_args,
             )
-            .await?;
+            .await
+            .classified()?;
 
         // Defensive: `eth_getTransactionReceipt` looks the receipt up *by hash*, so a
         // well-behaved backend always echoes back the hash we queried.
@@ -98,22 +99,30 @@ where
 
         self.verify_finality_level(transaction_receipt.block_number, finality)
             .await?;
-        self.verify_block_is_canonical(
-            transaction_receipt.block_number,
-            transaction_receipt.block_hash,
-        )
-        .await?;
+        if let Some(non_canonical) = self
+            .non_canonical_block_verdict(
+                transaction_receipt.block_number,
+                transaction_receipt.block_hash,
+            )
+            .await?
+        {
+            return Ok(non_canonical);
+        }
 
         let transaction_success = transaction_receipt.status == U64::one();
 
         if !transaction_success {
-            return Err(ForeignChainInspectionError::TransactionFailed);
+            return Ok(Verdict::TransactionFailed);
         }
 
-        extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&transaction_receipt))
-            .collect()
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in &extractors {
+            let Some(value) = extractor.extract_value(&transaction_receipt)? else {
+                return Ok(Verdict::LogIndexOutOfBounds);
+            };
+            extracted_values.push(value);
+        }
+        Ok(Verdict::Extracted(extracted_values))
     }
 }
 
@@ -148,7 +157,8 @@ where
         let head: GetBlockByNumberResponse = self
             .client
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
-            .await?;
+            .await
+            .classified()?;
 
         if head.number < receipt_block_number {
             return Err(ForeignChainInspectionError::NotFinalized);
@@ -157,18 +167,20 @@ where
     }
 
     /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
-    /// block at `receipt_block_number` and comparing hashes. `eth_getBlockByNumber` only ever
-    /// resolves to a canonical block, so a mismatch means the receipt was indexed against a
-    /// side block (stale tx index, partially-applied reorg, divergent RPC backend, etc.).
+    /// block at `receipt_block_number` and comparing hashes, returning the
+    /// [`Verdict::NonCanonicalBlock`] verdict on a mismatch and [`None`] when the block is
+    /// canonical. `eth_getBlockByNumber` only ever resolves to a canonical block, so a mismatch
+    /// means the receipt was indexed against a side block (stale tx index, partially-applied
+    /// reorg, divergent RPC backend, etc.).
     ///
     /// The canonical block's height is also asserted against the requested one — a divergent
     /// RPC that returns a hash from a different height would otherwise sneak past a
     /// hash-only check.
-    async fn verify_block_is_canonical(
+    async fn non_canonical_block_verdict(
         &self,
         receipt_block_number: U64,
         receipt_block_hash: H256,
-    ) -> Result<(), ForeignChainInspectionError> {
+    ) -> Result<Option<Verdict<EvmExtractedValue<Chain>>>, ForeignChainInspectionError> {
         let args = GetBlockByNumberArgs::new(
             BlockNumberOrTag::Number(receipt_block_number),
             ReturnFullTransactionObjects::from(false),
@@ -176,18 +188,19 @@ where
         let canonical: GetBlockByNumberResponse = self
             .client
             .request(GET_BLOCK_BY_NUMBER_METHOD, &args)
-            .await?;
+            .await
+            .classified()?;
 
         let hash_matches = canonical.hash == receipt_block_hash;
         let height_matches = canonical.number == receipt_block_number;
         if !hash_matches || !height_matches {
-            return Err(ForeignChainInspectionError::NonCanonicalBlock {
+            return Ok(Some(Verdict::NonCanonicalBlock {
                 block_number: receipt_block_number.as_u64(),
                 receipt_hash: receipt_block_hash.into(),
                 canonical_hash: canonical.hash.into(),
-            });
+            }));
         }
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -204,22 +217,26 @@ pub enum EvmExtractor {
 }
 
 impl EvmExtractor {
+    /// The extracted value, or [`None`] when the receipt has no log at the requested index —
+    /// a [`Verdict::LogIndexOutOfBounds`] verdict, which is the caller's to return.
     fn extract_value<Chain: EvmChain>(
         &self,
         rpc_response: &GetTransactionReceiptResponse,
-    ) -> Result<EvmExtractedValue<Chain>, ForeignChainInspectionError> {
+    ) -> Result<Option<EvmExtractedValue<Chain>>, ForeignChainInspectionError> {
         match self {
-            EvmExtractor::BlockHash => Ok(EvmExtractedValue::BlockHash(From::from(
+            EvmExtractor::BlockHash => Ok(Some(EvmExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
-            ))),
+            )))),
             EvmExtractor::Log { log_index } => {
                 let target_index = ethereum_types::U64::from(*log_index);
-                let log = rpc_response
+                let Some(log) = rpc_response
                     .logs
                     .iter()
                     .find(|log| log.log_index == target_index)
                     .cloned()
-                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+                else {
+                    return Ok(None);
+                };
 
                 // The receipt's transaction hash has already been checked against the
                 // requested one, so binding the log to the receipt transitively binds
@@ -239,7 +256,7 @@ impl EvmExtractor {
                     });
                 }
 
-                Ok(EvmExtractedValue::Log(log))
+                Ok(Some(EvmExtractedValue::Log(log)))
             }
         }
     }

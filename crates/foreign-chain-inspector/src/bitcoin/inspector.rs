@@ -2,8 +2,8 @@ use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
 use crate::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprint,
-    NetworkFingerprintInspector,
+    BlockConfirmations, ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector,
+    NetworkFingerprint, NetworkFingerprintInspector, Verdict,
 };
 use foreign_chain_rpc_interfaces::bitcoin::{
     GetBlockHashArgs, GetBlockHashResponse, GetBlockHeaderArgs, GetBlockHeaderVerboseResponse,
@@ -40,7 +40,7 @@ where
             .client
             .request(GET_BLOCK_HASH_METHOD, &args)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+            .classified()?;
         Ok(NetworkFingerprint::new(genesis_hash.canonical_text()))
     }
 
@@ -63,7 +63,7 @@ where
         transaction: BitcoinTransactionHash,
         block_confirmations_threshold: BlockConfirmations,
         extractors: Vec<BitcoinExtractor>,
-    ) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<BitcoinExtractedValue>, ForeignChainInspectionError> {
         let request_parameters = GetRawTransactionArgs {
             transaction_hash: TransportBitcoinTransactionHash::from(*transaction),
             verbose: VERBOSE_RESPONSE,
@@ -73,7 +73,8 @@ where
         let rpc_response: GetRawTransactionVerboseResponse = self
             .client
             .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
-            .await?;
+            .await
+            .classified()?;
 
         let transaction_block_confirmation = rpc_response.confirmations.into();
         let enough_block_confirmations =
@@ -86,15 +87,19 @@ where
             });
         }
 
-        self.verify_block_is_canonical(rpc_response.blockhash)
-            .await?;
+        if let Some(non_canonical) = self
+            .non_canonical_block_verdict(rpc_response.blockhash)
+            .await?
+        {
+            return Ok(non_canonical);
+        }
 
         let extracted_values = extractors
             .iter()
             .map(|extractor| extractor.extract_value(&rpc_response))
             .collect();
 
-        Ok(extracted_values)
+        Ok(Verdict::Extracted(extracted_values))
     }
 }
 
@@ -108,24 +113,24 @@ where
 
     /// Checks that the receipt's block is on the canonical chain by resolving its height via
     /// `getblockheader` and then asking the RPC for the canonical hash at that height via
-    /// `getblockhash`. `getblockhash` only ever returns canonical blocks, so a mismatch means
-    /// the `getrawtransaction` response was anchored to a side block (stale tx index,
-    /// partially-applied reorg, divergent RPC backend, etc.).
+    /// `getblockhash`, returning the [`Verdict::NonCanonicalBlock`] verdict on a mismatch and
+    /// [`None`] when the block is canonical. `getblockhash` only ever returns canonical blocks,
+    /// so a mismatch means the `getrawtransaction` response was anchored to a side block (stale
+    /// tx index, partially-applied reorg, divergent RPC backend, etc.).
     ///
     /// The two RPC calls are necessarily sequential — `getblockhash`'s height parameter
     /// depends on `getblockheader`'s response — so a reorg landing between them could in
-    /// principle yield a spurious
-    /// [`NonCanonicalBlock`](crate::ForeignChainInspectionError::NonCanonicalBlock). The caller
-    /// is expected to retry.
+    /// principle yield a spurious [`Verdict::NonCanonicalBlock`]. The caller is expected to
+    /// retry.
     ///
     /// Failures from the RPCs themselves ("Block not found" / "block height out of range")
-    /// surface as [`ClientError`](crate::ForeignChainInspectionError::ClientError) rather than
-    /// [`NonCanonicalBlock`](crate::ForeignChainInspectionError::NonCanonicalBlock); mapping those error
-    /// messages to a more specific variant is left to a follow-up.
-    async fn verify_block_is_canonical(
+    /// surface as [`RpcRequestRejected`](crate::ForeignChainInspectionError::RpcRequestRejected)
+    /// rather than [`Verdict::NonCanonicalBlock`]; mapping those error messages to a more
+    /// specific outcome is left to a follow-up.
+    async fn non_canonical_block_verdict(
         &self,
         receipt_blockhash: TransportBitcoinBlockHash,
-    ) -> Result<(), ForeignChainInspectionError> {
+    ) -> Result<Option<Verdict<BitcoinExtractedValue>>, ForeignChainInspectionError> {
         let get_block_header_args = GetBlockHeaderArgs {
             blockhash: receipt_blockhash,
             verbose: VERBOSE_RESPONSE,
@@ -133,7 +138,8 @@ where
         let block: GetBlockHeaderVerboseResponse = self
             .client
             .request(GET_BLOCK_HEADER_METHOD, &get_block_header_args)
-            .await?;
+            .await
+            .classified()?;
 
         // Defensive: `getblockheader` looks the header up *by hash*, so a well-behaved backend
         // always echoes back the hash we queried
@@ -150,28 +156,29 @@ where
         let canonical_blockhash: TransportBitcoinBlockHash = self
             .client
             .request(GET_BLOCK_HASH_METHOD, &get_block_hash_args)
-            .await?;
+            .await
+            .classified()?;
 
         if canonical_blockhash != receipt_blockhash {
-            return Err(non_canonical_block_error(
+            return Ok(Some(non_canonical_block_verdict(
                 block.height,
                 receipt_blockhash,
                 canonical_blockhash,
-            ));
+            )));
         }
-        Ok(())
+        Ok(None)
     }
 }
 
-fn non_canonical_block_error(
+fn non_canonical_block_verdict(
     block_number: u64,
     receipt_blockhash: TransportBitcoinBlockHash,
     canonical_blockhash: TransportBitcoinBlockHash,
-) -> ForeignChainInspectionError {
+) -> Verdict<BitcoinExtractedValue> {
     // Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so the
     // bytes recorded here are reversed relative to the on-chain orientation a block explorer
-    // expects. A triager reading this error needs to reverse the hex to look the block up.
-    ForeignChainInspectionError::NonCanonicalBlock {
+    // expects. A triager reading this verdict needs to reverse the hex to look the block up.
+    Verdict::NonCanonicalBlock {
         block_number,
         receipt_hash: (*receipt_blockhash).to_vec().into(),
         canonical_hash: (*canonical_blockhash).to_vec().into(),

@@ -1,11 +1,9 @@
 use crate::sui::{SuiExtractedValue, SuiTransactionDigest};
 use crate::{
-    AbsenceMeaning, ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector,
-    HasAbsenceMeaning, HexBytes, NetworkFingerprint, NetworkFingerprintInspector,
+    ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector, HexBytes,
+    NetworkFingerprint, NetworkFingerprintInspector, Verdict,
 };
-use foreign_chain_rpc_interfaces::sui::proto::{
-    ExecutedTransaction, GetServiceInfoResponse, GetTransactionResponse,
-};
+use foreign_chain_rpc_interfaces::sui::proto::ExecutedTransaction;
 use foreign_chain_rpc_interfaces::sui::{Code, Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 use std::str::FromStr;
@@ -72,10 +70,17 @@ where
         tx_id: SuiTransactionDigest,
         finality: SuiFinality,
         extractors: Vec<SuiExtractor>,
-    ) -> Result<Vec<SuiExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<SuiExtractedValue>, ForeignChainInspectionError> {
         let digest = sui_sdk_types::Digest::new(*tx_id).to_base58();
 
-        let response = self.client.get_transaction(&digest).await.classified()?;
+        // An unknown or pruned digest is the chain's verdict on the transaction, so it is
+        // intercepted here; every other status is a failure for `classified` to name.
+        let response = match self.client.get_transaction(&digest).await {
+            Err(status) if status.code() == Code::NotFound => {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
         let Some(tx) = response.transaction else {
             return Err(ForeignChainInspectionError::MalformedRpcResponse(
                 "response is missing the transaction".to_string(),
@@ -110,27 +115,21 @@ where
                 )
             })?;
         if !success {
-            return Err(ForeignChainInspectionError::TransactionFailed);
+            return Ok(Verdict::TransactionFailed);
         }
 
-        let extracted_values = extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&tx))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(extracted_values)
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in &extractors {
+            let Some(value) = extractor.extract_value(&tx)? else {
+                return Ok(Verdict::LogIndexOutOfBounds);
+            };
+            extracted_values.push(value);
+        }
+        Ok(Verdict::Extracted(extracted_values))
     }
 }
 
-impl HasAbsenceMeaning for GetTransactionResponse {
-    const ABSENCE: AbsenceMeaning = AbsenceMeaning::TransactionIsAbsent;
-}
-
-impl HasAbsenceMeaning for GetServiceInfoResponse {
-    const ABSENCE: AbsenceMeaning = AbsenceMeaning::ApiIsNotServed;
-}
-
-impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
+impl<T> ClassifyRpcOutcome for Result<T, Status> {
     type Response = T;
 
     fn classified(self) -> Result<T, ForeignChainInspectionError> {
@@ -141,14 +140,9 @@ impl<T: HasAbsenceMeaning> ClassifyRpcOutcome for Result<T, Status> {
 
         let message = status.to_string();
         Err(match status.code() {
-            Code::NotFound => match T::ABSENCE {
-                AbsenceMeaning::TransactionIsAbsent => {
-                    ForeignChainInspectionError::TransactionNotFound
-                }
-                AbsenceMeaning::ApiIsNotServed => {
-                    ForeignChainInspectionError::RpcRequestRejected(message)
-                }
-            },
+            // The transaction lookup intercepts NotFound as a verdict before classifying, so
+            // here it can only mean a path or service the provider does not serve.
+            Code::NotFound => ForeignChainInspectionError::RpcRequestRejected(message),
             Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
             Code::Unavailable
             | Code::ResourceExhausted
@@ -184,10 +178,12 @@ fn ensure_digest_matches(
 }
 
 impl SuiExtractor {
+    /// The extracted value, or [`None`] when the transaction has no event at the requested
+    /// index — a [`Verdict::LogIndexOutOfBounds`] verdict, which is the caller's to return.
     fn extract_value(
         &self,
         tx: &ExecutedTransaction,
-    ) -> Result<SuiExtractedValue, ForeignChainInspectionError> {
+    ) -> Result<Option<SuiExtractedValue>, ForeignChainInspectionError> {
         match self {
             SuiExtractor::Event { event_index } => {
                 let events = tx
@@ -195,9 +191,9 @@ impl SuiExtractor {
                     .as_ref()
                     .map(|events| events.events.as_slice())
                     .unwrap_or_default();
-                let event = events
-                    .get(*event_index)
-                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+                let Some(event) = events.get(*event_index) else {
+                    return Ok(None);
+                };
 
                 let package_id = event
                     .package_id
@@ -252,13 +248,13 @@ impl SuiExtractor {
                     .map(|value| value.to_vec())
                     .ok_or_else(|| malformed_event_field("bcs contents value"))?;
 
-                Ok(SuiExtractedValue::Event(SuiEvent {
+                Ok(Some(SuiExtractedValue::Event(SuiEvent {
                     package_id,
                     transaction_module,
                     sender,
                     type_tag,
                     bcs,
-                }))
+                })))
             }
         }
     }
@@ -296,29 +292,13 @@ mod tests {
     use rstest::rstest;
 
     fn read_as_transaction(status: Status) -> ForeignChainInspectionError {
-        Result::<GetTransactionResponse, _>::Err(status)
-            .classified()
-            .unwrap_err()
-    }
-
-    #[test]
-    fn classified__should_read_an_absent_transaction_as_the_chains_verdict() {
-        // Given — the status a node returns for an unknown or pruned digest.
-        let status =
-            Status::not_found("Transaction 88XKXHJRmGzkfwJa8PhoeDkqt4kxz8AEsB1UTzAbtd29 not found");
-
-        // When
-        let classified = read_as_transaction(status);
-
-        // Then — a substantive (non-transient) verdict.
-        assert_matches!(classified, ForeignChainInspectionError::TransactionNotFound);
-        assert!(!classified.is_transient());
+        Result::<(), _>::Err(status).classified().unwrap_err()
     }
 
     #[test]
     fn classified__should_read_an_absent_service_as_a_refusal() {
         // Given
-        let answered: Result<GetServiceInfoResponse, _> = Err(Status::not_found("no such service"));
+        let answered: Result<(), _> = Err(Status::not_found("no such service"));
 
         // When
         let classified = answered.classified().unwrap_err();
@@ -329,28 +309,6 @@ mod tests {
             ForeignChainInspectionError::RpcRequestRejected(_)
         );
         assert!(!classified.is_transient());
-    }
-
-    #[rstest]
-    #[case::deadline_exceeded(Code::DeadlineExceeded)]
-    #[case::unavailable(Code::Unavailable)]
-    #[case::invalid_argument(Code::InvalidArgument)]
-    #[case::unauthenticated(Code::Unauthenticated)]
-    fn classified__should_vary_by_resource_only_for_not_found(#[case] code: Code) {
-        // Given
-        let status = Status::new(code, "same code, either resource");
-
-        // When
-        let from_transaction = read_as_transaction(status.clone());
-        let from_service_info = Result::<GetServiceInfoResponse, _>::Err(status)
-            .classified()
-            .unwrap_err();
-
-        // Then
-        assert_eq!(
-            std::mem::discriminant(&from_transaction),
-            std::mem::discriminant(&from_service_info)
-        );
     }
 
     #[test]

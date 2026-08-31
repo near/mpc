@@ -5,6 +5,7 @@ pub mod common;
 use crate::common::{
     FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
 };
+use foreign_chain_inspector::Verdict;
 
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
@@ -66,6 +67,9 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
         .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
@@ -135,6 +139,9 @@ async fn extract_returns_empty_when_no_extractors_provided() {
         .extract(tx_id, threshold, Vec::new())
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected_extractions: Vec<BitcoinExtractedValue> = vec![];
@@ -142,7 +149,7 @@ async fn extract_returns_empty_when_no_extractors_provided() {
 }
 
 #[tokio::test]
-async fn extract_propagates_rpc_client_errors() {
+async fn extract__should_classify_rpc_client_errors() {
     // given
     let tx_id = BitcoinTransactionHash::from([9; 32]);
     let threshold = BlockConfirmations::from(1u64);
@@ -161,7 +168,10 @@ async fn extract_propagates_rpc_client_errors() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
+    );
 }
 
 #[tokio::test]
@@ -200,7 +210,7 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
     // then
     assert_matches!(
         response,
-        Err(ForeignChainInspectionError::NonCanonicalBlock {
+        Ok(Verdict::NonCanonicalBlock {
             block_number,
             receipt_hash,
             canonical_hash,
@@ -278,7 +288,10 @@ async fn extract__should_propagate_get_block_header_deserialize_error() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
 }
 
 #[tokio::test]
@@ -310,7 +323,10 @@ async fn extract__should_propagate_getblockhash_deserialize_error() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
 }
 
 #[tokio::test]
@@ -369,6 +385,9 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
         .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];

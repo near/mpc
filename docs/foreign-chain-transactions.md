@@ -11,7 +11,7 @@ This feature lets the MPC network sign payloads only after verifying a specific 
 
 ## Scope
 
-* In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain-family extractors.
+* In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, querying every configured provider, and extensible per-chain-family extractors.
 * Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results.
 
 ## Overview
@@ -33,7 +33,7 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 
 Not all extractors can be satisfied by a single RPC method call.
 
-* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain configurations.
+* **Provider selection**: The request does **not** specify an RPC URL. Nodes query every allowed provider they have configured from the on-chain foreign-chain configurations.
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`, plus `eth_getBlockByNumber` for the finality-head and canonical-chain checks.
@@ -598,19 +598,16 @@ If an operator's `foreign_chains.yaml` references a `provider_id` not on the whi
 - **Moving `sample_tx_id` on chain.** Stays in operator config for now; promoting it (so the whole network probes the same tx) is a candidate follow-up if operators start disagreeing on which tx to probe.
 - **Adding testnet `ForeignChain` variants** (`Sepolia`, `Goerli`, `Holesky`). The whitelist design doesn't need them and doesn't prevent them.
 
-## Deterministic Provider Selection
+## Provider Agreement
 
-Each node selects a provider using a deterministic hash of the provider identity (RPC URL):
-
-```
-hash = sha256(participant_id || request_id || provider_rpc_url)
-```
-
-Providers are sorted by this hash to build a deterministic ordering:
-
-* **Primary provider** = first in the ordering.
-
-This ensures different nodes query different providers for the same request while preserving determinism.
+A node queries **every** provider it has configured for the chain, concurrently, and compares the
+verdicts they reach: the extracted values, or a final answer that rules the transaction out
+(failed, not found, block not canonical, no log at the requested index). Verdicts must agree —
+extracted values byte for byte, failing verdicts by kind — and disagreement fails the request
+with an inspector mismatch. A provider that reaches no verdict at all, because it is
+unreachable, refuses the request, answers with something unusable, times out, or sees the
+transaction before finality, is tolerated whenever another provider reached one, so a single
+unavailable or misbehaving RPC does not take the node out of signing.
 
 ## Failure and Timeout Behavior
 
