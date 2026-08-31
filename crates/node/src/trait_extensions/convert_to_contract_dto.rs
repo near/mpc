@@ -6,9 +6,9 @@
 //! This module retains attestation conversions where the orphan rule applies.
 
 use mpc_attestation::{
+    EventLog, TcbInfo,
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::Collateral,
-    tcb_info::{EventLog, TcbInfo},
 };
 
 use near_mpc_contract_interface::types as dtos;
