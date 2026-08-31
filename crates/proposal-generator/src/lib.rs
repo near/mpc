@@ -1,108 +1,39 @@
-//! Builds the `vote_update_foreign_chain_providers` argument from a declarative TOML config.
-//!
-//! ```toml
-//! [chains.Bitcoin]
-//! quorum = 1
-//!
-//! [chains.Bitcoin.providers.public]
-//! base_url = "https://bitcoin-testnet-rpc.publicnode.com"
-//! auth_scheme = "None"
-//! chain_routing = "Embedded"
-//! ```
-//!
-//! Keys and values use the contract's serde shapes verbatim: chain keys are
-//! [`ForeignChain`] variant names, chain tables are [`ChainEntry`].
+//! Builds the foreign chain whitelist payload from TOML file.
 
+use anyhow::Context as _;
+use mpc_contract::errors::ChainEntryValidationError;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{
-    AuthScheme, ChainEntry, ChainRouting, ForeignChain, ProviderId,
-};
+use near_mpc_contract_interface::types::{ChainEntry, ForeignChain};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ProposalConfig {
     pub chains: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
 }
 
-/// Mirrors the `ChainEntry` validation the contract runs on a vote; a batch failing any of
-/// these is rejected on chain with `InvalidParameters::MalformedPayload`.
+/// A [`ChainEntryValidationError`] tagged with the chain it occurred on.
 #[derive(Debug, thiserror::Error)]
-pub enum ConfigError {
-    #[error("chain {chain:?}: quorum {quorum} must be between 1 and {providers} (provider count)")]
-    InvalidQuorum {
-        chain: ForeignChain,
-        quorum: u64,
-        providers: u64,
-    },
-    #[error("chain {chain:?}, provider {provider_id}: chain_routing segment must not contain '/'")]
-    PathSegmentContainsSlash {
-        chain: ForeignChain,
-        provider_id: ProviderId,
-    },
-    #[error(
-        "chain {chain:?}, provider {provider_id}: chain_routing query param {name:?} collides with the auth scheme's"
-    )]
-    QueryParamCollidesWithAuth {
-        chain: ForeignChain,
-        provider_id: ProviderId,
-        name: String,
-    },
-    #[error("chain {chain:?}: {providers} providers do not fit in u64")]
-    ProvidersLenOverflow {
-        chain: ForeignChain,
-        providers: usize,
-    },
+#[error("chain {chain:?}: {source}")]
+pub struct ConfigError {
+    pub chain: ForeignChain,
+    #[source]
+    pub source: ChainEntryValidationError,
 }
 
-pub fn build_batch(
-    config: ProposalConfig,
-) -> Result<NonEmptyBTreeMap<ForeignChain, ChainEntry>, ConfigError> {
+/// Validates each entry with the contract's own rules
+/// ([`mpc_contract::foreign_chain_rpc::ChainEntry`]), then borsh-encodes the
+/// `vote_update_foreign_chain_providers` argument.
+pub fn build_payload(config: ProposalConfig) -> anyhow::Result<Vec<u8>> {
     for (chain, entry) in config.chains.iter() {
-        validate_entry(*chain, entry)?;
-    }
-    Ok(config.chains)
-}
-
-fn validate_entry(chain: ForeignChain, entry: &ChainEntry) -> Result<(), ConfigError> {
-    let providers =
-        u64::try_from(entry.providers.len()).map_err(|_| ConfigError::ProvidersLenOverflow {
-            chain,
-            providers: entry.providers.len(),
+        mpc_contract::foreign_chain_rpc::ChainEntry::try_from(entry.clone()).map_err(|source| {
+            ConfigError {
+                chain: *chain,
+                source,
+            }
         })?;
-    if entry.quorum == 0 || entry.quorum > providers {
-        return Err(ConfigError::InvalidQuorum {
-            chain,
-            quorum: entry.quorum,
-            providers,
-        });
     }
-
-    for (provider_id, config) in entry.providers.iter() {
-        if let ChainRouting::PathSegment { segment } = &config.chain_routing
-            && segment.contains('/')
-        {
-            return Err(ConfigError::PathSegmentContainsSlash {
-                chain,
-                provider_id: provider_id.clone(),
-            });
-        }
-        if let (
-            ChainRouting::QueryParam {
-                name: routing_name, ..
-            },
-            AuthScheme::Query { name: auth_name },
-        ) = (&config.chain_routing, &config.auth_scheme)
-            && routing_name == auth_name
-        {
-            return Err(ConfigError::QueryParamCollidesWithAuth {
-                chain,
-                provider_id: provider_id.clone(),
-                name: auth_name.clone(),
-            });
-        }
-    }
-    Ok(())
+    borsh::to_vec(&config.chains)
+        .with_context(|| format!("failed to serialize chains {:?}", config.chains))
 }
 
 #[cfg(test)]
@@ -110,7 +41,9 @@ fn validate_entry(chain: ForeignChain, entry: &ChainEntry) -> Result<(), ConfigE
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use near_mpc_contract_interface::types::ProviderConfig;
+    use near_mpc_contract_interface::types::{
+        AuthScheme, ChainRouting, ProviderConfig, ProviderId,
+    };
     use rstest::rstest;
 
     fn parse(toml: &str) -> ProposalConfig {
@@ -118,7 +51,7 @@ mod tests {
     }
 
     #[test]
-    fn build_batch__should_map_config_to_chain_entries() {
+    fn build_payload__should_map_config_to_chain_entries() {
         // Given
         let config = parse(
             r#"
@@ -146,14 +79,16 @@ mod tests {
         );
 
         // When
-        let batch = build_batch(config).unwrap();
+        let payload = build_payload(config).unwrap();
 
         // Then
+        let votes: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
+            borsh::from_slice(&payload).unwrap();
         assert_eq!(
-            batch.keys().collect::<Vec<_>>(),
+            votes.keys().collect::<Vec<_>>(),
             vec![&ForeignChain::Bitcoin, &ForeignChain::Aptos]
         );
-        let aptos = &batch[&ForeignChain::Aptos];
+        let aptos = &votes[&ForeignChain::Aptos];
         assert_eq!(aptos.quorum, 2);
         assert_eq!(
             aptos.providers[&ProviderId("alchemy".into())],
@@ -172,7 +107,7 @@ mod tests {
                 scheme: Some("Bearer".into()),
             }
         );
-        let bitcoin = &batch[&ForeignChain::Bitcoin];
+        let bitcoin = &votes[&ForeignChain::Bitcoin];
         assert_eq!(bitcoin.quorum, 1);
         assert_eq!(
             bitcoin.providers[&ProviderId("public".into())].chain_routing,
@@ -189,11 +124,13 @@ mod tests {
             toml::from_str(include_str!("../proposals/testnet-rpc-whitelist.toml")).unwrap();
 
         // When
-        let batch = build_batch(config).unwrap();
+        let payload = build_payload(config).unwrap();
 
         // Then
+        let votes: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
+            borsh::from_slice(&payload).unwrap();
         assert_eq!(
-            batch.keys().copied().collect::<Vec<_>>(),
+            votes.keys().copied().collect::<Vec<_>>(),
             vec![
                 ForeignChain::Bitcoin,
                 ForeignChain::Abstract,
@@ -204,42 +141,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn proposal_config__should_reject_config_without_chains() {
-        // Given
-        let toml = "[chains]";
-
-        // When
-        let result = toml::from_str::<ProposalConfig>(toml);
-
-        // Then
-        assert_matches!(result, Err(_));
-    }
-
-    #[test]
-    fn proposal_config__should_reject_chain_without_providers() {
-        // Given
-        let toml = r#"
-            [chains.Bitcoin]
-            quorum = 1
-            providers = {}
-            "#;
-
-        // When
-        let result = toml::from_str::<ProposalConfig>(toml);
-
-        // Then
-        assert_matches!(result, Err(_));
-    }
-
-    #[test]
-    fn proposal_config__should_reject_unknown_chain_name() {
-        // Given
-        let toml = r#"
-            [chains.Dogecoin]
-            quorum = 1
-            "#;
-
+    #[rstest]
+    #[case::no_chains("[chains]")]
+    #[case::chain_without_providers(
+        r#"
+        [chains.Bitcoin]
+        quorum = 1
+        providers = {}
+        "#
+    )]
+    #[case::unknown_chain_name(
+        r#"
+        [chains.Dogecoin]
+        quorum = 1
+        "#
+    )]
+    fn proposal_config__should_reject_malformed_config(#[case] toml: &str) {
         // When
         let result = toml::from_str::<ProposalConfig>(toml);
 
@@ -248,89 +165,75 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0)]
-    #[case(2)]
-    fn build_batch__should_reject_quorum_outside_provider_count(#[case] quorum: u64) {
-        // Given
-        let config = parse(&format!(
-            r#"
-            [chains.Bitcoin]
-            quorum = {quorum}
+    #[case::zero_quorum(
+        r#"
+        [chains.Bitcoin]
+        quorum = 0
 
-            [chains.Bitcoin.providers.public]
-            base_url = "https://bitcoin-testnet-rpc.publicnode.com"
-            auth_scheme = "None"
-            chain_routing = "Embedded"
-            "#
-        ));
+        [chains.Bitcoin.providers.public]
+        base_url = "https://bitcoin-testnet-rpc.publicnode.com"
+        auth_scheme = "None"
+        chain_routing = "Embedded"
+        "#,
+        ForeignChain::Bitcoin,
+        ChainEntryValidationError::ZeroQuorum
+    )]
+    #[case::quorum_exceeds_providers(
+        r#"
+        [chains.Bitcoin]
+        quorum = 2
+
+        [chains.Bitcoin.providers.public]
+        base_url = "https://bitcoin-testnet-rpc.publicnode.com"
+        auth_scheme = "None"
+        chain_routing = "Embedded"
+        "#,
+        ForeignChain::Bitcoin,
+        ChainEntryValidationError::QuorumExceedsProviders { quorum: 2, providers_len: 1 }
+    )]
+    #[case::path_segment_containing_slash(
+        r#"
+        [chains.Ethereum]
+        quorum = 1
+
+        [chains.Ethereum.providers.ankr]
+        base_url = "https://rpc.ankr.com"
+        auth_scheme = "None"
+        chain_routing = { PathSegment = { segment = "eth/mainnet" } }
+        "#,
+        ForeignChain::Ethereum,
+        ChainEntryValidationError::PathSegmentContainsSlash { provider_id: "ankr".into() }
+    )]
+    #[case::query_param_colliding_with_auth(
+        r#"
+        [chains.Ethereum]
+        quorum = 1
+
+        [chains.Ethereum.providers.drpc]
+        base_url = "https://lb.drpc.org/ogrpc"
+        auth_scheme = { Query = { name = "network" } }
+        chain_routing = { QueryParam = { name = "network", value = "ethereum" } }
+        "#,
+        ForeignChain::Ethereum,
+        ChainEntryValidationError::QueryParamCollidesWithAuth {
+            provider_id: "drpc".into(),
+            name: "network".into(),
+        }
+    )]
+    fn build_payload__should_reject_entry_violating_contract_rules(
+        #[case] toml: &str,
+        #[case] chain: ForeignChain,
+        #[case] expected: ChainEntryValidationError,
+    ) {
+        // Given
+        let config = parse(toml);
 
         // When
-        let result = build_batch(config);
+        let result = build_payload(config);
 
         // Then
-        assert_matches!(
-            result,
-            Err(ConfigError::InvalidQuorum {
-                chain: ForeignChain::Bitcoin,
-                providers: 1,
-                ..
-            })
-        );
-    }
-
-    #[test]
-    fn build_batch__should_reject_path_segment_containing_slash() {
-        // Given
-        let config = parse(
-            r#"
-            [chains.Ethereum]
-            quorum = 1
-
-            [chains.Ethereum.providers.ankr]
-            base_url = "https://rpc.ankr.com"
-            auth_scheme = "None"
-            chain_routing = { PathSegment = { segment = "eth/mainnet" } }
-            "#,
-        );
-
-        // When
-        let result = build_batch(config);
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ConfigError::PathSegmentContainsSlash {
-                chain: ForeignChain::Ethereum,
-                ..
-            })
-        );
-    }
-
-    #[test]
-    fn build_batch__should_reject_query_param_colliding_with_auth() {
-        // Given
-        let config = parse(
-            r#"
-            [chains.Ethereum]
-            quorum = 1
-
-            [chains.Ethereum.providers.drpc]
-            base_url = "https://lb.drpc.org/ogrpc"
-            auth_scheme = { Query = { name = "network" } }
-            chain_routing = { QueryParam = { name = "network", value = "ethereum" } }
-            "#,
-        );
-
-        // When
-        let result = build_batch(config);
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ConfigError::QueryParamCollidesWithAuth {
-                chain: ForeignChain::Ethereum,
-                ..
-            })
-        );
+        let err = result.unwrap_err().downcast::<ConfigError>().unwrap();
+        assert_eq!(err.chain, chain);
+        assert_eq!(err.source, expected);
     }
 }

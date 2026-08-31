@@ -9341,10 +9341,13 @@ dependencies = [
  "base64 0.23.1",
  "borsh",
  "clap",
+ "hex",
+ "mpc-contract",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "rstest",
  "serde",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
  "toml 1.1.4+spec-1.1.0",
 ]
