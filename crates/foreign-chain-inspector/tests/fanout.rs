@@ -168,10 +168,7 @@ impl RecordProviderCall for ReportedCalls {
 
 fn measured_fan_out_of(
     inspectors: Vec<MockInspector>,
-) -> (
-    FanOut<MockInspector, ReportedCalls>,
-    mpsc::UnboundedReceiver<ReportedCall>,
-) {
+) -> (FanOut<MockInspector>, mpsc::UnboundedReceiver<ReportedCall>) {
     let (calls, reported) = mpsc::unbounded_channel();
     let fan_out = fan_out_of(inspectors).measuring(CHAIN, Arc::new(ReportedCalls(calls)));
     (fan_out, reported)

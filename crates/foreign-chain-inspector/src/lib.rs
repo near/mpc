@@ -28,10 +28,11 @@ pub mod contract_interface_conversions;
 pub mod ethereum;
 pub mod evm;
 pub mod hyperevm;
-mod measurement;
 pub mod polygon;
 pub mod starknet;
 pub mod sui;
+
+mod measurement;
 
 use measurement::{Measurement, TimedCall};
 
@@ -117,21 +118,13 @@ pub trait NetworkFingerprintInspector {
 /// the same failure mode (e.g. [`NonCanonicalBlock`](ForeignChainInspectionError::NonCanonicalBlock))
 /// are considered to agree even if the
 /// inner fields differ.
-pub struct FanOut<Inspector, Recorder: RecordProviderCall = ()> {
+#[derive(Clone)]
+pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
-    measurement: Option<Measurement<Recorder>>,
+    measurement: Option<Measurement>,
 }
 
-impl<Inspector: Clone, Recorder: RecordProviderCall> Clone for FanOut<Inspector, Recorder> {
-    fn clone(&self) -> Self {
-        Self {
-            inspectors: self.inspectors.clone(),
-            measurement: self.measurement.clone(),
-        }
-    }
-}
-
-impl<Inspector> FanOut<Inspector, ()> {
+impl<Inspector> FanOut<Inspector> {
     /// Creates a fan-out whose provider calls are not measured.
     pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
         Self {
@@ -144,28 +137,23 @@ impl<Inspector> FanOut<Inspector, ()> {
     ///
     /// [`FanOut::network_fingerprints`] is never measured: probe traffic shares these providers
     /// and would drown the verify latencies.
-    pub fn measuring<Recorder: RecordProviderCall>(
-        self,
+    pub fn measuring(
+        mut self,
         chain: &'static str,
-        record_call: Arc<Recorder>,
-    ) -> FanOut<Inspector, Recorder> {
-        FanOut {
-            inspectors: self.inspectors,
-            measurement: Some(Measurement { chain, record_call }),
-        }
+        record_call: Arc<dyn RecordProviderCall>,
+    ) -> Self {
+        self.measurement = Some(Measurement { chain, record_call });
+        self
     }
 }
 
-impl<Inspector, Recorder: RecordProviderCall> ForeignChainInspector for FanOut<Inspector, Recorder>
+impl<Inspector> ForeignChainInspector for FanOut<Inspector>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
     Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
-    // The spawned task must stay alive until every call has been reported, so `Recorder` must
-    // not outlive it.
-    Recorder: 'static,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -275,10 +263,9 @@ where
 /// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
-impl<Inspector, Recorder: RecordProviderCall> FanOut<Inspector, Recorder>
+impl<Inspector> FanOut<Inspector>
 where
     Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
-    Recorder: 'static,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the

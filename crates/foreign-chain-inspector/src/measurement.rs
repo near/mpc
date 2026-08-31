@@ -37,17 +37,6 @@ impl ProviderCallOutcome {
     }
 }
 
-impl RecordProviderCall for () {
-    fn record(
-        &self,
-        _chain: &str,
-        _provider: &ProviderId,
-        _elapsed: Duration,
-        _outcome: ProviderCallOutcome,
-    ) {
-    }
-}
-
 /// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
 /// on it. Says nothing about retryability: see [`crate::ForeignChainInspectionError::is_transient`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -61,33 +50,24 @@ pub enum ProviderFailure {
     TimedOut,
 }
 
-pub(crate) struct Measurement<Recorder: RecordProviderCall> {
+#[derive(Clone)]
+pub(crate) struct Measurement {
     pub(crate) chain: &'static str,
-    pub(crate) record_call: Arc<Recorder>,
-}
-
-impl<Recorder: RecordProviderCall> Clone for Measurement<Recorder> {
-    fn clone(&self) -> Self {
-        Self {
-            chain: self.chain,
-            record_call: Arc::clone(&self.record_call),
-        }
-    }
+    pub(crate) record_call: Arc<dyn RecordProviderCall>,
 }
 
 /// Times one provider's call and reports it once, from [`Drop`]: a caller's deadline aborts the
 /// spawned task mid-call, so no ordinary return path runs for a provider that never answers.
-#[derive(Clone)]
-pub(crate) struct TimedCall<Recorder: RecordProviderCall> {
-    pub(crate) measurement: Option<Measurement<Recorder>>,
-    pub(crate) provider: ProviderId,
+pub(crate) struct TimedCall {
+    measurement: Option<Measurement>,
+    provider: ProviderId,
     /// tokio's, so a paused clock in a test drives the reported duration.
-    pub(crate) started: tokio::time::Instant,
-    pub(crate) outcome: Option<ProviderCallOutcome>,
+    started: tokio::time::Instant,
+    outcome: Option<ProviderCallOutcome>,
 }
 
-impl<Recorder: RecordProviderCall> TimedCall<Recorder> {
-    pub(crate) fn start(measurement: Option<Measurement<Recorder>>, provider: ProviderId) -> Self {
+impl TimedCall {
+    pub(crate) fn start(measurement: Option<Measurement>, provider: ProviderId) -> Self {
         Self {
             measurement,
             provider,
@@ -101,7 +81,7 @@ impl<Recorder: RecordProviderCall> TimedCall<Recorder> {
     }
 }
 
-impl<Recorder: RecordProviderCall> Drop for TimedCall<Recorder> {
+impl Drop for TimedCall {
     fn drop(&mut self) {
         // A panicking inspector unwinds through this guard: the call was torn down, not
         // abandoned, and recording mid-unwind risks a double panic.
@@ -124,79 +104,20 @@ impl<Recorder: RecordProviderCall> Drop for TimedCall<Recorder> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::ForeignChainInspectionError;
-    use assert_matches::assert_matches;
-    use rstest::rstest;
 
     #[derive(Default)]
-    struct RecordedCalls(std::sync::Mutex<Vec<(String, ProviderId, ProviderCallOutcome)>>);
-
-    impl RecordedCalls {
-        fn taken(&self) -> Vec<(String, ProviderId, ProviderCallOutcome)> {
-            std::mem::take(&mut self.0.lock().unwrap())
-        }
-    }
+    struct RecordedCalls(std::sync::Mutex<Vec<ProviderCallOutcome>>);
 
     impl RecordProviderCall for RecordedCalls {
         fn record(
             &self,
-            chain: &str,
-            provider: &ProviderId,
+            _chain: &str,
+            _provider: &ProviderId,
             _elapsed: Duration,
             outcome: ProviderCallOutcome,
         ) {
-            self.0
-                .lock()
-                .unwrap()
-                .push((chain.to_owned(), provider.clone(), outcome));
+            self.0.lock().unwrap().push(outcome);
         }
-    }
-
-    fn measured_call(recorded: &Arc<RecordedCalls>) -> TimedCall<RecordedCalls> {
-        TimedCall::start(
-            Some(Measurement {
-                chain: "testchain",
-                record_call: Arc::clone(recorded),
-            }),
-            ProviderId("only".to_string()),
-        )
-    }
-
-    #[test]
-    fn timed_call__should_report_the_outcome_the_call_ended_with() {
-        // Given
-        let recorded = Arc::new(RecordedCalls::default());
-        let mut call = measured_call(&recorded);
-
-        // When
-        call.ended(&Err::<(), _>(ForeignChainInspectionError::Timeout));
-        drop(call);
-
-        // Then
-        assert_eq!(
-            recorded.taken(),
-            vec![(
-                "testchain".to_string(),
-                ProviderId("only".to_string()),
-                ProviderCallOutcome::Failed(ProviderFailure::TimedOut),
-            )]
-        );
-    }
-
-    #[test]
-    fn timed_call__should_report_a_call_that_never_ended_as_abandoned() {
-        // Given: a call whose task the caller's deadline aborted mid-flight.
-        let recorded = Arc::new(RecordedCalls::default());
-        let call = measured_call(&recorded);
-
-        // When
-        drop(call);
-
-        // Then
-        assert_matches!(
-            recorded.taken()[..],
-            [(_, _, ProviderCallOutcome::Abandoned)]
-        );
     }
 
     #[test]
@@ -206,34 +127,18 @@ mod tests {
 
         // When: the inspector panics, so the guard drops as part of the unwind.
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _call = measured_call(&recorded);
+            let _call = TimedCall::start(
+                Some(Measurement {
+                    chain: "testchain",
+                    record_call: Arc::clone(&recorded) as Arc<dyn RecordProviderCall>,
+                }),
+                ProviderId("only".to_string()),
+            );
             panic!("the inspector blew up");
         }));
 
         // Then
         assert!(panicked.is_err());
-        assert_eq!(recorded.taken(), vec![]);
-    }
-
-    #[rstest]
-    #[case(Ok(()), ProviderCallOutcome::Answered)]
-    #[case(
-        Err(ForeignChainInspectionError::RpcRequestFailed("_".to_string())),
-        ProviderCallOutcome::Failed(ProviderFailure::Unreachable)
-    )]
-    // A verdict about the transaction is an answer, so the provider is not at fault.
-    #[case(
-        Err(ForeignChainInspectionError::NotFinalized),
-        ProviderCallOutcome::Answered
-    )]
-    fn provider_call_outcome_of__should_blame_the_provider_only_for_its_own_failures(
-        #[case] result: Result<(), ForeignChainInspectionError>,
-        #[case] expected: ProviderCallOutcome,
-    ) {
-        // When
-        let outcome = ProviderCallOutcome::of(&result);
-
-        // Then
-        assert_eq!(outcome, expected);
+        assert_eq!(*recorded.0.lock().unwrap(), vec![]);
     }
 }

@@ -41,19 +41,19 @@ use tokio::sync::watch;
 /// Built once at startup so that request handling fans out over ready clients instead of re-parsing
 /// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
-    pub bitcoin: Option<FanOut<BitcoinInspector<Client>, ProviderCallMetrics>>,
-    pub ethereum: Option<FanOut<EthereumInspector<Client>, ProviderCallMetrics>>,
-    pub abstract_chain: Option<FanOut<AbstractInspector<Client>, ProviderCallMetrics>>,
-    pub bnb: Option<FanOut<BnbInspector<Client>, ProviderCallMetrics>>,
-    pub starknet: Option<FanOut<StarknetInspector<Client>, ProviderCallMetrics>>,
-    pub base: Option<FanOut<BaseInspector<Client>, ProviderCallMetrics>>,
-    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>, ProviderCallMetrics>>,
-    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>, ProviderCallMetrics>>,
-    pub polygon: Option<FanOut<PolygonInspector<Client>, ProviderCallMetrics>>,
-    pub avalanche: Option<FanOut<AvalancheInspector<Client>, ProviderCallMetrics>>,
-    pub adi: Option<FanOut<AdiInspector<Client>, ProviderCallMetrics>>,
-    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>, ProviderCallMetrics>>,
-    pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>, ProviderCallMetrics>>,
+    pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
+    pub ethereum: Option<FanOut<EthereumInspector<Client>>>,
+    pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
+    pub bnb: Option<FanOut<BnbInspector<Client>>>,
+    pub starknet: Option<FanOut<StarknetInspector<Client>>>,
+    pub base: Option<FanOut<BaseInspector<Client>>>,
+    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
+    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
+    pub polygon: Option<FanOut<PolygonInspector<Client>>>,
+    pub avalanche: Option<FanOut<AvalancheInspector<Client>>>,
+    pub adi: Option<FanOut<AdiInspector<Client>>>,
+    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
+    pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
 }
 
 /// Reports the verify fan-out's provider calls into [`crate::metrics`].
@@ -120,7 +120,7 @@ impl ForeignChainInspectors<HttpClient> {
             chain: &'static str,
             chain_config: Option<&ForeignChainConfig>,
             new_inspector: impl Fn(String, RpcAuthentication, Duration) -> anyhow::Result<I>,
-        ) -> anyhow::Result<Option<FanOut<I, ProviderCallMetrics>>> {
+        ) -> anyhow::Result<Option<FanOut<I>>> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
