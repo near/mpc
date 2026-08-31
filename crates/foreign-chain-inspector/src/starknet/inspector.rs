@@ -116,9 +116,9 @@ where
 
     /// The canonical block at `block_number`. `starknet_getBlockWithTxHashes` only ever
     /// resolves to a canonical block, so a receipt whose block disagrees with it was indexed
-    /// against a side block (stale tx index, partially-applied reorg, divergent RPC backend,
-    /// etc.). The caller compares the height too — a divergent RPC that returns a hash from a
-    /// different height would otherwise sneak past a hash-only check.
+    /// against a side block (stale tx index, partially applied reorg, divergent RPC backend,
+    /// etc.). The caller compares the height too, since a divergent RPC that returns a hash
+    /// from a different height would otherwise sneak past a check of the hash alone.
     async fn canonical_block_at(
         &self,
         block_number: u64,

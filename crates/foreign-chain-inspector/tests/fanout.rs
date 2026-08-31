@@ -321,17 +321,16 @@ mod failing_verdicts_agree {
     }
 
     #[tokio::test]
-    async fn fan_out__should_treat_same_verdict_variant_with_different_inner_fields_as_agreement() {
-        // Given: two NonCanonicalBlock verdicts with different inner fields. They share a
-        // discriminant, so the fan-out must consider them agreeing.
-        let non_canonical = |block_number: u64| {
-            mock_returning(verdict(move || Verdict::NonCanonicalBlock {
-                block_number,
+    async fn fan_out__should_return_the_verdict_when_fielded_verdicts_are_identical() {
+        // Given
+        let non_canonical = || {
+            mock_returning(verdict(|| Verdict::NonCanonicalBlock {
+                block_number: 1,
                 receipt_hash: HexBytes(vec![1]),
                 canonical_hash: HexBytes(vec![2]),
             }))
         };
-        let fan_out = fan_out_of(vec![non_canonical(1), non_canonical(2)]);
+        let fan_out = fan_out_of(vec![non_canonical(), non_canonical()]);
 
         // When
         let result = fan_out.extract((), (), vec![]).await;
@@ -365,6 +364,29 @@ mod failing_verdicts_disagree {
         let a = mock_returning(verdict(|| Verdict::TransactionFailed));
         let b = mock_returning(verdict(|| Verdict::LogIndexOutOfBounds));
         let fan_out = fan_out_of(vec![a, b]);
+
+        // When
+        let result = fan_out.extract((), (), vec![]).await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn fan_out__should_return_mismatch_when_verdicts_share_a_variant_but_differ_in_fields() {
+        // Given: both providers call the block non canonical but name different canonical
+        // hashes, so they describe different chains.
+        let non_canonical = |canonical_hash: Vec<u8>| {
+            mock_returning(verdict(move || Verdict::NonCanonicalBlock {
+                block_number: 1,
+                receipt_hash: HexBytes(vec![1]),
+                canonical_hash: HexBytes(canonical_hash.clone()),
+            }))
+        };
+        let fan_out = fan_out_of(vec![non_canonical(vec![2]), non_canonical(vec![3])]);
 
         // When
         let result = fan_out.extract((), (), vec![]).await;
@@ -413,9 +435,9 @@ mod all_err {
 
     #[tokio::test]
     async fn fan_out__should_propagate_an_error_when_error_variants_disagree() {
-        // Given: two different errors. The fan-out does not gate errors on variant
-        // agreement — they are not verdicts — so the result must be one of them and
-        // must not be InspectorResponseMismatch.
+        // Given: two different errors. Errors are not verdicts, so the fan-out does not gate
+        // them on variant agreement: the result must be one of them and must not be
+        // InspectorResponseMismatch.
         let a = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
         let b = mock_returning(err(|| {
             ForeignChainInspectionError::RpcRequestRejected("HTTP status 401".to_string())

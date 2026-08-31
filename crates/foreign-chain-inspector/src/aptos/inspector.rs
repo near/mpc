@@ -831,7 +831,7 @@ mod tests {
 
     #[test]
     fn classified__should_read_a_404_as_a_refusal() {
-        // Given — the transaction lookup intercepts its own 404 before classifying, so here a
+        // Given: the transaction lookup intercepts its own 404 before classifying, so here a
         // 404 can only mean a path the provider does not route.
         let answered: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(404));
 

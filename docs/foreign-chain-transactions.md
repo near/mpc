@@ -602,9 +602,9 @@ If an operator's `foreign_chains.yaml` references a `provider_id` not on the whi
 
 A node queries **every** provider it has configured for the chain, concurrently, and compares the
 verdicts they reach: the extracted values, or a final answer that rules the transaction out
-(failed, not found, block not canonical, no log at the requested index). Verdicts must agree —
-extracted values byte for byte, failing verdicts by kind — and disagreement fails the request
-with an inspector mismatch. A provider that reaches no verdict at all, because it is
+(failed, not found, block not canonical, no log at the requested index). The verdicts must be
+identical: any difference, even in the canonical hash named inside the same failure kind, fails
+the request with an inspector mismatch. A provider that reaches no verdict at all, because it is
 unreachable, refuses the request, answers with something unusable, times out, or sees the
 transaction before finality, is tolerated whenever another provider reached one, so a single
 unavailable or misbehaving RPC does not take the node out of signing.

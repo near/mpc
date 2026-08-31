@@ -44,13 +44,12 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Verdict<Self::ExtractedValue>, ForeignChainInspectionError>> + Send;
 }
 
-/// The settled answer one inspection produced. A verdict that rules the transaction out is
-/// still the inspection succeeding; failing to obtain any verdict is a
+/// The settled answer from a transaction inspection. Inspection producing a negative verdict is
+/// still a successful inspection. Failing to obtain any verdict is instead a
 /// [`ForeignChainInspectionError`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict<V> {
     Extracted(Vec<V>),
-    /// Executed and did not succeed.
     TransactionFailed,
     TransactionNotFound,
     NonCanonicalBlock {
@@ -59,18 +58,6 @@ pub enum Verdict<V> {
         canonical_hash: HexBytes,
     },
     LogIndexOutOfBounds,
-}
-
-impl<V: PartialEq> Verdict<V> {
-    /// Deliberately weaker than [`PartialEq`]: failing verdicts are compared at the variant
-    /// level, so two providers reporting [`Verdict::NonCanonicalBlock`] agree even when they
-    /// disagree on the canonical hash itself.
-    fn agrees_with(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Extracted(left), Self::Extracted(right)) => left == right,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
-        }
-    }
 }
 
 impl<V> std::fmt::Display for Verdict<V> {
@@ -140,13 +127,11 @@ pub trait NetworkFingerprintInspector {
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
 ///
-/// All inner inspectors are queried concurrently. Every [`Verdict`] must agree across the
-/// inspectors that produced one (see [`Verdict::agrees_with`]); disagreement returns
-/// [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors — failures to obtain a
-/// verdict, whether the provider's own fault or finality not yet reached — are tolerated
-/// whenever any inspector reached a verdict, so a single unavailable or misbehaving RPC does not
-/// take the whole node out of signing. Only when no inspector reached a verdict is the first
-/// error propagated.
+/// All inner inspectors are queried concurrently. Every [`Verdict`] reached must be identical;
+/// any disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors
+/// are tolerated as long as any inspector reached a verdict, so a single unavailable or
+/// misbehaving RPC does not take the whole node out of signing. When no inspector reached a
+/// verdict, the first error is propagated.
 #[derive(Clone, derive_more::Constructor)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
@@ -210,9 +195,7 @@ where
             ));
         };
 
-        let all_verdicts_agree = verdicts
-            .iter()
-            .all(|(_, verdict)| verdict.agrees_with(first_verdict));
+        let all_verdicts_agree = verdicts.iter().all(|(_, verdict)| verdict == first_verdict);
         if !all_verdicts_agree {
             tracing::error!(
                 ?verdicts,
@@ -451,8 +434,8 @@ fn is_retryable_status(status_code: u16) -> bool {
 }
 
 /// Classifies a raw client outcome into a [`ForeignChainInspectionError`], one implementation per
-/// client error type. Both routes an inspector serves go through this — transaction inspection
-/// and the network fingerprint probe — so the same fault reports the same error everywhere.
+/// client error type. Transaction inspection and the network fingerprint probe both go through
+/// this, so the same fault reports the same error on either route.
 ///
 /// A "not found" answer to the transaction lookup itself is a [`Verdict`], not an error, so the
 /// inspectors intercept it at that call site before classifying.
