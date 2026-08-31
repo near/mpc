@@ -407,7 +407,7 @@ The per-participant registration model above leaves the network with no shared n
 | Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)` — each `ChainVote` is a full per-chain snapshot (provider list + RPC response quorum). The chain's stored state is replaced when the protocol's signing threshold of participants holds the same canonical proposal.                                                            |
 | Where the RPC URL lives                | Operator's `foreign_chains.yaml`, as a full string with auth placeholders                   | Contract `ProviderEntry`: `base_url` + `auth_scheme` + `chain_routing` enum (`Embedded` / `PathSegment` / `QueryParam` — exactly one). Node assembles the final URL at startup.                  |
 | Where the operator's API key lives     | Operator's yaml, via `TokenConfig::env`                                                     | Operator's yaml, via `TokenConfig::env` *(unchanged)*                                                                                                                                          |
-| What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference                                                                                                                                                        |
+| What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference. When the voted `base_url` carries a `{}`, it is meant for operator specific slug                                                              |
 | Adding a new provider                  | Every operator updates their yaml; the network effectively supports a chain once enough do  | Threshold of participants vote in `(chain, ProviderEntry)`; operators reference it by `provider_id` only                                                                                       |
 | Removing a compromised provider        | Every operator manually edits their yaml; coordination problem                              | Threshold of participants vote remove; nodes pick up the change via the indexer and drop the provider on next reconfigure                                                                       |
 | Testnet vs mainnet separation          | Implicit — operator decides what URL goes under which chain                                 | Per-`ForeignChain` map slot, plus a recurring *network fingerprint probe* that calls the chain's self-identifying RPC and compares the response against the chain's `expected_network_fingerprint` from operator config — catches both lookup-level (wrong bucket) and content-level (wrong URL voted into the right bucket) confusion. |
@@ -475,7 +475,7 @@ pub struct ForeignChainRpcWhitelist {
 
 ### Example URL assembly
 
-The node assembles the final URL deterministically: start from `base_url`, apply `chain_routing` (no-op for `Embedded`, append segment for `PathSegment`, merge param for `QueryParam`), then apply `auth_scheme` to inject the token.
+The node assembles the final URL deterministically: start from `base_url`, fill a `{}` (if present) with the operator-specific host label (`SLUG` in the table below), apply `chain_routing` (no-op for `Embedded`, append segment for `PathSegment`, merge param for `QueryParam`), then apply `auth_scheme` to inject the token.
 
 | Vote                  | base_url                                | chain_routing                                  | auth_scheme       | Assembled URL                                              |
 |-----------------------|------------------------------------------|------------------------------------------------|-------------------|------------------------------------------------------------|
@@ -484,6 +484,7 @@ The node assembles the final URL deterministically: start from `base_url`, apply
 | `(Sepolia, ankr)`     | `https://rpc.ankr.com`                   | `PathSegment { segment: "eth_sepolia" }`       | `Path("")`        | `https://rpc.ankr.com/eth_sepolia/TOKEN`                   |
 | `(Ethereum, drpc)`    | `https://lb.drpc.org/ogrpc`              | `QueryParam { name: "network", value: "ethereum" }` | `Query("dkey")` | `https://lb.drpc.org/ogrpc?network=ethereum&dkey=TOKEN`  |
 | `(Ethereum, infura)`  | `https://mainnet.infura.io/v3/`          | `Embedded`                                     | `Path("")`        | `https://mainnet.infura.io/v3/TOKEN`                       |
+| `(Sui, quicknode)`    | `https://{}.sui-mainnet.quiknode.pro`    | `Embedded`                                     | `Path("")`        | `https://SLUG.sui-mainnet.quiknode.pro/TOKEN`              |
 
 ### Vote semantics
 
@@ -531,7 +532,7 @@ Providers use three mutually-exclusive conventions to identify which chain a req
 - **Path segment** (Ankr): `https://rpc.ankr.com/eth/…`
 - **Query param** (dRPC): `https://lb.drpc.org/ogrpc?network=ethereum&…`
 
-If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value*; they have no way to inject extra path components or query keys.
+If `base_url` were a single string *and* the operator chose the auth scheme, the operator could declare e.g. `auth: { kind: Query, name: "network", token_env: KEY }` against a `base_url` ending in `…?network=ethereum&`. The assembled URL becomes `…?network=ethereum&network=sepolia` — most servers take the last value, redirecting the call to Sepolia. Modelling chain identity as a `ChainRouting` enum (`Embedded` | `PathSegment` | `QueryParam`) and putting `auth_scheme` on chain removes that syntactic surface. The operator only supplies a token *value* — plus, for providers with per-operator hostnames, the one host label a `{}` in the voted `base_url` stands for; they have no way to inject extra path components or query keys.
 
 #### Why each `(chain, provider_id)` gets its own `ProviderEntry`
 
@@ -593,7 +594,7 @@ If an operator's `foreign_chains.yaml` references a `provider_id` not on the whi
 ### Out of scope / deferred
 
 - **Per-chain quorum policy** (`RpcPolicy.quorum_threshold` from the precursor design doc). This is the number of providers a node must independently agree with on a verification result — distinct from the per-chain voting threshold for add/remove. A follow-up under the same milestone.
-- **Hostname templating** for Alchemy / Infura. Chain identity for subdomain-encoded providers stays inside `base_url` rather than being structurally extracted; symmetric extraction was rejected as over-engineering with no concrete attack benefit.
+- **Chain-identity hostname templating** for Alchemy / Infura. Chain identity for subdomain-encoded providers stays inside `base_url` rather than being structurally extracted; symmetric extraction was rejected as over-engineering with no concrete attack benefit. This is distinct from the supported `{}` wildcard, which stands for an operator-chosen slug and carries no chain identity.
 - **Moving `sample_tx_id` on chain.** Stays in operator config for now; promoting it (so the whole network probes the same tx) is a candidate follow-up if operators start disagreeing on which tx to probe.
 - **Adding testnet `ForeignChain` variants** (`Sepolia`, `Goerli`, `Holesky`). The whitelist design doesn't need them and doesn't prevent them.
 

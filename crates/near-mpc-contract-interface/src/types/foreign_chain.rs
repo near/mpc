@@ -1946,6 +1946,10 @@ pub struct ProviderConfig {
     /// Provider's stable base. When `chain_routing == Embedded`, the chain identifier
     /// is already inside `base_url` (subdomain or path prefix). Otherwise `base_url`
     /// is chain-agnostic and `chain_routing` carries the chain marker.
+    ///
+    /// A single `{}` allows per-operator slug (e.g. QuickNode's
+    /// `https://{}.sui-testnet.quiknode.pro`); nodes match it against exactly one
+    /// label of the local URL, keeping the rest of the host pinned.
     pub base_url: String,
     pub auth_scheme: AuthScheme,
     pub chain_routing: ChainRouting,
