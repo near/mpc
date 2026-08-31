@@ -255,8 +255,8 @@ fn classify(
             Some(ProviderFailure::Rejected) => ProviderStatus::RequestRejected,
             Some(ProviderFailure::TimedOut) => ProviderStatus::TimedOut,
             Some(ProviderFailure::Malformed) => ProviderStatus::MalformedResponse,
-            // Probing does not inspect transactions, so a transaction-level error means
-            // an impl answered outside its contract.
+            // Probing does not inspect transactions, so an answer about transaction state
+            // means an impl answered outside its contract.
             None => ProviderStatus::MalformedResponse,
         },
     }
@@ -1168,15 +1168,12 @@ mod tests {
     }
 
     #[test]
-    fn classify__should_report_a_transaction_level_error_as_malformed() {
+    fn classify__should_report_a_transaction_state_answer_as_malformed() {
         // Given
         let expected = NetworkFingerprint::new(MAINNET);
 
         // When
-        let status = classify(
-            &expected,
-            Err(ForeignChainInspectionError::TransactionNotFound),
-        );
+        let status = classify(&expected, Err(ForeignChainInspectionError::NotFinalized));
 
         // Then
         assert_eq!(status, ProviderStatus::MalformedResponse);

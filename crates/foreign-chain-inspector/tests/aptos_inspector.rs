@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use foreign_chain_inspector::Verdict;
 use std::time::Duration;
 
 use assert_matches::assert_matches;
@@ -86,12 +87,12 @@ async fn extract__should_return_normalized_event_via_rest_client() {
     framework_address[31] = 1;
     assert_eq!(
         extracted_values,
-        vec![AptosExtractedValue::Event(AptosEvent {
+        Verdict::Extracted(vec![AptosExtractedValue::Event(AptosEvent {
             account_address: AptosAddress(framework_address),
             sequence_number: 5,
             type_tag: "0xdeadbeef::bridge::InitTransfer".to_string(),
             data: r#"{"a_recipient":"alice.near","z_amount":"100"}"#.to_string(),
-        })],
+        })]),
     );
     mock.assert();
 }
@@ -173,10 +174,7 @@ async fn extract__should_return_transaction_not_found_on_404() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionNotFound)
-    );
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
 }
 
 #[rstest]
