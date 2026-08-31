@@ -1094,7 +1094,6 @@ mod tests {
             "https://evil.com?x=.abstract-testnet.quiknode.pro",
             WILDCARD
         ));
-        // An empty label, and a suffix that is not where the host ends.
         assert!(!base_url_matches(
             "https://.abstract-testnet.quiknode.pro/",
             WILDCARD
