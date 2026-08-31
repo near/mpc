@@ -1050,15 +1050,14 @@ name = "attestation"
 version = "3.14.0"
 dependencies = [
  "attestation",
+ "attestation-types",
  "borsh",
  "dcap-qvl",
  "derive_more 2.1.1",
  "dstack-sdk-types",
  "hex",
- "rstest",
  "serde",
  "serde_json",
- "serde_with",
  "sha2 0.10.9",
  "tee-verifier-conversions",
  "tee-verifier-interface",
@@ -1089,6 +1088,21 @@ dependencies = [
  "time",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "attestation-types"
+version = "3.14.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.1.1",
+ "dstack-sdk-types",
+ "hex",
+ "rstest",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -5136,7 +5150,7 @@ name = "include-measurements"
 version = "3.14.0"
 dependencies = [
  "anyhow",
- "attestation",
+ "attestation-types",
  "hex",
  "proc-macro2",
  "quote",
@@ -6224,7 +6238,7 @@ version = "3.14.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "attestation",
+ "attestation-types",
  "blstrs",
  "borsh",
  "cargo-near-build",

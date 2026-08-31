@@ -200,7 +200,7 @@ impl TeeState {
         self.store_verified_attestation(node_id, verified_attestation)
     }
 
-    fn expected_report_data(node_id: &NodeId) -> ::attestation::report_data::ReportData {
+    fn expected_report_data(node_id: &NodeId) -> ::attestation_types::report_data::ReportData {
         let report_data: ReportData = ReportDataV1::new(
             *node_id.tls_public_key.as_bytes(),
             *node_id.account_public_key.as_bytes(),

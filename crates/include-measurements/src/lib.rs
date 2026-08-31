@@ -1,5 +1,5 @@
 use anyhow::Context;
-use attestation::tcb_info::TcbInfo;
+use attestation_types::tcb_info::TcbInfo;
 use proc_macro::TokenStream;
 use quote::quote;
 use std::env;
@@ -8,13 +8,13 @@ use std::path::Path;
 use syn::{LitStr, parse_macro_input};
 
 /// Expands TCB info measurements from the given JSON file
-/// into an [`ExpectedMeasurements`](attestation::measurements::ExpectedMeasurements) struct literal.
+/// into an [`ExpectedMeasurements`](attestation_types::measurements::ExpectedMeasurements) struct literal.
 ///
 /// # Usage
 ///
 /// ```rust,ignore
 /// use include_measurements::include_measurements;
-/// use attestation::measurements::ExpectedMeasurements;
+/// use attestation_types::measurements::ExpectedMeasurements;
 ///
 /// let measurements: ExpectedMeasurements = include_measurements!("path/to/tcb_info.json");
 /// ```

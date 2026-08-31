@@ -63,7 +63,7 @@ All files will be written into the specified output directory.
    cargo nextest run -p test-utils account_secret_key
    ```
 
-6. Update `crates/attestation/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
+6. Update `crates/attestation-types/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
    there as well, since unit tests in the `attestation` crate use it for deserialization tests.
    This is optional — the tests only verify parsing, not measurement values — but keeping it
    in sync avoids confusion.
