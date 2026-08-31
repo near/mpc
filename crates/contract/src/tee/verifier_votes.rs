@@ -69,7 +69,7 @@ impl TeeVerifierVotes {
     ) -> Result<Option<AccountId>, Error> {
         let governance_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
-        let proposal_hash: ProposalHash = proposal.clone().into();
+        let proposal_hash = proposal.proposal_hash();
 
         let count_usize = {
             let voter_set = self.pending.vote(participant, proposal_hash);
@@ -172,7 +172,7 @@ mod tests {
                 "duplicate voter in expected bucket"
             );
             assert!(
-                map.insert(proposal.into(), voter_set).is_none(),
+                map.insert(proposal.proposal_hash(), voter_set).is_none(),
                 "duplicate proposal in expected votes"
             );
         }

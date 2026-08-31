@@ -239,6 +239,19 @@ define_hash!(
     48
 );
 
+define_hash!(
+    /// SHA-256 digest identifying a governance proposal by its encoded content.
+    ProposalHash,
+    32
+);
+
+/// A [`DockerImageHash`] is already a 32-byte digest, so it identifies its own proposal.
+impl From<DockerImageHash> for ProposalHash {
+    fn from(hash: DockerImageHash) -> Self {
+        Self::new(hash.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +262,19 @@ mod tests {
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     define_hash!(TestHash, 32);
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn proposal_hash_from_docker_image_hash__should_be_the_image_hash_itself() {
+        // Given
+        let image_hash = DockerImageHash::from([0xAB; 32]);
+
+        // When
+        let proposal_hash = ProposalHash::from(image_hash);
+
+        // Then
+        assert_eq!(proposal_hash, ProposalHash::new([0xAB; 32]));
+    }
     define_hash!(TestHash48, 48);
 
     #[test]

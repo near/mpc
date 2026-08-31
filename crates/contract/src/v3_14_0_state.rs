@@ -7,6 +7,8 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 use near_sdk::{
@@ -21,7 +23,7 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::{AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::GovernanceThresholdParameters,
     },
@@ -30,10 +32,16 @@ use crate::{
         resharing::ResharingContractState, running::RunningContractState,
     },
     storage_keys::StorageKey,
-    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
+    tee::{
+        measurements::AllowedMeasurements,
+        proposal::{AllowedLauncherImages, NodeImageHash, StoredDockerImageHashes},
+        tee_state::{NodeAttestation, TeeState},
+        verifier_votes::TeeVerifierVotes,
+    },
     update::ProposedUpdates,
 };
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{LauncherVoteAction, MeasurementVoteAction};
 
 /// Shadow of the `3.14.0` [`Config`]: the deployed layout predates this release's
 /// `attestation_storage_fee_millinear`, so migrating `3.14.0` state deserializes the old
@@ -214,12 +222,60 @@ enum OldProtocolContractState {
     Resharing(ResharingContractState),
 }
 
+/// Shadow of the `3.14.0` `CodeHashesVotes`: a `BTreeMap` stored inline in the contract
+/// state, replaced by the [`IterableMap`]-backed
+/// [`Votes`](crate::primitives::votes::Votes).
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldCodeHashesVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
+}
+
+/// Shadow of the `3.14.0` `LauncherHashVotes`, see [`OldCodeHashesVotes`].
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldLauncherHashVotes {
+    vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
+}
+
+/// Shadow of the `3.14.0` `MeasurementVotes`, see [`OldCodeHashesVotes`].
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldMeasurementVotes {
+    vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
+}
+
+/// Shadow of the `3.14.0` [`TeeState`], carrying the `BTreeMap`-backed vote shadows.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: StoredDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: OldCodeHashesVotes,
+    launcher_votes: OldLauncherHashVotes,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: OldMeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        // Pending votes are transient governance state and deliberately dropped;
+        // participants re-vote after the upgrade.
+        TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            stored_attestations: old.stored_attestations,
+            allowed_measurements: old.allowed_measurements,
+            ..TeeState::default()
+        }
+    }
+}
+
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
 /// state written by the `3.14.0` contract still deserializes during migration.
 ///
 /// `protocol_state` carries the public-key layout shift (#1246) and is shadowed by
-/// `OldProtocolContractState`; `config` gains a field and is shadowed by `OldConfig`.
+/// `OldProtocolContractState`; `config` gains a field and is shadowed by `OldConfig`;
+/// `tee_state` moves its votes from inline `BTreeMap`s to [`IterableMap`]-backed
+/// [`Votes`](crate::primitives::votes::Votes) and is shadowed by `OldTeeState`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
@@ -235,7 +291,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: OldConfig,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     metrics: Metrics,
@@ -265,7 +321,7 @@ impl From<MpcContract> for crate::MpcContract {
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config.into(),
-            tee_state: old.tee_state,
+            tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
@@ -286,9 +342,21 @@ struct Metrics {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use crate::primitives::test_utils::bogus_ed25519_public_key_extended;
+    use super::{
+        AllowedLauncherImages, AllowedMeasurements, IterableMap, LauncherVoteAction,
+        MeasurementVoteAction, NodeAttestation, NodeImageHash, OldCodeHashesVotes,
+        OldLauncherHashVotes, OldMeasurementVotes, OldPublicKeyExtended, OldTeeState,
+        PublicKeyExtended, StorageKey, StoredDockerImageHashes, dtos,
+    };
+    use crate::primitives::test_utils::{
+        bogus_ed25519_public_key_extended, gen_authenticated_participants,
+    };
+    use mpc_primitives::hash::LauncherImageHash;
+    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
+    use std::collections::BTreeMap;
+    use std::time::Duration;
 
     /// An old-layout key, the key material it must migrate to, and the bytes `3.14.0` wrote
     /// for it: the variant tag followed by each field encoded by the type that held it.
@@ -377,5 +445,80 @@ mod tests {
 
         // Then the key material is unchanged.
         assert_eq!(dtos::PublicKey::from(migrated), expected);
+    }
+
+    fn measurement(byte: u8) -> dtos::ExpectedMeasurements {
+        dtos::ExpectedMeasurements {
+            mrtd: MrtdHash::from([byte; 48]),
+            rtmr0: Rtmr0Hash::from([byte; 48]),
+            rtmr1: Rtmr1Hash::from([byte; 48]),
+            rtmr2: Rtmr2Hash::from([byte; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([byte; 48]),
+        }
+    }
+
+    /// Pins the shadow's field order and types against the layout the `3.14.0` contract
+    /// stored: each field encoded in declaration order, with the vote shadows adding nothing
+    /// beyond their inline `BTreeMap`.
+    #[test]
+    fn old_tee_state__should_encode_as_the_3_14_0_layout() {
+        // Given field values as the `3.14.0` contract stored them.
+        testing_env!(VMContextBuilder::new().build());
+        let (_, voters) = gen_authenticated_participants(2);
+        let code_hash = NodeImageHash::from([1u8; 32]);
+
+        let mut allowed_docker_image_hashes = StoredDockerImageHashes::default();
+        allowed_docker_image_hashes.insert(code_hash, Duration::from_secs(1000));
+        let mut allowed_launcher_images = AllowedLauncherImages::default();
+        allowed_launcher_images.add_or_refresh(
+            LauncherImageHash::from([2u8; 32]),
+            &[code_hash],
+            Duration::from_secs(1000),
+        );
+        let votes = BTreeMap::from([(voters[0].clone(), NodeImageHash::from([3u8; 32]))]);
+        let launcher_votes = BTreeMap::from([(
+            voters[0].clone(),
+            LauncherVoteAction::Add(LauncherImageHash::from([4u8; 32])),
+        )]);
+        let stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation> =
+            IterableMap::new(StorageKey::StoredAttestations);
+        let mut allowed_measurements = AllowedMeasurements::default();
+        allowed_measurements.add(measurement(5));
+        let measurement_votes = BTreeMap::from([(
+            voters[1].clone(),
+            MeasurementVoteAction::Remove(measurement(6)),
+        )]);
+
+        let expected_bytes = [
+            borsh::to_vec(&allowed_docker_image_hashes).unwrap(),
+            borsh::to_vec(&allowed_launcher_images).unwrap(),
+            borsh::to_vec(&votes).unwrap(),
+            borsh::to_vec(&launcher_votes).unwrap(),
+            borsh::to_vec(&stored_attestations).unwrap(),
+            borsh::to_vec(&allowed_measurements).unwrap(),
+            borsh::to_vec(&measurement_votes).unwrap(),
+        ]
+        .concat();
+
+        // When encoding through the shadow type.
+        let old = OldTeeState {
+            allowed_docker_image_hashes,
+            allowed_launcher_images,
+            votes: OldCodeHashesVotes {
+                proposal_by_account: votes,
+            },
+            launcher_votes: OldLauncherHashVotes {
+                vote_by_account: launcher_votes,
+            },
+            stored_attestations,
+            allowed_measurements,
+            measurement_votes: OldMeasurementVotes {
+                vote_by_account: measurement_votes,
+            },
+        };
+        let bytes = borsh::to_vec(&old).unwrap();
+
+        // Then
+        assert_eq!(bytes, expected_bytes);
     }
 }

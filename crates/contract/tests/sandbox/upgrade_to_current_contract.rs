@@ -198,6 +198,13 @@ async fn propose_upgrade_from_production_to_current_binary(
         "launcher hash should be voted in before the upgrade"
     );
 
+    // A second launcher hash with a single vote stays pending across the upgrade, so
+    // migration decodes a non-empty vote map too.
+    let pending_launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xBB; 32]);
+    vote_add_launcher_hash(&accounts[0], &contract, &pending_launcher_hash)
+        .await
+        .unwrap();
+
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
@@ -215,6 +222,21 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap()
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
+    );
+
+    // Voting still works after the upgrade: a fresh threshold vote gets the hash in.
+    let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
+    for account in &accounts[..threshold] {
+        vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
+            .await
+            .unwrap();
+    }
+    assert!(
+        get_allowed_launcher_image_hashes(&contract)
+            .await
+            .unwrap()
+            .contains(&pending_launcher_hash),
+        "a fresh threshold vote should succeed after the upgrade"
     );
 }
 

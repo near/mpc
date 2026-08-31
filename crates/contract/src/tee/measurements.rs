@@ -1,70 +1,14 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation;
 use near_mpc_contract_interface::types::{ExpectedMeasurements, MeasurementVoteAction};
-use near_sdk::{log, near};
-use std::collections::BTreeMap;
+use near_sdk::log;
 
 use crate::dto_mapping::IntoContractType as _;
-use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
+use crate::primitives::votes::ProposalHashEncoding;
 
-/// Contract-side [`MeasurementVotes`](near_mpc_contract_interface::types::MeasurementVotes),
-/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
-/// the participant set.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
-}
-
-impl MeasurementVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: MeasurementVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old measurement vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total measurement votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &MeasurementVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all measurement votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new [`MeasurementVotes`] containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        MeasurementVotes {
-            vote_by_account: remaining,
-        }
+impl ProposalHashEncoding for MeasurementVoteAction {
+    fn bytes_for_hash(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("borsh serialization of MeasurementVoteAction must succeed")
     }
 }
 
@@ -118,5 +62,38 @@ impl AllowedMeasurements {
             .cloned()
             .map(|m| m.into_contract_type())
             .collect()
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::{ExpectedMeasurements, MeasurementVoteAction};
+    use crate::primitives::votes::ProposalHashEncoding;
+    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
+
+    /// Golden value computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + the five 48-byte digests), so a change to the encoding
+    /// or hashing fails here.
+    #[test]
+    fn measurement_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let measurement = ExpectedMeasurements {
+            mrtd: MrtdHash::from([0xCD; 48]),
+            rtmr0: Rtmr0Hash::from([0xCD; 48]),
+            rtmr1: Rtmr1Hash::from([0xCD; 48]),
+            rtmr2: Rtmr2Hash::from([0xCD; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([0xCD; 48]),
+        };
+
+        // When / Then
+        assert_eq!(
+            MeasurementVoteAction::Add(measurement).proposal_hash(),
+            "179aaa73073c7493dc33b55de9a28735d28f94975b662f22a6aaa63d6c059fcc"
+                .parse()
+                .unwrap()
+        );
     }
 }

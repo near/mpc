@@ -126,27 +126,26 @@ where
             .map(|(p_hash, voter_set)| (*p_hash, voter_set.0.clone()))
             .collect()
     }
-}
 
-pub const PROPOSAL_HASH_BYTES: usize = 32;
-mpc_primitives::define_hash!(ProposalHash, 32);
-
-impl<T> From<T> for ProposalHash
-where
-    T: ProposalHashEncoding,
-{
-    fn from(value: T) -> Self {
-        let encoded = value.bytes_for_hash();
-        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
-            .try_into()
-            .expect("require 32 bytes");
-        hash.into()
+    /// Pending votes keyed by proposal, borrowing the stored voter sets.
+    pub fn iter(&self) -> impl Iterator<Item = (&ProposalHash, &VoterSet<V>)> {
+        self.votes_by_proposal.iter()
     }
 }
+
+pub use mpc_primitives::hash::ProposalHash;
 
 /// This trait allows the user to create their own proposal hash encoding
 pub trait ProposalHashEncoding {
     fn bytes_for_hash(&self) -> Vec<u8>;
+
+    /// The [`ProposalHash`] identifying this proposal: SHA-256 of [`Self::bytes_for_hash`].
+    fn proposal_hash(&self) -> ProposalHash {
+        let hash: [u8; 32] = near_sdk::env::sha256(self.bytes_for_hash())
+            .try_into()
+            .expect("sha256 yields 32 bytes");
+        hash.into()
+    }
 }
 
 #[expect(rustdoc::private_intra_doc_links)]
@@ -169,6 +168,10 @@ where
     // counts all the votes for which `predicate` returns true
     pub fn count_for(&self, predicate: impl Fn(&V) -> bool) -> usize {
         self.0.iter().filter(|voter| predicate(voter)).count()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &V> {
+        self.0.iter()
     }
 
     // returns Some(remaining_votes) in case a vote was removed

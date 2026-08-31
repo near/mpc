@@ -538,12 +538,19 @@ expression: abi
       },
       {
         "name": "code_hash_votes",
-        "doc": " Returns the current code hash votes, showing each participant's vote.",
+        "doc": " Pending code hash votes, keyed by the [`dtos::NodeImageHash`] voted for.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/CodeHashesVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -958,12 +965,19 @@ expression: abi
       },
       {
         "name": "launcher_hash_votes",
-        "doc": " Returns the current launcher hash votes, showing each participant's vote.",
+        "doc": " Pending launcher hash votes, keyed by the proposal hash of the [`dtos::LauncherVoteAction`].",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/LauncherHashVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -1015,12 +1029,19 @@ expression: abi
       },
       {
         "name": "os_measurement_votes",
-        "doc": " Returns the current OS measurement votes, showing each participant's vote.",
+        "doc": " Pending OS measurement votes, keyed by the proposal hash of the [`dtos::MeasurementVoteAction`].",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/MeasurementVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -3520,21 +3541,6 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
-        "CodeHashesVotes": {
-          "description": "Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for a code hash to add.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/DockerImageHash"
-              }
-            }
-          }
-        },
         "Collateral": {
           "type": "object",
           "required": [
@@ -4716,99 +4722,11 @@ expression: abi
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "LauncherHashVotes": {
-          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/LauncherVoteAction"
-              }
-            }
-          }
-        },
         "LauncherImageHash": {
           "type": "string",
           "maxLength": 64,
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
-        },
-        "LauncherVoteAction": {
-          "description": "The action a participant is voting for on a launcher image hash.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/LauncherImageHash"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/LauncherImageHash"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVoteAction": {
-          "description": "The action a participant is voting for on an OS measurement set.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/ExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/ExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVotes": {
-          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/MeasurementVoteAction"
-              }
-            }
-          }
         },
         "MockAttestation": {
           "oneOf": [
