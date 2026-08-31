@@ -2,16 +2,14 @@
 //! accepted by the contract: the MPC node image, the launcher image and its
 //! derived compose hashes, and the OS measurements.
 
+use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
 use crate::state::ProtocolContractState;
-use crate::tee::measurements::{
-    ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
-};
-use crate::tee::proposal::{CodeHashesVotes, LauncherHashVotes, LauncherVoteAction, NodeImageHash};
+use crate::tee::proposal::NodeImageHash;
 use crate::{MpcContract, MpcContractExt};
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use near_mpc_contract_interface::types::{self as dtos};
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, log, near};
 use std::time::Duration;
 
@@ -62,7 +60,7 @@ impl MpcContract {
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = LauncherVoteAction::Add(launcher_hash);
+        let action = dtos::LauncherVoteAction::Add(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
         let tee_upgrade_deadline_duration =
@@ -98,7 +96,7 @@ impl MpcContract {
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = LauncherVoteAction::Remove(launcher_hash);
+        let action = dtos::LauncherVoteAction::Remove(launcher_hash);
         let votes = self.tee_state.vote_launcher(action, &participant);
 
         // Removal requires ALL participants to vote
@@ -115,7 +113,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_add_os_measurement(
         &mut self,
-        measurement: ContractExpectedMeasurements,
+        measurement: dtos::ExpectedMeasurements,
     ) -> Result<(), Error> {
         log!(
             "vote_add_os_measurement: signer={}, measurement={:?}",
@@ -127,7 +125,7 @@ impl MpcContract {
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = MeasurementVoteAction::Add(measurement.clone());
+        let action = dtos::MeasurementVoteAction::Add(measurement.clone());
         let votes = self.tee_state.vote_measurement(action, &participant);
 
         if votes >= self.threshold()?.value() {
@@ -143,7 +141,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_remove_os_measurement(
         &mut self,
-        measurement: ContractExpectedMeasurements,
+        measurement: dtos::ExpectedMeasurements,
     ) -> Result<(), Error> {
         log!(
             "vote_remove_os_measurement: signer={}, measurement={:?}",
@@ -155,7 +153,7 @@ impl MpcContract {
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let action = MeasurementVoteAction::Remove(measurement.clone());
+        let action = dtos::MeasurementVoteAction::Remove(measurement.clone());
         let votes = self.tee_state.vote_measurement(action, &participant);
 
         // Removal requires ALL participants to vote
@@ -169,13 +167,13 @@ impl MpcContract {
     }
 
     /// Returns the current OS measurement votes, showing each participant's vote.
-    pub fn os_measurement_votes(&self) -> MeasurementVotes {
+    pub fn os_measurement_votes(&self) -> dtos::MeasurementVotes {
         log!("os_measurement_votes");
-        self.tee_state.measurement_votes.clone()
+        (&self.tee_state.measurement_votes).into_dto_type()
     }
 
     /// Returns all currently allowed OS measurements.
-    pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+    pub fn allowed_os_measurements(&self) -> Vec<dtos::ExpectedMeasurements> {
         log!("allowed_os_measurements");
         self.tee_state.get_allowed_measurements()
     }
@@ -203,13 +201,13 @@ impl MpcContract {
     }
 
     /// Returns the current launcher hash votes, showing each participant's vote.
-    pub fn launcher_hash_votes(&self) -> LauncherHashVotes {
-        self.tee_state.launcher_votes.clone()
+    pub fn launcher_hash_votes(&self) -> dtos::LauncherHashVotes {
+        (&self.tee_state.launcher_votes).into_dto_type()
     }
 
     /// Returns the current code hash votes, showing each participant's vote.
-    pub fn code_hash_votes(&self) -> CodeHashesVotes {
-        self.tee_state.votes.clone()
+    pub fn code_hash_votes(&self) -> dtos::CodeHashesVotes {
+        (&self.tee_state.votes).into_dto_type()
     }
 
     /// Private endpoint to drop votes cast by non-participants after resharing.
@@ -239,10 +237,8 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::measurements::{
-        KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
-    };
     use crate::tee::proposal::get_docker_compose_hash;
+    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
@@ -583,7 +579,7 @@ mod tests {
 
         let votes = &contract.launcher_hash_votes().vote_by_account;
         assert_eq!(votes.len(), 1);
-        let expected_action = LauncherVoteAction::Add(launcher_hash);
+        let expected_action = dtos::LauncherVoteAction::Add(launcher_hash);
         assert!(votes.values().all(|v| *v == expected_action));
 
         // Second vote
@@ -818,8 +814,8 @@ mod tests {
         assert!(!compose_hashes.contains(&get_docker_compose_hash(&l2, &m1)));
     }
 
-    fn make_measurement(byte: u8) -> ContractExpectedMeasurements {
-        ContractExpectedMeasurements {
+    fn make_measurement(byte: u8) -> dtos::ExpectedMeasurements {
+        dtos::ExpectedMeasurements {
             mrtd: MrtdHash::from([byte; 48]),
             rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
             rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
@@ -1009,7 +1005,7 @@ mod tests {
         let votes = contract.os_measurement_votes();
         assert_eq!(votes.vote_by_account.len(), 1);
         let (_, action) = votes.vote_by_account.iter().next().unwrap();
-        assert_eq!(*action, MeasurementVoteAction::Add(measurement));
+        assert_eq!(*action, dtos::MeasurementVoteAction::Add(measurement));
     }
 
     /// Tests the allowed_os_measurements view method returns the full structs
@@ -1103,13 +1099,13 @@ mod tests {
         );
     }
 
-    /// Tests JSON serialization roundtrip for [`ContractExpectedMeasurements`].
+    /// Tests JSON serialization roundtrip for [`dtos::ExpectedMeasurements`].
     /// Verifies hex encoding/decoding of 48-byte fields works correctly.
     #[test]
     fn test_contract_expected_measurements_json_roundtrip() {
         let measurement = make_measurement(0xAA);
         let json = serde_json::to_string(&measurement).expect("serialize to JSON");
-        let deserialized: ContractExpectedMeasurements =
+        let deserialized: dtos::ExpectedMeasurements =
             serde_json::from_str(&json).expect("deserialize from JSON");
         assert_eq!(measurement, deserialized);
 

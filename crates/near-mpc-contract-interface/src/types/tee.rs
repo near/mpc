@@ -1,8 +1,13 @@
 use crate::types::primitives::AccountId;
+use crate::types::state::AuthenticatedParticipantId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_primitives::hash::NodeImageHash;
+use mpc_primitives::hash::{
+    KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, Rtmr0Hash, Rtmr1Hash,
+    Rtmr2Hash,
+};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(
     Clone,
@@ -54,10 +59,98 @@ pub struct AllowedMpcDockerImageHash {
     pub expiry_timestamp_seconds: Option<u64>,
 }
 
+/// The TDX measurements an attestation is required to match.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ExpectedMeasurements {
+    pub mrtd: MrtdHash,
+    pub rtmr0: Rtmr0Hash,
+    pub rtmr1: Rtmr1Hash,
+    pub rtmr2: Rtmr2Hash,
+    pub key_provider_event_digest: KeyProviderEventDigest,
+}
+
+/// The action a participant is voting for on an OS measurement set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum MeasurementVoteAction {
+    Add(ExpectedMeasurements),
+    Remove(ExpectedMeasurements),
+}
+
+/// Tracks votes for adding or removing OS measurements.
+/// Each participant can have at most one active vote at a time.
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct MeasurementVotes {
+    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
+}
+
+/// The action a participant is voting for on a launcher image hash.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum LauncherVoteAction {
+    Add(LauncherImageHash),
+    Remove(LauncherImageHash),
+}
+
+/// Tracks votes for adding or removing launcher image hashes.
+/// Each participant can have at most one active vote at a time.
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct LauncherHashVotes {
+    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
+}
+
+/// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
+/// a code hash to add.
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct CodeHashesVotes {
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::types::participants::ParticipantId;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -138,5 +231,62 @@ mod tests {
 
         // Then
         assert_eq!(deserialized, node_id_with_account_key(account_key()));
+    }
+
+    fn measurements(byte: u8) -> ExpectedMeasurements {
+        ExpectedMeasurements {
+            mrtd: MrtdHash::from([byte; 48]),
+            rtmr0: Rtmr0Hash::from([byte; 48]),
+            rtmr1: Rtmr1Hash::from([byte; 48]),
+            rtmr2: Rtmr2Hash::from([byte; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([byte; 48]),
+        }
+    }
+
+    #[test]
+    fn expected_measurements__should_serialize_digests_as_hex_strings() {
+        // Given
+        let measurements = measurements(0x01);
+
+        // When
+        let json = serde_json::to_value(&measurements).unwrap();
+
+        // Then
+        assert_eq!(json["mrtd"], "01".repeat(48));
+        assert_eq!(json["key_provider_event_digest"], "01".repeat(48));
+    }
+
+    #[test]
+    fn measurement_votes__should_serialize_participant_ids_as_object_keys() {
+        // Given
+        let votes = MeasurementVotes {
+            vote_by_account: BTreeMap::from([(
+                AuthenticatedParticipantId(ParticipantId::new(7)),
+                MeasurementVoteAction::Add(measurements(0x01)),
+            )]),
+        };
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json["vote_by_account"]["7"]["Add"]["mrtd"], "01".repeat(48));
+    }
+
+    #[test]
+    fn launcher_hash_votes__should_serialize_participant_ids_as_object_keys() {
+        // Given
+        let votes = LauncherHashVotes {
+            vote_by_account: BTreeMap::from([(
+                AuthenticatedParticipantId(ParticipantId::new(7)),
+                LauncherVoteAction::Add(LauncherImageHash::from([0xAB; 32])),
+            )]),
+        };
+
+        // When
+        let json = serde_json::to_value(&votes).unwrap();
+
+        // Then
+        assert_eq!(json["vote_by_account"]["7"]["Add"], "ab".repeat(32));
     }
 }

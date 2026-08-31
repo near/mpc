@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
 use near_sdk::{env::sha256, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
@@ -71,14 +71,6 @@ impl CodeHashesVotes {
             proposal_by_account: remaining,
         }
     }
-}
-
-/// The action a participant is voting for on a launcher image hash.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LauncherVoteAction {
-    Add(LauncherImageHash),
-    Remove(LauncherImageHash),
 }
 
 /// Tracks votes for adding or removing launcher image hashes.
