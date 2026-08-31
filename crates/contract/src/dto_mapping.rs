@@ -6,12 +6,12 @@
 
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
+    EventLog, HexBytes, TcbInfo,
     attestation::{
         Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
         VerifiedAttestation,
     },
     collateral::Collateral,
-    tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
@@ -33,6 +33,10 @@ use crate::{
         key_event::{KeyEvent, KeyEventInstance},
         resharing::ResharingContractState,
         running::RunningContractState,
+    },
+    tee::{
+        measurements::MeasurementVotes,
+        proposal::{CodeHashesVotes, LauncherHashVotes},
     },
     update::{ProposedUpdates, Update, UpdateId},
 };
@@ -78,15 +82,8 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-                expected_measurements: expected_measurements.map(|m| ExpectedMeasurements {
-                    rtmrs: Measurements {
-                        mrtd: m.mrtd.into(),
-                        rtmr0: m.rtmr0.into(),
-                        rtmr1: m.rtmr1.into(),
-                        rtmr2: m.rtmr2.into(),
-                    },
-                    key_provider_event_digest: m.key_provider_event_digest.into(),
-                }),
+                expected_measurements: expected_measurements
+                    .map(IntoContractType::into_contract_type),
             },
         }
     }
@@ -286,6 +283,32 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
     }
 }
 
+impl IntoContractType<ExpectedMeasurements> for dtos::ExpectedMeasurements {
+    fn into_contract_type(self) -> ExpectedMeasurements {
+        ExpectedMeasurements {
+            rtmrs: Measurements {
+                mrtd: self.mrtd.into(),
+                rtmr0: self.rtmr0.into(),
+                rtmr1: self.rtmr1.into(),
+                rtmr2: self.rtmr2.into(),
+            },
+            key_provider_event_digest: self.key_provider_event_digest.into(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ExpectedMeasurements> for ExpectedMeasurements {
+    fn into_dto_type(self) -> dtos::ExpectedMeasurements {
+        dtos::ExpectedMeasurements {
+            mrtd: self.rtmrs.mrtd.into(),
+            rtmr0: self.rtmrs.rtmr0.into(),
+            rtmr1: self.rtmrs.rtmr1.into(),
+            rtmr2: self.rtmrs.rtmr2.into(),
+            key_provider_event_digest: self.key_provider_event_digest.into(),
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
     fn into_dto_type(self) -> dtos::MockAttestation {
         match self {
@@ -300,13 +323,7 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-                expected_measurements: expected_measurements.map(|m| dtos::VerifiedMeasurements {
-                    mrtd: m.rtmrs.mrtd.into(),
-                    rtmr0: m.rtmrs.rtmr0.into(),
-                    rtmr1: m.rtmrs.rtmr1.into(),
-                    rtmr2: m.rtmrs.rtmr2.into(),
-                    key_provider_event_digest: m.key_provider_event_digest.into(),
-                }),
+                expected_measurements: expected_measurements.map(IntoInterfaceType::into_dto_type),
             },
         }
     }
@@ -857,6 +874,42 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .proposal_by_account
                 .iter()
                 .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
+    fn into_dto_type(self) -> dtos::MeasurementVotes {
+        dtos::MeasurementVotes {
+            vote_by_account: self
+                .vote_by_account
+                .iter()
+                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
+    fn into_dto_type(self) -> dtos::LauncherHashVotes {
+        dtos::LauncherHashVotes {
+            vote_by_account: self
+                .vote_by_account
+                .iter()
+                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &CodeHashesVotes {
+    fn into_dto_type(self) -> dtos::CodeHashesVotes {
+        dtos::CodeHashesVotes {
+            proposal_by_account: self
+                .proposal_by_account
+                .iter()
+                .map(|(participant, hash)| (participant.into_dto_type(), *hash))
                 .collect(),
         }
     }

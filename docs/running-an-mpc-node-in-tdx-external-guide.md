@@ -1401,7 +1401,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 attestation-cli tcb-status --url http://<IP>:8080/public_data
 ```
 
-It needs no image hash or compose file, prints the platform's SVNs, and reports both the node's own verdict and the one Intel's current TCB info gives. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do when your host is out of date.
+It needs no image hash or compose file, prints the platform's SVNs, and reports the node's own verdict alongside the ones Intel's current and next TCB info give. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do when your host is out of date, or about to be.
 
 ### Add the Node Account Key to Your Account
 

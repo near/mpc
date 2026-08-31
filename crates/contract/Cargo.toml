@@ -77,7 +77,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 assert_matches = { workspace = true }
-attestation = { workspace = true }
+attestation-types = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }

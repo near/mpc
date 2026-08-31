@@ -426,7 +426,7 @@ expression: abi
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ContractExpectedMeasurements"
+              "$ref": "#/definitions/ExpectedMeasurements"
             }
           }
         }
@@ -2656,7 +2656,7 @@ expression: abi
             {
               "name": "measurement",
               "type_schema": {
-                "$ref": "#/definitions/ContractExpectedMeasurements"
+                "$ref": "#/definitions/ExpectedMeasurements"
               }
             }
           ]
@@ -2812,7 +2812,7 @@ expression: abi
             {
               "name": "measurement",
               "type_schema": {
-                "$ref": "#/definitions/ContractExpectedMeasurements"
+                "$ref": "#/definitions/ExpectedMeasurements"
               }
             }
           ]
@@ -3821,34 +3821,6 @@ expression: abi
             }
           }
         },
-        "ContractExpectedMeasurements": {
-          "description": "On-chain representation of expected TDX measurements. Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with contract-compatible serialization (hex strings in JSON, borsh for storage).",
-          "type": "object",
-          "required": [
-            "key_provider_event_digest",
-            "mrtd",
-            "rtmr0",
-            "rtmr1",
-            "rtmr2"
-          ],
-          "properties": {
-            "key_provider_event_digest": {
-              "$ref": "#/definitions/KeyProviderEventDigest"
-            },
-            "mrtd": {
-              "$ref": "#/definitions/MrtdHash"
-            },
-            "rtmr0": {
-              "$ref": "#/definitions/Rtmr0Hash"
-            },
-            "rtmr1": {
-              "$ref": "#/definitions/Rtmr1Hash"
-            },
-            "rtmr2": {
-              "$ref": "#/definitions/Rtmr2Hash"
-            }
-          }
-        },
         "Curve": {
           "description": "Elliptic curve used by a domain.",
           "type": "string",
@@ -4102,6 +4074,34 @@ expression: abi
         "EvmTxId": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "ExpectedMeasurements": {
+          "description": "The TDX measurements an attestation is required to match.",
+          "type": "object",
+          "required": [
+            "key_provider_event_digest",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2"
+          ],
+          "properties": {
+            "key_provider_event_digest": {
+              "$ref": "#/definitions/KeyProviderEventDigest"
+            },
+            "mrtd": {
+              "$ref": "#/definitions/MrtdHash"
+            },
+            "rtmr0": {
+              "$ref": "#/definitions/Rtmr0Hash"
+            },
+            "rtmr1": {
+              "$ref": "#/definitions/Rtmr1Hash"
+            },
+            "rtmr2": {
+              "$ref": "#/definitions/Rtmr2Hash"
+            }
+          }
         },
         "ForeignChain": {
           "type": "string",
@@ -4868,7 +4868,7 @@ expression: abi
               ],
               "properties": {
                 "Add": {
-                  "$ref": "#/definitions/ContractExpectedMeasurements"
+                  "$ref": "#/definitions/ExpectedMeasurements"
                 }
               },
               "additionalProperties": false
@@ -4880,7 +4880,7 @@ expression: abi
               ],
               "properties": {
                 "Remove": {
-                  "$ref": "#/definitions/ContractExpectedMeasurements"
+                  "$ref": "#/definitions/ExpectedMeasurements"
                 }
               },
               "additionalProperties": false
@@ -4931,7 +4931,7 @@ expression: abi
                     "expected_measurements": {
                       "anyOf": [
                         {
-                          "$ref": "#/definitions/VerifiedMeasurements"
+                          "$ref": "#/definitions/ExpectedMeasurements"
                         },
                         {
                           "type": "null"
@@ -5520,12 +5520,6 @@ expression: abi
         },
         "Secp256k1PublicKey": {
           "type": "string"
-        },
-        "Sha384Digest": {
-          "type": "string",
-          "maxLength": 96,
-          "minLength": 96,
-          "pattern": "^[0-9a-fA-F]+$"
         },
         "SignRequestArgs": {
           "description": "Sign request args with backward-compatible deserialization.\n\nThe struct field is `payload` but serializes as `payload_v2` on the wire for compatibility with existing consumers. Deserialization accepts both `payload_v2` and the deprecated `payload` (as raw `[u8; 32]`) plus `key_version` as an alias for `domain_id`.",
@@ -6124,19 +6118,19 @@ expression: abi
           ],
           "properties": {
             "key_provider_event_digest": {
-              "$ref": "#/definitions/Sha384Digest"
+              "$ref": "#/definitions/KeyProviderEventDigest"
             },
             "mrtd": {
-              "$ref": "#/definitions/Sha384Digest"
+              "$ref": "#/definitions/MrtdHash"
             },
             "rtmr0": {
-              "$ref": "#/definitions/Sha384Digest"
+              "$ref": "#/definitions/Rtmr0Hash"
             },
             "rtmr1": {
-              "$ref": "#/definitions/Sha384Digest"
+              "$ref": "#/definitions/Rtmr1Hash"
             },
             "rtmr2": {
-              "$ref": "#/definitions/Sha384Digest"
+              "$ref": "#/definitions/Rtmr2Hash"
             }
           }
         },

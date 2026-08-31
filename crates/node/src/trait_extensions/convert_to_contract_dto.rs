@@ -6,9 +6,9 @@
 //! This module retains attestation conversions where the orphan rule applies.
 
 use mpc_attestation::{
+    EventLog, TcbInfo,
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::Collateral,
-    tcb_info::{EventLog, TcbInfo},
 };
 
 use near_mpc_contract_interface::types as dtos;
@@ -53,7 +53,7 @@ impl IntoContractInterfaceType<near_mpc_contract_interface::types::MockAttestati
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
                 expected_measurements: expected_measurements.map(|m| {
-                    near_mpc_contract_interface::types::VerifiedMeasurements {
+                    near_mpc_contract_interface::types::ExpectedMeasurements {
                         mrtd: m.rtmrs.mrtd.into(),
                         rtmr0: m.rtmrs.rtmr0.into(),
                         rtmr1: m.rtmrs.rtmr1.into(),
