@@ -17,10 +17,13 @@ use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{DomainConfig, Protocol, ReconstructionThreshold};
 use near_time::Clock;
 
-/// Shared budget for both assertions: the negative window must exceed the worst-case positive
-/// latency, else [`assert_cannot_sign`] could pass merely because a capable domain was slow.
-/// [`warm_up`] keeps that latency low.
-const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+/// Budget for positive assertions. Generous: a capable domain must not flake merely because a
+/// loaded CI runner made it slow (a `t = online` domain needs every online node within budget).
+const CAN_SIGN_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Budget for negative assertions, always waited out in full, so kept small. Sound only while the
+/// typical positive latency stays well below it, which [`warm_up`] takes care of.
+const CANNOT_SIGN_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
 const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
@@ -41,7 +44,7 @@ async fn request_and_await_response(
 }
 
 /// Primes each domain's presignatures for the current online set with a generously-budgeted sign,
-/// whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
+/// whose cold-start can exceed [`CANNOT_SIGN_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
 /// pre-generated presignatures; Frost and CKD sign directly, so pass only the block's signable
 /// CaitSith/DamgardEtAl domains after every online-set change.
 async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
@@ -52,7 +55,7 @@ async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
 
 async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
-        request_and_await_response(indexer, user, domain, REQUEST_WAIT_BUDGET)
+        request_and_await_response(indexer, user, domain, CAN_SIGN_WAIT_BUDGET)
             .await
             .is_some(),
         "domain {:?} (t={}) should be able to sign with the currently-online nodes",
@@ -63,7 +66,7 @@ async fn assert_can_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &
 
 async fn assert_cannot_sign(indexer: &mut FakeIndexerManager, user: &str, domain: &DomainConfig) {
     assert!(
-        request_and_await_response(indexer, user, domain, REQUEST_WAIT_BUDGET)
+        request_and_await_response(indexer, user, domain, CANNOT_SIGN_WAIT_BUDGET)
             .await
             .is_none(),
         "domain {:?} (t={}) must NOT be able to sign: too few nodes are online for its threshold",
@@ -85,13 +88,16 @@ async fn assert_availability(
 ) {
     for (domain, expected) in expectations {
         let user = format!("user_{stage}_{}", domain.id.0);
+        let budget = match expected {
+            Availability::Works => CAN_SIGN_WAIT_BUDGET,
+            Availability::Stops => CANNOT_SIGN_WAIT_BUDGET,
+        };
         let response = match Curve::from(domain.protocol) {
             Curve::Bls12381 => {
-                request_ckd_pv_and_await_response(indexer, &user, domain, REQUEST_WAIT_BUDGET).await
+                request_ckd_pv_and_await_response(indexer, &user, domain, budget).await
             }
             Curve::Secp256k1 | Curve::Edwards25519 => {
-                request_signature_and_await_response(indexer, &user, domain, REQUEST_WAIT_BUDGET)
-                    .await
+                request_signature_and_await_response(indexer, &user, domain, budget).await
             }
         };
         let t = domain.reconstruction_threshold.inner();
