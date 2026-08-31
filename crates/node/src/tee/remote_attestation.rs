@@ -29,7 +29,6 @@ use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
-const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
 const BACKOFF_FACTOR: f32 = 1.5;
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
 
@@ -47,7 +46,7 @@ pub struct AttestationSubmitter<T> {
 }
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until
-/// success or until a fixed retry window elapses, whichever comes first.
+/// success or until [`ATTESTATION_RESUBMISSION_INTERVAL`] elapses, whichever comes first.
 ///
 /// This function repeatedly attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
 /// the given participant's attestation and TLS public key. It uses the provided
@@ -107,7 +106,7 @@ pub async fn submit_remote_attestation(
                 "failed to submit attestation"
             );
         })
-        .timeout(MAX_RETRY_DURATION)
+        .timeout(ATTESTATION_RESUBMISSION_INTERVAL)
         .await
         .context("failed to submit attestation after multiple retry attempts")?
 }
@@ -137,10 +136,9 @@ fn validate_remote_attestation(
 }
 
 impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
-    /// Generates a fresh attestation and submits it to the contract, reporting whether it
-    /// reached the contract so the caller can decide when to try again. Failures are logged,
-    /// never propagated.
-    async fn generate_and_submit(&self) -> bool {
+    /// Generates a fresh attestation and submits it to the contract. Failures are logged, never
+    /// propagated.
+    async fn generate_and_submit(&self) {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
             *self.account_public_key.as_bytes(),
@@ -154,11 +152,11 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             Ok(attestation) => attestation,
             Err(error @ AttestationError::CollateralFetch(_)) => {
                 tracing::warn!(%error, "TEE attestation generation failed");
-                return false;
+                return;
             }
             Err(error) => {
                 tracing::error!(%error, "TEE attestation generation failed");
-                return false;
+                return;
             }
         };
         let allowed_image_hashes: Vec<_> = self
@@ -207,9 +205,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             .inc();
         if let Err(error) = submission {
             tracing::error!(?error, "attestation submission failed");
-            return false;
         }
-        true
     }
 }
 
@@ -248,6 +244,7 @@ mod tests {
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::tick::MockTicker;
     use ed25519_dalek::SigningKey;
+    use mpc_attestation::attestation::MockAttestation;
     use rand::SeedableRng;
     use std::sync::{
         Arc, Mutex,
@@ -406,15 +403,40 @@ mod tests {
         let handle = setup.spawn_periodic(2);
 
         // When
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL + Duration::from_secs(1)).await;
         setup.sender().set_failing(false);
 
         // Then
-        tokio::time::timeout(MAX_RETRY_DURATION, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a successful submission after the first retry window timed out");
+        tokio::time::timeout(
+            ATTESTATION_RESUBMISSION_INTERVAL,
+            setup.sender().wait_for_submission(),
+        )
+        .await
+        .expect("expected a successful submission after the first retry window timed out");
         assert_eq!(setup.sender().count(), 1);
         handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn submit_remote_attestation__should_stop_retrying_after_one_resubmission_interval() {
+        // Given
+        let setup = test_setup();
+        setup.sender().set_failing(true);
+        let started_at = tokio::time::Instant::now();
+
+        // When
+        let result = submit_remote_attestation(
+            setup.sender().clone(),
+            Attestation::Mock(MockAttestation::Valid),
+            setup.submitter.tls_public_key.clone(),
+            None,
+        )
+        .await;
+
+        // Then
+        result.expect_err("the retry window must elapse");
+        assert_eq!(started_at.elapsed(), ATTESTATION_RESUBMISSION_INTERVAL);
     }
 
     async fn validate_locally_generated_attestation(
