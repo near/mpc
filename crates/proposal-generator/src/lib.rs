@@ -117,11 +117,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn testnet_rpc_whitelist__should_be_a_valid_proposal() {
+    #[rstest]
+    #[case::testnet(include_str!("../proposals/testnet-rpc-whitelist.toml"))]
+    #[case::mainnet(include_str!("../proposals/mainnet-rpc-whitelist.toml"))]
+    fn rpc_whitelist_proposals__should_be_valid(#[case] fixture: &str) {
         // Given
-        let config: ProposalConfig =
-            toml::from_str(include_str!("../proposals/testnet-rpc-whitelist.toml")).unwrap();
+        let config: ProposalConfig = toml::from_str(fixture).unwrap();
 
         // When
         let payload = build_payload(config).unwrap();
