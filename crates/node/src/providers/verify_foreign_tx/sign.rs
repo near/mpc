@@ -559,10 +559,9 @@ fn ensure_chain_is_available(
 }
 
 fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
-    match verdict {
-        Verdict::Extracted(values) => Ok(values),
-        failing => anyhow::bail!("the transaction failed verification: {failing}"),
-    }
+    verdict
+        .into_extracted()
+        .map_err(|failing| anyhow::anyhow!("the transaction failed verification: {failing}"))
 }
 
 #[cfg(test)]

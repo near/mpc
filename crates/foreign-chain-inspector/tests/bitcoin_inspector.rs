@@ -174,6 +174,35 @@ async fn extract__should_return_the_not_found_verdict_for_an_unknown_transaction
 }
 
 #[tokio::test]
+async fn extract__should_reject_a_provider_without_txindex_rather_than_rule_the_tx_out() {
+    // given: with txindex disabled, bitcoind answers -5 for every confirmed transaction; that
+    // is the provider unable to serve the query, not the chain's verdict.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -5,
+            "No such mempool transaction. Use -txindex to enable blockchain transaction queries",
+            None::<()>,
+        )))
+    });
+    let inspector = BitcoinInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            BitcoinTransactionHash::from([9; 32]),
+            BlockConfirmations::from(1u64),
+            vec![BitcoinExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestRejected(_))
+    );
+}
+
+#[tokio::test]
 async fn extract__should_classify_rpc_client_errors() {
     // given
     let tx_id = BitcoinTransactionHash::from([9; 32]);

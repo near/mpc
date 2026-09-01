@@ -24,9 +24,11 @@ const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 /// Bitcoin has no chain id, so the genesis block is what tells the networks apart.
 const GENESIS_BLOCK_HEIGHT: u64 = 0;
 
-/// `RPC_INVALID_ADDRESS_OR_KEY`, which `getrawtransaction` answers as "No such mempool or
-/// blockchain transaction".
+/// `RPC_INVALID_ADDRESS_OR_KEY`. `getrawtransaction` raises it both for a transaction the node
+/// truly does not have and, when txindex is disabled, for any confirmed transaction; only the
+/// message tells the two apart.
 const NO_SUCH_TRANSACTION_CODE: i32 = -5;
+const NO_SUCH_TRANSACTION_MESSAGE: &str = "No such mempool or blockchain transaction";
 
 #[derive(Clone)]
 pub struct BitcoinInspector<Client> {
@@ -80,7 +82,12 @@ where
             .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
             .await
         {
-            Err(RpcClientError::Call(object)) if object.code() == NO_SUCH_TRANSACTION_CODE => {
+            // Without the message check, a provider running with txindex disabled would rule
+            // every confirmed transaction out instead of surfacing as a tolerated fault.
+            Err(RpcClientError::Call(object))
+                if object.code() == NO_SUCH_TRANSACTION_CODE
+                    && object.message().starts_with(NO_SUCH_TRANSACTION_MESSAGE) =>
+            {
                 return Ok(Verdict::TransactionNotFound);
             }
             other => other.classified()?,

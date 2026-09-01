@@ -51,6 +51,9 @@ pub trait ForeignChainInspector {
 pub enum Verdict<V> {
     Extracted(Vec<V>),
     TransactionFailed,
+    /// Deliberately a verdict rather than a tolerated error: honest providers cannot extract
+    /// anything from a transaction that does not exist, so tolerating absence would let one
+    /// fabricating provider outvote them all.
     TransactionNotFound,
     NonCanonicalBlock {
         block_number: u64,
@@ -58,6 +61,16 @@ pub enum Verdict<V> {
         canonical_hash: HexBytes,
     },
     LogIndexOutOfBounds,
+}
+
+impl<V> Verdict<V> {
+    /// The extracted values, or the failing verdict back as the error.
+    pub fn into_extracted(self) -> Result<Vec<V>, Verdict<V>> {
+        match self {
+            Self::Extracted(values) => Ok(values),
+            failing => Err(failing),
+        }
+    }
 }
 
 impl<V> std::fmt::Display for Verdict<V> {
@@ -282,7 +295,7 @@ pub enum RpcAuthentication {
 pub struct BlockConfirmations(u64);
 
 /// Chain-agnostic byte buffer that formats as `0x`-prefixed lowercase hex.
-/// Used in error messages to keep block-hash logs readable across chains
+/// Used in error messages and verdicts to keep block hash logs readable across chains
 /// whose hashes have different native types (EVM `H256`, Bitcoin's reversed
 /// 32-byte hash, Starknet felt, ...).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, From)]
@@ -352,7 +365,7 @@ pub enum ForeignChainInspectionError {
         receipt_block_hash: HexBytes,
         receipt_block_number: u64,
     },
-    #[error("inspector clients returned mismatching extracted values")]
+    #[error("inspector clients returned mismatching verdicts")]
     InspectorResponseMismatch,
 }
 
@@ -702,6 +715,27 @@ mod tests {
 
         // Then
         assert_eq!(failure, expected);
+    }
+
+    #[rstest]
+    #[case::transaction_failed(Verdict::TransactionFailed)]
+    #[case::transaction_not_found(Verdict::TransactionNotFound)]
+    #[case::non_canonical_block(Verdict::NonCanonicalBlock {
+        block_number: 1,
+        receipt_hash: HexBytes(vec![1]),
+        canonical_hash: HexBytes(vec![2]),
+    })]
+    #[case::log_index_out_of_bounds(Verdict::LogIndexOutOfBounds)]
+    fn into_extracted__should_return_a_failing_verdict_as_the_error(#[case] verdict: Verdict<u8>) {
+        // When / Then
+        assert_eq!(verdict.clone().into_extracted(), Err(verdict));
+    }
+
+    #[test]
+    fn into_extracted__should_return_the_extracted_values() {
+        // When / Then
+        let extracted = Verdict::<u8>::Extracted(vec![1, 2]).into_extracted();
+        assert_eq!(extracted, Ok(vec![1, 2]));
     }
 
     #[test]

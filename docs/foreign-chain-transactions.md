@@ -340,10 +340,10 @@ back here rather than redefining them.
   quorum). The policy set every node is expected to cover; **no single operator can add or remove a
   chain — only a threshold vote can**. Keys of `allowed_foreign_chain_providers()`. See
   [On-chain RPC Provider Whitelist](#on-chain-rpc-provider-whitelist).
-- **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of a node's configured
-  providers must return the same response for that node to accept a verification result
-  (`ChainEntry.quorum`), voted in alongside the provider list. A runtime knob; distinct from the
-  *signing threshold*.
+- **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of `C`'s whitelisted
+  providers a node must have configured to cover the chain (`ChainEntry.quorum`), voted in
+  alongside the provider list. A coverage knob: verification itself compares every configured
+  provider, see [Provider Agreement](#provider-agreement). Distinct from the *signing threshold*.
 - **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
   domain (`DomainConfig.reconstruction_threshold`; the max across `ForeignTx` domains if there are
   several): how many participants must produce signature shares to sign an observation. Distinct
@@ -607,14 +607,17 @@ identical: any difference, even in the canonical hash named inside the same fail
 the request with an inspector mismatch. A provider that reaches no verdict at all, because it is
 unreachable, refuses the request, answers with something unusable, times out, or sees the
 transaction before finality, is tolerated whenever another provider reached one, so a single
-unavailable or misbehaving RPC does not take the node out of signing.
+unavailable or misbehaving RPC does not take the node out of signing. A transaction the provider
+does not know is deliberately a verdict rather than a tolerated failure: honest providers cannot
+extract anything from a transaction that does not exist, so tolerating absence would let one
+fabricating provider outvote them all.
 
 ## Failure and Timeout Behavior
 
 * Nodes **do not participate** if RPC queries fail, extraction fails, or the computed
   payload hash does not match the request's `expected_payload_hash`.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
-* *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (RPC sub-quorum, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#3477](https://github.com/near/mpc/issues/3477).
+* *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (provider disagreement, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
 For operators, enabling a chain requires each node to register its local foreign-chain configuration with the contract:
 
