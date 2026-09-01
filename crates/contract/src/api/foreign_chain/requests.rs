@@ -4,22 +4,17 @@
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::dto_mapping::args_into_verify_foreign_tx_request;
 use crate::errors::{Error, InvalidParameters, InvalidState, RespondError, TeeError};
-use crate::primitives::signature::YieldIndex;
 use crate::{MpcContract, MpcContractExt, pending_requests};
-use dtos::DomainPurpose;
 use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{
-    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
-};
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, log, near};
 
 #[near]
 impl MpcContract {
     fn add_verify_foreign_tx_request(
         &mut self,
-        request: VerifyForeignTransactionRequest,
+        request: dtos::VerifyForeignTransactionRequest,
         data_id: CryptoHash,
     ) {
         pending_requests::push_pending_yield(
@@ -34,7 +29,10 @@ impl MpcContract {
     /// The signed payload is derived from the transaction ID (hash of tx_id).
     #[handle_result]
     #[payable]
-    pub fn verify_foreign_transaction(&mut self, request: VerifyForeignTransactionRequestArgs) {
+    pub fn verify_foreign_transaction(
+        &mut self,
+        request: dtos::VerifyForeignTransactionRequestArgs,
+    ) {
         log!(
             "verify_foreign_transaction: predecessor={:?}, request={:?}",
             env::predecessor_account_id(),
@@ -43,7 +41,7 @@ impl MpcContract {
 
         self.check_request_preconditions(
             request.domain_id,
-            DomainPurpose::ForeignTx,
+            dtos::DomainPurpose::ForeignTx,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
@@ -77,8 +75,8 @@ impl MpcContract {
     #[handle_result]
     pub fn respond_verify_foreign_tx(
         &mut self,
-        request: VerifyForeignTransactionRequest,
-        response: VerifyForeignTransactionResponse,
+        request: dtos::VerifyForeignTransactionRequest,
+        response: dtos::VerifyForeignTransactionResponse,
     ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
 
@@ -145,13 +143,13 @@ impl MpcContract {
     /// Presence check for a pending foreign-tx verification request, exposed as a
     /// view call.
     ///
-    /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
+    /// See [`Self::get_pending_request`] for the contract: the returned [`dtos::YieldIndex`]
     /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
     /// `Some`/`None` distinction is meaningful.
     pub fn get_pending_verify_foreign_tx_request(
         &self,
-        request: &VerifyForeignTransactionRequest,
-    ) -> Option<YieldIndex> {
+        request: &dtos::VerifyForeignTransactionRequest,
+    ) -> Option<dtos::YieldIndex> {
         self.pending_verify_foreign_tx_requests
             .get(request)
             .and_then(|q| q.first().cloned())
@@ -168,9 +166,9 @@ impl MpcContract {
     #[private]
     pub fn return_verify_foreign_tx_and_clean_state_on_success(
         &mut self,
-        request: VerifyForeignTransactionRequest,
-        #[callback_result] response: Result<VerifyForeignTransactionResponse, PromiseError>,
-    ) -> PromiseOrValue<VerifyForeignTransactionResponse> {
+        request: dtos::VerifyForeignTransactionRequest,
+        #[callback_result] response: Result<dtos::VerifyForeignTransactionResponse, PromiseError>,
+    ) -> PromiseOrValue<dtos::VerifyForeignTransactionResponse> {
         match response {
             Ok(response) => PromiseOrValue::Value(response),
             Err(_) => {
@@ -240,13 +238,13 @@ mod tests {
         // Given: two different callers will submit the same foreign-tx verification request.
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
 
-        let request_args = VerifyForeignTransactionRequestArgs {
+        let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
@@ -307,7 +305,7 @@ mod tests {
         let (signature, recovery_id) = signing_key
             .sign_prehash_recoverable(&payload_hash_arr)
             .unwrap();
-        let response = VerifyForeignTransactionResponse {
+        let response = dtos::VerifyForeignTransactionResponse {
             payload_hash: payload.compute_msg_hash().unwrap(),
             signature: dtos::SignatureResponse::Secp256k1(
                 dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
@@ -333,13 +331,13 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
-        let request_args = VerifyForeignTransactionRequestArgs {
+        let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
@@ -391,13 +389,13 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
-        let request_args = VerifyForeignTransactionRequestArgs {
+        let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
@@ -439,7 +437,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
@@ -456,7 +454,7 @@ mod tests {
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
-        let request_args = VerifyForeignTransactionRequestArgs {
+        let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: Some(payload.compute_msg_hash().unwrap()),
@@ -482,13 +480,13 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
-        let request_args = VerifyForeignTransactionRequestArgs {
+        let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
@@ -510,7 +508,7 @@ mod tests {
         with_active_participant_and_attested_context(&contract);
 
         // When
-        let tampered_request = VerifyForeignTransactionRequest {
+        let tampered_request = dtos::VerifyForeignTransactionRequest {
             expected_payload_hash: None,
             ..request.clone()
         };
@@ -532,7 +530,7 @@ mod tests {
     fn sign_foreign_tx_payload(
         secret_key: &k256::Scalar,
         payload: &ForeignTxSignPayload,
-    ) -> VerifyForeignTransactionResponse {
+    ) -> dtos::VerifyForeignTransactionResponse {
         let payload_hash = payload.compute_msg_hash().unwrap();
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
@@ -543,7 +541,7 @@ mod tests {
         let signature = dtos::SignatureResponse::Secp256k1(
             dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
         );
-        VerifyForeignTransactionResponse {
+        dtos::VerifyForeignTransactionResponse {
             payload_hash,
             signature,
         }
@@ -554,10 +552,10 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
         testing_env!(context.clone());
-        let request_args = VerifyForeignTransactionRequestArgs {
+        let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
@@ -589,19 +587,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Protocol::CaitSith, DomainPurpose::Sign)]
-    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
+    #[case(Protocol::CaitSith, dtos::DomainPurpose::Sign)]
+    #[case(Protocol::ConfidentialKeyDerivation, dtos::DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires ForeignTx")]
     fn verify_foreign_tx__should_reject_non_foreign_tx_domain(
         #[case] protocol: Protocol,
-        #[case] purpose: DomainPurpose,
+        #[case] purpose: dtos::DomainPurpose,
     ) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) = basic_setup_with_protocol(protocol, purpose, &mut rng);
 
         // When
-        contract.verify_foreign_transaction(VerifyForeignTransactionRequestArgs {
+        contract.verify_foreign_transaction(dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
@@ -619,7 +617,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         make_chains_available(&mut contract, [dtos::ForeignChain::Solana]);
         testing_env!(context.clone());
 
@@ -633,7 +631,7 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         for account_id in participant_account_ids(&contract) {
             register_foreign_chains_config_for(
                 &mut contract,
@@ -653,7 +651,7 @@ mod tests {
         // Given: 4 participants, ForeignTx reconstruction threshold 3; only 2 cover Bitcoin.
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participant_account_ids(&contract).iter().take(2) {
             register_foreign_chains_config_for(
@@ -673,7 +671,7 @@ mod tests {
         // Given: 4 participants, ForeignTx reconstruction threshold 3; only 3 cover Bitcoin.
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut rng);
+            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participant_account_ids(&contract).iter().take(3) {
             register_foreign_chains_config_for(
@@ -698,8 +696,8 @@ mod tests {
         );
     }
 
-    fn bitcoin_request_args() -> VerifyForeignTransactionRequestArgs {
-        VerifyForeignTransactionRequestArgs {
+    fn bitcoin_request_args() -> dtos::VerifyForeignTransactionRequestArgs {
+        dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,

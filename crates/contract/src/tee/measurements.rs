@@ -10,7 +10,7 @@ use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Par
 /// Contract-side [`MeasurementVotes`](near_mpc_contract_interface::types::MeasurementVotes),
 /// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
 /// the participant set.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MeasurementVotes {
     pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,

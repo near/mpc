@@ -15,7 +15,6 @@ use near_mpc_contract_interface::types as dtos;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(::near_sdk::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -98,16 +97,8 @@ pub mod k256_types {
 
     pub type PublicKey = <Secp256k1 as CurveArithmetic>::AffinePoint;
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy, Ord, PartialOrd)]
     pub struct SerializableScalar {
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "String"), // Scalar is a U256, which becomes a HEX-string after serialization.
-        )]
         pub scalar: Scalar,
     }
 
@@ -145,23 +136,11 @@ pub mod k256_types {
         }
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
     pub struct SerializableAffinePoint {
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>"), // Affine point may be compressed or decompressed.
-        )]
         pub affine_point: AffinePoint,
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
     pub struct Signature {
         pub big_r: SerializableAffinePoint,
@@ -236,22 +215,11 @@ pub mod ed25519_types {
         }
     }
 
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(::near_sdk::schemars::JsonSchema)
-    )]
     #[serde_as]
     #[derive(
         BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, Clone, PartialEq, Eq,
     )]
-    pub struct Signature(
-        #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
-        )]
-        #[serde_as(as = "[_; 64]")]
-        [u8; 64],
-    );
+    pub struct Signature(#[serde_as(as = "[_; 64]")] [u8; 64]);
 
     impl Signature {
         pub fn as_bytes(&self) -> &[u8; 64] {

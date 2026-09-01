@@ -12,7 +12,7 @@ use near_sdk::{env, log, near};
 use std::collections::BTreeSet;
 
 /// Maintains the state for the current key generation or resharing.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyEvent {
     /// The epoch ID that we're generating or resharing keys for.
@@ -237,7 +237,7 @@ enum VoteSuccessResult {
 }
 
 /// State for a single attempt at generating or resharing a key.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct KeyEventInstance {
     attempt_id: AttemptId,
