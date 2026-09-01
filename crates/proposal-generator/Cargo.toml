@@ -11,7 +11,6 @@ base64.workspace = true
 borsh.workspace = true
 clap.workspace = true
 hex.workspace = true
-mpc-contract = { workspace = true, features = ["non-contract-usage"] }
 near-mpc-bounded-collections.workspace = true
 near-mpc-contract-interface.workspace = true
 serde.workspace = true

@@ -9361,7 +9361,6 @@ dependencies = [
  "borsh",
  "clap",
  "hex",
- "mpc-contract",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "rstest",
