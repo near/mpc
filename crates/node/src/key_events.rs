@@ -139,7 +139,7 @@ async fn keygen_computation(
     participants: Arc<ParticipantsConfig>,
 ) -> anyhow::Result<()> {
     validate_key_event_participants(channel.participants(), &participants).inspect_err(|err| {
-        error!(
+        tracing::warn!(
             leader = %channel.leader(),
             "Refusing to take part in key generation attempt {:?}: {}", key_id, err
         )
@@ -376,7 +376,7 @@ async fn resharing_computation(
 ) -> anyhow::Result<()> {
     validate_key_event_participants(channel.participants(), &args.new_participants).inspect_err(
         |err| {
-            error!(
+            tracing::warn!(
                 leader = %channel.leader(),
                 "Refusing to take part in key resharing attempt {:?}: {}", key_id, err
             )
@@ -818,7 +818,7 @@ mod tests {
         let txn_sender = CountingTransactionSender::new();
         let txn_sender_handle = txn_sender.clone();
 
-        let keyshare_storage = make_test_keyshare_storage().await;
+        let keyshare_storage = must_create_test_keyshare_storage().await;
 
         // When
         let leader_handle = tokio::spawn(resharing_leader(
@@ -941,7 +941,7 @@ mod tests {
         let result = keygen_computation(
             rx,
             channel,
-            make_test_keyshare_storage().await,
+            must_create_test_keyshare_storage().await,
             txn_sender,
             key_event_id,
             Arc::new(make_participants(&[1, 2, 3, 4])),
@@ -949,7 +949,12 @@ mod tests {
         .await;
 
         // Then
-        assert!(result.is_err());
+        assert_matches!(
+            result
+                .unwrap_err()
+                .downcast::<InvalidKeyEventParticipants>(),
+            Ok(_)
+        );
         assert_eq!(txn_sender_handle.count(), 0);
     }
 
@@ -976,7 +981,7 @@ mod tests {
         let result = resharing_computation(
             rx,
             channel,
-            make_test_keyshare_storage().await,
+            must_create_test_keyshare_storage().await,
             txn_sender,
             key_event_id,
             args,
@@ -984,7 +989,12 @@ mod tests {
         .await;
 
         // Then
-        assert!(result.is_err());
+        assert_matches!(
+            result
+                .unwrap_err()
+                .downcast::<InvalidKeyEventParticipants>(),
+            Ok(_)
+        );
         assert_eq!(txn_sender_handle.count(), 0);
     }
 
@@ -1088,7 +1098,7 @@ mod tests {
         })
     }
 
-    async fn make_test_keyshare_storage() -> Arc<RwLock<KeyshareStorage>> {
+    async fn must_create_test_keyshare_storage() -> Arc<RwLock<KeyshareStorage>> {
         let keyshare_storage = KeyStorageConfig {
             home_dir: tempfile::tempdir().unwrap().keep(),
             local_encryption_key: [0u8; 16],
