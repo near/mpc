@@ -229,7 +229,7 @@ struct MakeDuplicateSignCallsArgs<'a> {
 /// [`crate::sandbox::common::SandboxTestSetupBuilder::with_sandbox_test_methods`]).
 async fn wait_for_pending_signature_queue(
     contract: &near_workspaces::Contract,
-    request: &mpc_contract::primitives::signature::SignatureRequest,
+    request: &near_mpc_contract_interface::types::SignatureRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);

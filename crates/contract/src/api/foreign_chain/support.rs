@@ -5,8 +5,7 @@ use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
-use dtos::DomainPurpose;
-use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
+use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{env, log, near};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,7 +45,7 @@ impl MpcContract {
         Self::assert_caller_is_signer();
         let signer_account_id = env::signer_account_id();
         let signer_account_pk = env::signer_account_pk();
-        let signer_account_ed25519_pk = Ed25519PublicKey::try_from(&signer_account_pk)
+        let signer_account_ed25519_pk = dtos::Ed25519PublicKey::try_from(&signer_account_pk)
             .unwrap_or_else(|_| env::panic_str("signer account key must be Ed25519"));
         let node_id = self
             .tee_state
@@ -90,7 +89,7 @@ impl MpcContract {
             self.protocol_state.domain_registry().ok().and_then(|r| {
                 r.domains()
                     .iter()
-                    .filter(|d| d.purpose == DomainPurpose::ForeignTx)
+                    .filter(|d| d.purpose == dtos::DomainPurpose::ForeignTx)
                     .map(|d| d.reconstruction_threshold.inner())
                     .max()
             })
@@ -709,8 +708,11 @@ mod tests {
     // then all 4 chains should be supported.
     fn get_available_foreign_chains__should_not_count_non_participant_node_config() {
         // Given: 4 participants, threshold 4 (all must agree); 4 chains whitelisted.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let all_chains = [
             dtos::ForeignChain::Bitcoin,
             dtos::ForeignChain::Ethereum,
@@ -734,7 +736,7 @@ mod tests {
             )
             .unwrap();
             for domain in state.domains.domains_mut() {
-                if domain.purpose == DomainPurpose::ForeignTx {
+                if domain.purpose == dtos::DomainPurpose::ForeignTx {
                     domain.reconstruction_threshold = ReconstructionThreshold::new(4);
                 }
             }
@@ -819,8 +821,11 @@ mod tests {
         // Node 4 supports only 2 chains.
         // Node 4's operator migrates to a new node that supports all 4 chains.
         // After conclude_node_migration the cache must reflect 4 chains without a manual recompute.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let all_chains = [
             dtos::ForeignChain::Bitcoin,
             dtos::ForeignChain::Ethereum,
@@ -841,7 +846,7 @@ mod tests {
             )
             .unwrap();
             for domain in state.domains.domains_mut() {
-                if domain.purpose == DomainPurpose::ForeignTx {
+                if domain.purpose == dtos::DomainPurpose::ForeignTx {
                     domain.reconstruction_threshold = ReconstructionThreshold::new(4);
                 }
             }
@@ -915,8 +920,11 @@ mod tests {
     fn get_available_foreign_chains__should_include_chain_when_at_least_threshold_participants_cover_it()
      {
         // Given: 4 participants, signing threshold 3; Bitcoin whitelisted.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -939,8 +947,11 @@ mod tests {
     #[test]
     fn get_available_foreign_chains__should_exclude_chain_when_fewer_than_threshold_cover_it() {
         // Given: 4 participants, threshold 3; Bitcoin whitelisted.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -962,8 +973,11 @@ mod tests {
     #[test]
     fn get_available_foreign_chains__should_exclude_chain_that_is_covered_but_not_whitelisted() {
         // Given: 4 participants, threshold 3; Bitcoin is NOT whitelisted.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
 
         // When: all 4 participants cover Bitcoin.
@@ -984,8 +998,11 @@ mod tests {
     fn get_available_foreign_chains__should_only_include_whitelisted_chains_with_threshold_coverage()
      {
         // Given: 4 participants, threshold 3. Bitcoin and Ethereum are whitelisted; Solana is not.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         whitelist_chain(&mut contract, dtos::ForeignChain::Ethereum);
@@ -1032,8 +1049,11 @@ mod tests {
     fn vote_update_foreign_chain_providers__should_populate_available_set_when_whitelisting_covered_chain()
      {
         // Given: 4 participants, threshold 3. Bitcoin is NOT yet whitelisted.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
 
         // GovernanceThreshold (3) participants already cover Bitcoin — but the chain is not whitelisted,
@@ -1060,8 +1080,11 @@ mod tests {
     fn clean_foreign_chain_data__should_drop_departed_participant_contribution_from_cache() {
         // Given: 4 participants, threshold 3, Bitcoin whitelisted.
         // Exactly 3 participants (0, 1, 2) cover Bitcoin → threshold met → available.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participants.iter().take(3) {
@@ -1123,8 +1146,11 @@ mod tests {
     fn recompute_available_foreign_chains__should_update_cache_during_resharing() {
         // Given: Running contract with Bitcoin whitelisted; threshold 3, only 2 participants
         // registered → Bitcoin not yet available.
-        let (_context, mut contract, _) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::ForeignTx, &mut OsRng);
+        let (_context, mut contract, _) = basic_setup_with_protocol(
+            Protocol::CaitSith,
+            dtos::DomainPurpose::ForeignTx,
+            &mut OsRng,
+        );
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
         for account_id in participants.iter().take(2) {
@@ -1183,7 +1209,7 @@ mod tests {
             id: domain_id,
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: DomainPurpose::ForeignTx,
+            purpose: dtos::DomainPurpose::ForeignTx,
         }];
         let (pk, _sk) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
         let key_for_domain = KeyForDomain {
@@ -1244,7 +1270,7 @@ mod tests {
             id: DomainId(id),
             protocol: Protocol::CaitSith,
             reconstruction_threshold: ReconstructionThreshold::new(threshold),
-            purpose: DomainPurpose::ForeignTx,
+            purpose: dtos::DomainPurpose::ForeignTx,
         };
         let domains = vec![foreign_tx_domain(0, 2), foreign_tx_domain(1, 3)];
         let keys_for_domains = domains

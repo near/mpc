@@ -44,7 +44,7 @@ where
         Ok(NetworkFingerprint::new(genesis_hash.canonical_text()))
     }
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(GetBlockHashResponse(fingerprint.to_owned()).canonical_text())
     }
 }

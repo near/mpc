@@ -48,7 +48,7 @@ pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 
 const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
 
 /// Config for V2 of the contract.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Config {
     /// If a key event attempt has not successfully completed within this many blocks,

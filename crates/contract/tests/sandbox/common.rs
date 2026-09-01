@@ -157,7 +157,7 @@ pub async fn init_contract_running(
             "domains": domains,
             "next_domain_id": next_domain_id,
             "keyset": keyset,
-            "parameters": params,
+            "parameters": dtos::GovernanceThresholdParameters::from(params),
             "init_config": init_config,
         }))
         .gas(GAS_FOR_INIT)

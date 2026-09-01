@@ -3987,7 +3987,7 @@ dependencies = [
  "bs58 0.5.1",
  "clap",
  "foreign-chain-inspector",
- "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
  "futures",
  "hex",
@@ -4006,16 +4006,19 @@ dependencies = [
 name = "foreign-chain-inspector"
 version = "3.14.0"
 dependencies = [
+ "anyhow",
  "assert_matches",
  "bs58 0.5.1",
  "derive_more 2.1.1",
  "ethereum-types",
+ "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
  "hex",
  "http",
  "httpmock",
  "jsonrpsee",
  "mockall",
+ "mpc-node-config",
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
@@ -4029,14 +4032,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "foreign-chain-rpc-auth"
+name = "foreign-chain-rpc-factory"
 version = "3.14.0"
 dependencies = [
  "anyhow",
  "assert_matches",
  "foreign-chain-inspector",
+ "foreign-chain-rpc-interfaces",
  "http",
+ "jsonrpsee",
  "mpc-node-config",
+ "near-mpc-contract-interface",
  "url",
 ]
 
@@ -6271,7 +6277,6 @@ dependencies = [
  "rand 0.8.8",
  "rand_core 0.6.4",
  "rstest",
- "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_with",
@@ -6345,7 +6350,7 @@ dependencies = [
  "flume",
  "foreign-chain-health-check",
  "foreign-chain-inspector",
- "foreign-chain-rpc-auth",
+ "foreign-chain-rpc-factory",
  "foreign-chain-rpc-interfaces",
  "futures",
  "gcloud-sdk",
