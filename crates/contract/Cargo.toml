@@ -60,6 +60,8 @@ bench-contract-methods = []
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
+# For native (non-wasm, non-test) consumers of contract types, e.g. proposal-generator.
+non-contract-usage = ["near-sdk/non-contract-usage"]
 abi = [
     "borsh/unstable__schema",
     "near-mpc-contract-interface/abi",
