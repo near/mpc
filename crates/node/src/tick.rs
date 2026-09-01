@@ -3,21 +3,16 @@
 #[cfg(test)]
 use std::sync::Arc;
 #[cfg(test)]
-use std::time::Duration;
-#[cfg(test)]
 use tokio::sync::Semaphore;
-use tokio::time::Instant;
 
-/// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`]. The returned instant
-/// is one period after the round it starts.
+/// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
 pub trait Tick {
-    async fn tick(&mut self) -> Instant;
+    async fn tick(&mut self);
 }
 
 impl Tick for tokio::time::Interval {
-    async fn tick(&mut self) -> Instant {
+    async fn tick(&mut self) {
         self.tick().await;
-        Instant::now() + self.period()
     }
 }
 
@@ -26,7 +21,6 @@ impl Tick for tokio::time::Interval {
 #[derive(Clone)]
 pub struct MockTicker {
     scheduled: Arc<Semaphore>,
-    period: Duration,
 }
 
 #[cfg(test)]
@@ -34,14 +28,7 @@ impl MockTicker {
     pub fn new(count: usize) -> Self {
         Self {
             scheduled: Arc::new(Semaphore::new(count)),
-            period: Duration::ZERO,
         }
-    }
-
-    /// Sets how long after each round the next one falls due.
-    pub fn with_period(mut self, period: Duration) -> Self {
-        self.period = period;
-        self
     }
 
     /// Lets the loop run `count` more rounds, from its next poll onwards.
@@ -57,7 +44,7 @@ impl MockTicker {
 
 #[cfg(test)]
 impl Tick for MockTicker {
-    async fn tick(&mut self) -> Instant {
+    async fn tick(&mut self) {
         let round = self
             .scheduled
             .acquire()
@@ -65,28 +52,5 @@ impl Tick for MockTicker {
             .expect("the Semaphore is never closed");
         // Spend the round.
         round.forget();
-        Instant::now() + self.period
-    }
-}
-
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-
-    #[tokio::test(start_paused = true)]
-    async fn tick__should_bound_the_round_from_its_start_after_a_missed_tick() {
-        // Given
-        let period = Duration::from_secs(60);
-        let mut interval = tokio::time::interval(period);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        Tick::tick(&mut interval).await;
-        tokio::time::sleep(2 * period + Duration::from_secs(1)).await;
-
-        // When
-        let deadline = Tick::tick(&mut interval).await;
-
-        // Then
-        assert_eq!(deadline, Instant::now() + period);
     }
 }
