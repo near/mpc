@@ -36,10 +36,10 @@ where
             .request(CHAIN_ID_METHOD, NO_PARAMS)
             .await
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
-        Ok(Self::canonical_fingerprint(&chain_id.0))
+        Ok(self.canonical_fingerprint(&chain_id.0))
     }
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(ChainIdResponse(fingerprint.to_owned()).canonical_text())
     }
 }
