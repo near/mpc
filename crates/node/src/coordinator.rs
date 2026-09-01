@@ -342,14 +342,14 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
-        let participants = Arc::new(mpc_config.participants.clone());
+        let expected_participant_ids = mpc_config.participants.participant_id_set();
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                participants,
+                expected_participant_ids,
             )
             .await?;
         } else {
@@ -358,7 +358,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                participants,
+                expected_participant_ids,
             )
             .await?;
         }
@@ -835,7 +835,7 @@ where
             existing_keyshares,
             old_reconstruction_thresholds,
             old_participants: current_running_state.participants,
-            new_participants: mpc_config.participants.clone(),
+            new_participant_ids: mpc_config.participants.participant_id_set(),
         });
 
         if mpc_config.is_leader_for_key_event() {

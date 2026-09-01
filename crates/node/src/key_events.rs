@@ -126,7 +126,8 @@ pub async fn keygen_computation_inner(
 }
 
 /// Wrapper around `keygen_computation_inner` which
-///  - Rejects computations whose participant set does not match the contract.
+///  - Rejects the computation if the [`NetworkTaskChannel`] participants differ from the
+///    expected participant ids.
 ///  - Waits for the key event to start.
 ///  - Interrupts the inner computation if the key event expires.
 ///  - Sends a `vote_abort_key_event_instance` transaction if the inner computation fails.
@@ -136,14 +137,15 @@ async fn keygen_computation(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
-    participants: Arc<ParticipantsConfig>,
+    expected_participant_ids: BTreeSet<ParticipantId>,
 ) -> anyhow::Result<()> {
-    validate_key_event_participants(channel.participants(), &participants).inspect_err(|err| {
-        tracing::warn!(
-            leader = %channel.leader(),
-            "Refusing to take part in key generation attempt {:?}: {}", key_id, err
-        )
-    })?;
+    validate_key_event_participants(channel.participants(), &expected_participant_ids)
+        .inspect_err(|err| {
+            tracing::warn!(
+                leader = %channel.leader(),
+                "Refusing to take part in key generation attempt {:?}: {}", key_id, err
+            )
+        })?;
     let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = keygen_computation_inner(
         channel,
@@ -180,7 +182,7 @@ pub struct ResharingArgs {
     pub old_reconstruction_thresholds: HashMap<DomainId, ReconstructionThreshold>,
     pub old_participants: ParticipantsConfig,
     /// The participant set the resharing is towards, as read from the contract.
-    pub new_participants: ParticipantsConfig,
+    pub new_participant_ids: BTreeSet<ParticipantId>,
 }
 
 /// The key resharing computation (same for both leader and follower) for a single key resharing
@@ -362,7 +364,8 @@ async fn resharing_computation_inner(
 }
 
 /// Wrapper around `resharing_computation_inner` which
-///  - Rejects computations whose participant set does not match the contract.
+///  - Rejects the computation if the [`NetworkTaskChannel`] participants differ from the
+///    expected participant ids.
 ///  - Waits for the key event to start.
 ///  - Interrupts the inner computation if the key event expires.
 ///  - Sends a `vote_abort_key_event_instance` transaction if the inner computation fails.
@@ -374,14 +377,13 @@ async fn resharing_computation(
     key_id: KeyEventId,
     args: Arc<ResharingArgs>,
 ) -> anyhow::Result<()> {
-    validate_key_event_participants(channel.participants(), &args.new_participants).inspect_err(
-        |err| {
+    validate_key_event_participants(channel.participants(), &args.new_participant_ids)
+        .inspect_err(|err| {
             tracing::warn!(
                 leader = %channel.leader(),
                 "Refusing to take part in key resharing attempt {:?}: {}", key_id, err
             )
-        },
-    )?;
+        })?;
     let key_event = wait_for_contract_catchup(&mut contract_key_event_id, key_id).await;
     let inner = resharing_computation_inner(
         channel,
@@ -412,16 +414,21 @@ async fn resharing_computation(
 
 fn validate_key_event_participants(
     channel_participants: &[ParticipantId],
-    expected: &ParticipantsConfig,
+    expected_participant_ids: &BTreeSet<ParticipantId>,
 ) -> Result<(), InvalidKeyEventParticipants> {
     let actual: BTreeSet<ParticipantId> = channel_participants.iter().copied().collect();
-    let expected: BTreeSet<ParticipantId> = expected.participants.iter().map(|p| p.id).collect();
-    if actual == expected {
+    if actual == *expected_participant_ids {
         return Ok(());
     }
     Err(InvalidKeyEventParticipants {
-        missing: expected.difference(&actual).copied().collect(),
-        unexpected: actual.difference(&expected).copied().collect(),
+        missing: expected_participant_ids
+            .difference(&actual)
+            .copied()
+            .collect(),
+        unexpected: actual
+            .difference(expected_participant_ids)
+            .copied()
+            .collect(),
     })
 }
 
@@ -483,7 +490,7 @@ pub async fn keygen_leader(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
-    participants: Arc<ParticipantsConfig>,
+    expected_participant_ids: BTreeSet<ParticipantId>,
 ) -> anyhow::Result<()> {
     loop {
         // Wait for all participants to be connected. Otherwise, computations are most likely going
@@ -546,7 +553,7 @@ pub async fn keygen_leader(
             keyshare_storage.clone(),
             chain_txn_sender.clone(),
             key_event_id,
-            participants.clone(),
+            expected_participant_ids.clone(),
         )
         .await
         {
@@ -566,7 +573,7 @@ pub async fn keygen_follower(
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender + 'static,
-    participants: Arc<ParticipantsConfig>,
+    expected_participant_ids: BTreeSet<ParticipantId>,
 ) -> anyhow::Result<()> {
     let mut tasks = AutoAbortTaskCollection::new();
     loop {
@@ -595,7 +602,7 @@ pub async fn keygen_follower(
                 keyshare_storage.clone(),
                 chain_txn_sender.clone(),
                 key_event_id,
-                participants.clone(),
+                expected_participant_ids.clone(),
             ),
         );
     }
@@ -786,13 +793,11 @@ impl KeyEventLeaderClient for Arc<MeshNetworkClient> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::config::ParticipantInfo;
     use crate::indexer::participants::{ContractKeyEventInstance, KeyEventIdComparisonResult};
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::keyshare::KeyStorageConfig;
     use crate::network::testing::new_task_channel_for_test;
     use assert_matches::assert_matches;
-    use ed25519_dalek::SigningKey;
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use near_mpc_contract_interface::types::{
@@ -876,11 +881,12 @@ mod tests {
     #[test]
     fn validate_key_event_participants__should_accept_the_contract_participant_set() {
         // Given
-        let expected = make_participants(&[1, 2, 3, 4]);
+        let expected_participant_ids = make_participant_id_set(&[1, 2, 3, 4]);
         let channel_participants = make_participant_ids(&[4, 1, 3, 2]);
 
         // When
-        let result = validate_key_event_participants(&channel_participants, &expected);
+        let result =
+            validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
         assert_matches!(result, Ok(()));
@@ -889,11 +895,12 @@ mod tests {
     #[test]
     fn validate_key_event_participants__should_reject_a_subset_of_the_contract_participant_set() {
         // Given
-        let expected = make_participants(&[1, 2, 3, 4]);
+        let expected_participant_ids = make_participant_id_set(&[1, 2, 3, 4]);
         let channel_participants = make_participant_ids(&[1, 2, 3]);
 
         // When
-        let result = validate_key_event_participants(&channel_participants, &expected);
+        let result =
+            validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
         assert_matches!(result, Err(err) => {
@@ -906,11 +913,12 @@ mod tests {
     fn validate_key_event_participants__should_reject_a_participant_outside_the_contract_participant_set()
      {
         // Given
-        let expected = make_participants(&[1, 2, 3, 4]);
+        let expected_participant_ids = make_participant_id_set(&[1, 2, 3, 4]);
         let channel_participants = make_participant_ids(&[1, 2, 3, 4, 5]);
 
         // When
-        let result = validate_key_event_participants(&channel_participants, &expected);
+        let result =
+            validate_key_event_participants(&channel_participants, &expected_participant_ids);
 
         // Then
         assert_matches!(result, Err(err) => {
@@ -944,7 +952,7 @@ mod tests {
             must_create_test_keyshare_storage().await,
             txn_sender,
             key_event_id,
-            Arc::new(make_participants(&[1, 2, 3, 4])),
+            make_participant_id_set(&[1, 2, 3, 4]),
         )
         .await;
 
@@ -1094,7 +1102,7 @@ mod tests {
                 threshold: 3,
                 participants: vec![],
             },
-            new_participants: make_participants(&[1, 2, 3, 4]),
+            new_participant_ids: make_participant_id_set(&[1, 2, 3, 4]),
         })
     }
 
@@ -1110,24 +1118,11 @@ mod tests {
         Arc::new(RwLock::new(keyshare_storage))
     }
 
-    fn make_participants(ids: &[u32]) -> ParticipantsConfig {
-        ParticipantsConfig {
-            threshold: 3,
-            participants: ids
-                .iter()
-                .map(|&id| ParticipantInfo {
-                    id: ParticipantId::from_raw(id),
-                    address: "127.0.0.1".to_string(),
-                    port: 3000,
-                    p2p_public_key: SigningKey::from_bytes(&[u8::try_from(id).unwrap(); 32])
-                        .verifying_key(),
-                    near_account_id: format!("node{id}.near").parse().unwrap(),
-                })
-                .collect(),
-        }
+    fn make_participant_ids(ids: &[u32]) -> Vec<ParticipantId> {
+        ids.iter().copied().map(ParticipantId::from_raw).collect()
     }
 
-    fn make_participant_ids(ids: &[u32]) -> Vec<ParticipantId> {
+    fn make_participant_id_set(ids: &[u32]) -> BTreeSet<ParticipantId> {
         ids.iter().copied().map(ParticipantId::from_raw).collect()
     }
 }
