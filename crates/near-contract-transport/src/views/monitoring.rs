@@ -138,7 +138,7 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use crate::{
-        HasPollInterval, ObservedState, SerializedObservation, ViewArgs,
+        HasPollInterval, Json, ObservedState, SerializedObservation, ViewArgs,
         mock::{Call, MockViewContract, MockViewError},
         views::{
             monitoring::{MonitoringTask, make_monitoring_task, modify, monitor},
@@ -438,7 +438,7 @@ mod tests {
         mock_response: Result<SerializedObservation, MockViewError>,
     ) -> (MockViewContract, MonitoringTask<Vec<u8>, MockViewError>) {
         let viewer = MockViewContract::new(mock_response);
-        let view_call = ViewCall::json(
+        let view_call = ViewCall::new::<Json>(
             viewer.clone(),
             call.contract_id,
             ViewArgs::new(call.method_name, call.args),

@@ -6,7 +6,7 @@ pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
 use chain_gateway::transaction_sender::{AccountCaller, SubmitFunctionCall, TransactionSigner};
 use near_account_id::AccountId;
-use near_contract_transport::{HasPollInterval, ViewArgs, ViewContract, WatchContractState};
+use near_contract_transport::{HasPollInterval, Json, ViewArgs, ViewContract, WatchContractState};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES,
@@ -138,7 +138,7 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
     cancel: CancellationToken,
 ) {
     let mut image_sub = chain_gateway
-        .view_json::<AllowedDockerImageHashesResponse>(
+        .view::<AllowedDockerImageHashesResponse, Json>(
             governance_contract.clone(),
             ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES),
         )
@@ -146,7 +146,7 @@ async fn watch_hashes<V: ViewContract + HasPollInterval + Clone + Send + Sync + 
         .await;
 
     let mut launcher_sub = chain_gateway
-        .view_json::<Vec<LauncherDockerComposeHash>>(
+        .view::<Vec<LauncherDockerComposeHash>, Json>(
             governance_contract,
             ViewArgs::no_args(ALLOWED_LAUNCHER_COMPOSE_HASHES),
         )

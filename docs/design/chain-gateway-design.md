@@ -450,22 +450,21 @@ pub enum TransportError<ViewError> {
 }
 ```
 
-Consumers do not call `view_contract` directly. `ViewContract` provides `view_json`/`view_borsh` methods pairing the backend with a JSON or borsh deserializer. The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
+Consumers do not call `view_contract` directly. `ViewContract` provides a `view` method pairing the backend with a deserializer selected by a marker type (`Json`, `Borsh`, or a custom `DeserializeAs<T>` implementation). The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
 
 ```rust
 pub trait ViewContract {
-    fn view_json<T: DeserializeOwned>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
-    fn view_borsh<T: BorshDeserialize>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
+    fn view<T, D: DeserializeAs<T>>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
 }
 
 // one-shot query
 let observed: ObservedState<Foo> = gateway
-    .view_json(contract_id, ViewArgs::no_args("state"))
+    .view::<_, Json>(contract_id, ViewArgs::no_args("state"))
     .await?;
 
 // subscription
 let mut sub = gateway
-    .view_json::<Foo>(contract_id, ViewArgs::no_args("state"))
+    .view::<Foo, Json>(contract_id, ViewArgs::no_args("state"))
     .subscribe()
     .await;
 
