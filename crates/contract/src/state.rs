@@ -22,7 +22,7 @@ use near_sdk::{env, near};
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub enum ProtocolContractState {

@@ -3,7 +3,6 @@
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState, TeeError};
 use crate::primitives::ckd::{app_public_key_check, ckd_output_check};
-use crate::primitives::signature::YieldIndex;
 use crate::{MpcContract, MpcContractExt, pending_requests};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
@@ -112,10 +111,10 @@ impl MpcContract {
 
     /// Presence check for a pending CKD request, exposed as a view call.
     ///
-    /// See [`Self::get_pending_request`] for the contract: the returned [`YieldIndex`]
+    /// See [`Self::get_pending_request`] for the contract: the returned [`dtos::YieldIndex`]
     /// is an arbitrary representative of a fan-out queue, not "the" yield. Only the
     /// `Some`/`None` distinction is meaningful.
-    pub fn get_pending_ckd_request(&self, request: &dtos::CKDRequest) -> Option<YieldIndex> {
+    pub fn get_pending_ckd_request(&self, request: &dtos::CKDRequest) -> Option<dtos::YieldIndex> {
         self.pending_ckd_requests
             .get(request)
             .and_then(|q| q.first().cloned())

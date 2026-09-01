@@ -2,11 +2,9 @@
 
 use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::key_state::EpochId;
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::tee::tee_state::TeeValidationResult;
 use crate::{MpcContract, MpcContractExt};
-use dtos::DomainConfig;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{env, log, near};
 use std::time::Duration;
@@ -32,7 +30,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_new_parameters(
         &mut self,
-        prospective_epoch_id: EpochId,
+        prospective_epoch_id: dtos::EpochId,
         proposal: dtos::ProposedGovernanceThresholdParameters,
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
@@ -92,7 +90,7 @@ impl MpcContract {
     /// The specified list of domains must have increasing and contiguous IDs, and the first ID
     /// must be the same as the `next_domain_id` returned by state().
     #[handle_result]
-    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+    pub fn vote_add_domains(&mut self, domains: Vec<dtos::DomainConfig>) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         log!(
             "vote_add_domains: signer={}, domains={:?}",
@@ -156,7 +154,7 @@ mod tests {
             GovernanceThresholdParameters::new(participants, governance_threshold).unwrap(),
             BTreeMap::new(),
         );
-        contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+        contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
     }
 
     /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants have
@@ -274,7 +272,7 @@ mod tests {
         let parameters =
             GovernanceThresholdParameters::new(participants.clone(), governance_threshold).unwrap();
         let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
+        let domains = vec![dtos::DomainConfig {
             id: domain_id,
             protocol: Protocol::CaitSith,
             reconstruction_threshold,
@@ -282,7 +280,7 @@ mod tests {
         }];
         let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
         let keyset = Keyset::new(
-            EpochId::new(0),
+            dtos::EpochId::new(0),
             vec![KeyForDomain {
                 domain_id,
                 key: pk.try_into().unwrap(),
@@ -313,7 +311,7 @@ mod tests {
                 .attached_deposit(NearToken::from_near(0))
                 .build()
         );
-        contract.vote_new_parameters(EpochId::new(1), proposal.into_dto_type())
+        contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
     }
 
     #[test]
@@ -479,7 +477,7 @@ mod tests {
 
         // When / Then: the confused-deputy vote must be rejected before it is recorded.
         contract
-            .vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+            .vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
             .expect("expected panic when predecessor != signer");
     }
 

@@ -24,7 +24,7 @@ use std::collections::{BTreeSet, HashSet};
 ///  - vote_new_parameters, upon threshold agreement, transitions into the
 ///    Resharing state to reshare keys for new participants and also change the
 ///    threshold if desired.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
