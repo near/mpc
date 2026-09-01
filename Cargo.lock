@@ -9352,6 +9352,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "proposal-generator"
+version = "3.14.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "base64 0.23.1",
+ "borsh",
+ "clap",
+ "hex",
+ "mpc-contract",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
+ "rstest",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.20",
+ "toml 1.1.4+spec-1.1.0",
+]
+
+[[package]]
 name = "proptest"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
