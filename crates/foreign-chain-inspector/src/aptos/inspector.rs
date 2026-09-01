@@ -65,8 +65,7 @@ where
     ) -> Result<Verdict<AptosExtractedValue>, ForeignChainInspectionError> {
         let tx_hash_hex = format!("0x{}", hex::encode(*tx_id));
 
-        // A 404 on the transaction lookup is the chain's verdict on the transaction, so it is
-        // intercepted here; every other failure is `classified`'s to name.
+        // A 404 on the Aptos transaction lookup call means the transaction does not exist
         let tx = match self.client.get_transaction_by_hash(&tx_hash_hex).await {
             Err(AptosRpcError::ApiError { status: 404, .. }) => {
                 return Ok(Verdict::TransactionNotFound);
@@ -116,8 +115,8 @@ impl<T> ClassifyRpcOutcome for Result<T, AptosRpcError> {
 
         let message = error.to_string();
         Err(match error {
-            // The transaction lookup intercepts a 404 as a verdict before classifying, so here
-            // it can only mean a path the provider does not route.
+            // A 404 is classified as a rejection by default. A call site where it means
+            // something else, like the transaction lookup, must intercept it before classifying.
             AptosRpcError::ApiError { status: 404, .. } => {
                 ForeignChainInspectionError::RpcRequestRejected(message)
             }

@@ -73,8 +73,8 @@ where
     ) -> Result<Verdict<SuiExtractedValue>, ForeignChainInspectionError> {
         let digest = sui_sdk_types::Digest::new(*tx_id).to_base58();
 
-        // An unknown or pruned digest is the chain's verdict on the transaction, so it is
-        // intercepted here; every other status is a failure for `classified` to name.
+        // A NotFound status on the Sui transaction lookup call means the transaction does not
+        // exist or has been pruned.
         let response = match self.client.get_transaction(&digest).await {
             Err(status) if status.code() == Code::NotFound => {
                 return Ok(Verdict::TransactionNotFound);
@@ -140,8 +140,8 @@ impl<T> ClassifyRpcOutcome for Result<T, Status> {
 
         let message = status.to_string();
         Err(match status.code() {
-            // The transaction lookup intercepts NotFound as a verdict before classifying, so
-            // here it can only mean a path or service the provider does not serve.
+            // NotFound classifies as a rejection by default. A call site where it means
+            // something else, like the transaction lookup, must intercept it before classifying.
             Code::NotFound => ForeignChainInspectionError::RpcRequestRejected(message),
             Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
             Code::Unavailable

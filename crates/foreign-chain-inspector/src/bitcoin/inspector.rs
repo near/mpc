@@ -24,10 +24,11 @@ const GET_BLOCK_HASH_METHOD: &str = "getblockhash";
 /// Bitcoin has no chain id, so the genesis block is what tells the networks apart.
 const GENESIS_BLOCK_HEIGHT: u64 = 0;
 
-/// `RPC_INVALID_ADDRESS_OR_KEY`. `getrawtransaction` raises it both for a transaction the node
-/// truly does not have and, when txindex is disabled, for any confirmed transaction; only the
-/// message tells the two apart.
+// Error code for `RPC_INVALID_ADDRESS_OR_KEY`.
 const NO_SUCH_TRANSACTION_CODE: i32 = -5;
+/// `getrawtransaction` raises `NO_SUCH_TRANSACTION_CODE` both when the transaction truly
+/// doesn't exist, or when the RPC node has disabled txindex and the transaction is outside
+/// of the mempool of the node. We need to use the error message to distinguish the 2 cases.
 const NO_SUCH_TRANSACTION_MESSAGE: &str = "No such mempool or blockchain transaction";
 
 #[derive(Clone)]
@@ -82,8 +83,6 @@ where
             .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
             .await
         {
-            // Without the message check, a provider running with txindex disabled would rule
-            // every confirmed transaction out instead of surfacing as a tolerated fault.
             Err(RpcClientError::Call(object))
                 if object.code() == NO_SUCH_TRANSACTION_CODE
                     && object.message().starts_with(NO_SUCH_TRANSACTION_MESSAGE) =>
@@ -108,10 +107,6 @@ where
             .canonical_blockhash_at_height_of(rpc_response.blockhash)
             .await?;
         if canonical_blockhash != rpc_response.blockhash {
-            // Bitcoin block hashes travel over JSON-RPC in reversed ("RPC byte order") form, so
-            // the bytes recorded here are reversed relative to the on-chain orientation a block
-            // explorer expects. A triager reading this verdict needs to reverse the hex to look
-            // the block up.
             return Ok(Verdict::NonCanonicalBlock {
                 block_number: block_height,
                 receipt_hash: (*rpc_response.blockhash).to_vec().into(),

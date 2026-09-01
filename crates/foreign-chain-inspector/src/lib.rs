@@ -47,48 +47,34 @@ pub trait ForeignChainInspector {
 /// The settled answer from a transaction inspection. Inspection producing a negative verdict is
 /// still a successful inspection. Failing to obtain any verdict is instead a
 /// [`ForeignChainInspectionError`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Verdict<V> {
+    #[display("extracted {} values", _0.len())]
     Extracted(Vec<V>),
+    #[display("the transaction's status was not success")]
     TransactionFailed,
-    /// Deliberately a verdict rather than a tolerated error: honest providers cannot extract
-    /// anything from a transaction that does not exist, so tolerating absence would let one
-    /// fabricating provider outvote them all.
+    /// Deliberately a verdict rather than a tolerated error. Honest providers cannot extract
+    /// anything from a transaction that does not exist.
+    #[display("the transaction was not found")]
     TransactionNotFound,
+    #[display(
+        "the transaction's block does not match the canonical chain at height {block_number}: \
+         receipt block {receipt_hash}, canonical block {canonical_hash}"
+    )]
     NonCanonicalBlock {
         block_number: u64,
         receipt_hash: HexBytes,
         canonical_hash: HexBytes,
     },
+    #[display("a requested log index is out of bounds")]
     LogIndexOutOfBounds,
 }
 
 impl<V> Verdict<V> {
-    /// The extracted values, or the failing verdict back as the error.
     pub fn into_extracted(self) -> Result<Vec<V>, Verdict<V>> {
         match self {
             Self::Extracted(values) => Ok(values),
             failing => Err(failing),
-        }
-    }
-}
-
-impl<V> std::fmt::Display for Verdict<V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Extracted(values) => write!(f, "extracted {} values", values.len()),
-            Self::TransactionFailed => write!(f, "the transaction's status was not success"),
-            Self::TransactionNotFound => write!(f, "the transaction was not found"),
-            Self::NonCanonicalBlock {
-                block_number,
-                receipt_hash,
-                canonical_hash,
-            } => write!(
-                f,
-                "the transaction's block does not match the canonical chain at height \
-                 {block_number}: receipt block {receipt_hash}, canonical block {canonical_hash}"
-            ),
-            Self::LogIndexOutOfBounds => write!(f, "a requested log index is out of bounds"),
         }
     }
 }
@@ -457,10 +443,7 @@ fn is_retryable_status(status_code: u16) -> bool {
 
 /// Classifies a raw client outcome into a [`ForeignChainInspectionError`], one implementation per
 /// client error type. Transaction inspection and the network fingerprint probe both go through
-/// this, so the same fault reports the same error on either route.
-///
-/// A "not found" answer to the transaction lookup itself is a [`Verdict`], not an error, so the
-/// inspectors intercept it at that call site before classifying.
+/// this.
 pub(crate) trait ClassifyRpcOutcome {
     type Response;
 

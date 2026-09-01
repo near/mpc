@@ -69,7 +69,6 @@ impl std::fmt::Display for Mismatch {
 
 impl std::error::Error for Mismatch {}
 
-/// The golden transaction is known good, so anything but extracted values fails the check.
 fn extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
     verdict.into_extracted().map_err(|failing| {
         anyhow::anyhow!("the provider ruled the golden transaction out: {failing}")
