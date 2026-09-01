@@ -1956,8 +1956,8 @@ pub struct ProviderConfig {
 }
 
 /// Reasons a [`ChainEntry`] proposal fails validation. [`NonEmptyBTreeMap`]
-/// already enforces non-empty + unique-[`ProviderId`] at borsh-deserialize
-/// time, so those cases are absent here.
+/// already enforces non-empty + unique-[`ProviderId`] at deserialize time,
+/// so those cases are absent here.
 #[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
 pub enum ChainEntryValidationError {
     #[error("ChainEntry.quorum must be >= 1")]
@@ -1974,8 +1974,6 @@ pub enum ChainEntryValidationError {
         "ChainRouting::QueryParam.name collides with AuthScheme::Query.name {name:?} for provider_id {provider_id:?}"
     )]
     QueryParamCollidesWithAuth { provider_id: String, name: String },
-    #[error("providers.len() {len} does not fit in u64: {reason}")]
-    ProvidersLenOverflow { len: usize, reason: String },
 }
 
 /// Stored state for one chain in the on-chain whitelist: a non-empty map from
@@ -2005,12 +2003,8 @@ impl ChainEntry {
         if *quorum == 0 {
             return Err(ChainEntryValidationError::ZeroQuorum);
         }
-        let providers_len = u64::try_from(providers.len()).map_err(|e| {
-            ChainEntryValidationError::ProvidersLenOverflow {
-                len: providers.len(),
-                reason: e.to_string(),
-            }
-        })?;
+        let providers_len = u64::try_from(providers.len())
+            .expect("usize is at most 64 bits on all supported targets");
         if *quorum > providers_len {
             return Err(ChainEntryValidationError::QuorumExceedsProviders {
                 quorum: *quorum,
