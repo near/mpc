@@ -261,7 +261,8 @@ fn bytes_used(update: &Update) -> u128 {
             n_bytes_used += code.len() as u128;
         }
         Update::Config(config) => {
-            let bytes = serde_json::to_vec(&config.clone().into_dto_type()).unwrap();
+            let bytes = serde_json::to_vec(&config.into_dto_type())
+                .expect("serde serialization must succeed");
             n_bytes_used += bytes.len() as u128;
         }
     }

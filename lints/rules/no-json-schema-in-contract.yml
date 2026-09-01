@@ -15,6 +15,6 @@ rule:
     - kind: attribute_item
       regex: 'schemars|JsonSchema'
     - kind: attribute_item
-      regex: 'near\(serializers\s*=\s*\[[^]]*json'
+      regex: '(?s)near\(.*serializers\s*=\s*\[[^\]]*json'
     - kind: use_declaration
       regex: 'schemars'
