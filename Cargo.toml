@@ -30,6 +30,7 @@ members = [
     "crates/node-config",
     "crates/node-types",
     "crates/primitives",
+    "crates/proposal-generator",
     "crates/tee-authority",
     "crates/tee-context",
     "crates/tee-launcher",
@@ -148,8 +149,9 @@ frost-ed25519 = { version = "3.0.0", default-features = false }
 frost-secp256k1 = { version = "3.0.0", default-features = false }
 futures = "0.3.32"
 futures-lite = "2.6.1"
-gcloud-sdk = { version = "0.30.0", default-features = false, features = [
+gcloud-sdk = { version = "0.31.0", default-features = false, features = [
     "google-cloud-secretmanager-v1",
+    "google-rpc",
     "tls-webpki-roots",
 ] }
 group = "0.13"
@@ -190,13 +192,10 @@ near-crypto-public = { version = "0.37.3", package = "near-crypto" }
 near-gas = "0.3.6"
 near-jsonrpc-client = "0.22.0"
 near-jsonrpc-primitives = "0.37.3"
-near-kit = { version = "0.15.0", default-features = false, features = ["rpc"] }
+near-kit = { version = "0.17.0", default-features = false, features = ["rpc"] }
 near-primitives = "0.37.3"
 near-sandbox = "0.3.15"
-near-sdk = { version = "5.29.0", features = [
-    "legacy",
-    "unstable",
-] }
+near-sdk = { version = "5.29.0", features = ["legacy", "unstable"] }
 near-token = "0.3.4"
 near-workspaces = { version = "0.23.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
@@ -213,9 +212,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
-reddsa = { version = "0.5.2", default-features = false, features = [
-    "frost",
-] }
+reddsa = { version = "0.5.2", default-features = false, features = ["frost"] }
 regex = "1.12.3"
 reqwest = { version = "0.13.3", features = ["multipart", "json"] }
 rmp-serde = "1.3.1"

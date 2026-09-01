@@ -17,7 +17,7 @@ use serde_with::{Bytes, serde_as};
 )]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct Measurements {
-    /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
+    /// MRTD (Measurement Register for the Trust Domain) - identifies the virtual firmware.
     #[serde_as(as = "Bytes")]
     pub mrtd: [u8; 48],
     /// RTMR0 (Runtime Measurement Register 0) - typically measures the bootloader, virtual

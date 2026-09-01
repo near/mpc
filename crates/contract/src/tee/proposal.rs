@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
 use near_sdk::{env::sha256, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
@@ -16,8 +16,9 @@ pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, Nod
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
 
-/// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
-/// a code hash to add.
+/// Contract-side [`CodeHashesVotes`](near_mpc_contract_interface::types::CodeHashesVotes),
+/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
+/// the participant set.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CodeHashesVotes {
@@ -73,16 +74,9 @@ impl CodeHashesVotes {
     }
 }
 
-/// The action a participant is voting for on a launcher image hash.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LauncherVoteAction {
-    Add(LauncherImageHash),
-    Remove(LauncherImageHash),
-}
-
-/// Tracks votes for adding or removing launcher image hashes.
-/// Each participant can have at most one active vote at a time.
+/// Contract-side [`LauncherHashVotes`](near_mpc_contract_interface::types::LauncherHashVotes),
+/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
+/// the participant set.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LauncherHashVotes {

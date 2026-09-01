@@ -1,33 +1,15 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_attestation::attestation::{ExpectedMeasurements, Measurements};
+use mpc_attestation::attestation;
+use near_mpc_contract_interface::types::{ExpectedMeasurements, MeasurementVoteAction};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 
+use crate::dto_mapping::IntoContractType as _;
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the MRTD (Module Run-Time Data) TDX measurement.
-    MrtdHash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR0 TDX measurement.
-    Rtmr0Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR1 TDX measurement.
-    Rtmr1Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the RTMR2 TDX measurement.
-    Rtmr2Hash, 48
-);
-mpc_primitives::define_hash!(
-    /// SHA-384 digest of the key provider event.
-    KeyProviderEventDigest, 48
-);
-
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
+/// Contract-side [`MeasurementVotes`](near_mpc_contract_interface::types::MeasurementVotes),
+/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
+/// the participant set.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MeasurementVotes {
@@ -86,14 +68,6 @@ impl MeasurementVotes {
     }
 }
 
-/// The action a participant is voting for on an OS measurement set.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MeasurementVoteAction {
-    Add(ContractExpectedMeasurements),
-    Remove(ContractExpectedMeasurements),
-}
-
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
 /// remove requires unanimity). Starts empty on fresh contracts (consistent with docker
 /// image hashes and launcher hashes); seeded from
@@ -105,13 +79,13 @@ pub enum MeasurementVoteAction {
     derive(borsh::BorshSchema)
 )]
 pub(crate) struct AllowedMeasurements {
-    entries: Vec<ContractExpectedMeasurements>,
+    entries: Vec<ExpectedMeasurements>,
 }
 
 impl AllowedMeasurements {
     /// Adds a new measurement set to the allowed list.
     /// Returns `false` if the measurement is already in the list.
-    pub fn add(&mut self, measurement: ContractExpectedMeasurements) -> bool {
+    pub fn add(&mut self, measurement: ExpectedMeasurements) -> bool {
         if self.entries.contains(&measurement) {
             log!("measurement already in allowed list");
             return false;
@@ -122,7 +96,7 @@ impl AllowedMeasurements {
 
     /// Removes a measurement set from the allowed list.
     /// Returns `false` if the measurement was not found or if removal would leave the list empty.
-    pub fn remove(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
+    pub fn remove(&mut self, measurement: &ExpectedMeasurements) -> bool {
         let would_remain = self.entries.iter().filter(|e| *e != measurement).count();
         if would_remain == 0 {
             return false;
@@ -133,67 +107,16 @@ impl AllowedMeasurements {
     }
 
     /// Returns all allowed measurements.
-    pub fn entries(&self) -> &[ContractExpectedMeasurements] {
+    pub fn entries(&self) -> &[ExpectedMeasurements] {
         &self.entries
     }
 
     /// Converts to attestation-crate types for verification.
-    pub fn to_attestation_measurements(&self) -> Vec<ExpectedMeasurements> {
+    pub fn to_attestation_measurements(&self) -> Vec<attestation::ExpectedMeasurements> {
         self.entries
             .iter()
             .cloned()
-            .map(ExpectedMeasurements::from)
+            .map(|m| m.into_contract_type())
             .collect()
-    }
-}
-
-/// On-chain representation of expected TDX measurements.
-/// Mirrors [`mpc_attestation::attestation::ExpectedMeasurements`] with
-/// contract-compatible serialization (hex strings in JSON, borsh for storage).
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema, schemars::JsonSchema)
-)]
-pub struct ContractExpectedMeasurements {
-    pub mrtd: MrtdHash,
-    pub rtmr0: Rtmr0Hash,
-    pub rtmr1: Rtmr1Hash,
-    pub rtmr2: Rtmr2Hash,
-    pub key_provider_event_digest: KeyProviderEventDigest,
-}
-
-impl From<ExpectedMeasurements> for ContractExpectedMeasurements {
-    fn from(m: ExpectedMeasurements) -> Self {
-        Self {
-            mrtd: MrtdHash::from(m.rtmrs.mrtd),
-            rtmr0: Rtmr0Hash::from(m.rtmrs.rtmr0),
-            rtmr1: Rtmr1Hash::from(m.rtmrs.rtmr1),
-            rtmr2: Rtmr2Hash::from(m.rtmrs.rtmr2),
-            key_provider_event_digest: KeyProviderEventDigest::from(m.key_provider_event_digest),
-        }
-    }
-}
-
-impl From<ContractExpectedMeasurements> for ExpectedMeasurements {
-    fn from(m: ContractExpectedMeasurements) -> Self {
-        Self {
-            rtmrs: Measurements {
-                mrtd: m.mrtd.into(),
-                rtmr0: m.rtmr0.into(),
-                rtmr1: m.rtmr1.into(),
-                rtmr2: m.rtmr2.into(),
-            },
-            key_provider_event_digest: m.key_provider_event_digest.into(),
-        }
     }
 }

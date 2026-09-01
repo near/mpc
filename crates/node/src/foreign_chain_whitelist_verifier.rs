@@ -205,7 +205,8 @@ fn base_url_matches(local: &str, base: &str) -> bool {
     let label_len = rest
         .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
         .unwrap_or(rest.len());
-    label_len > 0 && starts_with_at_boundary(&rest[label_len..], suffix)
+    let (_, rest) = rest.split_at(label_len);
+    label_len > 0 && starts_with_at_boundary(rest, suffix)
 }
 
 /// Like [`str::starts_with`], but `prefix` must end where a URL component does.
