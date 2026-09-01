@@ -76,6 +76,9 @@ mod tests {
             secrets_file(home),
             backup_encryption_key_file(home),
             wipe_token_file(home),
+            // The epoch-sync reset marker must survive the wipe it triggers: it is
+            // read (and cleared) on the restart that performs the wipe.
+            epoch_sync_reset_marker_file(home),
         ];
 
         // Then

@@ -235,13 +235,17 @@ fn write_last_token(token_path: &Path, token: u64) -> std::io::Result<()> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::home_paths::near_data_dir;
+    use crate::home_paths::{near_data_dir, secrets_file};
     use rstest::rstest;
 
     fn read_recorded(home: &Path) -> Option<u64> {
         std::fs::read_to_string(wipe_token_file(home))
             .ok()
             .map(|s| s.trim().parse().unwrap())
+    }
+
+    fn marker_exists(home: &Path) -> bool {
+        epoch_sync_reset_marker_file(home).exists()
     }
 
     #[rstest]
@@ -331,5 +335,71 @@ mod tests {
         let home = tmp.path();
         let hot_store_path = home.join(sub);
         assert_eq!(ensure_within_home(home, &hot_store_path).is_ok(), expect_ok);
+    }
+
+    #[rstest]
+    #[case::marker_present_wipes_and_clears(true, true, false, false, false)]
+    #[case::no_marker_is_noop(false, true, false, true, false)]
+    #[case::archival_keeps_data_and_marker(true, true, true, true, true)]
+    #[case::missing_data_dir_clears_marker(true, false, false, false, false)]
+    fn wipe_near_data_if_epoch_sync_reset__should_wipe_and_clear_only_when_marker_present(
+        #[case] create_marker: bool,
+        #[case] create_data_dir: bool,
+        #[case] is_archival: bool,
+        #[case] expect_data_dir_exists: bool,
+        #[case] expect_marker_exists: bool,
+    ) {
+        // Given
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let data_dir = near_data_dir(home);
+        if create_data_dir {
+            std::fs::create_dir_all(&data_dir).unwrap();
+            std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
+        }
+        if create_marker {
+            record_epoch_sync_reset_request(home);
+        }
+
+        // When
+        wipe_near_data_if_epoch_sync_reset(home, &data_dir, is_archival).unwrap();
+
+        // Then
+        assert_eq!(data_dir.exists(), expect_data_dir_exists);
+        assert_eq!(marker_exists(home), expect_marker_exists);
+    }
+
+    #[test]
+    fn epoch_sync_reset__should_wipe_only_the_store_and_preserve_siblings_across_restart() {
+        // Given a synced node: a chain store plus a keyshare-like sibling file, and
+        // nearcore having requested a reset (recorded at shutdown, as in `real.rs`).
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let data_dir = near_data_dir(home);
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
+        let keyshare = secrets_file(home);
+        std::fs::write(&keyshare, b"keyshare-secret").unwrap();
+        record_epoch_sync_reset_request(home);
+
+        // When the node restarts and runs the startup wipe.
+        wipe_near_data_if_epoch_sync_reset(home, &data_dir, false).unwrap();
+
+        // Then only the chain store is gone; the marker is cleared and the keyshare survives.
+        assert!(!data_dir.exists());
+        assert!(!marker_exists(home));
+        assert_eq!(std::fs::read(&keyshare).unwrap(), b"keyshare-secret");
+    }
+
+    #[test]
+    fn wipe_near_data_if_epoch_sync_reset__should_error_when_store_path_escapes_home() {
+        // Given a reset marker but a misconfigured store path outside the home tree.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        record_epoch_sync_reset_request(home);
+        let escaping = home.join("../escape");
+
+        // When / Then — the path guard rejects it and the data is left untouched.
+        assert!(wipe_near_data_if_epoch_sync_reset(home, &escaping, false).is_err());
     }
 }
