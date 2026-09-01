@@ -1,13 +1,15 @@
 use near_account_id::AccountId;
-use near_contract_transport::{
-    Deserializer, HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs,
-    ViewContract,
-};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
-use crate::state_viewer::view_call::{ViewCall, deserialize_res};
+use crate::{
+    HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs, ViewContract,
+    views::{
+        deserialize::Deserializer,
+        view_call::{ViewCall, deserialize_res},
+    },
+};
 
 pub struct MonitoringTask<T, ViewError> {
     pub(crate) cached: Result<ObservedState<T>, TransportError<ViewError>>,
@@ -136,20 +138,16 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use crate::{
+        HasPollInterval, ObservedState, SerializedObservation, ViewArgs,
         mock::{Call, MockViewContract, MockViewError},
-        state_viewer::{
-            monitoring::{modify, monitor},
+        views::{
+            monitoring::{MonitoringTask, make_monitoring_task, modify, monitor},
             view_call::ViewCall,
         },
     };
-    use near_contract_transport::{HasPollInterval, ObservedState, ViewArgs};
     use rstest::rstest;
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
-
-    use near_contract_transport::SerializedObservation;
-
-    use super::{MonitoringTask, make_monitoring_task};
 
     fn expected_call() -> Call {
         Call {

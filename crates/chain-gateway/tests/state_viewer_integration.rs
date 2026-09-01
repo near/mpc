@@ -1,10 +1,9 @@
 use assert_matches::assert_matches;
 use chain_gateway::errors::NearViewClientError;
-use near_contract_transport::{ObservedState, TransportError, WatchContractState};
-
-use chain_gateway::state_viewer::ViewExt;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
-use near_contract_transport::ViewArgs;
+use near_contract_transport::{
+    ObservedState, TransportError, ViewArgs, ViewContract, WatchContractState,
+};
 
 use crate::common::localnet::Localnet;
 

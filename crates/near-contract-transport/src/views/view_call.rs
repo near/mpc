@@ -2,12 +2,15 @@ use std::pin::Pin;
 
 use borsh::BorshDeserialize;
 use near_account_id::AccountId;
-use near_contract_transport::{
-    Deserializer, HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs,
-    ViewContract, WatchContractState, borsh_de, json_de,
-};
 
-use crate::state_viewer::monitoring::MonitoringTask;
+use crate::{
+    HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs, ViewContract,
+    WatchContractState,
+    views::{
+        deserialize::{Deserializer, borsh_de, json_de},
+        monitoring::MonitoringTask,
+    },
+};
 
 pub struct ViewCall<Viewer, T> {
     pub viewer: Viewer,
@@ -92,10 +95,12 @@ where
 mod tests {
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
-    use near_contract_transport::{ObservedState, TransportError, ViewArgs};
 
-    use crate::mock::{Call, MockViewContract, MockViewError};
-    use crate::state_viewer::view_call::ViewCall;
+    use crate::{
+        ObservedState, TransportError, ViewArgs,
+        mock::{Call, MockViewContract, MockViewError},
+        views::view_call::ViewCall,
+    };
 
     fn contract_id() -> AccountId {
         "example.testnet".parse().unwrap()

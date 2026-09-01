@@ -1,5 +1,7 @@
 # MPC Indexer Breakout
 
+**Status:** Implemented — shipped as the `chain-gateway` and `near-contract-transport` crates: state viewer ([#2344](https://github.com/near/mpc/pull/2344)), transaction sender ([#2464](https://github.com/near/mpc/pull/2464)), block event subscriber ([#2625](https://github.com/near/mpc/pull/2625)), MPC context as the `tee-context` crate ([#2505](https://github.com/near/mpc/pull/2505)), `near-contract-transport` breakout ([#3871](https://github.com/near/mpc/pull/3871)) with unified view/call traits ([#3870](https://github.com/near/mpc/pull/3870), [#3872](https://github.com/near/mpc/pull/3872), epic [#3693](https://github.com/near/mpc/issues/3693)), back-end-generic monitoring ([#4266](https://github.com/near/mpc/pull/4266), moved to the transport crate in [#4275](https://github.com/near/mpc/issues/4275)). Block replay is still open ([#236](https://github.com/near/mpc/issues/236)). The code and its rustdoc are the source of truth; this document is the design record.
+
 This document outlines the design and efforts for breaking out the indexer into its own crate.
 
 ## Background
@@ -420,7 +422,7 @@ The Chain Gateway provides three functionalities:
 
 ##### State Viewer
 
-View calls are split across two crates. The `near-contract-transport` crate holds the vocabulary types and the backend trait, implemented once per transport (the chain-gateway implements it against the embedded neard node's view client, tests implement it with a mock):
+View calls live in the `near-contract-transport` crate: the vocabulary types, the backend trait, and the deserializing view/subscription machinery on top of it. The backend trait is implemented once per transport (the chain-gateway implements it against the embedded neard node's view client, tests implement it with a mock):
 
 ```rust
 /// A backend executing NEAR view calls against a contract.
@@ -450,10 +452,10 @@ pub enum TransportError<ViewError> {
 }
 ```
 
-Consumers do not call `view_contract` directly. The chain-gateway crate provides the blanket extension trait `ViewExt`, which pairs any `ViewContract` backend with a JSON or borsh deserializer. The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
+Consumers do not call `view_contract` directly. `ViewContract` provides `view_json`/`view_borsh` methods pairing the backend with a JSON or borsh deserializer. The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
 
 ```rust
-pub trait ViewExt: ViewContract + Clone + Sized {
+pub trait ViewContract {
     fn view_json<T: DeserializeOwned>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
     fn view_borsh<T: BorshDeserialize>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
 }

@@ -1,13 +1,10 @@
-use chain_gateway::state_viewer::ViewExt;
 use std::time::{Duration, Instant};
 
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
-use near_contract_transport::ObservedState;
-
 use chain_gateway_test_contract::consts::VIEW_VALUE;
 use ed25519_dalek::SigningKey;
-use near_contract_transport::ViewArgs;
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};

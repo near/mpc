@@ -1,6 +1,4 @@
-use super::monitoring::MonitoringTask;
-use near_contract_transport::WatchContractState;
-use near_contract_transport::{ObservedState, TransportError};
+use crate::{ObservedState, TransportError, WatchContractState, views::monitoring::MonitoringTask};
 
 impl<T, ViewError> WatchContractState<T, ViewError> for MonitoringTask<T, ViewError>
 where
@@ -35,13 +33,12 @@ where
 mod tests {
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
-    use near_contract_transport::ViewArgs;
-    use near_contract_transport::{HasPollInterval, TransportError, WatchContractState};
 
-    use crate::mock::{MockViewContract, MockViewError};
-    use crate::state_viewer::monitoring::MonitoringTask;
-    use crate::state_viewer::view_call::ViewCall;
-    use near_contract_transport::ObservedState;
+    use crate::{
+        HasPollInterval, ObservedState, TransportError, ViewArgs, WatchContractState,
+        mock::{MockViewContract, MockViewError},
+        views::{monitoring::MonitoringTask, view_call::ViewCall},
+    };
     use std::time::Duration;
 
     fn contract_id() -> AccountId {
