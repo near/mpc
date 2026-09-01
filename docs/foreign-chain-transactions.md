@@ -340,18 +340,19 @@ back here rather than redefining them.
   quorum). The policy set every node is expected to cover; **no single operator can add or remove a
   chain — only a threshold vote can**. Keys of `allowed_foreign_chain_providers()`. See
   [On-chain RPC Provider Whitelist](#on-chain-rpc-provider-whitelist).
-- **RPC quorum** (`rpc_quorum(C)`) — per whitelisted chain `C`, how many of `C`'s whitelisted
-  providers a node must have configured to cover the chain (`ChainEntry.quorum`), voted in
-  alongside the provider list. A coverage knob: verification itself compares every configured
-  provider, see [Provider Agreement](#provider-agreement). Distinct from the *signing threshold*.
+- **RPC quorum** — per whitelisted chain `C`, the `ChainEntry.quorum` value voted
+  in alongside the provider list. Stored on chain but not yet consumed by nodes: verification
+  compares every configured provider (see [Provider Agreement](#provider-agreement)), and the
+  quorum policy that would consume it is deferred (see
+  [Out of scope / deferred](#out-of-scope--deferred)). Distinct from the *signing threshold*.
 - **Signing threshold** — the cryptographic reconstruction threshold of the `ForeignTx` signing
   domain (`DomainConfig.reconstruction_threshold`; the max across `ForeignTx` domains if there are
   several): how many participants must produce signature shares to sign an observation. Distinct
   from the RPC quorum and from the governance threshold (`self.threshold()`) used for votes.
-- **A node covers (supports) a chain `C`** — the node's local RPC config has at least `rpc_quorum(C)`
-  of `C`'s whitelisted providers configured (enough to reach the RPC quorum on its own). Reported
-  on-chain via `register_available_foreign_chain_config`. *"Covers" and "supports" are interchangeable; this
-  doc prefers* covers.
+- **A node covers (supports) a chain `C`** — the node's local RPC config has at least one of `C`'s
+  whitelisted providers configured, so `C` survives startup validation and stays in the node's
+  registration. Reported on-chain via `register_available_foreign_chain_config`. *"Covers" and
+  "supports" are interchangeable; this doc prefers* covers.
 - **Available chain** — a whitelisted chain that at least `signing_threshold` active participants
   currently cover, so the network can serve it now. Computed dynamically from per-node reports;
   `available ⊆ whitelisted`. `verify_foreign_transaction(C)` is rejected unless `C` is available.
@@ -450,8 +451,8 @@ pub struct ProviderEntry {
     pub chain_routing: ChainRouting,
 }
 
-/// Per-chain stored state: the canonical (sorted) provider list and the RPC response
-/// quorum nodes should use when querying.
+/// Per-chain stored state: the canonical (sorted) provider list and the voted RPC
+/// response quorum (stored for a deferred quorum policy, not yet consumed by nodes).
 pub struct ChainEntry {
     pub providers: Vec<ProviderEntry>,
     pub quorum: u64,
@@ -496,7 +497,7 @@ the caller wants to update. Each `ChainVote` proposes the chain's complete state
 pub struct ChainVote {
     pub chain: ForeignChain,
     pub providers: Vec<ProviderEntry>,
-    /// RPC response quorum nodes apply when fanning out queries to those providers.
+    /// Proposed RPC response quorum (stored, not yet consumed by nodes).
     pub quorum: u64,
 }
 
@@ -512,7 +513,7 @@ Borsh args (not JSON) because serde::Deserialize for the nested `ChainVote`/`Pro
 - **Vote target = the per-chain snapshot.** For each `ChainVote` in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, quorum)` pairs are byte-identical.
 - **Canonicalization.** Within each `ChainVote`, the contract sorts `providers` by `provider_id` before comparison, so two participants who submitted the same logical set in different orders still count as the same proposal. A duplicate `provider_id` inside a single `ChainVote`, or a duplicate `chain` across the batch, is rejected with `InvalidParameters::MalformedPayload`.
 - **One active vote per participant per chain.** Votes are keyed by `(participant, chain)`. Recasting for a chain overwrites that participant's slot for *only that chain*; chains the participant didn't touch in the new call keep their prior slot.
-- **Gated on the protocol signing threshold.** The proposed entry is applied — the chain becomes **whitelisted** (or its existing entry is replaced) — once the count of participants holding the same canonical `(providers, quorum)` pair reaches `self.threshold()?.value()`, the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainVote.quorum` is the *RPC quorum* (a runtime concept consumed by nodes), not a voting parameter.
+- **Gated on the protocol signing threshold.** The proposed entry is applied — the chain becomes **whitelisted** (or its existing entry is replaced) — once the count of participants holding the same canonical `(providers, quorum)` pair reaches `self.threshold()?.value()`, the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainVote.quorum` is the *RPC quorum* (a stored runtime knob for nodes, not a voting parameter).
 - **Apply = full snapshot replacement.** When threshold is reached for a chain, `AllowedProviders.entries[chain]` is set to the proposed `ChainEntry` — the old provider list is discarded wholesale. The chain's pending votes are cleared (`clear_chain`) so the next round starts fresh. Other chains' pending votes are untouched.
 - **Threshold checked synchronously on every call.** No periodic sweep.
 - **Vote withdraw.** No explicit withdraw endpoint. Recasting overwrites your slot for the chains you touch. A vote is also cleared by being removed from the participant set (`clean_tee_status` → `ProviderVotes::retain_only`) or by the chain applying.
@@ -561,7 +562,7 @@ Two reasons together drove the snapshot model over an Add/Remove diff-ops endpoi
 
 #### Why protocol signing threshold (not unanimous, not a separate per-chain knob)
 
-Voting uses the protocol's existing signing threshold (`self.threshold()?.value()`), the same gate as `verify_tee` and `vote_add_os_measurement`. An earlier design proposed a separate per-chain *voting* threshold so mainnet and testnet could be voted in under different agreement requirements; that was dropped because (a) there's no setter that could safely populate it without itself being voted in, leaving a hardcoded default that's strictly weaker than the protocol threshold, and (b) the per-chain numeric on `ChainVote.quorum` already covers the *runtime* security knob — how many of N whitelisted providers must agree for a node to accept a response — which is what operators actually need to tune per chain.
+Voting uses the protocol's existing signing threshold (`self.threshold()?.value()`), the same gate as `verify_tee` and `vote_add_os_measurement`. An earlier design proposed a separate per-chain *voting* threshold so mainnet and testnet could be voted in under different agreement requirements; that was dropped because (a) there's no setter that could safely populate it without itself being voted in, leaving a hardcoded default that's strictly weaker than the protocol threshold, and (b) the per-chain numeric on `ChainVote.quorum` already covers the *runtime* security knob — how many of N whitelisted providers must agree for a node to accept a response — which is what operators actually need to tune per chain (the policy consuming it is still deferred, see [Out of scope / deferred](#out-of-scope--deferred)).
 
 #### Why the network fingerprint probe in addition to per-chain keying (PR 3)
 
@@ -593,7 +594,7 @@ If an operator's `foreign_chains.yaml` references a `provider_id` not on the whi
 
 ### Out of scope / deferred
 
-- **Per-chain quorum policy** (`RpcPolicy.quorum_threshold` from the precursor design doc). This is the number of providers a node must independently agree with on a verification result — distinct from the per-chain voting threshold for add/remove. A follow-up under the same milestone.
+- **Per-chain quorum policy.** How many providers must concur before a node accepts a verification result. The voted `ChainEntry.quorum` already stores the value, but nothing consumes it yet: verification requires every provider that reached a verdict to agree (see [Provider Agreement](#provider-agreement)). A follow-up under the same milestone.
 - **Chain-identity hostname templating** for Alchemy / Infura. Chain identity for subdomain-encoded providers stays inside `base_url` rather than being structurally extracted; symmetric extraction was rejected as over-engineering with no concrete attack benefit. This is distinct from the supported `{}` wildcard, which stands for an operator-chosen slug and carries no chain identity.
 - **Moving `sample_tx_id` on chain.** Stays in operator config for now; promoting it (so the whole network probes the same tx) is a candidate follow-up if operators start disagreeing on which tx to probe.
 - **Adding testnet `ForeignChain` variants** (`Sepolia`, `Goerli`, `Holesky`). The whitelist design doesn't need them and doesn't prevent them.

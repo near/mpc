@@ -13,8 +13,9 @@ request whose target chain is not in it. A single node that registers an empty l
 feature down. That is what this proposal fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
-per chain, the network-trusted providers and the **RPC quorum** (`ChainEntry.quorum`
-— how many of a node's providers must agree for it to accept a result).
+per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
+stored for a deferred quorum policy and not yet consumed: verification compares every
+configured provider, see [Verification behavior](#verification-behavior)).
 
 ## Proposal: two sets of chains
 
@@ -72,11 +73,11 @@ is tracked in [#3477](https://github.com/near/mpc/issues/3477).
 ## Participant selection
 
 Foreign-tx signing must select participants that **cover** the requested chain
-(report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
+(their registration lists `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
 Implemented in two places:
-1. Leader selection is chain- and quorum-aware: the
+1. Leader selection is chain- and threshold-aware: the
 pending-request queue narrows a request's eligible leaders to the supporters
 of `C`, and selects one only when at least a reconstruction threshold's worth
 of them is online (the same threshold that gates availability). Otherwise the request
@@ -123,7 +124,8 @@ no flag-day coordination.
 ## Guarantees preserved
 
 **Safety** — the network signs an observation only if ≥ `signing_threshold`
-participants each independently verified it (each via its own RPC quorum). Fewer than
+participants each independently verified it, each against its own configured providers
+(see [Verification behavior](#verification-behavior)). Fewer than
 `signing_threshold` cannot force a false attestation.
 
 **Liveness** — a request is accepted only when `C` is available (≥ `signing_threshold`
