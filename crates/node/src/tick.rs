@@ -9,14 +9,15 @@ use tokio::sync::Semaphore;
 use tokio::time::Instant;
 
 /// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`]. The returned instant
-/// is when the next round falls due, so it bounds the round just started.
+/// is one period after the round it starts.
 pub trait Tick {
     async fn tick(&mut self) -> Instant;
 }
 
 impl Tick for tokio::time::Interval {
     async fn tick(&mut self) -> Instant {
-        self.tick().await + self.period()
+        self.tick().await;
+        Instant::now() + self.period()
     }
 }
 
@@ -74,16 +75,18 @@ mod tests {
     use super::*;
 
     #[tokio::test(start_paused = true)]
-    async fn tick__should_report_the_next_round_as_the_deadline() {
+    async fn tick__should_bound_the_round_from_its_start_after_a_missed_tick() {
         // Given
         let period = Duration::from_secs(60);
         let mut interval = tokio::time::interval(period);
-        let started_at = Instant::now();
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        Tick::tick(&mut interval).await;
+        tokio::time::sleep(2 * period + Duration::from_secs(1)).await;
 
         // When
         let deadline = Tick::tick(&mut interval).await;
 
         // Then
-        assert_eq!(deadline, started_at + period);
+        assert_eq!(deadline, Instant::now() + period);
     }
 }

@@ -489,6 +489,7 @@ pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounte
 
 pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
 pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
+pub const MPC_TEE_ATTESTATION_OUTCOME_DEADLINE_EXCEEDED: &str = "deadline_exceeded";
 
 pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {

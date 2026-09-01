@@ -7,8 +7,9 @@ use crate::{
         types::ChainSendTransactionRequest,
     },
     metrics::{
-        MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
-        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
+        MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_DEADLINE_EXCEEDED,
+        MPC_TEE_ATTESTATION_OUTCOME_FAILURE, MPC_TEE_ATTESTATION_OUTCOME_SUCCESS,
+        MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
@@ -161,18 +162,31 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             *self.account_public_key.as_bytes(),
         )
         .into();
-        let result = self.tee_authority.generate_attestation(report_data).await;
+        let generated = self
+            .tee_authority
+            .generate_attestation(report_data)
+            .timeout_at(deadline)
+            .await;
+        let generation_outcome = match &generated {
+            Ok(Ok(_)) => MPC_TEE_ATTESTATION_OUTCOME_SUCCESS,
+            Ok(Err(_)) => MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
+            Err(_) => MPC_TEE_ATTESTATION_OUTCOME_DEADLINE_EXCEEDED,
+        };
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-            .with_label_values(&[outcome_label(result.is_ok())])
+            .with_label_values(&[generation_outcome])
             .inc();
-        let attestation = match result {
-            Ok(attestation) => attestation,
-            Err(error @ AttestationError::CollateralFetch(_)) => {
-                tracing::warn!(%error, "TEE attestation generation failed");
+        let attestation = match generated {
+            Ok(Ok(attestation)) => attestation,
+            Ok(Err(error @ AttestationError::CollateralFetch(_))) => {
+                tracing::warn!(%error, "TEE attestation collateral fetch failed");
+                return;
+            }
+            Ok(Err(error)) => {
+                tracing::error!(%error, "TEE attestation generation failed");
                 return;
             }
             Err(error) => {
-                tracing::error!(%error, "TEE attestation generation failed");
+                tracing::error!(%error, "TEE attestation generation timed out");
                 return;
             }
         };
@@ -186,7 +200,9 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
         let pre_submit_expiry = match self
             .attestation_reader
             .read_stored_attestation_expiry(&self.tls_public_key)
+            .timeout_at(deadline)
             .await
+            .unwrap_or_else(|elapsed| Err(elapsed.into()))
         {
             Ok(baseline) => baseline, // None just means nothing stored yet (e.g. first submit)
             // Submit anyway on a read error: refreshing the attestation is the priority, and a
@@ -295,6 +311,18 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct HangingAttestationGenerator;
+
+    impl GenerateAttestation for HangingAttestationGenerator {
+        async fn generate_attestation(
+            &self,
+            _report_data: ReportData,
+        ) -> Result<Attestation, AttestationError> {
+            std::future::pending().await
+        }
+    }
+
     struct StubAttestationExpiryReader {
         fail: bool,
     }
@@ -318,6 +346,7 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct MockSender {
+        attempts: Arc<AtomicUsize>,
         submissions: Arc<Mutex<usize>>,
         notify: Arc<tokio::sync::Notify>,
         failing: Arc<AtomicBool>,
@@ -326,6 +355,10 @@ mod tests {
     impl MockSender {
         fn set_failing(&self, failing: bool) {
             self.failing.store(failing, Ordering::Relaxed);
+        }
+
+        fn attempts(&self) -> usize {
+            self.attempts.load(Ordering::Relaxed)
         }
 
         fn count(&self) -> usize {
@@ -342,6 +375,7 @@ mod tests {
             &self,
             _: ChainSendTransactionRequest,
         ) -> Result<(), TransactionProcessorError> {
+            self.attempts.fetch_add(1, Ordering::Relaxed);
             if self.failing.load(Ordering::Relaxed) {
                 return Err(TransactionProcessorError::ProcessorIsClosed);
             }
@@ -462,9 +496,10 @@ mod tests {
         handle.abort();
     }
 
-    #[test]
+    #[tokio::test]
     #[expect(non_snake_case)]
-    fn periodic_attestation_submission__should_wait_for_the_next_tick_when_generation_fails() {
+    async fn periodic_attestation_submission__should_wait_for_the_next_tick_when_generation_fails()
+    {
         // Given
         let generator = FailingAttestationGenerator::default();
         let setup = test_setup_with(generator.clone());
@@ -500,6 +535,27 @@ mod tests {
 
         // Then
         assert_eq!(Instant::now(), deadline);
+        assert!(setup.sender().attempts() > 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn generate_and_submit__should_stop_generating_at_the_deadline() {
+        // Given
+        let setup = test_setup_with(HangingAttestationGenerator);
+        let deadline = Instant::now() + ATTESTATION_RESUBMISSION_INTERVAL;
+
+        // When
+        tokio::time::timeout(
+            2 * ATTESTATION_RESUBMISSION_INTERVAL,
+            setup.submitter.generate_and_submit(deadline),
+        )
+        .await
+        .expect("generation should have stopped at the deadline");
+
+        // Then
+        assert_eq!(Instant::now(), deadline);
+        assert_eq!(setup.sender().count(), 0);
     }
 
     async fn validate_locally_generated_attestation(
