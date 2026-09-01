@@ -610,14 +610,17 @@ transaction before finality, is tolerated whenever another provider reached one,
 unavailable or misbehaving RPC does not take the node out of signing. A transaction the provider
 does not know is deliberately a verdict rather than a tolerated failure: honest providers cannot
 extract anything from a transaction that does not exist, so tolerating absence would let one
-fabricating provider outvote them all.
+fabricating provider outvote them all. The price is that agreement is unanimity, not majority: a
+single provider that has not indexed the transaction yet vetoes a verification its peers agree
+on, and the request fails safe until retried. Operators sizing their provider lists should
+account for this.
 
 ## Failure and Timeout Behavior
 
 * Nodes **do not participate** if RPC queries fail, extraction fails, or the computed
   payload hash does not match the request's `expected_payload_hash`.
 * A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
-* *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (provider disagreement, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#3477](https://github.com/near/mpc/issues/3477).
+* *Known limitation:* a failed verification is not signalled explicitly — even when the failure reason is known (provider disagreement, extraction error), the request just times out. Emitting an explicit failure so callers can react sooner is a desirable improvement, tracked in [#2677](https://github.com/near/mpc/issues/2677).
 
 For operators, enabling a chain requires each node to register its local foreign-chain configuration with the contract:
 

@@ -294,22 +294,6 @@ mod tests {
     }
 
     #[test]
-    fn classified__should_read_an_absent_service_as_a_refusal() {
-        // Given
-        let answered: Result<(), _> = Err(Status::not_found("no such service"));
-
-        // When
-        let classified = answered.classified().unwrap_err();
-
-        // Then
-        assert_matches!(
-            classified,
-            ForeignChainInspectionError::RpcRequestRejected(_)
-        );
-        assert!(!classified.is_transient());
-    }
-
-    #[test]
     fn classified__should_name_a_deadline_exceeded_as_a_timeout() {
         // Given / When
         let classified = classify(Status::new(Code::DeadlineExceeded, "too slow"));
@@ -334,6 +318,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case::not_found(Code::NotFound)]
     #[case::invalid_argument(Code::InvalidArgument)]
     #[case::unauthenticated(Code::Unauthenticated)]
     #[case::permission_denied(Code::PermissionDenied)]

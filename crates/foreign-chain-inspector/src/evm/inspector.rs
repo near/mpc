@@ -106,9 +106,13 @@ where
         let canonical = self
             .canonical_block_at(transaction_receipt.block_number)
             .await?;
-        let hash_matches = canonical.hash == transaction_receipt.block_hash;
-        let height_matches = canonical.number == transaction_receipt.block_number;
-        if !hash_matches || !height_matches {
+        if canonical.number != transaction_receipt.block_number {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                "the canonical block lookup at height {} answered with the block at height {}",
+                transaction_receipt.block_number, canonical.number,
+            )));
+        }
+        if canonical.hash != transaction_receipt.block_hash {
             return Ok(Verdict::NonCanonicalBlock {
                 block_number: transaction_receipt.block_number.as_u64(),
                 receipt_hash: transaction_receipt.block_hash.into(),
@@ -176,8 +180,8 @@ where
     /// The canonical block at `block_number`. `eth_getBlockByNumber` only ever resolves to a
     /// canonical block, so a receipt whose block disagrees with it was indexed against a side
     /// block (stale tx index, partially applied reorg, divergent RPC backend, etc.). The caller
-    /// compares the height too, since a divergent RPC that returns a hash from a different
-    /// height would otherwise sneak past a check of the hash alone.
+    /// checks the height first: an answer from a different height is the provider's own fault,
+    /// not a statement about the chain.
     async fn canonical_block_at(
         &self,
         block_number: U64,

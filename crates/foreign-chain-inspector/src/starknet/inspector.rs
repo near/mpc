@@ -92,9 +92,13 @@ where
         }
 
         let canonical = self.canonical_block_at(rpc_response.block_number).await?;
-        let hash_matches = canonical.block_hash == rpc_response.block_hash;
-        let height_matches = canonical.block_number == rpc_response.block_number;
-        if !hash_matches || !height_matches {
+        if canonical.block_number != rpc_response.block_number {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                "the canonical block lookup at height {} answered with the block at height {}",
+                rpc_response.block_number, canonical.block_number,
+            )));
+        }
+        if canonical.block_hash != rpc_response.block_hash {
             return Ok(Verdict::NonCanonicalBlock {
                 block_number: rpc_response.block_number,
                 receipt_hash: rpc_response.block_hash.into(),
@@ -128,8 +132,8 @@ where
     /// The canonical block at `block_number`. `starknet_getBlockWithTxHashes` only ever
     /// resolves to a canonical block, so a receipt whose block disagrees with it was indexed
     /// against a side block (stale tx index, partially applied reorg, divergent RPC backend,
-    /// etc.). The caller compares the height too, since a divergent RPC that returns a hash
-    /// from a different height would otherwise sneak past a check of the hash alone.
+    /// etc.). The caller checks the height first: an answer from a different height is the
+    /// provider's own fault, not a statement about the chain.
     async fn canonical_block_at(
         &self,
         block_number: u64,

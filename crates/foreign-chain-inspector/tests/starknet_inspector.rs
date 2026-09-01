@@ -436,6 +436,41 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
 }
 
 #[tokio::test]
+async fn extract__should_reject_a_canonical_lookup_answering_a_different_height() {
+    // given: the canonical block lookup answers with a block below the receipt's height, the
+    // provider's own fault rather than a statement about the chain.
+    let tx_id = StarknetTransactionHash::from([1; 32]);
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL1,
+        StarknetExecutionStatus::Succeeded,
+    );
+    let canonical_block = GetBlockWithTxHashesResponse {
+        block_hash: receipt.block_hash,
+        block_number: receipt.block_number - 1,
+    };
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
+}
+
+#[tokio::test]
 async fn extract__should_return_non_canonical_block_when_receipt_block_hash_differs_from_canonical()
 {
     // given: the receipt is fully finalized but the canonical block at its height has a

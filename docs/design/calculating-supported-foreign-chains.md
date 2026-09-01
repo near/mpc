@@ -60,12 +60,14 @@ result only when every provider that reached a verdict reached the same one; pro
 that fail to answer are tolerated. On any disagreement the node errors out and produces
 no signature share.
 
-**This sub-quorum outcome must be terminal — the leader must not re-attempt the
+**A disagreement outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue
-retries every request, so the foreign-tx path must special-case a sub-quorum
-result as non-retryable. (Open: whether a sub-quorum from purely *transient*
-failures — timeouts, finality not reached — should still retry, vs. only genuine
-disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
+retries every request, so the foreign-tx path must special-case a disagreement
+as non-retryable. The fan out already distinguishes the two outcomes in its
+return value: when no provider reaches a verdict it propagates the underlying
+error, and only genuine disagreement between verdicts reports a mismatch.
+Whether the no-verdict outcome should retry while disagreement stays terminal
+is tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
 ## Participant selection
 
