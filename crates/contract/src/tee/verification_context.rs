@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_attestation::attestation::DstackAttestation;
+use mpc_attestation::TcbInfo;
 
 use super::tee_state::NodeId;
 
@@ -10,5 +10,5 @@ use super::tee_state::NodeId;
 )]
 pub struct VerificationContext {
     pub(crate) node_id: NodeId,
-    pub(crate) attestation: DstackAttestation,
+    pub(crate) tcb_info: TcbInfo,
 }
