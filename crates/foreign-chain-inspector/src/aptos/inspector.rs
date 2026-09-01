@@ -39,12 +39,10 @@ where
 {
     async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
         let ledger_info = self.client.get_ledger_info().await.classified()?;
-        Ok(Self::canonical_fingerprint(
-            &ledger_info.chain_id.to_string(),
-        ))
+        Ok(self.canonical_fingerprint(&ledger_info.chain_id.to_string()))
     }
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(canonical_chain_id_text(fingerprint))
     }
 }

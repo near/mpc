@@ -60,6 +60,12 @@ pub struct ForeignChainConfig {
     pub providers: NonEmptyBTreeMap<RpcProviderName, ForeignChainProviderConfig>,
 }
 
+impl ForeignChainConfig {
+    pub fn timeout_duration(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.timeout_sec.get())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForeignChainProviderConfig {
     pub rpc_url: String,
