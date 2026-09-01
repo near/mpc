@@ -1,7 +1,10 @@
 use super::foreign_chain::monitor_foreign_chain_supporters;
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
-use super::near_data_wipe::wipe_near_data_if_requested;
+use super::near_data_wipe::{
+    record_epoch_sync_reset_request, wipe_near_data_if_epoch_sync_reset,
+    wipe_near_data_if_requested,
+};
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader};
@@ -20,6 +23,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
+use near_client::client_actor::ShutdownReason;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use std::future::Future;
@@ -125,10 +129,55 @@ pub fn spawn_real_indexer(
                  fix the cause and set wipe_near_data_token to a new value to retry",
             );
 
-            let near_node = Indexer::start_near_node(
-                &near_indexer_config,
+            // Automatic recovery from the epoch-sync wedge (#3909): if nearcore
+            // requested a data reset on a previous run, wipe the chain store now,
+            // before nearcore reopens it, so the fresh state-sync below can proceed.
+            wipe_near_data_if_epoch_sync_reset(
+                &home_dir,
+                &hot_store_path,
+                near_config.client_config.archive,
+            )
+            .expect("epoch-sync data-reset wipe failed");
+
+            // Wire nearcore's shutdown signal so an epoch-sync data reset is acted on
+            // rather than silently dropped. Without this, a node that fell far behind
+            // while offline validates the epoch-sync proof, requests a data reset that
+            // goes nowhere (`start_with_config` hard-codes `shutdown_signal = None`),
+            // and loops forever with a frozen head (#3909). On `EpochSyncDataReset` we
+            // record a marker and exit non-zero; the container's `restart: on-failure`
+            // brings us back, and the wipe above runs on that next start.
+            let (shutdown_tx, mut shutdown_rx) =
+                tokio::sync::broadcast::channel::<ShutdownReason>(16);
+            {
+                let home_dir = home_dir.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match shutdown_rx.recv().await {
+                            Ok(ShutdownReason::EpochSyncDataReset) => {
+                                tracing::warn!(
+                                    "nearcore requested an epoch-sync data reset; recording \
+                                     marker and restarting to wipe the chain store (#3909)"
+                                );
+                                record_epoch_sync_reset_request(&home_dir);
+                                std::process::exit(70);
+                            }
+                            Ok(other) => {
+                                tracing::warn!(?other, "nearcore requested shutdown; exiting");
+                                std::process::exit(0);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                });
+            }
+
+            let near_node = nearcore::start_with_config_and_synchronization(
+                &home_dir,
                 near_config.clone(),
                 ActorSystem::new(),
+                Some(shutdown_tx),
+                None,
             )
             .await
             .expect("near node has started");

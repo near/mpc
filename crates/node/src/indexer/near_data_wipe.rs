@@ -9,9 +9,80 @@
 //! interrupted by a crash leaves only the trash behind — which is cleaned on the
 //! next startup.
 
-use crate::home_paths::{near_data_trash_dir, wipe_token_file};
+use crate::home_paths::{epoch_sync_reset_marker_file, near_data_trash_dir, wipe_token_file};
 use std::io::Write;
 use std::path::{Component, Path};
+
+/// Records that nearcore's epoch-sync asked for a data reset. Written just before
+/// the process exits (see #3909); consumed by [`wipe_near_data_if_epoch_sync_reset`]
+/// on the next startup. Best-effort: if the marker can't be written the node simply
+/// loops again on restart, recoverable by an operator exactly as before this fix.
+pub(crate) fn record_epoch_sync_reset_request(home_dir: &Path) {
+    let marker = epoch_sync_reset_marker_file(home_dir);
+    if let Err(err) = std::fs::write(&marker, b"1") {
+        tracing::error!(
+            ?marker,
+            ?err,
+            "failed to write epoch-sync data-reset marker"
+        );
+    }
+}
+
+/// If nearcore requested an epoch-sync data reset on a previous run, wipe the
+/// chain store now — before nearcore reopens it — and clear the marker. Mirrors
+/// `neard`'s `check_epoch_sync_data_reset_marker`. Reuses the same atomic
+/// rename-into-trash the token wipe uses. Skipped, with a warning, on archival
+/// nodes. Keyshares/secrets/config are untouched (only the store dir is moved).
+pub(crate) fn wipe_near_data_if_epoch_sync_reset(
+    home_dir: &Path,
+    hot_store_path: &Path,
+    is_archival: bool,
+) -> std::io::Result<()> {
+    let marker = epoch_sync_reset_marker_file(home_dir);
+    if !marker.exists() {
+        return Ok(());
+    }
+    if is_archival {
+        tracing::warn!(
+            ?hot_store_path,
+            "epoch-sync data-reset marker found but node is archival, ignoring"
+        );
+        return Ok(());
+    }
+
+    ensure_within_home(home_dir, hot_store_path)?;
+    let trash_path = near_data_trash_dir(home_dir);
+    remove_trash(&trash_path);
+    match std::fs::rename(hot_store_path, &trash_path) {
+        Ok(()) => {}
+        // Already fresh (e.g. a prior crash mid-wipe already moved it) — nothing to do.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            tracing::error!(
+                ?hot_store_path,
+                ?err,
+                "failed to move nearcore data dir aside for epoch-sync reset"
+            );
+            return Err(err);
+        }
+    }
+    remove_trash(&trash_path);
+    // Clear the marker only after the store is gone, so a crash mid-wipe retries.
+    if let Err(err) = std::fs::remove_file(&marker)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(
+            ?marker,
+            ?err,
+            "could not remove epoch-sync data-reset marker"
+        );
+    }
+    tracing::info!(
+        ?hot_store_path,
+        "wiped nearcore data dir (epoch-sync data reset)"
+    );
+    Ok(())
+}
 
 /// Cleans any leftover wipe trash, then — if `requested_token` is non-zero and
 /// differs from the last recorded value — records it and wipes the data dir.

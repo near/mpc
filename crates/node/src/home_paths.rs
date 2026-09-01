@@ -42,6 +42,13 @@ pub fn wipe_token_file(home_dir: &Path) -> PathBuf {
     home_dir.join(".near_data_wipe_token")
 }
 
+/// Written when nearcore's epoch-sync asks for a data reset; on the next startup
+/// the node wipes the chain store and clears this, mirroring what the `neard`
+/// binary does in its CLI wrapper. Lives beside `data` so it survives the wipe.
+pub fn epoch_sync_reset_marker_file(home_dir: &Path) -> PathBuf {
+    home_dir.join(".epoch_sync_data_reset")
+}
+
 /// Holds the data dir mid-wipe: the wipe renames the store here in one atomic
 /// step, then deletes it. Leftovers from an interrupted delete are cleaned on
 /// the next startup.
