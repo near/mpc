@@ -1,3 +1,15 @@
+//! Provider for [`Protocol::DamgardEtAl`](mpc_primitives::domain::Protocol::DamgardEtAl)
+//! domains.
+//!
+//! # Do not enable this in production
+//!
+//! The underlying scheme in
+//! [`threshold_signatures::ecdsa::robust_ecdsa`] is an insecure stub that leaks the
+//! signing key, kept so this plumbing stays exercised until a real robust scheme
+//! replaces it. Read that module's docs before enabling a domain for this protocol
+//! anywhere. Everything in this module is scheme-agnostic and is expected to survive
+//! that replacement unchanged.
+
 pub mod presign;
 mod sign;
 
