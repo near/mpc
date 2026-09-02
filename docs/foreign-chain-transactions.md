@@ -655,40 +655,39 @@ See "Contract State (Foreign Chain Configurations)" above.
 ## Provider Metrics
 
 The verify fan-out measures each provider it queries and exposes two series on the node's
-`/metrics` endpoint. Both carry a `chain` label — the key the chain is configured under
-(`bitcoin`, `hyper_evm`, ...) — and a `provider` label, its configured provider name.
+`/metrics` endpoint. Both carry a `chain` label, the key the chain is configured under
+(`bitcoin`, `hyper_evm`, ...), and a `provider` label, its configured provider name.
 
 | Metric | Measures |
 | --- | --- |
-| `mpc_foreign_chain_provider_inspection_seconds` | Histogram of how long one provider took to answer one verify request. One observation is a whole inspection, which is one to three serialized RPC calls depending on the chain and on where the inspection stopped — not a single round trip. The top bucket is the node's inspection deadline, so nothing can be observed beyond it. |
+| `mpc_foreign_chain_provider_inspection_seconds` | Histogram of the time one provider took to answer one verify request. Only answers are timed, so p95 and p99 describe answers and cannot be flattened by timeouts. One observation is a whole inspection, one to three serialized RPC calls depending on the chain and on where the inspection stopped, not a single round trip. The top bucket is the node's inspection deadline. |
 | `mpc_foreign_chain_provider_errors_total` | Requests the provider itself failed to answer, by `kind`. |
 
 `kind` is one of:
 
-* `transient` — no answer arrived: transport failure, 5xx, or rate limiting.
-* `non_transient` — the provider answered and refused, or answered with something unusable.
+* `transient`: no answer arrived. Transport failure, 5xx, or rate limiting.
+* `non_transient`: the provider answered and refused, or answered with something unusable.
   Retrying cannot change either.
-* `timeout` — the provider did not answer before the node gave up on it. This also covers a call
-  the node itself tore down, which happens to whatever is in flight when the node shuts down or
-  the participant set changes.
+* `timeout`: the provider had not answered when the node gave up on it, including a call still in
+  flight when the node abandons the inspection at its deadline or on shutdown.
 
-Each provider's series is published when the node starts, so a healthy idle node reports zero
-rather than nothing at all.
+Every configured provider's series is published when the node starts, so a healthy idle node
+reports zero rather than nothing at all.
 
-What the provider answered is not counted as an error, even when it ends the verification: a
-transaction that is not final yet, has too few confirmations, is absent, reverted, or sits on a
-non-canonical block is an answer. Without that split, every healthy provider would be counted as
-failing whenever a caller asks about a transaction before it is final.
+A failed call is counted but not timed: its duration says nothing about the provider's latency,
+and a timeout observed at the deadline would pin the high quantiles there. A provider that times
+out is therefore invisible in the histogram and loud in the counter, so read p95 and p99 next to
+the rate of `kind="timeout"`.
 
-Some things worth knowing before building an alert on these:
+An answer about the transaction is never counted as an error, even when it ends the verification:
+a transaction that is not final yet, has too few confirmations, is absent, reverted, or sits on a
+non-canonical block is an answer. Otherwise every healthy provider would count as failing whenever
+a caller asks about a transaction before it is final.
 
-* A call the node abandons is counted, but not timed. How far it got is bounded by whatever cut it
-  off rather than by the provider, so timing it would drag the quantiles toward the deadline.
-* A verify request that never reaches a provider — the chain is unavailable, no inspector is
-  configured for it, or the request itself is malformed — is in neither series.
-* The leader and every follower run their own inspection, so one user request produces one
-  inspection per participating node, and one observation per provider within each.
-* `solana` can be configured but has no inspector, so it never appears.
+A verify request that never reaches a provider (the chain is unavailable, no inspector is
+configured for it, or the request itself is malformed) is in neither series. The leader and every
+follower run their own inspection, so one user request produces one observation per provider on
+each participating node.
 
 CLI probe traffic is deliberately excluded: probes share their providers with the verify path, and
 their latencies would drown the ones an operator is looking at.

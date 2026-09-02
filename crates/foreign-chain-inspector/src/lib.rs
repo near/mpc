@@ -34,12 +34,6 @@ pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
 
-mod measurement;
-
-use measurement::{Measurement, TimedCall};
-
-pub use measurement::{ProviderCallOutcome, ProviderFailure, RecordProviderCall};
-
 pub trait ForeignChainInspector {
     type TransactionId;
     type Finality;
@@ -143,29 +137,61 @@ pub trait NetworkFingerprintInspector {
 #[derive(Clone)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
-    measurement: Option<Measurement>,
+    recorder: Option<Arc<dyn RecordProviderCall>>,
 }
 
 impl<Inspector> FanOut<Inspector> {
-    /// Creates a fan-out whose provider calls are not measured.
     pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
         Self {
             inspectors,
-            measurement: None,
+            recorder: None,
         }
     }
 
-    /// Reports every provider call [`FanOut::extract`] makes, under the label `chain`.
-    ///
-    /// [`FanOut::network_fingerprints`] is never measured: probe traffic shares these providers
-    /// and would drown the verify latencies.
-    pub fn measuring(
-        mut self,
-        chain: &'static str,
-        record_call: Arc<dyn RecordProviderCall>,
-    ) -> Self {
-        self.measurement = Some(Measurement { chain, record_call });
+    /// Reports every provider call [`FanOut::extract`] makes. [`FanOut::network_fingerprints`]
+    /// is never measured: probe traffic shares these providers and would drown the verify
+    /// latencies.
+    pub fn measuring(mut self, recorder: Arc<dyn RecordProviderCall>) -> Self {
+        self.recorder = Some(recorder);
         self
+    }
+}
+
+/// Reports one provider call made by [`FanOut::extract`]. `failure` is [`None`] for any answer,
+/// including a verdict against the transaction or a state the chain has not settled yet. A call
+/// still in flight when the caller drops the fan-out reports [`ProviderFailure::TimedOut`].
+pub trait RecordProviderCall: Send + Sync {
+    fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>);
+}
+
+/// Reports a provider call once. [`Drop`] covers the task aborted mid-call by the caller's
+/// deadline, the one case with no return path.
+struct TimedCall {
+    recorder: Option<Arc<dyn RecordProviderCall>>,
+    provider: ProviderId,
+    /// tokio's clock, so a paused clock in a test drives the reported duration.
+    started: tokio::time::Instant,
+}
+
+impl TimedCall {
+    fn start(recorder: Option<Arc<dyn RecordProviderCall>>, provider: ProviderId) -> Self {
+        Self {
+            recorder,
+            provider,
+            started: tokio::time::Instant::now(),
+        }
+    }
+
+    fn report(&mut self, failure: Option<ProviderFailure>) {
+        if let Some(recorder) = self.recorder.take() {
+            recorder.record(&self.provider, self.started.elapsed(), failure);
+        }
+    }
+}
+
+impl Drop for TimedCall {
+    fn drop(&mut self) {
+        self.report(Some(ProviderFailure::TimedOut));
     }
 }
 
@@ -195,11 +221,11 @@ where
             let extractors = extractors.clone();
             let inspector = inspector.clone();
             let provider = provider.clone();
-            let measurement = self.measurement.clone();
+            let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                let mut call = TimedCall::start(measurement, provider.clone());
+                let mut call = TimedCall::start(recorder, provider.clone());
                 let result = inspector.extract(tx_id, finality, extractors).await;
-                call.ended(&result);
+                call.report(result.as_ref().err().and_then(|err| err.provider_failure()));
                 (provider, result)
             });
         }
@@ -492,6 +518,19 @@ impl<T> ClassifyRpcOutcome for Result<T, RpcClientError> {
     fn classified(self) -> Result<T, ForeignChainInspectionError> {
         self.map_err(ForeignChainInspectionError::classify_rpc_client_error)
     }
+}
+
+/// Groups the ways a provider itself can fail, for callers that report an outcome rather than act
+/// on it. Says nothing about retryability: see [`ForeignChainInspectionError::is_transient`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProviderFailure {
+    /// No answer arrived: transport failure, 5xx, or rate limiting.
+    Unreachable,
+    /// The provider answered and refused. Retrying cannot change it.
+    Rejected,
+    /// The provider answered with something the caller could not use.
+    Malformed,
+    TimedOut,
 }
 
 #[cfg(test)]
