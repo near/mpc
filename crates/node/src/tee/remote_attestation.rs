@@ -24,10 +24,11 @@ use mpc_attestation::{
 };
 use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, Ed25519PublicKey};
 use tee_authority::tee_authority::{AttestationError, TeeAuthority};
+use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_mpc_contract_interface::call_args as contract_args;
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Instant};
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -61,26 +62,6 @@ pub struct AttestationSubmitter<T, A> {
     pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
     pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     pub attestation_reader: Arc<dyn ReadAttestationExpiry>,
-}
-
-/// The stage a single iteration of [`periodic_attestation_submission`] is in. A cancelled
-/// iteration cannot report anything itself, so it publishes each stage it enters, and the one
-/// it was cancelled in ends up in the log and metric.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RoundStage {
-    GenerateAttestation,
-    ReadExpiryBaseline,
-    SubmitAttestation,
-}
-
-impl RoundStage {
-    fn as_label(self) -> &'static str {
-        match self {
-            RoundStage::GenerateAttestation => MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
-            RoundStage::ReadExpiryBaseline => MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE,
-            RoundStage::SubmitAttestation => MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION,
-        }
-    }
 }
 
 /// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
@@ -170,40 +151,31 @@ fn validate_remote_attestation(
 }
 
 impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<T, A> {
-    /// Generates a fresh attestation and submits it to the contract, publishing each stage it
-    /// enters to the given [`watch::Sender`] so a caller that drops this future can tell
-    /// which stage was cut off. Failures are logged, never propagated.
-    async fn generate_and_submit(&self, stage: &watch::Sender<RoundStage>) {
+    async fn generate_attestation(&self) -> Option<Attestation> {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
             *self.account_public_key.as_bytes(),
         )
         .into();
-        stage.send_replace(RoundStage::GenerateAttestation);
         let result = self.tee_authority.generate_attestation(report_data).await;
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
             .with_label_values(&[outcome_label(result.is_ok())])
             .inc();
-        let attestation = match result {
-            Ok(attestation) => attestation,
+        match result {
+            Ok(attestation) => Some(attestation),
             Err(error @ AttestationError::CollateralFetch(_)) => {
                 tracing::warn!(%error, "TEE attestation collateral fetch failed");
-                return;
+                None
             }
             Err(error) => {
                 tracing::error!(%error, "TEE attestation generation failed");
-                return;
+                None
             }
-        };
-        let allowed_image_hashes: Vec<_> = self
-            .allowed_image_hashes
-            .borrow()
-            .iter()
-            .map(|entry| entry.image_hash)
-            .collect();
-        let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
-        stage.send_replace(RoundStage::ReadExpiryBaseline);
-        let pre_submit_expiry = match self
+        }
+    }
+
+    async fn read_expiry_baseline(&self) -> Option<u64> {
+        match self
             .attestation_reader
             .read_stored_attestation_expiry(&self.tls_public_key)
             .await
@@ -218,7 +190,17 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
                 );
                 None
             }
-        };
+        }
+    }
+
+    async fn submit_attestation(&self, attestation: Attestation, pre_submit_expiry: Option<u64>) {
+        let allowed_image_hashes: Vec<_> = self
+            .allowed_image_hashes
+            .borrow()
+            .iter()
+            .map(|entry| entry.image_hash)
+            .collect();
+        let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
         if let Err(error) = validate_remote_attestation(
             &attestation,
             self.tls_public_key.clone(),
@@ -230,7 +212,6 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             // fail on a stale view of the allowed hashes
             tracing::warn!("Attestation is not valid: {error}");
         }
-        stage.send_replace(RoundStage::SubmitAttestation);
         let submission = submit_remote_attestation(
             self.tx_sender.clone(),
             attestation,
@@ -262,35 +243,48 @@ where
 {
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    periodic_attestation_submission(submitter, interval, ATTESTATION_RESUBMISSION_INTERVAL).await
+    periodic_attestation_submission(submitter, interval).await
 }
 
-/// Periodically regenerates and submits this node's attestation. A round that times out is
-/// abandoned, recorded in [`MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL`] under the stage it was
-/// cut in, and the next tick starts over with a fresh attestation. Failures are logged,
-/// never propagated; this task never returns.
+/// Periodically regenerates and submits this node's attestation. A stage still running at the
+/// round deadline is abandoned, recorded in [`MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL`], and
+/// the next tick starts over with a fresh attestation. Failures are logged, never propagated;
+/// this task never returns.
 #[tracing::instrument(skip_all)]
 async fn periodic_attestation_submission<T: TransactionSender + Clone, A: GenerateAttestation>(
     submitter: AttestationSubmitter<T, A>,
     mut interval_ticker: impl Tick,
-    round_timeout: Duration,
 ) {
     loop {
         interval_ticker.tick().await;
-        let (stage, _) = watch::channel(RoundStage::GenerateAttestation);
-        let round = tokio::time::timeout(round_timeout, submitter.generate_and_submit(&stage));
-        if round.await.is_err() {
-            let stage = stage.borrow().as_label();
-            MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL
-                .with_label_values(&[stage])
-                .inc();
-            tracing::warn!(
-                stage,
-                timeout = ?round_timeout,
-                "attestation round timed out; retrying from scratch on the next tick"
-            );
+        let deadline = Instant::now() + ATTESTATION_RESUBMISSION_INTERVAL;
+        let Ok(generated) = submitter.generate_attestation().timeout_at(deadline).await else {
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION);
+            continue;
+        };
+        let Some(attestation) = generated else {
+            continue;
+        };
+        let Ok(pre_submit_expiry) = submitter.read_expiry_baseline().timeout_at(deadline).await
+        else {
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE);
+            continue;
+        };
+        let submission = submitter.submit_attestation(attestation, pre_submit_expiry);
+        if submission.timeout_at(deadline).await.is_err() {
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION);
         }
     }
+}
+
+fn record_round_timeout(stage: &'static str) {
+    MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL
+        .with_label_values(&[stage])
+        .inc();
+    tracing::warn!(
+        stage,
+        "attestation round timed out; retrying from scratch on the next tick"
+    );
 }
 
 #[cfg(test)]
@@ -455,7 +449,6 @@ mod tests {
             tokio::spawn(periodic_attestation_submission(
                 self.submitter.clone(),
                 MockTicker::new(ticks),
-                ATTESTATION_RESUBMISSION_INTERVAL,
             ))
         }
     }
@@ -529,7 +522,6 @@ mod tests {
         let MaybeReady::Future(parked_loop) = run_future_once(periodic_attestation_submission(
             setup.submitter.clone(),
             ticker.clone(),
-            ATTESTATION_RESUBMISSION_INTERVAL,
         )) else {
             panic!("the loop should park once its ticker runs out");
         };
@@ -585,26 +577,6 @@ mod tests {
             cut_rounds_before + 1
         );
         handle.abort();
-    }
-
-    #[tokio::test(start_paused = true)]
-    #[expect(non_snake_case)]
-    async fn generate_and_submit__should_record_the_submission_stage_when_cut_off() {
-        // Given
-        let setup = test_setup();
-        setup.sender().set_failing(true);
-        let (stage, _) = watch::channel(RoundStage::GenerateAttestation);
-
-        // When
-        let round = tokio::time::timeout(
-            ATTESTATION_RESUBMISSION_INTERVAL,
-            setup.submitter.generate_and_submit(&stage),
-        )
-        .await;
-
-        // Then
-        assert!(round.is_err());
-        assert_eq!(*stage.borrow(), RoundStage::SubmitAttestation);
     }
 
     async fn validate_locally_generated_attestation(
