@@ -12,7 +12,8 @@ use foreign_chain_inspector::{
     base::inspector::Base,
     evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
 };
-use foreign_chain_rpc_client::{RpcAuthentication, build_http_client};
+use foreign_chain_rpc_factory::build_http_client;
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::evm::{
@@ -383,8 +384,11 @@ macro_rules! evm_inspector_tests {
                     });
                 });
 
-                let client =
-                    build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+                let client = build_http_client(&ForeignChainProviderConfig {
+                    rpc_url: server.url("/"),
+                    auth: AuthConfig::None,
+                })
+                .unwrap();
                 let inspector = Inspector::new(client);
 
                 // when
@@ -725,6 +729,10 @@ evm_inspector_tests!(
     avalanche
 );
 evm_inspector_tests!(foreign_chain_inspector::adi::inspector::Adi, adi);
+evm_inspector_tests!(
+    foreign_chain_inspector::ethereum::inspector::Ethereum,
+    ethereum
+);
 
 // Base mainnet, standing in for every EVM chain: the fingerprint call has no chain-specific parts.
 const CHAIN_ID_8453: &str = "0x2105";
@@ -760,7 +768,11 @@ async fn network_fingerprint__should_ask_the_provider_for_its_chain_id() {
             }));
         })
         .await;
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = EvmInspector::<_, Base>::new(client);
 
     // When

@@ -6,7 +6,6 @@ use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, PublicKeyError};
 use crate::{MpcContract, MpcContractExt};
-use dtos::{Curve, DomainId};
 use near_mpc_contract_interface::types::kdf::derive_tweak;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{AccountId, env, near};
@@ -17,8 +16,8 @@ impl MpcContract {
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
     #[handle_result]
-    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<dtos::PublicKey, Error> {
-        let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
+    pub fn public_key(&self, domain_id: Option<dtos::DomainId>) -> Result<dtos::PublicKey, Error> {
+        let domain_id = domain_id.unwrap_or_else(dtos::DomainId::legacy_ecdsa_id);
         self.public_key_extended(domain_id).map(Into::into)
     }
 
@@ -32,19 +31,17 @@ impl MpcContract {
         &self,
         path: String,
         predecessor: Option<AccountId>,
-        domain_id: Option<DomainId>,
+        domain_id: Option<dtos::DomainId>,
     ) -> Result<dtos::PublicKey, Error> {
         let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
-        let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
+        let domain = domain_id.unwrap_or_else(dtos::DomainId::legacy_ecdsa_id);
         let public_key = self.public_key_extended(domain)?;
 
         let derived_public_key: dtos::PublicKey = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
+                let affine = *k256::PublicKey::try_from(&near_public_key)
                     .expect("stored key is always valid")
                     .as_affine();
                 let derived_public_key =
@@ -56,7 +53,7 @@ impl MpcContract {
                     derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
                 dtos::Ed25519PublicKey::from(derived_public_key_edwards_point.compress()).into()
             }
-            PublicKeyExtended::Bls12381 { public_key } => public_key,
+            PublicKeyExtended::Bls12381 { public_key } => public_key.into(),
         };
 
         Ok(derived_public_key)
@@ -68,7 +65,7 @@ impl MpcContract {
     /// within a secure enclave. The signature_scheme parameter specifies which protocol
     /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
     /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> u32 {
+    pub fn latest_key_version(&self, signature_scheme: Option<dtos::Curve>) -> u32 {
         self.protocol_state
             .most_recent_domain_for_curve(signature_scheme.unwrap_or_default())
             .unwrap()
@@ -79,7 +76,7 @@ impl MpcContract {
 impl MpcContract {
     pub(crate) fn public_key_extended(
         &self,
-        domain_id: DomainId,
+        domain_id: dtos::DomainId,
     ) -> Result<PublicKeyExtended, Error> {
         self.protocol_state.public_key(domain_id)
     }

@@ -1,6 +1,7 @@
 mod monitoring;
 mod subscription;
 mod traits;
+mod view_call;
 
-pub use monitoring::POLL_INTERVAL;
-pub use traits::{SubscribeToContractMethod, ViewMethod, WatchContractState};
+pub use traits::ViewExt;
+pub use view_call::ViewCall;

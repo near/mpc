@@ -9,6 +9,7 @@ pub mod avalanche;
 pub mod base;
 pub mod bitcoin;
 pub mod bnb;
+pub mod ethereum;
 pub mod evm;
 pub mod hyper_evm;
 pub mod polygon;

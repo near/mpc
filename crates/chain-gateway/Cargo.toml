@@ -9,6 +9,7 @@ autotests = false
 test-utils = []
 
 [dependencies]
+borsh = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 near-account-id = { workspace = true }

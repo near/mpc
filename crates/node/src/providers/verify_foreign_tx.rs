@@ -1,6 +1,6 @@
 mod sign;
 
-use crate::foreign_chain_policy::SupportersByForeignChain;
+use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::EcdsaSignatureProvider;
@@ -16,17 +16,19 @@ use foreign_chain_inspector::avalanche::inspector::AvalancheInspector;
 use foreign_chain_inspector::base::inspector::BaseInspector;
 use foreign_chain_inspector::bitcoin::inspector::BitcoinInspector;
 use foreign_chain_inspector::bnb::inspector::BnbInspector;
+use foreign_chain_inspector::ethereum::inspector::EthereumInspector;
 use foreign_chain_inspector::http_client::HttpClient;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
-use foreign_chain_rpc_client::{aptos_client, http_client, sui_client};
+use foreign_chain_rpc_factory::{build_http_client, resolve_provider_auth};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::{
     ConfigFile, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
+use mpc_primitives::ReconstructionThreshold;
 use near_mpc_contract_interface::types::ProviderId;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,6 +41,7 @@ use tokio::sync::watch;
 /// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
     pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
+    pub ethereum: Option<FanOut<EthereumInspector<Client>>>,
     pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
     pub bnb: Option<FanOut<BnbInspector<Client>>>,
     pub starknet: Option<FanOut<StarknetInspector<Client>>>,
@@ -75,13 +78,42 @@ impl ForeignChainInspectors<HttpClient> {
         fn with_http_client<I>(
             new_inspector: impl Fn(HttpClient) -> I,
         ) -> impl Fn(&ForeignChainProviderConfig, Duration) -> anyhow::Result<I> {
-            move |provider, _timeout| Ok(new_inspector(http_client(provider)?))
+            move |provider, _timeout| {
+                let client = build_http_client(provider)?;
+                Ok(new_inspector(client))
+            }
+        }
+
+        fn new_sui_inspector(
+            provider: &ForeignChainProviderConfig,
+            timeout: Duration,
+        ) -> anyhow::Result<SuiInspector<GrpcSuiClient>> {
+            let (url, auth_header) = resolve_provider_auth(provider)?;
+            let client = GrpcSuiClient::new(url, auth_header, timeout)
+                .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))?;
+            Ok(SuiInspector::new(client))
+        }
+
+        fn new_aptos_inspector(
+            provider: &ForeignChainProviderConfig,
+            timeout: Duration,
+        ) -> anyhow::Result<AptosInspector<ReqwestAptosClient>> {
+            let (url, auth_header) = resolve_provider_auth(provider)?;
+            Ok(AptosInspector::new(ReqwestAptosClient::new(
+                url,
+                auth_header,
+                timeout,
+            )))
         }
 
         Ok(Self {
             bitcoin: build_fanout(
                 config.bitcoin.as_ref(),
                 with_http_client(BitcoinInspector::new),
+            )?,
+            ethereum: build_fanout(
+                config.ethereum.as_ref(),
+                with_http_client(EthereumInspector::new),
             )?,
             abstract_chain: build_fanout(
                 config.abstract_chain.as_ref(),
@@ -110,12 +142,8 @@ impl ForeignChainInspectors<HttpClient> {
                 with_http_client(AvalancheInspector::new),
             )?,
             adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
-            aptos: build_fanout(config.aptos.as_ref(), |provider, timeout| {
-                Ok(AptosInspector::new(aptos_client(provider, timeout)?))
-            })?,
-            sui: build_fanout(config.sui.as_ref(), |provider, timeout| {
-                Ok(SuiInspector::new(sui_client(provider, timeout)?))
-            })?,
+            aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
+            sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
         })
     }
 }
@@ -124,6 +152,9 @@ pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
     inspectors: ForeignChainInspectors<HttpClient>,
     supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+    /// [`foreign_tx_reconstruction_threshold`](crate::foreign_chain_policy::foreign_tx_reconstruction_threshold)
+    /// of the running domains; `None` when there is no ForeignTx domain.
+    foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
@@ -146,6 +177,7 @@ impl VerifyForeignTxProvider {
     pub fn new(
         config: Arc<ConfigFile>,
         supporters_by_foreign_chain: watch::Receiver<SupportersByForeignChain>,
+        foreign_tx_reconstruction_threshold: Option<ReconstructionThreshold>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> anyhow::Result<Self> {
@@ -154,9 +186,17 @@ impl VerifyForeignTxProvider {
             config,
             inspectors,
             supporters_by_foreign_chain,
+            foreign_tx_reconstruction_threshold,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
         })
+    }
+
+    pub(crate) fn new_eligible_leaders_refiner(&self) -> ForeignChainLeadersRefiner {
+        ForeignChainLeadersRefiner::new(
+            self.supporters_by_foreign_chain.clone(),
+            self.foreign_tx_reconstruction_threshold,
+        )
     }
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {

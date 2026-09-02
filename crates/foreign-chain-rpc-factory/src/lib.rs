@@ -1,18 +1,12 @@
-//! Turns a foreign chain provider's configuration into a client that can talk to it, with the
-//! provider's credentials already applied.
-
-use std::time::Duration;
-
 use anyhow::Context;
-use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
-use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
-/// How a provider expects its API key to be presented.
+pub mod inspectors;
+
 #[derive(Debug, Clone)]
-pub enum RpcAuthentication {
+pub(crate) enum RpcAuthentication {
     /// The key is in the URL (e.g., Alchemy, QuickNode).
     /// Example: `https://eth-mainnet.alchemyapi.io/v2/your-api-key`
     KeyInUrl,
@@ -24,39 +18,9 @@ pub enum RpcAuthentication {
     },
 }
 
-/// Builds an HTTP client with the specified authentication method, for callers that already
-/// hold a resolved [`RpcAuthentication`]. Most callers want [`http_client`] instead, which
-/// resolves it from a provider's config.
-pub fn build_http_client(
-    base_url: String,
-    rpc_authentication: RpcAuthentication,
-) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
-    let mut headers = HeaderMap::new();
-
-    match rpc_authentication {
-        RpcAuthentication::KeyInUrl => {}
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => {
-            headers.insert(header_name, header_value);
-        }
-    }
-
-    let client = HttpClientBuilder::default()
-        .set_headers(headers)
-        .build(&base_url)?;
-
-    Ok(client)
-}
-
-/// Convert an [`AuthConfig`] into an [`RpcAuthentication`].
-///
-/// Shared by the MPC node and the foreign-chain config tester so both exercise the
-/// exact same URL/auth handling. It lives in its own crate (rather than the
-/// lightweight `mpc-node-config`) to keep `foreign-chain-inspector` out of the
-/// config crate's dependency tree.
-pub fn auth_config_to_rpc_auth(
+/// Convert an [`AuthConfig`] into a [`RpcAuthentication`], substituting `Path`/`Query` tokens
+/// into `rpc_url` as it goes.
+fn auth_config_to_rpc_auth(
     auth: AuthConfig,
     rpc_url: &mut String,
 ) -> anyhow::Result<RpcAuthentication> {
@@ -72,7 +36,8 @@ pub fn auth_config_to_rpc_auth(
                 Some(scheme) => format!("{scheme} {token_value}"),
                 None => token_value,
             };
-            let mut header_value = HeaderValue::from_str(&header_value_str)?;
+            let mut header_value = HeaderValue::from_str(&header_value_str)
+                .map_err(|e| anyhow::anyhow!("invalid header value: {e}"))?;
             // Redacts the token from `Debug` output and excludes it from HPACK
             // dynamic-table indexing on h2 connections.
             header_value.set_sensitive(true);
@@ -99,47 +64,38 @@ pub fn auth_config_to_rpc_auth(
     }
 }
 
-/// The URL to dial and the header to install for a provider, with `Path` and `Query` auth
-/// already spliced into the URL.
-fn authenticated_endpoint(
+pub fn resolve_provider_auth(
     provider: &ForeignChainProviderConfig,
 ) -> anyhow::Result<(String, Option<(HeaderName, HeaderValue)>)> {
     let mut url = provider.rpc_url.clone();
-    let header = match auth_config_to_rpc_auth(provider.auth.clone(), &mut url)? {
-        RpcAuthentication::KeyInUrl => None,
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => Some((header_name, header_value)),
-    };
-    Ok((url, header))
-}
-
-/// The authenticated JSON-RPC client for a provider, used by every chain the node reaches over
-/// jsonrpsee. Carries no timeout: those chains are bounded by their caller's deadline.
-pub fn http_client(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
-    let mut url = provider.rpc_url.clone();
     let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
-    build_http_client(url, auth).map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
+    Ok((
+        url,
+        match auth {
+            RpcAuthentication::KeyInUrl => None,
+            RpcAuthentication::CustomHeader {
+                header_name,
+                header_value,
+            } => Some((header_name, header_value)),
+        },
+    ))
 }
 
-/// The authenticated Aptos REST client for a provider.
-pub fn aptos_client(
-    provider: &ForeignChainProviderConfig,
-    timeout: Duration,
-) -> anyhow::Result<ReqwestAptosClient> {
-    let (url, header) = authenticated_endpoint(provider)?;
-    Ok(ReqwestAptosClient::new(url, header, timeout))
-}
+/// Builds an HTTP client for a configured provider, resolving its URL and authentication.
+/// This client can be used to construct a [`foreign_chain_inspector::ForeignChainInspector`].
+pub fn build_http_client(provider: &ForeignChainProviderConfig) -> anyhow::Result<HttpClient> {
+    let (url, auth) = resolve_provider_auth(provider)?;
+    let mut headers = HeaderMap::new();
 
-/// The authenticated Sui gRPC client for a provider.
-pub fn sui_client(
-    provider: &ForeignChainProviderConfig,
-    timeout: Duration,
-) -> anyhow::Result<GrpcSuiClient> {
-    let (url, header) = authenticated_endpoint(provider)?;
-    GrpcSuiClient::new(url, header, timeout)
-        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
+    if let Some((header_name, header_value)) = auth {
+        headers.insert(header_name, header_value);
+    }
+
+    let client = HttpClientBuilder::default()
+        .set_headers(headers)
+        .build(&url)?;
+
+    Ok(client)
 }
 
 #[cfg(test)]
@@ -186,7 +142,7 @@ mod tests {
     fn auth_config_to_rpc_auth__header_auth_leaves_url_unchanged() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
+            name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Val {
                 val: "secret".to_string(),
@@ -206,7 +162,7 @@ mod tests {
     fn auth_config_to_rpc_auth__header_auth_with_scheme_prepends_scheme() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
+            name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Val {
                 val: "secret".to_string(),
@@ -226,10 +182,9 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__header_auth_without_scheme_uses_raw_token() {
-        // Given: providers like Tatum (`x-api-key`) and NowNodes (`api-key`) use
-        // the raw token as the header value, with no scheme prefix.
+        // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("x-api-key"),
+            name: HeaderName::from_static("x-api-key"),
             scheme: None,
             token: TokenConfig::Val {
                 val: "raw-token-value".to_string(),
@@ -251,7 +206,7 @@ mod tests {
     fn auth_config_to_rpc_auth__should_mark_header_value_sensitive() {
         // Given
         let auth = AuthConfig::Header {
-            name: http::HeaderName::from_static("authorization"),
+            name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
             token: TokenConfig::Val {
                 val: "secret".to_string(),
@@ -272,7 +227,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_without_query() {
-        // Given: providers like Helius use `?api-key=<KEY>` on a URL with no query.
+        // Given
         let auth = AuthConfig::Query {
             name: "api-key".to_string(),
             token: TokenConfig::Val {
@@ -291,8 +246,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_with_existing_query() {
-        // Given: dRPC's `?network=ethereum&dkey=<KEY>` form — the URL already has
-        // query parameters and the auth key must be appended with `&`.
+        // Given
         let auth = AuthConfig::Query {
             name: "dkey".to_string(),
             token: TokenConfig::Val {
@@ -314,7 +268,7 @@ mod tests {
 
     #[test]
     fn auth_config_to_rpc_auth__query_auth_url_encodes_special_characters() {
-        // Given: tokens may contain characters that must be URL-encoded.
+        // Given
         let auth = AuthConfig::Query {
             name: "api-key".to_string(),
             token: TokenConfig::Val {

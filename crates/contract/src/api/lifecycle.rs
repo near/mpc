@@ -16,7 +16,6 @@ use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ProposedUpdates;
 use crate::{MpcContract, MpcContractExt, v3_14_0_state};
-use dtos::DomainConfig;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{env, log, near};
@@ -84,12 +83,13 @@ impl MpcContract {
     #[init]
     #[handle_result]
     pub fn init_running(
-        domains: Vec<DomainConfig>,
+        domains: Vec<dtos::DomainConfig>,
         next_domain_id: u64,
-        keyset: Keyset,
+        keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        let keyset: Keyset = keyset.try_into_contract_type()?;
         let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());

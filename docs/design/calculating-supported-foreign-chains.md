@@ -21,7 +21,7 @@ per chain, the network-trusted providers and the **RPC quorum** (`ChainEntry.quo
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
 > [Foreign Chain Transaction Verification Design — Terminology](../foreign-chain-transactions.md#terminology).
 
-The network distinguishes the **whitelisted** set (vote-driven policy, `get_whitelisted_foreign_chains()`)
+The network distinguishes the **whitelisted** set (vote-driven policy, `allowed_foreign_chain_providers()`)
 from the **available** set (servable right now, `get_available_foreign_chains()`):
 
 - **Whitelisted** is derived purely from the on-chain RPC whitelist — **no per-node input can add or
@@ -33,7 +33,7 @@ from the **available** set (servable right now, `get_available_foreign_chains()`
 instead of accepting a request that can't reach the signing threshold and letting it time out. The
 rejection is temporary — `C` becomes serviceable again as soon as enough nodes report coverage.
 
-The legacy `get_supported_foreign_chains()` (the intersection rule) is **to be deprecated** in favour
+The legacy `get_supported_foreign_chains()` (the intersection rule) is **deprecated** in favour
 of the two views above.
 
 ## Why two sets
@@ -72,12 +72,18 @@ Foreign-tx signing must select participants that **cover** the requested chain
 (report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
-Implemented on the presignature-selection side: the leader only takes a
-presignature whose participants are all alive **and** supporters of `C`, and
+Implemented in two places:
+1. Leader selection is chain- and quorum-aware: the
+pending-request queue narrows a request's eligible leaders to the supporters
+of `C`, and selects one only when at least a reconstruction threshold's worth
+of them is online (the same threshold that gates availability). Otherwise the request
+parks — no attempt is consumed, the `mpc_num_requests_without_refined_leader_total` metric counts the queue
+passes — until supporters come back or the request expires.
+2. On the
+presignature-selection side, the leader only takes a presignature whose
+participants are all alive **and** supporters of `C`, and as defense-in-depth
 refuses to lead a request for a chain it does not itself support (every owned
-presignature includes the leader). Leader selection itself is not yet
-chain-aware — a non-supporting leader rejects the attempt instead of serving
-it — tracked in [#3961](https://github.com/near/mpc/issues/3961).
+presignature includes the leader).
 
 Residual limitation, accepted as-is: presignature generation remains
 liveness-driven, so participant sets are random `t`-subsets of the alive set.
@@ -141,7 +147,10 @@ node for every chain.
 can roll out before the contract upgrade (node and contract migrate independently):
 
 1. Keep `get_supported_foreign_chains()` unchanged.
-2. Add `get_whitelisted_foreign_chains()` and `get_available_foreign_chains()` (additive).
-3. Vote the RPC providers / chains into the whitelist.
-4. Upgrade the contract.
-5. Switch node code to the new methods and deprecate `get_supported_foreign_chains()`.
+2. Add `allowed_foreign_chain_providers()` and `get_available_foreign_chains()` (additive).
+3. Vote the RPC providers / chains into the whitelist. This must precede step 4 on every
+   network: `available ⊆ whitelisted`, so with an empty whitelist the new gate rejects every
+   request.
+4. Upgrade the contract: `verify_foreign_transaction` gates on the available set instead of
+   the supported set, and `get_supported_foreign_chains()` is deprecated.
+5. Switch node code to the new methods and drop the legacy registration.

@@ -12,7 +12,7 @@ anyhow = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true, optional = true }
 foreign-chain-inspector = { workspace = true }
-foreign-chain-rpc-client = { workspace = true }
+foreign-chain-rpc-factory = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }

@@ -3,7 +3,6 @@
 
 use crate::crypto_shared::types::PublicKeyExtendedConversionError;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::key_state::KeyEventId;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
@@ -14,7 +13,7 @@ impl MpcContract {
     /// Starts a new attempt to generate a key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]
-    pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn start_keygen_instance(&mut self, key_event_id: dtos::KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
 
         self.assert_caller_is_attested_participant_and_protocol_active();
@@ -41,7 +40,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_pk(
         &mut self,
-        key_event_id: KeyEventId,
+        key_event_id: dtos::KeyEventId,
         public_key: dtos::PublicKey,
     ) -> Result<(), Error> {
         log!(
@@ -72,7 +71,7 @@ impl MpcContract {
     /// Starts a new attempt to reshare the key for the current domain.
     /// This only succeeds if the signer is the leader (the participant with the lowest ID).
     #[handle_result]
-    pub fn start_reshare_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn start_reshare_instance(&mut self, key_event_id: dtos::KeyEventId) -> Result<(), Error> {
         log!(
             "start_reshare_instance: signer={}",
             env::signer_account_id()
@@ -97,7 +96,7 @@ impl MpcContract {
     ///    - Same as the last case, except that all domains' keys have been reshared now, and the
     ///      state transitions into Running with the newly reshared keys.
     #[handle_result]
-    pub fn vote_reshared(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn vote_reshared(&mut self, key_event_id: dtos::KeyEventId) -> Result<(), Error> {
         log!(
             "vote_reshared: signer={}, resharing_id={:?}",
             env::signer_account_id(),
@@ -221,7 +220,10 @@ impl MpcContract {
     /// Casts a vote to abort the current key event instance. If succesful, the contract aborts the
     /// instance and a new instance with the next attempt_id can be started.
     #[handle_result]
-    pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
+    pub fn vote_abort_key_event_instance(
+        &mut self,
+        key_event_id: dtos::KeyEventId,
+    ) -> Result<(), Error> {
         log!(
             "vote_abort_key_event_instance: signer={}",
             env::signer_account_id()

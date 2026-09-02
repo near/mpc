@@ -5,7 +5,7 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 use self::stats::IndexerStats;
 use anyhow::Context;
 use handler::ChainBlockUpdate;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
@@ -20,7 +20,7 @@ use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
@@ -47,13 +47,7 @@ pub mod types;
 #[cfg(test)]
 pub mod fake;
 
-// TODO(#3751): drop this struct after upgrading the contract.
-#[derive(Debug, PartialEq, Deserialize)]
-#[serde(untagged)]
-enum AllowedDockerImageHashesResponse {
-    WithExpiry(Vec<dtos::AllowedMpcDockerImageHash>),
-    Legacy(Vec<NodeImageHash>),
-}
+type AllowedDockerImageHashesResponse = Vec<dtos::AllowedMpcDockerImageHash>;
 
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
@@ -334,21 +328,10 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<dtos::AllowedMpcDockerImageHash>)> {
-        let (block_height, response): (u64, AllowedDockerImageHashesResponse) = self
+        let (block_height, entries): (u64, AllowedDockerImageHashesResponse) = self
             .get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
             .await?;
 
-        // TODO(#3751): drop this logic after upgrading the contract.
-        let entries = match response {
-            AllowedDockerImageHashesResponse::WithExpiry(entries) => entries,
-            AllowedDockerImageHashesResponse::Legacy(hashes) => hashes
-                .into_iter()
-                .map(|image_hash| dtos::AllowedMpcDockerImageHash {
-                    image_hash,
-                    expiry_timestamp_seconds: None,
-                })
-                .collect(),
-        };
         Ok((block_height, entries))
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
@@ -357,13 +340,6 @@ impl IndexerViewClient {
     ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
         self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
             .await
-    }
-
-    pub(crate) async fn get_mpc_tee_accounts(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
     }
 
     pub(crate) async fn get_mpc_migration_info(
@@ -576,8 +552,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
@@ -592,42 +566,7 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{
-        AllowedDockerImageHashesResponse, BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress,
-    };
-    use assert_matches::assert_matches;
-    use mpc_primitives::hash::NodeImageHash;
-
-    #[test]
-    fn allowed_docker_image_hashes_response__should_deserialize_with_expiry_objects() {
-        let json = r#"[
-        { "image_hash": "1111111111111111111111111111111111111111111111111111111111111111", "expiry_timestamp_seconds": 42 },
-        { "image_hash": "2222222222222222222222222222222222222222222222222222222222222222", "expiry_timestamp_seconds": null }
-    ]"#;
-        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
-        assert_matches!(response, AllowedDockerImageHashesResponse::WithExpiry(entries) if entries.len() == 2);
-    }
-
-    #[test]
-    fn allowed_docker_image_hashes_response__should_deserialize_legacy_bare_hashes() {
-        // Given: the shape returned by contracts predating expiry reporting.
-        let json = r#"[
-            "1111111111111111111111111111111111111111111111111111111111111111",
-            "2222222222222222222222222222222222222222222222222222222222222222"
-        ]"#;
-
-        // When
-        let response: AllowedDockerImageHashesResponse = serde_json::from_str(json).unwrap();
-
-        // Then
-        assert_eq!(
-            response,
-            AllowedDockerImageHashesResponse::Legacy(vec![
-                NodeImageHash::from([0x11; 32]),
-                NodeImageHash::from([0x22; 32]),
-            ])
-        );
-    }
+    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();

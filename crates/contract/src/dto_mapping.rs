@@ -6,19 +6,19 @@
 
 use k256::elliptic_curve::group::GroupEncoding as _;
 use mpc_attestation::{
+    EventLog, HexBytes, TcbInfo,
     attestation::{
         Attestation, DstackAttestation, ExpectedMeasurements, Measurements, MockAttestation,
         VerifiedAttestation,
     },
     collateral::Collateral,
-    tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
 use crate::{
     config::Config,
-    crypto_shared::types::PublicKeyExtended,
+    crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     errors::{ConversionError, Error},
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
@@ -34,7 +34,11 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    update::{ProposedUpdates, Update},
+    tee::{
+        measurements::MeasurementVotes,
+        proposal::{CodeHashesVotes, LauncherHashVotes},
+    },
+    update::{ProposedUpdates, Update, UpdateId},
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -78,15 +82,8 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-                expected_measurements: expected_measurements.map(|m| ExpectedMeasurements {
-                    rtmrs: Measurements {
-                        mrtd: m.mrtd.into(),
-                        rtmr0: m.rtmr0.into(),
-                        rtmr1: m.rtmr1.into(),
-                        rtmr2: m.rtmr2.into(),
-                    },
-                    key_provider_event_digest: m.key_provider_event_digest.into(),
-                }),
+                expected_measurements: expected_measurements
+                    .map(IntoContractType::into_contract_type),
             },
         }
     }
@@ -286,6 +283,32 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
     }
 }
 
+impl IntoContractType<ExpectedMeasurements> for dtos::ExpectedMeasurements {
+    fn into_contract_type(self) -> ExpectedMeasurements {
+        ExpectedMeasurements {
+            rtmrs: Measurements {
+                mrtd: self.mrtd.into(),
+                rtmr0: self.rtmr0.into(),
+                rtmr1: self.rtmr1.into(),
+                rtmr2: self.rtmr2.into(),
+            },
+            key_provider_event_digest: self.key_provider_event_digest.into(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ExpectedMeasurements> for ExpectedMeasurements {
+    fn into_dto_type(self) -> dtos::ExpectedMeasurements {
+        dtos::ExpectedMeasurements {
+            mrtd: self.rtmrs.mrtd.into(),
+            rtmr0: self.rtmrs.rtmr0.into(),
+            rtmr1: self.rtmrs.rtmr1.into(),
+            rtmr2: self.rtmrs.rtmr2.into(),
+            key_provider_event_digest: self.key_provider_event_digest.into(),
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
     fn into_dto_type(self) -> dtos::MockAttestation {
         match self {
@@ -300,13 +323,7 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_timestamp_seconds,
-                expected_measurements: expected_measurements.map(|m| dtos::VerifiedMeasurements {
-                    mrtd: m.rtmrs.mrtd.into(),
-                    rtmr0: m.rtmrs.rtmr0.into(),
-                    rtmr1: m.rtmrs.rtmr1.into(),
-                    rtmr2: m.rtmrs.rtmr2.into(),
-                    key_provider_event_digest: m.key_provider_event_digest.into(),
-                }),
+                expected_measurements: expected_measurements.map(IntoInterfaceType::into_dto_type),
             },
         }
     }
@@ -415,13 +432,59 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
     }
 }
 
+impl IntoInterfaceType<dtos::UpdateId> for UpdateId {
+    fn into_dto_type(self) -> dtos::UpdateId {
+        dtos::UpdateId(self.0)
+    }
+}
+
+impl IntoContractType<UpdateId> for dtos::UpdateId {
+    fn into_contract_type(self) -> UpdateId {
+        UpdateId(self.0)
+    }
+}
+
 impl IntoInterfaceType<dtos::UpdateHash> for &Update {
     fn into_dto_type(self) -> dtos::UpdateHash {
         match self {
             Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code)),
             Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
-                serde_json::to_vec(config).expect("serde serialization must succeed"),
+                serde_json::to_vec(&config.into_dto_type())
+                    .expect("serde serialization must succeed"),
             )),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::Config> for &Config {
+    fn into_dto_type(self) -> dtos::Config {
+        dtos::Config {
+            key_event_timeout_blocks: self.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: self.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: self.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: self
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: self
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: self
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: self
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: self.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: self.fail_attestation_submission_tera_gas,
+            clean_tee_status_tera_gas: self.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: self.clean_invalid_attestations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: self
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: self
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: self.clean_foreign_chain_data_tera_gas,
+            remove_non_participant_tee_verifier_votes_tera_gas: self
+                .remove_non_participant_tee_verifier_votes_tera_gas,
+            verifier_tera_gas: self.verifier_tera_gas,
+            resolve_verification_tera_gas: self.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: self.launcher_hash_unused_ttl_seconds,
+            attestation_storage_fee_millinear: self.attestation_storage_fee_millinear,
         }
     }
 }
@@ -433,13 +496,13 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
         let votes = all
             .votes
             .into_iter()
-            .map(|(account, update_id)| (account, update_id.0))
+            .map(|(account, update_id)| (account, update_id.into_dto_type()))
             .collect();
 
         let updates = all
             .updates
             .into_iter()
-            .map(|(update_id, update)| (update_id.0, update))
+            .map(|(update_id, update)| (update_id.into_dto_type(), update))
             .collect();
 
         dtos::ProposedUpdates { votes, updates }
@@ -614,6 +677,12 @@ mod test_conversions {
         }
     }
 
+    impl From<&Keyset> for dtos::Keyset {
+        fn from(keyset: &Keyset) -> Self {
+            keyset.into_dto_type()
+        }
+    }
+
     impl From<GovernanceThresholdParameters> for dtos::GovernanceThresholdParameters {
         fn from(params: GovernanceThresholdParameters) -> Self {
             (&params).into_dto_type()
@@ -667,6 +736,59 @@ impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
 
 // --- PublicKeyExtended ---
 
+impl TryIntoContractType<PublicKeyExtended> for dtos::PublicKeyExtended {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<PublicKeyExtended, Self::Error> {
+        let parse_failed = |err| ConversionError::DataConversion {
+            reason: format!("Failed to parse public key: {err}"),
+        };
+
+        match self {
+            dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
+                Ok(PublicKeyExtended::Secp256k1 {
+                    near_public_key: near_public_key.parse().map_err(parse_failed)?,
+                })
+            }
+            dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                edwards_point,
+            } => {
+                let near_public_key_compressed: dtos::Ed25519PublicKey =
+                    near_public_key_compressed.parse().map_err(parse_failed)?;
+                let derived = SerializableEdwardsPoint::from_bytes(&near_public_key_compressed)
+                    .into_option()
+                    .ok_or_else(|| ConversionError::DataConversion {
+                        reason: "The compressed key is not a valid Edwards point.".to_string(),
+                    })?;
+                // The DTO carries the Edwards point alongside the compressed key; the contract
+                // type derives it, so a pair that disagrees is rejected rather than dropped.
+                if derived.to_bytes() != edwards_point {
+                    return Err(ConversionError::DataConversion {
+                        reason: "The Edwards point does not match the compressed public key."
+                            .to_string(),
+                    }
+                    .into());
+                }
+
+                Ok(PublicKeyExtended::Ed25519 {
+                    near_public_key_compressed,
+                    edwards_point: derived,
+                })
+            }
+            dtos::PublicKeyExtended::Bls12381 { public_key } => {
+                let dtos::PublicKey::Bls12381(public_key) = public_key else {
+                    return Err(ConversionError::DataConversion {
+                        reason: "Expected a bls12381g2 public key.".to_string(),
+                    }
+                    .into());
+                };
+
+                Ok(PublicKeyExtended::Bls12381 { public_key })
+            }
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
     fn into_dto_type(self) -> dtos::PublicKeyExtended {
         match self {
@@ -683,13 +805,11 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
                 edwards_point: edwards_point.to_bytes(),
             },
             PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKeyExtended::Bls12381 {
-                public_key: public_key.clone(),
+                public_key: dtos::PublicKey::Bls12381(public_key.clone()),
             },
         }
     }
 }
-
-// --- Key state types ---
 
 // --- Participants types ---
 
@@ -765,7 +885,74 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     }
 }
 
+impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
+    fn into_dto_type(self) -> dtos::MeasurementVotes {
+        dtos::MeasurementVotes {
+            vote_by_account: self
+                .vote_by_account
+                .iter()
+                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
+    fn into_dto_type(self) -> dtos::LauncherHashVotes {
+        dtos::LauncherHashVotes {
+            vote_by_account: self
+                .vote_by_account
+                .iter()
+                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &CodeHashesVotes {
+    fn into_dto_type(self) -> dtos::CodeHashesVotes {
+        dtos::CodeHashesVotes {
+            proposal_by_account: self
+                .proposal_by_account
+                .iter()
+                .map(|(participant, hash)| (participant.into_dto_type(), *hash))
+                .collect(),
+        }
+    }
+}
+
 // --- Key state types ---
+
+impl TryIntoContractType<KeyForDomain> for dtos::KeyForDomain {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<KeyForDomain, Self::Error> {
+        let dtos::KeyForDomain {
+            domain_id,
+            key,
+            attempt,
+        } = self;
+
+        Ok(KeyForDomain {
+            domain_id,
+            key: key.try_into_contract_type()?,
+            attempt,
+        })
+    }
+}
+
+impl TryIntoContractType<Keyset> for dtos::Keyset {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<Keyset, Self::Error> {
+        let dtos::Keyset { epoch_id, domains } = self;
+
+        let domains = domains
+            .into_iter()
+            .map(TryIntoContractType::try_into_contract_type)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Keyset::new(epoch_id, domains))
+    }
+}
 
 impl IntoInterfaceType<dtos::KeyForDomain> for &KeyForDomain {
     fn into_dto_type(self) -> dtos::KeyForDomain {
@@ -901,98 +1088,89 @@ pub fn args_into_verify_foreign_tx_request(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::api::test_utils::make_public_key_for_curve;
     use crate::errors::InvalidThreshold;
-    use crate::primitives::test_utils::gen_participants;
+    use crate::primitives::key_state::{AttemptId, EpochId};
+    use crate::primitives::test_utils::{
+        bogus_ed25519_public_key, bogus_ed25519_public_key_extended, gen_participants,
+    };
     use crate::primitives::thresholds::GovernanceThreshold;
     use assert_matches::assert_matches;
+    use rand::rngs::OsRng;
+    use rstest::rstest;
 
-    const TEST_THRESHOLD: u64 = 2;
+    #[rstest]
+    #[case(dtos::Curve::Secp256k1)]
+    #[case(dtos::Curve::Edwards25519)]
+    #[case(dtos::Curve::Bls12381)]
+    fn keyset__should_round_trip_through_the_dto(#[case] curve: dtos::Curve) {
+        // Given
+        let (public_key, _) = make_public_key_for_curve(curve, &mut OsRng);
+        let internal = Keyset::new(
+            EpochId::new(7),
+            vec![KeyForDomain {
+                domain_id: dtos::DomainId(3),
+                key: public_key.try_into().unwrap(),
+                attempt: AttemptId::new(),
+            }],
+        );
 
-    fn test_participants() -> Participants {
-        let mut participants = Participants::new();
-        participants
-            .insert(
-                "alice.near".parse().unwrap(),
-                crate::primitives::participants::ParticipantInfo {
-                    url: "https://alice.near.org".to_string(),
-                    tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
-                        .parse()
-                        .unwrap(),
-                },
-            )
-            .unwrap();
-        participants
-            .insert(
-                "bob.near".parse().unwrap(),
-                crate::primitives::participants::ParticipantInfo {
-                    url: "https://bob.near.org".to_string(),
-                    tls_public_key: "ed25519:HghFShDXwniWaV3CbMmPJsUjeLZBJ2jjCq6rM3AQYbx7"
-                        .parse()
-                        .unwrap(),
-                },
-            )
-            .unwrap();
-        participants
-    }
+        // When
+        let dto: dtos::Keyset = (&internal).into_dto_type();
+        let roundtrip: Keyset = dto.clone().try_into_contract_type().unwrap();
 
-    /// Ensures that the JSON produced by serializing the internal [`Participants`]
-    /// type can be deserialized into the DTO [`dtos::Participants`] type and
-    /// vice versa, producing identical JSON in both directions.
-    #[test]
-    fn participants_serde_is_compatible_with_dto() {
-        let internal = test_participants();
-        let json = serde_json::to_value(&internal).unwrap();
-
-        // Internal JSON → DTO type.
-        let dto: dtos::Participants = serde_json::from_value(json.clone()).unwrap();
-
-        // DTO → JSON must match the original.
-        let dto_json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
-
-        // Full round-trip back to the internal type.
-        let roundtrip: Participants = serde_json::from_value(dto_json).unwrap();
+        // Then
         assert_eq!(internal, roundtrip);
     }
 
-    /// Ensures that the JSON produced by serializing the internal
-    /// [`GovernanceThresholdParameters`] type can be deserialized into the DTO
-    /// [`dtos::GovernanceThresholdParameters`] type and vice versa, producing identical
-    /// JSON in both directions.
     #[test]
-    fn threshold_parameters_serde_is_compatible_with_dto() {
-        let internal = GovernanceThresholdParameters::new(
-            test_participants(),
-            GovernanceThreshold::new(TEST_THRESHOLD),
-        )
-        .unwrap();
-        let json = serde_json::to_value(&internal).unwrap();
+    fn public_key_extended__should_reject_an_edwards_point_that_is_not_the_compressed_key() {
+        // Given
+        let dtos::PublicKeyExtended::Ed25519 {
+            near_public_key_compressed,
+            ..
+        } = (&bogus_ed25519_public_key_extended()).into_dto_type()
+        else {
+            panic!("expected an ed25519 key");
+        };
+        let dto = dtos::PublicKeyExtended::Ed25519 {
+            near_public_key_compressed,
+            edwards_point: bogus_ed25519_public_key().0,
+        };
 
-        let dto: dtos::GovernanceThresholdParameters =
-            serde_json::from_value(json.clone()).unwrap();
+        // When
+        let result: Result<PublicKeyExtended, Error> = dto.try_into_contract_type();
 
-        let dto_json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
-
-        let roundtrip: GovernanceThresholdParameters = serde_json::from_value(dto_json).unwrap();
-        assert_eq!(internal, roundtrip);
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::ConversionError(
+                ConversionError::DataConversion { .. }
+            ))
+        );
     }
 
-    /// Verify that [`IntoInterfaceType::into_dto_type`] produces a DTO whose
-    /// serialization matches the internal type's serialization.
-    #[test]
-    fn into_dto_type_preserves_serialization() {
-        let internal = GovernanceThresholdParameters::new(
-            test_participants(),
-            GovernanceThreshold::new(TEST_THRESHOLD),
-        )
-        .unwrap();
-        let internal_json = serde_json::to_value(&internal).unwrap();
+    #[rstest]
+    #[case::ed25519_tag_holding_a_secp256k1_key(dtos::PublicKeyExtended::Ed25519 {
+        near_public_key_compressed: String::from(&dtos::Secp256k1PublicKey([1u8; 64])),
+        edwards_point: [0u8; 32],
+    })]
+    #[case::bls12381_tag_holding_an_ed25519_key(dtos::PublicKeyExtended::Bls12381 {
+        public_key: dtos::PublicKey::Ed25519(bogus_ed25519_public_key()),
+    })]
+    fn public_key_extended__should_reject_a_variant_tag_that_disagrees_with_the_key(
+        #[case] dto: dtos::PublicKeyExtended,
+    ) {
+        // When
+        let result: Result<PublicKeyExtended, Error> = dto.try_into_contract_type();
 
-        let dto: dtos::GovernanceThresholdParameters = (&internal).into_dto_type();
-        let dto_json = serde_json::to_value(&dto).unwrap();
-
-        assert_eq!(internal_json, dto_json);
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::ConversionError(
+                ConversionError::DataConversion { .. }
+            ))
+        );
     }
 
     /// A threshold below the relative (>= 60%) requirement must be rejected at the

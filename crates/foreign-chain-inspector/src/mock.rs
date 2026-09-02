@@ -1,10 +1,7 @@
-//! Scripted test doubles for the network fingerprint probe.
+//! Test doubles for the Foreign Tx Inspectors.
 //!
-//! Under `#[tokio::test(start_paused = true)]` every scripted delay is a virtual timer, so
-//! retry, backoff and timeout behavior runs deterministically and in microseconds of wall
-//! time. Never combine paused time with a real socket (httpmock, tonic): the runtime
-//! advances the clock automatically while the socket is silent, firing timeouts before any
-//! real response can land.
+//! Use `#[tokio::test(start_paused = true)]` if test case simulates network latency.
+//! Never use with real sockets, tokio paused clock will fire timeouts instantly.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,83 +10,82 @@ use std::time::Duration;
 
 use crate::{ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintInspector};
 
-/// One scripted attempt: a virtual delay, then an outcome. Outcomes are constructed fresh
-/// per attempt because [`ForeignChainInspectionError`] is not `Clone`.
 #[derive(Debug)]
-pub enum ScriptedReply {
-    /// Answer `fingerprint` after `delay`. Keep the string under
-    /// [`NetworkFingerprint`]'s length cap, or it is truncated on the way out.
+pub enum MockReply {
     Answer {
         delay: Duration,
         fingerprint: String,
     },
-    /// A transient failure ([`ForeignChainInspectionError::RpcRequestFailed`]) after
-    /// `delay`; [`FanOut`](crate::FanOut) retries it.
-    TransientFailure { delay: Duration },
-    /// A refusal ([`ForeignChainInspectionError::RpcRequestRejected`]) after `delay`;
-    /// [`FanOut`](crate::FanOut) does not retry it.
-    Refusal { delay: Duration },
-    /// Never resolves; only the caller's timeout ends the attempt.
+    Fail {
+        delay: Duration,
+        error: ForeignChainInspectionError,
+    },
+    /// Never resolves
     Hang,
 }
 
-/// A [`NetworkFingerprintInspector`] that answers each call from a queue of
-/// [`ScriptedReply`]s and panics on a call beyond the script, so an unexpected extra
-/// attempt fails loudly. Clones share the queue and the call counter —
-/// [`FanOut`](crate::FanOut) clones its inspector into the task it spawns for each
-/// provider — so use one instance per provider and keep a clone in the test for
-/// [`ScriptedInspector::calls`].
+impl MockReply {
+    pub fn fail(delay: Duration, error: ForeignChainInspectionError) -> Self {
+        Self::Fail { delay, error }
+    }
+
+    pub fn transient(delay: Duration) -> Self {
+        Self::fail(
+            delay,
+            ForeignChainInspectionError::RpcRequestFailed("mock transient failure".to_string()),
+        )
+    }
+
+    pub fn refusal(delay: Duration) -> Self {
+        Self::fail(
+            delay,
+            ForeignChainInspectionError::RpcRequestRejected("mock refusal".to_string()),
+        )
+    }
+}
+
+/// Answers from a queue of [`MockReply`]s; panics on a call past the end of the queue.
 #[derive(Clone)]
-pub struct ScriptedInspector {
-    script: Arc<Mutex<VecDeque<ScriptedReply>>>,
+pub struct MockInspector {
+    replies: Arc<Mutex<VecDeque<MockReply>>>,
     calls: Arc<AtomicUsize>,
 }
 
-impl ScriptedInspector {
-    pub fn new(replies: impl IntoIterator<Item = ScriptedReply>) -> Self {
+impl MockInspector {
+    pub fn new(replies: impl IntoIterator<Item = MockReply>) -> Self {
         Self {
-            script: Arc::new(Mutex::new(replies.into_iter().collect())),
+            replies: Arc::new(Mutex::new(replies.into_iter().collect())),
             calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    /// How many attempts reached this inspector so far.
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
 }
 
-impl NetworkFingerprintInspector for ScriptedInspector {
+impl NetworkFingerprintInspector for MockInspector {
     async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let reply = self
-            .script
+            .replies
             .lock()
-            .expect("script mutex poisoned")
+            .expect("replies mutex poisoned")
             .pop_front()
-            .expect("call beyond the script");
+            .expect("call beyond the queued replies");
         match reply {
-            ScriptedReply::Answer { delay, fingerprint } => {
+            MockReply::Answer { delay, fingerprint } => {
                 tokio::time::sleep(delay).await;
                 Ok(NetworkFingerprint::new(fingerprint))
             }
-            ScriptedReply::TransientFailure { delay } => {
+            MockReply::Fail { delay, error } => {
                 tokio::time::sleep(delay).await;
-                Err(ForeignChainInspectionError::RpcRequestFailed(
-                    "scripted transient failure".to_string(),
-                ))
+                Err(error)
             }
-            ScriptedReply::Refusal { delay } => {
-                tokio::time::sleep(delay).await;
-                Err(ForeignChainInspectionError::RpcRequestRejected(
-                    "scripted refusal".to_string(),
-                ))
-            }
-            ScriptedReply::Hang => std::future::pending().await,
+            MockReply::Hang => std::future::pending().await,
         }
     }
 
-    /// Identity: tests script the exact canonical string they assert.
     fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(fingerprint)
     }

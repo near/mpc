@@ -9,7 +9,6 @@ use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::migration_service::types::MigrationInfo;
 use crate::tests::common::MockTransactionSender;
-use crate::tests::dto_conversions::keyset_to_dto;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
 use crate::types::{CKDId, VerifyForeignTxId};
@@ -491,7 +490,7 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        let dto_keyset = keyset_to_dto(&running_state.keyset);
+        let dto_keyset = dtos::Keyset::from(&running_state.keyset);
         if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }
@@ -1203,7 +1202,6 @@ impl FakeIndexerManager {
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
             allowed_launcher_compose_receiver,
-            attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             attestation_reader: std::sync::Arc::new(FakeAttestationExpiryReader),

@@ -3,12 +3,12 @@
 
 use crate::api::common::refund_to;
 use crate::config::Config;
-use crate::dto_mapping::IntoInterfaceType;
+use crate::dto_mapping::{IntoContractType, IntoInterfaceType};
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::state::ProtocolContractState;
 use crate::update::{ProposedUpdates, Update, UpdateId};
 use crate::{MpcContract, MpcContractExt};
-use near_mpc_contract_interface::types::{self as dtos, ProposeUpdateArgs};
+use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, env, log, near};
 
 #[near]
@@ -18,8 +18,8 @@ impl MpcContract {
     #[handle_result]
     pub fn propose_update(
         &mut self,
-        #[serializer(borsh)] args: ProposeUpdateArgs,
-    ) -> Result<UpdateId, Error> {
+        #[serializer(borsh)] args: dtos::ProposeUpdateArgs,
+    ) -> Result<dtos::UpdateId, Error> {
         // Only voters can propose updates:
         let proposer = self.voter_or_panic();
         let payload_bytes =
@@ -56,22 +56,23 @@ impl MpcContract {
             refund_to(&proposer, diff);
         }
 
-        Ok(id)
+        Ok(id.into_dto_type())
     }
 
-    /// Vote for a proposed update given the [`UpdateId`] of the update.
+    /// Vote for a proposed update, given the id returned by [`Self::propose_update`].
     ///
     /// Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was
     /// executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.
     /// Returns [`Error`] if the update was not found or if the voter is not a participant
     /// in the protocol.
     #[handle_result]
-    pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, Error> {
+    pub fn vote_update(&mut self, id: dtos::UpdateId) -> Result<bool, Error> {
         log!(
             "vote_update: signer={}, id={:?}",
             env::signer_account_id(),
             id,
         );
+        let id: UpdateId = id.into_contract_type();
 
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
@@ -195,10 +196,10 @@ mod tests {
     fn propose_and_vote(
         contract: &mut MpcContract,
         update: Update,
-        expected_update_id: u64,
+        expected_update_id: UpdateId,
     ) -> Vec<dtos::AccountId> {
         let update_id = contract.proposed_updates.propose(update.clone());
-        assert_eq!(update_id.0, expected_update_id);
+        assert_eq!(update_id, expected_update_id);
         // generate two accounts for voting
         let account_id_0 = gen_account_id();
         let account_id_1 = gen_account_id();
@@ -220,14 +221,14 @@ mod tests {
     /// Used to convert BTreeMap-based [`ProposedUpdates`] into a sortable vector format for assertions.
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
     struct TestUpdate {
-        update_id: u64,
+        update_id: dtos::UpdateId,
         update_hash: dtos::UpdateHash,
         votes: Vec<dtos::AccountId>,
     }
 
     impl TestUpdate {
         fn from_proposed_updates(
-            update_id: u64,
+            update_id: dtos::UpdateId,
             update_hash: dtos::UpdateHash,
             proposed_updates: &dtos::ProposedUpdates,
         ) -> Self {
@@ -245,14 +246,17 @@ mod tests {
         }
     }
 
-    fn propose_and_vote_code(expected_update_id: u64, contract: &mut MpcContract) -> TestUpdate {
+    fn propose_and_vote_code(
+        expected_update_id: UpdateId,
+        contract: &mut MpcContract,
+    ) -> TestUpdate {
         let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
         let hash = Sha256::digest(code);
         let update = Update::Contract(code.into());
         let expected_update_hash = dtos::UpdateHash::Code(hash.into());
         let expected_votes = propose_and_vote(contract, update, expected_update_id);
         TestUpdate {
-            update_id: expected_update_id,
+            update_id: expected_update_id.into_dto_type(),
             update_hash: expected_update_hash,
             votes: expected_votes,
         }
@@ -290,18 +294,18 @@ mod tests {
         assert_eq!(empty_result.updates, BTreeMap::new());
 
         // Propose and vote for code update
-        let code_update_id = 0;
+        let code_update_id = UpdateId(0);
         let mut code_update = propose_and_vote_code(code_update_id, &mut contract);
 
         // Propose and vote for config update
         let mut config_update = {
             let update_config = dummy_config(1);
             let config_hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
-            let config_update_obj = Update::Config(update_config.clone());
-            let config_update_id = 1;
+            let config_update_obj = Update::Config(update_config.try_into().unwrap());
+            let config_update_id = UpdateId(1);
             let config_votes = propose_and_vote(&mut contract, config_update_obj, config_update_id);
             TestUpdate {
-                update_id: config_update_id,
+                update_id: config_update_id.into_dto_type(),
                 update_hash: dtos::UpdateHash::Config(config_hash.into()),
                 votes: config_votes,
             }
@@ -364,9 +368,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
 
         // Propose and vote for code update
-        let update_id_u64 = 0;
-        let test_update = propose_and_vote_code(update_id_u64, &mut contract);
-        let update_id = UpdateId::from(update_id_u64);
+        let update_id = UpdateId(0);
+        let test_update = propose_and_vote_code(update_id, &mut contract);
 
         for (account_id, _, _) in participants.participants() {
             contract
@@ -376,7 +379,10 @@ mod tests {
             let proposed_updates = contract.proposed_updates();
             assert_eq!(proposed_updates.updates.len(), 1);
             assert_eq!(
-                *proposed_updates.updates.get(&update_id.0).unwrap(),
+                *proposed_updates
+                    .updates
+                    .get(&update_id.into_dto_type())
+                    .unwrap(),
                 test_update.update_hash
             );
 
@@ -386,7 +392,7 @@ mod tests {
             let actual_voters: Vec<_> = proposed_updates
                 .votes
                 .iter()
-                .filter(|&(_, &uid)| uid == update_id.0)
+                .filter(|&(_, &uid)| uid == update_id.into_dto_type())
                 .map(|(voter, _)| voter.clone())
                 .collect();
             assert_eq!(actual_voters.len(), expected_voters.len());
@@ -411,7 +417,7 @@ mod tests {
             let actual_voters: Vec<_> = res
                 .votes
                 .iter()
-                .filter(|&(_, &uid)| uid == update_id.0)
+                .filter(|&(_, &uid)| uid == update_id.into_dto_type())
                 .map(|(voter, _)| voter.clone())
                 .collect();
             assert_eq!(actual_voters.len(), test_update.votes.len());
@@ -429,7 +435,7 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
 
         // Propose and vote for code update
-        let update_id = 0;
+        let update_id = UpdateId(0);
         let test_update = propose_and_vote_code(update_id, &mut contract);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -521,7 +527,7 @@ mod tests {
                 .build()
         );
         // then: threshold not met (need 2 valid votes, have only 1)
-        assert!(!contract.vote_update(update_id).unwrap());
+        assert!(!contract.vote_update(update_id.into_dto_type()).unwrap());
 
         // given: a 2nd participant vote is added
         contract
@@ -536,7 +542,7 @@ mod tests {
                 .build()
         );
         // then: threshold met (have 2 valid votes, need 2)
-        assert!(contract.vote_update(update_id).unwrap());
+        assert!(contract.vote_update(update_id.into_dto_type()).unwrap());
     }
 
     #[test]
@@ -563,7 +569,7 @@ mod tests {
         environment.set_deposit(required_deposit);
         let storage_before = env::storage_usage();
         let id = contract
-            .propose_update(ProposeUpdateArgs {
+            .propose_update(dtos::ProposeUpdateArgs {
                 code: Some(code),
                 config: None,
             })
@@ -608,9 +614,8 @@ mod tests {
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
         // propose_and_vote_code adds 2 non-participant votes.
-        let update_id_u64 = 0;
-        let _ = propose_and_vote_code(update_id_u64, &mut contract);
-        let update_id: UpdateId = update_id_u64.into();
+        let update_id = UpdateId(0);
+        let _ = propose_and_vote_code(update_id, &mut contract);
 
         // Add votes from 2 current participants.
         let participants = participants.participants();
@@ -654,9 +659,8 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
-        let update_id_u64 = 0;
-        let test_update = propose_and_vote_code(update_id_u64, &mut contract);
-        let update_id: UpdateId = update_id_u64.into();
+        let update_id = UpdateId(0);
+        let test_update = propose_and_vote_code(update_id, &mut contract);
         let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
 
         let participants = participants.participants();

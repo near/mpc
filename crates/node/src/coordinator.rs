@@ -342,12 +342,14 @@ where
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
         let (network_client, channel_receiver, _handle) =
             run_network_client(Arc::new(sender), Box::new(receiver));
+        let expected_participant_ids = mpc_config.participants.participant_id_set();
         if mpc_config.is_leader_for_key_event() {
             keygen_leader(
                 network_client,
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
+                expected_participant_ids,
             )
             .await?;
         } else {
@@ -356,6 +358,7 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
+                expected_participant_ids,
             )
             .await?;
         }
@@ -703,8 +706,10 @@ where
                 // and remain after the reshare supports it. With no ForeignTx
                 // domain nothing can be available, so the resolver isn't
                 // spawned and the provider sees a constant empty map.
+                let foreign_tx_threshold =
+                    foreign_tx_reconstruction_threshold(&running_state.domains);
                 let (supporters_by_foreign_chain, _supporters_resolver_task) =
-                    match foreign_tx_reconstruction_threshold(&running_state.domains) {
+                    match foreign_tx_threshold {
                         Some(threshold) => {
                             let (receiver, task) = spawn_supporters_by_foreign_chain(
                                 foreign_chain_supporters_receiver,
@@ -725,6 +730,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     supporters_by_foreign_chain,
+                    foreign_tx_threshold,
                     verify_foreign_tx_request_store.clone(),
                     ecdsa_signature_provider.clone(),
                 )?);
@@ -829,6 +835,7 @@ where
             existing_keyshares,
             old_reconstruction_thresholds,
             old_participants: current_running_state.participants,
+            new_participant_ids: mpc_config.participants.participant_id_set(),
         });
 
         if mpc_config.is_leader_for_key_event() {

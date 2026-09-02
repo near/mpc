@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use near_account_id::AccountId;
 use near_async::messaging::CanSendAsync as _;
-use near_contract_transport::{BlockHeight, ObservedState, ViewArgs, ViewContract};
+use near_contract_transport::{ObservedState, SerializedObservation, ViewArgs};
 
 use crate::types::LatestFinalBlockInfo;
 use crate::{
@@ -29,15 +29,13 @@ impl NearViewClientActorHandle {
     }
 }
 
-impl ViewContract for NearViewClientActorHandle {
-    type Error = NearViewClientError;
-    type ObservedAt = BlockHeight;
+impl NearViewClientActorHandle {
     /// calls view method contract_id::method_name(args) and returns the result
-    async fn view_contract(
+    pub(crate) async fn view_near(
         &self,
         contract_id: &AccountId,
         view_args: ViewArgs,
-    ) -> Result<ObservedState, Self::Error> {
+    ) -> Result<SerializedObservation, NearViewClientError> {
         let method_name = view_args.method_name;
         let query = near_client::Query {
             block_reference: near_indexer_primitives::types::BlockReference::Finality(

@@ -20,13 +20,12 @@ use foreign_chain_inspector::arbitrum::inspector::Arbitrum;
 use foreign_chain_inspector::avalanche::inspector::Avalanche;
 use foreign_chain_inspector::base::inspector::Base;
 use foreign_chain_inspector::bnb::inspector::Bnb;
+use foreign_chain_inspector::ethereum::inspector::Ethereum;
 use foreign_chain_inspector::evm::inspector::EvmChain;
 use foreign_chain_inspector::hyperevm::inspector::HyperEvm;
 use foreign_chain_inspector::polygon::inspector::Polygon;
-use foreign_chain_rpc_client::{
-    RpcAuthentication, auth_config_to_rpc_auth, http_client, sui_client,
-};
-use http::{HeaderName, HeaderValue};
+use foreign_chain_rpc_factory::{build_http_client, resolve_provider_auth};
+use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::foreign_chains::RpcProviderName;
 use mpc_node_config::{ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig};
 
@@ -49,6 +48,11 @@ pub async fn check_all_providers(
     let golden = golden::golden_set(network);
     let mut out = Vec::new();
 
+    if let Some(cfg) = &fc.ethereum {
+        run_evm::<Ethereum>("ethereum", cfg, golden.ethereum, network, &mut out).await;
+    } else {
+        mark_not_configured("ethereum", &mut out);
+    }
     if let Some(cfg) = &fc.base {
         run_evm::<Base>("base", cfg, golden.base, network, &mut out).await;
     } else {
@@ -111,11 +115,6 @@ pub async fn check_all_providers(
     }
 
     // Configured but not yet supported by the node (see verify_foreign_tx/sign.rs).
-    if let Some(cfg) = &fc.ethereum {
-        mark_skipped("ethereum", cfg, "not yet supported by the node", &mut out);
-    } else {
-        mark_not_configured("ethereum", &mut out);
-    }
     if let Some(cfg) = &fc.solana {
         mark_skipped("solana", cfg, "not yet supported by the node", &mut out);
     } else {
@@ -132,27 +131,8 @@ fn no_reference_reason(network: Network) -> String {
     )
 }
 
-fn timeout_of(cfg: &ForeignChainConfig) -> Duration {
-    Duration::from_secs(cfg.timeout_sec.get())
-}
-
 fn provider_name(name: &RpcProviderName) -> String {
     name.as_str().to_owned()
-}
-
-fn prepare_aptos(
-    provider: &ForeignChainProviderConfig,
-) -> anyhow::Result<(String, Option<(HeaderName, HeaderValue)>)> {
-    let mut url = provider.rpc_url.clone();
-    let auth = auth_config_to_rpc_auth(provider.auth.clone(), &mut url)?;
-    let header = match auth {
-        RpcAuthentication::KeyInUrl => None,
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => Some((header_name, header_value)),
-    };
-    Ok((url, header))
 }
 
 async fn run_check(timeout: Duration, fut: impl Future<Output = anyhow::Result<()>>) -> Status {
@@ -174,11 +154,11 @@ async fn run_evm<Chain: EvmChain + Send + Sync>(
         mark_skipped(chain, cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed =
         golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, http_client(provider)) {
+        let status = match (&parsed, build_http_client(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
@@ -203,11 +183,11 @@ async fn run_bitcoin(
         mark_skipped("bitcoin", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed =
         golden::hex32(vector.tx).and_then(|tx| golden::hex32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, http_client(provider)) {
+        let status = match (&parsed, build_http_client(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
@@ -232,11 +212,11 @@ async fn run_starknet(
         mark_skipped("starknet", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed = golden::felt32(vector.tx)
         .and_then(|tx| golden::felt32(vector.block_hash).map(|bh| (tx, bh)));
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed, http_client(provider)) {
+        let status = match (&parsed, build_http_client(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok((tx, bh)), Ok(client)) => {
@@ -261,10 +241,10 @@ async fn run_aptos(
         mark_skipped("aptos", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     let parsed_tx = golden::hex32(vector.tx);
     for (name, provider) in cfg.providers.iter() {
-        let status = match (&parsed_tx, prepare_aptos(provider)) {
+        let status = match (&parsed_tx, resolve_provider_auth(provider)) {
             (Err(e), _) => Status::Failed(format!("invalid golden vector: {e:#}")),
             (Ok(_), Err(e)) => Status::Failed(format!("{e:#}")),
             (Ok(tx), Ok((url, header))) => {
@@ -304,9 +284,9 @@ async fn run_sui(
         mark_skipped("sui", cfg, &no_reference_reason(network), out);
         return;
     };
-    let timeout = timeout_of(cfg);
+    let timeout = cfg.timeout_duration();
     for (name, provider) in cfg.providers.iter() {
-        let status = match sui_client(provider, timeout) {
+        let status = match prepare_sui(provider, timeout) {
             Err(e) => Status::Failed(format!("{e:#}")),
             Ok(client) => run_check(timeout, checks::check_sui(client, vector.chain_id)).await,
         };
@@ -316,6 +296,15 @@ async fn run_sui(
             status,
         });
     }
+}
+
+fn prepare_sui(
+    provider: &ForeignChainProviderConfig,
+    timeout: Duration,
+) -> anyhow::Result<GrpcSuiClient> {
+    let (url, header) = resolve_provider_auth(provider)?;
+    GrpcSuiClient::new(url, header, timeout)
+        .map_err(|e| anyhow::anyhow!("failed to build the Sui gRPC client: {e}"))
 }
 
 fn mark_skipped(
@@ -368,7 +357,7 @@ mod tests {
     async fn check_all_providers__should_skip_configured_but_unsupported_chains() {
         // Given a configured but not-yet-supported chain
         let fc = ForeignChainsConfig {
-            ethereum: Some(config_with_provider(AuthConfig::None)),
+            solana: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
         };
 
@@ -376,12 +365,12 @@ mod tests {
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
         // Then it is reported skipped as unsupported, not probed
-        let ethereum = results
+        let solana = results
             .iter()
-            .find(|r| r.chain == "ethereum")
-            .expect("ethereum row");
+            .find(|r| r.chain == "solana")
+            .expect("solana row");
         assert_matches!(
-            &ethereum.status,
+            &solana.status,
             Status::Skipped(reason) if reason.contains("not yet supported")
         );
     }
@@ -396,6 +385,7 @@ mod tests {
 
         // Then every known chain still appears, each with a "not configured" placeholder
         let expected = [
+            "ethereum",
             "base",
             "bnb",
             "arbitrum",
@@ -408,7 +398,6 @@ mod tests {
             "starknet",
             "aptos",
             "sui",
-            "ethereum",
             "solana",
         ];
         for chain in expected {
@@ -443,8 +432,11 @@ mod tests {
         let results = check_all_providers(&fc, Network::Mainnet).await;
 
         // Then
-        assert_eq!(results[0].chain, "base");
-        let Status::Failed(reason) = &results[0].status else {
+        let base = results
+            .iter()
+            .find(|r| r.chain == "base")
+            .expect("base row");
+        let Status::Failed(reason) = &base.status else {
             panic!("expected Failed, got a pass/skip");
         };
         assert!(reason.contains("DEFINITELY_UNSET_TOKEN_ENV"));
@@ -517,7 +509,7 @@ mod tests {
                 expected_network_fingerprint: None,
                 providers,
             }),
-            ethereum: Some(config_with_provider(AuthConfig::None)),
+            solana: Some(config_with_provider(AuthConfig::None)),
             ..Default::default()
         };
 
@@ -535,6 +527,6 @@ mod tests {
         };
         assert_matches!(status("aptos", "healthy"), Status::Passed);
         assert_matches!(status("aptos", "broken"), Status::Failed(_));
-        assert_matches!(status("ethereum", "only"), Status::Skipped(_));
+        assert_matches!(status("solana", "only"), Status::Skipped(_));
     }
 }

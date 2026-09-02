@@ -60,7 +60,7 @@ impl RobustEcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
 
         Ok(Self {
             config,
@@ -184,12 +184,12 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let background_tasks = self
+        let generate_presignatures = self
             .keyshares
             .iter()
             .map(|(domain_id, data)| {
-                tracking::spawn_described(
-                    format!("generate presignatures for domain {}", domain_id.0),
+                tracking::spawn(
+                    &format!("generate presignatures for domain {}", domain_id.0),
                     presign::run_background_presignature_generation(
                         self.client.clone(),
                         self.mpc_config.clone(),
@@ -201,12 +201,13 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        let (description, outcome) = tracking::first_task_exit(background_tasks).await;
-        // Generators never return, so any exit is a failure.
-        let Err(join_error) = outcome;
-        anyhow::bail!(
-            "Damgard et al background task \"{description}\" ended unexpectedly: {join_error}"
-        )
+        for Err(join_error) in futures::future::join_all(generate_presignatures).await {
+            tracing::error!(
+                "Damgard et al background presignature task ended unexpectedly: {join_error}"
+            );
+        }
+
+        Ok(())
     }
 }
 

@@ -5,7 +5,7 @@ use foreign_chain_inspector::{
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
-use foreign_chain_rpc_client::RpcAuthentication;
+use foreign_chain_rpc_factory::build_http_client;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::HttpClient;
 use rstest::rstest;
@@ -37,10 +37,10 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider(
     #[case] finality: StarknetFinality,
 ) {
     // given
-    let http_client = foreign_chain_rpc_client::build_http_client(
-        PUBLIC_NODE_URL.to_string(),
-        RpcAuthentication::KeyInUrl,
-    )
+    let http_client = build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: PUBLIC_NODE_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
     .unwrap();
     let (transaction_id, expected_block_hash) =
         resolve_input(&http_client, tx_hash, expected_block_hash).await;
@@ -117,10 +117,10 @@ const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_CHAIN_ID;
 #[ignore = "manual test to sanity check against live Starknet RPC provider"]
 async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
     // given
-    let http_client = foreign_chain_rpc_client::build_http_client(
-        PUBLIC_NODE_URL.to_string(),
-        RpcAuthentication::KeyInUrl,
-    )
+    let http_client = build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: PUBLIC_NODE_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
     .unwrap();
     let inspector = StarknetInspector::new(http_client);
 

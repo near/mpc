@@ -27,7 +27,7 @@ pub(crate) fn governance_threshold_upper_relative_bound(n: u64) -> u64 {
 /// Stores the governance parameters: the current `participants` and the
 /// governance `threshold` (the number of participants that must agree to
 /// approve a governance action). This is the stored, always-current shape.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct GovernanceThresholdParameters {
     participants: Participants,
@@ -229,11 +229,10 @@ impl GovernanceThresholdParameters {
 /// [`super::domain::DomainRegistry`] when resharing completes. An empty map keeps
 /// the current thresholds; a populated map must reference only existing domains
 /// (validated in [`RunningContractState::process_new_parameters_proposal`](crate::state::running::RunningContractState::process_new_parameters_proposal)).
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ProposedGovernanceThresholdParameters {
     parameters: GovernanceThresholdParameters,
-    #[serde(default)]
     per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
@@ -728,46 +727,6 @@ mod tests {
         assert_eq!(proposal.participants(), params.participants());
         assert_eq!(proposal.threshold(), params.threshold());
         assert_eq!(proposal.per_domain_thresholds(), &updates);
-    }
-
-    #[test]
-    fn proposed_threshold_parameters__should_default_per_domain_thresholds_when_field_absent_in_json()
-     {
-        // Given a serialized proposal with the `per_domain_thresholds` field
-        // stripped out — the shape an older client predating per-domain
-        // reconstruction thresholds would submit to `vote_new_parameters`.
-        let params = gen_threshold_params(10);
-        let proposal = ProposedGovernanceThresholdParameters::new(params, BTreeMap::new());
-        let mut json = serde_json::to_value(&proposal).unwrap();
-        json.as_object_mut()
-            .unwrap()
-            .remove("per_domain_thresholds")
-            .expect("empty map should still serialize as a field");
-
-        // When deserializing the field-less JSON
-        let parsed: ProposedGovernanceThresholdParameters = serde_json::from_value(json).unwrap();
-
-        // Then the missing field defaults to an empty (no-change) map and the
-        // rest of the proposal is preserved.
-        assert!(parsed.per_domain_thresholds().is_empty());
-        assert_eq!(parsed.parameters(), proposal.parameters());
-    }
-
-    #[test]
-    fn proposed_threshold_parameters__should_round_trip_per_domain_thresholds_through_json() {
-        // Given a proposal with a populated per-domain threshold map
-        let params = gen_threshold_params(10);
-        let mut updates = BTreeMap::new();
-        updates.insert(DomainId(0), ReconstructionThreshold::new(3));
-        updates.insert(DomainId(2), ReconstructionThreshold::new(4));
-        let proposal = ProposedGovernanceThresholdParameters::new(params, updates);
-
-        // When serializing to JSON and back
-        let json = serde_json::to_string(&proposal).unwrap();
-        let parsed: ProposedGovernanceThresholdParameters = serde_json::from_str(&json).unwrap();
-
-        // Then the proposal round-trips unchanged
-        assert_eq!(parsed, proposal);
     }
 
     #[test]

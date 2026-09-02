@@ -382,7 +382,7 @@ Additionally, the backup service will need to provide a TEE attestation similar 
 The backup service attestation registreation and verification would follow the same process as MPC node attestations:
 1. Backup service generates TLS keypair inside TEE
 2. Backup service generates account keypair inside TEE for signing contract transactions (required to submit the attestation to the contract)
-3. Creates `ReportData` V1: `[version(2 bytes big endian) || sha384(TLS pub key || account_pubkey) || zero padding]`
+3. Creates `ReportData` V1: `[version(2 bytes big endian) || sha3-384(TLS pub key || account_pubkey) || zero padding]`
 4. Obtains TEE quote embedding the `ReportData`
 5. Submits attestation via `register_backup_service(tls_public_key, account_public_key, attestation)`
 6. Contract verifies (using existing `TeeState` verification logic):
@@ -442,7 +442,7 @@ The contract provides the following methods:
     - Removes the `OngoingNodeMigration` record for the node operator's account.
     - Useful if the new node is not functioning correctly or wrong information was provided
 
-- **`conclude_node_migration(keyset: &Keyset)`** - Finalizes a node migration:
+- **`conclude_node_migration(keyset: Keyset)`** - Finalizes a node migration:
     - Called by the new node after receiving keyshares from backup service
     - Verifies the provided `keyset` matches the expected key event IDs for this epoch
     - Replaces the old node's `ParticipantInfo` with the new node's info in the current participant set

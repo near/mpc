@@ -1,15 +1,17 @@
 [package]
-name = "foreign-chain-rpc-client"
+name = "foreign-chain-rpc-factory"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-node-config = { workspace = true }
+near-mpc-contract-interface = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]

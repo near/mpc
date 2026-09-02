@@ -5,9 +5,10 @@ use crate::sandbox::common::{
     arbitrum_evm_request, avalanche_evm_request,
     await_pending_foreign_tx_request_observed_on_contract, base_evm_request,
     bitcoin_extracted_values, bitcoin_request, bnb_evm_request, bogus_ton_log_extracted_value,
-    ethereum_evm_request, evm_block_hash_extracted_values, hyper_evm_request, polygon_evm_request,
-    register_foreign_chain_configuration, sign_foreign_tx_response, starknet_extracted_values,
-    starknet_request, sui_extracted_values, sui_request, ton_request,
+    ethereum_evm_request, evm_block_hash_extracted_values, fogo_request, hyper_evm_request,
+    make_foreign_chain_available, polygon_evm_request, sign_foreign_tx_response, solana_request,
+    starknet_extracted_values, starknet_request, sui_extracted_values, sui_request,
+    svm_extracted_values, ton_request,
 };
 use crate::sandbox::utils::transactions::CallMpcContract;
 use near_mpc_contract_interface::method_names;
@@ -35,6 +36,8 @@ const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 #[case::sui(sui_request(), sui_extracted_values())]
 #[case::avalanche(avalanche_evm_request(), evm_block_hash_extracted_values())]
 #[case::adi(adi_evm_request(), evm_block_hash_extracted_values())]
+#[case::solana(solana_request(), svm_extracted_values())]
+#[case::fogo(fogo_request(), svm_extracted_values())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_succeed(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -46,7 +49,7 @@ async fn verify_foreign_transaction__should_succeed(
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    make_foreign_chain_available(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
     let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
@@ -113,7 +116,7 @@ async fn verify_foreign_transaction__should_fan_out_response_to_duplicates_from_
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    make_foreign_chain_available(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let alice = setup.worker.dev_create_account().await.unwrap();
     let bob = setup.worker.dev_create_account().await.unwrap();
@@ -193,7 +196,7 @@ async fn respond_verify_foreign_tx__should_reject_response_not_matching_expected
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    make_foreign_chain_available(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
     let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
@@ -256,7 +259,7 @@ async fn verify_foreign_transaction__should_succeed_when_response_matches_expect
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    make_foreign_chain_available(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
     let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
@@ -326,6 +329,8 @@ async fn verify_foreign_transaction__should_succeed_when_response_matches_expect
 #[case::sui(sui_request())]
 #[case::avalanche(avalanche_evm_request())]
 #[case::adi(adi_evm_request())]
+#[case::solana(solana_request())]
+#[case::fogo(fogo_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_reject_without_policy(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -372,6 +377,8 @@ async fn verify_foreign_transaction__should_reject_without_policy(
 #[case::sui(sui_request())]
 #[case::avalanche(avalanche_evm_request())]
 #[case::adi(adi_evm_request())]
+#[case::solana(solana_request())]
+#[case::fogo(fogo_request())]
 #[tokio::test]
 async fn verify_foreign_transaction__should_timeout_without_response(
     #[case] rpc_request: ForeignChainRpcRequest,
@@ -382,7 +389,7 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         .build()
         .await;
     let foreign_tx_key = setup.foreign_tx_key();
-    register_foreign_chain_configuration(chain, &setup.contract, &setup.mpc_signer_accounts).await;
+    make_foreign_chain_available(chain, &setup.contract, &setup.mpc_signer_accounts).await;
 
     let user = setup.worker.dev_create_account().await.unwrap();
 

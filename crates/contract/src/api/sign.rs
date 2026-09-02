@@ -5,9 +5,7 @@ use crate::crypto_shared::derive_key_secp256k1;
 use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState, RespondError, TeeError};
-use crate::primitives::signature::{SignRequestArgs, SignatureRequest, YieldIndex};
 use crate::{MpcContract, MpcContractExt, pending_requests};
-use dtos::{DomainPurpose, Protocol};
 use k256::elliptic_curve::PrimeField;
 use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::{method_names, types as dtos};
@@ -15,7 +13,7 @@ use near_sdk::{CryptoHash, Gas, NearToken, Promise, PromiseError, PromiseOrValue
 
 #[near]
 impl MpcContract {
-    fn add_signature_request(&mut self, request: SignatureRequest, data_id: CryptoHash) {
+    fn add_signature_request(&mut self, request: dtos::SignatureRequest, data_id: CryptoHash) {
         pending_requests::push_pending_yield(
             &mut self.pending_signature_requests,
             request,
@@ -28,7 +26,7 @@ impl MpcContract {
     /// we ask for a small deposit for each signature request.
     #[handle_result]
     #[payable]
-    pub fn sign(&mut self, request: SignRequestArgs) {
+    pub fn sign(&mut self, request: dtos::SignRequestArgs) {
         log!(
             "sign: predecessor={:?}, request={:?}",
             env::predecessor_account_id(),
@@ -37,7 +35,7 @@ impl MpcContract {
 
         let (domain_config, predecessor) = self.check_request_preconditions(
             request.domain_id,
-            DomainPurpose::Sign,
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas),
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         );
@@ -46,23 +44,23 @@ impl MpcContract {
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         match domain_config.protocol {
-            Protocol::CaitSith | Protocol::DamgardEtAl => {
+            dtos::Protocol::CaitSith | dtos::Protocol::DamgardEtAl => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            Protocol::Frost => {
+            dtos::Protocol::Frost => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
-            Protocol::ConfidentialKeyDerivation => {
+            dtos::Protocol::ConfidentialKeyDerivation => {
                 env::panic_str(
                     "ConfidentialKeyDerivation is not supported for signature responses",
                 );
             }
         }
 
-        let request = SignatureRequest::new(
+        let request = dtos::SignatureRequest::new(
             request.domain_id,
             request.payload,
             &predecessor,
@@ -86,7 +84,7 @@ impl MpcContract {
     #[handle_result]
     pub fn respond(
         &mut self,
-        request: SignatureRequest,
+        request: dtos::SignatureRequest,
         response: dtos::SignatureResponse,
     ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
@@ -112,9 +110,7 @@ impl MpcContract {
                 PublicKeyExtended::Secp256k1 { near_public_key },
             ) => {
                 // generate the expected public key
-                let secp_pk = dtos::Secp256k1PublicKey::try_from(&near_public_key)
-                    .expect("Secp256k1 variant always has a secp256k1 key");
-                let affine = *k256::PublicKey::try_from(&secp_pk)
+                let affine = *k256::PublicKey::try_from(&near_public_key)
                     .expect("stored key is always valid")
                     .as_affine();
                 let expected_public_key =
@@ -175,16 +171,19 @@ impl MpcContract {
 
     /// Presence check for a pending signature request, exposed as a view call.
     ///
-    /// **The returned [`YieldIndex`] is an arbitrary representative, not "the" yield
+    /// **The returned [`dtos::YieldIndex`] is an arbitrary representative, not "the" yield
     /// for this request.** Since the duplicate-request fan-out feature (PR #3187),
     /// a single request key can have N queued yields; this method returns the head of the
     /// queue. Callers that need to act on the full set are wrong to use this. The
     /// only correct interpretation is presence: `Some(_)` vs `None`.
     ///
-    /// The `Option<YieldIndex>` shape is retained for JSON wire compatibility with
+    /// The `Option<dtos::YieldIndex>` shape is retained for JSON wire compatibility with
     /// out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)
     /// only matches on presence. Prefer a `bool`-shaped accessor if one is added.
-    pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
+    pub fn get_pending_request(
+        &self,
+        request: &dtos::SignatureRequest,
+    ) -> Option<dtos::YieldIndex> {
         self.pending_signature_requests
             .get(request)
             .and_then(|q| q.first().cloned())
@@ -200,7 +199,7 @@ impl MpcContract {
     #[private]
     pub fn return_signature_and_clean_state_on_success(
         &mut self,
-        request: SignatureRequest,
+        request: dtos::SignatureRequest,
         #[callback_result] signature: Result<dtos::SignatureResponse, PromiseError>,
     ) -> PromiseOrValue<dtos::SignatureResponse> {
         match signature {
@@ -271,9 +270,9 @@ mod tests {
         dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id)
     }
 
-    fn test_signature_common(success: bool, legacy_v1_api: bool, protocol: Protocol) {
+    fn test_signature_common(success: bool, legacy_v1_api: bool, protocol: dtos::Protocol) {
         let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(protocol, DomainPurpose::Sign, &mut OsRng);
+            basic_setup_with_protocol(protocol, dtos::DomainPurpose::Sign, &mut OsRng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -282,7 +281,7 @@ mod tests {
         let payload = Payload::from_legacy_ecdsa(payload_hash);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request: SignRequestArgs = if legacy_v1_api {
+        let request: dtos::SignRequestArgs = if legacy_v1_api {
             serde_json::from_value(serde_json::json!({
                 "payload": payload_hash,
                 "key_version": 0,
@@ -290,13 +289,13 @@ mod tests {
             }))
             .unwrap()
         } else {
-            SignRequestArgs {
+            dtos::SignRequestArgs {
                 payload: payload.clone(),
                 path: key_path.clone(),
                 domain_id: DomainId::legacy_ecdsa_id(),
             }
         };
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
             &context.predecessor_account_id,
@@ -340,7 +339,7 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists() {
-        for protocol in [Protocol::CaitSith, Protocol::DamgardEtAl] {
+        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::DamgardEtAl] {
             test_signature_common(true, false, protocol);
             test_signature_common(false, false, protocol);
         }
@@ -348,7 +347,7 @@ mod tests {
 
     #[test]
     fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
-        for protocol in [Protocol::CaitSith, Protocol::DamgardEtAl] {
+        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::DamgardEtAl] {
             test_signature_common(true, true, protocol);
             test_signature_common(false, true, protocol);
         }
@@ -360,12 +359,12 @@ mod tests {
         let payload = Payload::from_legacy_ecdsa([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
-        let request = SignRequestArgs {
+        let request = dtos::SignRequestArgs {
             payload: payload.clone(),
             path: key_path.clone(),
             domain_id: DomainId::legacy_ecdsa_id(),
         };
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             payload,
             &context.predecessor_account_id,
@@ -387,7 +386,7 @@ mod tests {
     fn test_signature_timeout__request_in_neither_map_still_schedules_fail() {
         // given
         let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             Payload::from_legacy_ecdsa([0u8; 32]),
             &context.predecessor_account_id,
@@ -413,7 +412,7 @@ mod tests {
     fn test_signature_success__returns_value_directly() {
         // given
         let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             Payload::from_legacy_ecdsa([0u8; 32]),
             &context.predecessor_account_id,
@@ -441,20 +440,23 @@ mod tests {
     #[test]
     fn sign__should_queue_duplicate_requests_and_drain_all_on_respond() {
         // Given
-        let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, DomainPurpose::Sign, &mut OsRng);
+        let (context, mut contract, secret_key) = basic_setup_with_protocol(
+            dtos::Protocol::CaitSith,
+            dtos::DomainPurpose::Sign,
+            &mut OsRng,
+        );
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
         let payload = Payload::from_legacy_ecdsa([7u8; 32]);
         let path = "duplicate_requests_test".to_string();
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
             &context.predecessor_account_id,
             &path,
         );
-        let request_args = SignRequestArgs {
+        let request_args = dtos::SignRequestArgs {
             payload: payload.clone(),
             path: path.clone(),
             domain_id: DomainId::legacy_ecdsa_id(),
@@ -500,7 +502,7 @@ mod tests {
     fn add_signature_request__should_panic_when_pending_queue_is_full() {
         // Given: a contract with a queue already at the fan-out cap for some request key.
         let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             Payload::from_legacy_ecdsa([3u8; 32]),
             &context.predecessor_account_id,
@@ -547,7 +549,7 @@ mod tests {
     fn return_signature_and_clean_state_on_success__should_pop_only_oldest_yield_on_timeout() {
         // Given: three duplicate sign requests queued for the same key.
         let (context, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
-        let signature_request = SignatureRequest::new(
+        let signature_request = dtos::SignatureRequest::new(
             DomainId::default(),
             Payload::from_legacy_ecdsa([0u8; 32]),
             &context.predecessor_account_id,
@@ -600,19 +602,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Protocol::CaitSith, DomainPurpose::ForeignTx)]
-    #[case(Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD)]
+    #[case(dtos::Protocol::CaitSith, dtos::DomainPurpose::ForeignTx)]
+    #[case(dtos::Protocol::ConfidentialKeyDerivation, dtos::DomainPurpose::CKD)]
     #[should_panic(expected = "this method requires Sign")]
     fn sign__should_reject_non_sign_domain(
-        #[case] protocol: Protocol,
-        #[case] purpose: DomainPurpose,
+        #[case] protocol: dtos::Protocol,
+        #[case] purpose: dtos::DomainPurpose,
     ) {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_context, mut contract, _sk) = basic_setup_with_protocol(protocol, purpose, &mut rng);
 
         // When
-        contract.sign(SignRequestArgs {
+        contract.sign(dtos::SignRequestArgs {
             payload: Payload::from_legacy_ecdsa([7u8; 32]),
             path: "test".to_string(),
             domain_id: DomainId::default(),

@@ -1,8 +1,8 @@
+use chain_gateway::state_viewer::ViewExt;
 use std::time::{Duration, Instant};
 
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
-use chain_gateway::state_viewer::ViewMethod;
 use near_contract_transport::ObservedState;
 
 use chain_gateway_test_contract::consts::VIEW_VALUE;
@@ -122,7 +122,7 @@ impl LocalnetBuilder {
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_method(
+                .view_json(
                     localnet.contract.account_id.clone(),
                     ViewArgs::no_args(VIEW_VALUE),
                 )
