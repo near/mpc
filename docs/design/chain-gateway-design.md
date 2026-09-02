@@ -1,8 +1,6 @@
 # MPC Indexer Breakout
 
-**Status:** Implemented — shipped as the `chain-gateway` and `near-contract-transport` crates: state viewer ([#2344](https://github.com/near/mpc/pull/2344)), transaction sender ([#2464](https://github.com/near/mpc/pull/2464)), block event subscriber ([#2625](https://github.com/near/mpc/pull/2625)), MPC context as the `tee-context` crate ([#2505](https://github.com/near/mpc/pull/2505)), `near-contract-transport` breakout ([#3871](https://github.com/near/mpc/pull/3871)) with unified view/call traits ([#3870](https://github.com/near/mpc/pull/3870), [#3872](https://github.com/near/mpc/pull/3872), epic [#3693](https://github.com/near/mpc/issues/3693)), back-end-generic monitoring ([#4266](https://github.com/near/mpc/pull/4266), moved to the transport crate in [#4275](https://github.com/near/mpc/issues/4275)). Block replay is still open ([#236](https://github.com/near/mpc/issues/236)). The code and its rustdoc are the source of truth; this document is the design record.
-
-This document outlines the design and efforts for breaking out the indexer into its own crate.
+This document outlines the design and efforts for breaking out the indexer into its own crate. It is a living document expected to track the developments. Once sufficiently concluded, we will move this doc there as a readme.
 
 ## Background
 
