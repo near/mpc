@@ -173,3 +173,9 @@ Running all `cargo-make` supported checks:
 ```console
 cargo make check-all
 ```
+
+### Documentation
+
+Documentation in this repository falls into two categories: live documentation, aiming to explain how something works _right now_, and archived documentation records that may help future developers retrace past decisions. Live documentation _must_ be updated if invalidated by a change, but archived documentation _must not_ be updated, as doing so would undermine its purpose.
+
+Archived documentation must be labeled as such with a status banner at the top of the file (`Status: ARCHIVED`). Any document without such a banner is considered live.
