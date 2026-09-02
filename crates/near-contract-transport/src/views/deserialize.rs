@@ -12,11 +12,32 @@ impl DeserializationError {
 
 pub type Deserializer<T> = fn(&[u8]) -> Result<T, DeserializationError>;
 
-pub fn json_de<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, DeserializationError> {
+/// Selects the [`Deserializer`] a view call decodes `T` with; see [`Json`] and [`Borsh`].
+pub trait DeserializeAs<T> {
+    fn deserializer() -> Deserializer<T>;
+}
+
+pub struct Json;
+
+impl<T: DeserializeOwned> DeserializeAs<T> for Json {
+    fn deserializer() -> Deserializer<T> {
+        json_de::<T>
+    }
+}
+
+pub struct Borsh;
+
+impl<T: borsh::BorshDeserialize> DeserializeAs<T> for Borsh {
+    fn deserializer() -> Deserializer<T> {
+        borsh_de::<T>
+    }
+}
+
+fn json_de<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, DeserializationError> {
     serde_json::from_slice(bytes).map_err(|e| DeserializationError(e.to_string()))
 }
 
-pub fn borsh_de<T: borsh::BorshDeserialize>(bytes: &[u8]) -> Result<T, DeserializationError> {
+fn borsh_de<T: borsh::BorshDeserialize>(bytes: &[u8]) -> Result<T, DeserializationError> {
     borsh::from_slice(bytes).map_err(|e| DeserializationError(e.to_string()))
 }
 
