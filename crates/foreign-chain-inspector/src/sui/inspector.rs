@@ -42,12 +42,12 @@ where
                 "service info is missing the chain id".to_string(),
             ));
         };
-        Ok(Self::canonical_fingerprint(&chain_id))
+        Ok(self.canonical_fingerprint(&chain_id))
     }
 
     /// Unlike inspectors for other chains, we do not need to normalize the input string here.
     /// Base58 is case sensitive and does not permit prefix or padding.
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(fingerprint)
     }
 }
@@ -73,8 +73,8 @@ where
     ) -> Result<Verdict<SuiExtractedValue>, ForeignChainInspectionError> {
         let digest = sui_sdk_types::Digest::new(*tx_id).to_base58();
 
-        // An unknown or pruned digest is the chain's verdict on the transaction, so it is
-        // intercepted here; every other status is a failure for `classified` to name.
+        // A NotFound status on the Sui transaction lookup call means the transaction does not
+        // exist or has been pruned.
         let response = match self.client.get_transaction(&digest).await {
             Err(status) if status.code() == Code::NotFound => {
                 return Ok(Verdict::TransactionNotFound);
@@ -140,8 +140,8 @@ impl<T> ClassifyRpcOutcome for Result<T, Status> {
 
         let message = status.to_string();
         Err(match status.code() {
-            // The transaction lookup intercepts NotFound as a verdict before classifying, so
-            // here it can only mean a path or service the provider does not serve.
+            // NotFound classifies as a rejection by default. A call site where it means
+            // something else, like the transaction lookup, must intercept it before classifying.
             Code::NotFound => ForeignChainInspectionError::RpcRequestRejected(message),
             Code::DeadlineExceeded => ForeignChainInspectionError::Timeout,
             Code::Unavailable
@@ -289,30 +289,14 @@ mod tests {
     use assert_matches::assert_matches;
     use rstest::rstest;
 
-    fn read_as_transaction(status: Status) -> ForeignChainInspectionError {
+    fn classify(status: Status) -> ForeignChainInspectionError {
         Result::<(), _>::Err(status).classified().unwrap_err()
-    }
-
-    #[test]
-    fn classified__should_read_an_absent_service_as_a_refusal() {
-        // Given
-        let answered: Result<(), _> = Err(Status::not_found("no such service"));
-
-        // When
-        let classified = answered.classified().unwrap_err();
-
-        // Then
-        assert_matches!(
-            classified,
-            ForeignChainInspectionError::RpcRequestRejected(_)
-        );
-        assert!(!classified.is_transient());
     }
 
     #[test]
     fn classified__should_name_a_deadline_exceeded_as_a_timeout() {
         // Given / When
-        let classified = read_as_transaction(Status::new(Code::DeadlineExceeded, "too slow"));
+        let classified = classify(Status::new(Code::DeadlineExceeded, "too slow"));
 
         // Then
         assert_matches!(classified, ForeignChainInspectionError::Timeout);
@@ -326,7 +310,7 @@ mod tests {
     #[case::unknown(Code::Unknown)]
     fn classified__should_keep_provider_hiccups_transient(#[case] code: Code) {
         // Given / When
-        let classified = read_as_transaction(Status::new(code, "provider hiccup"));
+        let classified = classify(Status::new(code, "provider hiccup"));
 
         // Then — the provider is dropped from the quorum instead of blocking it.
         assert_matches!(classified, ForeignChainInspectionError::RpcRequestFailed(_));
@@ -334,16 +318,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case::not_found(Code::NotFound)]
     #[case::invalid_argument(Code::InvalidArgument)]
     #[case::unauthenticated(Code::Unauthenticated)]
     #[case::permission_denied(Code::PermissionDenied)]
     #[case::unimplemented(Code::Unimplemented)]
     fn classified__should_reject_deterministic_errors(#[case] code: Code) {
         // Given / When
-        let classified = read_as_transaction(Status::new(code, "deterministic rejection"));
+        let classified = classify(Status::new(code, "deterministic rejection"));
 
-        // Then — non-transient: retrying cannot change it, and the fan-out must not
-        // validate on the remaining providers alone.
+        // Then: not transient, since retrying cannot change a deterministic rejection. The
+        // fan out tolerates it as the provider's own fault rather than a verdict.
         assert_matches!(
             classified,
             ForeignChainInspectionError::RpcRequestRejected(_)

@@ -9,11 +9,15 @@ use foreign_chain_rpc_interfaces::starknet::{
     StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::client::error::Error as RpcClientError;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
 const CHAIN_ID_METHOD: &str = "starknet_chainId";
+
+/// `TXN_HASH_NOT_FOUND` in the Starknet API spec
+const TRANSACTION_HASH_NOT_FOUND_CODE: i32 = 29;
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -36,10 +40,10 @@ where
             .request(CHAIN_ID_METHOD, NO_PARAMS)
             .await
             .classified()?;
-        Ok(Self::canonical_fingerprint(&chain_id.0))
+        Ok(self.canonical_fingerprint(&chain_id.0))
     }
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(ChainIdResponse(fingerprint.to_owned()).canonical_text())
     }
 }
@@ -63,11 +67,18 @@ where
             transaction_hash: H256(transaction.into()),
         };
 
-        let rpc_response: GetTransactionReceiptResponse = self
+        let rpc_response: GetTransactionReceiptResponse = match self
             .client
             .request(GET_TRANSACTION_RECEIPT_METHOD, &request_parameters)
             .await
-            .classified()?;
+        {
+            Err(RpcClientError::Call(object))
+                if object.code() == TRANSACTION_HASH_NOT_FOUND_CODE =>
+            {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
 
         let actual_finality = parse_finality_status(&rpc_response.finality_status)?;
 
@@ -81,9 +92,13 @@ where
         }
 
         let canonical = self.canonical_block_at(rpc_response.block_number).await?;
-        let hash_matches = canonical.block_hash == rpc_response.block_hash;
-        let height_matches = canonical.block_number == rpc_response.block_number;
-        if !hash_matches || !height_matches {
+        if canonical.block_number != rpc_response.block_number {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                "the canonical block lookup at height {} answered with the block at height {}",
+                rpc_response.block_number, canonical.block_number,
+            )));
+        }
+        if canonical.block_hash != rpc_response.block_hash {
             return Ok(Verdict::NonCanonicalBlock {
                 block_number: rpc_response.block_number,
                 receipt_hash: rpc_response.block_hash.into(),
@@ -116,9 +131,9 @@ where
 
     /// The canonical block at `block_number`. `starknet_getBlockWithTxHashes` only ever
     /// resolves to a canonical block, so a receipt whose block disagrees with it was indexed
-    /// against a side block (stale tx index, partially-applied reorg, divergent RPC backend,
-    /// etc.). The caller compares the height too — a divergent RPC that returns a hash from a
-    /// different height would otherwise sneak past a hash-only check.
+    /// against a side block (stale tx index, partially applied reorg, divergent RPC backend,
+    /// etc.). The caller checks the height first: an answer from a different height is the
+    /// provider's own fault, not a statement about the chain.
     async fn canonical_block_at(
         &self,
         block_number: u64,

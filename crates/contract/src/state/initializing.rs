@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 /// revert back to the Running state but deleting the domains for which we have not yet successfully
 /// generated a key. This can be useful if the current set of participants are no longer all online
 /// and we wish to perform a resharing before adding domains again.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct InitializingContractState {

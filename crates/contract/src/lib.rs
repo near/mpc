@@ -38,14 +38,15 @@ use crate::{
     update::ProposedUpdates,
 };
 use config::Config;
-use near_mpc_contract_interface::types::{CKDRequest, VerifyForeignTransactionRequest};
+use near_mpc_contract_interface::types::{
+    CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+};
 
 use near_sdk::{
     AccountId, env, near,
     store::{IterableMap, Lazy, LookupMap},
 };
 use node_migrations::NodeMigrations;
-use primitives::signature::{SignatureRequest, YieldIndex};
 
 use state::ProtocolContractState;
 

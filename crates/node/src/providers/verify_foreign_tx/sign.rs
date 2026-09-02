@@ -180,6 +180,9 @@ impl VerifyForeignTxProvider {
             .await
     }
 
+    // TODO(#2677): Any negative verdict or errors here only makes this node abstain from
+    // responding and lets the request time out. We should produce a response for unhappy
+    // paths as well.
     async fn execute_foreign_chain_request(
         &self,
         request: &dtos::ForeignChainRpcRequest,
@@ -555,12 +558,10 @@ fn ensure_chain_is_available(
     }
 }
 
-/// The extracted values, or the failing verdict as this node's reason not to participate.
 fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
-    match verdict {
-        Verdict::Extracted(values) => Ok(values),
-        failing => anyhow::bail!("the transaction failed verification: {failing}"),
-    }
+    verdict
+        .into_extracted()
+        .map_err(|failing| anyhow::anyhow!("the transaction failed verification: {failing}"))
 }
 
 #[cfg(test)]

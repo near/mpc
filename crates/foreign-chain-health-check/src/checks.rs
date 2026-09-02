@@ -69,12 +69,10 @@ impl std::fmt::Display for Mismatch {
 
 impl std::error::Error for Mismatch {}
 
-/// The golden transaction is known good, so anything but extracted values fails the check.
 fn extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
-    match verdict {
-        Verdict::Extracted(values) => Ok(values),
-        failing => bail!("the provider ruled the golden transaction out: {failing}"),
-    }
+    verdict.into_extracted().map_err(|failing| {
+        anyhow::anyhow!("the provider ruled the golden transaction out: {failing}")
+    })
 }
 
 fn verify_block_hash(expected: [u8; 32], got: [u8; 32]) -> anyhow::Result<()> {

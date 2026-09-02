@@ -16,7 +16,6 @@ use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ProposedUpdates;
 use crate::{MpcContract, MpcContractExt, v3_14_0_state};
-use dtos::DomainConfig;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{env, log, near};
@@ -84,7 +83,7 @@ impl MpcContract {
     #[init]
     #[handle_result]
     pub fn init_running(
-        domains: Vec<DomainConfig>,
+        domains: Vec<dtos::DomainConfig>,
         next_domain_id: u64,
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,

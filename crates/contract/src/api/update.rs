@@ -8,7 +8,7 @@ use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::state::ProtocolContractState;
 use crate::update::{ProposedUpdates, Update, UpdateId};
 use crate::{MpcContract, MpcContractExt};
-use near_mpc_contract_interface::types::{self as dtos, ProposeUpdateArgs};
+use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, env, log, near};
 
 #[near]
@@ -18,7 +18,7 @@ impl MpcContract {
     #[handle_result]
     pub fn propose_update(
         &mut self,
-        #[serializer(borsh)] args: ProposeUpdateArgs,
+        #[serializer(borsh)] args: dtos::ProposeUpdateArgs,
     ) -> Result<dtos::UpdateId, Error> {
         // Only voters can propose updates:
         let proposer = self.voter_or_panic();
@@ -569,7 +569,7 @@ mod tests {
         environment.set_deposit(required_deposit);
         let storage_before = env::storage_usage();
         let id = contract
-            .propose_update(ProposeUpdateArgs {
+            .propose_update(dtos::ProposeUpdateArgs {
                 code: Some(code),
                 config: None,
             })

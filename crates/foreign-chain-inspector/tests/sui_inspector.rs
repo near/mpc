@@ -190,7 +190,7 @@ async fn extract__should_return_not_finalized_when_checkpoint_is_missing() {
         .extract(tx_id(), SuiFinality::Checkpointed, vec![])
         .await;
 
-    // Then — transient, so the fan-out keeps retrying until it is checkpointed.
+    // Then: transient, worth retrying once the transaction is checkpointed.
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
     assert!(response.unwrap_err().is_transient());
 }
@@ -309,7 +309,7 @@ async fn extract__should_propagate_unavailable_provider_as_transient() {
 }
 
 #[tokio::test]
-async fn extract__should_return_error_when_event_index_out_of_bounds() {
+async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_event_index() {
     // Given
     let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![
         framework_event(),

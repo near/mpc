@@ -38,12 +38,10 @@ where
 {
     async fn network_fingerprint(&self) -> Result<NetworkFingerprint, ForeignChainInspectionError> {
         let ledger_info = self.client.get_ledger_info().await.classified()?;
-        Ok(Self::canonical_fingerprint(
-            &ledger_info.chain_id.to_string(),
-        ))
+        Ok(self.canonical_fingerprint(&ledger_info.chain_id.to_string()))
     }
 
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
         NetworkFingerprint::new(canonical_chain_id_text(fingerprint))
     }
 }
@@ -65,8 +63,7 @@ where
     ) -> Result<Verdict<AptosExtractedValue>, ForeignChainInspectionError> {
         let tx_hash_hex = format!("0x{}", hex::encode(*tx_id));
 
-        // A 404 on the transaction lookup is the chain's verdict on the transaction, so it is
-        // intercepted here; every other failure is `classified`'s to name.
+        // A 404 on the Aptos transaction lookup call means the transaction does not exist
         let tx = match self.client.get_transaction_by_hash(&tx_hash_hex).await {
             Err(AptosRpcError::ApiError { status: 404, .. }) => {
                 return Ok(Verdict::TransactionNotFound);
@@ -116,8 +113,8 @@ impl<T> ClassifyRpcOutcome for Result<T, AptosRpcError> {
 
         let message = error.to_string();
         Err(match error {
-            // The transaction lookup intercepts a 404 as a verdict before classifying, so here
-            // it can only mean a path the provider does not route.
+            // A 404 is classified as a rejection by default. A call site where it means
+            // something else, like the transaction lookup, must intercept it before classifying.
             AptosRpcError::ApiError { status: 404, .. } => {
                 ForeignChainInspectionError::RpcRequestRejected(message)
             }
@@ -538,7 +535,7 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — transient, so the fan-out keeps retrying until it commits.
+        // Then: transient, worth retrying once the transaction commits.
         assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
         assert!(result.unwrap_err().is_transient());
     }
@@ -738,8 +735,8 @@ mod tests {
             .extract(tx_id, AptosFinality::Committed, vec![])
             .await;
 
-        // Then — non-transient: retrying cannot change a deterministic rejection, and the
-        // fan-out must not validate on the remaining providers alone.
+        // Then: not transient, since retrying cannot change a deterministic rejection. The
+        // fan out tolerates it as the provider's own fault rather than a verdict.
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::RpcRequestRejected(_))
@@ -831,7 +828,7 @@ mod tests {
 
     #[test]
     fn classified__should_read_a_404_as_a_refusal() {
-        // Given — the transaction lookup intercepts its own 404 before classifying, so here a
+        // Given: the transaction lookup intercepts its own 404 before classifying, so here a
         // 404 can only mean a path the provider does not route.
         let answered: Result<LedgerInfoResponse, _> = Err(MockAptosClient::error(404));
 
