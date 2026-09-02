@@ -5,7 +5,6 @@ use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
 use crate::metrics;
 
-/// Records the verify fan-out's provider calls for one chain into [`crate::metrics`].
 pub(super) struct ProviderCallMetrics {
     chain: ForeignChain,
 }

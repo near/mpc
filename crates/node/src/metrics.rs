@@ -538,10 +538,6 @@ pub fn init_attestation_freshness_metrics() {
     LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
 }
 
-/// One observation is a whole inspection at one provider: one to three serialized RPC calls
-/// depending on the chain and on where the inspection stopped, not a single round trip. Only
-/// answers are timed, so the quantiles describe answers and a timeout cannot flatten them; a call
-/// the provider failed is counted in [`MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`] instead.
 pub static MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS: LazyLock<prometheus::HistogramVec> =
     LazyLock::new(|| {
         prometheus::register_histogram_vec!(
@@ -559,8 +555,7 @@ pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCoun
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
             "mpc_foreign_chain_provider_errors_total",
-            "Verify requests a foreign chain RPC provider itself failed to answer. An answer about \
-             the transaction (not final, not found, reverted) is not counted here",
+            "Number of times a foreign chain RPC provider failed transaction verification requests.",
             &["chain", "provider", "kind"],
         )
         .unwrap()
@@ -570,7 +565,6 @@ pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT: &str = "transient";
 pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT: &str = "non_transient";
 pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT: &str = "timeout";
 
-/// Every `kind` label value, for publishing a provider's series ahead of its first failure.
 pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_KINDS: [&str; 3] = [
     MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT,
     MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT,

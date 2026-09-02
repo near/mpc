@@ -672,7 +672,8 @@ The verify fan-out measures each provider it queries and exposes two series on t
   flight when the node abandons the inspection at its deadline or on shutdown.
 
 Every configured provider's series is published when the node starts, so a healthy idle node
-reports zero rather than nothing at all.
+reports zero rather than nothing at all. Solana is the exception: it can be configured but has no
+inspector, so it never appears.
 
 A failed call is counted but not timed: its duration says nothing about the provider's latency,
 and a timeout observed at the deadline would pin the high quantiles there. A provider that times

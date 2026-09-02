@@ -134,6 +134,9 @@ pub trait NetworkFingerprintInspector {
 /// are tolerated as long as any inspector reached a verdict, so a single unavailable or
 /// misbehaving RPC does not take the whole node out of signing. When no inspector reached a
 /// verdict, the first error is propagated.
+///
+/// With a recorder set through [`FanOut::measuring`], each provider call metric is recorded when it
+/// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.
 #[derive(Clone)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
@@ -148,28 +151,19 @@ impl<Inspector> FanOut<Inspector> {
         }
     }
 
-    /// Reports every provider call [`FanOut::extract`] makes. [`FanOut::network_fingerprints`]
-    /// is never measured: probe traffic shares these providers and would drown the verify
-    /// latencies.
     pub fn measuring(mut self, recorder: Arc<dyn RecordProviderCall>) -> Self {
         self.recorder = Some(recorder);
         self
     }
 }
 
-/// Reports one provider call made by [`FanOut::extract`]. `failure` is [`None`] for any answer,
-/// including a verdict against the transaction or a state the chain has not settled yet. A call
-/// still in flight when the caller drops the fan-out reports [`ProviderFailure::TimedOut`].
 pub trait RecordProviderCall: Send + Sync {
     fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>);
 }
 
-/// Reports a provider call once. [`Drop`] covers the task aborted mid-call by the caller's
-/// deadline, the one case with no return path.
 struct TimedCall {
     recorder: Option<Arc<dyn RecordProviderCall>>,
     provider: ProviderId,
-    /// tokio's clock, so a paused clock in a test drives the reported duration.
     started: tokio::time::Instant,
 }
 
