@@ -1912,7 +1912,6 @@ version = "3.14.0"
 dependencies = [
  "assert_matches",
  "base64 0.23.1",
- "borsh",
  "chain-gateway",
  "chain-gateway-test-contract",
  "derive_more 2.1.1",
@@ -1933,14 +1932,12 @@ dependencies = [
  "prometheus",
  "rand 0.8.8",
  "rstest",
- "serde",
  "serde_json",
  "tempfile",
  "test-port-allocator",
  "test-utils",
  "thiserror 2.0.20",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 
@@ -6873,14 +6870,19 @@ dependencies = [
 name = "near-contract-transport"
 version = "3.14.0"
 dependencies = [
+ "assert_matches",
  "borsh",
  "derive_more 2.1.1",
  "near-account-id",
  "near-gas",
  "near-token",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

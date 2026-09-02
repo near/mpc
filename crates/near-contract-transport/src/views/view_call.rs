@@ -1,44 +1,34 @@
 use std::pin::Pin;
 
-use borsh::BorshDeserialize;
 use near_account_id::AccountId;
-use near_contract_transport::{
-    Deserializer, HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs,
-    ViewContract, WatchContractState, borsh_de, json_de,
+
+use crate::{
+    HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs, ViewContract,
+    WatchContractState,
+    views::{
+        deserialize::{DeserializeAs, Deserializer},
+        monitoring::MonitoringTask,
+    },
 };
 
-use crate::state_viewer::monitoring::MonitoringTask;
-
 pub struct ViewCall<Viewer, T> {
-    pub viewer: Viewer,
-    pub contract_id: AccountId,
-    pub args: ViewArgs,
-    pub deserializer: Deserializer<T>,
+    pub(crate) viewer: Viewer,
+    pub(crate) contract_id: AccountId,
+    pub(crate) args: ViewArgs,
+    pub(crate) deserializer: Deserializer<T>,
 }
 
-impl<Viewer, T> ViewCall<Viewer, T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    pub fn json(viewer: Viewer, contract_id: AccountId, args: ViewArgs) -> Self {
+impl<Viewer, T> ViewCall<Viewer, T> {
+    pub fn new<D: DeserializeAs<T>>(
+        viewer: Viewer,
+        contract_id: AccountId,
+        args: ViewArgs,
+    ) -> Self {
         Self {
             viewer,
             contract_id,
             args,
-            deserializer: json_de::<T>,
-        }
-    }
-}
-impl<Viewer, T> ViewCall<Viewer, T>
-where
-    T: BorshDeserialize,
-{
-    pub fn borsh(viewer: Viewer, contract_id: AccountId, args: ViewArgs) -> Self {
-        Self {
-            viewer,
-            contract_id,
-            args,
-            deserializer: borsh_de::<T>,
+            deserializer: D::deserializer(),
         }
     }
 }
@@ -92,10 +82,12 @@ where
 mod tests {
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
-    use near_contract_transport::{ObservedState, TransportError, ViewArgs};
 
-    use crate::mock::{Call, MockViewContract, MockViewError};
-    use crate::state_viewer::view_call::ViewCall;
+    use crate::{
+        Borsh, Json, ObservedState, TransportError, ViewArgs,
+        mock::{Call, MockViewContract, MockViewError},
+        views::view_call::ViewCall,
+    };
 
     fn contract_id() -> AccountId {
         "example.testnet".parse().unwrap()
@@ -111,7 +103,7 @@ mod tests {
 
         // When
         let observed: ObservedState<String> =
-            ViewCall::json(viewer, contract_id(), ViewArgs::no_args("get_value"))
+            ViewCall::new::<Json>(viewer, contract_id(), ViewArgs::no_args("get_value"))
                 .await
                 .unwrap();
 
@@ -130,7 +122,7 @@ mod tests {
         let args = ViewArgs::new("get_value".to_string(), vec![0xAA]);
 
         // When
-        let _: ObservedState<String> = ViewCall::json(viewer.clone(), contract_id(), args)
+        let _: ObservedState<String> = ViewCall::new::<Json>(viewer.clone(), contract_id(), args)
             .await
             .unwrap();
 
@@ -151,10 +143,13 @@ mod tests {
         let viewer = MockViewContract::new(Err(MockViewError("view failed")));
 
         // When
-        let err =
-            ViewCall::<_, String>::json(viewer, contract_id(), ViewArgs::no_args("get_value"))
-                .await
-                .unwrap_err();
+        let err = ViewCall::<_, String>::new::<Json>(
+            viewer,
+            contract_id(),
+            ViewArgs::no_args("get_value"),
+        )
+        .await
+        .unwrap_err();
 
         // Then
         assert_eq!(err, TransportError::View(MockViewError("view failed")));
@@ -169,10 +164,13 @@ mod tests {
         }));
 
         // When
-        let err =
-            ViewCall::<_, String>::json(viewer, contract_id(), ViewArgs::no_args("get_value"))
-                .await
-                .unwrap_err();
+        let err = ViewCall::<_, String>::new::<Json>(
+            viewer,
+            contract_id(),
+            ViewArgs::no_args("get_value"),
+        )
+        .await
+        .unwrap_err();
 
         // Then
         assert_matches!(err, TransportError::Deserialization(_));
@@ -188,7 +186,7 @@ mod tests {
 
         // When
         let observed: ObservedState<u64> =
-            ViewCall::borsh(viewer, contract_id(), ViewArgs::no_args("get_value"))
+            ViewCall::new::<Borsh>(viewer, contract_id(), ViewArgs::no_args("get_value"))
                 .await
                 .unwrap();
 
