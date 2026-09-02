@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use crate::{
     indexer::{
@@ -8,7 +8,10 @@ use crate::{
     },
     metrics::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
-        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
+        MPC_TEE_ATTESTATION_OUTCOME_SUCCESS, MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL,
+        MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
+        MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE,
+        MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
     tick::Tick,
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
@@ -25,19 +28,34 @@ use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
 use near_mpc_contract_interface::call_args as contract_args;
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Instant};
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
-const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
 const BACKOFF_FACTOR: f32 = 1.5;
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour.
+
+pub(crate) trait GenerateAttestation: Send + Sync {
+    fn generate_attestation(
+        &self,
+        report_data: ReportData,
+    ) -> impl Future<Output = Result<Attestation, AttestationError>> + Send;
+}
+
+impl GenerateAttestation for TeeAuthority {
+    async fn generate_attestation(
+        &self,
+        report_data: ReportData,
+    ) -> Result<Attestation, AttestationError> {
+        TeeAuthority::generate_attestation(self, report_data).await
+    }
+}
 
 /// Inputs for the attestation-submission background task
 /// [`run_periodic_attestation_submission`].
 #[derive(Clone)]
-pub struct AttestationSubmitter<T> {
-    pub tee_authority: TeeAuthority,
+pub struct AttestationSubmitter<T, A> {
+    pub tee_authority: A,
     pub tx_sender: T,
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
@@ -46,14 +64,12 @@ pub struct AttestationSubmitter<T> {
     pub attestation_reader: Arc<dyn ReadAttestationExpiry>,
 }
 
-/// Submits a remote attestation transaction to the MPC contract, retrying with backoff until
-/// success or until a fixed retry window elapses, whichever comes first.
-///
-/// This function repeatedly attempts to submit a [`contract_args::SubmitParticipantInfoArgs`] transaction containing
-/// the given participant's attestation and TLS public key. It uses the provided
-/// [`TransactionSender`] to send the transaction and waits until [`TransactionStatus::Executed`]
-/// is observed. Returns an error if no attempt succeeds within the retry window.
-pub async fn submit_remote_attestation(
+/// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
+/// participant's attestation and TLS public key, using the provided [`TransactionSender`] and
+/// retrying with backoff until [`TransactionStatus::Executed`] is observed. Retries are
+/// unbounded; the caller stops them by dropping this future, as
+/// [`periodic_attestation_submission`] does when a round times out.
+async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
@@ -107,9 +123,7 @@ pub async fn submit_remote_attestation(
                 "failed to submit attestation"
             );
         })
-        .timeout(MAX_RETRY_DURATION)
         .await
-        .context("failed to submit attestation after multiple retry attempts")?
 }
 
 fn validate_remote_attestation(
@@ -136,11 +150,8 @@ fn validate_remote_attestation(
         .map(|_| ())
 }
 
-impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
-    /// Generates a fresh attestation and submits it to the contract, reporting whether it
-    /// reached the contract so the caller can decide when to try again. Failures are logged,
-    /// never propagated.
-    async fn generate_and_submit(&self) -> bool {
+impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<T, A> {
+    async fn generate_attestation(&self) -> Option<Attestation> {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
             *self.account_public_key.as_bytes(),
@@ -150,25 +161,21 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
             .with_label_values(&[outcome_label(result.is_ok())])
             .inc();
-        let attestation = match result {
-            Ok(attestation) => attestation,
+        match result {
+            Ok(attestation) => Some(attestation),
             Err(error @ AttestationError::CollateralFetch(_)) => {
-                tracing::warn!(%error, "TEE attestation generation failed");
-                return false;
+                tracing::warn!(%error, "TEE attestation collateral fetch failed");
+                None
             }
             Err(error) => {
                 tracing::error!(%error, "TEE attestation generation failed");
-                return false;
+                None
             }
-        };
-        let allowed_image_hashes: Vec<_> = self
-            .allowed_image_hashes
-            .borrow()
-            .iter()
-            .map(|entry| entry.image_hash)
-            .collect();
-        let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
-        let pre_submit_expiry = match self
+        }
+    }
+
+    async fn read_expiry_baseline(&self) -> Option<u64> {
+        match self
             .attestation_reader
             .read_stored_attestation_expiry(&self.tls_public_key)
             .await
@@ -183,7 +190,17 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
                 );
                 None
             }
-        };
+        }
+    }
+
+    async fn submit_attestation(&self, attestation: Attestation, pre_submit_expiry: Option<u64>) {
+        let allowed_image_hashes: Vec<_> = self
+            .allowed_image_hashes
+            .borrow()
+            .iter()
+            .map(|entry| entry.image_hash)
+            .collect();
+        let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
         if let Err(error) = validate_remote_attestation(
             &attestation,
             self.tls_public_key.clone(),
@@ -207,9 +224,7 @@ impl<T: TransactionSender + Clone> AttestationSubmitter<T> {
             .inc();
         if let Err(error) = submission {
             tracing::error!(?error, "attestation submission failed");
-            return false;
         }
-        true
     }
 }
 
@@ -221,41 +236,105 @@ fn outcome_label(succeeded: bool) -> &'static str {
     }
 }
 
-pub async fn run_periodic_attestation_submission<T: TransactionSender + Clone>(
-    submitter: AttestationSubmitter<T>,
-) {
+pub async fn run_periodic_attestation_submission<T, A>(submitter: AttestationSubmitter<T, A>)
+where
+    T: TransactionSender + Clone,
+    A: GenerateAttestation,
+{
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     periodic_attestation_submission(submitter, interval).await
 }
 
-/// Periodically regenerates and submits this node's attestation. Generation and submission
-/// failures are logged and retried on the next tick; this task never returns.
+/// Periodically regenerates and submits this node's attestation. A stage still running at the
+/// round deadline is abandoned, recorded in [`MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL`], and
+/// the next tick starts over with a fresh attestation. Failures are logged, never propagated;
+/// this task never returns.
 #[tracing::instrument(skip_all)]
-async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
-    submitter: AttestationSubmitter<T>,
-    mut interval_ticker: I,
+async fn periodic_attestation_submission<T: TransactionSender + Clone, A: GenerateAttestation>(
+    submitter: AttestationSubmitter<T, A>,
+    mut interval_ticker: impl Tick,
 ) {
     loop {
         interval_ticker.tick().await;
-        submitter.generate_and_submit().await;
+        let deadline = Instant::now() + ATTESTATION_RESUBMISSION_INTERVAL;
+        let Ok(generated) = submitter.generate_attestation().timeout_at(deadline).await else {
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION);
+            continue;
+        };
+        let Some(attestation) = generated else {
+            continue;
+        };
+        let Ok(pre_submit_expiry) = submitter.read_expiry_baseline().timeout_at(deadline).await
+        else {
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE);
+            continue;
+        };
+        let submission = submitter.submit_attestation(attestation, pre_submit_expiry);
+        if submission.timeout_at(deadline).await.is_err() {
+            record_round_timeout(MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION);
+        }
     }
+}
+
+fn record_round_timeout(stage: &'static str) {
+    MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL
+        .with_label_values(&[stage])
+        .inc();
+    tracing::warn!(
+        stage,
+        "attestation round timed out; retrying from scratch on the next tick"
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::indexer::tx_sender::{TransactionProcessorError, TransactionStatus};
     use crate::tick::MockTicker;
     use ed25519_dalek::SigningKey;
     use rand::SeedableRng;
     use std::sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     };
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
+
+    #[derive(Clone, Default)]
+    struct FailingAttestationGenerator {
+        attempts: Arc<AtomicUsize>,
+    }
+
+    impl FailingAttestationGenerator {
+        fn attempts(&self) -> usize {
+            self.attempts.load(Ordering::Relaxed)
+        }
+    }
+
+    impl GenerateAttestation for FailingAttestationGenerator {
+        async fn generate_attestation(
+            &self,
+            _report_data: ReportData,
+        ) -> Result<Attestation, AttestationError> {
+            self.attempts.fetch_add(1, Ordering::Relaxed);
+            Err(AttestationError::InvalidEndpoint)
+        }
+    }
+
+    #[derive(Clone)]
+    struct HangingAttestationGenerator;
+
+    impl GenerateAttestation for HangingAttestationGenerator {
+        async fn generate_attestation(
+            &self,
+            _report_data: ReportData,
+        ) -> Result<Attestation, AttestationError> {
+            std::future::pending().await
+        }
+    }
 
     struct StubAttestationExpiryReader {
         fail: bool,
@@ -280,6 +359,7 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct MockSender {
+        attempts: Arc<AtomicUsize>,
         submissions: Arc<Mutex<usize>>,
         notify: Arc<tokio::sync::Notify>,
         failing: Arc<AtomicBool>,
@@ -288,6 +368,10 @@ mod tests {
     impl MockSender {
         fn set_failing(&self, failing: bool) {
             self.failing.store(failing, Ordering::Relaxed);
+        }
+
+        fn attempts(&self) -> usize {
+            self.attempts.load(Ordering::Relaxed)
         }
 
         fn count(&self) -> usize {
@@ -304,6 +388,7 @@ mod tests {
             &self,
             _: ChainSendTransactionRequest,
         ) -> Result<(), TransactionProcessorError> {
+            self.attempts.fetch_add(1, Ordering::Relaxed);
             if self.failing.load(Ordering::Relaxed) {
                 return Err(TransactionProcessorError::ProcessorIsClosed);
             }
@@ -330,17 +415,21 @@ mod tests {
         )
     }
 
-    struct TestSetup {
-        submitter: AttestationSubmitter<MockSender>,
+    struct TestSetup<A> {
+        submitter: AttestationSubmitter<MockSender, A>,
     }
 
     /// Builds an [`AttestationSubmitter`] around a [`MockSender`].
-    fn test_setup() -> TestSetup {
+    fn test_setup() -> TestSetup<TeeAuthority> {
+        test_setup_with(TeeAuthority::from(LocalTeeAuthorityConfig::default()))
+    }
+
+    fn test_setup_with<A: GenerateAttestation>(tee_authority: A) -> TestSetup<A> {
         let (tls_public_key, account_public_key) = test_keys();
         let (_, allowed_image_hashes) = watch::channel(vec![]);
         let (_, allowed_launcher_compose_hashes) = watch::channel(vec![]);
         let submitter = AttestationSubmitter {
-            tee_authority: TeeAuthority::from(LocalTeeAuthorityConfig::default()),
+            tee_authority,
             tx_sender: MockSender::default(),
             tls_public_key,
             account_public_key,
@@ -351,7 +440,7 @@ mod tests {
         TestSetup { submitter }
     }
 
-    impl TestSetup {
+    impl<A: GenerateAttestation + Clone + 'static> TestSetup<A> {
         fn sender(&self) -> &MockSender {
             &self.submitter.tx_sender
         }
@@ -400,20 +489,93 @@ mod tests {
     #[tokio::test(start_paused = true)]
     #[expect(non_snake_case)]
     async fn periodic_attestation_submission__should_survive_submission_retry_timeout() {
-        // Given: the first tick burns the whole retry window, the second one lands
+        // Given: the first round times out, the second one lands
         let setup = test_setup();
         setup.sender().set_failing(true);
         let handle = setup.spawn_periodic(2);
 
         // When
-        tokio::time::sleep(MAX_RETRY_DURATION + Duration::from_secs(1)).await;
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL + Duration::from_secs(1)).await;
         setup.sender().set_failing(false);
 
         // Then
-        tokio::time::timeout(MAX_RETRY_DURATION, setup.sender().wait_for_submission())
-            .await
-            .expect("expected a successful submission after the first retry window timed out");
+        tokio::time::timeout(
+            ATTESTATION_RESUBMISSION_INTERVAL,
+            setup.sender().wait_for_submission(),
+        )
+        .await
+        .expect("expected a successful submission on the round after the cut-off one");
         assert_eq!(setup.sender().count(), 1);
+        handle.abort();
+    }
+
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_wait_for_the_next_tick_when_generation_fails()
+    {
+        // Given
+        let generator = FailingAttestationGenerator::default();
+        let setup = test_setup_with(generator.clone());
+        let ticker = MockTicker::new(1);
+
+        // When
+        let MaybeReady::Future(parked_loop) = run_future_once(periodic_attestation_submission(
+            setup.submitter.clone(),
+            ticker.clone(),
+        )) else {
+            panic!("the loop should park once its ticker runs out");
+        };
+        let attempts_before_the_next_tick = generator.attempts();
+        ticker.schedule(1);
+        run_future_once(parked_loop);
+
+        // Then
+        assert_eq!(attempts_before_the_next_tick, 1);
+        assert_eq!(generator.attempts(), 2);
+        assert_eq!(setup.sender().count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_stop_submission_retries_at_the_round_timeout()
+    {
+        // Given
+        let setup = test_setup();
+        setup.sender().set_failing(true);
+        let handle = setup.spawn_periodic(1);
+
+        // When
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL + Duration::from_secs(1)).await;
+        let attempts_at_the_timeout = setup.sender().attempts();
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL).await;
+
+        // Then
+        assert!(attempts_at_the_timeout > 1);
+        assert_eq!(setup.sender().attempts(), attempts_at_the_timeout);
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[expect(non_snake_case)]
+    async fn periodic_attestation_submission__should_cut_hung_generation_at_the_round_timeout() {
+        // Given
+        let setup = test_setup_with(HangingAttestationGenerator);
+        let cut_rounds_before = MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL
+            .with_label_values(&[MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION])
+            .get();
+        let handle = setup.spawn_periodic(1);
+
+        // When
+        tokio::time::sleep(ATTESTATION_RESUBMISSION_INTERVAL + Duration::from_secs(1)).await;
+
+        // Then
+        assert_eq!(setup.sender().count(), 0);
+        assert_eq!(
+            MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL
+                .with_label_values(&[MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION])
+                .get(),
+            cut_rounds_before + 1
+        );
         handle.abort();
     }
 
