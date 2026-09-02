@@ -21,9 +21,7 @@ The node supports multiple threshold signature schemes, organized into *domains*
   - *Presignature generation*: also runs in the background; each presignature consumes two triples.
   - *Signing*: one round of communication using a presignature.
 
-**[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — Based on [DJNPO20](https://eprint.iacr.org/2020/501). Skips triple generation entirely:
-  - *Presignature generation*: a single 3-round protocol using degree-2t polynomials.
-  - *Signing*: one round, same as OT-based ECDSA.
+**[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — **currently an insecure stub, never enabled in production.** The [DJNPO20](https://eprint.iacr.org/2020/501) implementation was removed; the remaining stub produces valid signatures while leaking the signing key, and exists to keep the surrounding plumbing exercised until a real robust scheme replaces it.
 
 **[EdDSA](crates/threshold-signatures/docs/eddsa/signing.md)** (Ed25519) — Based on [FROST](https://eprint.iacr.org/2020/852) threshold signatures:
   - *Presignature generation*: participants exchange nonce commitments.

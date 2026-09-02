@@ -144,6 +144,9 @@ pub(crate) const ROBUST_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 1;
 ///
 /// This work does depend on the private key though, and it's crucial
 /// that a presignature is never reused.
+///
+/// **This is a stub and leaks the signing key.** See the [module docs](super) before
+/// using it for anything.
 pub fn presign<R>(
     participants: &[Participant],
     me: Participant,
@@ -191,7 +194,9 @@ where
         ));
     }
 
-    // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
+    // The removed scheme needed exactly 2*max_malicious+1 presigners to avoid
+    // split-view attacks. The stub does not, but keeping the check preserves the
+    // participant-count contract a replacement scheme is likely to need again.
     if participants.len() != robust_ecdsa_threshold {
         return Err(InitializationError::BadParameters(
             "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
@@ -203,18 +208,20 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-/// The stub presigning protocol.
+/// The stub presigning protocol. This is where the signing key leaks: see the
+/// [module docs](super).
 ///
-/// One broadcast round: every participant contributes a random summand to the nonce
-/// `k`, so all parties learn `k` in the clear and agree on `R = k * G`. The output
-/// fields are then filled so that [`super::sign::sign`]'s unchanged Lagrange
-/// linearization reconstructs a valid ECDSA signature:
+/// One broadcast round, in which every participant contributes a random summand to
+/// the nonce `k`. All parties therefore learn `k` and agree on `R = k * G`. The
+/// output fields are chosen so that [`super::sign::sign`]'s Lagrange linearization
+/// recombines them into a valid ECDSA signature:
 ///
 /// - `alpha = c = k^{-1}` are held identically by everybody, and Lagrange
-///   coefficients at zero sum to one, so they combine back to `k^{-1}`;
-/// - `beta = k^{-1} * x_i` is scaled by the party's real key share, so it combines
+///   coefficients at zero sum to one, so they recombine to `k^{-1}`;
+/// - `beta = k^{-1} * x_i` is scaled by the party's real key share, so it recombines
 ///   to `k^{-1} * x`;
-/// - `e = 0`, the real scheme's zero-sharing mask, is not needed here.
+/// - `e = 0`, since the zero-sharing mask it carried in the removed scheme has
+///   nothing to mask here.
 async fn do_presign(
     mut chan: SharedChannel,
     participants: ParticipantList,
