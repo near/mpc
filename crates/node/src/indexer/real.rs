@@ -31,7 +31,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -53,6 +53,36 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
             return;
         }
     }
+}
+
+/// Wires nearcore's shutdown signal so an [`ShutdownReason::EpochSyncDataReset`]
+/// is acted on instead of dropped: a stale node that would otherwise loop forever
+/// in epoch-sync (#3909) records the reset marker and exits non-zero, so the
+/// container's `restart: on-failure` restarts it and the startup wipe runs. Returns
+/// the sender to pass to [`nearcore::start_with_config_and_synchronization`].
+fn spawn_epoch_sync_reset_handler(home_dir: PathBuf) -> broadcast::Sender<ShutdownReason> {
+    let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
+    tokio::spawn(async move {
+        loop {
+            match shutdown_rx.recv().await {
+                Ok(ShutdownReason::EpochSyncDataReset) => {
+                    tracing::warn!(
+                        "epoch-sync data reset requested; recording marker and restarting \
+                         to wipe the chain store (#3909)"
+                    );
+                    record_epoch_sync_reset_request(&home_dir);
+                    std::process::exit(70);
+                }
+                Ok(other) => {
+                    tracing::warn!(?other, "nearcore requested shutdown; exiting");
+                    std::process::exit(0);
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+    shutdown_tx
 }
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerAPI`].
@@ -129,9 +159,8 @@ pub fn spawn_real_indexer(
                  fix the cause and set wipe_near_data_token to a new value to retry",
             );
 
-            // Automatic recovery from the epoch-sync wedge (#3909): if nearcore
-            // requested a data reset on a previous run, wipe the chain store now,
-            // before nearcore reopens it, so the fresh state-sync below can proceed.
+            // If nearcore requested an epoch-sync data reset on a previous run,
+            // wipe the chain store before it reopens (see #3909).
             wipe_near_data_if_epoch_sync_reset(
                 &home_dir,
                 &hot_store_path,
@@ -139,38 +168,7 @@ pub fn spawn_real_indexer(
             )
             .expect("epoch-sync data-reset wipe failed");
 
-            // Wire nearcore's shutdown signal so an epoch-sync data reset is acted on
-            // rather than silently dropped. Without this, a node that fell far behind
-            // while offline validates the epoch-sync proof, requests a data reset that
-            // goes nowhere (`start_with_config` hard-codes `shutdown_signal = None`),
-            // and loops forever with a frozen head (#3909). On `EpochSyncDataReset` we
-            // record a marker and exit non-zero; the container's `restart: on-failure`
-            // brings us back, and the wipe above runs on that next start.
-            let (shutdown_tx, mut shutdown_rx) =
-                tokio::sync::broadcast::channel::<ShutdownReason>(16);
-            {
-                let home_dir = home_dir.clone();
-                tokio::spawn(async move {
-                    loop {
-                        match shutdown_rx.recv().await {
-                            Ok(ShutdownReason::EpochSyncDataReset) => {
-                                tracing::warn!(
-                                    "nearcore requested an epoch-sync data reset; recording \
-                                     marker and restarting to wipe the chain store (#3909)"
-                                );
-                                record_epoch_sync_reset_request(&home_dir);
-                                std::process::exit(70);
-                            }
-                            Ok(other) => {
-                                tracing::warn!(?other, "nearcore requested shutdown; exiting");
-                                std::process::exit(0);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                        }
-                    }
-                });
-            }
+            let shutdown_tx = spawn_epoch_sync_reset_handler(home_dir.clone());
 
             let near_node = nearcore::start_with_config_and_synchronization(
                 &home_dir,

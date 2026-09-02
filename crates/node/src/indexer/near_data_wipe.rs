@@ -50,23 +50,14 @@ pub(crate) fn wipe_near_data_if_epoch_sync_reset(
         return Ok(());
     }
 
-    ensure_within_home(home_dir, hot_store_path)?;
-    let trash_path = near_data_trash_dir(home_dir);
-    remove_trash(&trash_path);
-    match std::fs::rename(hot_store_path, &trash_path) {
-        Ok(()) => {}
-        // Already fresh (e.g. a prior crash mid-wipe already moved it) — nothing to do.
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => {
-            tracing::error!(
-                ?hot_store_path,
-                ?err,
-                "failed to move nearcore data dir aside for epoch-sync reset"
-            );
-            return Err(err);
-        }
+    if let Err(err) = wipe_store_dir(home_dir, hot_store_path) {
+        tracing::error!(
+            ?hot_store_path,
+            ?err,
+            "failed to move nearcore data dir aside for epoch-sync reset"
+        );
+        return Err(err);
     }
-    remove_trash(&trash_path);
     // Clear the marker only after the store is gone, so a crash mid-wipe retries.
     if let Err(err) = std::fs::remove_file(&marker)
         && err.kind() != std::io::ErrorKind::NotFound
@@ -114,18 +105,18 @@ pub(crate) fn wipe_near_data_if_requested(
         return Ok(());
     }
 
-    // Guard against a misconfigured store.path (absolute, `..`, or the home dir
-    // itself) turning the wipe into a rename/remove outside the node's data tree.
-    ensure_within_home(home_dir, hot_store_path)?;
-
+    // Record the token before wiping: if the wipe fails it is not retried
+    // automatically, so a recorded token avoids a wipe loop on every restart.
     write_last_token(&token_path, requested_token)?;
 
-    // Move the store aside in one atomic rename, so the data dir is gone for good
-    // even if the process dies before the (best-effort) delete below runs.
-    match std::fs::rename(hot_store_path, &trash_path) {
-        Ok(()) => {}
+    match wipe_store_dir(home_dir, hot_store_path) {
+        Ok(true) => tracing::info!(
+            ?hot_store_path,
+            requested_token,
+            "wiped nearcore data dir (wipe_near_data_token)"
+        ),
         // Fresh node: nothing to wipe.
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Ok(false) => {}
         Err(err) => {
             tracing::error!(
                 ?hot_store_path,
@@ -138,13 +129,27 @@ pub(crate) fn wipe_near_data_if_requested(
             return Err(err);
         }
     }
-    remove_trash(&trash_path);
-    tracing::info!(
-        ?hot_store_path,
-        requested_token,
-        "wiped nearcore data dir (wipe_near_data_token)"
-    );
     Ok(())
+}
+
+/// Atomically moves the chain store aside (rename into the trash dir) and deletes
+/// it, refusing a store path outside `home_dir`. Returns whether there was a store
+/// to wipe — `false` means the store dir was already absent (a fresh node).
+fn wipe_store_dir(home_dir: &Path, hot_store_path: &Path) -> std::io::Result<bool> {
+    // Guard against a misconfigured store.path (absolute, `..`, or the home dir
+    // itself) turning the wipe into a rename/remove outside the node's data tree.
+    ensure_within_home(home_dir, hot_store_path)?;
+    let trash_path = near_data_trash_dir(home_dir);
+    remove_trash(&trash_path);
+    // One atomic rename, so the store is gone for good even if the process dies
+    // before the (best-effort) delete below runs.
+    match std::fs::rename(hot_store_path, &trash_path) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err),
+    }
+    remove_trash(&trash_path);
+    Ok(true)
 }
 
 /// Best-effort recursive delete of the wipe trash dir. Never fatal.
