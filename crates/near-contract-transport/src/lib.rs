@@ -1,8 +1,11 @@
 //! NEAR contract transport: the payload and vocabulary types of contract
-//! calls and views, plus the [`CallContract`]/[`ViewContract`] traits,
-//! implemented once per transport backend. The traits and the view
-//! types live behind the opt-in `traits` feature.
+//! calls and views, the [`CallContract`]/[`ViewContract`] traits implemented
+//! once per transport backend, and the deserializing [`ViewCall`] and
+//! subscription machinery on top. Everything but the payload types lives
+//! behind the opt-in `traits` feature.
 
+#[cfg(all(feature = "traits", any(test, feature = "test-utils")))]
+pub mod mock;
 #[cfg(feature = "traits")]
 mod traits;
 mod types;
@@ -14,8 +17,7 @@ pub use traits::CallContract;
 #[cfg(feature = "traits")]
 pub use views::{
     DeserializationError, Deserializer, HasPollInterval, ObservedState, PollInterval,
-    SerializedObservation, TransportError, ViewArgs, ViewContract, WatchContractState, borsh_de,
-    json_de,
+    SerializedObservation, TransportError, ViewArgs, ViewCall, ViewContract, WatchContractState,
 };
 
 pub use types::{BlockHeight, FunctionCallArgs, NearGas, NearToken};

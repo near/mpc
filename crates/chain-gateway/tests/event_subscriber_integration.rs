@@ -10,7 +10,6 @@ use chain_gateway::{
         },
         subscriber::{BlockEventSubscription, BlockEventSubscriptions},
     },
-    state_viewer::ViewExt,
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
 };
 use chain_gateway_test_contract::{
@@ -19,7 +18,7 @@ use chain_gateway_test_contract::{
     },
     consts::{PRIVATE_SET, SET_VALUE_IN_PROMISE, VIEW_VALUE},
 };
-use near_contract_transport::{ViewArgs, WatchContractState};
+use near_contract_transport::{ViewArgs, ViewContract, WatchContractState};
 use rstest::rstest;
 
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);

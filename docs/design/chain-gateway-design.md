@@ -1,6 +1,6 @@
 # MPC Indexer Breakout
 
-This document outlines the design and efforts for breaking out the indexer into its own crate.
+This document outlines the design and efforts for breaking out the indexer into its own crate. It is a living document expected to track the developments. Once sufficiently concluded, we will move this doc there as a readme.
 
 ## Background
 
@@ -420,7 +420,7 @@ The Chain Gateway provides three functionalities:
 
 ##### State Viewer
 
-View calls are split across two crates. The `near-contract-transport` crate holds the vocabulary types and the backend trait, implemented once per transport (the chain-gateway implements it against the embedded neard node's view client, tests implement it with a mock):
+View calls live in the `near-contract-transport` crate: the vocabulary types, the backend trait, and the deserializing view/subscription machinery on top of it. The backend trait is implemented once per transport (the chain-gateway implements it against the embedded neard node's view client, tests implement it with a mock):
 
 ```rust
 /// A backend executing NEAR view calls against a contract.
@@ -450,10 +450,10 @@ pub enum TransportError<ViewError> {
 }
 ```
 
-Consumers do not call `view_contract` directly. The chain-gateway crate provides the blanket extension trait `ViewExt`, which pairs any `ViewContract` backend with a JSON or borsh deserializer. The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
+Consumers do not call `view_contract` directly. `ViewContract` provides `view_json`/`view_borsh` methods pairing the backend with a JSON or borsh deserializer. The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
 
 ```rust
-pub trait ViewExt: ViewContract + Clone + Sized {
+pub trait ViewContract {
     fn view_json<T: DeserializeOwned>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
     fn view_borsh<T: BorshDeserialize>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
 }

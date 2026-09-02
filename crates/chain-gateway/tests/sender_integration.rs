@@ -1,12 +1,11 @@
 use std::time::{Duration, Instant};
 
-use chain_gateway::state_viewer::ViewExt;
 use chain_gateway::transaction_sender::SubmitFunctionCall;
 use chain_gateway_test_contract::args::make_set_value_args;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
+use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
 
 use crate::common::localnet::LocalnetBuilder;
-use near_contract_transport::{ObservedState, ViewArgs};
 
 /// This integration test uses the [`ChainGateway`] struct to spin up two neard nodes
 /// for a localnet. One of the nodes is an observer node (what the MPC node would be running),

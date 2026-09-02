@@ -1,7 +1,6 @@
 mod errors;
 mod types;
 
-use chain_gateway::state_viewer::ViewExt;
 pub use errors::TeeContextError;
 pub use types::{AllowedTeeHashes, TeeNodeIdentity};
 
@@ -208,13 +207,14 @@ mod tests {
     use assert_matches::assert_matches;
     use chain_gateway::{
         errors::ChainGatewayError,
-        mock::{MockChainState, MockChainStateBuilder, MockError, MockViewError},
+        mock::{MockChainState, MockChainStateBuilder, MockError},
         transaction_sender::TransactionSigner,
         types::LatestFinalBlockInfo,
     };
     use ed25519_dalek::SigningKey;
     use mpc_primitives::hash::LauncherDockerComposeHash;
     use near_account_id::AccountId;
+    use near_contract_transport::mock::MockViewError;
     use near_contract_transport::{HasPollInterval, ObservedState};
     use near_mpc_contract_interface::client::MpcContractHandleError;
     use near_mpc_contract_interface::method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES;

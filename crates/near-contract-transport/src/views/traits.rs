@@ -1,20 +1,23 @@
 use std::time::Duration;
 
+use borsh::BorshDeserialize;
 use near_account_id::AccountId;
+use serde::de::DeserializeOwned;
 
 use crate::{
     TransportError,
     views::{
         args::ViewArgs,
         observation::{ObservedState, SerializedObservation},
+        view_call::ViewCall,
     },
 };
 
 /// A backend executing NEAR view calls against a contract.
 ///
-/// Implementors wire [`ViewArgs`] to their transport (nearcore view client,
-/// RPC, test double) and surface the transport's native error as
-/// [`Error`](ViewContract::Error).
+/// A back-end implementing this trait inherits the deserializing one-shot
+/// views ([`view_json`](ViewContract::view_json)/[`view_borsh`](ViewContract::view_borsh))
+/// and the subscription logic ([`WatchContractState`]).
 pub trait ViewContract {
     type Error: std::error::Error + Clone + PartialEq + Send + Sync + 'static;
 
@@ -23,6 +26,22 @@ pub trait ViewContract {
         contract_id: &AccountId,
         view_args: ViewArgs,
     ) -> impl Future<Output = Result<SerializedObservation, Self::Error>> + Send;
+
+    fn view_json<T>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>
+    where
+        T: DeserializeOwned,
+        Self: Clone + Sized,
+    {
+        ViewCall::json(self.clone(), contract_id, args)
+    }
+
+    fn view_borsh<T>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>
+    where
+        T: BorshDeserialize,
+        Self: Clone + Sized,
+    {
+        ViewCall::borsh(self.clone(), contract_id, args)
+    }
 }
 
 /// A non-zero polling period.

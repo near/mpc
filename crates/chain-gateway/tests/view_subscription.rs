@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use chain_gateway::{state_viewer::ViewExt, transaction_sender::SubmitFunctionCall};
+use chain_gateway::transaction_sender::SubmitFunctionCall;
 use chain_gateway_test_contract::{
     args::make_set_value_args,
     consts::{DEFAULT_VALUE, VIEW_VALUE},
 };
+use near_contract_transport::{ViewArgs, ViewContract, WatchContractState};
 
 use crate::common::localnet::LocalnetBuilder;
-use near_contract_transport::{ViewArgs, WatchContractState};
 
 /// Checks if subscribing to the state succeeds
 #[tokio::test]
