@@ -8,7 +8,7 @@ mod traits;
 mod view_call;
 
 pub use args::ViewArgs;
-pub use deserialize::{DeserializationError, Deserializer};
+pub use deserialize::{Borsh, DeserializationError, DeserializeAs, Deserializer, Json};
 pub use errors::TransportError;
 pub use observation::{ObservedState, SerializedObservation};
 pub use traits::{HasPollInterval, PollInterval, ViewContract, WatchContractState};

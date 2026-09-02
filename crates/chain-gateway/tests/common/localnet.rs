@@ -4,7 +4,7 @@ use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
 use chain_gateway_test_contract::consts::VIEW_VALUE;
 use ed25519_dalek::SigningKey;
-use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
+use near_contract_transport::{Json, ObservedState, ViewArgs, ViewContract};
 
 use super::accounts::{Contract, TestAccount, compiled_test_contract_wasm, test_contract};
 use super::node::{LocalNode, LocalNodeBuilder};
@@ -119,7 +119,7 @@ impl LocalnetBuilder {
             let state: ObservedState<String> = localnet
                 .observer
                 .chain_gateway
-                .view_json(
+                .view::<_, Json>(
                     localnet.contract.account_id.clone(),
                     ViewArgs::no_args(VIEW_VALUE),
                 )

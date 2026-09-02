@@ -5,7 +5,7 @@ use chain_gateway_test_contract::{
     args::make_set_value_args,
     consts::{DEFAULT_VALUE, VIEW_VALUE},
 };
-use near_contract_transport::{ViewArgs, ViewContract, WatchContractState};
+use near_contract_transport::{Json, ViewArgs, ViewContract, WatchContractState};
 
 use crate::common::localnet::LocalnetBuilder;
 
@@ -21,7 +21,7 @@ async fn test_subscription() {
     let contract_id = localnet.contract.account_id.clone();
 
     let mut sub = observer_gw
-        .view_json::<String>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .view::<String, Json>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
         .subscribe()
         .await;
 

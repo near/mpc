@@ -16,8 +16,9 @@ mod views;
 pub use traits::CallContract;
 #[cfg(feature = "traits")]
 pub use views::{
-    DeserializationError, Deserializer, HasPollInterval, ObservedState, PollInterval,
-    SerializedObservation, TransportError, ViewArgs, ViewCall, ViewContract, WatchContractState,
+    Borsh, DeserializationError, DeserializeAs, Deserializer, HasPollInterval, Json, ObservedState,
+    PollInterval, SerializedObservation, TransportError, ViewArgs, ViewCall, ViewContract,
+    WatchContractState,
 };
 
 pub use types::{BlockHeight, FunctionCallArgs, NearGas, NearToken};

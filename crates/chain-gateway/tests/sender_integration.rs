@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use chain_gateway::transaction_sender::SubmitFunctionCall;
 use chain_gateway_test_contract::args::make_set_value_args;
 use chain_gateway_test_contract::consts::{DEFAULT_VALUE, VIEW_VALUE};
-use near_contract_transport::{ObservedState, ViewArgs, ViewContract};
+use near_contract_transport::{Json, ObservedState, ViewArgs, ViewContract};
 
 use crate::common::localnet::LocalnetBuilder;
 
@@ -28,7 +28,7 @@ async fn test_submit_set_value_and_read_back() {
 
     // Verify initial state: get_value should return DEFAULT_VALUE
     let initial: ObservedState<String> = observer_gw
-        .view_json(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+        .view::<_, Json>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
         .await
         .expect("initial view call should succeed");
 
@@ -50,7 +50,7 @@ async fn test_submit_set_value_and_read_back() {
         localnet.assert_nodes_alive();
 
         let result: ObservedState<String> = observer_gw
-            .view_json(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
+            .view::<_, Json>(contract_id.clone(), ViewArgs::no_args(VIEW_VALUE))
             .await
             .expect("view call should succeed");
 
