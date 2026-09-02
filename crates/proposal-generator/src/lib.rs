@@ -2,7 +2,8 @@
 
 use anyhow::Context as _;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{ChainEntry, ChainEntryValidationError, ForeignChain};
+use near_mpc_contract_interface::types::{ChainEntry, ForeignChain};
+use near_mpc_sdk::foreign_chain::validation::{ChainEntryValidationError, validate_chain_entry};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -18,11 +19,11 @@ pub struct ConfigError {
     pub source: ChainEntryValidationError,
 }
 
-/// Validates each entry with the contract's own rules ([`ChainEntry::validate`]),
+/// Validates each entry with the contract's own rules ([`validate_chain_entry`]),
 /// then borsh-encodes the `vote_update_foreign_chain_providers` argument.
 pub fn build_payload(config: ProposalConfig) -> anyhow::Result<Vec<u8>> {
     for (chain, entry) in config.chains.iter() {
-        entry.validate().map_err(|source| ConfigError {
+        validate_chain_entry(entry.clone()).map_err(|source| ConfigError {
             chain: *chain,
             source,
         })?;

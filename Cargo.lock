@@ -7314,6 +7314,7 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-signature-verifier",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -9363,6 +9364,7 @@ dependencies = [
  "hex",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "near-mpc-sdk",
  "rstest",
  "serde",
  "sha2 0.10.9",

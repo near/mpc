@@ -13,9 +13,8 @@
 use std::collections::BTreeMap;
 
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{
-    self as dtos, ChainEntryValidationError, ForeignChain, ProviderConfig, ProviderId,
-};
+use near_mpc_contract_interface::types::{self as dtos, ForeignChain, ProviderConfig, ProviderId};
+use near_mpc_sdk::foreign_chain::validation::{ChainEntryValidationError, validate_chain_entry};
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
@@ -51,8 +50,7 @@ impl TryFrom<dtos::ChainEntry> for ChainEntry {
     type Error = ChainEntryValidationError;
 
     fn try_from(entry: dtos::ChainEntry) -> Result<Self, Self::Error> {
-        entry.validate()?;
-        let dtos::ChainEntry { providers, quorum } = entry;
+        let dtos::ChainEntry { providers, quorum } = validate_chain_entry(entry)?.into();
         Ok(ChainEntry { providers, quorum })
     }
 }
