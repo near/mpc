@@ -26,7 +26,7 @@ At a high level:
 This design intentionally keeps responses small and on-chain-friendly by enforcing:
 
 * Each extractor returns **exactly one** typed value.
-* The request includes a bounded number of extractors.
+* The request includes at most 32 extractors (`MAX_EXTRACTORS_PER_REQUEST`).
 * Extracted values have strict size limits (e.g., bytes length caps).
 
 ### RPC Call Plan
@@ -143,7 +143,7 @@ pub enum ForeignChainRpcRequest {
 
 pub struct EvmRpcRequest {
     pub tx_id: EvmTxId,
-    pub extractors: Vec<EvmExtractor>,
+    pub extractors: UpperBoundedVec<EvmExtractor, MAX_EXTRACTORS_PER_REQUEST>,
     pub finality: EvmFinality,
 }
 
@@ -151,13 +151,13 @@ pub struct EvmRpcRequest {
 pub struct SvmRpcRequest {
     pub tx_id: SvmTxId, // The 64-byte transaction signature
     pub finality: SvmFinality,
-    pub extractors: Vec<SvmExtractor>,
+    pub extractors: UpperBoundedVec<SvmExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId, // This is the payload we're signing
     pub confirmations: BlockConfirmations, // required confirmations before considering final
-    pub extractors: Vec<BitcoinExtractor>,
+    pub extractors: UpperBoundedVec<BitcoinExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 pub enum EvmFinality {

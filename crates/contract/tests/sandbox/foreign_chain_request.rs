@@ -11,11 +11,15 @@ use crate::sandbox::common::{
     svm_extracted_values, ton_request,
 };
 use crate::sandbox::utils::transactions::CallMpcContract;
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
+use near_mpc_contract_interface::deposits::SIGN_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
+    self as dtos, EvmExtractor, EvmFinality, EvmRpcRequest, EvmTxId, ExtractedValue,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, MAX_EXTRACTORS_PER_REQUEST,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
+use near_workspaces::types::NearToken;
 use rstest::rstest;
 use serde_json::json;
 
@@ -416,4 +420,149 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         execution.is_failure(),
         "request should time out without a response"
     );
+}
+
+fn evm_request_args_with_extractors(
+    domain_id: dtos::DomainId,
+    extractor_count: usize,
+) -> dtos::VerifyForeignTransactionRequestArgs {
+    let extractors: Vec<EvmExtractor> = (0..extractor_count)
+        .map(|log_index| EvmExtractor::Log {
+            log_index: log_index as u64,
+        })
+        .collect();
+    dtos::VerifyForeignTransactionRequestArgs {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: Some(dtos::Hash256([9u8; 32])),
+        request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+            tx_id: EvmTxId([0xbb; 32]),
+            extractors: extractors.try_into().unwrap(),
+            finality: EvmFinality::Finalized,
+        }),
+    }
+}
+
+async fn contract_storage_usage(setup: &SandboxTestSetup) -> u64 {
+    setup
+        .worker
+        .view_account(setup.contract.id())
+        .await
+        .unwrap()
+        .storage_usage
+}
+
+#[tokio::test]
+async fn verify_foreign_transaction__should_release_storage_when_request_at_extractor_cap_times_out()
+ {
+    // Given
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
+    make_foreign_chain_available(
+        dtos::ForeignChain::Ethereum,
+        &setup.contract,
+        &setup.mpc_signer_accounts,
+    )
+    .await;
+    let user = setup.worker.dev_create_account().await.unwrap();
+    let domain_id = dtos::DomainId(setup.foreign_tx_key().domain_id().0);
+    let request_args = evm_request_args_with_extractors(domain_id, MAX_EXTRACTORS_PER_REQUEST);
+    let request = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: request_args.payload_version,
+        expected_payload_hash: request_args.expected_payload_hash.clone(),
+        request: request_args.request.clone(),
+    };
+    let storage_before = contract_storage_usage(&setup).await;
+
+    // When
+    let status = user
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(request_args)
+        .await
+        .unwrap();
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &request).await;
+    let storage_while_pending = contract_storage_usage(&setup).await;
+    setup
+        .worker
+        .fast_forward(SIGNATURE_TIMEOUT_BLOCKS)
+        .await
+        .unwrap();
+    let execution = status.await.unwrap();
+
+    // Then
+    assert!(
+        execution.is_failure(),
+        "request should time out without a response"
+    );
+    assert!(
+        storage_while_pending > storage_before,
+        "a pending request must occupy contract storage"
+    );
+    assert_eq!(
+        contract_storage_usage(&setup).await,
+        storage_before,
+        "the timeout must release the pending request's storage"
+    );
+}
+
+#[tokio::test]
+async fn verify_foreign_transaction__should_reject_request_above_extractor_cap() {
+    // Given
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
+    make_foreign_chain_available(
+        dtos::ForeignChain::Ethereum,
+        &setup.contract,
+        &setup.mpc_signer_accounts,
+    )
+    .await;
+    let user = setup.worker.dev_create_account().await.unwrap();
+    let domain_id = dtos::DomainId(setup.foreign_tx_key().domain_id().0);
+    let mut request_args = serde_json::to_value(evm_request_args_with_extractors(
+        domain_id,
+        MAX_EXTRACTORS_PER_REQUEST,
+    ))
+    .unwrap();
+    request_args["request"]["Ethereum"]["extractors"]
+        .as_array_mut()
+        .unwrap()
+        .push(
+            serde_json::to_value(EvmExtractor::Log {
+                log_index: MAX_EXTRACTORS_PER_REQUEST as u64,
+            })
+            .unwrap(),
+        );
+    let storage_before = contract_storage_usage(&setup).await;
+
+    // When
+    let result = user
+        .call(
+            setup.contract.id(),
+            method_names::VERIFY_FOREIGN_TRANSACTION,
+        )
+        .args_json(json!({ "request": request_args }))
+        .deposit(NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR))
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .into_result();
+
+    // Then
+    let error_message = result.unwrap_err().to_string();
+    let expected_error = BoundedVecOutOfBounds::UpperBoundError {
+        upper_bound: MAX_EXTRACTORS_PER_REQUEST,
+        got: MAX_EXTRACTORS_PER_REQUEST + 1,
+    }
+    .to_string();
+    assert!(
+        error_message.contains(&expected_error),
+        "the request must be rejected for exceeding the extractor cap, got: {error_message}"
+    );
+    assert_eq!(contract_storage_usage(&setup).await, storage_before);
 }

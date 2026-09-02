@@ -37,6 +37,12 @@ pub type TonCellData = UpperBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
 pub type TonCellRefs = UpperBoundedVec<Hash256, TON_CELL_MAX_REFS>;
 
+/// Upper bound on the extractors in one request.
+///
+/// A pending request is stored as a contract storage key, so its size has to stay well
+/// below NEAR's storage key length limit; the largest extractor is 33 bytes.
+pub const MAX_EXTRACTORS_PER_REQUEST: usize = 32;
+
 #[derive(
     Debug,
     Clone,
@@ -233,7 +239,7 @@ impl ForeignChainRpcRequest {
 )]
 pub struct EvmRpcRequest {
     pub tx_id: EvmTxId,
-    pub extractors: Vec<EvmExtractor>,
+    pub extractors: UpperBoundedVec<EvmExtractor, MAX_EXTRACTORS_PER_REQUEST>,
     pub finality: EvmFinality,
 }
 
@@ -257,7 +263,7 @@ pub struct EvmRpcRequest {
 pub struct SvmRpcRequest {
     pub tx_id: SvmTxId,
     pub finality: SvmFinality,
-    pub extractors: Vec<SvmExtractor>,
+    pub extractors: UpperBoundedVec<SvmExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -280,7 +286,7 @@ pub struct SvmRpcRequest {
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId,
     pub confirmations: BlockConfirmations,
-    pub extractors: Vec<BitcoinExtractor>,
+    pub extractors: UpperBoundedVec<BitcoinExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -304,7 +310,7 @@ pub struct TonRpcRequest {
     pub tx_id: TonTxId,
     pub account: TonAddress,
     pub finality: TonFinality,
-    pub extractors: Vec<TonExtractor>,
+    pub extractors: UpperBoundedVec<TonExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[serde_as]
@@ -642,7 +648,7 @@ pub struct AptosAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct AptosRpcRequest {
     pub tx_id: AptosTxId,
     pub finality: AptosFinality,
-    pub extractors: Vec<AptosExtractor>,
+    pub extractors: UpperBoundedVec<AptosExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -805,7 +811,7 @@ pub struct SuiAddress(#[serde_as(as = "Hex")] pub [u8; 32]);
 pub struct SuiRpcRequest {
     pub tx_id: SuiTxId,
     pub finality: SuiFinality,
-    pub extractors: Vec<SuiExtractor>,
+    pub extractors: UpperBoundedVec<SuiExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 /// Sui has no reorgs; a transaction is final once it is included in a
@@ -930,7 +936,7 @@ pub enum SuiExtractedValue {
 pub struct StarknetRpcRequest {
     pub tx_id: StarknetTxId,
     pub finality: StarknetFinality,
-    pub extractors: Vec<StarknetExtractor>,
+    pub extractors: UpperBoundedVec<StarknetExtractor, MAX_EXTRACTORS_PER_REQUEST>,
 }
 
 #[derive(
@@ -1979,6 +1985,7 @@ pub struct ChainEntry {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use rstest::rstest;
 
     #[test]
@@ -1987,7 +1994,7 @@ mod tests {
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
                 tx_id: EvmTxId([0xab; 32]),
-                extractors: vec![EvmExtractor::BlockHash],
+                extractors: [EvmExtractor::BlockHash].into(),
                 finality: EvmFinality::Finalized,
             }),
             values: vec![ExtractedValue::EvmExtractedValue(
@@ -2009,7 +2016,7 @@ mod tests {
             request: ForeignChainRpcRequest::Solana(SvmRpcRequest {
                 tx_id: SvmTxId([0x11; 64]),
                 finality: SvmFinality::Finalized,
-                extractors: vec![
+                extractors: [
                     SvmExtractor::InnerInstruction {
                         instruction_index: 2,
                         inner_instruction_index: 0,
@@ -2017,7 +2024,8 @@ mod tests {
                     SvmExtractor::AccountState {
                         pubkey: SvmAddress([0x22; 32]),
                     },
-                ],
+                ]
+                .into(),
             }),
             values: vec![
                 ExtractedValue::SvmExtractedValue(SvmExtractedValue::InnerInstruction(
@@ -2048,10 +2056,11 @@ mod tests {
             request: ForeignChainRpcRequest::Fogo(SvmRpcRequest {
                 tx_id: SvmTxId([0x77; 64]),
                 finality: SvmFinality::Confirmed,
-                extractors: vec![SvmExtractor::InnerInstruction {
+                extractors: [SvmExtractor::InnerInstruction {
                     instruction_index: 0,
                     inner_instruction_index: 1,
-                }],
+                }]
+                .into(),
             }),
             values: vec![ExtractedValue::SvmExtractedValue(
                 SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
@@ -2076,7 +2085,7 @@ mod tests {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: BitcoinTxId([0x55; 32]),
                 confirmations: BlockConfirmations(6),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
             values: vec![ExtractedValue::BitcoinExtractedValue(
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
@@ -2097,7 +2106,7 @@ mod tests {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id: StarknetTxId(StarknetFelt([0x77; 32])),
                 finality: StarknetFinality::AcceptedOnL1,
-                extractors: vec![StarknetExtractor::BlockHash],
+                extractors: [StarknetExtractor::BlockHash].into(),
             }),
             values: vec![ExtractedValue::StarknetExtractedValue(
                 StarknetExtractedValue::BlockHash(StarknetFelt([0x88; 32])),
@@ -2115,7 +2124,7 @@ mod tests {
     #[case::abstract_(
         ForeignChainRpcRequest::Abstract(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Abstract,
@@ -2123,7 +2132,7 @@ mod tests {
     #[case::ethereum(
         ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Ethereum,
@@ -2132,7 +2141,7 @@ mod tests {
         ForeignChainRpcRequest::Solana(SvmRpcRequest {
             tx_id: SvmTxId([0; 64]),
             finality: SvmFinality::Finalized,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Solana,
     )]
@@ -2140,7 +2149,7 @@ mod tests {
         ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id: BitcoinTxId([0; 32]),
             confirmations: BlockConfirmations(1),
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Bitcoin,
     )]
@@ -2148,14 +2157,14 @@ mod tests {
         ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
             tx_id: StarknetTxId(StarknetFelt([0; 32])),
             finality: StarknetFinality::AcceptedOnL1,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Starknet,
     )]
     #[case::bnb(
         ForeignChainRpcRequest::Bnb(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Bnb,
@@ -2163,7 +2172,7 @@ mod tests {
     #[case::base(
         ForeignChainRpcRequest::Base(EvmRpcRequest {
             tx_id: EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Base,
@@ -2171,7 +2180,7 @@ mod tests {
     #[case::arbitrum(
         ForeignChainRpcRequest::Arbitrum(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Arbitrum,
@@ -2179,7 +2188,7 @@ mod tests {
     #[case::hyper_evm(
         ForeignChainRpcRequest::HyperEvm(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::HyperEvm,
@@ -2187,7 +2196,7 @@ mod tests {
     #[case::polygon(
         ForeignChainRpcRequest::Polygon(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Polygon,
@@ -2200,7 +2209,7 @@ mod tests {
                 hash: Hash256([0; 32]),
             },
             finality: TonFinality::MasterchainIncluded,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Ton,
     )]
@@ -2208,7 +2217,7 @@ mod tests {
         ForeignChainRpcRequest::Aptos(AptosRpcRequest {
             tx_id: AptosTxId([0; 32]),
             finality: AptosFinality::Committed,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Aptos,
     )]
@@ -2216,14 +2225,14 @@ mod tests {
         ForeignChainRpcRequest::Sui(SuiRpcRequest {
             tx_id: SuiTxId([0; 32]),
             finality: SuiFinality::Checkpointed,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Sui,
     )]
     #[case::avalanche(
         ForeignChainRpcRequest::Avalanche(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Avalanche,
@@ -2231,7 +2240,7 @@ mod tests {
     #[case::adi(
         ForeignChainRpcRequest::Adi(EvmRpcRequest {
             tx_id: EvmTxId([12; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: EvmFinality::Finalized,
         }),
         ForeignChain::Adi,
@@ -2240,7 +2249,7 @@ mod tests {
         ForeignChainRpcRequest::Fogo(SvmRpcRequest {
             tx_id: SvmTxId([0; 64]),
             finality: SvmFinality::Finalized,
-            extractors: vec![],
+            extractors: [].into(),
         }),
         ForeignChain::Fogo,
     )]
@@ -2257,7 +2266,7 @@ mod tests {
         let payload_a = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
                 tx_id: EvmTxId([0x01; 32]),
-                extractors: vec![EvmExtractor::BlockHash],
+                extractors: [EvmExtractor::BlockHash].into(),
                 finality: EvmFinality::Finalized,
             }),
 
@@ -2268,7 +2277,7 @@ mod tests {
         let payload_b = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
                 tx_id: EvmTxId([0x02; 32]),
-                extractors: vec![EvmExtractor::BlockHash],
+                extractors: [EvmExtractor::BlockHash].into(),
                 finality: EvmFinality::Finalized,
             }),
             values: vec![ExtractedValue::EvmExtractedValue(
@@ -2329,7 +2338,7 @@ mod tests {
                     hash: Hash256([0xaa; 32]),
                 },
                 finality: TonFinality::MasterchainIncluded,
-                extractors: vec![TonExtractor::Log { message_index: 0 }],
+                extractors: [TonExtractor::Log { message_index: 0 }].into(),
             }),
             values: vec![ExtractedValue::TonExtractedValue(TonExtractedValue::Log(
                 TonLog {
@@ -2360,7 +2369,7 @@ mod tests {
             request: ForeignChainRpcRequest::Aptos(AptosRpcRequest {
                 tx_id: AptosTxId([0xcc; 32]),
                 finality: AptosFinality::Committed,
-                extractors: vec![AptosExtractor::Event { event_index: 0 }],
+                extractors: [AptosExtractor::Event { event_index: 0 }].into(),
             }),
             values: vec![ExtractedValue::AptosExtractedValue(
                 AptosExtractedValue::Event(AptosEvent {
@@ -2386,7 +2395,7 @@ mod tests {
             request: ForeignChainRpcRequest::Sui(SuiRpcRequest {
                 tx_id: SuiTxId([0xdd; 32]),
                 finality: SuiFinality::Checkpointed,
-                extractors: vec![SuiExtractor::Event { event_index: 0 }],
+                extractors: [SuiExtractor::Event { event_index: 0 }].into(),
             }),
             values: vec![ExtractedValue::SuiExtractedValue(SuiExtractedValue::Event(
                 SuiEvent {
@@ -2535,7 +2544,7 @@ mod tests {
                         hash: Hash256([0xaa; 32]),
                     },
                     finality: TonFinality::MasterchainIncluded,
-                    extractors: vec![TonExtractor::Log { message_index: 0 }],
+                    extractors: [TonExtractor::Log { message_index: 0 }].into(),
                 }),
                 // 0xfe (not 0xff) so the body stays canonical at 7 bits, where the final
                 // byte's low bit is unused padding and must be zero.
@@ -2551,5 +2560,45 @@ mod tests {
 
         // Then
         assert_ne!(hash_7_bits, hash_8_bits);
+    }
+
+    fn evm_rpc_request_json_with_extractors(extractor_count: usize) -> serde_json::Value {
+        let mut json = serde_json::to_value(EvmRpcRequest {
+            tx_id: EvmTxId([0xab; 32]),
+            extractors: [].into(),
+            finality: EvmFinality::Finalized,
+        })
+        .unwrap();
+        let extractors: Vec<EvmExtractor> = (0..extractor_count)
+            .map(|log_index| EvmExtractor::Log {
+                log_index: log_index as u64,
+            })
+            .collect();
+        json["extractors"] = serde_json::to_value(extractors).unwrap();
+        json
+    }
+
+    #[test]
+    fn evm_rpc_request__should_deserialize_with_extractors_at_the_cap() {
+        // Given
+        let json = evm_rpc_request_json_with_extractors(MAX_EXTRACTORS_PER_REQUEST);
+
+        // When
+        let request: EvmRpcRequest = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(request.extractors.len(), MAX_EXTRACTORS_PER_REQUEST);
+    }
+
+    #[test]
+    fn evm_rpc_request__should_reject_extractors_above_the_cap() {
+        // Given
+        let json = evm_rpc_request_json_with_extractors(MAX_EXTRACTORS_PER_REQUEST + 1);
+
+        // When
+        let result = serde_json::from_value::<EvmRpcRequest>(json);
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 }
