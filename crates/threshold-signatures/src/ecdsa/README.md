@@ -19,24 +19,28 @@ Originally imported from the [Cait-Sith](https://github.com/cronokirby/cait-sith
 
 See [`ot_based_ecdsa/README.md`](ot_based_ecdsa/README.md) for details.
 
-### Robust ECDSA (`robust_ecdsa/`)
+### Robust ECDSA (`robust_ecdsa/`) -- stub, not a secure scheme
 
-Implemented from scratch following \[[DJNPO20](https://eprint.iacr.org/2020/501)\] with minimal modifications. Avoids triple generation entirely -- the offline round consists of a single presigning protocol using degree-2t polynomials. Requires `N >= 2t+1` signers where `t = MaxMalicious`.
+The \[[DJNPO20](https://eprint.iacr.org/2020/501)\] implementation was removed and replaced by a stub that produces valid signatures while leaking the signing key, so that the node plumbing built around this protocol stays exercised until a real robust scheme replaces it. Requires exactly `N = 2t+1` signers where `t = MaxMalicious`.
 
-See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) for details.
+See [`robust_ecdsa/README.md`](robust_ecdsa/README.md) before using it for anything.
 
 ## Key Differences
 
-| | OT-based ECDSA | Robust ECDSA |
+OT-based ECDSA is the only secure scheme in this module; the comparison below records
+the interface each one presents, not a choice between them.
+
+| | OT-based ECDSA | Robust ECDSA (stub) |
 |---|---|---|
 | **Offline phases** | Triple generation + Presigning | Presigning only |
-| **Offline rounds** | 11+ | 3 |
+| **Offline rounds** | 11+ | 1 |
 | **Sign rounds** | 1 | 1 |
 | **Triple requirement** | 2 triples per presignature | None |
 | **Threshold parameter** | `ReconstructionThreshold` | `MaxMalicious` |
-| **Scaling** | Less efficient with many participants | Better efficiency and bandwidth |
+| **Participants** | `N >= t` | exactly `N = 2t + 1` |
 
-See the [benchmark analysis](../../docs/benches/results.md) for detailed performance comparisons.
+The [benchmark analysis](../../docs/benches/results.md) compares OT-based ECDSA against
+the removed robust implementation; its robust figures no longer describe this module.
 
 ## DKG
 
