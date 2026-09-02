@@ -125,7 +125,7 @@ impl fmt::Debug for DstackAttestation {
 impl DstackAttestation {
     /// Runs the post-DCAP checks against an already-verified report.
     pub fn verify_with_report(
-        &self,
+        tcb_info: &TcbInfo,
         report: &VerifiedReport,
         expected_report_data: ReportData,
         accepted_measurements: &[ExpectedMeasurements],
@@ -137,13 +137,13 @@ impl DstackAttestation {
 
         // Verify all attestation components
         let advisory_ids = Self::verify_tcb_status(report)?;
-        self.verify_report_data(&expected_report_data, report_data)?;
+        Self::verify_report_data(&expected_report_data, report_data)?;
 
-        self.verify_rtmr3(report_data, &self.tcb_info)?;
-        self.verify_app_compose(&self.tcb_info)?;
+        Self::verify_rtmr3(report_data, tcb_info)?;
+        Self::verify_app_compose(tcb_info)?;
 
         let measurements =
-            self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)?;
+            Self::verify_any_measurements(report_data, tcb_info, accepted_measurements)?;
         Ok(AcceptedDstackAttestation {
             measurements,
             advisory_ids,
@@ -160,7 +160,12 @@ impl DstackAttestation {
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<AcceptedDstackAttestation, VerificationError> {
         let report = self.verify_dcap_quote(timestamp_seconds)?;
-        self.verify_with_report(&report, expected_report_data, accepted_measurements)
+        Self::verify_with_report(
+            &self.tcb_info,
+            &report,
+            expected_report_data,
+            accepted_measurements,
+        )
     }
 
     /// Runs only the DCAP step ([`dcap_qvl::verify::verify`]) and returns the
@@ -269,7 +274,6 @@ impl DstackAttestation {
     /// Matching the full blob proves the caller's expected report data was bound into the quote
     /// by an app running inside a TDX enclave. Its layout is the caller's concern.
     fn verify_report_data(
-        &self,
         expected: &ReportData,
         actual: &TDReport10,
     ) -> Result<(), VerificationError> {
@@ -279,17 +283,13 @@ impl DstackAttestation {
     /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
     /// On success, returns the matched measurements.
     fn verify_any_measurements(
-        &self,
         report_data: &TDReport10,
         tcb_info: &TcbInfo,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<ExpectedMeasurements, VerificationError> {
         for expected in accepted_measurements {
-            if self
-                .verify_static_rtmrs(report_data, tcb_info, expected)
-                .is_ok()
-                && self
-                    .verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
+            if Self::verify_static_rtmrs(report_data, tcb_info, expected).is_ok()
+                && Self::verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
                     .is_ok()
             {
                 return Ok(*expected); // found a valid match
@@ -304,7 +304,6 @@ impl DstackAttestation {
     }
     /// Verifies static RTMRs match expected values.
     fn verify_static_rtmrs(
-        &self,
         report_data: &TDReport10,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
@@ -357,11 +356,7 @@ impl DstackAttestation {
     }
 
     /// Verifies RTMR3 by replaying event log.
-    fn verify_rtmr3(
-        &self,
-        report_data: &TDReport10,
-        tcb_info: &TcbInfo,
-    ) -> Result<(), VerificationError> {
+    fn verify_rtmr3(report_data: &TDReport10, tcb_info: &TcbInfo) -> Result<(), VerificationError> {
         compare_hashes("rtmr3", tcb_info.rtmr3.as_slice(), &report_data.rt_mr3)?;
 
         Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
@@ -370,7 +365,7 @@ impl DstackAttestation {
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
-    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> Result<(), VerificationError> {
+    fn verify_app_compose(tcb_info: &TcbInfo) -> Result<(), VerificationError> {
         let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
             .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
 
@@ -414,7 +409,6 @@ impl DstackAttestation {
 
     /// Verifies local key-provider event digest matches the expected digest.
     fn verify_key_provider_digest(
-        &self,
         tcb_info: &TcbInfo,
         expected_digest: &[u8; 48],
     ) -> Result<(), VerificationError> {
