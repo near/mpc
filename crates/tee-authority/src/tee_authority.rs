@@ -685,10 +685,14 @@ where
     Err(AllPccsEndpointsFailed { failures })
 }
 
-async fn get_with_dstack_bounds<Value>(
-    operation: impl AsyncFn() -> anyhow::Result<Value>,
+async fn get_with_dstack_bounds<Operation, OperationFuture, Value>(
+    operation: Operation,
     description: &str,
-) -> anyhow::Result<Value> {
+) -> anyhow::Result<Value>
+where
+    Operation: Fn() -> OperationFuture,
+    OperationFuture: Future<Output = anyhow::Result<Value>>,
+{
     get_with_backoff(
         || async {
             tokio::time::timeout(DSTACK_REQUEST_TIMEOUT, operation())
