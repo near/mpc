@@ -4,13 +4,12 @@ use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
 use ethereum_types::H256;
-use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use jsonrpsee::core::http_helpers::HttpError;
 use jsonrpsee::http_client::transport::Error as HttpTransportError;
-use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use mpc_node_config::ForeignChainProviderConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
-use near_mpc_contract_interface::types::ProviderId;
+use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -27,7 +26,10 @@ pub mod contract_interface_conversions;
 pub mod ethereum;
 pub mod evm;
 pub mod hyperevm;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock;
 pub mod polygon;
+pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
 
@@ -121,7 +123,7 @@ pub trait NetworkFingerprintInspector {
 
     /// Normalizes any spec-legal spelling of this chain's fingerprint into the single form the trait
     /// compares. Idempotent.
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint;
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint;
 }
 
 /// Combines multiple inspectors that target the same chain into a single inspector.
@@ -220,12 +222,27 @@ where
     }
 }
 
+pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
+
+impl<T: NetworkFingerprintInspector + Clone + Send + Sync + 'static> ChainInspector for T {}
+
+pub trait BuildInspectors: Sync {
+    type Inspector: ChainInspector;
+
+    fn build(
+        &self,
+        chain: ForeignChain,
+        provider: &ForeignChainProviderConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<Self::Inspector>>;
+}
+
 /// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
 impl<Inspector> FanOut<Inspector>
 where
-    Inspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static,
+    Inspector: ChainInspector,
 {
     /// Ask every provider for the network it serves concurrently, one result each.
     /// Unlike [`FanOut::extract`], disagreement is not an error: a diagnostic caller needs the
@@ -262,19 +279,6 @@ where
         }
         join_set.join_all().await
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum RpcAuthentication {
-    /// The key is in the URL (e.g., Alchemy, QuickNode).
-    /// Example: `https://eth-mainnet.alchemyapi.io/v2/your-api-key`
-    KeyInUrl,
-    /// Custom header for providers like NOWNodes or GetBlock.
-    /// Example: key="x-api-key", value="your-secret-token"
-    CustomHeader {
-        header_name: HeaderName,
-        header_value: HeaderValue,
-    },
 }
 
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -471,32 +475,6 @@ pub enum ProviderFailure {
     TimedOut,
 }
 
-/// Builds an HTTP client with the specified authentication method.
-/// This client can be used to construct a [`ForeignChainInspector`] such
-/// as [`bitcoin::inspector::BitcoinInspector`].
-pub fn build_http_client(
-    base_url: String,
-    rpc_authentication: RpcAuthentication,
-) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
-    let mut headers = HeaderMap::new();
-
-    match rpc_authentication {
-        RpcAuthentication::KeyInUrl => {}
-        RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } => {
-            headers.insert(header_name, header_value);
-        }
-    }
-
-    let client = HttpClientBuilder::default()
-        .set_headers(headers)
-        .build(&base_url)?;
-
-    Ok(client)
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -628,9 +606,9 @@ mod tests {
     fn classify_rpc_client_error__should_keep_the_rpc_url_out_of_the_message() {
         // Given
         let url_carrying_a_key = "http://provider.example/v2/super-secret".to_string();
-        let error = transport(HttpTransportError::Url(url_carrying_a_key));
 
         // When
+        let error = transport(HttpTransportError::Url(url_carrying_a_key));
         let classified = ForeignChainInspectionError::classify_rpc_client_error(error);
 
         // Then

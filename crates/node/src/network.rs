@@ -733,6 +733,10 @@ impl NetworkTaskChannel {
         self.sender.my_participant_id
     }
 
+    pub fn leader(&self) -> ParticipantId {
+        self.sender.leader
+    }
+
     /// Receives a single MPC message from any participant from the network, without processing it.
     /// This will return error early if any connection is broken.
     async fn receive_raw(&mut self) -> anyhow::Result<MpcPeerMessage> {

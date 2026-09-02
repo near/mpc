@@ -9,14 +9,15 @@ use foreign_chain_inspector::Verdict;
 
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
-    NetworkFingerprintInspector, RpcAuthentication,
+    NetworkFingerprintInspector,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
         MAINNET_GENESIS_BLOCK_HASH,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
-    build_http_client,
 };
+use foreign_chain_rpc_factory::build_http_client;
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::bitcoin::{
@@ -396,7 +397,11 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
         });
     });
 
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = BitcoinInspector::new(client);
 
     // when
@@ -429,7 +434,11 @@ async fn network_fingerprint__should_ask_the_provider_for_the_hash_at_height_zer
             }));
         })
         .await;
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = BitcoinInspector::new(client);
 
     // When

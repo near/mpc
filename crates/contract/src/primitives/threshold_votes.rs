@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 /// Tracks votes for proposed threshold parameters (new participants, threshold,
 /// and per-domain threshold updates). Each current participant can maintain one vote.
 // TODO(#2825): Replace with Votes<AuthenticatedAccountId> from votes.rs
-// once this type is moved out of RunningContractState (which requires Clone + PartialEq + JSON).
-#[near(serializers=[borsh, json])]
+// once this type is moved out of RunningContractState (which requires Clone + PartialEq).
+#[near(serializers=[borsh])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GovernanceThresholdParametersVotes {
     pub(crate) proposal_by_account:

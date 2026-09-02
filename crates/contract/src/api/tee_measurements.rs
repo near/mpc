@@ -6,9 +6,7 @@ use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
 use crate::state::ProtocolContractState;
-use crate::tee::proposal::NodeImageHash;
 use crate::{MpcContract, MpcContractExt};
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, log, near};
 use std::time::Duration;
@@ -16,7 +14,7 @@ use std::time::Duration;
 #[near]
 impl MpcContract {
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error> {
+    pub fn vote_code_hash(&mut self, code_hash: dtos::NodeImageHash) -> Result<(), Error> {
         log!(
             "vote_code_hash: signer={}, code_hash={:?}",
             env::signer_account_id(),
@@ -48,7 +46,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_add_launcher_hash(
         &mut self,
-        launcher_hash: LauncherImageHash,
+        launcher_hash: dtos::LauncherImageHash,
     ) -> Result<(), Error> {
         log!(
             "vote_add_launcher_hash: signer={}, launcher_hash={:?}",
@@ -84,7 +82,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_remove_launcher_hash(
         &mut self,
-        launcher_hash: LauncherImageHash,
+        launcher_hash: dtos::LauncherImageHash,
     ) -> Result<(), Error> {
         log!(
             "vote_remove_launcher_hash: signer={}, launcher_hash={:?}",
@@ -192,11 +190,11 @@ impl MpcContract {
         entries
     }
 
-    pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+    pub fn allowed_launcher_compose_hashes(&self) -> Vec<dtos::LauncherDockerComposeHash> {
         self.tee_state.get_allowed_launcher_compose_hashes()
     }
 
-    pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash> {
+    pub fn allowed_launcher_image_hashes(&self) -> Vec<dtos::LauncherImageHash> {
         self.tee_state.get_allowed_launcher_hashes()
     }
 
@@ -276,7 +274,7 @@ mod tests {
                 .expect("vote succeeds");
         }
 
-        let allowed_docker_image_hashes: Vec<NodeImageHash> = contract
+        let allowed_docker_image_hashes: Vec<dtos::NodeImageHash> = contract
             .tee_state
             .get_allowed_mpc_docker_images(Duration::from_secs(10))
             .into_iter()
@@ -285,12 +283,12 @@ mod tests {
 
         assert_eq!(
             allowed_docker_image_hashes,
-            vec![NodeImageHash::from(code_hash)]
+            vec![dtos::NodeImageHash::from(code_hash)]
         )
     }
 
-    fn make_launcher_hash(byte: u8) -> LauncherImageHash {
-        LauncherImageHash::from([byte; 32])
+    fn make_launcher_hash(byte: u8) -> dtos::LauncherImageHash {
+        dtos::LauncherImageHash::from([byte; 32])
     }
 
     #[test]
@@ -626,7 +624,7 @@ mod tests {
         let threshold = 3;
         let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
-        let code_hash = NodeImageHash::from([0xAB; 32]);
+        let code_hash = dtos::NodeImageHash::from([0xAB; 32]);
 
         assert!(contract.code_hash_votes().proposal_by_account.is_empty());
 
@@ -733,7 +731,7 @@ mod tests {
         let upgrade_deadline = 7 * day;
         let t0 = sec;
 
-        let vote_mpc = |contract: &mut MpcContract, hash: NodeImageHash, ts: u64| {
+        let vote_mpc = |contract: &mut MpcContract, hash: dtos::NodeImageHash, ts: u64| {
             for (account_id, _, _) in participant_list {
                 testing_env!(
                     VMContextBuilder::new()
@@ -748,7 +746,7 @@ mod tests {
             }
         };
 
-        let vote_launcher = |contract: &mut MpcContract, hash: LauncherImageHash, ts: u64| {
+        let vote_launcher = |contract: &mut MpcContract, hash: dtos::LauncherImageHash, ts: u64| {
             for (account_id, _, _) in &participant_list[0..3] {
                 testing_env!(
                     VMContextBuilder::new()
@@ -765,9 +763,9 @@ mod tests {
 
         let l1 = make_launcher_hash(0xA1);
         let l2 = make_launcher_hash(0xA2);
-        let m1 = NodeImageHash::from([0x11; 32]);
-        let m2 = NodeImageHash::from([0x22; 32]);
-        let m3 = NodeImageHash::from([0x33; 32]);
+        let m1 = dtos::NodeImageHash::from([0x11; 32]);
+        let m2 = dtos::NodeImageHash::from([0x22; 32]);
+        let m3 = dtos::NodeImageHash::from([0x33; 32]);
 
         vote_mpc(&mut contract, m1, t0);
         vote_launcher(&mut contract, l1, t0);

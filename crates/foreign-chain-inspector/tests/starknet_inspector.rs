@@ -9,12 +9,13 @@ use foreign_chain_inspector::Verdict;
 
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
-    RpcAuthentication, build_http_client,
     starknet::{
         MAINNET_CHAIN_ID, StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
+use foreign_chain_rpc_factory::build_http_client;
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::starknet::{
@@ -408,7 +409,11 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
     setup_starknet_rpc_mock(&server);
 
     let tx_id = StarknetTransactionHash::from([9; 32]);
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = StarknetInspector::new(client);
 
     // when
@@ -560,7 +565,11 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
     setup_starknet_rpc_mock(&server);
 
     let tx_id = StarknetTransactionHash::from([9; 32]);
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = StarknetInspector::new(client);
 
     // when

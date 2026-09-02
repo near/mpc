@@ -677,6 +677,12 @@ mod test_conversions {
         }
     }
 
+    impl From<&Keyset> for dtos::Keyset {
+        fn from(keyset: &Keyset) -> Self {
+            keyset.into_dto_type()
+        }
+    }
+
     impl From<GovernanceThresholdParameters> for dtos::GovernanceThresholdParameters {
         fn from(params: GovernanceThresholdParameters) -> Self {
             (&params).into_dto_type()
@@ -1093,95 +1099,6 @@ mod tests {
     use rand::rngs::OsRng;
     use rstest::rstest;
 
-    const TEST_THRESHOLD: u64 = 2;
-
-    fn test_participants() -> Participants {
-        let mut participants = Participants::new();
-        participants
-            .insert(
-                "alice.near".parse().unwrap(),
-                crate::primitives::participants::ParticipantInfo {
-                    url: "https://alice.near.org".to_string(),
-                    tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
-                        .parse()
-                        .unwrap(),
-                },
-            )
-            .unwrap();
-        participants
-            .insert(
-                "bob.near".parse().unwrap(),
-                crate::primitives::participants::ParticipantInfo {
-                    url: "https://bob.near.org".to_string(),
-                    tls_public_key: "ed25519:HghFShDXwniWaV3CbMmPJsUjeLZBJ2jjCq6rM3AQYbx7"
-                        .parse()
-                        .unwrap(),
-                },
-            )
-            .unwrap();
-        participants
-    }
-
-    /// Ensures that the JSON produced by serializing the internal [`Participants`]
-    /// type can be deserialized into the DTO [`dtos::Participants`] type and
-    /// vice versa, producing identical JSON in both directions.
-    #[test]
-    fn participants_serde_is_compatible_with_dto() {
-        let internal = test_participants();
-        let json = serde_json::to_value(&internal).unwrap();
-
-        // Internal JSON → DTO type.
-        let dto: dtos::Participants = serde_json::from_value(json.clone()).unwrap();
-
-        // DTO → JSON must match the original.
-        let dto_json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
-
-        // Full round-trip back to the internal type.
-        let roundtrip: Participants = serde_json::from_value(dto_json).unwrap();
-        assert_eq!(internal, roundtrip);
-    }
-
-    /// Ensures that the JSON produced by serializing the internal
-    /// [`GovernanceThresholdParameters`] type can be deserialized into the DTO
-    /// [`dtos::GovernanceThresholdParameters`] type and vice versa, producing identical
-    /// JSON in both directions.
-    #[test]
-    fn threshold_parameters_serde_is_compatible_with_dto() {
-        let internal = GovernanceThresholdParameters::new(
-            test_participants(),
-            GovernanceThreshold::new(TEST_THRESHOLD),
-        )
-        .unwrap();
-        let json = serde_json::to_value(&internal).unwrap();
-
-        let dto: dtos::GovernanceThresholdParameters =
-            serde_json::from_value(json.clone()).unwrap();
-
-        let dto_json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
-
-        let roundtrip: GovernanceThresholdParameters = serde_json::from_value(dto_json).unwrap();
-        assert_eq!(internal, roundtrip);
-    }
-
-    /// Verify that [`IntoInterfaceType::into_dto_type`] produces a DTO whose
-    /// serialization matches the internal type's serialization.
-    #[test]
-    fn into_dto_type_preserves_serialization() {
-        let internal = GovernanceThresholdParameters::new(
-            test_participants(),
-            GovernanceThreshold::new(TEST_THRESHOLD),
-        )
-        .unwrap();
-        let internal_json = serde_json::to_value(&internal).unwrap();
-
-        let dto: dtos::GovernanceThresholdParameters = (&internal).into_dto_type();
-        let dto_json = serde_json::to_value(&dto).unwrap();
-
-        assert_eq!(internal_json, dto_json);
-    }
-
     #[rstest]
     #[case(dtos::Curve::Secp256k1)]
     #[case(dtos::Curve::Edwards25519)]
@@ -1204,10 +1121,6 @@ mod tests {
 
         // Then
         assert_eq!(internal, roundtrip);
-        assert_eq!(
-            serde_json::to_value(&internal).unwrap(),
-            serde_json::to_value(&dto).unwrap()
-        );
     }
 
     #[test]

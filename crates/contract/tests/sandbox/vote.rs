@@ -389,10 +389,10 @@ async fn setup_resharing_state(
     // Verify we're in resharing state
     match get_state(&contract).await {
         ProtocolContractState::Resharing(state) => {
-            // Compare proposal parameters via JSON roundtrip (internal vs DTO types)
-            let proposal_json = serde_json::to_value(&proposal).unwrap();
-            let state_params_json = serde_json::to_value(&state.resharing_key.parameters).unwrap();
-            assert_eq!(state_params_json, proposal_json);
+            assert_eq!(
+                state.resharing_key.parameters,
+                dtos::GovernanceThresholdParameters::from(proposal.clone())
+            );
             assert_eq!(state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
@@ -665,8 +665,8 @@ async fn test_cancelled_epoch_cannot_be_reused(
     match state {
         ProtocolContractState::Resharing(resharing_contract_state) => {
             assert_eq!(
-                serde_json::to_value(&resharing_contract_state.resharing_key.parameters).unwrap(),
-                serde_json::to_value(&threshold_parameters).unwrap()
+                resharing_contract_state.resharing_key.parameters,
+                dtos::GovernanceThresholdParameters::from(threshold_parameters.clone())
             );
             assert_eq!(
                 resharing_contract_state.resharing_key.epoch_id, prospective_epoch_id,
@@ -757,8 +757,8 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
                 "previously_cancelled_resharing_epoch_id should be None after successful resharing"
             );
             assert_eq!(
-                serde_json::to_value(&running_state.parameters).unwrap(),
-                serde_json::to_value(&threshold_parameters).unwrap(),
+                running_state.parameters,
+                dtos::GovernanceThresholdParameters::from(threshold_parameters.clone()),
                 "threshold parameters must match"
             );
         }

@@ -19,7 +19,7 @@ const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
 /// Contract-side [`CodeHashesVotes`](near_mpc_contract_interface::types::CodeHashesVotes),
 /// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
 /// the participant set.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CodeHashesVotes {
     pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
@@ -77,7 +77,7 @@ impl CodeHashesVotes {
 /// Contract-side [`LauncherHashVotes`](near_mpc_contract_interface::types::LauncherHashVotes),
 /// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
 /// the participant set.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LauncherHashVotes {
     pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
