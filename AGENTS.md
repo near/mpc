@@ -60,7 +60,8 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 |-------|---------|
 | `mpc-node` | Main node binary: indexer, coordinator, P2P networking, signature protocols |
 | `mpc-contract` | NEAR smart contract: manages requests, participant set, protocol state |
-| `contract-interface` | DTOs for contract communication |
+| `near-mpc-contract-interface` | DTOs for contract communication and typed contract calls; plain data carriers |
+| `near-mpc-sdk` | Client SDK: request builders, response verification; owns validation shared between consumers of the contract-interface crate |
 | `mpc-primitives` | Core domain types (domain IDs, signature schemes) |
 | `mpc-tls` | TLS transport for secure P2P communication |
 | `test-utils` | Testing utilities for integration tests |
@@ -119,6 +120,14 @@ See `docs/engineering-standards.md` for the full rationale and additional testin
 
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
+
+### Validation
+We follow [parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/): a validation method returns a validated struct rather than a `bool`, so the type system carries the proof of validity.
+
+Validation logic needed by different consumers of the contract-interface crate should be shared, not re-implemented per consumer. A good place for such shared logic is the `near-mpc-sdk` crate.
+
+### Contract Methods
+A PR introducing a new contract method must add that method to the `MpcContractHandle` in the interface crate.
 
 ### Trait Naming
 Traits should model a single capability, and be named after the action, not as an agent noun derived from it: `ReadContractState`, not `ContractStateReader`. This follows std-idiomatic patterns (`From*`/`Into*`/`To*` conversions). This applies to new traits and opportunistic renames, existing traits may deviate from this principle.
