@@ -226,7 +226,7 @@ const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 const DSTACK_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-const DSTACK_MAX_RETRIES: usize = 1;
+const DSTACK_MAX_RETRIES: usize = 3;
 
 /// Maximum age accepted for PCCS collateral. Hard-coded at 31 days.
 /// Lives in the node binary (governed via image-hash approval), not
