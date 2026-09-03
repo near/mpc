@@ -14,9 +14,10 @@ use std::io::Write;
 use std::path::{Component, Path};
 
 /// Records that nearcore's epoch-sync asked for a data reset (see #3909). Consumed by
-/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup. The caller only requests a
-/// restart when this succeeds, so a persistent write failure (a full or read-only
-/// filesystem) leaves the node up and wedged rather than restart-looping.
+/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup. The caller
+/// ([`crate::indexer::real::handle_shutdown_signal`]) only restarts when this succeeds, so
+/// a persistent write failure (a full or read-only filesystem) leaves the node up and
+/// wedged rather than restart-looping.
 ///
 /// A plain (non-atomic) write is deliberate — unlike [`write_last_token`], which uses
 /// tmp+fsync+rename because a torn token would corrupt its wipe-once decision. Here only
@@ -365,7 +366,7 @@ mod tests {
     #[case::no_marker_is_noop(false, true, false, true, false)]
     #[case::archival_skips_wipe_but_clears_marker(true, true, true, true, false)]
     #[case::missing_data_dir_clears_marker(true, false, false, false, false)]
-    fn wipe_near_data_if_epoch_sync_reset__should_wipe_and_clear_only_when_marker_present(
+    fn wipe_near_data_if_epoch_sync_reset__should_clear_marker_and_wipe_store_except_when_archival(
         #[case] create_marker: bool,
         #[case] create_data_dir: bool,
         #[case] is_archival: bool,
@@ -422,8 +423,10 @@ mod tests {
         record_epoch_sync_reset_request(home).unwrap();
         let escaping = home.join("../escape");
 
-        // When / Then — the path guard rejects it and the data is left untouched.
+        // When / Then — the path guard rejects it and the data is left untouched. The
+        // marker must survive so the caller keeps the restart disarmed instead of looping.
         assert!(wipe_near_data_if_epoch_sync_reset(home, &escaping, false).is_err());
+        assert!(marker_exists(home));
     }
 
     #[test]
