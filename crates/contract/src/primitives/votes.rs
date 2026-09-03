@@ -135,19 +135,6 @@ where
 
 pub use mpc_primitives::hash::ProposalHash;
 
-/// This trait allows the user to create their own proposal hash encoding
-pub trait ProposalHashEncoding {
-    fn bytes_for_hash(&self) -> Vec<u8>;
-
-    /// The [`ProposalHash`] identifying this proposal: SHA-256 of [`Self::bytes_for_hash`].
-    fn proposal_hash(&self) -> ProposalHash {
-        let hash: [u8; 32] = near_sdk::env::sha256(self.bytes_for_hash())
-            .try_into()
-            .expect("sha256 yields 32 bytes");
-        hash.into()
-    }
-}
-
 #[expect(rustdoc::private_intra_doc_links)]
 /// The set of voters who voted for a particular proposal. Always non-empty when stored
 /// inside [`Votes::votes_by_proposal`].
@@ -189,7 +176,7 @@ mod tests {
 
     use near_sdk::{
         BorshStorageKey,
-        borsh::{self, BorshDeserialize, BorshSerialize},
+        borsh::{BorshDeserialize, BorshSerialize},
     };
     use std::{
         collections::{BTreeMap, BTreeSet},
@@ -199,22 +186,8 @@ mod tests {
 
     use crate::primitives::votes::{ProposalHash, VoterSet, Votes};
 
-    use super::ProposalHashEncoding;
-
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestVoter(String);
-    #[expect(
-        dead_code,
-        reason = "constructed in tests via Borsh deserialization, which the dead-code analyzer doesn't see."
-    )]
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
-    struct TestProposal(String);
-
-    impl ProposalHashEncoding for TestProposal {
-        fn bytes_for_hash(&self) -> Vec<u8> {
-            borsh::to_vec(&self).expect("borsh serialization of String must succeed")
-        }
-    }
 
     #[derive(Hash, Clone, Debug, PartialEq, Eq, BorshSerialize, BorshStorageKey)]
     pub enum TestStorageKey {

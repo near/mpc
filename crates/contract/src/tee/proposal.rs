@@ -1,9 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env::sha256, log};
 use std::time::Duration;
 
-use crate::primitives::{time::Timestamp, votes::ProposalHashEncoding};
+use crate::primitives::time::Timestamp;
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 
@@ -13,12 +13,6 @@ pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, Nod
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
-
-impl ProposalHashEncoding for LauncherVoteAction {
-    fn bytes_for_hash(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("borsh serialization of LauncherVoteAction must succeed")
-    }
-}
 
 /// An allowed Docker image configuration entry containing the MPC image hash
 /// and when it was added to the allowlist.
@@ -414,7 +408,10 @@ pub fn get_docker_compose_hash(
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    use super::*;
+    use super::{
+        AllowedLauncherImageInsertion, AllowedLauncherImages, Duration, LauncherImageHash,
+        NodeImageHash, StoredDockerImageHashes, get_docker_compose_hash,
+    };
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -822,28 +819,6 @@ mod tests {
         // Then it stays live past the original deadline (101), within the refreshed window (190).
         set_block_secs(150);
         assert_eq!(allowed.launcher_hashes().len(), 1);
-    }
-
-    /// Golden values computed independently (Python hashlib over the borsh bytes:
-    /// 1-byte variant tag + payload), so a change to the encoding or hashing fails here.
-    #[test]
-    fn launcher_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
-        // Given
-        let hash = dummy_launcher_hash(0xAB);
-
-        // When / Then
-        assert_eq!(
-            LauncherVoteAction::Add(hash).proposal_hash(),
-            "86754e71ab90f305c4faa7eee57b41b89e49ebcdf03a745c855ee611e4597237"
-                .parse()
-                .unwrap()
-        );
-        assert_eq!(
-            LauncherVoteAction::Remove(hash).proposal_hash(),
-            "7165f0a4234dd3c248bb18575a214c9c948f925b6717c3aaab16b6cf500f19fa"
-                .parse()
-                .unwrap()
-        );
     }
 
     #[test]

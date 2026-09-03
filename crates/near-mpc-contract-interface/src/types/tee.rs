@@ -7,6 +7,7 @@ use mpc_primitives::hash::{
 };
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(
@@ -96,8 +97,16 @@ pub enum MeasurementVoteAction {
     Remove(ExpectedMeasurements),
 }
 
-/// Pending OS measurement votes, keyed by the proposal hash of the [`MeasurementVoteAction`].
-pub type MeasurementVotes = BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>;
+/// The [`ProposalHash`] identifying a measurement vote: SHA-256 of the action's borsh
+/// encoding.
+impl From<&MeasurementVoteAction> for ProposalHash {
+    fn from(action: &MeasurementVoteAction) -> Self {
+        sha256_proposal_hash(
+            &borsh::to_vec(action)
+                .expect("borsh serialization of MeasurementVoteAction must succeed"),
+        )
+    }
+}
 
 /// The action a participant is voting for on a launcher image hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -110,16 +119,69 @@ pub enum LauncherVoteAction {
     Remove(LauncherImageHash),
 }
 
-/// Pending launcher hash votes, keyed by the proposal hash of the [`LauncherVoteAction`].
-pub type LauncherHashVotes = BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>;
+/// The [`ProposalHash`] identifying a launcher vote: SHA-256 of the action's borsh
+/// encoding.
+impl From<&LauncherVoteAction> for ProposalHash {
+    fn from(action: &LauncherVoteAction) -> Self {
+        sha256_proposal_hash(
+            &borsh::to_vec(action).expect("borsh serialization of LauncherVoteAction must succeed"),
+        )
+    }
+}
 
-/// Pending node image hash votes, keyed by the [`NodeImageHash`] voted for.
-pub type CodeHashesVotes = BTreeMap<NodeImageHash, BTreeSet<AuthenticatedParticipantId>>;
+fn sha256_proposal_hash(bytes: &[u8]) -> ProposalHash {
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    ProposalHash::new(digest)
+}
+
+/// Voters grouped by the [`ProposalHash`] of the action they voted for.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct VotesByProposal(pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>);
+
+/// Voters grouped by the [`NodeImageHash`] they voted to whitelist.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct CodeHashesVotes(pub BTreeMap<NodeImageHash, BTreeSet<AuthenticatedParticipantId>>);
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
+    use super::{
+        Ed25519PublicKey, ExpectedMeasurements, KeyProviderEventDigest, LauncherImageHash,
+        LauncherVoteAction, MeasurementVoteAction, MrtdHash, NodeId, ProposalHash, Rtmr0Hash,
+        Rtmr1Hash, Rtmr2Hash,
+    };
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -223,5 +285,44 @@ mod tests {
         // Then
         assert_eq!(json["mrtd"], "01".repeat(48));
         assert_eq!(json["key_provider_event_digest"], "01".repeat(48));
+    }
+
+    /// Golden values computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + payload), so a change to the encoding or hashing fails here.
+    #[test]
+    fn launcher_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
+        // Given
+        let hash = LauncherImageHash::from([0xAB; 32]);
+
+        // When / Then
+        assert_eq!(
+            ProposalHash::from(&LauncherVoteAction::Add(hash)),
+            "86754e71ab90f305c4faa7eee57b41b89e49ebcdf03a745c855ee611e4597237"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            ProposalHash::from(&LauncherVoteAction::Remove(hash)),
+            "7165f0a4234dd3c248bb18575a214c9c948f925b6717c3aaab16b6cf500f19fa"
+                .parse()
+                .unwrap()
+        );
+    }
+
+    /// Golden value computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + the five 48-byte digests), so a change to the encoding
+    /// or hashing fails here.
+    #[test]
+    fn measurement_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
+        // Given
+        let measurement = measurements(0xCD);
+
+        // When / Then
+        assert_eq!(
+            ProposalHash::from(&MeasurementVoteAction::Add(measurement)),
+            "179aaa73073c7493dc33b55de9a28735d28f94975b662f22a6aaa63d6c059fcc"
+                .parse()
+                .unwrap()
+        );
     }
 }

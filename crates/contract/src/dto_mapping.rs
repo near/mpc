@@ -857,24 +857,33 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 // --- Voting types ---
 
-/// Pending votes for the vote view methods, keyed by the 32-byte proposal identifier:
+/// Pending votes keyed by the 32-byte proposal identifier `K`:
 /// [`ProposalHash`](crate::primitives::votes::ProposalHash) in general, or the digest
 /// newtype itself where the proposal is one (code-hash votes store the
 /// [`dtos::NodeImageHash`] unhashed).
-impl<K> IntoInterfaceType<BTreeMap<K, BTreeSet<dtos::AuthenticatedParticipantId>>>
-    for &Votes<AuthenticatedParticipantId>
-where
-    K: From<[u8; 32]> + Ord,
-{
-    fn into_dto_type(self) -> BTreeMap<K, BTreeSet<dtos::AuthenticatedParticipantId>> {
-        self.iter()
-            .map(|(proposal, voters)| {
-                (
-                    K::from((*proposal).into()),
-                    voters.iter().map(|v| v.into_dto_type()).collect(),
-                )
-            })
-            .collect()
+fn votes_by_proposal_key<K: From<[u8; 32]> + Ord>(
+    votes: &Votes<AuthenticatedParticipantId>,
+) -> BTreeMap<K, BTreeSet<dtos::AuthenticatedParticipantId>> {
+    votes
+        .iter()
+        .map(|(proposal, voters)| {
+            (
+                K::from((*proposal).into()),
+                voters.iter().map(|v| v.into_dto_type()).collect(),
+            )
+        })
+        .collect()
+}
+
+impl IntoInterfaceType<dtos::VotesByProposal> for &Votes<AuthenticatedParticipantId> {
+    fn into_dto_type(self) -> dtos::VotesByProposal {
+        dtos::VotesByProposal(votes_by_proposal_key(self))
+    }
+}
+
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &Votes<AuthenticatedParticipantId> {
+    fn into_dto_type(self) -> dtos::CodeHashesVotes {
+        dtos::CodeHashesVotes(votes_by_proposal_key(self))
     }
 }
 

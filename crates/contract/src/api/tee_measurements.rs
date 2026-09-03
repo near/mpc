@@ -217,7 +217,7 @@ impl MpcContract {
     }
 
     /// Pending OS measurement votes, keyed by the proposal hash of the [`dtos::MeasurementVoteAction`].
-    pub fn os_measurement_votes(&self) -> dtos::MeasurementVotes {
+    pub fn os_measurement_votes(&self) -> dtos::VotesByProposal {
         log!("os_measurement_votes");
         (&self.tee_state.measurement_votes).into_dto_type()
     }
@@ -251,7 +251,7 @@ impl MpcContract {
     }
 
     /// Pending launcher hash votes, keyed by the proposal hash of the [`dtos::LauncherVoteAction`].
-    pub fn launcher_hash_votes(&self) -> dtos::LauncherHashVotes {
+    pub fn launcher_hash_votes(&self) -> dtos::VotesByProposal {
         (&self.tee_state.launcher_votes).into_dto_type()
     }
 
@@ -284,12 +284,13 @@ impl MpcContract {
 mod tests {
     use super::{Duration, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
-    use crate::primitives::votes::ProposalHashEncoding;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::proposal::get_docker_compose_hash;
-    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use mpc_primitives::hash::{
+        KeyProviderEventDigest, MrtdHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+    };
     use near_mpc_contract_interface::types::{
         self as dtos, ExpectedMeasurements, LauncherVoteAction, MeasurementVoteAction,
     };
@@ -616,7 +617,7 @@ mod tests {
         let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
         let participant_list = participants.participants();
         let launcher_hash = make_launcher_hash(0xCC);
-        let expected_proposal = LauncherVoteAction::Add(launcher_hash).proposal_hash();
+        let expected_proposal = ProposalHash::from(&LauncherVoteAction::Add(launcher_hash));
 
         assert!(contract.launcher_hash_votes().is_empty());
 
@@ -1057,7 +1058,7 @@ mod tests {
             .expect("add vote should succeed");
 
         let votes = contract.os_measurement_votes();
-        let expected_proposal = MeasurementVoteAction::Add(measurement).proposal_hash();
+        let expected_proposal = ProposalHash::from(&MeasurementVoteAction::Add(measurement));
         assert_eq!(votes.len(), 1);
         assert_eq!(votes[&expected_proposal].len(), 1);
     }

@@ -2,7 +2,7 @@ use crate::{
     primitives::{
         key_state::AuthenticatedParticipantId,
         participants::Participants,
-        votes::{ProposalHashEncoding, VoterSet, Votes},
+        votes::{ProposalHash, VoterSet, Votes},
     },
     storage_keys::StorageKey,
     tee::measurements::AllowedMeasurements,
@@ -414,7 +414,7 @@ impl TeeState {
         participant: &AuthenticatedParticipantId,
     ) -> &VoterSet<AuthenticatedParticipantId> {
         self.launcher_votes
-            .vote(participant.clone(), action.proposal_hash())
+            .vote(participant.clone(), ProposalHash::from(&action))
     }
 
     /// Adds a launcher image to the allowed set, computing compose hashes for all currently
@@ -452,7 +452,7 @@ impl TeeState {
         participant: &AuthenticatedParticipantId,
     ) -> &VoterSet<AuthenticatedParticipantId> {
         self.measurement_votes
-            .vote(participant.clone(), action.proposal_hash())
+            .vote(participant.clone(), ProposalHash::from(&action))
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
