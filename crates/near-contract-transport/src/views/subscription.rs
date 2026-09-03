@@ -1,6 +1,4 @@
-use super::monitoring::MonitoringTask;
-use near_contract_transport::WatchContractState;
-use near_contract_transport::{ObservedState, TransportError};
+use crate::{ObservedState, TransportError, WatchContractState, views::monitoring::MonitoringTask};
 
 impl<T, ViewError> WatchContractState<T, ViewError> for MonitoringTask<T, ViewError>
 where
@@ -35,13 +33,12 @@ where
 mod tests {
     use assert_matches::assert_matches;
     use near_account_id::AccountId;
-    use near_contract_transport::ViewArgs;
-    use near_contract_transport::{HasPollInterval, TransportError, WatchContractState};
 
-    use crate::mock::{MockViewContract, MockViewError};
-    use crate::state_viewer::monitoring::MonitoringTask;
-    use crate::state_viewer::view_call::ViewCall;
-    use near_contract_transport::ObservedState;
+    use crate::{
+        HasPollInterval, Json, ObservedState, TransportError, ViewArgs, WatchContractState,
+        mock::{MockViewContract, MockViewError},
+        views::{monitoring::MonitoringTask, view_call::ViewCall},
+    };
     use std::time::Duration;
 
     fn contract_id() -> AccountId {
@@ -56,7 +53,7 @@ mod tests {
             observed_at: 42.into(),
             value: serde_json::to_vec(&"hello").unwrap(),
         }));
-        let view_call = ViewCall::json(viewer, contract_id(), view_args());
+        let view_call = ViewCall::new::<Json>(viewer, contract_id(), view_args());
         let mut sub = MonitoringTask::<String, _>::new(view_call).await;
 
         let state = sub.latest().unwrap();
@@ -70,7 +67,8 @@ mod tests {
         let method_name = "get_value".to_string();
         let viewer = MockViewContract::new(Err(MockViewError("view failed")));
 
-        let call = ViewCall::json(viewer, account_id.clone(), ViewArgs::no_args(&method_name));
+        let call =
+            ViewCall::new::<Json>(viewer, account_id.clone(), ViewArgs::no_args(&method_name));
         let mut sub = MonitoringTask::<String, _>::new(call).await;
 
         assert_eq!(
@@ -86,7 +84,7 @@ mod tests {
             value: b"not json".to_vec(),
         }));
 
-        let call = ViewCall::json(viewer, contract_id(), view_args());
+        let call = ViewCall::new::<Json>(viewer, contract_id(), view_args());
         let mut sub = MonitoringTask::<String, _>::new(call).await;
 
         let err = sub.latest().unwrap_err();
@@ -99,7 +97,7 @@ mod tests {
             observed_at: 1.into(),
             value: serde_json::to_vec(&"initial").unwrap(),
         }));
-        let call = ViewCall::json(viewer.clone(), contract_id(), view_args());
+        let call = ViewCall::new::<Json>(viewer.clone(), contract_id(), view_args());
         let mut sub = MonitoringTask::<String, _>::new(call).await;
         assert_eq!(sub.latest().unwrap().value, "initial");
 
@@ -127,7 +125,7 @@ mod tests {
             value: serde_json::to_vec(&"before").unwrap(),
         }));
 
-        let call = ViewCall::json(viewer.clone(), contract_id(), view_args());
+        let call = ViewCall::new::<Json>(viewer.clone(), contract_id(), view_args());
         let mut sub = MonitoringTask::<String, _>::new(call).await;
         assert_eq!(sub.latest().unwrap().value, "before");
 

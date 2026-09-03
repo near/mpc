@@ -1962,8 +1962,8 @@ pub struct ProviderConfig {
 }
 
 /// Stored state for one chain in the on-chain whitelist: a non-empty map from
-/// [`ProviderId`] to that provider's per-chain configuration, plus the RPC response
-/// quorum nodes should use when querying. Returned by the
+/// [`ProviderId`] to that provider's per-chain configuration, plus the voted RPC
+/// response quorum. Returned by the
 /// `allowed_foreign_chain_providers` view fn. [`NonEmptyBTreeMap`] enforces a non-empty
 /// provider set and at-most-one entry per [`ProviderId`] at borsh-deserialize time,
 /// and the map iterates in [`ProviderId`] order — so the canonical hash matches across
@@ -1976,8 +1976,9 @@ pub struct ProviderConfig {
 )]
 pub struct ChainEntry {
     pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
-    /// RPC response quorum: when a node queries the providers above, at least this
-    /// many must return the same value for the response to be accepted.
+    /// Voted RPC response quorum. Stored for a deferred quorum policy and not yet
+    /// consumed: nodes currently require every provider that reaches a verdict to
+    /// agree on it.
     pub quorum: u64,
 }
 

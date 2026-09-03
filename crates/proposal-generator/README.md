@@ -1,8 +1,8 @@
 # Proposal generator
 
-This tool is meant for MPC team to generate proposals for foreign chain whitelist
-voting and share generated payload with operators. It the argument for
-foreign chain whitelist voting from TOML config file.
+This tool is meant for the MPC team to generate proposals for foreign chain whitelist
+voting and share the generated payload with operators. It builds the
+`vote_update_foreign_chain_providers` argument from a TOML config file.
 
 ## Usage
 

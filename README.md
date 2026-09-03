@@ -8,7 +8,7 @@ There are two main parts of the binary: NEAR indexer and MPC signing.
 
 ### NEAR Indexer
 
-The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
+The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/design/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
 
 ### MPC Signing
 
@@ -173,3 +173,25 @@ Running all `cargo-make` supported checks:
 ```console
 cargo make check-all
 ```
+
+### Documentation
+
+Documentation in this repository falls into two categories: live documentation, aiming to explain how something works _right now_, and archived documentation records that may help future developers retrace past decisions. Live documentation _must_ be updated if invalidated by a change, but archived documentation _must not_ be updated, as doing so would undermine its purpose.
+
+Archived documentation must be labeled as such with a status banner: a `**Status:** ARCHIVED` line immediately below the document's title. Any document without such a banner is considered live.
+
+To archive a file, one must open a PR adding the status banner.
+
+### Repository layout
+
+The following is a non-exhaustive list of crates from this repository that may be relevant to the reader of this document:
+
+**The node** [(`mpc-node`)](crates/node) is the binary run by MPC participants: NEAR indexer, P2P networking, and the threshold protocols themselves.
+
+**The contract** [(`mpc-contract`)](crates/contract) is the smart contract deployed on NEAR. It accepts signature requests, manages the participant set and protocol state, and governs upgrades through participant voting.
+
+**The contract interface** [(`near-mpc-contract-interface`)](crates/near-mpc-contract-interface) contains the wire formats accepted by the contract as well as a `client` feature for constructing typed contract calls over generic backends (RPC nodes, nearcore indexer).
+
+**The MPC SDK crate** [(`near-mpc-sdk`)](crates/near-mpc-sdk) contains logic shared between the MPC contract and its callers.
+
+**Threshold Signatures** [(`threshold-signatures`)](crates/threshold-signatures) implements the threshold cryptography itself.
