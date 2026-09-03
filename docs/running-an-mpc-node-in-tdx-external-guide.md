@@ -2197,9 +2197,10 @@ re-serializes the app-compose on save.)
 
 ### Wiping the NEAR indexer data (force a re-sync)
 
-**Symptom:** the embedded NEAR node won't sync — it stays at genesis, reports stale/corrupt
-chain data, or is stuck far behind the chain — and a plain restart doesn't recover it. Inside
-the CVM you can't delete the data dir by hand, so the node config exposes a one-time wipe.
+**Symptom:** the embedded NEAR node won't sync — it stays at genesis, or reports stale/corrupt
+chain data — and a plain restart doesn't recover it. Inside the CVM you can't delete the data
+dir by hand, so the node config exposes a one-time wipe. (A node stuck *far behind* past the
+epoch-sync horizon is handled automatically — see the note below.)
 
 > **Note:** a node stuck *far behind* past the epoch-sync horizon now recovers **automatically**
 > on restart by wiping its data and re-syncing — no operator action, though expect it to take

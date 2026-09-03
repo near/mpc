@@ -81,21 +81,12 @@ fn spawn_epoch_sync_reset_handler(
 ) -> broadcast::Sender<ShutdownReason> {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
     tokio::spawn(async move {
-        // Latches the give-up log so a wedged node doesn't repeat it every ~60s.
-        let mut warned = false;
-        // Loop because nearcore may in principle emit more than one reason; only an
-        // acted-on reset or a closed channel ends it.
-        loop {
-            match handle_shutdown_signal(
-                shutdown_rx.recv().await,
-                &home_dir,
-                restart_disabled,
-                &mut warned,
-            ) {
-                HandlerAction::Restart => std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE),
-                HandlerAction::KeepListening => {}
-                HandlerAction::Stop => break,
-            }
+        // nearcore `take()`s the shutdown sender (nearcore `chain/client/src/sync/epoch.rs`),
+        // so it emits at most one reason for the life of the process — handle that one signal.
+        if handle_shutdown_signal(shutdown_rx.recv().await, &home_dir, restart_disabled)
+            == HandlerAction::Restart
+        {
+            std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE);
         }
     });
     shutdown_tx
@@ -114,41 +105,31 @@ fn restart_disabled_reason(is_archival: bool, wipe_failed: bool) -> Option<&'sta
     }
 }
 
-/// What [`spawn_epoch_sync_reset_handler`] does after one nearcore shutdown signal.
+/// What [`spawn_epoch_sync_reset_handler`] does with nearcore's shutdown signal.
 #[derive(Debug, PartialEq, Eq)]
 enum HandlerAction {
     /// A reset was requested and the marker is on disk: exit to restart and wipe.
     Restart,
-    /// Nothing to act on; keep waiting for the next signal.
-    KeepListening,
-    /// The channel closed (normal teardown); stop.
-    Stop,
+    /// Anything else: leave the node running.
+    Ignore,
 }
 
-/// Decides the [`HandlerAction`] for one nearcore shutdown signal, writing the reset
-/// marker when a restart is warranted. Split from the spawn so it is unit-testable without
-/// exiting the process. `warned` dedupes the give-up log (restart-disabled, or a marker
-/// write that failed) across the resets nearcore repeats while wedged.
+/// Decides the [`HandlerAction`] for nearcore's shutdown signal, writing the reset marker
+/// when a restart is warranted. Split from the spawn so it is unit-testable without exiting
+/// the process.
 fn handle_shutdown_signal(
     signal: Result<ShutdownReason, broadcast::error::RecvError>,
     home_dir: &Path,
     restart_disabled: Option<&str>,
-    warned: &mut bool,
 ) -> HandlerAction {
     match signal {
         Ok(ShutdownReason::EpochSyncDataReset) => {
-            // Both give-up paths below repeat every ~60s while wedged (nearcore keeps
-            // re-requesting), so log each at most once. They are mutually exclusive per
-            // process, so one latch covers both.
             if let Some(reason) = restart_disabled {
-                if !*warned {
-                    tracing::error!(
-                        "epoch-sync data reset requested but {reason}; not restarting — \
-                         manual recovery required"
-                    );
-                    *warned = true;
-                }
-                return HandlerAction::KeepListening;
+                tracing::error!(
+                    "epoch-sync data reset requested but {reason}; not restarting — \
+                     manual recovery required"
+                );
+                return HandlerAction::Ignore;
             }
             // Only restart once the marker is on disk; otherwise a persistent write failure
             // (full or read-only fs) would restart-loop with nothing to break it. Stay up
@@ -162,14 +143,11 @@ fn handle_shutdown_signal(
                     HandlerAction::Restart
                 }
                 Err(err) => {
-                    if !*warned {
-                        tracing::error!(
-                            ?err,
-                            "could not record the epoch-sync reset marker; staying up wedged"
-                        );
-                        *warned = true;
-                    }
-                    HandlerAction::KeepListening
+                    tracing::error!(
+                        ?err,
+                        "could not record the epoch-sync reset marker; staying up wedged"
+                    );
+                    HandlerAction::Ignore
                 }
             }
         }
@@ -177,17 +155,17 @@ fn handle_shutdown_signal(
         // the same height, taking mpc-node offline for no gain.
         Ok(ShutdownReason::ExpectedShutdown) => {
             tracing::warn!("nearcore signalled ExpectedShutdown; ignoring");
-            HandlerAction::KeepListening
+            HandlerAction::Ignore
         }
         Err(broadcast::error::RecvError::Lagged(skipped)) => {
             tracing::warn!(
                 skipped,
                 "shutdown-signal receiver lagged; may have missed a reset"
             );
-            HandlerAction::KeepListening
+            HandlerAction::Ignore
         }
         // Closed is the normal teardown path; nothing to do.
-        Err(broadcast::error::RecvError::Closed) => HandlerAction::Stop,
+        Err(broadcast::error::RecvError::Closed) => HandlerAction::Ignore,
     }
 }
 
@@ -278,7 +256,7 @@ pub fn spawn_real_indexer(
                     ?err,
                     marker = ?epoch_sync_reset_marker_file(&home_dir),
                     "epoch-sync data-reset wipe failed; not restarting to avoid a wipe \
-                     loop — correct the node's store path and redeploy (see the runbook)",
+                     loop — correct the node's store path and redeploy",
                 );
             })
             .is_err();
@@ -565,12 +543,8 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
 
         // When
-        let action = handle_shutdown_signal(
-            Ok(ShutdownReason::EpochSyncDataReset),
-            home.path(),
-            None,
-            &mut false,
-        );
+        let action =
+            handle_shutdown_signal(Ok(ShutdownReason::EpochSyncDataReset), home.path(), None);
 
         // Then
         assert_eq!(action, HandlerAction::Restart);
@@ -579,37 +553,24 @@ mod tests {
 
     /// The signals that must *not* take the node offline or write a marker: a reset on a
     /// restart-disabled node, and the non-reset arms. Pin each so a regression into the
-    /// restart path (including the `Closed` busy-loop) fails a test.
+    /// restart path fails a test.
     #[rstest]
-    #[case::archival_reset(
-        Ok(ShutdownReason::EpochSyncDataReset),
-        Some("archival"),
-        HandlerAction::KeepListening
-    )]
-    #[case::expected_shutdown(
-        Ok(ShutdownReason::ExpectedShutdown),
-        None,
-        HandlerAction::KeepListening
-    )]
-    #[case::lagged(
-        Err(broadcast::error::RecvError::Lagged(3)),
-        None,
-        HandlerAction::KeepListening
-    )]
-    #[case::closed(Err(broadcast::error::RecvError::Closed), None, HandlerAction::Stop)]
+    #[case::archival_reset(Ok(ShutdownReason::EpochSyncDataReset), Some("archival"))]
+    #[case::expected_shutdown(Ok(ShutdownReason::ExpectedShutdown), None)]
+    #[case::lagged(Err(broadcast::error::RecvError::Lagged(3)), None)]
+    #[case::closed(Err(broadcast::error::RecvError::Closed), None)]
     fn handle_shutdown_signal__should_not_restart_or_write_marker_for_other_signals(
         #[case] signal: Result<ShutdownReason, broadcast::error::RecvError>,
         #[case] restart_disabled: Option<&str>,
-        #[case] expected: HandlerAction,
     ) {
         // Given
         let home = tempfile::tempdir().unwrap();
 
         // When
-        let action = handle_shutdown_signal(signal, home.path(), restart_disabled, &mut false);
+        let action = handle_shutdown_signal(signal, home.path(), restart_disabled);
 
         // Then
-        assert_eq!(action, expected);
+        assert_eq!(action, HandlerAction::Ignore);
         assert!(!epoch_sync_reset_marker_file(home.path()).exists());
     }
 
