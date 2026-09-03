@@ -61,9 +61,14 @@ pub async fn run_command(args: cli::Args) {
             let (mpc_p2p_client, key_shares_storage) =
                 open_node_client_and_storage(&home_dir, &subcommand_args).await;
 
-            put_keyshares(&mpc_p2p_client, &key_shares_storage, &home_dir)
+            put_keyshares(&mpc_p2p_client, &key_shares_storage)
                 .await
-                .expect("failed to put keyshares");
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "failed to put keyshares from {}: {err:?}",
+                        home_dir.display()
+                    )
+                });
         }
         cli::Command::Run(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
@@ -245,7 +250,6 @@ pub async fn get_keyshares(
 pub async fn put_keyshares(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
-    home_dir: &Path,
 ) -> anyhow::Result<()> {
     let key_shares = keyshares_storage
         .load_keyshares()
@@ -253,9 +257,8 @@ pub async fn put_keyshares(
         .map_err(|err| anyhow::anyhow!("failed to load keyshares: {err:?}"))?;
     if key_shares.is_empty() {
         anyhow::bail!(
-            "no keyshares in local storage at {}: run `get-keyshares` against a node that holds \
-             them before putting them back",
-            home_dir.display()
+            "no keyshares in local storage: run `get-keyshares` against a node that holds them \
+             before putting them back"
         );
     }
     mpc_p2p_client
@@ -273,7 +276,6 @@ fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use mpc_node::keyshare::{Keyshare, test_utils::generate_dummy_keyshare};
@@ -335,7 +337,7 @@ mod tests {
         };
 
         // When
-        let result = put_keyshares(&mpc_p2p_client, &storage, Path::new("/backup/home")).await;
+        let result = put_keyshares(&mpc_p2p_client, &storage).await;
 
         // Then
         result.expect("stored keyshares should be pushed to the node");
