@@ -19,8 +19,8 @@ pub struct ConfigError {
     pub source: ChainEntryValidationError,
 }
 
-/// Validates each entry with the contract's own rules ([`validate_chain_entry`]),
-/// then borsh-encodes the `vote_update_foreign_chain_providers` argument.
+/// Validates each entry with [`validate_chain_entry`], then borsh-encodes
+/// the `vote_update_foreign_chain_providers` argument.
 pub fn build_payload(config: ProposalConfig) -> anyhow::Result<Vec<u8>> {
     for (chain, entry) in config.chains.iter() {
         validate_chain_entry(entry.clone()).map_err(|source| ConfigError {

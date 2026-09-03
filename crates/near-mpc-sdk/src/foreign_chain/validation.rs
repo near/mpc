@@ -27,20 +27,20 @@ pub enum ChainEntryValidationError {
     QueryParamCollidesWithAuth { provider_id: String, name: String },
 }
 
-/// Witness that a [`dtos::ChainEntry`] passed [`validate_chain_entry`]; convert
-/// back via [`From<ValidatedChainEntry>`] to reach the fields.
+/// Witness that a [`dtos::ChainEntry`] passed [`validate_chain_entry`].
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ValidatedChainEntry {
     providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
     quorum: u64,
 }
 
-impl From<ValidatedChainEntry> for dtos::ChainEntry {
-    fn from(entry: ValidatedChainEntry) -> Self {
-        dtos::ChainEntry {
-            providers: entry.providers,
-            quorum: entry.quorum,
-        }
+impl ValidatedChainEntry {
+    pub fn providers(&self) -> &NonEmptyBTreeMap<ProviderId, ProviderConfig> {
+        &self.providers
+    }
+
+    pub fn quorum(&self) -> u64 {
+        self.quorum
     }
 }
 
@@ -212,6 +212,7 @@ mod tests {
         let validated = validate_chain_entry(entry.clone()).unwrap();
 
         // Then
-        assert_eq!(dtos::ChainEntry::from(validated), entry);
+        assert_eq!(validated.providers(), &entry.providers);
+        assert_eq!(validated.quorum(), entry.quorum);
     }
 }
