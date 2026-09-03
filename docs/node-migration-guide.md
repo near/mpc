@@ -453,6 +453,17 @@ If backup-cli cannot connect to your node:
 - **Verify the port**: The migration endpoint uses the node's `migration_web_ui` port, which is not always the `8079` default — read it from `http://<IP>:8080/debug/node_config`. The same endpoint shows the bind address, which must not be loopback-only.
 - **Verify firewall rules**: Ensure the backup service can reach the node's address and that the migration port is open and accessible. Test with `nc -vz <host> <port>` rather than `curl`; the endpoint is a raw TLS channel authenticated against the registered backup-service key, so it does not answer plain HTTP requests.
 
+### `put-keyshares` reports success but the node never onboards
+
+If the new node does not conclude the migration, check its logs for a warning that the registered
+destination TLS key is not its own; it names both keys. That means the `tls_public_key` passed to
+`start_node_migration` in [Step 6](#step-6-initiate-migration-state-in-contract) is not the key the
+new node runs with. Compare `migration_info` against
+`curl -s http://<new-node-IP>:8080/public_data | jq -r .near_p2p_public_key` and call
+`start_node_migration` again with the correct value; only the last call is retained. The node still
+holds the transferred keyshares in memory and imports them as soon as it sees itself registered,
+so `put-keyshares` only needs re-running if the node restarted in the meantime.
+
 ## Known Limitations
 
 The back-migration flow (returning to a previously-active node, i.e. A → B → A) has two operator-facing limitations:
