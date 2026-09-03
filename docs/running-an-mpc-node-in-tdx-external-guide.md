@@ -2201,6 +2201,11 @@ re-serializes the app-compose on save.)
 chain data, or is stuck far behind the chain — and a plain restart doesn't recover it. Inside
 the CVM you can't delete the data dir by hand, so the node config exposes a one-time wipe.
 
+> **Note:** a node stuck *far behind* past the epoch-sync horizon now recovers **automatically**
+> on restart — it writes an internal `.epoch_sync_data_reset` marker, restarts, wipes the chain
+> store, and re-syncs, with no operator action. This manual wipe is for the other cases above
+> (a corrupt or stale store), or if the automatic recovery doesn't apply.
+
 **Fix — change the wipe token and redeploy.** Set `wipe_near_data_token` under
 `[mpc_node_config.node.indexer]` to a **new non-zero value** (different from its current
 value), then redeploy/restart the CVM:

@@ -61,10 +61,10 @@ near-mpc-contract-interface = { workspace = true, features = [
 ] }
 near-mpc-crypto-types = { workspace = true }
 near-o11y = { workspace = true }
-nearcore = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-store = { workspace = true }
 near-time = { workspace = true }
+nearcore = { workspace = true }
 node-types = { workspace = true }
 num_enum = { workspace = true }
 pprof = { workspace = true }

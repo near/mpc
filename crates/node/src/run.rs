@@ -217,6 +217,10 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     // held by its spawned monitor tasks are released — enabling
     // `RocksDB::block_until_all_instances_are_dropped()` to return.
     let indexer_shutdown_token = CancellationToken::new();
+    // Fired by the epoch-sync reset handler; the main `select!` below turns it into a
+    // graceful shutdown + non-zero exit, so the container restarts and the startup
+    // wipe runs (#3909).
+    let (epoch_reset_sender, mut epoch_reset_receiver) = mpsc::channel(1);
     let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
         node_config.indexer.clone(),
@@ -224,6 +228,7 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         persistent_secrets.near_signer_key.clone(),
         respond_config,
         indexer_exit_sender,
+        epoch_reset_sender,
         protocol_state_sender,
         migration_state_sender,
         *tls_public_key,
@@ -290,6 +295,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             // contract-state channel closed) is logged a few lines below via
             // `info!(?exit_result, "Image hash watcher exited.")`.
             Err(anyhow!("TEE allowed-image-hashes watcher exited unexpectedly."))
+        }
+        // Epoch-sync data reset (#3909): the marker is already written, so exiting
+        // non-zero here restarts the container and the startup wipe re-syncs the node.
+        Some(()) = epoch_reset_receiver.recv() => {
+            Err(anyhow!("epoch-sync data reset requested; restarting to wipe the chain store"))
         }
     };
 
