@@ -231,38 +231,19 @@ async fn handle_request(
             }
         }
         ("PUT", "/set_keyshares") => {
+            tracing::info!("received set_keyshares request");
             let whole_body = req.into_body().collect().await.map(|body| body.to_bytes());
             match whole_body {
-                Ok(bytes) => {
-                    match decrypt_and_deserialize_keyshares(&bytes, &state.backup_encryption_key) {
-                        Ok(new_keyshares) => {
-                            if state.import_keyshares_sender.send(new_keyshares).is_err() {
-                                let msg = "keyshares receiver channel is closed".to_string();
-                                tracing::error!(msg);
-                                Ok(Response::builder()
-                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Full::new(Bytes::from(msg)))
-                                    .unwrap())
-                            } else {
-                                Ok(Response::new(Full::new(Bytes::from_static(
-                                    b"Keyshares received.",
-                                ))))
-                            }
-                        }
-                        Err(err) => Ok(Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Full::new(Bytes::from(format!(
-                                "Invalid Json or encryption: {err}"
-                            ))))
-                            .unwrap()),
-                    }
+                Ok(bytes) => Ok(handle_set_keyshares(&bytes, &state)),
+                Err(err) => {
+                    tracing::error!(?err, "set_keyshares: failed to read body");
+                    Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Full::new(Bytes::from(format!(
+                            "Failed to read body: {err}"
+                        ))))
+                        .unwrap())
                 }
-                Err(err) => Ok(Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Full::new(Bytes::from(format!(
-                        "Failed to read body: {err}"
-                    ))))
-                    .unwrap()),
             }
         }
         _ => {
@@ -273,24 +254,98 @@ async fn handle_request(
     }
 }
 
+/// Hands received keyshares to the onboarding loop. Every outcome is logged: an operator
+/// watching a migration otherwise cannot tell a transfer from a rejected or empty one.
+fn handle_set_keyshares(body: &[u8], state: &WebServerState) -> Response<Full<Bytes>> {
+    let keyshares = match decrypt_and_deserialize_keyshares(body, &state.backup_encryption_key) {
+        Ok(keyshares) => keyshares,
+        Err(err) => {
+            tracing::error!(?err, "set_keyshares rejected: invalid json or encryption");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Full::new(Bytes::from(format!(
+                    "Invalid Json or encryption: {err}"
+                ))))
+                .unwrap();
+        }
+    };
+
+    // The onboarding loop skips an empty set, so accepting one imports nothing.
+    if keyshares.is_empty() {
+        tracing::warn!("set_keyshares received no keyshares, nothing will be imported");
+    }
+
+    let num_keyshares = keyshares.len();
+    if state.import_keyshares_sender.send(keyshares).is_err() {
+        let msg = "keyshares receiver channel is closed".to_string();
+        tracing::error!(msg);
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Full::new(Bytes::from(msg)))
+            .unwrap();
+    }
+
+    tracing::info!(num_keyshares, "set_keyshares accepted keyshares");
+    Response::new(Full::new(Bytes::from_static(b"Keyshares received.")))
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::keyshare::{Keyshare, generate_key_storage_config, test_utils::KeysetBuilder};
     use crate::metrics;
     use crate::migration_service::{
         types::MigrationInfo,
-        web::server::{
-            RecordBackupServedError, record_backup_served, spawn_expected_peer_info_monitoring,
+        web::{
+            serialization::serialize_and_encrypt_keyshares,
+            server::{
+                RecordBackupServedError, WebServerState, handle_set_keyshares,
+                record_backup_served, spawn_expected_peer_info_monitoring,
+            },
         },
     };
-    use near_mpc_contract_interface::types::Ed25519PublicKey;
 
     use assert_matches::assert_matches;
     use ed25519_dalek::SigningKey;
+    use hyper::StatusCode;
     use mpc_primitives::EpochId;
-    use near_mpc_contract_interface::types::BackupServiceInfo;
+    use near_mpc_contract_interface::types::{BackupServiceInfo, Ed25519PublicKey};
     use near_mpc_crypto_types::Keyset;
+    use rand::SeedableRng as _;
+    use rand::rngs::StdRng;
     use serial_test::serial;
-    use tokio::sync::watch;
+    use std::sync::Arc;
+    use tokio::sync::{RwLock, watch};
+    use tracing_test::traced_test;
+
+    const BACKUP_ENCRYPTION_KEY: [u8; 32] = [7u8; 32];
+
+    /// The returned [`TempDir`](tempfile::TempDir) backs the keyshare storage and must outlive it.
+    async fn web_server_state() -> (
+        WebServerState,
+        watch::Receiver<Vec<Keyshare>>,
+        tempfile::TempDir,
+    ) {
+        let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
+        let (config, tempdir) = generate_key_storage_config();
+        let keyshare_storage = config
+            .create()
+            .await
+            .expect("keyshare storage should be creatable in a temp dir");
+        (
+            WebServerState {
+                import_keyshares_sender,
+                keyshare_storage: Arc::new(RwLock::new(keyshare_storage)),
+                backup_encryption_key: BACKUP_ENCRYPTION_KEY,
+            },
+            import_keyshares_receiver,
+            tempdir,
+        )
+    }
+
+    fn encrypted_body(keyshares: &[Keyshare]) -> String {
+        serialize_and_encrypt_keyshares(keyshares, &BACKUP_ENCRYPTION_KEY)
+            .expect("keyshares should be serializable")
+    }
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
         MigrationInfo {
@@ -353,5 +408,60 @@ mod tests {
             metrics::MPC_LAST_BACKUP_SERVED_TIMESTAMP_SECONDS.get(),
             timestamp_before
         );
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn handle_set_keyshares__should_log_the_number_of_accepted_keyshares() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let keyset = KeysetBuilder::new_populated(1, 2, &mut rng);
+        let (state, mut receiver, _tempdir) = web_server_state().await;
+        let body = encrypted_body(keyset.keyshares());
+
+        // When
+        let response = handle_set_keyshares(body.as_bytes(), &state);
+
+        // Then
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(*receiver.borrow_and_update(), keyset.keyshares().to_vec());
+        assert!(logs_contain("set_keyshares accepted keyshares"));
+        assert!(logs_contain("num_keyshares=2"));
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn handle_set_keyshares__should_warn_when_the_request_carries_no_keyshares() {
+        // Given
+        let (state, _receiver, _tempdir) = web_server_state().await;
+        let body = encrypted_body(&[]);
+
+        // When
+        let response = handle_set_keyshares(body.as_bytes(), &state);
+
+        // Then
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(logs_contain(
+            "set_keyshares received no keyshares, nothing will be imported"
+        ));
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    #[expect(non_snake_case)]
+    async fn handle_set_keyshares__should_log_a_rejected_request() {
+        // Given
+        let (state, _receiver, _tempdir) = web_server_state().await;
+
+        // When
+        let response = handle_set_keyshares(b"not encrypted keyshares", &state);
+
+        // Then
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(logs_contain(
+            "set_keyshares rejected: invalid json or encryption"
+        ));
     }
 }
