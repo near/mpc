@@ -382,6 +382,8 @@ backup-cli \
 
 Each request to the node is bounded by `--request-timeout-seconds` (default 30). If the transfer fails with a timeout on a slow link, raise it.
 
+The command fails without contacting the node when `$BACKUP_HOME_DIR` holds no keyshares; take a backup ([Step 4](#step-4-backup-keyshares-from-old-node)) first. On success the new node logs `set_keyshares accepted keyshares` with the number received.
+
 The new node will:
 1. Receive the encrypted keyshares
 2. Decrypt them using its configured backup encryption key (Step 5)
