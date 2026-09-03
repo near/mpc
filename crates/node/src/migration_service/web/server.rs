@@ -230,7 +230,7 @@ async fn handle_request(
                 }
             }
         }
-        ("PUT", "/set_keyshares") => handle_set_keyshares(req.into_body(), &state).await,
+        ("PUT", "/set_keyshares") => Ok(handle_set_keyshares(req.into_body(), &state).await),
         _ => {
             let mut not_found = Response::new(Full::new(Bytes::from_static(b"Not Found")));
             *not_found.status_mut() = StatusCode::NOT_FOUND;
@@ -240,10 +240,7 @@ async fn handle_request(
 }
 
 /// Hands received keyshares to the onboarding loop, logging each outcome.
-async fn handle_set_keyshares<B>(
-    body: B,
-    state: &WebServerState,
-) -> Result<Response<Full<Bytes>>, Infallible>
+async fn handle_set_keyshares<B>(body: B, state: &WebServerState) -> Response<Full<Bytes>>
 where
     B: hyper::body::Body,
     B::Error: std::fmt::Debug + std::fmt::Display,
@@ -253,7 +250,7 @@ where
         Ok(body) => body.to_bytes(),
         Err(err) => {
             tracing::error!(?err, "set_keyshares: failed to read body");
-            return Ok(bad_request(format!("Failed to read body: {err}")));
+            return bad_request(format!("Failed to read body: {err}"));
         }
     };
 
@@ -261,7 +258,7 @@ where
         Ok(keyshares) => keyshares,
         Err(err) => {
             tracing::error!(?err, "set_keyshares rejected: invalid json or encryption");
-            return Ok(bad_request(format!("Invalid Json or encryption: {err}")));
+            return bad_request(format!("Invalid Json or encryption: {err}"));
         }
     };
 
@@ -273,13 +270,11 @@ where
     if state.import_keyshares_sender.send(keyshares).is_err() {
         let msg = "keyshares receiver channel is closed".to_string();
         tracing::error!(msg);
-        return Ok(internal_server_error(msg));
+        return internal_server_error(msg);
     }
 
     tracing::info!(num_keyshares, "set_keyshares accepted keyshares");
-    Ok(Response::new(Full::new(Bytes::from_static(
-        b"Keyshares received.",
-    ))))
+    Response::new(Full::new(Bytes::from_static(b"Keyshares received.")))
 }
 
 fn bad_request(msg: String) -> Response<Full<Bytes>> {
@@ -432,7 +427,7 @@ mod tests {
         let body = encrypted_body(keyset.keyshares());
 
         // When
-        let Ok(response) = handle_set_keyshares(full_body(body), &state).await;
+        let response = handle_set_keyshares(full_body(body), &state).await;
 
         // Then
         assert_eq!(response.status(), StatusCode::OK);
@@ -447,7 +442,7 @@ mod tests {
         let body = encrypted_body(&[]);
 
         // When
-        let Ok(response) = handle_set_keyshares(full_body(body), &state).await;
+        let response = handle_set_keyshares(full_body(body), &state).await;
 
         // Then
         assert_eq!(response.status(), StatusCode::OK);
@@ -461,7 +456,7 @@ mod tests {
         let (state, receiver, _tempdir) = web_server_state().await;
 
         // When
-        let Ok(response) =
+        let response =
             handle_set_keyshares(Full::new(Bytes::from_static(b"not encrypted")), &state).await;
 
         // Then
@@ -480,7 +475,7 @@ mod tests {
         drop(receiver);
 
         // When
-        let Ok(response) = handle_set_keyshares(full_body(body), &state).await;
+        let response = handle_set_keyshares(full_body(body), &state).await;
 
         // Then
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
