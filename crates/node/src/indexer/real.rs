@@ -81,8 +81,10 @@ fn spawn_epoch_sync_reset_handler(
 ) -> broadcast::Sender<ShutdownReason> {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
     tokio::spawn(async move {
-        // nearcore `take()`s the shutdown sender (nearcore `chain/client/src/sync/epoch.rs`),
-        // so it emits at most one reason for the life of the process — handle that one signal.
+        // Every `ShutdownReason` goes through the ClientActor's single
+        // `shutdown_signal: Option<Sender>` (nearcore 2.13.3 `chain/client/src/client_actor.rs`),
+        // which each send site `take()`s — so whichever fires first (an epoch-sync reset, or an
+        // `ExpectedShutdown`) consumes it, and at most one reason is ever delivered. Handle it.
         if handle_shutdown_signal(shutdown_rx.recv().await, &home_dir, restart_disabled)
             == HandlerAction::Restart
         {
@@ -125,10 +127,7 @@ fn handle_shutdown_signal(
     match signal {
         Ok(ShutdownReason::EpochSyncDataReset) => {
             if let Some(reason) = restart_disabled {
-                tracing::error!(
-                    "epoch-sync data reset requested but {reason}; not restarting — \
-                     manual recovery required"
-                );
+                tracing::error!("epoch-sync data reset requested but {reason}; not restarting");
                 return HandlerAction::Ignore;
             }
             // Only restart once the marker is on disk; otherwise a persistent write failure
@@ -256,7 +255,7 @@ pub fn spawn_real_indexer(
                     ?err,
                     marker = ?epoch_sync_reset_marker_file(&home_dir),
                     "epoch-sync data-reset wipe failed; not restarting to avoid a wipe \
-                     loop — correct the node's store path and redeploy",
+                     loop — resolve the cause (see error) and redeploy",
                 );
             })
             .is_err();

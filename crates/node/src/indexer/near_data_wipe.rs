@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn epoch_sync_reset__should_wipe_only_the_store_and_preserve_siblings_across_restart() {
+    fn wipe_near_data_if_epoch_sync_reset__should_wipe_only_the_store_and_preserve_siblings() {
         // Given a synced node: a chain store plus a keyshare-like sibling file, and
         // nearcore having requested a reset (recorded at shutdown, as in `real.rs`).
         let tmp = tempfile::tempdir().unwrap();
