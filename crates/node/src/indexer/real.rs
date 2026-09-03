@@ -1,14 +1,17 @@
 use super::foreign_chain::monitor_foreign_chain_supporters;
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
-use super::near_data_wipe::wipe_near_data_if_requested;
+use super::near_data_wipe::{
+    record_epoch_sync_reset_request, wipe_near_data_if_epoch_sync_reset,
+    wipe_near_data_if_requested,
+};
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState, RealAttestationExpiryReader};
 use crate::config::RespondConfig;
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
-use crate::home_paths::near_data_dir;
+use crate::home_paths::{epoch_sync_reset_marker_file, near_data_dir};
 use crate::indexer::configs::IndexerConfigExt;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_foreign_chain_providers,
@@ -20,14 +23,15 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
+use near_client::client_actor::ShutdownReason;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -48,6 +52,122 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
             tracing::info!("channel closed");
             return;
         }
+    }
+}
+
+/// Exit code for the epoch-sync data-reset restart — non-zero so the container's
+/// `restart: on-failure` policy brings the node back to run the startup wipe.
+const EPOCH_SYNC_RESET_EXIT_CODE: i32 = 70;
+
+/// Wires nearcore's shutdown signal so that a [`ShutdownReason::EpochSyncDataReset`]
+/// is acted on instead of dropped: a stale node that would otherwise loop forever in
+/// epoch-sync (#3909) records the reset marker and exits non-zero, so the container's
+/// `restart: on-failure` brings it back and the startup wipe runs. Returns the sender to
+/// pass to [`nearcore::start_with_config_and_synchronization`].
+///
+/// In the #3909 wedge the reset arrives during initial sync, while the main thread is
+/// still parked in [`spawn_real_indexer`], so the main `select!` is unreachable and the
+/// handler must exit the process itself. Nothing pins a reset to that window: one arriving
+/// after sync is a hard kill with [`SecretDB`](crate::db::SecretDB) open — equivalent to a
+/// crash, which the node already tolerates, and the chain store is wiped on the next start
+/// regardless.
+///
+/// `restart_disabled` suppresses the exit when a wipe must not (or cannot) run — an
+/// archival node, or a startup wipe that just failed — so in those cases the reset wedges
+/// the node rather than restart-looping. Its message names the reason for the operator.
+/// `on_restart` is the terminal action once a reset is acted on: process exit in
+/// production, injected in tests.
+fn spawn_epoch_sync_reset_handler(
+    home_dir: PathBuf,
+    restart_disabled: Option<&'static str>,
+    on_restart: impl FnOnce() + Send + 'static,
+) -> broadcast::Sender<ShutdownReason> {
+    let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
+    tokio::spawn(async move {
+        // nearcore routes every `ShutdownReason` through the ClientActor's single
+        // `shutdown_signal` sender, which each send site `take()`s — so whichever fires first
+        // (an epoch-sync reset, or an `ExpectedShutdown`) consumes it, and at most one reason
+        // is ever delivered. Act on that one signal.
+        if handle_shutdown_signal(shutdown_rx.recv().await, &home_dir, restart_disabled)
+            == HandlerAction::Restart
+        {
+            on_restart();
+        }
+    });
+    shutdown_tx
+}
+
+/// The reason auto-restart is suppressed, or `None` when a reset should restart-and-wipe.
+/// An archive must never be wiped; a startup wipe that just failed would otherwise
+/// restart-loop on a wipe that keeps failing.
+fn restart_disabled_reason(is_archival: bool, wipe_failed: bool) -> Option<&'static str> {
+    if is_archival {
+        Some("node is archival (auto-wipe would destroy the archive)")
+    } else if wipe_failed {
+        Some("the previous epoch-sync wipe failed")
+    } else {
+        None
+    }
+}
+
+/// What [`spawn_epoch_sync_reset_handler`] does with nearcore's shutdown signal.
+#[derive(Debug, PartialEq, Eq)]
+enum HandlerAction {
+    /// A reset was requested and the marker is on disk: exit to restart and wipe.
+    Restart,
+    /// Anything else: leave the node running.
+    Ignore,
+}
+
+/// Decides the [`HandlerAction`] for nearcore's shutdown signal, writing the reset marker
+/// when a restart is warranted. Split from the spawn so it is unit-testable without exiting
+/// the process.
+fn handle_shutdown_signal(
+    signal: Result<ShutdownReason, broadcast::error::RecvError>,
+    home_dir: &Path,
+    restart_disabled: Option<&str>,
+) -> HandlerAction {
+    match signal {
+        Ok(ShutdownReason::EpochSyncDataReset) => {
+            if let Some(reason) = restart_disabled {
+                tracing::error!("epoch-sync data reset requested but {reason}; not restarting");
+                return HandlerAction::Ignore;
+            }
+            // Only restart once the marker is on disk; otherwise a persistent write failure
+            // (full or read-only fs) would restart-loop with nothing to break it. Stay up
+            // wedged instead.
+            match record_epoch_sync_reset_request(home_dir) {
+                Ok(()) => {
+                    tracing::warn!(
+                        "epoch-sync data reset requested; recorded marker, restarting \
+                         to wipe the chain store"
+                    );
+                    HandlerAction::Restart
+                }
+                Err(err) => {
+                    tracing::error!(
+                        ?err,
+                        "could not record the epoch-sync reset marker; staying up wedged"
+                    );
+                    HandlerAction::Ignore
+                }
+            }
+        }
+        // Ignore nearcore's `ExpectedShutdown`: acting on it would exit into a restart at
+        // the same height, taking mpc-node offline for no gain.
+        Ok(ShutdownReason::ExpectedShutdown) => {
+            tracing::warn!("nearcore signalled ExpectedShutdown; ignoring");
+            HandlerAction::Ignore
+        }
+        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+            tracing::warn!(
+                skipped,
+                "shutdown-signal receiver lagged; may have missed a reset"
+            );
+            HandlerAction::Ignore
+        }
+        // Closed is the normal teardown path; nothing to do.
+        Err(broadcast::error::RecvError::Closed) => HandlerAction::Ignore,
     }
 }
 
@@ -106,10 +226,10 @@ pub fn spawn_real_indexer(
 
             // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
             // and differs from the last applied value, wipe the data dir. Must run
-            // here, after the config is loaded but before `start_near_node` below
-            // opens the store, because the dir can't be removed while nearcore holds
-            // it open. Runs once per process start, so a changed token takes effect on
-            // the next restart.
+            // here, after the config is loaded but before nearcore opens the store
+            // below, because the dir can't be removed while nearcore holds it open.
+            // Runs once per process start, so a changed token takes effect on the
+            // next restart.
             let hot_store_path = match near_config.config.store.path.as_deref() {
                 Some(path) => home_dir.join(path),
                 None => near_data_dir(&home_dir),
@@ -125,10 +245,38 @@ pub fn spawn_real_indexer(
                  fix the cause and set wipe_near_data_token to a new value to retry",
             );
 
-            let near_node = Indexer::start_near_node(
-                &near_indexer_config,
+            // If nearcore requested an epoch-sync data reset on a previous run, wipe the
+            // chain store before it reopens. On failure, disarm the reset handler below so
+            // the node wedges rather than restart-loops on a wipe that keeps failing.
+            let reset_wipe_failed = wipe_near_data_if_epoch_sync_reset(
+                &home_dir,
+                &hot_store_path,
+                near_config.client_config.archive,
+            )
+            .inspect_err(|err| {
+                tracing::error!(
+                    ?err,
+                    marker = ?epoch_sync_reset_marker_file(&home_dir),
+                    "epoch-sync data-reset wipe failed; not restarting to avoid a wipe \
+                     loop — resolve the cause (see error) and redeploy",
+                );
+            })
+            .is_err();
+
+            // TODO(#4343): a reset that keeps recurring after a *successful* wipe still
+            // loops (wipe -> re-sync -> reset -> wipe) unbounded; bound the attempts.
+            let restart_disabled =
+                restart_disabled_reason(near_config.client_config.archive, reset_wipe_failed);
+            let shutdown_tx = spawn_epoch_sync_reset_handler(home_dir.clone(), restart_disabled, || {
+                std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE)
+            });
+
+            let near_node = nearcore::start_with_config_and_synchronization(
+                &home_dir,
                 near_config.clone(),
                 ActorSystem::new(),
+                Some(shutdown_tx),
+                None,
             )
             .await
             .expect("near node has started");
@@ -355,8 +503,15 @@ async fn await_sync_or_shutdown(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::await_sync_or_shutdown;
+    use super::{
+        HandlerAction, ShutdownReason, await_sync_or_shutdown, handle_shutdown_signal,
+        restart_disabled_reason, spawn_epoch_sync_reset_handler,
+    };
+    use crate::home_paths::epoch_sync_reset_marker_file;
+    use rstest::rstest;
     use std::future::pending;
+    use std::time::Duration;
+    use tokio::sync::{broadcast, oneshot};
     use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
@@ -385,5 +540,89 @@ mod tests {
 
         // Then
         assert!(!synced);
+    }
+
+    #[test]
+    fn handle_shutdown_signal__should_record_marker_and_restart_on_reset() {
+        // Given
+        let home = tempfile::tempdir().unwrap();
+
+        // When
+        let action =
+            handle_shutdown_signal(Ok(ShutdownReason::EpochSyncDataReset), home.path(), None);
+
+        // Then
+        assert_eq!(action, HandlerAction::Restart);
+        assert!(epoch_sync_reset_marker_file(home.path()).exists());
+    }
+
+    /// The wiring the whole fix hinges on: a reset delivered on the returned sender reaches
+    /// the spawned task, writes the marker, and fires the terminal restart action.
+    #[tokio::test]
+    async fn spawn_epoch_sync_reset_handler__should_fire_restart_and_write_marker_on_reset() {
+        // Given
+        let home = tempfile::tempdir().unwrap();
+        let (restarted_tx, restarted_rx) = oneshot::channel();
+        let shutdown_tx =
+            spawn_epoch_sync_reset_handler(home.path().to_path_buf(), None, move || {
+                let _ = restarted_tx.send(());
+            });
+
+        // When
+        shutdown_tx
+            .send(ShutdownReason::EpochSyncDataReset)
+            .unwrap();
+
+        // Then — the restart action fires (the marker is written before it does)
+        tokio::time::timeout(Duration::from_secs(5), restarted_rx)
+            .await
+            .expect("restart action should fire")
+            .expect("restart sender dropped");
+        assert!(epoch_sync_reset_marker_file(home.path()).exists());
+    }
+
+    /// The signals that must *not* take the node offline or write a marker: a reset on a
+    /// restart-disabled node, and the non-reset arms. Pin each so a regression into the
+    /// restart path fails a test.
+    #[rstest]
+    #[case::archival_reset(Ok(ShutdownReason::EpochSyncDataReset), Some("archival"))]
+    #[case::expected_shutdown(Ok(ShutdownReason::ExpectedShutdown), None)]
+    #[case::lagged(Err(broadcast::error::RecvError::Lagged(3)), None)]
+    #[case::closed(Err(broadcast::error::RecvError::Closed), None)]
+    fn handle_shutdown_signal__should_not_restart_or_write_marker_for_other_signals(
+        #[case] signal: Result<ShutdownReason, broadcast::error::RecvError>,
+        #[case] restart_disabled: Option<&str>,
+    ) {
+        // Given
+        let home = tempfile::tempdir().unwrap();
+
+        // When
+        let action = handle_shutdown_signal(signal, home.path(), restart_disabled);
+
+        // Then
+        assert_eq!(action, HandlerAction::Ignore);
+        assert!(!epoch_sync_reset_marker_file(home.path()).exists());
+    }
+
+    #[rstest]
+    #[case::archival(
+        true,
+        false,
+        Some("node is archival (auto-wipe would destroy the archive)")
+    )]
+    #[case::wipe_failed(false, true, Some("the previous epoch-sync wipe failed"))]
+    #[case::archival_takes_precedence(
+        true,
+        true,
+        Some("node is archival (auto-wipe would destroy the archive)")
+    )]
+    #[case::healthy(false, false, None)]
+    fn restart_disabled_reason__should_suppress_restart_for_archival_or_failed_wipe(
+        #[case] is_archival: bool,
+        #[case] wipe_failed: bool,
+        #[case] expected: Option<&str>,
+    ) {
+        // When / Then
+        assert_eq!(restart_disabled_reason(is_archival, wipe_failed), expected);
     }
 }
