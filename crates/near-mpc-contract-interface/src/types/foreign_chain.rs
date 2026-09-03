@@ -2562,41 +2562,43 @@ mod tests {
         assert_ne!(hash_7_bits, hash_8_bits);
     }
 
-    fn evm_rpc_request_json_with_extractors(extractor_count: usize) -> serde_json::Value {
-        let mut json = serde_json::to_value(EvmRpcRequest {
-            tx_id: EvmTxId([0xab; 32]),
-            extractors: [].into(),
-            finality: EvmFinality::Finalized,
+    fn verify_foreign_transaction_args_json(extractor_count: usize) -> serde_json::Value {
+        serde_json::json!({
+            "request": {
+                "Ethereum": {
+                    "tx_id": "bb".repeat(32),
+                    "extractors": vec!["BlockHash"; extractor_count],
+                    "finality": "Finalized",
+                }
+            },
+            "domain_id": 0,
+            "payload_version": 1,
         })
-        .unwrap();
-        let extractors: Vec<EvmExtractor> = (0..extractor_count)
-            .map(|log_index| EvmExtractor::Log {
-                log_index: log_index as u64,
-            })
-            .collect();
-        json["extractors"] = serde_json::to_value(extractors).unwrap();
-        json
     }
 
     #[test]
-    fn evm_rpc_request__should_deserialize_with_extractors_at_the_cap() {
+    fn verify_foreign_transaction_request_args__should_deserialize_with_extractors_at_the_cap() {
         // Given
-        let json = evm_rpc_request_json_with_extractors(MAX_EXTRACTORS_PER_REQUEST);
+        let json = verify_foreign_transaction_args_json(MAX_EXTRACTORS_PER_REQUEST);
 
         // When
-        let request: EvmRpcRequest = serde_json::from_value(json).unwrap();
+        let args: VerifyForeignTransactionRequestArgs = serde_json::from_value(json).unwrap();
 
         // Then
-        assert_eq!(request.extractors.len(), MAX_EXTRACTORS_PER_REQUEST);
+        assert_matches!(
+            args.request,
+            ForeignChainRpcRequest::Ethereum(request)
+                if request.extractors.len() == MAX_EXTRACTORS_PER_REQUEST
+        );
     }
 
     #[test]
-    fn evm_rpc_request__should_reject_extractors_above_the_cap() {
+    fn verify_foreign_transaction_request_args__should_reject_extractors_above_the_cap() {
         // Given
-        let json = evm_rpc_request_json_with_extractors(MAX_EXTRACTORS_PER_REQUEST + 1);
+        let json = verify_foreign_transaction_args_json(MAX_EXTRACTORS_PER_REQUEST + 1);
 
         // When
-        let result = serde_json::from_value::<EvmRpcRequest>(json);
+        let result = serde_json::from_value::<VerifyForeignTransactionRequestArgs>(json);
 
         // Then
         assert_matches!(result, Err(_));
