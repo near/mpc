@@ -4,7 +4,7 @@ version = "0.0.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "SDK for requesting and verifying threshold signatures from the NEAR MPC network"
+description = "SDK for requesting, verifying threshold signatures from the NEAR MPC network and validation shared between the contract and its clients."
 
 [features]
 abi = [
