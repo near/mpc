@@ -13,13 +13,14 @@
 use std::collections::BTreeMap;
 
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-use near_mpc_contract_interface::types::{
-    self as dtos, ChainRouting, ForeignChain, ProviderConfig, ProviderId,
+use near_mpc_contract_interface::types::{self as dtos, ForeignChain, ProviderConfig, ProviderId};
+use near_mpc_sdk::foreign_chain::validation::{
+    ChainEntryValidationError, ValidatedChainEntry, validate_chain_entry,
 };
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
-use crate::errors::{ChainEntryValidationError, ConversionError, Error, InvalidParameters};
+use crate::errors::{ConversionError, Error, InvalidParameters};
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
@@ -47,49 +48,21 @@ pub struct ChainEntry {
     quorum: u64,
 }
 
+impl From<ValidatedChainEntry> for ChainEntry {
+    fn from(entry: ValidatedChainEntry) -> ChainEntry {
+        ChainEntry {
+            providers: entry.providers().clone(),
+            quorum: entry.quorum(),
+        }
+    }
+}
+
 impl TryFrom<dtos::ChainEntry> for ChainEntry {
     type Error = ChainEntryValidationError;
 
     fn try_from(entry: dtos::ChainEntry) -> Result<Self, Self::Error> {
-        let dtos::ChainEntry { providers, quorum } = entry;
-        if quorum == 0 {
-            return Err(ChainEntryValidationError::ZeroQuorum);
-        }
-        let providers_len = u64::try_from(providers.len()).map_err(|e| {
-            ChainEntryValidationError::ProvidersLenOverflow {
-                len: providers.len(),
-                reason: e.to_string(),
-            }
-        })?;
-        if quorum > providers_len {
-            return Err(ChainEntryValidationError::QuorumExceedsProviders {
-                quorum,
-                providers_len,
-            });
-        }
-        for (id, config) in providers.iter() {
-            if let ChainRouting::PathSegment { segment } = &config.chain_routing
-                && segment.contains('/')
-            {
-                return Err(ChainEntryValidationError::PathSegmentContainsSlash {
-                    provider_id: id.0.clone(),
-                });
-            }
-            if let (
-                ChainRouting::QueryParam {
-                    name: routing_name, ..
-                },
-                dtos::AuthScheme::Query { name: auth_name },
-            ) = (&config.chain_routing, &config.auth_scheme)
-                && routing_name == auth_name
-            {
-                return Err(ChainEntryValidationError::QueryParamCollidesWithAuth {
-                    provider_id: id.0.clone(),
-                    name: auth_name.clone(),
-                });
-            }
-        }
-        Ok(ChainEntry { providers, quorum })
+        let validated_chain_entry = validate_chain_entry(entry)?;
+        Ok(validated_chain_entry.into())
     }
 }
 
@@ -251,7 +224,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use mpc_primitives::GovernanceThreshold;
-    use near_mpc_contract_interface::types::AuthScheme;
+    use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
 
     /// Build a [`GovernanceThresholdParameters`] for tests, bypassing the relative-threshold
     /// validation so tests can express edge-case combinations (e.g. the stale-votes
@@ -776,107 +749,5 @@ mod tests {
         // Then
         assert!(!has_pending_vote(&wl, &(p0, ForeignChain::Ethereum)));
         assert!(has_pending_vote(&wl, &(p1, ForeignChain::Polygon)));
-    }
-
-    // Direct tests for `TryFrom<dtos::ChainEntry> for ChainEntry` — the validation
-    // step that gates a vote's payload before it ever reaches `Votes<V>::vote`.
-    // These complement the `vote__should_return_err_on_*` tests above, which cover
-    // the same paths but through the full `ForeignChainRpcWhitelist::vote` entry point.
-
-    #[test]
-    fn validate_chain_entry__should_reject_zero_quorum() {
-        // Given
-        let dto = chain_entry(&["alchemy"], 0);
-
-        // When
-        let err = ChainEntry::try_from(dto).unwrap_err();
-
-        // Then
-        assert_matches!(err, ChainEntryValidationError::ZeroQuorum);
-    }
-
-    #[test]
-    fn validate_chain_entry__should_reject_quorum_exceeding_providers_count() {
-        // Given
-        let dto = chain_entry(&["alchemy"], 2);
-
-        // When
-        let err = ChainEntry::try_from(dto).unwrap_err();
-
-        // Then
-        assert_matches!(
-            err,
-            ChainEntryValidationError::QuorumExceedsProviders {
-                quorum: 2,
-                providers_len: 1,
-            }
-        );
-    }
-
-    #[test]
-    fn validate_chain_entry__should_reject_path_segment_containing_slash() {
-        // Given
-        let dto = dtos::ChainEntry {
-            providers: NonEmptyBTreeMap::new(
-                ProviderId("ankr".to_string()),
-                ProviderConfig {
-                    base_url: "https://rpc.ankr.com".to_string(),
-                    auth_scheme: AuthScheme::None,
-                    chain_routing: ChainRouting::PathSegment {
-                        segment: "eth/sepolia".to_string(),
-                    },
-                },
-            ),
-            quorum: 1,
-        };
-
-        // When
-        let err = ChainEntry::try_from(dto).unwrap_err();
-
-        // Then
-        assert_matches!(
-            err,
-            ChainEntryValidationError::PathSegmentContainsSlash { provider_id } if provider_id == "ankr"
-        );
-    }
-
-    #[test]
-    fn validate_chain_entry__should_reject_query_param_colliding_with_auth_query() {
-        // Given
-        let dto = dtos::ChainEntry {
-            providers: NonEmptyBTreeMap::new(
-                ProviderId("drpc".to_string()),
-                ProviderConfig {
-                    base_url: "https://lb.drpc.org/ogrpc".to_string(),
-                    auth_scheme: AuthScheme::Query {
-                        name: "key".to_string(),
-                    },
-                    chain_routing: ChainRouting::QueryParam {
-                        name: "key".to_string(),
-                        value: "ethereum".to_string(),
-                    },
-                },
-            ),
-            quorum: 1,
-        };
-
-        // When
-        let err = ChainEntry::try_from(dto).unwrap_err();
-
-        // Then
-        assert_matches!(
-            err,
-            ChainEntryValidationError::QueryParamCollidesWithAuth { provider_id, name }
-                if provider_id == "drpc" && name == "key"
-        );
-    }
-
-    #[test]
-    fn validate_chain_entry__should_accept_well_formed_entry() {
-        // Given
-        let dto = chain_entry(&["alchemy", "ankr"], 2);
-
-        // When / Then
-        ChainEntry::try_from(dto).expect("well-formed entry should validate");
     }
 }

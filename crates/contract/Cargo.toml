@@ -60,8 +60,6 @@ bench-contract-methods = []
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
-# For native (non-wasm, non-test) consumers of contract types, e.g. proposal-generator.
-non-contract-usage = ["near-sdk/non-contract-usage"]
 abi = [
     "borsh/unstable__schema",
     "near-mpc-contract-interface/abi",
@@ -99,6 +97,7 @@ near-mpc-contract-interface = { workspace = true, features = [
     "k256",
     "near",
 ] }
+near-mpc-sdk = { workspace = true }
 near-mpc-signature-verifier = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
@@ -134,7 +133,6 @@ mpc-contract = { workspace = true, features = [
 near-abi = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }

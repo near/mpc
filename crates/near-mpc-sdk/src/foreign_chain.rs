@@ -14,6 +14,7 @@ pub mod evm;
 pub mod hyper_evm;
 pub mod polygon;
 pub mod starknet;
+pub mod validation;
 
 use near_mpc_contract_interface::types::PublicKey;
 // response types
