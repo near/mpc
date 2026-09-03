@@ -38,7 +38,7 @@ pub enum TeeQuoteStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AttestationSubmissionError {
-    #[error("the submitted attestation failed verification, reason: {:?}", .0)]
+    #[error("the submitted attestation failed verification, reason: {0}")]
     InvalidAttestation(#[from] attestation::VerificationError),
     #[error(
         "TLS public key is already registered to a different account; only the owning account may update it"
@@ -635,6 +635,23 @@ mod tests {
             .signer_account_id(account_id.clone())
             .signer_account_pk(public_key.clone());
         testing_env!(builder.build());
+    }
+
+    #[test]
+    fn invalid_attestation__should_render_the_verification_error_as_prose() {
+        // Given
+        let error = AttestationSubmissionError::InvalidAttestation(
+            attestation::VerificationError::Custom("x".to_string()),
+        );
+
+        // When
+        let rendered = error.to_string();
+
+        // Then
+        assert_eq!(
+            rendered,
+            "the submitted attestation failed verification, reason: custom error: `x`"
+        );
     }
 
     #[test]
