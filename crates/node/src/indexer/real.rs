@@ -141,8 +141,8 @@ async fn handle_shutdown_signal(
                 }
             }
         }
-        // `ExpectedShutdown` is nearcore's graceful-restart request; ignore it and keep
-        // mpc-node up rather than risk the round-1 restart hazard.
+        // Ignore nearcore's `ExpectedShutdown`: acting on it would exit into a restart at
+        // the same height, taking mpc-node offline for no gain.
         Ok(ShutdownReason::ExpectedShutdown) => {
             tracing::warn!("nearcore signalled ExpectedShutdown; ignoring");
             HandlerAction::KeepListening
@@ -234,10 +234,8 @@ pub fn spawn_real_indexer(
             );
 
             // If nearcore requested an epoch-sync data reset on a previous run, wipe the
-            // chain store before it reopens (see #3909). A hard failure here must not
-            // panic — that would crash-loop with the marker still on disk. Surface an
-            // actionable error and remember it, so the reset handler below is disarmed
-            // and the node wedges rather than restart-loops on a wipe that keeps failing.
+            // chain store before it reopens. On failure, disarm the reset handler below so
+            // the node wedges rather than restart-loops on a wipe that keeps failing.
             let reset_wipe_failed = wipe_near_data_if_epoch_sync_reset(
                 &home_dir,
                 &hot_store_path,
@@ -546,8 +544,8 @@ mod tests {
     }
 
     /// The signals that must *not* take the node offline or write a marker: a reset on a
-    /// restart-disabled node, and the non-reset arms. Each could be reverted into the
-    /// restart path, so pinning them keeps the round-1 hazard from creeping back.
+    /// restart-disabled node, and the non-reset arms. Pin each so a regression into the
+    /// restart path (including the `Closed` busy-loop) fails a test.
     #[rstest]
     #[case::archival_reset(
         Ok(ShutdownReason::EpochSyncDataReset),
