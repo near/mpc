@@ -152,9 +152,10 @@ See `docs/engineering-standards.md` §Write helpful code comments for the full r
 
 ## Documentation alignment
 
-Archived documents are recognizable by a "Status: ARCHIVED" banner at the top. Such documents must never be modified.
+Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified. When a PR archives a file, it must remove any contents at risk of becoming stale (such as file paths). The archiving procedure is described in [README.md §Documentation](README.md#documentation).
+
 All other documents are considered live and expected to be updated if invalidated by a change.
-When authoring or reviewing a change that renames, removes, or reshapes code (types, methods, contract entry points, config fields, protocol state, architecture), verify that the surrounding documentation still describes the new behavior. This covers Markdown under `docs/` and any referenced templates, as well as Rust doc comments (`///`, `//!`) on and near the changed items — names, parameters, invariants, and examples in doc comments drift just as easily as prose docs. Design documents (`docs/design/`, `docs/*-design.md`) that describe a superseded design must be updated as well (unless labeled as archived).
+
+When authoring or reviewing a change that renames, removes, or reshapes code (types, methods, contract entry points, config fields, protocol state, architecture), verify that the surrounding documentation still describes the new behavior. This covers Markdown under `docs/` and any referenced templates, as well as Rust doc comments (`///`, `//!`) on and near the changed items — names, parameters, invariants, and examples in doc comments drift just as easily as prose docs. Design documents (`docs/design/`, `docs/*-design.md`) that describe a superseded design must never be left silently stale: update them in the same PR, or — when the rewrite is too big for the PR that invalidated them — mark the stale sections with a status banner linking an issue that tracks the rewrite (e.g. `**Status:** Partially superseded — TODO(#3825): …`).
 
 If you find stale passages in a live doc, flag them with `file:line` and, when authoring, fix them in the same PR. Doc drift is a review-blocking issue, not a follow-up.
-
