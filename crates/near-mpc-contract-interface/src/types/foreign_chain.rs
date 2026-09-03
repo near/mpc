@@ -1985,6 +1985,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use rstest::rstest;
+    use serde_json::json;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {
@@ -2560,45 +2561,90 @@ mod tests {
         assert_ne!(hash_7_bits, hash_8_bits);
     }
 
-    fn verify_foreign_transaction_args_json(extractor_count: usize) -> serde_json::Value {
-        serde_json::json!({
-            "request": {
-                "Ethereum": {
-                    "tx_id": "bb".repeat(32),
-                    "extractors": vec!["BlockHash"; extractor_count],
-                    "finality": "Finalized",
-                }
-            },
+    fn hex_bytes(len: usize) -> String {
+        "bb".repeat(len)
+    }
+
+    fn verify_foreign_transaction_args_json(
+        mut request: serde_json::Value,
+        extractor: serde_json::Value,
+        extractor_count: usize,
+    ) -> serde_json::Value {
+        let fields = request
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        fields["extractors"] = vec![extractor; extractor_count].into();
+        json!({
+            "request": request,
             "domain_id": 0,
             "payload_version": 1,
         })
     }
 
-    #[test]
-    fn verify_foreign_transaction_request_args__should_deserialize_with_extractors_at_the_cap() {
+    #[rstest]
+    #[case::evm(
+        json!({"Ethereum": {"tx_id": hex_bytes(32), "finality": "Finalized"}}),
+        json!("BlockHash")
+    )]
+    #[case::svm(
+        json!({"Solana": {"tx_id": hex_bytes(64), "finality": "Finalized"}}),
+        json!({"AccountState": {"pubkey": hex_bytes(32)}})
+    )]
+    #[case::bitcoin(
+        json!({"Bitcoin": {"tx_id": hex_bytes(32), "confirmations": 6}}),
+        json!("BlockHash")
+    )]
+    #[case::starknet(
+        json!({"Starknet": {"tx_id": hex_bytes(32), "finality": "AcceptedOnL1"}}),
+        json!("BlockHash")
+    )]
+    #[case::ton(
+        json!({
+            "Ton": {
+                "tx_id": hex_bytes(32),
+                "account": {"workchain": 0, "hash": hex_bytes(32)},
+                "finality": "MasterchainIncluded",
+            }
+        }),
+        json!({"Log": {"message_index": 0}})
+    )]
+    #[case::aptos(
+        json!({"Aptos": {"tx_id": hex_bytes(32), "finality": "Committed"}}),
+        json!({"Event": {"event_index": 0}})
+    )]
+    #[case::sui(
+        json!({"Sui": {"tx_id": hex_bytes(32), "finality": "Checkpointed"}}),
+        json!({"Event": {"event_index": 0}})
+    )]
+    fn verify_foreign_transaction_request_args__should_bound_extractors_at_the_cap(
+        #[case] request: serde_json::Value,
+        #[case] extractor: serde_json::Value,
+    ) {
         // Given
-        let json = verify_foreign_transaction_args_json(MAX_EXTRACTORS_PER_REQUEST);
-
-        // When
-        let args: VerifyForeignTransactionRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_matches!(
-            args.request,
-            ForeignChainRpcRequest::Ethereum(request)
-                if request.extractors.len() == MAX_EXTRACTORS_PER_REQUEST
+        let at_cap = verify_foreign_transaction_args_json(
+            request.clone(),
+            extractor.clone(),
+            MAX_EXTRACTORS_PER_REQUEST,
         );
-    }
-
-    #[test]
-    fn verify_foreign_transaction_request_args__should_reject_extractors_above_the_cap() {
-        // Given
-        let json = verify_foreign_transaction_args_json(MAX_EXTRACTORS_PER_REQUEST + 1);
+        let above_cap = verify_foreign_transaction_args_json(
+            request,
+            extractor,
+            MAX_EXTRACTORS_PER_REQUEST + 1,
+        );
 
         // When
-        let result = serde_json::from_value::<VerifyForeignTransactionRequestArgs>(json);
+        let accepted =
+            serde_json::from_value::<VerifyForeignTransactionRequestArgs>(at_cap.clone()).unwrap();
+        let rejected = serde_json::from_value::<VerifyForeignTransactionRequestArgs>(above_cap);
 
         // Then
-        assert_matches!(result, Err(_));
+        assert_eq!(
+            serde_json::to_value(accepted.request).unwrap(),
+            at_cap["request"]
+        );
+        assert_matches!(rejected, Err(_));
     }
 }
