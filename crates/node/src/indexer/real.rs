@@ -65,11 +65,11 @@ const EPOCH_SYNC_RESET_EXIT_CODE: i32 = 70;
 /// `restart: on-failure` brings it back and the startup wipe runs. Returns the sender to
 /// pass to [`nearcore::start_with_config_and_synchronization`].
 ///
-/// The reset arrives during initial sync, while the main thread is still parked in
-/// `spawn_real_indexer` waiting for the node to sync — which, being wedged, it never will.
-/// So the handler exits the process directly rather than routing through the main
-/// `select!` (which that parked thread never reaches): `SecretDB` is not opened until
-/// after sync, and nearcore's store is about to be wiped, so there is nothing to flush.
+/// In the #3909 wedge the reset arrives during initial sync, while the main thread is
+/// still parked in `spawn_real_indexer`, so the main `select!` is unreachable and the
+/// handler must exit the process itself. Nothing pins a reset to that window: one arriving
+/// after sync is a hard kill with `SecretDB` open — equivalent to a crash, which the node
+/// already tolerates, and the chain store is wiped on the next start regardless.
 ///
 /// `restart_disabled` suppresses the exit when a wipe must not (or cannot) run — an
 /// archival node, or a startup wipe that just failed — so the reset can only wedge the
@@ -80,12 +80,17 @@ fn spawn_epoch_sync_reset_handler(
 ) -> broadcast::Sender<ShutdownReason> {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
     tokio::spawn(async move {
+        // A wedged node re-requests the reset every ~60s; log the disabled reason once.
+        let mut disabled_warned = false;
         // Loop because nearcore may in principle emit more than one reason; only an
         // acted-on reset or a closed channel ends it.
         loop {
-            match handle_shutdown_signal(shutdown_rx.recv().await, &home_dir, restart_disabled)
-                .await
-            {
+            match handle_shutdown_signal(
+                shutdown_rx.recv().await,
+                &home_dir,
+                restart_disabled,
+                &mut disabled_warned,
+            ) {
                 HandlerAction::Restart => std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE),
                 HandlerAction::KeepListening => {}
                 HandlerAction::Stop => break,
@@ -93,6 +98,19 @@ fn spawn_epoch_sync_reset_handler(
         }
     });
     shutdown_tx
+}
+
+/// The reason auto-restart is suppressed, or `None` when a reset should restart-and-wipe.
+/// An archive must never be wiped; a startup wipe that just failed would otherwise
+/// restart-loop on a wipe that keeps failing.
+fn restart_disabled_reason(is_archival: bool, wipe_failed: bool) -> Option<&'static str> {
+    if is_archival {
+        Some("node is archival (auto-wipe would destroy the archive)")
+    } else if wipe_failed {
+        Some("the previous epoch-sync wipe failed")
+    } else {
+        None
+    }
 }
 
 /// What [`spawn_epoch_sync_reset_handler`] does after one nearcore shutdown signal.
@@ -108,19 +126,24 @@ enum HandlerAction {
 
 /// Decides the [`HandlerAction`] for one nearcore shutdown signal, writing the reset
 /// marker when a restart is warranted. Split from the spawn so it is unit-testable without
-/// exiting the process.
-async fn handle_shutdown_signal(
+/// exiting the process. `disabled_warned` dedupes the restart-disabled log across the
+/// resets nearcore repeats while wedged.
+fn handle_shutdown_signal(
     signal: Result<ShutdownReason, broadcast::error::RecvError>,
     home_dir: &Path,
     restart_disabled: Option<&str>,
+    disabled_warned: &mut bool,
 ) -> HandlerAction {
     match signal {
         Ok(ShutdownReason::EpochSyncDataReset) => {
             if let Some(reason) = restart_disabled {
-                tracing::error!(
-                    "epoch-sync data reset requested but {reason}; not restarting — \
-                     manual recovery required"
-                );
+                if !*disabled_warned {
+                    tracing::error!(
+                        "epoch-sync data reset requested but {reason}; not restarting — \
+                         manual recovery required"
+                    );
+                    *disabled_warned = true;
+                }
                 return HandlerAction::KeepListening;
             }
             tracing::warn!(
@@ -253,13 +276,8 @@ pub fn spawn_real_indexer(
 
             // TODO(#4343): a reset that keeps recurring after a *successful* wipe still
             // loops (wipe -> re-sync -> reset -> wipe) unbounded; bound the attempts.
-            let restart_disabled = if near_config.client_config.archive {
-                Some("node is archival (auto-wipe would destroy the archive)")
-            } else if reset_wipe_failed {
-                Some("the previous epoch-sync wipe failed")
-            } else {
-                None
-            };
+            let restart_disabled =
+                restart_disabled_reason(near_config.client_config.archive, reset_wipe_failed);
             let shutdown_tx = spawn_epoch_sync_reset_handler(home_dir.clone(), restart_disabled);
 
             let near_node = nearcore::start_with_config_and_synchronization(
@@ -494,7 +512,10 @@ async fn await_sync_or_shutdown(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{HandlerAction, ShutdownReason, await_sync_or_shutdown, handle_shutdown_signal};
+    use super::{
+        HandlerAction, ShutdownReason, await_sync_or_shutdown, handle_shutdown_signal,
+        restart_disabled_reason,
+    };
     use crate::home_paths::epoch_sync_reset_marker_file;
     use rstest::rstest;
     use std::future::pending;
@@ -529,14 +550,18 @@ mod tests {
         assert!(!synced);
     }
 
-    #[tokio::test]
-    async fn handle_shutdown_signal__should_record_marker_and_restart_on_reset() {
+    #[test]
+    fn handle_shutdown_signal__should_record_marker_and_restart_on_reset() {
         // Given
         let home = tempfile::tempdir().unwrap();
 
         // When
-        let action =
-            handle_shutdown_signal(Ok(ShutdownReason::EpochSyncDataReset), home.path(), None).await;
+        let action = handle_shutdown_signal(
+            Ok(ShutdownReason::EpochSyncDataReset),
+            home.path(),
+            None,
+            &mut false,
+        );
 
         // Then
         assert_eq!(action, HandlerAction::Restart);
@@ -563,8 +588,7 @@ mod tests {
         HandlerAction::KeepListening
     )]
     #[case::closed(Err(broadcast::error::RecvError::Closed), None, HandlerAction::Stop)]
-    #[tokio::test]
-    async fn handle_shutdown_signal__should_not_restart_or_write_marker_for_other_signals(
+    fn handle_shutdown_signal__should_not_restart_or_write_marker_for_other_signals(
         #[case] signal: Result<ShutdownReason, broadcast::error::RecvError>,
         #[case] restart_disabled: Option<&str>,
         #[case] expected: HandlerAction,
@@ -573,10 +597,31 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
 
         // When
-        let action = handle_shutdown_signal(signal, home.path(), restart_disabled).await;
+        let action = handle_shutdown_signal(signal, home.path(), restart_disabled, &mut false);
 
         // Then
         assert_eq!(action, expected);
         assert!(!epoch_sync_reset_marker_file(home.path()).exists());
+    }
+
+    #[rstest]
+    #[case::archival(
+        true,
+        false,
+        Some("node is archival (auto-wipe would destroy the archive)")
+    )]
+    #[case::wipe_failed(false, true, Some("the previous epoch-sync wipe failed"))]
+    #[case::archival_takes_precedence(
+        true,
+        true,
+        Some("node is archival (auto-wipe would destroy the archive)")
+    )]
+    #[case::healthy(false, false, None)]
+    fn restart_disabled_reason__should_suppress_restart_for_archival_or_failed_wipe(
+        #[case] is_archival: bool,
+        #[case] wipe_failed: bool,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(restart_disabled_reason(is_archival, wipe_failed), expected);
     }
 }
