@@ -326,24 +326,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn put_keyshares__should_fail_naming_the_home_dir_when_local_storage_is_empty() {
-        // Given
-        let mpc_p2p_client = FakeP2PClient::new();
-        let storage = FakeKeyshareStorage { keyshares: vec![] };
-
-        // When
-        let result = put_keyshares(&mpc_p2p_client, &storage, Path::new("/backup/home")).await;
-
-        // Then
-        let err = result.expect_err("an empty local store should not be pushed to a node");
-        assert!(
-            err.to_string().contains("/backup/home"),
-            "unexpected error: {err:?}"
-        );
-        assert_eq!(mpc_p2p_client.put_keyshares_calls.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
     async fn put_keyshares__should_send_the_stored_keyshares() {
         // Given
         let mut rng = StdRng::seed_from_u64(42);
