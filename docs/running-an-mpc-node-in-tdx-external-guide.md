@@ -2203,8 +2203,8 @@ the CVM you can't delete the data dir by hand, so the node config exposes a one-
 
 > **Note:** a node stuck *far behind* past the epoch-sync horizon now recovers **automatically**
 > on restart by wiping its data and re-syncing — no operator action, though expect it to take
-> 1–2 hours (like the initial sync). Archival nodes are the exception (never auto-wiped); use the
-> manual wipe below there, as well as for a corrupt or stale store.
+> 1–2 hours (like the initial sync). The manual wipe below is for the other cases (a corrupt or
+> stale store).
 
 **Fix — change the wipe token and redeploy.** Set `wipe_near_data_token` under
 `[mpc_node_config.node.indexer]` to a **new non-zero value** (different from its current

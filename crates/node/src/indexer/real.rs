@@ -66,10 +66,11 @@ const EPOCH_SYNC_RESET_EXIT_CODE: i32 = 70;
 /// pass to [`nearcore::start_with_config_and_synchronization`].
 ///
 /// In the #3909 wedge the reset arrives during initial sync, while the main thread is
-/// still parked in `spawn_real_indexer`, so the main `select!` is unreachable and the
+/// still parked in [`spawn_real_indexer`], so the main `select!` is unreachable and the
 /// handler must exit the process itself. Nothing pins a reset to that window: one arriving
-/// after sync is a hard kill with `SecretDB` open — equivalent to a crash, which the node
-/// already tolerates, and the chain store is wiped on the next start regardless.
+/// after sync is a hard kill with [`SecretDB`](crate::db::SecretDB) open — equivalent to a
+/// crash, which the node already tolerates, and the chain store is wiped on the next start
+/// regardless.
 ///
 /// `restart_disabled` suppresses the exit when a wipe must not (or cannot) run — an
 /// archival node, or a startup wipe that just failed — so the reset can only wedge the
@@ -80,8 +81,8 @@ fn spawn_epoch_sync_reset_handler(
 ) -> broadcast::Sender<ShutdownReason> {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
     tokio::spawn(async move {
-        // A wedged node re-requests the reset every ~60s; log the disabled reason once.
-        let mut disabled_warned = false;
+        // Latches the give-up log so a wedged node doesn't repeat it every ~60s.
+        let mut warned = false;
         // Loop because nearcore may in principle emit more than one reason; only an
         // acted-on reset or a closed channel ends it.
         loop {
@@ -89,7 +90,7 @@ fn spawn_epoch_sync_reset_handler(
                 shutdown_rx.recv().await,
                 &home_dir,
                 restart_disabled,
-                &mut disabled_warned,
+                &mut warned,
             ) {
                 HandlerAction::Restart => std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE),
                 HandlerAction::KeepListening => {}
@@ -126,40 +127,48 @@ enum HandlerAction {
 
 /// Decides the [`HandlerAction`] for one nearcore shutdown signal, writing the reset
 /// marker when a restart is warranted. Split from the spawn so it is unit-testable without
-/// exiting the process. `disabled_warned` dedupes the restart-disabled log across the
-/// resets nearcore repeats while wedged.
+/// exiting the process. `warned` dedupes the give-up log (restart-disabled, or a marker
+/// write that failed) across the resets nearcore repeats while wedged.
 fn handle_shutdown_signal(
     signal: Result<ShutdownReason, broadcast::error::RecvError>,
     home_dir: &Path,
     restart_disabled: Option<&str>,
-    disabled_warned: &mut bool,
+    warned: &mut bool,
 ) -> HandlerAction {
     match signal {
         Ok(ShutdownReason::EpochSyncDataReset) => {
+            // Both give-up paths below repeat every ~60s while wedged (nearcore keeps
+            // re-requesting), so log each at most once. They are mutually exclusive per
+            // process, so one latch covers both.
             if let Some(reason) = restart_disabled {
-                if !*disabled_warned {
+                if !*warned {
                     tracing::error!(
                         "epoch-sync data reset requested but {reason}; not restarting — \
                          manual recovery required"
                     );
-                    *disabled_warned = true;
+                    *warned = true;
                 }
                 return HandlerAction::KeepListening;
             }
-            tracing::warn!(
-                "epoch-sync data reset requested; recording marker and restarting \
-                 to wipe the chain store"
-            );
             // Only restart once the marker is on disk; otherwise a persistent write failure
             // (full or read-only fs) would restart-loop with nothing to break it. Stay up
             // wedged instead.
             match record_epoch_sync_reset_request(home_dir) {
-                Ok(()) => HandlerAction::Restart,
-                Err(err) => {
-                    tracing::error!(
-                        ?err,
-                        "could not record the epoch-sync reset marker; staying up wedged"
+                Ok(()) => {
+                    tracing::warn!(
+                        "epoch-sync data reset requested; recorded marker, restarting \
+                         to wipe the chain store"
                     );
+                    HandlerAction::Restart
+                }
+                Err(err) => {
+                    if !*warned {
+                        tracing::error!(
+                            ?err,
+                            "could not record the epoch-sync reset marker; staying up wedged"
+                        );
+                        *warned = true;
+                    }
                     HandlerAction::KeepListening
                 }
             }
