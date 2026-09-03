@@ -60,7 +60,8 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 |-------|---------|
 | `mpc-node` | Main node binary: indexer, coordinator, P2P networking, signature protocols |
 | `mpc-contract` | NEAR smart contract: manages requests, participant set, protocol state |
-| `contract-interface` | DTOs for contract communication |
+| `near-mpc-contract-interface` | DTOs for contract communication and typed contract calls; plain data carriers |
+| `near-mpc-sdk` | Client SDK: request builders, response verification; owns validation shared between consumers of the contract-interface crate |
 | `mpc-primitives` | Core domain types (domain IDs, signature schemes) |
 | `mpc-tls` | TLS transport for secure P2P communication |
 | `test-utils` | Testing utilities for integration tests |
@@ -120,6 +121,14 @@ See `docs/engineering-standards.md` for the full rationale and additional testin
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
+### Validation
+We follow [parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/): a validation method returns a validated struct rather than a `bool`, so the type system carries the proof of validity.
+
+Validation logic needed by different consumers of the contract-interface crate should be shared, not re-implemented per consumer. A good place for such shared logic is the `near-mpc-sdk` crate.
+
+### Contract Methods
+A PR introducing a new contract method must add that method to the `MpcContractHandle` in the interface crate.
+
 ### Trait Naming
 Traits should model a single capability, and be named after the action, not as an agent noun derived from it: `ReadContractState`, not `ContractStateReader`. This follows std-idiomatic patterns (`From*`/`Into*`/`To*` conversions). This applies to new traits and opportunistic renames, existing traits may deviate from this principle.
 
@@ -152,5 +161,10 @@ See `docs/engineering-standards.md` §Write helpful code comments for the full r
 
 ## Documentation alignment
 
-When authoring or reviewing a change that renames, removes, or reshapes code (types, methods, contract entry points, config fields, protocol state, architecture), verify that the surrounding documentation still describes the new behavior. This covers Markdown under `docs/` and any referenced templates, as well as Rust doc comments (`///`, `//!`) on and near the changed items — names, parameters, invariants, and examples in doc comments drift just as easily as prose docs. Design documents (`docs/design/`, `docs/*-design.md`) that describe a superseded design must be either updated, removed, or prominently marked as outdated (e.g. a "Status: superseded by #NNNN" banner at the top) — never left silently stale. If you find stale passages, flag them with `file:line` and, when authoring, fix them in the same PR. Doc drift is a review-blocking issue, not a follow-up.
+Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [README.md §Documentation](README.md#documentation).
 
+All other documents are considered live and expected to be updated if invalidated by a change.
+
+When authoring or reviewing a change that renames, removes, or reshapes code (types, methods, contract entry points, config fields, protocol state, architecture), verify that the surrounding documentation still describes the new behavior. This covers Markdown under `docs/` and any referenced templates, as well as Rust doc comments (`///`, `//!`) on and near the changed items — names, parameters, invariants, and examples in doc comments drift just as easily as prose docs. Design documents (`docs/design/`, `docs/*-design.md`) that describe a superseded design must never be left silently stale: update them in the same PR, or — when the rewrite is too big for the PR that invalidated them — mark the stale sections with a status banner linking an issue that tracks the rewrite (e.g. `**Status:** Partially superseded — TODO(#3825): …`).
+
+If you find stale passages in a live doc, flag them with `file:line` and, when authoring, fix them in the same PR. Doc drift is a review-blocking issue, not a follow-up.
