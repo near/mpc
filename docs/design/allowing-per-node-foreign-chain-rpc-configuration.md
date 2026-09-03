@@ -23,8 +23,8 @@ requiring all other nodes to have the exact same configuration.
 
 1. RPC providers are whitelisted by being voted into the contract by node operators submitting votes. The whitelist is **per-chain**, keyed by `(ForeignChain, ProviderId)`.
 2. The contract owns the connection config (`base_url`, `auth_scheme`, `chain_routing`), not the operator. Operator yaml carries `provider_id` + a `token_env` reference only.
-3. Nodes do not need to have local configurations covering all whitelisted RPC providers — a quorum number of locally-configured providers per chain is sufficient.
-4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. A quorum of those RPC providers must agree on the verification; if fewer than the quorum agree, the node errors out that foreign-tx validation and does **not** retry the request.
+3. Nodes do not need to have local configurations covering all whitelisted RPC providers — a subset of the chain's whitelisted providers is sufficient (a single provider already covers the chain).
+4. Every node partaking in a foreign signature verification request queries all its locally configured RPC providers for the relevant chain, independently of other nodes. Every provider that reaches a verdict must agree on it, while providers that fail to answer are tolerated; on disagreement the node errors out that foreign-tx validation and does **not** retry the request.
 5. Every node is expected to **cover** every whitelisted foreign chain at all times. There is no
    on-chain enforcement, so the system must tolerate temporary **incomplete coverage**: a chain is
    served while it is **available** (≥ signing threshold of active nodes cover it), and
@@ -40,7 +40,7 @@ The current setup has many limitations and was implemented as an MVP.
 ### Availability
 Currently, if a single RPC provider is unresponsive, then a foreign chain validation will fail because the nodes that are mapped to that RPC provider will fail.
 ### Security
-By requiring every node to have a valid quorum of RPC providers for a verification, each node does not need to trust the other nodes' RPC configurations. Putting the connection config (`base_url`, `auth_scheme`, `chain_routing`) on chain also closes the gap where a TEE-attested binary trusts its operator's local config — the operator can no longer point the node at an arbitrary URL, only at one the network has voted to trust for that chain.
+By requiring every node to verify against its own RPC providers, each node does not need to trust the other nodes' RPC configurations. Putting the connection config (`base_url`, `auth_scheme`, `chain_routing`) on chain also closes the gap where a TEE-attested binary trusts its operator's local config — the operator can no longer point the node at an arbitrary URL, only at one the network has voted to trust for that chain.
 ### Flexibility
 We want to allow nodes to use newly whitelisted RPC providers without forcing all other node operators to also configure RPC accounts for that provider.
 
@@ -64,15 +64,14 @@ struct ForeignChainRpcWhitelist {
 }
 
 struct AllowedProviders {
-    // Each chain stores its full whitelist + the RPC response quorum nodes should
-    // use when fanning out queries to those providers.
+    // Each chain stores its full whitelist plus the voted RPC response quorum.
     entries: BTreeMap<ForeignChain, ChainEntry>,
 }
 
 struct ChainEntry {
     providers: Vec<ProviderEntry>,
-    // RPC response quorum: when a node fans out a query to the N providers above,
-    // at least this many must return the same value for the response to be accepted.
+    // Voted RPC response quorum, stored for a deferred quorum policy; verification
+    // does not consume it yet.
     quorum: u64,
 }
 
@@ -118,11 +117,11 @@ Drop-and-log rather than hard-crash so that a single hostile vote-removal partic
 
 Since the nodes are running in a Trusted Execution Environment (TEE), this functionality lets the node guard against operators that might otherwise point the binary at a malicious RPC URL. The full URL is assembled from on-chain `base_url` + `chain_routing` + operator-supplied token via `auth_scheme`, so the operator never writes a URL directly — for `{}` bases, the operator's slug fills exactly one host label under the domain suffix the vote pinned.
 
-### Individual node quorum of RPC providers for verification requests
+### Provider agreement for verification requests
 
-When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff at least the per-chain RPC quorum of providers agreed. If fewer than the RPC quorum agree, the node errors out and produces no signature share. This sub-quorum outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md#verification-behavior).
+When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff every provider that reached a verdict reached the same one; providers that fail to answer are tolerated. On any disagreement the node errors out and produces no signature share. This disagreement outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md#verification-behavior).
 
-The quorum value comes from on-chain `ChainEntry.quorum`, voted in as part of the same `ChainVote` that voted the chain's provider list — so participants agree on both "which providers are trusted" and "how many of them must concur" in one round.
+The on-chain `ChainEntry.quorum`, voted in as part of the same `ChainVote` that voted the chain's provider list, is stored for a deferred quorum policy (how many providers must concur before a node accepts a result) and is not yet consumed by verification.
 
 ### Nodes submit the configured foreign chains on-chain
 

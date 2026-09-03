@@ -1,9 +1,9 @@
 //! Builds the foreign chain whitelist payload from TOML file.
 
 use anyhow::Context as _;
-use mpc_contract::errors::ChainEntryValidationError;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{ChainEntry, ForeignChain};
+use near_mpc_sdk::foreign_chain::validation::{ChainEntryValidationError, validate_chain_entry};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -19,16 +19,13 @@ pub struct ConfigError {
     pub source: ChainEntryValidationError,
 }
 
-/// Validates each entry with the contract's own rules
-/// ([`mpc_contract::foreign_chain_rpc::ChainEntry`]), then borsh-encodes the
-/// `vote_update_foreign_chain_providers` argument.
+/// Validates each entry with [`validate_chain_entry`], then borsh-encodes
+/// the `vote_update_foreign_chain_providers` argument.
 pub fn build_payload(config: ProposalConfig) -> anyhow::Result<Vec<u8>> {
     for (chain, entry) in config.chains.iter() {
-        mpc_contract::foreign_chain_rpc::ChainEntry::try_from(entry.clone()).map_err(|source| {
-            ConfigError {
-                chain: *chain,
-                source,
-            }
+        validate_chain_entry(entry.clone()).map_err(|source| ConfigError {
+            chain: *chain,
+            source,
         })?;
     }
     borsh::to_vec(&config.chains)

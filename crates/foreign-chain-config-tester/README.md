@@ -52,7 +52,7 @@ sui       public     ✓ ok
 4 passed, 1 failed, 0 skipped
 
 Failures:
-  starknet / public: inner network client failed to fetch: Transaction hash not found
+  starknet / public: the provider ruled the golden transaction out: the transaction was not found
 ```
 
 > **Note:** for providers that carry the API key in the URL (`path` / `query`

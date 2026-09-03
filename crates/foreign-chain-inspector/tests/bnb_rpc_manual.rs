@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector,
     bnb::{
@@ -48,6 +49,9 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     assert_eq!(extracted_values.len(), 4);

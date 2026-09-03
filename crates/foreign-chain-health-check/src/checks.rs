@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use foreign_chain_inspector::ForeignChainInspectionError;
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
     BlockConfirmations, EthereumFinality, ForeignChainInspector,
     aptos::{
@@ -69,6 +69,12 @@ impl std::fmt::Display for Mismatch {
 
 impl std::error::Error for Mismatch {}
 
+fn extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
+    verdict.into_extracted().map_err(|failing| {
+        anyhow::anyhow!("the provider ruled the golden transaction out: {failing}")
+    })
+}
+
 fn verify_block_hash(expected: [u8; 32], got: [u8; 32]) -> anyhow::Result<()> {
     if got != expected {
         return Err(Mismatch::BlockHash { expected, got }.into());
@@ -85,13 +91,14 @@ where
     Chain: EvmChain + Send + Sync,
 {
     let inspector = EvmInspector::<HttpClient, Chain>::new(client);
-    let values = inspector
+    let verdict = inspector
         .extract(
             Chain::TransactionHash::from(tx),
             EthereumFinality::Finalized,
             vec![EvmExtractor::BlockHash],
         )
         .await?;
+    let values = extracted(verdict)?;
     match values.into_iter().next().context("RPC returned no value")? {
         EvmExtractedValue::BlockHash(hash) => {
             let got: [u8; 32] = hash.into();
@@ -107,13 +114,14 @@ pub async fn check_bitcoin(
     expected_block_hash: [u8; 32],
 ) -> anyhow::Result<()> {
     let inspector = BitcoinInspector::new(client);
-    let values = inspector
+    let verdict = inspector
         .extract(
             BitcoinTransactionHash::from(tx),
             BlockConfirmations::from(1),
             vec![BitcoinExtractor::BlockHash],
         )
         .await?;
+    let values = extracted(verdict)?;
     match values.into_iter().next().context("RPC returned no value")? {
         BitcoinExtractedValue::BlockHash(hash) => {
             let got: [u8; 32] = hash.into();
@@ -128,13 +136,14 @@ pub async fn check_starknet(
     expected_block_hash: [u8; 32],
 ) -> anyhow::Result<()> {
     let inspector = StarknetInspector::new(client);
-    let values = inspector
+    let verdict = inspector
         .extract(
             StarknetTransactionHash::from(tx),
             StarknetFinality::AcceptedOnL1,
             vec![StarknetExtractor::BlockHash],
         )
         .await?;
+    let values = extracted(verdict)?;
     match values.into_iter().next().context("RPC returned no value")? {
         StarknetExtractedValue::BlockHash(hash) => {
             let got: [u8; 32] = hash.into();
@@ -193,8 +202,8 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
 
     let inspector = SuiInspector::new(client);
     // Probe the first event to exercise the full extraction pipeline when the tx emits
-    // events; a tx with no events (`LogIndexOutOfBounds`) or a failed one still proves the
-    // provider serves canonical checkpointed data.
+    // events; a tx with no events or a failed one still proves the provider serves canonical
+    // checkpointed data.
     match inspector
         .extract(
             SuiTransactionDigest::from(tx),
@@ -203,9 +212,10 @@ pub async fn check_sui(client: impl SuiRpcClient, expected_chain_id: &str) -> an
         )
         .await
     {
-        Ok(_)
-        | Err(ForeignChainInspectionError::TransactionFailed)
-        | Err(ForeignChainInspectionError::LogIndexOutOfBounds) => Ok(()),
+        Ok(Verdict::Extracted(_) | Verdict::TransactionFailed | Verdict::LogIndexOutOfBounds) => {
+            Ok(())
+        }
+        Ok(failing) => bail!("the provider ruled its own checkpointed transaction out: {failing}"),
         Err(e) => Err(e).context("failed to inspect a transaction from the latest checkpoint"),
     }
 }
@@ -219,13 +229,14 @@ pub async fn check_aptos(
     expected_sequence_number: u64,
 ) -> anyhow::Result<()> {
     let inspector = AptosInspector::new(ReqwestAptosClient::new(url, auth_header, timeout));
-    let values = inspector
+    let verdict = inspector
         .extract(
             AptosTransactionHash::from(tx),
             AptosFinality::Committed,
             vec![AptosExtractor::Event { event_index: 0 }],
         )
         .await?;
+    let values = extracted(verdict)?;
     match values.into_iter().next().context("RPC returned no value")? {
         AptosExtractedValue::Event(event) => {
             if event.type_tag != expected_type_tag {

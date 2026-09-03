@@ -8,7 +8,7 @@ use crate::common::{
 
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
-    NetworkFingerprintInspector,
+    NetworkFingerprintInspector, Verdict,
     base::inspector::Base,
     evm::inspector::{EvmChain, EvmExtractedValue, EvmExtractor, EvmInspector},
 };
@@ -110,7 +110,7 @@ macro_rules! evm_inspector_tests {
                     .unwrap();
 
                 // then
-                assert_eq!(vec![expected], extracted_values);
+                assert_eq!(Verdict::Extracted(vec![expected]), extracted_values);
             }
 
             #[tokio::test]
@@ -156,7 +156,7 @@ macro_rules! evm_inspector_tests {
                 // then
                 let expected_extractions =
                     vec![ExtractedValue::BlockHash(expected_block_hash)];
-                assert_eq!(expected_extractions, extracted_values);
+                assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
             }
 
             #[tokio::test]
@@ -198,7 +198,7 @@ macro_rules! evm_inspector_tests {
             }
 
             #[tokio::test]
-            async fn extract_returns_error_when_transaction_failed() {
+            async fn extract_returns_the_transaction_failed_verdict() {
                 // given
                 let tx_id = TxHash::from([1; 32]);
 
@@ -239,7 +239,7 @@ macro_rules! evm_inspector_tests {
                 // then
                 assert_matches!(
                     response,
-                    Err(ForeignChainInspectionError::TransactionFailed)
+                    Ok(Verdict::TransactionFailed)
                 );
             }
 
@@ -279,11 +279,32 @@ macro_rules! evm_inspector_tests {
 
                 // then
                 let expected_extractions: Vec<ExtractedValue> = vec![];
-                assert_eq!(expected_extractions, extracted_values);
+                assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
             }
 
             #[tokio::test]
-            async fn extract_propagates_rpc_client_errors() {
+            async fn extract_returns_the_not_found_verdict_when_the_receipt_is_null() {
+                // given: `eth_getTransactionReceipt` answers `null` for an unknown transaction.
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&serde_json::Value::Null)
+                    .build();
+                let inspector = Inspector::new(mock_client);
+
+                // when
+                let response = inspector
+                    .extract(
+                        TxHash::from([9; 32]),
+                        EthereumFinality::Finalized,
+                        vec![EvmExtractor::BlockHash],
+                    )
+                    .await;
+
+                // then
+                assert_matches!(response, Ok(Verdict::TransactionNotFound));
+            }
+
+            #[tokio::test]
+            async fn extract__should_classify_rpc_client_errors() {
                 // given
                 let tx_id = TxHash::from([9; 32]);
 
@@ -307,7 +328,7 @@ macro_rules! evm_inspector_tests {
                 // then
                 assert_matches!(
                     response,
-                    Err(ForeignChainInspectionError::ClientError(_))
+                    Err(ForeignChainInspectionError::RpcRequestFailed(_))
                 );
             }
 
@@ -404,11 +425,11 @@ macro_rules! evm_inspector_tests {
                 // then
                 let expected_extractions =
                     vec![ExtractedValue::BlockHash(expected_block_hash)];
-                assert_eq!(expected_extractions, extracted_values);
+                assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
             }
 
             #[tokio::test]
-            async fn extract_returns_error_when_log_index_out_of_bounds() {
+            async fn extract_returns_the_out_of_bounds_verdict_when_log_index_is_absent() {
                 // given
                 let tx_id = TxHash::from([1; 32]);
 
@@ -447,7 +468,7 @@ macro_rules! evm_inspector_tests {
                 // then
                 assert_matches!(
                     response,
-                    Err(ForeignChainInspectionError::LogIndexOutOfBounds)
+                    Ok(Verdict::LogIndexOutOfBounds)
                 );
             }
 
@@ -515,11 +536,56 @@ macro_rules! evm_inspector_tests {
 
                 // then
                 let expected_extractions = vec![ExtractedValue::Log(expected_log)];
-                assert_eq!(expected_extractions, extracted_values);
+                assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
             }
 
             #[tokio::test]
-            async fn extract_returns_error_when_receipt_block_hash_is_not_canonical() {
+            async fn extract_rejects_a_canonical_lookup_answering_a_different_height() {
+                // given: the canonical block lookup answers with a block below the receipt's
+                // height, the provider's own fault rather than a statement about the chain.
+                let tx_id = TxHash::from([1; 32]);
+
+                let finality_block_response = GetBlockByNumberResponse {
+                    number: U64::from(100),
+                    hash: H256::from([0xaa; 32]),
+                };
+                let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: H256::from([1; 32]),
+                    block_hash: H256::from([0xbb; 32]),
+                    block_number: U64::from(90),
+                    status: U64::one(),
+                    logs: vec![test_log()],
+                };
+                let canonical_block_response = GetBlockByNumberResponse {
+                    number: U64::from(89),
+                    hash: tx_response.block_hash,
+                };
+
+                let mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(&tx_response)
+                    .with_response(&finality_block_response)
+                    .with_response(&canonical_block_response)
+                    .build();
+                let inspector = Inspector::new(mock_client);
+
+                // when
+                let response = inspector
+                    .extract(
+                        tx_id,
+                        EthereumFinality::Finalized,
+                        vec![EvmExtractor::BlockHash],
+                    )
+                    .await;
+
+                // then
+                assert_matches!(
+                    response,
+                    Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+                );
+            }
+
+            #[tokio::test]
+            async fn extract_returns_the_non_canonical_verdict_when_the_receipt_block_is_not_canonical() {
                 // given: the receipt is past the finality head (so the number-only check passes)
                 // but its block hash differs from the canonical block hash at that height,
                 // simulating an RPC that served a side-block receipt for a finalized height.
@@ -560,7 +626,7 @@ macro_rules! evm_inspector_tests {
                 // then
                 assert_matches!(
                     response,
-                    Err(ForeignChainInspectionError::NonCanonicalBlock {
+                    Ok(Verdict::NonCanonicalBlock {
                         block_number,
                         receipt_hash,
                         canonical_hash,
@@ -666,7 +732,7 @@ macro_rules! evm_inspector_tests {
             async fn extract_log_from_receipt_with(
                 tx_id: TxHash,
                 log: Log,
-            ) -> Result<Vec<ExtractedValue>, ForeignChainInspectionError> {
+            ) -> Result<Verdict<ExtractedValue>, ForeignChainInspectionError> {
                 let bound_log = test_log();
                 let target_log_index = log.log_index.as_u64();
                 let finality_block_response = GetBlockByNumberResponse {

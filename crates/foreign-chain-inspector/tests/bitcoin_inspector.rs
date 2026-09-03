@@ -5,6 +5,7 @@ pub mod common;
 use crate::common::{
     FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
 };
+use foreign_chain_inspector::Verdict;
 
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
@@ -67,6 +68,9 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
         .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
@@ -136,6 +140,9 @@ async fn extract_returns_empty_when_no_extractors_provided() {
         .extract(tx_id, threshold, Vec::new())
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected_extractions: Vec<BitcoinExtractedValue> = vec![];
@@ -143,7 +150,61 @@ async fn extract_returns_empty_when_no_extractors_provided() {
 }
 
 #[tokio::test]
-async fn extract_propagates_rpc_client_errors() {
+async fn extract__should_return_the_not_found_verdict_for_an_unknown_transaction() {
+    // given: bitcoind answers `getrawtransaction` for an unknown txid with code -5.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -5,
+            "No such mempool or blockchain transaction",
+            None::<()>,
+        )))
+    });
+    let inspector = BitcoinInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            BitcoinTransactionHash::from([9; 32]),
+            BlockConfirmations::from(1u64),
+            vec![BitcoinExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
+}
+
+#[tokio::test]
+async fn extract__should_reject_a_provider_without_txindex_rather_than_rule_the_tx_out() {
+    // given: with txindex disabled, bitcoind answers -5 for every confirmed transaction; that
+    // is the provider unable to serve the query, not the chain's verdict.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -5,
+            "No such mempool transaction. Use -txindex to enable blockchain transaction queries",
+            None::<()>,
+        )))
+    });
+    let inspector = BitcoinInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            BitcoinTransactionHash::from([9; 32]),
+            BlockConfirmations::from(1u64),
+            vec![BitcoinExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestRejected(_))
+    );
+}
+
+#[tokio::test]
+async fn extract__should_classify_rpc_client_errors() {
     // given
     let tx_id = BitcoinTransactionHash::from([9; 32]);
     let threshold = BlockConfirmations::from(1u64);
@@ -162,7 +223,10 @@ async fn extract_propagates_rpc_client_errors() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
+    );
 }
 
 #[tokio::test]
@@ -201,7 +265,7 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
     // then
     assert_matches!(
         response,
-        Err(ForeignChainInspectionError::NonCanonicalBlock {
+        Ok(Verdict::NonCanonicalBlock {
             block_number,
             receipt_hash,
             canonical_hash,
@@ -211,8 +275,8 @@ async fn extract__should_return_non_canonical_block_when_receipt_blockhash_diffe
     );
 }
 
-/// `getblockheader` looks a header up by hash, so a backend that echoes back a *different* hash
-/// is misbehaving, simulating an RPC that returned the wrong block for the queried hash.
+/// `getblockheader` looks a header up by hash, so a backend that echoes back a different hash
+/// is misbehaving.
 #[tokio::test]
 async fn extract__should_return_inconsistent_rpc_response_when_get_block_header_echoes_different_hash()
  {
@@ -279,39 +343,10 @@ async fn extract__should_propagate_get_block_header_deserialize_error() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
-}
-
-#[tokio::test]
-async fn extract__should_propagate_getblockhash_deserialize_error() {
-    // given: getrawtransaction and getblockheader succeed; getblockhash returns a payload that fails to deserialize.
-    let tx_id = BitcoinTransactionHash::from([1; 32]);
-    let threshold = BlockConfirmations::from(1u64);
-    let receipt_blockhash = TransportBitcoinBlockHash::from([0xbb; 32]);
-
-    let tx_response = GetRawTransactionVerboseResponse {
-        blockhash: receipt_blockhash,
-        confirmations: TEST_SUFFICIENT_CONFIRMATIONS,
-    };
-    let block_response = GetBlockHeaderVerboseResponse {
-        hash: receipt_blockhash,
-        height: TEST_BLOCK_HEIGHT,
-    };
-
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx_response)
-        .with_response(block_response)
-        .with_response(serde_json::json!(42))
-        .build();
-    let inspector = BitcoinInspector::new(mock_client);
-
-    // when
-    let response = inspector
-        .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
-        .await;
-
-    // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
 }
 
 #[tokio::test]
@@ -374,6 +409,9 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
         .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
