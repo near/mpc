@@ -1,7 +1,7 @@
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{
-    ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS, NetworkFingerprint,
-    NetworkFingerprintInspector,
+    ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector, NO_PARAMS,
+    NetworkFingerprint, NetworkFingerprintInspector, Verdict,
 };
 use foreign_chain_rpc_interfaces::starknet::{
     BlockId, ChainIdResponse, GetBlockWithTxHashesArgs, GetBlockWithTxHashesResponse,
@@ -9,11 +9,15 @@ use foreign_chain_rpc_interfaces::starknet::{
     StarknetFinalityStatus,
 };
 use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::client::error::Error as RpcClientError;
 use near_mpc_contract_interface::types::{StarknetFelt, StarknetLog};
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
 const GET_BLOCK_WITH_TX_HASHES_METHOD: &str = "starknet_getBlockWithTxHashes";
 const CHAIN_ID_METHOD: &str = "starknet_chainId";
+
+/// `TXN_HASH_NOT_FOUND` in the Starknet API spec
+const TRANSACTION_HASH_NOT_FOUND_CODE: i32 = 29;
 
 #[derive(Clone)]
 pub struct StarknetInspector<Client> {
@@ -35,7 +39,7 @@ where
             .client
             .request(CHAIN_ID_METHOD, NO_PARAMS)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+            .classified()?;
         Ok(self.canonical_fingerprint(&chain_id.0))
     }
 
@@ -58,15 +62,23 @@ where
         transaction: StarknetTransactionHash,
         finality: StarknetFinality,
         extractors: Vec<StarknetExtractor>,
-    ) -> Result<Vec<StarknetExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<StarknetExtractedValue>, ForeignChainInspectionError> {
         let request_parameters = GetTransactionReceiptArgs {
             transaction_hash: H256(transaction.into()),
         };
 
-        let rpc_response: GetTransactionReceiptResponse = self
+        let rpc_response: GetTransactionReceiptResponse = match self
             .client
             .request(GET_TRANSACTION_RECEIPT_METHOD, &request_parameters)
-            .await?;
+            .await
+        {
+            Err(RpcClientError::Call(object))
+                if object.code() == TRANSACTION_HASH_NOT_FOUND_CODE =>
+            {
+                return Ok(Verdict::TransactionNotFound);
+            }
+            other => other.classified()?,
+        };
 
         let actual_finality = parse_finality_status(&rpc_response.finality_status)?;
 
@@ -79,19 +91,33 @@ where
             return Err(ForeignChainInspectionError::NotFinalized);
         }
 
-        self.verify_block_is_canonical(rpc_response.block_number, rpc_response.block_hash)
-            .await?;
-
-        if rpc_response.execution_status != StarknetExecutionStatus::Succeeded {
-            return Err(ForeignChainInspectionError::TransactionFailed);
+        let canonical = self.canonical_block_at(rpc_response.block_number).await?;
+        if canonical.block_number != rpc_response.block_number {
+            return Err(ForeignChainInspectionError::MalformedRpcResponse(format!(
+                "the canonical block lookup at height {} answered with the block at height {}",
+                rpc_response.block_number, canonical.block_number,
+            )));
+        }
+        if canonical.block_hash != rpc_response.block_hash {
+            return Ok(Verdict::NonCanonicalBlock {
+                block_number: rpc_response.block_number,
+                receipt_hash: rpc_response.block_hash.into(),
+                canonical_hash: canonical.block_hash.into(),
+            });
         }
 
-        let extracted_values = extractors
-            .iter()
-            .map(|extractor| extractor.extract_value(&rpc_response))
-            .collect::<Result<Vec<_>, _>>()?;
+        if rpc_response.execution_status != StarknetExecutionStatus::Succeeded {
+            return Ok(Verdict::TransactionFailed);
+        }
 
-        Ok(extracted_values)
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in &extractors {
+            let Some(value) = extractor.extract_value(&rpc_response) else {
+                return Ok(Verdict::LogIndexOutOfBounds);
+            };
+            extracted_values.push(value);
+        }
+        Ok(Verdict::Extracted(extracted_values))
     }
 }
 
@@ -103,40 +129,22 @@ where
         Self { client }
     }
 
-    /// Checks that the receipt's block is on the canonical chain by re-fetching the canonical
-    /// block at `receipt_block_number` and comparing hashes. `starknet_getBlockWithTxHashes`
-    /// only ever resolves to a canonical block, so a mismatch means the receipt was indexed
-    /// against a side block (stale tx index, partially-applied reorg, divergent RPC backend,
-    /// etc.).
-    ///
-    /// The canonical block's height is also asserted against the requested one — a divergent
-    /// RPC that returns a hash from a different height would otherwise sneak past a
-    /// hash-only check.
-    async fn verify_block_is_canonical(
+    /// The canonical block at `block_number`. `starknet_getBlockWithTxHashes` only ever
+    /// resolves to a canonical block, so a receipt whose block disagrees with it was indexed
+    /// against a side block (stale tx index, partially applied reorg, divergent RPC backend,
+    /// etc.). The caller checks the height first: an answer from a different height is the
+    /// provider's own fault, not a statement about the chain.
+    async fn canonical_block_at(
         &self,
-        receipt_block_number: u64,
-        receipt_block_hash: H256,
-    ) -> Result<(), ForeignChainInspectionError> {
+        block_number: u64,
+    ) -> Result<GetBlockWithTxHashesResponse, ForeignChainInspectionError> {
         let args = GetBlockWithTxHashesArgs {
-            block_id: BlockId::Number {
-                block_number: receipt_block_number,
-            },
+            block_id: BlockId::Number { block_number },
         };
-        let canonical: GetBlockWithTxHashesResponse = self
-            .client
+        self.client
             .request(GET_BLOCK_WITH_TX_HASHES_METHOD, &args)
-            .await?;
-
-        let hash_matches = canonical.block_hash == receipt_block_hash;
-        let height_matches = canonical.block_number == receipt_block_number;
-        if !hash_matches || !height_matches {
-            return Err(ForeignChainInspectionError::NonCanonicalBlock {
-                block_number: receipt_block_number,
-                receipt_hash: receipt_block_hash.into(),
-                canonical_hash: canonical.block_hash.into(),
-            });
-        }
-        Ok(())
+            .await
+            .classified()
     }
 }
 
@@ -146,11 +154,7 @@ fn parse_finality_status(
     match status {
         StarknetFinalityStatus::AcceptedOnL2 => Ok(StarknetFinality::AcceptedOnL2),
         StarknetFinalityStatus::AcceptedOnL1 => Ok(StarknetFinality::AcceptedOnL1),
-        StarknetFinalityStatus::Received => Err(ForeignChainInspectionError::ClientError(
-            jsonrpsee::core::client::error::Error::Custom(format!(
-                "unsupported finality status: {status:?}"
-            )),
-        )),
+        StarknetFinalityStatus::Received => Err(ForeignChainInspectionError::NotFinalized),
     }
 }
 
@@ -164,17 +168,14 @@ impl StarknetExtractor {
     fn extract_value(
         &self,
         rpc_response: &GetTransactionReceiptResponse,
-    ) -> Result<StarknetExtractedValue, ForeignChainInspectionError> {
+    ) -> Option<StarknetExtractedValue> {
         match self {
-            StarknetExtractor::BlockHash => Ok(StarknetExtractedValue::BlockHash(
+            StarknetExtractor::BlockHash => Some(StarknetExtractedValue::BlockHash(
                 (*rpc_response.block_hash.as_fixed_bytes()).into(),
             )),
             StarknetExtractor::Log { log_index } => {
-                let event = rpc_response
-                    .events
-                    .get(*log_index)
-                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
-                Ok(StarknetExtractedValue::Log(StarknetLog {
+                let event = rpc_response.events.get(*log_index)?;
+                Some(StarknetExtractedValue::Log(StarknetLog {
                     block_hash: StarknetFelt(*rpc_response.block_hash.as_fixed_bytes()),
                     block_number: rpc_response.block_number,
                     data: event
