@@ -182,3 +182,16 @@ Archived documentation must be labeled as such with a status banner: a `**Status
 
 To archive a file, one must open a PR adding the status banner.
 
+### Repository layout
+
+The following is a non-exhaustive list of crates from this repository that may be relevant to the reader of this document:
+
+**The node** [(`mpc-node`)](crates/node) is the binary run by MPC participants: NEAR indexer, P2P networking, and the threshold protocols themselves.
+
+**The contract** [(`mpc-contract`)](crates/contract) is the smart contract deployed on NEAR. It accepts signature requests, manages the participant set and protocol state, and governs upgrades through participant voting.
+
+**The contract interface** [(`near-mpc-contract-interface`)](crates/near-mpc-contract-interface) contains the wire formats accepted by the contract as well as a `client` feature for constructing typed contract calls over generic backends (RPC nodes, nearcore indexer).
+
+**The MPC SDK crate** [(`near-mpc-sdk`)](crates/near-mpc-sdk) contains logic shared between the MPC contract and its callers.
+
+**Threshold Signatures** [(`threshold-signatures`)](crates/threshold-signatures) implements the threshold cryptography itself.
