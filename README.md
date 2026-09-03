@@ -180,5 +180,5 @@ Documentation in this repository falls into two categories: live documentation, 
 
 Archived documentation must be labeled as such with a status banner: a `**Status:** ARCHIVED` line immediately below the document's title. Any document without such a banner is considered live.
 
-To archive a file, one must open a PR adding the status banner. Additionally, the PR should make any required modifications to the file, such that its contents are useful to future readers. In particular, the PR author must remove any contents at risk of becoming stale (such as file paths).
+To archive a file, one must open a PR adding the status banner.
 

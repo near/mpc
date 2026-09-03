@@ -152,7 +152,7 @@ See `docs/engineering-standards.md` §Write helpful code comments for the full r
 
 ## Documentation alignment
 
-Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified. When a PR archives a file, it must remove any contents at risk of becoming stale (such as file paths). The archiving procedure is described in [README.md §Documentation](README.md#documentation).
+Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [README.md §Documentation](README.md#documentation).
 
 All other documents are considered live and expected to be updated if invalidated by a change.
 
