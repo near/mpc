@@ -37,10 +37,7 @@ pub type TonCellData = UpperBoundedVec<u8, TON_CELL_MAX_DATA_BYTES>;
 /// References of a TON Cell: between 0 and [`TON_CELL_MAX_REFS`] entries (inclusive).
 pub type TonCellRefs = UpperBoundedVec<Hash256, TON_CELL_MAX_REFS>;
 
-/// Upper bound on the extractors in one request.
-///
-/// A pending request is stored as a contract storage key, so its size has to stay well
-/// below NEAR's storage key length limit; the largest extractor is 33 bytes.
+// Pending requests are stored in the contract. We need to cap the size of a request.
 pub const MAX_EXTRACTORS_PER_REQUEST: usize = 32;
 
 #[derive(
