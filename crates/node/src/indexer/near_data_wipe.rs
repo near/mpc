@@ -14,9 +14,9 @@ use std::io::Write;
 use std::path::{Component, Path};
 
 /// Records that nearcore's epoch-sync asked for a data reset, consumed by
-/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup. The caller
-/// ([`crate::indexer::real::handle_shutdown_signal`]) only restarts when this succeeds, so
-/// a persistent write failure leaves the node up and wedged rather than restart-looping.
+/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup. The caller only restarts
+/// when this succeeds, so a persistent write failure leaves the node up and wedged rather
+/// than restart-looping.
 pub(crate) fn record_epoch_sync_reset_request(home_dir: &Path) -> std::io::Result<()> {
     std::fs::write(epoch_sync_reset_marker_file(home_dir), b"1")
 }
