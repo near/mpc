@@ -86,8 +86,7 @@ pub(crate) fn wipe_near_data_if_requested(
     is_archival: bool,
 ) -> std::io::Result<()> {
     // Clean any leftover trash from a prior interrupted wipe. Runs on every startup,
-    // including when no wipe is requested; the wipe path below re-cleans it inside
-    // wipe_store_dir.
+    // including when no wipe is requested.
     remove_trash(&near_data_trash_dir(home_dir));
 
     // 0 is the "off" value: never wipe.
@@ -110,7 +109,7 @@ pub(crate) fn wipe_near_data_if_requested(
 
     // Validate the store path *before* recording the token: a guard rejection is not a
     // partial wipe, so recording the token here would suppress the retry after the
-    // operator fixes the path. (wipe_store_dir re-checks; the guard is cheap.)
+    // operator fixes the path.
     ensure_within_home(home_dir, hot_store_path)?;
     write_last_token(&token_path, requested_token)?;
 
