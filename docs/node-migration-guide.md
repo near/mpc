@@ -459,8 +459,8 @@ destination TLS key is not its own; it names both keys. That means the `tls_publ
 new node runs with. Compare `migration_info` against
 `curl -s http://<new-node-IP>:8080/public_data | jq -r .near_p2p_public_key` and call
 `start_node_migration` again with the correct value; only the last call is retained. The node still
-holds the transferred keyshares and imports them as soon as it sees itself registered, so there is
-no need to re-run `put-keyshares`.
+holds the transferred keyshares in memory and imports them as soon as it sees itself registered,
+so `put-keyshares` only needs re-running if the node restarted in the meantime.
 
 ## Known Limitations
 

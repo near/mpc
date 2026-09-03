@@ -137,7 +137,7 @@ fn infer_migration_status(
             tracing::warn!(
                 registered_tls_public_key = %String::from(registered_key),
                 my_tls_public_key = %String::from(&Ed25519PublicKey::from(my_p2p_public_key)),
-                "registered destination node TLS key is not this node's key, migration stays inactive"
+                "a destination node with a different TLS key is registered for this account; this node will not onboard (expected if this node is the migration source)"
             );
             false
         }
