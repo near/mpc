@@ -296,8 +296,9 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             // `info!(?exit_result, "Image hash watcher exited.")`.
             Err(anyhow!("TEE allowed-image-hashes watcher exited unexpectedly."))
         }
-        // Epoch-sync data reset (#3909): the marker is already written, so exiting
-        // non-zero here restarts the container and the startup wipe re-syncs the node.
+        // Epoch-sync data reset (#3909): the handler only fires this after the marker is
+        // on disk, so exiting non-zero here restarts the container and the startup wipe
+        // re-syncs the node.
         Some(()) = epoch_reset_receiver.recv() => {
             Err(anyhow!("epoch-sync data reset requested; restarting to wipe the chain store"))
         }

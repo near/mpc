@@ -27,7 +27,8 @@ use near_client::client_actor::ShutdownReason;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use std::future::Future;
-use std::path::PathBuf;
+use std::ops::ControlFlow;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
@@ -60,51 +61,91 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 /// epoch-sync (#3909) records the reset marker and asks the node to shut down, so the
 /// container's `restart: on-failure` brings it back and the startup wipe runs.
 ///
-/// The reset goes through `reset_shutdown` rather than [`std::process::exit`], so the
-/// node's documented graceful teardown still runs (committing in-flight SecretDB
-/// batches) and the process exits non-zero via the normal path. Returns the sender to
-/// pass to [`nearcore::start_with_config_and_synchronization`].
+/// The reset goes through `reset_shutdown` so the node's graceful teardown runs
+/// (committing in-flight SecretDB batches) before the non-zero exit. Returns the sender
+/// to pass to [`nearcore::start_with_config_and_synchronization`].
+///
+/// `restart_disabled` suppresses the restart when a wipe must not (or cannot) run — an
+/// archival node, or a startup wipe that just failed — so the reset can only wedge the
+/// node, never restart-loop it. Its message names the reason for the operator.
 fn spawn_epoch_sync_reset_handler(
     home_dir: PathBuf,
-    is_archival: bool,
+    restart_disabled: Option<&'static str>,
     reset_shutdown: mpsc::Sender<()>,
 ) -> broadcast::Sender<ShutdownReason> {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
-    // nearcore `take()`s a single shutdown sender, so it sends at most one reason.
     tokio::spawn(async move {
-        match shutdown_rx.recv().await {
-            // Never auto-wipe an archive: the startup wipe skips archival, so restarting
-            // here would crash-loop. Wedge instead (pre-fix behavior), with an actionable
-            // error.
-            Ok(ShutdownReason::EpochSyncDataReset) if is_archival => tracing::error!(
-                "epoch-sync data reset requested but node is archival; refusing to \
-                 auto-wipe (would destroy the archive) — manual recovery required"
-            ),
-            Ok(ShutdownReason::EpochSyncDataReset) => {
-                tracing::warn!(
-                    "epoch-sync data reset requested; recording marker and restarting \
-                     to wipe the chain store"
-                );
-                record_epoch_sync_reset_request(&home_dir);
-                let _ = reset_shutdown.send(()).await;
-            }
-            // Pre-#3909 the signal was dropped (`shutdown_signal = None`) and the node
-            // kept running; mpc-node does not configure `expected_shutdown`, so preserve
-            // that rather than take the node offline.
-            Ok(ShutdownReason::ExpectedShutdown) => {
-                tracing::warn!("nearcore signalled ExpectedShutdown; ignoring")
-            }
-            Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                tracing::warn!(
-                    skipped,
-                    "shutdown-signal receiver lagged; may have missed a reset"
-                )
-            }
-            // Closed is the normal teardown path; nothing to do.
-            Err(broadcast::error::RecvError::Closed) => {}
-        }
+        // Loop rather than a single `recv`: nearcore currently sends at most one reason,
+        // but not relying on that means a future reordering (e.g. an `ExpectedShutdown`
+        // ahead of the reset) can't silently eat the signal this handler exists to catch.
+        while handle_shutdown_signal(
+            shutdown_rx.recv().await,
+            &home_dir,
+            restart_disabled,
+            &reset_shutdown,
+        )
+        .await
+        .is_continue()
+        {}
     });
     shutdown_tx
+}
+
+/// Handles one nearcore shutdown signal. Returns [`ControlFlow::Break`] once the handler
+/// is done — a restart was requested, or the channel closed — and [`ControlFlow::Continue`]
+/// to keep listening.
+async fn handle_shutdown_signal(
+    signal: Result<ShutdownReason, broadcast::error::RecvError>,
+    home_dir: &Path,
+    restart_disabled: Option<&str>,
+    reset_shutdown: &mpsc::Sender<()>,
+) -> ControlFlow<()> {
+    match signal {
+        Ok(ShutdownReason::EpochSyncDataReset) => {
+            if let Some(reason) = restart_disabled {
+                tracing::error!(
+                    "epoch-sync data reset requested but {reason}; not restarting — \
+                     manual recovery required"
+                );
+                return ControlFlow::Continue(());
+            }
+            tracing::warn!(
+                "epoch-sync data reset requested; recording marker and restarting \
+                 to wipe the chain store"
+            );
+            // Only request the restart once the marker is on disk; otherwise a persistent
+            // write failure (full or read-only fs) would restart-loop with nothing to
+            // break it. Stay up wedged instead.
+            match record_epoch_sync_reset_request(home_dir) {
+                Ok(()) => {
+                    let _ = reset_shutdown.send(()).await;
+                    ControlFlow::Break(())
+                }
+                Err(err) => {
+                    tracing::error!(
+                        ?err,
+                        "could not record the epoch-sync reset marker; staying up wedged"
+                    );
+                    ControlFlow::Continue(())
+                }
+            }
+        }
+        // mpc-node does not configure `expected_shutdown`, so ignore it rather than take
+        // the node offline.
+        Ok(ShutdownReason::ExpectedShutdown) => {
+            tracing::warn!("nearcore signalled ExpectedShutdown; ignoring");
+            ControlFlow::Continue(())
+        }
+        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+            tracing::warn!(
+                skipped,
+                "shutdown-signal receiver lagged; may have missed a reset"
+            );
+            ControlFlow::Continue(())
+        }
+        // Closed is the normal teardown path; nothing to do.
+        Err(broadcast::error::RecvError::Closed) => ControlFlow::Break(()),
+    }
 }
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerAPI`].
@@ -184,26 +225,36 @@ pub fn spawn_real_indexer(
                  fix the cause and set wipe_near_data_token to a new value to retry",
             );
 
-            // If nearcore requested an epoch-sync data reset on a previous run,
-            // wipe the chain store before it reopens (see #3909). A hard failure here
-            // must not panic — that would crash-loop with the marker still on disk.
-            // Degrade to the pre-fix wedge and surface an actionable error instead.
-            if let Err(err) = wipe_near_data_if_epoch_sync_reset(
+            // If nearcore requested an epoch-sync data reset on a previous run, wipe the
+            // chain store before it reopens (see #3909). A hard failure here must not
+            // panic — that would crash-loop with the marker still on disk. Surface an
+            // actionable error and remember it, so the reset handler below is disarmed
+            // and the node wedges rather than restart-loops on a wipe that keeps failing.
+            let reset_wipe_failed = wipe_near_data_if_epoch_sync_reset(
                 &home_dir,
                 &hot_store_path,
                 near_config.client_config.archive,
-            ) {
+            )
+            .inspect_err(|err| {
                 tracing::error!(
                     ?err,
                     marker = ?epoch_sync_reset_marker_file(&home_dir),
-                    "epoch-sync data-reset wipe failed; node may stay wedged — resolve the \
-                     cause or delete the marker manually",
+                    "epoch-sync data-reset wipe failed; not restarting to avoid a wipe \
+                     loop — resolve the cause or delete the marker manually",
                 );
-            }
+            })
+            .is_err();
 
+            let restart_disabled = if near_config.client_config.archive {
+                Some("node is archival (auto-wipe would destroy the archive)")
+            } else if reset_wipe_failed {
+                Some("the previous epoch-sync wipe failed")
+            } else {
+                None
+            };
             let shutdown_tx = spawn_epoch_sync_reset_handler(
                 home_dir.clone(),
-                near_config.client_config.archive,
+                restart_disabled,
                 epoch_reset_shutdown,
             );
 
@@ -439,8 +490,11 @@ async fn await_sync_or_shutdown(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::await_sync_or_shutdown;
+    use super::{ShutdownReason, await_sync_or_shutdown, handle_shutdown_signal};
+    use crate::home_paths::epoch_sync_reset_marker_file;
     use std::future::pending;
+    use std::ops::ControlFlow;
+    use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
@@ -469,5 +523,47 @@ mod tests {
 
         // Then
         assert!(!synced);
+    }
+
+    #[tokio::test]
+    async fn handle_shutdown_signal__should_record_marker_and_request_restart_on_reset() {
+        // Given
+        let home = tempfile::tempdir().unwrap();
+        let (reset_tx, mut reset_rx) = mpsc::channel(1);
+
+        // When
+        let flow = handle_shutdown_signal(
+            Ok(ShutdownReason::EpochSyncDataReset),
+            home.path(),
+            None,
+            &reset_tx,
+        )
+        .await;
+
+        // Then
+        assert_eq!(flow, ControlFlow::Break(()));
+        assert!(epoch_sync_reset_marker_file(home.path()).exists());
+        assert_eq!(reset_rx.try_recv(), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn handle_shutdown_signal__should_not_restart_or_mark_when_restart_disabled() {
+        // Given
+        let home = tempfile::tempdir().unwrap();
+        let (reset_tx, mut reset_rx) = mpsc::channel(1);
+
+        // When
+        let flow = handle_shutdown_signal(
+            Ok(ShutdownReason::EpochSyncDataReset),
+            home.path(),
+            Some("node is archival"),
+            &reset_tx,
+        )
+        .await;
+
+        // Then
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert!(!epoch_sync_reset_marker_file(home.path()).exists());
+        assert!(reset_rx.try_recv().is_err());
     }
 }

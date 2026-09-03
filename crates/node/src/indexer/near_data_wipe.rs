@@ -13,24 +13,17 @@ use crate::home_paths::{epoch_sync_reset_marker_file, near_data_trash_dir, wipe_
 use std::io::Write;
 use std::path::{Component, Path};
 
-/// Records that nearcore's epoch-sync asked for a data reset. Written just before
-/// the graceful shutdown that triggers a restart (see #3909); consumed by
-/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup.
+/// Records that nearcore's epoch-sync asked for a data reset (see #3909). Consumed by
+/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup. The caller only requests a
+/// restart when this succeeds, so a persistent write failure (a full or read-only
+/// filesystem) leaves the node up and wedged rather than restart-looping.
 ///
 /// A plain (non-atomic) write is deliberate — unlike [`write_last_token`], which uses
 /// tmp+fsync+rename because a torn token would corrupt its wipe-once decision. Here only
-/// the marker's *existence* matters (never its contents), and a lost marker self-heals:
-/// the node re-enters epoch-sync and records it again. So it needs neither durability nor
-/// atomicity.
-pub(crate) fn record_epoch_sync_reset_request(home_dir: &Path) {
-    let marker = epoch_sync_reset_marker_file(home_dir);
-    if let Err(err) = std::fs::write(&marker, b"1") {
-        tracing::error!(
-            ?marker,
-            ?err,
-            "failed to write epoch-sync data-reset marker"
-        );
-    }
+/// the marker's *existence* matters (never its contents), and a transiently lost marker
+/// self-heals: the node re-enters epoch-sync and records it again.
+pub(crate) fn record_epoch_sync_reset_request(home_dir: &Path) -> std::io::Result<()> {
+    std::fs::write(epoch_sync_reset_marker_file(home_dir), b"1")
 }
 
 /// If nearcore requested an epoch-sync data reset on a previous run, wipe the
@@ -81,13 +74,14 @@ pub(crate) fn wipe_near_data_if_epoch_sync_reset(
     Ok(())
 }
 
-/// Best-effort removal of the epoch-sync reset marker. Never fatal — a leftover
-/// marker only costs one extra wipe check on the next startup.
+/// Best-effort removal of the epoch-sync reset marker. Never fatal, but not harmless
+/// after a successful wipe: a marker left behind makes the next startup wipe again and
+/// re-sync from scratch, so log it at `error` to keep it greppable.
 fn remove_marker(marker: &Path) {
     if let Err(err) = std::fs::remove_file(marker)
         && err.kind() != std::io::ErrorKind::NotFound
     {
-        tracing::warn!(
+        tracing::error!(
             ?marker,
             ?err,
             "could not remove epoch-sync data-reset marker"
@@ -387,7 +381,7 @@ mod tests {
             std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
         }
         if create_marker {
-            record_epoch_sync_reset_request(home);
+            record_epoch_sync_reset_request(home).unwrap();
         }
 
         // When
@@ -409,7 +403,7 @@ mod tests {
         std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
         let keyshare = secrets_file(home);
         std::fs::write(&keyshare, b"keyshare-secret").unwrap();
-        record_epoch_sync_reset_request(home);
+        record_epoch_sync_reset_request(home).unwrap();
 
         // When the node restarts and runs the startup wipe.
         wipe_near_data_if_epoch_sync_reset(home, &data_dir, false).unwrap();
@@ -425,7 +419,7 @@ mod tests {
         // Given a reset marker but a misconfigured store path outside the home tree.
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        record_epoch_sync_reset_request(home);
+        record_epoch_sync_reset_request(home).unwrap();
         let escaping = home.join("../escape");
 
         // When / Then — the path guard rejects it and the data is left untouched.

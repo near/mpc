@@ -2203,8 +2203,9 @@ the CVM you can't delete the data dir by hand, so the node config exposes a one-
 
 > **Note:** a node stuck *far behind* past the epoch-sync horizon now recovers **automatically**
 > on restart — it writes an internal `.epoch_sync_data_reset` marker, restarts, wipes the chain
-> store, and re-syncs, with no operator action. This manual wipe is for the other cases above
-> (a corrupt or stale store), or if the automatic recovery doesn't apply.
+> store, and re-syncs, with no operator action. The automatic recovery is **skipped on archival
+> nodes** (an archive is never auto-wiped) — use this manual wipe there. It is also the fallback
+> for the other cases above (a corrupt or stale store).
 
 **Fix — change the wipe token and redeploy.** Set `wipe_near_data_token` under
 `[mpc_node_config.node.indexer]` to a **new non-zero value** (different from its current
