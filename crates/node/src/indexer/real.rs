@@ -73,22 +73,25 @@ const EPOCH_SYNC_RESET_EXIT_CODE: i32 = 70;
 /// regardless.
 ///
 /// `restart_disabled` suppresses the exit when a wipe must not (or cannot) run — an
-/// archival node, or a startup wipe that just failed — so the reset can only wedge the
-/// node, never restart-loop it. Its message names the reason for the operator.
+/// archival node, or a startup wipe that just failed — so in those cases the reset wedges
+/// the node rather than restart-looping. Its message names the reason for the operator.
+/// `on_restart` is the terminal action once a reset is acted on: process exit in
+/// production, injected in tests.
 fn spawn_epoch_sync_reset_handler(
     home_dir: PathBuf,
     restart_disabled: Option<&'static str>,
+    on_restart: impl FnOnce() + Send + 'static,
 ) -> broadcast::Sender<ShutdownReason> {
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<ShutdownReason>(16);
     tokio::spawn(async move {
-        // Every `ShutdownReason` goes through the ClientActor's single
-        // `shutdown_signal: Option<Sender>` (nearcore 2.13.3 `chain/client/src/client_actor.rs`),
-        // which each send site `take()`s — so whichever fires first (an epoch-sync reset, or an
-        // `ExpectedShutdown`) consumes it, and at most one reason is ever delivered. Handle it.
+        // nearcore routes every `ShutdownReason` through the ClientActor's single
+        // `shutdown_signal` sender, which each send site `take()`s — so whichever fires first
+        // (an epoch-sync reset, or an `ExpectedShutdown`) consumes it, and at most one reason
+        // is ever delivered. Act on that one signal.
         if handle_shutdown_signal(shutdown_rx.recv().await, &home_dir, restart_disabled)
             == HandlerAction::Restart
         {
-            std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE);
+            on_restart();
         }
     });
     shutdown_tx
@@ -264,7 +267,9 @@ pub fn spawn_real_indexer(
             // loops (wipe -> re-sync -> reset -> wipe) unbounded; bound the attempts.
             let restart_disabled =
                 restart_disabled_reason(near_config.client_config.archive, reset_wipe_failed);
-            let shutdown_tx = spawn_epoch_sync_reset_handler(home_dir.clone(), restart_disabled);
+            let shutdown_tx = spawn_epoch_sync_reset_handler(home_dir.clone(), restart_disabled, || {
+                std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE)
+            });
 
             let near_node = nearcore::start_with_config_and_synchronization(
                 &home_dir,
@@ -500,12 +505,13 @@ async fn await_sync_or_shutdown(
 mod tests {
     use super::{
         HandlerAction, ShutdownReason, await_sync_or_shutdown, handle_shutdown_signal,
-        restart_disabled_reason,
+        restart_disabled_reason, spawn_epoch_sync_reset_handler,
     };
     use crate::home_paths::epoch_sync_reset_marker_file;
     use rstest::rstest;
     use std::future::pending;
-    use tokio::sync::broadcast;
+    use std::time::Duration;
+    use tokio::sync::{broadcast, oneshot};
     use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
@@ -550,6 +556,31 @@ mod tests {
         assert!(epoch_sync_reset_marker_file(home.path()).exists());
     }
 
+    /// The wiring the whole fix hinges on: a reset delivered on the returned sender reaches
+    /// the spawned task, writes the marker, and fires the terminal restart action.
+    #[tokio::test]
+    async fn spawn_epoch_sync_reset_handler__should_fire_restart_and_write_marker_on_reset() {
+        // Given
+        let home = tempfile::tempdir().unwrap();
+        let (restarted_tx, restarted_rx) = oneshot::channel();
+        let shutdown_tx =
+            spawn_epoch_sync_reset_handler(home.path().to_path_buf(), None, move || {
+                let _ = restarted_tx.send(());
+            });
+
+        // When
+        shutdown_tx
+            .send(ShutdownReason::EpochSyncDataReset)
+            .unwrap();
+
+        // Then — the restart action fires (the marker is written before it does)
+        tokio::time::timeout(Duration::from_secs(5), restarted_rx)
+            .await
+            .expect("restart action should fire")
+            .expect("restart sender dropped");
+        assert!(epoch_sync_reset_marker_file(home.path()).exists());
+    }
+
     /// The signals that must *not* take the node offline or write a marker: a reset on a
     /// restart-disabled node, and the non-reset arms. Pin each so a regression into the
     /// restart path fails a test.
@@ -591,6 +622,7 @@ mod tests {
         #[case] wipe_failed: bool,
         #[case] expected: Option<&str>,
     ) {
+        // When / Then
         assert_eq!(restart_disabled_reason(is_archival, wipe_failed), expected);
     }
 }
