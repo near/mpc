@@ -43,16 +43,18 @@ on-chain confirmation of an attestation submission, in
 Recorded in [`metrics.rs`](../../crates/node/src/metrics.rs) by the verify fan-out, which
 measures each provider it queries. Both series carry a `chain` label, the key the chain is
 configured under (`bitcoin`, `hyper_evm`, ...), and a `provider` label, its configured provider
-name:
+name. Both labels are bounded by the node's own config, so the number of series is a small
+multiple of the number of configured providers:
 
 | Metric | Measures | How to interpret |
 | --- | --- | --- |
-| [`mpc_foreign_chain_provider_inspection_seconds`](../../crates/node/src/metrics.rs) | time one provider took to answer one verify request; failed calls are not timed | compare providers of the same chain against each other. One drifting up toward the top bucket is approaching the node's inspection deadline. A provider that times out is invisible here and loud in `mpc_foreign_chain_provider_errors_total{kind="timeout"}`, so read p95 and p99 next to that rate. |
+| [`mpc_foreign_chain_provider_inspection_seconds`](../../crates/node/src/metrics.rs) | time one provider took to answer one verify request; failed calls are not timed | compare providers of the same chain against each other. One drifting up toward the top bucket is approaching the node's inspection deadline. A provider that fails or hangs is invisible here and loud in `mpc_foreign_chain_provider_errors_total`, so read p95 and p99 next to that counter's rate. |
 | [`mpc_foreign_chain_provider_errors_total`](../../crates/node/src/metrics.rs) | requests a provider itself failed to answer, by `kind` | should be near zero. `non_transient` is the one to act on first: the provider is refusing requests or answering with something unusable, and retrying will fix neither. |
 
 `kind` is one of:
 
-* `transient`: no answer arrived. Transport failure, 5xx, or rate limiting.
+* `transient`: no usable answer, for a reason that can clear on its own: transport failure, 5xx,
+  or rate limiting.
 * `non_transient`: the provider answered and refused, or answered with something unusable.
   Retrying cannot change either.
 * `timeout`: the provider had not answered when the node gave up on it, including a call still in
@@ -72,9 +74,12 @@ non-canonical block is an answer. Otherwise every healthy provider would count a
 a caller asks about a transaction before it is final.
 
 Every configured provider's series is published once the node enters the contract's `Running`
-state, the point from which it serves verify requests, so a healthy idle node reports zero rather
-than nothing at all. Before that, neither series exists. Solana is the exception: it can be
-configured but has no inspector, so it never appears.
+state and starts serving verify requests, so an idle node reports zero rather than nothing at
+all. Before that, neither series exists. Solana is the exception: it can be configured but has no
+inspector, so it never appears.
+
+Zero means no failures or no verify traffic. Without requests both series stay flat for a healthy
+provider and a down one alike, so on an idle node the probe gauges below are the health signal.
 
 A verify request that never reaches a provider (the chain is unavailable, no inspector is
 configured for it, or the request itself is malformed) is in neither series. The leader and every
@@ -84,6 +89,18 @@ each participating node.
 Probe traffic is deliberately excluded, both the node's own periodic provider probe and the
 `foreign-chain-config-tester` CLI: probes share their providers with the verify path, and their
 latencies would drown the ones an operator is looking at.
+
+The probe has its own gauges, set in [`foreign_chain_probe.rs`](../../crates/node/src/foreign_chain_probe.rs).
+Every `FOREIGN_CHAIN_PROBE_INTERVAL` (1h), from process start and regardless of the contract state,
+the node asks each configured provider for its network and compares the answer with the chain's
+`expected_network_fingerprint`:
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_foreign_chain_rpc_providers_configured`](../../crates/node/src/metrics.rs) | providers configured for the chain | the denominator for the gauge below. |
+| [`mpc_foreign_chain_rpc_providers_healthy`](../../crates/node/src/metrics.rs) | providers that answered the latest probe with the expected network | should equal the configured count. Anything less is a provider that failed the probe (unreachable, refusing, timing out, or serving another network), or a chain configured without an `expected_network_fingerprint`, since the probe cannot check those providers. |
+
+Solana has no probe and is left out of both gauges.
 
 ## Recommended alerts
 
@@ -110,6 +127,12 @@ increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0 
 # inspection deadline while its peers on the same chain keep up. Tolerated by the
 # fan-out, so it is silent otherwise. The 15m hold rides out a short rate limit burst.
 increase(mpc_foreign_chain_provider_errors_total{kind=~"transient|timeout"}[5m]) > 0  for 15m
+
+# Provider unhealthy at the probe (warn): unreachable, refusing, or serving another
+# network. Unlike the two rules above this needs no verify traffic. The probe runs
+# hourly, so the 2h hold waits for two rounds to agree. Also fires for a chain
+# configured without an expected_network_fingerprint, since the probe cannot check it.
+mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
 
 # Backups stale (warn): no keyshares served to the backup service recently. Only
 # meaningful once backups are being taken against this node.

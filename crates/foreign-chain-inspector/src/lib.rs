@@ -222,6 +222,8 @@ where
             let provider = provider.clone();
             let recorder = self.recorder.clone();
             join_set.spawn(async move {
+                // Started inside the task so the clock excludes scheduling delay. A task aborted
+                // before its first poll made no call and reports nothing.
                 let mut call = TimedCall::start(recorder, provider.clone());
                 let result = inspector.extract(tx_id, finality, extractors).await;
                 call.report(result.as_ref().err().and_then(|err| err.provider_failure()));
