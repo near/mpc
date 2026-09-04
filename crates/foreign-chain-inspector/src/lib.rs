@@ -33,6 +33,15 @@ pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
 
+/// Inspects transactions on one foreign chain.
+///
+/// [`Self::extract`] reaches a [`Verdict`] whenever the provider answered about the transaction,
+/// and fails with a [`ForeignChainInspectionError`] only when no verdict could be reached.
+/// Implementations must map the chain's own signal for an unknown transaction, be it a `null`
+/// receipt, a dedicated JSON-RPC error code or a 404, to [`Verdict::TransactionNotFound`] rather
+/// than let it surface as a client error: [`FanOut`] tolerates errors, so an unmapped absence
+/// would let one provider fabricating a transaction outvote every honest one. Pin the mapping
+/// with a test that feeds the inspector the provider's actual answer.
 pub trait ForeignChainInspector {
     type TransactionId;
     type Finality;
