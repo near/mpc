@@ -5,6 +5,274 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.15.0] - 2026-09-04
+
+### 🚀 Features
+
+- [#4025](https://github.com/near/mpc/pull/4025)(@gilcu3): Add backup-cli service based on RPCs (#4025)
+
+- [#4016](https://github.com/near/mpc/pull/4016)(@barakeinav1): *(contract)* Operator-prepaid attestation storage (grant counter) (#4016)
+
+- [#4049](https://github.com/near/mpc/pull/4049)(@haiyuechen-nearone): EVM chains RPC probing logic (#4049)
+
+- [#4032](https://github.com/near/mpc/pull/4032)(@netrome): Add optional payload hash to foreign transaction requests (#4032)
+
+- [#3922](https://github.com/near/mpc/pull/3922)(@kevindeforth): *(interface)* Typed vote and admin methods on MpcContractHandle (#3922)
+
+- [#4067](https://github.com/near/mpc/pull/4067)(@haiyuechen-nearone): Probe Bitcoin provider by genesis block hash (#4067)
+
+- [#3912](https://github.com/near/mpc/pull/3912)(@anodar): *(node)* Gate verify-foreign-tx on available chains via the watch channel (#3912)
+
+- [#4069](https://github.com/near/mpc/pull/4069)(@haiyuechen-nearone): Probe Aptos providers by ledger chain id (#4069)
+
+- [#4145](https://github.com/near/mpc/pull/4145)(@frolvanya): *(foreign-tx)* Avalanche and adi support (#4145)
+
+- [#4205](https://github.com/near/mpc/pull/4205)(@kevindeforth): Expose finality status for e2e test framework and unify syntax with codebase (#4205)
+
+- [#3886](https://github.com/near/mpc/pull/3886)(@metalurgical): *(mpc-contract)* Cancel_node_migration() function in contract (#3886)
+
+- [#4054](https://github.com/near/mpc/pull/4054)(@anodar): *(node)* Chain-compatible presignature selection for verifying foreign transactions (#4054)
+
+- [#4070](https://github.com/near/mpc/pull/4070)(@haiyuechen-nearone): Probe Sui providers by genesis checkpoint digest (#4070)
+
+- [#4228](https://github.com/near/mpc/pull/4228)(@gilcu3): Add tcb-status support for attestation-cli (#4228)
+
+- [#4203](https://github.com/near/mpc/pull/4203)(@anodar): *(node)* Narrow verify-foreign-tx leader selection to chain supporters (#4203)
+
+- [#4235](https://github.com/near/mpc/pull/4235)(@frolvanya): *(foreign-tx)* Ethereum support (#4235)
+
+- [#4136](https://github.com/near/mpc/pull/4136)(@frolvanya): *(foreign-tx)* Svm support in contract interface (#4136)
+
+- [#4236](https://github.com/near/mpc/pull/4236)(@barakeinav1): *(node)* Metrics for attestation freshness (#4236)
+
+- [#4234](https://github.com/near/mpc/pull/4234)(@anodar): Accept foreign chain requests based on available chain (#4234)
+
+- [#4071](https://github.com/near/mpc/pull/4071)(@haiyuechen-nearone): Periodically report foreign chain RPC provider health (#4071)
+
+- [#4285](https://github.com/near/mpc/pull/4285)(@pbeza): *(attestation-cli)* Report the early TCB evaluation data set (#4285)
+
+- [#4296](https://github.com/near/mpc/pull/4296)(@anodar): Support {} host-label wildcard in on-chain base_url (#4296)
+
+- [#4266](https://github.com/near/mpc/pull/4266)(@kevindeforth): Make chain-gateways monitoring logic generic for other back-ends (#4266)
+
+- [#4287](https://github.com/near/mpc/pull/4287)(@anodar): Implement CLI that generates whitelist proposal declaratively (#4287)
+
+- [#4310](https://github.com/near/mpc/pull/4310)(@haiyuechen-nearone): *(inspector)* Split foreign chain inspection verdicts from inspector errors (#4310)
+
+- [#4352](https://github.com/near/mpc/pull/4352)(@gilcu3): *(contract)* Move whitelist foreign chain vote to json for readability (#4352)
+
+- [#4348](https://github.com/near/mpc/pull/4348)(@pbeza): *(tee)* Name TCB component statuses and advisory IDs in attestation rejection reasons (#4348)
+
+
+### 🐛 Bug Fixes
+
+- [#4087](https://github.com/near/mpc/pull/4087)(@gilcu3): Do not crash on wrong participants in Start message (#4087)
+
+- [#4132](https://github.com/near/mpc/pull/4132)(@haiyuechen-nearone): Compare foreign chain whitelist header names case insensitively (#4132)
+
+- [#4142](https://github.com/near/mpc/pull/4142)(@gilcu3): Remove duplicate type AuthenticatedParticipantId from contract API (#4142)
+
+- [#4073](https://github.com/near/mpc/pull/4073)(@barakeinav1): *(contract)* Size max_scan and the sweep gas budget together (#4073)
+
+- [#4157](https://github.com/near/mpc/pull/4157)(@SimonRastikian): Surfacing failure by replacing join_all with select_all (#4157)
+
+- [#4201](https://github.com/near/mpc/pull/4201)(@pbeza): *(node)* Keep attestation tasks alive after submission retry timeout (#4201)
+
+- [#4311](https://github.com/near/mpc/pull/4311)(@gilcu3): *(node)* Check participant sets match during resharing and keygen (#4311)
+
+- [#4281](https://github.com/near/mpc/pull/4281)(@pbeza): *(node)* Retry attestation submission only until the next resubmission tick (#4281)
+
+- [#4328](https://github.com/near/mpc/pull/4328)(@pbeza): *(node)* Bound the dstack RPC calls in attestation generation (#4328)
+
+- [#4341](https://github.com/near/mpc/pull/4341)(@gilcu3): Warn about mismatched tls keys during migration (#4341)
+
+- [#4339](https://github.com/near/mpc/pull/4339)(@gilcu3): Make sure empty keysets fail loudly during put-keyshares (#4339)
+
+- [#4334](https://github.com/near/mpc/pull/4334)(@haiyuechen-nearone): Cap the number of extractors in a foreign transaction request (#4334)
+
+
+### 🚜 Refactor
+
+- [#4099](https://github.com/near/mpc/pull/4099)(@SimonRastikian): *(scripts)* Rename prepare-release.sh to prepare-github-releas… (#4099)
+
+- [#3939](https://github.com/near/mpc/pull/3939)(@kevindeforth): *(sandbox)* Use mpc contract interface (#3939)
+
+- [#4143](https://github.com/near/mpc/pull/4143)(@pbeza): *(test-utils)* Read the collateral straight from the captured `public_data.json` (#4143)
+
+- [#4147](https://github.com/near/mpc/pull/4147)(@gilcu3): *(contract)* Add api module root and lift shared test fixtures (#4147)
+
+- [#4148](https://github.com/near/mpc/pull/4148)(@gilcu3): *(contract)* Move shared request and auth plumbing into api/common.rs (#4148)
+
+- [#4155](https://github.com/near/mpc/pull/4155)(@gilcu3): *(contract)* Move public-key views and signing into api/keys.rs and api/sign.rs (#4155)
+
+- [#4160](https://github.com/near/mpc/pull/4160)(@gilcu3): *(contract)* Move confidential key derivation into api/ckd.rs (#4160)
+
+- [#4161](https://github.com/near/mpc/pull/4161)(@gilcu3): *(contract)* Move init, migrate and top-level views into api/lifecycle.rs (#4161)
+
+- [#4159](https://github.com/near/mpc/pull/4159)(@kevindeforth): *(devnet)* Hand out access keys as shared handles (#4159)
+
+- [#4163](https://github.com/near/mpc/pull/4163)(@gilcu3): *(contract)* Move governance and key-event votes (#4163)
+
+- [#4185](https://github.com/near/mpc/pull/4185)(@gilcu3): *(contract)* Move contract-update proposals into api/update.rs (#4185)
+
+- [#4190](https://github.com/near/mpc/pull/4190)(@gilcu3): *(contract)* Move node migration into api/node_migration.rs (#4190)
+
+- [#4189](https://github.com/near/mpc/pull/4189)(@kevindeforth): *(devnet)* Typed mpc-contract calls (#4189)
+
+- [#4193](https://github.com/near/mpc/pull/4193)(@gilcu3): *(contract)* Move TEE verifier votes into api/tee_verifier.rs (#4193)
+
+- [#4194](https://github.com/near/mpc/pull/4194)(@gilcu3): *(contract)* Move TEE measurement votes into api/tee_measurements.rs (#4194)
+
+- [#4198](https://github.com/near/mpc/pull/4198)(@gilcu3): *(contract)* Move clean_tee_status into api/tee_measurements.rs (#4198)
+
+- [#4197](https://github.com/near/mpc/pull/4197)(@gilcu3): *(contract)* Move TEE attestation lifecycle into api/attestation.rs (#4197)
+
+- [#4202](https://github.com/near/mpc/pull/4202)(@gilcu3): *(contract)* Move the foreign-tx request path into api/foreign_chain.rs (#4202)
+
+- [#4206](https://github.com/near/mpc/pull/4206)(@gilcu3): *(contract)* Move foreign-chain support and provider policy (#4206)
+
+- [#4207](https://github.com/near/mpc/pull/4207)(@kevindeforth): Add typed init call to mpc contract interface (#4207)
+
+- [#4227](https://github.com/near/mpc/pull/4227)(@SimonRastikian): Simplifying storage by giving it to the client directly - #3851 (#4227)
+
+- [#4251](https://github.com/near/mpc/pull/4251)(@anodar): Drop trait bounds from structs (#4251)
+
+- [#4238](https://github.com/near/mpc/pull/4238)(@SimonRastikian): Enforcing strong typing in governance.rs (#4238)
+
+- [#4269](https://github.com/near/mpc/pull/4269)(@gilcu3): *(contract)* Use UpdateId and Keyset from dtos in the API (#4269)
+
+- [#4276](https://github.com/near/mpc/pull/4276)(@gilcu3): *(contract)* Use CKDRequest from dtos (#4276)
+
+- [#4278](https://github.com/near/mpc/pull/4278)(@gilcu3): *(contract)* Use internal config::Config type instead of dto (#4278)
+
+- [#4274](https://github.com/near/mpc/pull/4274)(@anodar): Foreign chain impl block and test utils into separate package (#4274)
+
+- [#4239](https://github.com/near/mpc/pull/4239)(@SimonRastikian): Renaming threshold in verifier_votes.rs and reducing code redundancy (#4239)
+
+- [#4290](https://github.com/near/mpc/pull/4290)(@gilcu3): Define attestation types in their own crate (#4290)
+
+- [#4293](https://github.com/near/mpc/pull/4293)(@gilcu3): Move tee vote types in the contract public API to dtos crate (#4293)
+
+- [#4244](https://github.com/near/mpc/pull/4244)(@haiyuechen-nearone): Inject the inspectors into RPC probing path (#4244)
+
+- [#4320](https://github.com/near/mpc/pull/4320)(@pbeza): *(contract)* Trim `VerificationContext` to carry only `TcbInfo` (#4320)
+
+- [#4315](https://github.com/near/mpc/pull/4315)(@anodar): Chain entry validation into contract interface (#4315)
+
+
+### 📚 Documentation
+
+- [#4066](https://github.com/near/mpc/pull/4066)(@barakeinav1): *(migration)* Clarify backup-cli node address format and migration port (#4066)
+
+- [#4097](https://github.com/near/mpc/pull/4097)(@anodar): Add section in onboarding doc about foreign chain configs (#4097)
+
+- [#4260](https://github.com/near/mpc/pull/4260)(@gilcu3): Add tdx tcb info for operators (#4260)
+
+- [#4331](https://github.com/near/mpc/pull/4331)(@kevindeforth): Distinguish live and archived documentation (#4331)
+
+- [#4332](https://github.com/near/mpc/pull/4332)(@kevindeforth): Explain repository layout and shared validation placement (#4332)
+
+- [#4355](https://github.com/near/mpc/pull/4355)(@kevindeforth): Sort docs into guide/development/archived (#4355)
+
+- [#4357](https://github.com/near/mpc/pull/4357)(@kevindeforth): Organize docs (#4357)
+
+- [#4358](https://github.com/near/mpc/pull/4358)(@kevindeforth): Move docs to correct folder (#4358)
+
+- [#4360](https://github.com/near/mpc/pull/4360)(@kevindeforth): Sort more docs into guide/development/archive (#4360)
+
+- [#4361](https://github.com/near/mpc/pull/4361)(@kevindeforth): Archive the per-node foreign-chain RPC configuration design (#4361)
+
+- [#4362](https://github.com/near/mpc/pull/4362)(@kevindeforth): Sort more docs into guide/development/design/archive (#4362)
+
+
+### 🧪 Testing
+
+- [#4165](https://github.com/near/mpc/pull/4165)(@pbeza): *(contract)* Sandbox tests for the attestation flow against the real tee-verifier (#4165)
+
+- [#4214](https://github.com/near/mpc/pull/4214)(@gilcu3): Keep e2e tests artifacts on failure (#4214)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4062](https://github.com/near/mpc/pull/4062)(@gilcu3): E2e test in cargo-make now compatible with nextest filters (#4062)
+
+- [#4061](https://github.com/near/mpc/pull/4061)(@gilcu3): Include salt and info in ckd key derivation example (#4061)
+
+- [#4074](https://github.com/near/mpc/pull/4074)(@pbeza): Convert doc references to intra-doc links and document conventions in `AGENTS.md` (#4074)
+
+- [#4081](https://github.com/near/mpc/pull/4081)(@gilcu3): Update contract migrations after 3.14 release (#4081)
+
+- [#4086](https://github.com/near/mpc/pull/4086)(@gilcu3): Remove old unused metrics from contract (#4086)
+
+- [#4116](https://github.com/near/mpc/pull/4116)(@pbeza): *(deny)* Ignore the unmaintained advisories for `im` and its dependencies (#4116)
+
+- [#4113](https://github.com/near/mpc/pull/4113)(@dependabot[bot]): Bump the rust-minor-and-patch group with 4 updates (#4113)
+
+- [#4125](https://github.com/near/mpc/pull/4125)(@barakeinav1): Install catatonit for repro-env podman builds (#4125)
+
+- [#4128](https://github.com/near/mpc/pull/4128)(@barakeinav1): Install catatonit in the image-publishing workflows (#4128)
+
+- [#4134](https://github.com/near/mpc/pull/4134)(@gilcu3): Move runner images to ubuntu 26.04 (#4134)
+
+- [#4115](https://github.com/near/mpc/pull/4115)(@barakeinav1): *(contract)* Correct the grants map in the design doc and measure its row cost (#4115)
+
+- [#4109](https://github.com/near/mpc/pull/4109)(@pbeza): *(test-utils)* Regenerate attestation fixtures with a retained signer key (#4109)
+
+- [#4164](https://github.com/near/mpc/pull/4164)(@dependabot[bot]): Bump the rust-minor-and-patch group with 5 updates (#4164)
+
+- [#4168](https://github.com/near/mpc/pull/4168)(@anodar): Update aptos tx in testnet config for foreign-chain-config-tester (#4168)
+
+- [#4175](https://github.com/near/mpc/pull/4175)(@anodar): Bump up h2 according to RUSTSEC-2026-0258 (#4175)
+
+- [#4184](https://github.com/near/mpc/pull/4184)(@gilcu3): Fix the skopeo image to use an immutable tag (#4184)
+
+- [#4200](https://github.com/near/mpc/pull/4200)(@gilcu3): Add 3.14.1 contract to history (#4200)
+
+- [#4213](https://github.com/near/mpc/pull/4213)(@gilcu3): Include action updates in dependabot (#4213)
+
+- [#4216](https://github.com/near/mpc/pull/4216)(@dependabot[bot]): Bump the github-actions group across 1 directory with 6 updates (#4216)
+
+- [#4218](https://github.com/near/mpc/pull/4218)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 2 updates (#4218)
+
+- [#4219](https://github.com/near/mpc/pull/4219)(@dependabot[bot]): Bump near-kit from 0.14.0 to 0.15.0 (#4219)
+
+- [#4232](https://github.com/near/mpc/pull/4232)(@gilcu3): Add cache layer for repro-env (#4232)
+
+- [#4224](https://github.com/near/mpc/pull/4224)(@kevindeforth): Remove legacy struct from mpc node and tee context post contract upgrade (#4224)
+
+- [#4256](https://github.com/near/mpc/pull/4256)(@gilcu3): *(contract)* Move away from near-sdk PublicKey type (#4256)
+
+- [#4264](https://github.com/near/mpc/pull/4264)(@SimonRastikian): Revert "fix: Surfacing failure by replacing join_all with try_join" (#4264)
+
+- [#4268](https://github.com/near/mpc/pull/4268)(@gilcu3): Update nix (#4268)
+
+- [#4265](https://github.com/near/mpc/pull/4265)(@barakeinav1): *(tee)* Align reportData and node-key docs with the code (#4265)
+
+- [#4284](https://github.com/near/mpc/pull/4284)(@gilcu3): Workaround rust-analyzer bug around shadowing (#4284)
+
+- [#4279](https://github.com/near/mpc/pull/4279)(@netrome): *(standards)* Don't require `must_` prefix on all panicking test helpers (#4279)
+
+- [#4282](https://github.com/near/mpc/pull/4282)(@gilcu3): *(node)* Remove monitor_attestation_removal (#4282)
+
+- [#4295](https://github.com/near/mpc/pull/4295)(@gilcu3): Bump several important deps with potential sec changes (#4295)
+
+- [#4302](https://github.com/near/mpc/pull/4302)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4302)
+
+- [#4303](https://github.com/near/mpc/pull/4303)(@dependabot[bot]): Bump the rust-minor-and-patch group with 3 updates (#4303)
+
+- [#4305](https://github.com/near/mpc/pull/4305)(@dependabot[bot]): Bump near-kit from 0.15.0 to 0.17.0 (#4305)
+
+- [#4306](https://github.com/near/mpc/pull/4306)(@dependabot[bot]): Bump gcloud-sdk from 0.30.2 to 0.31.0 (#4306)
+
+- [#4300](https://github.com/near/mpc/pull/4300)(@gilcu3): Remove json schemars from the contract, avoid future reintroduction (#4300)
+
+- [#4316](https://github.com/near/mpc/pull/4316)(@kevindeforth): Move stuff from chain-gateway to near-contract-transport (#4316)
+
+- [#4317](https://github.com/near/mpc/pull/4317)(@kevindeforth): View call marker deserializers (#4317)
+
+- [#4350](https://github.com/near/mpc/pull/4350)(@github-actions[bot]): Bump to nearcore 2.13.4 (#4350)
+
+
 ## [3.14.0] - 2026-08-05
 
 ### 🚀 Features

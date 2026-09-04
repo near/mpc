@@ -1,9 +1,10 @@
 use jsonrpsee::core::client::ClientT;
+use jsonrpsee::core::client::error::Error as RpcClientError;
 
 use crate::svm::{SvmExtractedValue, SvmTransactionSignature};
 use crate::{
-    ForeignChainInspectionError, ForeignChainInspector, HexBytes, NO_PARAMS, NetworkFingerprint,
-    NetworkFingerprintInspector,
+    ClassifyRpcOutcome, ForeignChainInspectionError, ForeignChainInspector, HexBytes, NO_PARAMS,
+    NetworkFingerprint, NetworkFingerprintInspector, Verdict,
 };
 use foreign_chain_rpc_interfaces::svm::{
     Commitment, GetAccountInfoArgs, GetAccountInfoResponse, GetTransactionArgs,
@@ -15,6 +16,12 @@ use std::collections::BTreeMap;
 const GET_TRANSACTION_METHOD: &str = "getTransaction";
 const GET_ACCOUNT_INFO_METHOD: &str = "getAccountInfo";
 const GET_GENESIS_HASH_METHOD: &str = "getGenesisHash";
+
+/// `TransactionHistoryNotAvailable`: the node runs without `--enable-rpc-transaction-history`,
+/// which is the default. A provider gap rather than a refusal, so it is reported as a transient
+/// failure and the fan-out falls through to a provider that does serve history. The shared
+/// classifier would otherwise read any unrecognized JSON-RPC code as a deterministic rejection.
+const TRANSACTION_HISTORY_NOT_AVAILABLE_CODE: i32 = -32011;
 
 /// Base58 of a 32-byte value is at most 44 characters, of a 64-byte value at most 88.
 /// Inputs beyond the cap are rejected before the superlinear base58 decode runs.
@@ -96,10 +103,15 @@ where
         tx_id: SvmTransactionSignature,
         finality: SvmFinality,
         extractors: Vec<SvmExtractor>,
-    ) -> Result<Vec<SvmExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<SvmExtractedValue>, ForeignChainInspectionError> {
         let commitment = Commitment::from(finality);
-        let tx = self.fetch_transaction(tx_id, commitment).await?;
-        let meta = successful_transaction_meta(&tx)?;
+        let Some(tx) = self.fetch_transaction(tx_id, commitment).await? else {
+            return Ok(Verdict::TransactionNotFound);
+        };
+        let meta = transaction_meta(&tx)?;
+        if !meta.err.is_null() {
+            return Ok(Verdict::TransactionFailed);
+        }
         self.extract_values(&tx, meta, commitment, &extractors).await
     }
 }
@@ -121,14 +133,15 @@ where
     /// root separately and comparing slots against it would instead stitch two answers
     /// together, which a load-balanced endpoint is free to serve from different backends.
     /// A `null` covers an unknown transaction and one that is confirmed but not yet rooted
-    /// alike, so the second read tells the retriable case from the substantive one.
+    /// alike, so the second read tells the retriable [`ForeignChainInspectionError::NotFinalized`]
+    /// from the settled [`Verdict::TransactionNotFound`], reported here as [`None`].
     async fn fetch_transaction(
         &self,
         tx_id: SvmTransactionSignature,
         commitment: Commitment,
-    ) -> Result<GetTransactionResponse, ForeignChainInspectionError> {
+    ) -> Result<Option<GetTransactionResponse>, ForeignChainInspectionError> {
         if let Some(tx) = self.request_transaction(tx_id, commitment).await? {
-            return Ok(tx);
+            return Ok(Some(tx));
         }
         if commitment == Commitment::Finalized
             && self
@@ -138,7 +151,7 @@ where
         {
             return Err(ForeignChainInspectionError::NotFinalized);
         }
-        Err(ForeignChainInspectionError::TransactionNotFound)
+        Ok(None)
     }
 
     async fn request_transaction(
@@ -150,11 +163,17 @@ where
             signature: bs58::encode(*tx_id).into_string(),
             commitment,
         };
-        let response: Option<GetTransactionResponse> = self
-            .client
-            .request(GET_TRANSACTION_METHOD, &args)
-            .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+        let outcome = self.client.request(GET_TRANSACTION_METHOD, &args).await;
+        let response: Option<GetTransactionResponse> = match outcome {
+            Err(RpcClientError::Call(object))
+                if object.code() == TRANSACTION_HISTORY_NOT_AVAILABLE_CODE =>
+            {
+                return Err(ForeignChainInspectionError::RpcRequestFailed(
+                    "provider does not serve transaction history".to_string(),
+                ));
+            }
+            other => other.classified()?,
+        };
         if let Some(tx) = &response {
             let returned = tx.transaction.signatures.first().map(String::as_str);
             ensure_signature_matches(&tx_id, returned)?;
@@ -171,7 +190,7 @@ where
         meta: &TransactionMeta,
         commitment: Commitment,
         extractors: &[SvmExtractor],
-    ) -> Result<Vec<SvmExtractedValue>, ForeignChainInspectionError> {
+    ) -> Result<Verdict<SvmExtractedValue>, ForeignChainInspectionError> {
         let account_keys = account_key_list(&tx.transaction.message.account_keys, meta);
         let mut accounts: BTreeMap<SvmAddress, SvmAccount> = BTreeMap::new();
         let mut extracted_values = Vec::with_capacity(extractors.len());
@@ -180,18 +199,27 @@ where
                 SvmExtractor::InnerInstruction {
                     instruction_index,
                     inner_instruction_index,
-                } => extract_inner_instruction(
-                    meta,
-                    &account_keys,
-                    *instruction_index,
-                    *inner_instruction_index,
-                )?,
+                } => {
+                    let Some(instruction) = extract_inner_instruction(
+                        meta,
+                        &account_keys,
+                        *instruction_index,
+                        *inner_instruction_index,
+                    )?
+                    else {
+                        return Ok(Verdict::LogIndexOutOfBounds);
+                    };
+                    instruction
+                }
                 SvmExtractor::AccountState { pubkey } => {
                     let account = match accounts.get(pubkey) {
                         Some(account) => account.clone(),
                         None => {
-                            let account =
-                                self.fetch_account_state(pubkey, commitment, tx.slot).await?;
+                            let Some(account) =
+                                self.fetch_account_state(pubkey, commitment, tx.slot).await?
+                            else {
+                                return Ok(Verdict::AccountNotFound);
+                            };
                             accounts.insert(pubkey.clone(), account.clone());
                             account
                         }
@@ -202,7 +230,7 @@ where
             extracted_values.push(value);
         }
 
-        Ok(extracted_values)
+        Ok(Verdict::Extracted(extracted_values))
     }
 
     async fn fetch_account_state(
@@ -210,7 +238,7 @@ where
         pubkey: &SvmAddress,
         commitment: Commitment,
         tx_slot: u64,
-    ) -> Result<SvmAccount, ForeignChainInspectionError> {
+    ) -> Result<Option<SvmAccount>, ForeignChainInspectionError> {
         let args = GetAccountInfoArgs {
             pubkey: bs58::encode(pubkey.0).into_string(),
             commitment,
@@ -219,19 +247,20 @@ where
             .client
             .request(GET_ACCOUNT_INFO_METHOD, &args)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+            .classified()?;
         // A load-balanced endpoint can route this read to a backend that has not seen the
         // transaction, whose pre-transaction answer would otherwise be taken as a verdict.
-        // Transient, so that backend is dropped from the quorum rather than failing the request.
+        // An error, so that backend drops out rather than settling the request.
         if response.context.slot < tx_slot {
             return Err(ForeignChainInspectionError::RpcRequestFailed(format!(
                 "account read answered at slot {}, before the transaction's slot {tx_slot}",
                 response.context.slot
             )));
         }
-        let account = response
-            .value
-            .ok_or(ForeignChainInspectionError::AccountNotFound)?;
+        // No account at the address is the `AccountNotFound` verdict, reported as `None`.
+        let Some(account) = response.value else {
+            return Ok(None);
+        };
 
         let owner = parse_svm_pubkey(&account.owner).map_err(|reason| {
             ForeignChainInspectionError::MalformedRpcResponse(format!(
@@ -243,7 +272,7 @@ where
             .decode()
             .map_err(ForeignChainInspectionError::MalformedRpcResponse)?;
 
-        Ok(SvmAccount { owner, data })
+        Ok(Some(SvmAccount { owner, data }))
     }
 }
 
@@ -257,7 +286,7 @@ where
             .client
             .request(GET_GENESIS_HASH_METHOD, NO_PARAMS)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+            .classified()?;
         Ok(self.canonical_fingerprint(&genesis_hash))
     }
 
@@ -276,20 +305,18 @@ fn canonical_genesis_hash(fingerprint: &str) -> NetworkFingerprint {
     NetworkFingerprint::new(canonical)
 }
 
-/// The status metadata of a transaction that succeeded. Metadata the provider does not serve
-/// is a malformed response; a non-null `err` is the chain's own verdict on the transaction.
-fn successful_transaction_meta(
+/// A node that holds the transaction but not its status metadata is a provider gap, not corrupt
+/// data — the same class as an absent inner-instruction list, and reported the same way, so the
+/// fan-out falls through to a provider that does serve it. Without `meta` there is no `err`
+/// either, so a success cannot be told from a failure.
+fn transaction_meta(
     tx: &GetTransactionResponse,
 ) -> Result<&TransactionMeta, ForeignChainInspectionError> {
-    let meta = tx.meta.as_ref().ok_or_else(|| {
-        ForeignChainInspectionError::MalformedRpcResponse(
-            "transaction is missing its status metadata".to_string(),
+    tx.meta.as_ref().ok_or_else(|| {
+        ForeignChainInspectionError::RpcRequestFailed(
+            "provider does not serve the transaction's status metadata".to_string(),
         )
-    })?;
-    if !meta.err.is_null() {
-        return Err(ForeignChainInspectionError::TransactionFailed);
-    }
-    Ok(meta)
+    })
 }
 
 /// Rejects a backend that returned a different transaction than queried. The transaction
@@ -345,10 +372,10 @@ fn extract_inner_instruction(
     account_keys: &[&str],
     instruction_index: usize,
     inner_instruction_index: usize,
-) -> Result<SvmExtractedValue, ForeignChainInspectionError> {
-    // An absent list means the node does not record inner instructions — a provider gap, kept
-    // transient so the fan-out falls through to a provider that does record them. An empty
-    // list, by contrast, is the chain's own answer.
+) -> Result<Option<SvmExtractedValue>, ForeignChainInspectionError> {
+    // An absent list means the node does not record inner instructions — a provider gap, so the
+    // fan-out falls through to a provider that does record them. An empty list, by contrast, is
+    // the chain's own answer, and an index into it is the `LogIndexOutOfBounds` verdict.
     let entries = meta.inner_instructions.as_deref().ok_or_else(|| {
         ForeignChainInspectionError::RpcRequestFailed(
             "provider does not record inner instructions".to_string(),
@@ -357,8 +384,10 @@ fn extract_inner_instruction(
     let instruction = entries
         .iter()
         .find(|entry| usize::from(entry.index) == instruction_index)
-        .and_then(|entry| entry.instructions.get(inner_instruction_index))
-        .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+        .and_then(|entry| entry.instructions.get(inner_instruction_index));
+    let Some(instruction) = instruction else {
+        return Ok(None);
+    };
 
     let resolve = |index: u8, role: &str| {
         let key = account_keys.get(usize::from(index)).ok_or_else(|| {
@@ -398,11 +427,13 @@ fn extract_inner_instruction(
         ))
     })?;
 
-    Ok(SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
-        program_id,
-        accounts,
-        data,
-    }))
+    Ok(Some(SvmExtractedValue::InnerInstruction(
+        SvmInnerInstruction {
+            program_id,
+            accounts,
+            data,
+        },
+    )))
 }
 
 /// Parse a base58 SVM pubkey into [`SvmAddress`]; exactly 32 bytes, no short spellings.

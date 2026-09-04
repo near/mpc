@@ -1,7 +1,7 @@
 # Calculating the whitelisted and available foreign-chain sets
 
 Status: Proposed — supersedes the all-participant intersection rule in
-[`docs/foreign-chain-transactions.md`](../foreign-chain-transactions.md). Tracked by
+[`docs/archive/design/foreign-chain-transactions.md`](../archive/design/foreign-chain-transactions.md). Tracked by
 [#3434](https://github.com/near/mpc/issues/3434).
 
 ## Background
@@ -13,13 +13,14 @@ request whose target chain is not in it. A single node that registers an empty l
 feature down. That is what this proposal fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
-per chain, the network-trusted providers and the **RPC quorum** (`ChainEntry.quorum`
-— how many of a node's providers must agree for it to accept a result).
+per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
+stored for a deferred quorum policy and not yet consumed: verification compares every
+configured provider, see [Verification behavior](#verification-behavior)).
 
 ## Proposal: two sets of chains
 
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
-> [Foreign Chain Transaction Verification Design — Terminology](../foreign-chain-transactions.md#terminology).
+> [Foreign Chain Transaction Verification Design — Terminology](../archive/design/foreign-chain-transactions.md#terminology).
 
 The network distinguishes the **whitelisted** set (vote-driven policy, `allowed_foreign_chain_providers()`)
 from the **available** set (servable right now, `get_available_foreign_chains()`):
@@ -56,24 +57,27 @@ misconfigured for a chain — an operational anomaly that alerting surfaces (see
 ## Verification behavior
 
 Each node fans the query out to its whitelisted providers for `C` and accepts a
-result only when ≥ `rpc_quorum(C)` return the same response. If fewer agree, the node
-errors out and produces no signature share.
+result only when every provider that reached a verdict reached the same one; providers
+that fail to answer are tolerated. On any disagreement the node errors out and produces
+no signature share.
 
-**This sub-quorum outcome must be terminal — the leader must not re-attempt the
+**A disagreement outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue
-retries every request, so the foreign-tx path must special-case a sub-quorum
-result as non-retryable. (Open: whether a sub-quorum from purely *transient*
-failures — timeouts, finality not reached — should still retry, vs. only genuine
-disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
+retries every request, so the foreign-tx path must special-case a disagreement
+as non-retryable. The fan out already distinguishes the two outcomes in its
+return value: when no provider reaches a verdict it propagates the underlying
+error, and only genuine disagreement between verdicts reports a mismatch.
+Whether the no-verdict outcome should retry while disagreement stays terminal
+is tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
 ## Participant selection
 
 Foreign-tx signing must select participants that **cover** the requested chain
-(report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
+(their registration lists `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
 Implemented in two places:
-1. Leader selection is chain- and quorum-aware: the
+1. Leader selection is chain- and threshold-aware: the
 pending-request queue narrows a request's eligible leaders to the supporters
 of `C`, and selects one only when at least a reconstruction threshold's worth
 of them is online (the same threshold that gates availability). Otherwise the request
@@ -120,7 +124,8 @@ no flag-day coordination.
 ## Guarantees preserved
 
 **Safety** — the network signs an observation only if ≥ `signing_threshold`
-participants each independently verified it (each via its own RPC quorum). Fewer than
+participants each independently verified it, each against its own configured providers
+(see [Verification behavior](#verification-behavior)). Fewer than
 `signing_threshold` cannot force a false attestation.
 
 **Liveness** — a request is accepted only when `C` is available (≥ `signing_threshold`

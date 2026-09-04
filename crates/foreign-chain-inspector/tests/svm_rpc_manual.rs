@@ -115,6 +115,8 @@ async fn inspector_extracts_inner_instruction_against_live_rpc_provider() {
                 }],
             )
             .await
+            .unwrap()
+            .into_extracted()
             .unwrap();
 
         // then
@@ -155,6 +157,8 @@ async fn inspector_extracts_account_state_against_live_rpc_provider() {
             }],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // then — the mint account is owned by the SPL Token program and carries its data.

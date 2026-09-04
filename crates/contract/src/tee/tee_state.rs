@@ -38,7 +38,7 @@ pub enum TeeQuoteStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AttestationSubmissionError {
-    #[error("the submitted attestation failed verification, reason: {:?}", .0)]
+    #[error("the submitted attestation failed verification, reason: {0}")]
     InvalidAttestation(#[from] attestation::VerificationError),
     #[error(
         "TLS public key is already registered to a different account; only the owning account may update it"

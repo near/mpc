@@ -10,7 +10,7 @@ use assert_matches::assert_matches;
 use base64::Engine as _;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
-    ProviderFailure,
+    ProviderFailure, Verdict,
     svm::{
         SvmExtractedValue, SvmTransactionSignature,
         inspector::{SolanaInspector, SvmExtractor, SvmFinality},
@@ -173,6 +173,8 @@ async fn extract__should_return_resolved_inner_instruction() {
             vec![inner_instruction_extractor()],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then — program id and accounts resolved to pubkeys, data base58-decoded.
@@ -206,6 +208,8 @@ async fn extract__should_resolve_program_id_from_loaded_addresses() {
             }],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then
@@ -238,6 +242,8 @@ async fn extract__should_return_account_state() {
             }],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then — owner parsed, data base64-decoded.
@@ -296,6 +302,8 @@ async fn extract__should_accept_an_account_read_answered_at_the_transaction_slot
             }],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then
@@ -329,6 +337,8 @@ async fn extract__should_read_a_repeated_account_once() {
             ],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then — both extractors resolve, from a single round trip, to the same state.
@@ -370,6 +380,8 @@ async fn extract__should_read_distinct_accounts_separately() {
             ],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then — deduplication keys on the pubkey, so distinct accounts are both read, in order.
@@ -407,6 +419,8 @@ async fn extract__should_read_account_state_at_finalized_when_finality_is_finali
             }],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then
@@ -476,6 +490,8 @@ async fn extract__should_return_values_in_extractor_order() {
             ],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then
@@ -504,6 +520,8 @@ async fn extract__should_accept_finalized_transaction_when_finality_is_finalized
             vec![inner_instruction_extractor()],
         )
         .await
+        .unwrap()
+        .into_extracted()
         .unwrap();
 
     // Then
@@ -552,12 +570,8 @@ async fn extract__should_return_transaction_not_found_when_neither_commitment_ha
         )
         .await;
 
-    // Then — only two independent misses may stand as a substantive verdict.
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionNotFound)
-    );
-    assert!(!response.unwrap_err().is_transient());
+    // Then — only two independent misses may settle on the verdict.
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
 }
 
 #[tokio::test]
@@ -605,16 +619,12 @@ async fn extract__should_return_transaction_not_found_for_null_response() {
         )
         .await;
 
-    // Then — a substantive (non-transient) verdict.
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionNotFound)
-    );
-    assert!(!response.unwrap_err().is_transient());
+    // Then — a settled verdict, not a tolerated error.
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
 }
 
 #[tokio::test]
-async fn extract__should_fail_when_transaction_failed() {
+async fn extract__should_return_the_failed_verdict_for_a_failed_transaction() {
     // Given
     let mut tx = confirmed_tx();
     tx["meta"]["err"] = json!({ "InstructionError": [0, { "Custom": 6000 }] });
@@ -633,10 +643,7 @@ async fn extract__should_fail_when_transaction_failed() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionFailed)
-    );
+    assert_matches!(response, Ok(Verdict::TransactionFailed));
 }
 
 #[tokio::test]
@@ -666,8 +673,8 @@ async fn extract__should_reject_response_with_mismatched_signature() {
 }
 
 #[tokio::test]
-async fn extract__should_reject_missing_meta_as_malformed() {
-    // Given
+async fn extract__should_report_missing_meta_as_a_provider_failure() {
+    // Given — a node that holds the transaction but not its status metadata.
     let mut tx = confirmed_tx();
     tx["meta"] = serde_json::Value::Null;
     let mock_client = SequentialResponseMockClientBuilder::new()
@@ -684,18 +691,47 @@ async fn extract__should_reject_missing_meta_as_malformed() {
         )
         .await;
 
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
+    // Then — the same class as an unrecorded inner-instruction list, and reported the same
+    // way: a gap in what this provider serves, not data the chain settled or a broken payload.
+    let error = response.unwrap_err();
+    assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
+    assert_eq!(error.provider_failure(), Some(ProviderFailure::Unreachable));
+}
+
+#[tokio::test]
+async fn extract__should_report_absent_transaction_history_as_a_provider_failure() {
+    // Given — a node started without `--enable-rpc-transaction-history` (the default) answers
+    // `getTransaction` with code -32011.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            -32011,
+            "Transaction history is not available from this node",
+            None::<()>,
+        )))
+    });
+    let inspector = SolanaInspector::new(mock_client);
+
+    // When
+    let response = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Confirmed,
+            vec![inner_instruction_extractor()],
+        )
+        .await;
+
+    // Then — a capability gap, not the deterministic refusal the shared classifier would read
+    // any unrecognized JSON-RPC code as.
+    let error = response.unwrap_err();
+    assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
+    assert!(error.is_transient());
 }
 
 #[rstest]
 #[case::no_entry_for_top_level_instruction(0, 0)]
 #[case::inner_index_beyond_entry(1, 99)]
 #[tokio::test]
-async fn extract__should_fail_when_inner_instruction_index_out_of_bounds(
+async fn extract__should_return_the_out_of_bounds_verdict_for_a_missing_inner_instruction(
     #[case] instruction_index: usize,
     #[case] inner_instruction_index: usize,
 ) {
@@ -718,10 +754,7 @@ async fn extract__should_fail_when_inner_instruction_index_out_of_bounds(
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-    );
+    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
 }
 
 #[tokio::test]
@@ -771,12 +804,8 @@ async fn extract__should_report_an_empty_inner_instruction_list_as_out_of_bounds
         )
         .await;
 
-    // Then — the chain's own answer: a substantive, non-transient verdict.
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-    );
-    assert!(!response.unwrap_err().is_transient());
+    // Then — the chain's own answer, so a settled verdict rather than an error.
+    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
 }
 
 #[tokio::test]
@@ -852,9 +881,8 @@ async fn extract__should_return_account_not_found_for_null_account_value() {
         )
         .await;
 
-    // Then — the account's absence is a substantive verdict.
-    assert_matches!(response, Err(ForeignChainInspectionError::AccountNotFound));
-    assert!(!response.unwrap_err().is_transient());
+    // Then — the account's absence is the chain's answer, so a settled verdict.
+    assert_matches!(response, Ok(Verdict::AccountNotFound));
 }
 
 #[tokio::test]
