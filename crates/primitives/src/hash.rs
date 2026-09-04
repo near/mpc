@@ -209,8 +209,33 @@ define_hash!(
 );
 
 define_hash!(
-    /// A SHA-384 digest used for TDX measurements (MRTD, RTMRs, event digests).
-    Sha384Digest,
+    /// SHA-384 digest of the MRTD (Measurement Register for the Trust Domain), the
+    /// build-time measurement of the TD image.
+    MrtdHash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the RTMR0 TDX measurement.
+    Rtmr0Hash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the RTMR1 TDX measurement.
+    Rtmr1Hash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the RTMR2 TDX measurement.
+    Rtmr2Hash,
+    48
+);
+
+define_hash!(
+    /// SHA-384 digest of the key provider event.
+    KeyProviderEventDigest,
     48
 );
 

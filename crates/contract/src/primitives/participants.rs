@@ -11,7 +11,7 @@ pub mod hpke {
     pub type PublicKey = [u8; 32];
 }
 
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
@@ -19,7 +19,7 @@ pub struct ParticipantInfo {
     pub tls_public_key: Ed25519PublicKey,
 }
 
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Participants {
     next_id: ParticipantId,

@@ -19,7 +19,7 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 - **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
 [key-import]: #key-import-process
-[block-event-subscriber]: chain-gateway-design.md#block-event-subscriber
+[block-event-subscriber]: design/chain-gateway-design.md#block-event-subscriber
 [hot-mpc]: https://github.com/near/hot-mpc
 [mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
 [validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
@@ -87,7 +87,7 @@ The Archive Signer is built on three reusable layers from this repository. For t
 - **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
 
 [tee-lifecycle]: tee-lifecycle.md
-[chain-gateway-design]: chain-gateway-design.md
+[chain-gateway-design]: design/chain-gateway-design.md
 
 ### Crate Dependencies
 
@@ -406,7 +406,7 @@ The initial governor set and vote threshold are configured at contract deploymen
 | `allowed_launcher_image_hashes()` | View | Archive Signer | Query approved launcher image hashes |
 | `allowed_launcher_compose_hashes()` | View | Archive Signer | Query approved launcher compose hashes |
 | `get_tee_accounts()` | View | Anyone | Query nodes with valid attestations |
-| `get_supported_foreign_chains()` | View | Archive Signer |  Query active foreign chains (opt-in)  |
+| `get_available_foreign_chains()` | View | Archive Signer | Query foreign chains accepted by `verify_foreign_transaction` |
 
 ### Launcher Compose Hash Derivation
 
@@ -466,7 +466,7 @@ sequenceDiagram
         Note over OP: Operator restarts CVM with correct image
     end
 
-    loop Every 7 days
+    loop Every hour
         APP ->> APP: Generate fresh attestation quote
         APP ->> HC: submit_participant_info(attestation, tls_pk)
     end

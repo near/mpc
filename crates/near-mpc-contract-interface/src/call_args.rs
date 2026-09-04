@@ -5,8 +5,8 @@ use crate::types::{
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, GovernanceThresholdParameters,
     InitConfig, KeyEventId, Keyset, ProposedGovernanceThresholdParameters, PublicKey,
     SignRequestArgs, SignatureRequest, SignatureResponse, SupportedForeignChains,
-    TeeVerifierCodeHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -124,7 +124,7 @@ pub struct VoteResharedArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteUpdateArgs {
-    pub id: u64,
+    pub id: UpdateId,
 }
 
 #[derive(Serialize, Debug)]

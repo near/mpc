@@ -23,15 +23,15 @@ Services run inside Dstack CVMs, booted through a [Launcher][launcher] that meas
 | [Transaction Sender][transaction-sender] | Submits attestation transactions to the governance contract |
 
 [dstack]: https://github.com/Dstack-TEE/dstack
-[chain-indexer]: chain-gateway-design.md
+[chain-indexer]: design/chain-gateway-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [`tee-authority`]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
 [`mpc-attestation`]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
-[contract-state-subscriber]: chain-gateway-design.md#state-viewer
-[transaction-sender]: chain-gateway-design.md#transaction-sender
+[contract-state-subscriber]: design/chain-gateway-design.md#state-viewer
+[transaction-sender]: design/chain-gateway-design.md#transaction-sender
 [tee-context-design]: tee-context-design.md
-[mpc-context]: chain-gateway-design.md
+[mpc-context]: design/chain-gateway-design.md
 [launcher]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ### Crate Dependencies
@@ -121,7 +121,7 @@ sequenceDiagram
         Note over OP: Operator restarts CVM with correct image
     end
 
-    loop Every 7 days
+    loop Every hour
         APP ->> APP: Generate fresh attestation quote
         APP ->> SC: submit_participant_info(attestation, tls_pk)
     end
@@ -142,12 +142,11 @@ Individual services may add steps between "Start application container" and the 
 
 The [TEE Context][tee-context-design] is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services.
 
-[mpc-context]: chain-gateway-design.md
+[mpc-context]: design/chain-gateway-design.md
 
 [remote-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs
 [allowed-hashes-watcher]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/allowed_image_hashes_watcher.rs#L103
 [periodic-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs#L140
-[monitor-attestation-removal]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs#L187
 
 ### Tasks
 
@@ -162,8 +161,7 @@ flowchart LR
 subgraph TEE_CTX["TEE Context"]
     POLL_HASHES["Poll Allowed Hashes<br/>(ContractStateSubscriber)"]
     POLL_FCP["Poll Foreign Chain Policy<br/>(ContractStateSubscriber)"]
-    MONITOR["Monitor Attestation<br/>Removal"]
-    ATTEST["Periodic Attestation<br/>(every 7 days)"]
+    ATTEST["Periodic Attestation<br/>(every hour)"]
 end
 
 subgraph CHAIN["Chain Gateway"]
@@ -183,11 +181,9 @@ class TEE_CTX ctx;
 
 1. **Poll allowed hashes** — Periodically queries the governance contract for [`allowed_docker_image_hashes()`][allowed-docker-image-hashes] and [`allowed_launcher_compose_hashes()`][allowed-launcher-compose-hashes] via the [Contract State Subscriber][contract-state-subscriber]. Writes updates to disk for the Launcher to use on next boot. (Reference: [`monitor_allowed_image_hashes`][allowed-hashes-watcher])
 
-2. **Periodic attestation** — Every 7 days, generates a fresh TDX attestation quote and submits it to the governance contract via [`submit_participant_info()`][submit-participant-info]. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
+2. **Periodic attestation** — Every hour, generates a fresh TDX attestation quote and submits it to the governance contract via [`submit_participant_info()`][submit-participant-info]. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
 
-3. **Monitor attestation removal** — Watches the contract for changes to the attested nodes list. If this node's attestation is removed (e.g., due to image hash rotation), resubmits immediately. (Reference: [`monitor_attestation_removal`][monitor-attestation-removal])
-
-4. **Poll foreign chain policy** — Subscribes to the governance contract's [`get_foreign_chain_policy()`][get-foreign-chain-policy] view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
+3. **Poll foreign chain policy** — Subscribes to the governance contract's [`get_foreign_chain_policy()`][get-foreign-chain-policy] view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
 
 [foreign-tx-verification]: foreign-chain-transactions.md
 
@@ -203,9 +199,8 @@ class TEE_CTX ctx;
 After boot, every service must continuously prove to the governance contract that it is running an approved image inside a genuine TDX enclave. The attestation lifecycle is the same for all three services:
 
 1. **Initial attestation** — the service generates a TDX quote that binds its identity (TLS public key) to the enclave measurements and submits it to the governance contract.
-2. **Periodic renewal** — every 7 days a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
-3. **Removal monitoring** — if the contract removes the node's attestation (e.g., after an image-hash rotation), the service detects this and resubmits immediately.
-4. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate all stored attestations and evict nodes whose image hashes are no longer on the approved list.
+2. **Periodic renewal** — every hour a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
+3. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate all stored attestations and evict nodes whose image hashes are no longer on the approved list.
 
 The [TEE Context][tee-context-design] crate provides the contract interface for the above — each service is responsible for its own attestation scheduling. See the [TEE Context design doc][tee-context-design] for the interface and usage examples.
 
@@ -232,7 +227,7 @@ The following attestation methods must be uniform across all governance contract
 | `allowed_docker_image_hashes()` | View | Query approved image hashes |
 | `allowed_launcher_compose_hashes()` | View | Query approved launcher hashes |
 | `get_tee_accounts()` | View | Query participants with valid attestations |
-| `get_supported_foreign_chains()` | View | Query active foreign chains (opt-in) |
+| `get_available_foreign_chains()` | View | Query foreign chains accepted by `verify_foreign_transaction` |
 
 > **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
 

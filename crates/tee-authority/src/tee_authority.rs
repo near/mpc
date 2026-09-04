@@ -224,6 +224,10 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// to splitting them, and the redundancy is harmless.
 const PCCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
+const DSTACK_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+const DSTACK_MAX_RETRIES: usize = 3;
+
 /// Maximum age accepted for PCCS collateral. Hard-coded at 31 days.
 /// Lives in the node binary (governed via image-hash approval), not
 /// as per-operator configuration.
@@ -421,7 +425,7 @@ impl TeeAuthority {
             .ok_or(AttestationError::InvalidEndpoint)?;
         let client = DstackClient::new(Some(endpoint));
 
-        let client_info_response = get_with_backoff(|| client.info(), "dstack client info", None)
+        let client_info_response = get_with_dstack_bounds(|| client.info(), "dstack client info")
             .await
             .map_err(AttestationError::DstackClientInfo)?;
         let tcb_info = client_info_response
@@ -429,10 +433,9 @@ impl TeeAuthority {
             .try_into()
             .map_err(|e| AttestationError::TcbInfoConversion(anyhow::anyhow!("{e}")))?;
 
-        let quote = get_with_backoff(
+        let quote = get_with_dstack_bounds(
             || client.get_quote(report_data.to_bytes().into()),
             "dstack client tdx quote",
-            None,
         )
         .await
         .map_err(AttestationError::QuoteGeneration)?
@@ -682,6 +685,26 @@ where
     Err(AllPccsEndpointsFailed { failures })
 }
 
+async fn get_with_dstack_bounds<Operation, OperationFuture, Value>(
+    operation: Operation,
+    description: &str,
+) -> anyhow::Result<Value>
+where
+    Operation: Fn() -> OperationFuture,
+    OperationFuture: Future<Output = anyhow::Result<Value>>,
+{
+    get_with_backoff(
+        || async {
+            tokio::time::timeout(DSTACK_REQUEST_TIMEOUT, operation())
+                .await
+                .map_err(|_| anyhow::anyhow!("timed out after {DSTACK_REQUEST_TIMEOUT:?}"))?
+        },
+        description,
+        Some(DSTACK_MAX_RETRIES),
+    )
+    .await
+}
+
 async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
     operation: Operation,
     description: &str,
@@ -776,6 +799,59 @@ mod tests {
                 .verify_locally(report_data.into(), timestamp_s, &[], &[], &[])
                 .is_ok(),
             quote_verification_result
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn generate_attestation__should_fail_when_dstack_socket_is_missing() {
+        // Given
+        let authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::new(
+            PathBuf::from("/nonexistent/dstack.sock"),
+            endpoints(&["https://unused.example/"]),
+        ));
+        let report_data: ReportData = ReportDataV1::new(p2p_tls_key(), account_key()).into();
+
+        // When
+        let result = authority.generate_attestation(report_data).await;
+
+        // Then
+        assert_matches!(result, Err(AttestationError::DstackClientInfo(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn generate_attestation__should_time_out_when_dstack_socket_hangs() {
+        // Given
+        let socket_dir = tempfile::tempdir().unwrap();
+        let socket_path = socket_dir.path().join("dstack.sock");
+        let _listener = tokio::net::UnixListener::bind(&socket_path).unwrap();
+        let authority = TeeAuthority::Dstack(DstackTeeAuthorityConfig::new(
+            socket_path,
+            endpoints(&["https://unused.example/"]),
+        ));
+        let report_data: ReportData = ReportDataV1::new(p2p_tls_key(), account_key()).into();
+        let start = tokio::time::Instant::now();
+
+        // When
+        let error = authority
+            .generate_attestation(report_data)
+            .await
+            .unwrap_err();
+
+        // Then
+        assert_eq!(
+            error.to_string(),
+            format!("dstack client info failed: timed out after {DSTACK_REQUEST_TIMEOUT:?}")
+        );
+        let attempts = (DSTACK_MAX_RETRIES + 1) as u32;
+        let all_timeouts = DSTACK_REQUEST_TIMEOUT * attempts;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= all_timeouts,
+            "every attempt should run into the full request timeout, got {elapsed:?}"
+        );
+        assert!(
+            elapsed < all_timeouts + MAX_BACKOFF_DURATION,
+            "the backoff between attempts should stay below the max backoff delay, got {elapsed:?}"
         );
     }
 

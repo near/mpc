@@ -60,13 +60,14 @@ bench-contract-methods = []
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
+# For native (non-wasm, non-test) consumers of contract types, e.g. proposal-generator.
+non-contract-usage = ["near-sdk/non-contract-usage"]
 abi = [
     "borsh/unstable__schema",
     "near-mpc-contract-interface/abi",
     "mpc-attestation/abi",
     "mpc-primitives/abi",
     "tee-verifier-interface/borsh-schema",
-    "schemars",
 ]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
@@ -75,7 +76,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 assert_matches = { workspace = true }
-attestation = { workspace = true }
+attestation-types = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -114,7 +115,6 @@ near-account-id = { workspace = true, features = [
     "schemars-v0_8",
     "abi",
 ] }
-schemars = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["custom"] }

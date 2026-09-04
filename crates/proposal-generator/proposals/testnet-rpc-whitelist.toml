@@ -1,0 +1,86 @@
+# Testnet RPC provider whitelist
+
+[chains.Bitcoin]
+quorum = 1
+
+[chains.Bitcoin.providers.public]
+base_url = "https://bitcoin-testnet-rpc.publicnode.com"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Abstract]
+quorum = 3
+
+[chains.Abstract.providers.alchemy]
+base_url = "https://abstract-testnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Abstract.providers.abstract-testnet]
+base_url = "https://api.testnet.abs.xyz"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Abstract.providers.quicknode]
+base_url = "https://{}.abstract-testnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Starknet]
+quorum = 3
+
+[chains.Starknet.providers.alchemy]
+base_url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Starknet.providers.publicnode]
+base_url = "https://starknet-sepolia-rpc.publicnode.com"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Starknet.providers.quicknode]
+base_url = "https://{}.strk-sepolia.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Aptos]
+quorum = 3
+
+[chains.Aptos.providers.alchemy]
+base_url = "https://aptos-testnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Aptos.providers.geomi]
+base_url = "https://api.testnet.aptoslabs.com/v1"
+auth_scheme = { Header = { name = "Authorization", scheme = "Bearer" } }
+chain_routing = "Embedded"
+
+[chains.Aptos.providers.public]
+base_url = "https://fullnode.testnet.aptoslabs.com/v1"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Aptos.providers.quicknode]
+base_url = "https://{}.aptos-testnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Sui]
+quorum = 3
+
+[chains.Sui.providers.alchemy]
+base_url = "https://sui-testnet.g.alchemy.com"
+auth_scheme = { Header = { name = "Authorization", scheme = "Bearer" } }
+chain_routing = "Embedded"
+
+[chains.Sui.providers.public]
+base_url = "https://archive.testnet.sui.io"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Sui.providers.quicknode]
+base_url = "https://{}.sui-testnet.quiknode.pro"
+auth_scheme = { Header = { name = "x-token" } }
+chain_routing = "Embedded"

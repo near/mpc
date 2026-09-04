@@ -170,8 +170,8 @@ pub enum InvalidParameters {
     InvalidTeeRemoteAttestation { reason: String },
     #[error("Caller is not the signer account.")]
     CallerNotSigner,
-    #[error("Requested foreign chain, {requested:?}, is not supported.")]
-    ForeignChainNotSupported { requested: ForeignChain },
+    #[error("Requested foreign chain, {requested:?}, is not available.")]
+    ForeignChainNotAvailable { requested: ForeignChain },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

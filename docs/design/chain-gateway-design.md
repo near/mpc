@@ -1,6 +1,6 @@
 # MPC Indexer Breakout
 
-This document outlines the design and efforts for breaking out the indexer into its own crate.
+This document outlines the design and efforts for breaking out the indexer into its own crate. It is a living document expected to track the developments. Once sufficiently concluded, we will move this doc there as a readme.
 
 ## Background
 
@@ -420,71 +420,65 @@ The Chain Gateway provides three functionalities:
 
 ##### State Viewer
 
-The Chain Gateway offers the following traits for viewing and subscribing to contract state:
+View calls live in the `near-contract-transport` crate: the vocabulary types, the backend trait, and the deserializing view/subscription machinery on top of it. The backend trait is implemented once per transport (the chain-gateway implements it against the embedded neard node's view client, tests implement it with a mock):
 
 ```rust
-
-/// One-shot typed view call with JSON serialization/deserialization.
-pub trait ViewMethod: ViewRaw {
-    async fn view<Arg: Serialize + Sync, Res: DeserializeOwned + Send + Clone>(
-        &self, contract_id: AccountId, method_name: &str, args: &Arg,
-    ) -> Result<ObservedState<Res>, ChainGatewayError>;
+/// A backend executing NEAR view calls against a contract.
+pub trait ViewContract {
+    type Error: Clone + PartialEq + Send + Sync + 'static;
+    async fn view_contract(
+        &self, contract_id: &AccountId, view_args: ViewArgs,
+    ) -> Result<SerializedObservation, Self::Error>;
 }
 
-/// Polls every 200ms; emits change only when returned bytes differ.
-pub trait SubscribeContractState: ViewRaw + Clone {
-    async fn subscribe<T: DeserializeOwned + Send + Clone>(
-        &self, contract: AccountId, view_method: &str,
-    ) -> impl WatchContractState<T> + Send;
+pub struct ViewArgs {
+    pub method_name: String,
+    pub args: Vec<u8>,
 }
 
-pub trait WatchContractState<Res> {
-    /// Returns the last observed value and the block height at which it was observed.
-    fn latest(&mut self) -> Result<ObservedState<Res>, ChainGatewayError>;
-    /// Waits until the observed value changes.
-    async fn changed(&mut self) -> Result<(), ChainGatewayError>;
-}
-
-pub struct ObservedState<T = Vec<u8>> {
+/// A value read from a contract together with the height it was observed at.
+pub struct ObservedState<T> {
     pub observed_at: BlockHeight,
     pub value: T,
 }
+pub type SerializedObservation = ObservedState<Vec<u8>>;
 
-/// Empty arguments for view calls that take no parameters.
-pub struct NoArgs {}
-
-pub struct BlockHeight(u64);
+pub enum TransportError<ViewError> {
+    Deserialization(DeserializationError),
+    View(ViewError),
+    MonitoringClosed,
+}
 ```
 
-Note that the above traits derive from `ViewRaw`, which in turn derives from two low-level traits.
+Consumers do not call `view_contract` directly. `ViewContract` provides a `view` method pairing the backend with a deserializer selected by a marker type (`Json`, `Borsh`, or a custom `DeserializeAs<T>` implementation). The resulting `ViewCall` is awaited directly for a one-shot query, or turned into a subscription with `subscribe()`:
 
 ```rust
-/// Waits for sync then delegates to QueryViewFunction.
-/// Supertraits provide the raw RPC plumbing.
-pub trait ViewRaw: IsSyncing + QueryViewFunction {
-    async fn view_raw(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<ObservedState, ChainGatewayError>;
+pub trait ViewContract {
+    fn view<T, D: DeserializeAs<T>>(&self, contract_id: AccountId, args: ViewArgs) -> ViewCall<Self, T>;
 }
 
-// queries the actual state
-pub trait QueryViewFunction: Send + Sync + 'static {
-    async fn view_function_query(
-        &self,
-        contract_id: &AccountId,
-        method_name: &str,
-        args: &[u8],
-    ) -> Result<RawObservedState, Error>;
-}
-// returns true if the node is still syncing with the blockchain
-pub trait IsSyncing: Send + Sync + 'static {
-    /// Returns whether the node is currently syncing.
-    async fn is_syncing(&self) -> Result<bool, Error>;
+// one-shot query
+let observed: ObservedState<Foo> = gateway
+    .view::<_, Json>(contract_id, ViewArgs::no_args("state"))
+    .await?;
+
+// subscription
+let mut sub = gateway
+    .view::<Foo, Json>(contract_id, ViewArgs::no_args("state"))
+    .subscribe()
+    .await;
+
+pub trait WatchContractState<T, ViewError> {
+    /// Returns the last value observed on chain and the block height at which it was first observed.
+    fn latest(&mut self) -> Result<ObservedState<T>, TransportError<ViewError>>;
+    /// Waits until the observed value changes.
+    async fn changed(&mut self) -> Result<(), TransportError<ViewError>>;
 }
 ```
+
+A subscription polls at the backend's `HasPollInterval::poll_interval()` — for the chain gateway `max(expected_block_time / 2, 50ms)` — and notifies only when the returned bytes differ; a block-height increase alone does not count as a change.
+
+`ChainGateway`'s `ViewContract` implementation waits for the node to be fully synced before querying the view client, so view results never reflect a stale local chain.
 
 
 ##### Block Event Subscriber

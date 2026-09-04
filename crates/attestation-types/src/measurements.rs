@@ -1,4 +1,3 @@
-use alloc::string::String;
 #[cfg(feature = "borsh-schema")]
 use alloc::string::ToString;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -18,7 +17,7 @@ use serde_with::{Bytes, serde_as};
 )]
 #[cfg_attr(feature = "borsh-schema", derive(borsh::BorshSchema))]
 pub struct Measurements {
-    /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
+    /// MRTD (Measurement Register for the Trust Domain) - identifies the virtual firmware.
     #[serde_as(as = "Bytes")]
     pub mrtd: [u8; 48],
     /// RTMR0 (Runtime Measurement Register 0) - typically measures the bootloader, virtual
@@ -47,18 +46,6 @@ pub struct ExpectedMeasurements {
     pub key_provider_event_digest: [u8; 48],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum MeasurementsError {
-    #[error("no TD10 report")]
-    NoTd10Report,
-    #[error("invalid TCB info")]
-    InvalidTcbInfo,
-    #[error("invalid hex value for {0}: {1}")]
-    InvalidHexValue(String, String),
-    #[error("invalid length for {0}: {1}")]
-    InvalidLength(String, usize),
-}
-
 impl From<&crate::tcb_info::TcbInfo> for Measurements {
     fn from(tcb: &crate::tcb_info::TcbInfo) -> Self {
         Self {
@@ -67,24 +54,5 @@ impl From<&crate::tcb_info::TcbInfo> for Measurements {
             rtmr1: *tcb.rtmr1,
             rtmr2: *tcb.rtmr2,
         }
-    }
-}
-
-impl TryFrom<tee_verifier_interface::VerifiedReport> for Measurements {
-    type Error = MeasurementsError;
-
-    fn try_from(
-        verified_report: tee_verifier_interface::VerifiedReport,
-    ) -> Result<Self, Self::Error> {
-        let td10 = verified_report
-            .report
-            .as_td10()
-            .ok_or(MeasurementsError::NoTd10Report)?;
-        Ok(Self {
-            rtmr0: td10.rt_mr0,
-            rtmr1: td10.rt_mr1,
-            rtmr2: td10.rt_mr2,
-            mrtd: td10.mr_td,
-        })
     }
 }

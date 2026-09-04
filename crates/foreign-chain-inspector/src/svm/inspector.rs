@@ -6,7 +6,7 @@ use crate::{
     NetworkFingerprintInspector,
 };
 use foreign_chain_rpc_interfaces::svm::{
-    Commitment, GetAccountInfoArgs, GetAccountInfoResponse, GetSlotArgs, GetTransactionArgs,
+    Commitment, GetAccountInfoArgs, GetAccountInfoResponse, GetTransactionArgs,
     GetTransactionResponse, TransactionMeta,
 };
 use near_mpc_contract_interface::types::{SvmAccount, SvmAddress, SvmInnerInstruction};
@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 
 const GET_TRANSACTION_METHOD: &str = "getTransaction";
 const GET_ACCOUNT_INFO_METHOD: &str = "getAccountInfo";
-const GET_SLOT_METHOD: &str = "getSlot";
 const GET_GENESIS_HASH_METHOD: &str = "getGenesisHash";
 
 /// Base58 of a 32-byte value is at most 44 characters, of a 64-byte value at most 88.
@@ -22,12 +21,13 @@ const GET_GENESIS_HASH_METHOD: &str = "getGenesisHash";
 const MAX_PUBKEY_BASE58_CHARS: usize = 44;
 const MAX_SIGNATURE_BASE58_CHARS: usize = 88;
 
-/// Inner-instruction data is bounded by the runtime's 10 KiB CPI cap (13,985 base58
-/// characters), not by the 1232-byte transaction packet, since it is built at runtime.
+/// Inner-instruction data is bounded by the runtime's 10 KiB Cross-Program Invocation (CPI)
+/// cap (13,985 base58 characters), not by the 1232-byte transaction packet, since it is built
+/// at runtime.
 const MAX_INSTRUCTION_DATA_BASE58_CHARS: usize = 14_000;
 
-/// The runtime's cap on a CPI instruction's account metas, duplicates included. Enforced
-/// before the one-byte wire indices are resolved into 32-byte pubkeys.
+/// The runtime's cap on the accounts a CPI instruction may reference, duplicates included.
+/// Enforced before the one-byte wire indices are resolved into 32-byte pubkeys.
 const MAX_INSTRUCTION_ACCOUNTS: usize = 255;
 
 /// Marker trait for SVM chain type parameters, so that different chains' inspectors stay
@@ -61,6 +61,15 @@ pub enum SvmFinality {
     Finalized,
 }
 
+impl From<SvmFinality> for Commitment {
+    fn from(finality: SvmFinality) -> Self {
+        match finality {
+            SvmFinality::Confirmed => Commitment::Confirmed,
+            SvmFinality::Finalized => Commitment::Finalized,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SvmExtractor {
     InnerInstruction {
@@ -68,7 +77,7 @@ pub enum SvmExtractor {
         inner_instruction_index: usize,
     },
     AccountState {
-        pubkey: [u8; 32],
+        pubkey: SvmAddress,
     },
 }
 
@@ -88,84 +97,10 @@ where
         finality: SvmFinality,
         extractors: Vec<SvmExtractor>,
     ) -> Result<Vec<SvmExtractedValue>, ForeignChainInspectionError> {
-        // Read before the transaction: a transaction served at or below a previously
-        // observed root can only come from the rooted block itself, while a root read
-        // afterwards would also admit a block orphaned in between.
-        let finalized_slot = match finality {
-            SvmFinality::Confirmed => None,
-            SvmFinality::Finalized => Some(self.fetch_finalized_slot().await?),
-        };
-
-        // Queried at `confirmed` even for `Finalized` requests: at `finalized` the RPC
-        // answers null for unknown and not-yet-rooted transactions alike, and only the
-        // former is a substantive verdict. Finality is checked via `finalized_slot`.
-        let args = GetTransactionArgs {
-            signature: bs58::encode(*tx_id).into_string(),
-            commitment: Commitment::Confirmed,
-        };
-        let response: Option<GetTransactionResponse> = self
-            .client
-            .request(GET_TRANSACTION_METHOD, &args)
-            .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
-        let tx = response.ok_or(ForeignChainInspectionError::TransactionNotFound)?;
-
-        ensure_signature_matches(&tx_id, tx.transaction.signatures.first())?;
-
-        let commitment = match finalized_slot {
-            None => Commitment::Confirmed,
-            Some(finalized_slot) => {
-                if tx.slot > finalized_slot {
-                    return Err(ForeignChainInspectionError::NotFinalized);
-                }
-                Commitment::Finalized
-            }
-        };
-
-        let meta = tx.meta.as_ref().ok_or_else(|| {
-            ForeignChainInspectionError::MalformedRpcResponse(
-                "transaction is missing its status metadata".to_string(),
-            )
-        })?;
-        if !meta.err.is_null() {
-            return Err(ForeignChainInspectionError::TransactionFailed);
-        }
-
-        let account_keys = account_key_list(&tx.transaction.message.account_keys, meta);
-
-        // One read per distinct account: repeated pubkeys in one request would otherwise cost a
-        // round trip each and could observe different states within a single payload.
-        let mut accounts: BTreeMap<[u8; 32], SvmAccount> = BTreeMap::new();
-        let mut extracted_values = Vec::with_capacity(extractors.len());
-        for extractor in &extractors {
-            let value = match extractor {
-                SvmExtractor::InnerInstruction {
-                    instruction_index,
-                    inner_instruction_index,
-                } => extract_inner_instruction(
-                    meta,
-                    &account_keys,
-                    *instruction_index,
-                    *inner_instruction_index,
-                )?,
-                SvmExtractor::AccountState { pubkey } => {
-                    let account = match accounts.get(pubkey) {
-                        Some(account) => account.clone(),
-                        None => {
-                            let account = self
-                                .fetch_account_state(pubkey, commitment, tx.slot)
-                                .await?;
-                            accounts.insert(*pubkey, account.clone());
-                            account
-                        }
-                    };
-                    SvmExtractedValue::AccountState(account)
-                }
-            };
-            extracted_values.push(value);
-        }
-
-        Ok(extracted_values)
+        let commitment = Commitment::from(finality);
+        let tx = self.fetch_transaction(tx_id, commitment).await?;
+        let meta = successful_transaction_meta(&tx)?;
+        self.extract_values(&tx, meta, commitment, &extractors).await
     }
 }
 
@@ -181,26 +116,103 @@ where
         }
     }
 
-    async fn fetch_finalized_slot(&self) -> Result<u64, ForeignChainInspectionError> {
-        self.client
-            .request(
-                GET_SLOT_METHOD,
-                &GetSlotArgs {
-                    commitment: Commitment::Finalized,
-                },
-            )
+    /// The transaction as the provider serves it at `commitment`, which is the whole finality
+    /// check: `finalized` is answered only from slots the serving node has rooted. Reading a
+    /// root separately and comparing slots against it would instead stitch two answers
+    /// together, which a load-balanced endpoint is free to serve from different backends.
+    /// A `null` covers an unknown transaction and one that is confirmed but not yet rooted
+    /// alike, so the second read tells the retriable case from the substantive one.
+    async fn fetch_transaction(
+        &self,
+        tx_id: SvmTransactionSignature,
+        commitment: Commitment,
+    ) -> Result<GetTransactionResponse, ForeignChainInspectionError> {
+        if let Some(tx) = self.request_transaction(tx_id, commitment).await? {
+            return Ok(tx);
+        }
+        if commitment == Commitment::Finalized
+            && self
+                .request_transaction(tx_id, Commitment::Confirmed)
+                .await?
+                .is_some()
+        {
+            return Err(ForeignChainInspectionError::NotFinalized);
+        }
+        Err(ForeignChainInspectionError::TransactionNotFound)
+    }
+
+    async fn request_transaction(
+        &self,
+        tx_id: SvmTransactionSignature,
+        commitment: Commitment,
+    ) -> Result<Option<GetTransactionResponse>, ForeignChainInspectionError> {
+        let args = GetTransactionArgs {
+            signature: bs58::encode(*tx_id).into_string(),
+            commitment,
+        };
+        let response: Option<GetTransactionResponse> = self
+            .client
+            .request(GET_TRANSACTION_METHOD, &args)
             .await
-            .map_err(ForeignChainInspectionError::classify_rpc_client_error)
+            .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
+        if let Some(tx) = &response {
+            let returned = tx.transaction.signatures.first().map(String::as_str);
+            ensure_signature_matches(&tx_id, returned)?;
+        }
+        Ok(response)
+    }
+
+    /// Resolves the extractors in request order. One read per distinct account: a pubkey named
+    /// twice in one request would otherwise cost a round trip each and could observe two
+    /// different states within a single payload.
+    async fn extract_values(
+        &self,
+        tx: &GetTransactionResponse,
+        meta: &TransactionMeta,
+        commitment: Commitment,
+        extractors: &[SvmExtractor],
+    ) -> Result<Vec<SvmExtractedValue>, ForeignChainInspectionError> {
+        let account_keys = account_key_list(&tx.transaction.message.account_keys, meta);
+        let mut accounts: BTreeMap<SvmAddress, SvmAccount> = BTreeMap::new();
+        let mut extracted_values = Vec::with_capacity(extractors.len());
+        for extractor in extractors {
+            let value = match extractor {
+                SvmExtractor::InnerInstruction {
+                    instruction_index,
+                    inner_instruction_index,
+                } => extract_inner_instruction(
+                    meta,
+                    &account_keys,
+                    *instruction_index,
+                    *inner_instruction_index,
+                )?,
+                SvmExtractor::AccountState { pubkey } => {
+                    let account = match accounts.get(pubkey) {
+                        Some(account) => account.clone(),
+                        None => {
+                            let account =
+                                self.fetch_account_state(pubkey, commitment, tx.slot).await?;
+                            accounts.insert(pubkey.clone(), account.clone());
+                            account
+                        }
+                    };
+                    SvmExtractedValue::AccountState(account)
+                }
+            };
+            extracted_values.push(value);
+        }
+
+        Ok(extracted_values)
     }
 
     async fn fetch_account_state(
         &self,
-        pubkey: &[u8; 32],
+        pubkey: &SvmAddress,
         commitment: Commitment,
         tx_slot: u64,
     ) -> Result<SvmAccount, ForeignChainInspectionError> {
         let args = GetAccountInfoArgs {
-            pubkey: bs58::encode(pubkey).into_string(),
+            pubkey: bs58::encode(pubkey.0).into_string(),
             commitment,
         };
         let response: GetAccountInfoResponse = self
@@ -246,18 +258,38 @@ where
             .request(GET_GENESIS_HASH_METHOD, NO_PARAMS)
             .await
             .map_err(ForeignChainInspectionError::classify_rpc_client_error)?;
-        Ok(Self::canonical_fingerprint(&genesis_hash))
+        Ok(self.canonical_fingerprint(&genesis_hash))
     }
 
-    /// A valid genesis hash is re-encoded through its 32 bytes, collapsing spelling
-    /// differences base58 itself cannot produce (surrounding whitespace); anything
-    /// unparseable is reported as answered.
-    fn canonical_fingerprint(fingerprint: &str) -> NetworkFingerprint {
-        match decode_base58_32(fingerprint.trim()) {
-            Ok(bytes) => NetworkFingerprint::new(bs58::encode(bytes).into_string()),
-            Err(_) => NetworkFingerprint::new(fingerprint),
-        }
+    fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint {
+        canonical_genesis_hash(fingerprint)
     }
+}
+
+/// Trims surrounding whitespace; base58 admits no other spelling of the same 32 bytes. Text
+/// that is not a 32-byte base58 value is returned unchanged rather than rejected, so that the
+/// mismatch an operator is shown carries what the provider actually answered.
+fn canonical_genesis_hash(fingerprint: &str) -> NetworkFingerprint {
+    let canonical = decode_base58_32(fingerprint.trim())
+        .map(|bytes| bs58::encode(bytes).into_string())
+        .unwrap_or_else(|_| fingerprint.to_owned());
+    NetworkFingerprint::new(canonical)
+}
+
+/// The status metadata of a transaction that succeeded. Metadata the provider does not serve
+/// is a malformed response; a non-null `err` is the chain's own verdict on the transaction.
+fn successful_transaction_meta(
+    tx: &GetTransactionResponse,
+) -> Result<&TransactionMeta, ForeignChainInspectionError> {
+    let meta = tx.meta.as_ref().ok_or_else(|| {
+        ForeignChainInspectionError::MalformedRpcResponse(
+            "transaction is missing its status metadata".to_string(),
+        )
+    })?;
+    if !meta.err.is_null() {
+        return Err(ForeignChainInspectionError::TransactionFailed);
+    }
+    Ok(meta)
 }
 
 /// Rejects a backend that returned a different transaction than queried. The transaction
@@ -265,7 +297,7 @@ where
 /// well-formed but different one is a hard inconsistency.
 fn ensure_signature_matches(
     requested: &[u8; 64],
-    returned: Option<&String>,
+    returned: Option<&str>,
 ) -> Result<(), ForeignChainInspectionError> {
     let returned = returned.ok_or_else(|| {
         ForeignChainInspectionError::MalformedRpcResponse(
@@ -314,8 +346,8 @@ fn extract_inner_instruction(
     instruction_index: usize,
     inner_instruction_index: usize,
 ) -> Result<SvmExtractedValue, ForeignChainInspectionError> {
-    // An absent list means the node does not record CPI metadata — a provider gap, kept
-    // transient so the fan-out falls through to a provider that does record it. An empty
+    // An absent list means the node does not record inner instructions — a provider gap, kept
+    // transient so the fan-out falls through to a provider that does record them. An empty
     // list, by contrast, is the chain's own answer.
     let entries = meta.inner_instructions.as_deref().ok_or_else(|| {
         ForeignChainInspectionError::RpcRequestFailed(
@@ -435,11 +467,9 @@ mod tests {
     #[test]
     fn ensure_signature_matches__should_reject_non_base58_signature_as_malformed() {
         // Given — 0, O, I and l are not part of the base58 alphabet.
-        let invalid = "not-base58-0OIl".to_string();
-
         // When / Then
         assert_matches!(
-            ensure_signature_matches(&[0xab; 64], Some(&invalid)),
+            ensure_signature_matches(&[0xab; 64], Some("not-base58-0OIl")),
             Err(ForeignChainInspectionError::MalformedRpcResponse(_))
         );
     }
@@ -513,14 +543,13 @@ mod tests {
         " 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d\n",
         "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
     )]
-    #[case::unparseable_is_reported_as_answered("not-a-genesis-hash", "not-a-genesis-hash")]
-    fn canonical_fingerprint__should_canonicalize_what_a_provider_answers(
+    #[case::unparseable_is_returned_unchanged("not-a-genesis-hash", "not-a-genesis-hash")]
+    fn canonical_genesis_hash__should_canonicalize_what_a_provider_answers(
         #[case] answered: &str,
         #[case] expected: &str,
     ) {
         // When
-        let fingerprint =
-            <SolanaInspector<jsonrpsee::http_client::HttpClient>>::canonical_fingerprint(answered);
+        let fingerprint = canonical_genesis_hash(answered);
 
         // Then
         assert_eq!(fingerprint.to_string(), expected);

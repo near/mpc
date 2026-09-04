@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use foreign_chain_inspector::svm::inspector::{SolanaInspector, SvmExtractor, SvmFinality};
 use foreign_chain_inspector::svm::{SvmExtractedValue, SvmTransactionSignature};
-use foreign_chain_inspector::{
-    ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication, build_http_client,
-};
+use foreign_chain_inspector::{ForeignChainInspector, NetworkFingerprintInspector};
+use foreign_chain_rpc_factory::build_http_client;
 use foreign_chain_rpc_interfaces::svm::{Commitment, GetTransactionArgs, GetTransactionResponse};
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::HttpClient;
 use jsonrpsee::rpc_params;
+use near_mpc_contract_interface::types::SvmAddress;
 use serde::Deserialize;
 
 const PUBLIC_NODE_URL: &str = "https://api.mainnet-beta.solana.com";
@@ -23,15 +23,19 @@ const EXPECTED_NETWORK_FINGERPRINT: &str = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc1
 /// <https://solscan.io/token/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v>
 const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-/// The SPL Token program that owns the USDC mint account.
+/// The Solana Program Library (SPL) Token program that owns the USDC mint account.
 const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
 fn live_client() -> HttpClient {
-    build_http_client(PUBLIC_NODE_URL.to_string(), RpcAuthentication::KeyInUrl).unwrap()
+    build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: PUBLIC_NODE_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
+    .unwrap()
 }
 
-fn parse_pubkey(base58: &str) -> [u8; 32] {
-    bs58::decode(base58).into_vec().unwrap().try_into().unwrap()
+fn parse_pubkey(base58: &str) -> SvmAddress {
+    SvmAddress(bs58::decode(base58).into_vec().unwrap().try_into().unwrap())
 }
 
 #[derive(Debug, Deserialize)]
@@ -157,7 +161,7 @@ async fn inspector_extracts_account_state_against_live_rpc_provider() {
     let [SvmExtractedValue::AccountState(account)] = values.as_slice() else {
         panic!("expected exactly one account value, got {values:?}");
     };
-    assert_eq!(account.owner.0, parse_pubkey(TOKEN_PROGRAM));
+    assert_eq!(account.owner, parse_pubkey(TOKEN_PROGRAM));
     assert!(!account.data.is_empty());
 }
 

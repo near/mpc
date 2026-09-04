@@ -33,20 +33,20 @@ pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
     foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
-    primitives::ckd::CKDRequest,
     tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes,
     update::ProposedUpdates,
 };
 use config::Config;
-use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
+use near_mpc_contract_interface::types::{
+    CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+};
 
 use near_sdk::{
     AccountId, env, near,
     store::{IterableMap, Lazy, LookupMap},
 };
 use node_migrations::NodeMigrations;
-use primitives::signature::{SignatureRequest, YieldIndex};
 
 use state::ProtocolContractState;
 

@@ -251,7 +251,7 @@ impl MpcContract {
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
                     .resolve_verification(VerificationContext {
                         node_id,
-                        attestation,
+                        tcb_info: attestation.tcb_info,
                     }),
             ))
     }
@@ -477,7 +477,7 @@ impl MpcContract {
 
         let insertion = match self.tee_state.verify_and_store_dstack(
             context.node_id.clone(),
-            &context.attestation,
+            &context.tcb_info,
             report,
             tee_upgrade_deadline_duration,
         ) {
@@ -548,7 +548,7 @@ mod tests {
     use std::panic;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
     };
 
     #[test]
@@ -606,12 +606,11 @@ mod tests {
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
             account_public_key: Ed25519PublicKey(account_key()),
         };
-        let attestation = mock_dstack_attestation_inner();
         (
             contract,
             VerificationContext {
                 node_id,
-                attestation,
+                tcb_info: mock_tcb_info(),
             },
         )
     }
@@ -1028,7 +1027,7 @@ mod tests {
         let mut contract = MpcContract::init_running(
             domains.clone(),
             1,
-            keyset.clone(),
+            (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             None,
         )
@@ -1149,9 +1148,14 @@ mod tests {
                 attempt: AttemptId::new(),
             }],
         );
-        let mut contract =
-            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains,
+            1,
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            None,
+        )
+        .unwrap();
 
         // Expire the last participant's attestation so a kickout drops the set to 4.
         let participant_list: Vec<_> = participants.participants().to_vec();

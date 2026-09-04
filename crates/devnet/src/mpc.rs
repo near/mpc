@@ -27,7 +27,7 @@ use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, NodeImageHash,
     ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, protocol_state_to_string,
+    ReconstructionThreshold, UpdateId, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
@@ -495,11 +495,11 @@ impl MpcProposeUpdateContractCmd {
             .await
             .into_return_value()
             .expect("Failed to propose update");
-        let update_id: u64 = serde_json::from_slice(&result).expect(&format!(
+        let update_id: UpdateId = serde_json::from_slice(&result).expect(&format!(
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
         ));
-        println!("Proposed update with ID {}", update_id);
+        println!("Proposed update with ID {}", update_id.0);
         println!("Run the following command to vote for the update:");
         let self_exe = std::env::current_exe()
             .expect("Failed to get current executable path")
@@ -508,7 +508,7 @@ impl MpcProposeUpdateContractCmd {
             .to_string();
         println!(
             "{} mpc {} vote-update --update-id={}",
-            self_exe, name, update_id
+            self_exe, name, update_id.0
         );
     }
 }
@@ -533,7 +533,7 @@ impl MpcVoteUpdateCmd {
         let mut futs = Vec::new();
         for account_id in from_accounts {
             let handle = setup.accounts.account(account_id).call_mpc(&contract);
-            futs.push(async move { handle.vote_update(self.update_id).await });
+            futs.push(async move { handle.vote_update(UpdateId(self.update_id)).await });
         }
         let results = futures::future::join_all(futs).await;
         for (i, result) in results.into_iter().enumerate() {

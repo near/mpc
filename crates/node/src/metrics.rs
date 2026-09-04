@@ -477,5 +477,77 @@ pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVe
         .unwrap()
     });
 
+pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_tee_attestation_submissions_total",
+            "Total number of TEE attestation submissions to the MPC contract",
+            &["outcome"],
+        )
+        .unwrap()
+    });
+
 pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
 pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
+
+pub static MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_tee_attestation_round_timeouts_total",
+            "Total number of TEE attestation submission rounds that timed out, by stage",
+            &["stage"],
+        )
+        .unwrap()
+    });
+
+pub const MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION: &str = "generate_attestation";
+pub const MPC_TEE_ATTESTATION_STAGE_READ_EXPIRY_BASELINE: &str = "read_expiry_baseline";
+pub const MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION: &str = "submit_attestation";
+
+pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_configured",
+            "RPC providers configured for a foreign chain",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_attestation_expiry_timestamp_seconds",
+            "NEAR block time at which the attestation stored on chain for this node's TLS key \
+             expires. -1 if the stored attestation carries no expiry; 0 if none is stored. \
+             Subtract mpc_indexer_latest_block_timestamp_seconds, not wall clock, for the \
+             remaining time"
+        )
+        .unwrap()
+    });
+
+pub static FOREIGN_CHAIN_RPC_PROVIDERS_HEALTHY: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_foreign_chain_rpc_providers_healthy",
+            "RPC providers that served the expected network at the latest probe",
+            &["chain"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_attestation_last_landed_timestamp_seconds",
+            "Unix time, by this node's own clock, at which it last confirmed an attestation \
+             submission landed on chain"
+        )
+        .unwrap()
+    });
+
+/// An alert cannot fire on a series that does not exist yet.
+pub fn init_attestation_freshness_metrics() {
+    LazyLock::force(&MPC_ATTESTATION_EXPIRY_TIMESTAMP_SECONDS);
+    LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
+}

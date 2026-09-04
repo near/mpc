@@ -20,10 +20,8 @@ use crate::{
     foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
     node_migrations::NodeMigrations,
     primitives::{
-        ckd::CKDRequest,
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        signature::{SignatureRequest, YieldIndex},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::GovernanceThresholdParameters,
     },
@@ -225,14 +223,15 @@ enum OldProtocolContractState {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
-    pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
-    pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
+    pending_signature_requests: LookupMap<dtos::SignatureRequest, Vec<dtos::YieldIndex>>,
+    pending_ckd_requests: LookupMap<dtos::CKDRequest, Vec<dtos::YieldIndex>>,
     /// The deployed `3.14.0` keys predate `expected_payload_hash`, so this type parameter
     /// does not describe their borsh layout — do not read entries through this map. Not
     /// shadowed because `LookupMap`'s own borsh form is just the storage prefix: the type
     /// parameters never touch the state deserialization this struct exists for, and the
     /// migration discards the map unread.
-    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
+    pending_verify_foreign_tx_requests:
+        LookupMap<VerifyForeignTransactionRequest, Vec<dtos::YieldIndex>>,
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: OldConfig,

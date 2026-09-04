@@ -2,7 +2,9 @@
 
 pub mod common;
 
-use crate::common::{SequentialResponseMockClientBuilder, mock_client_from_fixed_response};
+use crate::common::{
+    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
+};
 
 use assert_matches::assert_matches;
 use base64::Engine as _;
@@ -231,7 +233,9 @@ async fn extract__should_return_account_state() {
         .extract(
             tx_id(),
             SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await
         .unwrap();
@@ -260,7 +264,9 @@ async fn extract__should_reject_an_account_read_answered_before_the_transaction_
         .extract(
             tx_id(),
             SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await
         .unwrap_err();
@@ -285,7 +291,9 @@ async fn extract__should_accept_an_account_read_answered_at_the_transaction_slot
         .extract(
             tx_id(),
             SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await
         .unwrap();
@@ -312,8 +320,12 @@ async fn extract__should_read_a_repeated_account_once() {
             tx_id(),
             SvmFinality::Confirmed,
             vec![
-                SvmExtractor::AccountState { pubkey: [6; 32] },
-                SvmExtractor::AccountState { pubkey: [6; 32] },
+                SvmExtractor::AccountState {
+                    pubkey: SvmAddress([6; 32]),
+                },
+                SvmExtractor::AccountState {
+                    pubkey: SvmAddress([6; 32]),
+                },
             ],
         )
         .await
@@ -349,8 +361,12 @@ async fn extract__should_read_distinct_accounts_separately() {
             tx_id(),
             SvmFinality::Confirmed,
             vec![
-                SvmExtractor::AccountState { pubkey: [6; 32] },
-                SvmExtractor::AccountState { pubkey: [7; 32] },
+                SvmExtractor::AccountState {
+                    pubkey: SvmAddress([6; 32]),
+                },
+                SvmExtractor::AccountState {
+                    pubkey: SvmAddress([7; 32]),
+                },
             ],
         )
         .await
@@ -378,11 +394,7 @@ async fn extract__should_read_distinct_accounts_separately() {
 #[tokio::test]
 async fn extract__should_read_account_state_at_finalized_when_finality_is_finalized() {
     // Given — the only combination in which `Commitment::Finalized` reaches `getAccountInfo`.
-    let mock_client = RecordingClient::new(vec![
-        json!(TX_SLOT),
-        confirmed_tx(),
-        account_info(8, b"rooted"),
-    ]);
+    let mock_client = RecordingClient::new(vec![confirmed_tx(), account_info(8, b"rooted")]);
     let inspector = SolanaInspector::new(mock_client.clone());
 
     // When
@@ -390,7 +402,9 @@ async fn extract__should_read_account_state_at_finalized_when_finality_is_finali
         .extract(
             tx_id(),
             SvmFinality::Finalized,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await
         .unwrap();
@@ -405,35 +419,37 @@ async fn extract__should_read_account_state_at_finalized_when_finality_is_finali
     );
     // Asserted on the recorded params: decoded responses alone cannot show the commitment.
     let requests = mock_client.requests();
-    assert_eq!(requests[0].0, "getSlot");
-    assert_eq!(requests[0].1[0]["commitment"], "finalized");
-    assert_eq!(requests[2].0, "getAccountInfo");
-    assert_eq!(requests[2].1[1]["commitment"], "finalized");
-    assert_eq!(requests[2].1[1]["encoding"], "base64");
+    assert_eq!(requests.len(), 2, "the rooted answer needs no second read");
+    assert_eq!(requests[1].0, "getAccountInfo");
+    assert_eq!(requests[1].1[1]["commitment"], "finalized");
+    assert_eq!(requests[1].1[1]["encoding"], "base64");
 }
 
+#[rstest]
+#[case::confirmed(SvmFinality::Confirmed, "confirmed")]
+#[case::finalized(SvmFinality::Finalized, "finalized")]
 #[tokio::test]
-async fn extract__should_query_the_transaction_at_confirmed_with_version_zero() {
+async fn extract__should_query_the_transaction_at_the_requested_commitment_with_version_zero(
+    #[case] finality: SvmFinality,
+    #[case] expected_commitment: &str,
+) {
     // Given
     let mock_client = RecordingClient::new(vec![confirmed_tx()]);
     let inspector = SolanaInspector::new(mock_client.clone());
 
     // When
     inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
+        .extract(tx_id(), finality, vec![inner_instruction_extractor()])
         .await
         .unwrap();
 
-    // Then — `confirmed` (at `finalized` unknown and not-yet-rooted are indistinguishable);
-    // without version 0 every v0 transaction errors.
+    // Then — the commitment carries the finality check; without version 0 every v0
+    // transaction errors.
     let requests = mock_client.requests();
+    assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].0, "getTransaction");
     let config = &requests[0].1[1];
-    assert_eq!(config["commitment"], "confirmed");
+    assert_eq!(config["commitment"], expected_commitment);
     assert_eq!(config["encoding"], "json");
     assert_eq!(config["maxSupportedTransactionVersion"], 0);
 }
@@ -454,7 +470,9 @@ async fn extract__should_return_values_in_extractor_order() {
             SvmFinality::Confirmed,
             vec![
                 inner_instruction_extractor(),
-                SvmExtractor::AccountState { pubkey: [6; 32] },
+                SvmExtractor::AccountState {
+                    pubkey: SvmAddress([6; 32]),
+                },
             ],
         )
         .await
@@ -472,9 +490,8 @@ async fn extract__should_return_values_in_extractor_order() {
 
 #[tokio::test]
 async fn extract__should_accept_finalized_transaction_when_finality_is_finalized() {
-    // Given — the finalized slot (read first) has reached the transaction's slot.
+    // Given — the provider serves the transaction at `finalized`, i.e. from a slot it rooted.
     let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(TX_SLOT)
         .with_response(confirmed_tx())
         .build();
     let inspector = SolanaInspector::new(mock_client);
@@ -494,13 +511,11 @@ async fn extract__should_accept_finalized_transaction_when_finality_is_finalized
 }
 
 #[tokio::test]
-async fn extract__should_return_not_finalized_when_finalized_slot_is_behind() {
-    // Given — the transaction is confirmed but its slot is not yet rooted.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(TX_SLOT - 1)
-        .with_response(confirmed_tx())
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
+async fn extract__should_return_not_finalized_when_the_transaction_is_only_confirmed() {
+    // Given — null at `finalized`, then the same transaction at `confirmed`: it exists but
+    // the provider has not rooted its slot.
+    let mock_client = RecordingClient::new(vec![serde_json::Value::Null, confirmed_tx()]);
+    let inspector = SolanaInspector::new(mock_client.clone());
 
     // When
     let response = inspector
@@ -514,6 +529,63 @@ async fn extract__should_return_not_finalized_when_finalized_slot_is_behind() {
     // Then — "not final yet" is a transient verdict, not an error.
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
     assert!(response.unwrap_err().is_transient());
+    let requests = mock_client.requests();
+    assert_eq!(requests[0].1[1]["commitment"], "finalized");
+    assert_eq!(requests[1].1[1]["commitment"], "confirmed");
+}
+
+#[tokio::test]
+async fn extract__should_return_transaction_not_found_when_neither_commitment_has_it() {
+    // Given — null at `finalized` and at `confirmed`: the provider does not know it at all.
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(serde_json::Value::Null)
+        .with_response(serde_json::Value::Null)
+        .build();
+    let inspector = SolanaInspector::new(mock_client);
+
+    // When
+    let response = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Finalized,
+            vec![inner_instruction_extractor()],
+        )
+        .await;
+
+    // Then — only two independent misses may stand as a substantive verdict.
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::TransactionNotFound)
+    );
+    assert!(!response.unwrap_err().is_transient());
+}
+
+#[tokio::test]
+async fn extract__should_not_read_a_failed_finality_recheck_as_transaction_not_found() {
+    // Given — null at `finalized`, and the `confirmed` re-read fails outright.
+    let call_count = AtomicUsize::new(0);
+    let mock_client = FixedResponseRpcClient::new(move || {
+        if call_count.fetch_add(1, Ordering::SeqCst) == 0 {
+            Ok(serde_json::Value::Null)
+        } else {
+            Err(RpcClientError::RequestTimeout)
+        }
+    });
+    let inspector = SolanaInspector::new(mock_client);
+
+    // When
+    let error = inspector
+        .extract(
+            tx_id(),
+            SvmFinality::Finalized,
+            vec![inner_instruction_extractor()],
+        )
+        .await
+        .unwrap_err();
+
+    // Then — the provider's own failure must not stand in for the chain's verdict.
+    assert_matches!(error, ForeignChainInspectionError::Timeout);
+    assert!(error.is_transient());
 }
 
 #[tokio::test]
@@ -654,7 +726,7 @@ async fn extract__should_fail_when_inner_instruction_index_out_of_bounds(
 
 #[tokio::test]
 async fn extract__should_report_unrecorded_inner_instructions_as_a_provider_failure() {
-    // Given — null means CPI metadata is not recorded, as opposed to the empty list a
+    // Given — null means inner instructions are not recorded, as opposed to the empty list a
     // recording node answers for a transaction without any.
     let mut tx = confirmed_tx();
     tx["meta"]["innerInstructions"] = serde_json::Value::Null;
@@ -682,7 +754,7 @@ async fn extract__should_report_unrecorded_inner_instructions_as_a_provider_fail
 
 #[tokio::test]
 async fn extract__should_report_an_empty_inner_instruction_list_as_out_of_bounds() {
-    // Given — a node that records CPI metadata, for a transaction that produced none.
+    // Given — a node that records inner instructions, for a transaction that produced none.
     let mut tx = confirmed_tx();
     tx["meta"]["innerInstructions"] = json!([]);
     let mock_client = SequentialResponseMockClientBuilder::new()
@@ -774,7 +846,9 @@ async fn extract__should_return_account_not_found_for_null_account_value() {
         .extract(
             tx_id(),
             SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await;
 
@@ -797,7 +871,9 @@ async fn extract__should_reject_an_account_response_omitting_value_as_malformed(
         .extract(
             tx_id(),
             SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await;
 
@@ -828,7 +904,9 @@ async fn extract__should_reject_account_data_in_wrong_encoding_as_malformed() {
         .extract(
             tx_id(),
             SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState { pubkey: [6; 32] }],
+            vec![SvmExtractor::AccountState {
+                pubkey: SvmAddress([6; 32]),
+            }],
         )
         .await;
 

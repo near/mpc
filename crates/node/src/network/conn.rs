@@ -28,7 +28,7 @@ pub struct ConnectionWithVersion<T> {
     version: usize,
 }
 
-impl<T: Send + Sync + 'static> Clone for ConnectionWithVersion<T> {
+impl<T> Clone for ConnectionWithVersion<T> {
     fn clone(&self) -> Self {
         Self {
             connection: self.connection.clone(),
@@ -37,7 +37,7 @@ impl<T: Send + Sync + 'static> Clone for ConnectionWithVersion<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
+impl<T> ConnectionWithVersion<T> {
     pub fn version(&self) -> usize {
         if self.connection.upgrade().is_some() {
             self.version

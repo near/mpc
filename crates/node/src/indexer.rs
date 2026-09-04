@@ -20,7 +20,7 @@ use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
@@ -342,13 +342,6 @@ impl IndexerViewClient {
             .await
     }
 
-    pub(crate) async fn get_mpc_tee_accounts(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
-    }
-
     pub(crate) async fn get_mpc_migration_info(
         &self,
         mpc_contract_id: AccountId,
@@ -559,8 +552,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
