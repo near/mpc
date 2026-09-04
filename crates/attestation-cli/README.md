@@ -238,7 +238,7 @@ Advisory IDs:           INTEL-SA-01379, INTEL-SA-01404, INTEL-SA-01428, INTEL-SA
 This platform clears TCB recovery set 20 but not set 22, which Intel publishes and has yet to promote.
 ```
 
-The node above is accepted today and stops being accepted when Intel promotes set 22, with nothing changed on the operator's side. That is the point of the third row: the firmware update its shortfall lines call for takes planning, and the two rows above it only ever report a demotion that has already happened. [What to do about it](../../docs/tdx-tcb-status.md#when-you-are-about-to-be-out-of-date).
+The node above is accepted today and stops being accepted when Intel promotes set 22, with nothing changed on the operator's side. That is the point of the third row: the firmware update its shortfall lines call for takes planning, and the two rows above it only ever report a demotion that has already happened. [What to do about it](../../docs/guide/tdx-tcb-status.md#when-you-are-about-to-be-out-of-date).
 
 For a scheduled check, evaluate the early set alone, so the demotion that has yet to land is what fails the check:
 
