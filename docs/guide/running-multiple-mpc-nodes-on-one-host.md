@@ -1,6 +1,6 @@
 # Running multiple MPC nodes on one host
 
-Companion to the [TDX operator guide](./running-an-mpc-node-in-tdx-external-guide.md).
+Companion to the [TDX operator guide](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md).
 Covers the case where you want to run **two MPC nodes on the same
 bare-metal TDX host** — typically a mainnet node and a testnet node
 sharing one machine.
@@ -28,19 +28,19 @@ Two reasons operators consider this:
   host-side overhead.
 
 If you're new to running a TDX MPC node, start with the
-[TDX operator guide](./running-an-mpc-node-in-tdx-external-guide.md)
+[TDX operator guide](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md)
 and a single node. Come back here once you have one node working.
 
 ## Prerequisites
 
-In addition to the standard [hardware requirements](./running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements):
+In addition to the standard [hardware requirements](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements):
 
 - **At least two routable public IPs** on the host's NIC, one per
   node. Same NIC is fine; what matters is that each CVM can be
   port-forwarded to a distinct external IP.
-- **2× the single-node hardware** ([single-node minimums](./running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements)
+- **2× the single-node hardware** ([single-node minimums](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#hardware-requirements)
   apply per CVM): ≥ 128 GB memory, ≥ 16 cores, ≥ 1 TB SSD/NVMe disk.
-- **Firewall opened on both IPs** for the [required ports](./running-an-mpc-node-in-tdx-external-guide.md#required-ports)
+- **Firewall opened on both IPs** for the [required ports](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#required-ports)
   (80, 8080, 24567, 8079).
 - *(Optional)* a DNS A record per IP. Recommended if you want to
   re-IP later without rotating operator-side configuration.
@@ -108,7 +108,7 @@ Key properties:
 ## Setup walkthrough
 
 Assumes you've completed the single-node
-[TDX and Dstack Setup](./running-an-mpc-node-in-tdx-external-guide.md#tdx-and-dstack-setup)
+[TDX and Dstack Setup](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#tdx-and-dstack-setup)
 and have one working CVM. The steps below add a second CVM on the
 same host, sharing the same `dstack-vmm`.
 
@@ -130,7 +130,7 @@ disambiguates them on the host side.
 The first CVM is the one you already created via the single-node
 walkthrough. In the same dstack-vmm web UI (`http://127.0.0.1:10000`),
 create the second CVM following
-[Configuring and starting the MPC binary in a CVM](./running-an-mpc-node-in-tdx-external-guide.md#configuring-and-starting-the-mpc-binary-in-a-cvm).
+[Configuring and starting the MPC binary in a CVM](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#configuring-and-starting-the-mpc-binary-in-a-cvm).
 
 For **every public port forward** (`:80`, `:8080`, `:24567`, **and the
 migration port `:8079`**), set the **host address** to that CVM's
@@ -149,7 +149,7 @@ next to host port / VM port at CVM-creation time.
 
 The two CVMs use the same launcher image but **different**
 `user-config.toml` content. Deltas from the
-[single-node example](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
+[single-node example](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
 — each field lives in a different section of `user-config.toml`, so
 follow the [template](https://github.com/near/mpc/blob/main/deployment/cvm-deployment/user-config.toml)
 for the right placement:
@@ -166,7 +166,7 @@ for the right placement:
 auto-discovers its advertised address as the host's default-route
 outbound IP, which DSS peers may not be able to reach, and state sync
 stalls. See the
-[`tier3_public_addr` bullet](./running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
+[`tier3_public_addr` bullet](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration)
 in the single-node guide for the full field semantics.
 
 ## Operational considerations

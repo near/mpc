@@ -3,7 +3,7 @@
 **Status:** ARCHIVED
 **Implemented:** [#3564](https://github.com/near/mpc/pull/3564)
 **Issue:** [#3381](https://github.com/near/mpc/issues/3381)
-**Related:** [Securing MPC with TEE](../../design/securing-mpc-with-tee-design-doc.md), [TEE Lifecycle](../../design/tee-lifecycle.md)
+**Related:** [Securing MPC with TEE](../../design/securing-mpc-with-tee-design-doc/securing-mpc-with-tee-design-doc.md), [TEE Lifecycle](../../design/tee-lifecycle.md)
 
 ## Problem
 

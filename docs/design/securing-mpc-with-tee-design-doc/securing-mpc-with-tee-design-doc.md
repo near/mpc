@@ -2,7 +2,7 @@
 
 # Introduction and Background
 
-This document describes the high level design for integrating a Trusted Execution Environment (TEE) into the existing Multi-Party Computation (MPC) network. For the generic TEE lifecycle patterns (attestation, governance, upgrade) shared across all TEE services, see [TEE Lifecycle](./tee-lifecycle.md).
+This document describes the high level design for integrating a Trusted Execution Environment (TEE) into the existing Multi-Party Computation (MPC) network. For the generic TEE lifecycle patterns (attestation, governance, upgrade) shared across all TEE services, see [TEE Lifecycle](../tee-lifecycle.md).
 
 ## Multi-Party Computation (MPC)
 
@@ -137,7 +137,7 @@ The exposed endpoints are:
 
 ## **Launcher** Pattern
 
-We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: Boot](./tee-lifecycle.md#boot) for the generalized description.
+We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: Boot](../tee-lifecycle.md#boot) for the generalized description.
 
 ![](attachments/system_design_dtx_with_steps.png)
 
@@ -413,7 +413,7 @@ The private key never leaves the CVM. While the public key can be exported from 
 
 The Operator will then register the node's account key as an additional **function-call access key** on the node's NEAR account, scoped to the MPC signer contract (`--contract-account-id`) with an `unlimited` allowance and an **empty method-names list**. An empty list grants the key access to **all** methods on the MPC contract, while keeping it unable to transfer funds or call any other contract.
 
-We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chain_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
+We grant access to all contract methods rather than an explicit allow-list because the set of methods a node must call changes across releases (for example, `register_foreign_chain_config` was added for foreign-chain support). A hand-maintained list silently drifts out of date, after which the node fails — with no obvious error — on any newly added method the key was never granted. See the operator guide ([running-an-mpc-node-in-tdx-external-guide.md](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#updating-an-existing-key-to-allow-all-methods)) for the exact `near` CLI commands, and for rotating an existing restricted key (access-key permissions are immutable in NEAR, so the key must be deleted and re-added).
 
 > **⚠️ Security tradeoff:** Allowing all methods widens the *in-contract* blast
 > radius — a compromised node key can now call **any** contract method (e.g.
@@ -460,13 +460,13 @@ Beyond the TDX quote itself, attestation requires PCCS-supplied collateral — T
 
 - **Freshness threshold is part of the attested image.** That value is hard-coded in the node binary rather than in operator config. Governance voters approve an image hash that already encodes this policy, so an operator cannot relax freshness without going through image-hash voting.
 
-- **Evaluation data set.** The fetch asks for Intel's `standard` TCB evaluation data set, the one the contract judges a submission against. Intel publishes the next set under `update=early`; a node has no reason to submit collateral judged more strictly than the contract requires, so only the [`attestation-cli tcb-status`](../../crates/attestation-cli/README.md#tcb-status) diagnostic fetches it, as advance warning that a coming promotion will demote the platform.
+- **Evaluation data set.** The fetch asks for Intel's `standard` TCB evaluation data set, the one the contract judges a submission against. Intel publishes the next set under `update=early`; a node has no reason to submit collateral judged more strictly than the contract requires, so only the [`attestation-cli tcb-status`](../../../crates/attestation-cli/README.md#tcb-status) diagnostic fetches it, as advance warning that a coming promotion will demote the platform.
 
-For the operator-facing setup details (TOML schema, self-hosted PCCS recipe), see [Customizing PCCS endpoints](../guide/running-an-mpc-node-in-tdx-external-guide.md#customizing-pccs-endpoints-optional) and [Appendix: Self-hosting a local PCCS](../guide/running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs) in the operator deployment guide.
+For the operator-facing setup details (TOML schema, self-hosted PCCS recipe), see [Customizing PCCS endpoints](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#customizing-pccs-endpoints-optional) and [Appendix: Self-hosting a local PCCS](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs) in the operator deployment guide.
 
 ## Attestation verification on the contract:
 
-See also [TEE Lifecycle: Attestation](./tee-lifecycle.md#attestation) for the generalized verification steps.
+See also [TEE Lifecycle: Attestation](../tee-lifecycle.md#attestation) for the generalized verification steps.
 
 Review Dstack [RMTR calculation and attestation](https://github.com/Dstack-TEE/dstack/blob/6b77340cf530b4532c5815039a74bb3a60302378/attestation.md) for more information
 
@@ -583,7 +583,7 @@ This may change in the future (see dstack update section).
 
 # MPC Node Upgradability
 
-See also [TEE Lifecycle: Upgrade](./tee-lifecycle.md#upgrade) for the generalized upgrade pattern.
+See also [TEE Lifecycle: Upgrade](../tee-lifecycle.md#upgrade) for the generalized upgrade pattern.
 
 ## Bootstrapping
 
@@ -700,7 +700,7 @@ Once the voting threshold is reached:
 -   Multiple Launcher versions may temporarily coexist during migration.
 
 > Launcher hashes left unused past a TTL are now auto-removed without a unanimous
-> vote — see [auto-removal of unused launcher hashes](../archive/design/auto-remove-launcher-hashes-design.md).
+> vote — see [auto-removal of unused launcher hashes](../../archive/design/auto-remove-launcher-hashes-design.md).
 
 ### OS Measurement Upgrade
 
