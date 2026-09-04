@@ -33,16 +33,17 @@ pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
 
-/// Inspects transactions on one foreign chain.
-///
-/// Implementations must map the chain's signal for an unknown transaction to
-/// [`Verdict::TransactionNotFound`] and pin that with a test. Left as a client error, absence is
-/// tolerated by [`FanOut`], and one fabricating provider outvotes every honest one.
 pub trait ForeignChainInspector {
     type TransactionId;
     type Finality;
     type Extractor;
     type ExtractedValue;
+
+    /// Inspects transactions on one foreign chain.
+    ///
+    /// Implementations must map the chain's signal for an unknown transaction to
+    /// [`Verdict::TransactionNotFound`] and pin that with a test. If left as a client error,
+    /// absence is tolerated by [`FanOut`] as a transient issue at a given provider.
     fn extract(
         &self,
         tx_id: Self::TransactionId,
