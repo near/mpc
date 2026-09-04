@@ -12,9 +12,5 @@ https://hackenproof.com/programs/near-intents-bridges
 Non-vulnerability-related security issues, such as new ideas for security
 features, are welcome on GitHub Issues.
 
-## Security-Related Information
-
-We will provide security-related information such as a threat model,
-considerations for secure use, or any known security issues in our
-documentation. Please note that labs and sample code are intended to demonstrate
-a concept and may need to be sufficiently hardened for production use.
+Reports from our independent security audits are published in
+[audits](../audits/README.md).
