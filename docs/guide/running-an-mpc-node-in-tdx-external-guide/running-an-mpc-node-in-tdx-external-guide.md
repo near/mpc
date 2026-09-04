@@ -23,7 +23,7 @@ To move a node between hosts, follow the supported procedure described in the [N
 
 From an operator’s perspective, the key differences between a **TEE-based** MPC node and a **non-TEE** node are:
 
-For a full architecture review of the TEE-based MPC, see: [design doc](../../design/securing-mpc-with-tee-design-doc/securing-mpc-with-tee-design-doc.md)
+For a full architecture review of the TEE-based MPC, see: [design doc](../../design/securing-mpc-with-tee/securing-mpc-with-tee.md)
 
 | Category/feature | Non TEE | With TEE |
 | :---- | :---- | :---- |
@@ -1942,7 +1942,7 @@ Restart the CVM (see [CVM management](#cvm-management)). The launcher will pull 
 
 Launcher or CVM upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image or OS measurements affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
 
-For full design details, see the [CVM Upgrades section in the TEE design doc](../../design/securing-mpc-with-tee-design-doc/securing-mpc-with-tee-design-doc.md#cvm-upgrades).
+For full design details, see the [CVM Upgrades section in the TEE design doc](../../design/securing-mpc-with-tee/securing-mpc-with-tee.md#cvm-upgrades).
 
 **Steps:**
 
