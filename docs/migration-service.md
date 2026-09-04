@@ -78,7 +78,7 @@ node, but only of the secret shares. The MPC node generates a few secrets that w
 
 Each keyshare set the node hands out is recorded in its `mpc_last_backup_served_epoch` and
 `mpc_last_backup_served_timestamp_seconds` metrics, which let an operator alert on backups
-that stopped happening (see [node-operator-metrics.md](design/node-operator-metrics.md)).
+that stopped happening (see [node-operator-metrics.md](guide/node-operator-metrics.md)).
 
 ```mermaid
 ---
