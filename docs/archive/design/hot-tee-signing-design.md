@@ -1,5 +1,7 @@
 # Archive Signer
 
+**Status:** ARCHIVED
+
 This document outlines the design of the Archive Signer — a TEE application for long-term support of legacy HOT Wallet keys.
 
 ## Background
@@ -19,7 +21,7 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 - **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
 [key-import]: #key-import-process
-[block-event-subscriber]: chain-gateway-design.md#block-event-subscriber
+[block-event-subscriber]: ../../design/chain-gateway-design.md#block-event-subscriber
 [hot-mpc]: https://github.com/near/hot-mpc
 [mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
 [validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
@@ -86,8 +88,8 @@ The Archive Signer is built on three reusable layers from this repository. For t
 - **[Chain Gateway][chain-gateway-design]** — sits on top of the embedded indexer node; provides `ContractStateSubscriber` (reads contract state) and `TransactionSender` (submits transactions to the NEAR network).
 - **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
 
-[tee-lifecycle]: tee-lifecycle.md
-[chain-gateway-design]: chain-gateway-design.md
+[tee-lifecycle]: ../../design/tee-lifecycle.md
+[chain-gateway-design]: ../../design/chain-gateway-design.md
 
 ### Crate Dependencies
 
@@ -219,7 +221,7 @@ If verification fails, the application logs the error and exits without starting
 
 The TEE Context is described in the [TEE Context design doc][tee-context]. It is a shared crate managing the attestation lifecycle — polling allowed hashes, periodic attestation submission, attestation removal monitoring, and polling foreign chain policy. The Archive Signer uses it directly, configured to talk to the HOT governance contract. The foreign chain policy task provides the active `ForeignChainPolicy` to the validation SDK so it knows which RPC providers to trust for each chain.
 
-[tee-context]: tee-context-design.md
+[tee-context]: ../../design/tee-context-design.md
 
 ## HTTP Signing API
 
@@ -412,7 +414,7 @@ The initial governor set and vote threshold are configured at contract deploymen
 
 Launcher compose hash derivation follows the standard mechanism described in [TEE Lifecycle: Launcher Compose Hash Derivation][tee-launcher-hash]. The HOT TEE governance contract uses its own launcher compose template, since the Archive Signer has a different Docker Compose configuration than the MPC node.
 
-[tee-launcher-hash]: tee-lifecycle.md#voting-methods
+[tee-launcher-hash]: ../../design/tee-lifecycle.md#voting-methods
 
 ## Attestation Flow
 
@@ -420,7 +422,7 @@ Launcher compose hash derivation follows the standard mechanism described in [TE
 
 The generic CVM boot sequence is described in [TEE Lifecycle: CVM Boot Sequence][tee-boot-sequence]. The diagram below extends it with Archive Signer-specific key import steps.
 
-[tee-boot-sequence]: tee-lifecycle.md#boot
+[tee-boot-sequence]: ../../design/tee-lifecycle.md#boot
 
 ```mermaid
 sequenceDiagram
@@ -476,13 +478,13 @@ sequenceDiagram
 
 Attestation generation and on-chain verification follow the standard TEE lifecycle. See [TEE Lifecycle: Attestation][tee-attestation] for the full details.
 
-[tee-attestation]: tee-lifecycle.md#attestation
+[tee-attestation]: ../../design/tee-lifecycle.md#attestation
 
 ## Upgrade Path
 
 Application upgrades follow the standard [Launcher pattern][tee-upgrade]: governors vote for a new Docker image hash, the running app detects the update, the operator restarts the CVM, and the new app reattests. See [TEE Lifecycle: Application Upgrade][tee-upgrade] for the full flow.
 
-[tee-upgrade]: tee-lifecycle.md#upgrade
+[tee-upgrade]: ../../design/tee-lifecycle.md#upgrade
 
 ## Redundancy and Recovery
 
@@ -512,7 +514,7 @@ This decouples recovery from any specific CVM instance or disk encryption key, r
 
 For additional high availability, a hot standby instance (a second CVM holding the same keys) can be added in the future if needed.
 
-[ckd]: ../../crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md
+[ckd]: ../../../crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md
 
 ## Open Questions
 

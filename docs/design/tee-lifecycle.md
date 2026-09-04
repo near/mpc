@@ -6,7 +6,7 @@ For MPC-network-specific TEE integration (threat model, participant management, 
 
 [mpc-node]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node
 [backup-service]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/backup-cli
-[archive-signer]: hot-tee-signing-design.md
+[archive-signer]: ../archive/design/hot-tee-signing-design.md
 [securing-mpc-with-tee]: ../securing-mpc-with-tee-design-doc.md
 [dstack]: https://github.com/Dstack-TEE/dstack
 
@@ -89,7 +89,7 @@ CHAIN --> CONTRACTS
 
 Depending on the service, the contract the _Chain Gateway_ communicates with is either the MPC signer contract (which embeds [governance](#governance-contract) alongside signing logic) or a standalone governance contract such as the [HOT TEE Governance][hot-tee-governance].
 
-[hot-tee-governance]: hot-tee-signing-design.md#on-chain-contract-hot-tee-governance
+[hot-tee-governance]: ../archive/design/hot-tee-signing-design.md#on-chain-contract-hot-tee-governance
 
 ## Boot
 
@@ -136,7 +136,7 @@ sequenceDiagram
 Individual services may add steps between "Start application container" and the image hash check — for example, the Archive Signer performs [key import][key-import] on first boot.
 
 [launcher-pattern]: ../securing-mpc-with-tee-design-doc.md#launcher-pattern
-[key-import]: hot-tee-signing-design.md#key-import-process
+[key-import]: ../archive/design/hot-tee-signing-design.md#key-import-process
 
 ## TEE Context
 
