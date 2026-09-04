@@ -2,7 +2,7 @@
 
 This guide explains how to create and test a **Multi-Party Computation (MPC)** network on a local blockchain (localnet), where each MPC node runs inside a **Confidential Virtual Machine (CVM)**.
 
-It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), which describes how to launch a local blockchain network.
+It builds upon the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/development/localnet.md), which describes how to launch a local blockchain network.
 However, instead of running MPC nodes as local binaries, this setup runs each MPC node inside a CVM, where the MPC node itself runs as a Docker container.
 
 For details on how to set up a TDX-based Confidential VM and prepare the DStack environment, refer to the [Running an MPC Node in TDX External Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
@@ -12,7 +12,7 @@ For details on how to set up a TDX-based Confidential VM and prepare the DStack 
 ## High-Level Steps
 
 1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md).
-2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md), excluding the startup of the MPC nodes.
+2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/development/localnet.md), excluding the startup of the MPC nodes.
 3. Start two MPC nodes that will run inside CVMs.
 4. Extract the public keys from the nodes and add them to the contract and user accounts.
 5. Vote for a new MPC Docker image hash on the contract.
@@ -28,7 +28,7 @@ Note - You can use the instructions in **MPC Node Setup and Deployment** section
 
 ## Step 2: Spin Up the Localnet
 
-Follow the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md) up until (but not including) the **“Start MPC nodes”** section.
+Follow the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/development/localnet.md) up until (but not including) the **“Start MPC nodes”** section.
 
 ---
 

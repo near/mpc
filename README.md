@@ -35,7 +35,7 @@ For each scheme, the participating set is fixed from the offline phase through t
 
 **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** (BLS12-381) — Derives application-specific keys without revealing the master secret. Takes an application ID and an ephemeral public key, and produces a deterministic secret using threshold BLS signatures and ElGamal encryption. Two variants are supported: *privately verifiable* (app verifies after decryption) and *publicly verifiable* (anyone can verify the encrypted result on-chain without knowing the app's secret key).
 
-**Foreign chain transaction verification** — The network can verify transactions on foreign chains (Ethereum, Solana, Bitcoin, etc.) before signing. Nodes independently query configured RPC providers, run deterministic extractors over the results, and produce a threshold signature over the observed values. This enables NEAR contracts to react to external chain events without a trusted relayer. See [docs/foreign-chain-transactions.md](docs/foreign-chain-transactions.md) for the full design.
+**Foreign chain transaction verification** — The network can verify transactions on foreign chains (Ethereum, Solana, Bitcoin, etc.) before signing. Nodes independently query configured RPC providers, run deterministic extractors over the results, and produce a threshold signature over the observed values. This enables NEAR contracts to react to external chain events without a trusted relayer. See [docs/archive/design/foreign-chain-transactions.md](docs/archive/design/foreign-chain-transactions.md) for the full design.
 
 ## TEE Integration
 
