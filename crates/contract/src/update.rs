@@ -220,7 +220,7 @@ impl ProposedUpdates {
         let non_participants: Vec<AccountId> = self
             .vote_by_participant
             .keys()
-            .filter(|voter| !participants.is_participant_given_account_id(voter))
+            .filter(|voter| !participants.is_participant(*voter))
             .cloned()
             .collect();
 

@@ -2,6 +2,7 @@ use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
+use crate::primitives::participants::IdentifiesParticipant;
 use crate::primitives::{
     domain::{
         AddDomainsVotes, DomainRegistry, max_reconstruction_threshold, validate_domain_purpose,
@@ -11,7 +12,6 @@ use crate::primitives::{
     threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
 };
-use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
 use std::collections::{BTreeSet, HashSet};
@@ -252,10 +252,8 @@ impl RunningContractState {
         }
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
-        self.parameters
-            .participants()
-            .is_participant_given_account_id(account_id)
+    pub fn is_participant<K: IdentifiesParticipant>(&self, id: &K) -> bool {
+        self.parameters.participants().is_participant(id)
     }
 }
 
@@ -317,7 +315,7 @@ pub mod running_tests {
                 if i < participants.participants().len()
                     && !proposal
                         .participants()
-                        .is_participant_given_account_id(&participants.participants()[i].0)
+                        .is_participant(&participants.participants()[i].0)
                 {
                     continue;
                 }
@@ -343,10 +341,7 @@ pub mod running_tests {
         // existing participants vote
         let mut n_votes = 0;
         for (account_id, _, _) in participants.participants().iter() {
-            if !proposal
-                .participants()
-                .is_participant_given_account_id(account_id)
-            {
+            if !proposal.participants().is_participant(account_id) {
                 continue;
             }
             n_votes += 1;
@@ -362,7 +357,7 @@ pub mod running_tests {
         }
         // candidates vote
         for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant_given_account_id(account_id) {
+            if participants.is_participant(account_id) {
                 continue;
             }
             n_votes += 1;
@@ -602,12 +597,7 @@ pub mod running_tests {
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| {
-                state
-                    .parameters
-                    .participants()
-                    .is_participant_given_account_id(account_id)
-            })
+            .find(|account_id| state.parameters.participants().is_participant(account_id))
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 
@@ -768,12 +758,7 @@ pub mod running_tests {
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| {
-                state
-                    .parameters
-                    .participants()
-                    .is_participant_given_account_id(account_id)
-            })
+            .find(|account_id| state.parameters.participants().is_participant(account_id))
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 
@@ -847,12 +832,7 @@ pub mod running_tests {
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| {
-                state
-                    .parameters
-                    .participants()
-                    .is_participant_given_account_id(account_id)
-            })
+            .find(|account_id| state.parameters.participants().is_participant(account_id))
             .expect("proposal must retain at least one current participant");
         env.set_signer(&signer);
 

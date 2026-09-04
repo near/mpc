@@ -5,7 +5,6 @@
 //! committing to the `(account_id, code_hash)` pair they audited off-chain.
 
 use crate::{
-    errors::{ConversionError, Error},
     primitives::{
         key_state::AuthenticatedParticipantId,
         participants::Participants,
@@ -66,24 +65,21 @@ impl TeeVerifierVotes {
         proposal: VerifierChangeProposal,
         participant: AuthenticatedParticipantId,
         threshold_parameters: &GovernanceThresholdParameters,
-    ) -> Result<Option<AccountId>, Error> {
+    ) -> Option<AccountId> {
         let governance_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
         let proposal_hash = proposal.to_proposal_hash();
 
-        let count_usize = {
-            let voter_set = self.pending.vote(participant, proposal_hash);
-            voter_set.count_for(|p| participants.is_participant_given_participant_id(&p.get()))
-        };
-        let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count_usize} does not fit in u64: {e}"),
-        })?;
+        let count = self
+            .pending
+            .vote(participant, proposal_hash)
+            .count_participants(participants);
 
         if count >= governance_threshold {
             self.pending.clear();
-            Ok(Some(proposal.candidate_account_id))
+            Some(proposal.candidate_account_id)
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -96,8 +92,7 @@ impl TeeVerifierVotes {
     /// Drops votes from accounts that are no longer participants (called after
     /// a resharing changes the participant set).
     pub fn retain(&mut self, current: &Participants) {
-        self.pending
-            .retain_votes(|p| current.is_participant_given_participant_id(&p.get()));
+        self.pending.retain_votes(|p| current.is_participant(p));
     }
 
     /// Pending votes keyed by proposal.
@@ -149,7 +144,6 @@ mod tests {
         ) -> Option<AccountId> {
             self.votes
                 .vote(proposal.clone(), self.voters[voter].clone(), &self.params)
-                .unwrap()
         }
 
         fn voter(&self, voter: usize) -> AuthenticatedParticipantId {
