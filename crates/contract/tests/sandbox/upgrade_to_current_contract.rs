@@ -8,8 +8,9 @@ use crate::sandbox::{
         contract_build::current_contract,
         mpc_contract::{
             get_allowed_docker_image_hashes, get_allowed_launcher_image_hashes,
-            get_code_hash_votes, get_launcher_hash_votes, get_participants, get_state,
-            get_tee_accounts, vote_add_launcher_hash, vote_code_hash,
+            get_allowed_os_measurements, get_code_hash_votes, get_launcher_hash_votes,
+            get_os_measurement_votes, get_participants, get_state, get_tee_accounts,
+            vote_add_launcher_hash, vote_add_os_measurement, vote_code_hash,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
@@ -212,6 +213,18 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap();
 
+    // Same for the OS measurement vote map.
+    let pending_measurement = near_mpc_contract_interface::types::ExpectedMeasurements {
+        mrtd: mpc_primitives::hash::MrtdHash::from([0xCD; 48]),
+        rtmr0: mpc_primitives::hash::Rtmr0Hash::from([0xCD; 48]),
+        rtmr1: mpc_primitives::hash::Rtmr1Hash::from([0xCD; 48]),
+        rtmr2: mpc_primitives::hash::Rtmr2Hash::from([0xCD; 48]),
+        key_provider_event_digest: mpc_primitives::hash::KeyProviderEventDigest::from([0xCD; 48]),
+    };
+    vote_add_os_measurement(&accounts[0], &contract, &pending_measurement)
+        .await
+        .unwrap();
+
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
@@ -240,6 +253,13 @@ async fn propose_upgrade_from_production_to_current_binary(
         get_launcher_hash_votes(&contract).await.unwrap().is_empty(),
         "pending launcher votes should be dropped by the migration"
     );
+    assert!(
+        get_os_measurement_votes(&contract)
+            .await
+            .unwrap()
+            .is_empty(),
+        "pending OS measurement votes should be dropped by the migration"
+    );
 
     // Voting still works after the upgrade: a fresh threshold vote gets the hash in.
     let threshold = ((accounts.len() as f64) * 0.6).ceil() as usize;
@@ -267,6 +287,18 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap()
             .contains(&pending_launcher_hash),
         "a fresh launcher threshold vote should succeed after the upgrade"
+    );
+    for account in &accounts[..threshold] {
+        vote_add_os_measurement(account, &contract, &pending_measurement)
+            .await
+            .unwrap();
+    }
+    assert!(
+        get_allowed_os_measurements(&contract)
+            .await
+            .unwrap()
+            .contains(&pending_measurement),
+        "a fresh OS measurement threshold vote should succeed after the upgrade"
     );
 }
 

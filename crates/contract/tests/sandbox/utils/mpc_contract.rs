@@ -66,6 +66,38 @@ pub async fn get_code_hash_votes(
     Ok(contract.view(method_names::CODE_HASH_VOTES).await?.json()?)
 }
 
+pub async fn vote_add_os_measurement(
+    account: &Account,
+    contract: &Contract,
+    measurement: &near_mpc_contract_interface::types::ExpectedMeasurements,
+) -> anyhow::Result<()> {
+    let result = account
+        .call(contract.id(), method_names::VOTE_ADD_OS_MEASUREMENT)
+        .args_json(serde_json::json!({"measurement": measurement}))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn get_os_measurement_votes(
+    contract: &Contract,
+) -> anyhow::Result<near_mpc_contract_interface::types::VotesByProposal> {
+    Ok(contract
+        .view(method_names::OS_MEASUREMENT_VOTES)
+        .await?
+        .json()?)
+}
+
+pub async fn get_allowed_os_measurements(
+    contract: &Contract,
+) -> anyhow::Result<Vec<near_mpc_contract_interface::types::ExpectedMeasurements>> {
+    Ok(contract
+        .view(method_names::ALLOWED_OS_MEASUREMENTS)
+        .await?
+        .json()?)
+}
+
 pub async fn get_launcher_hash_votes(
     contract: &Contract,
 ) -> anyhow::Result<near_mpc_contract_interface::types::VotesByProposal> {
