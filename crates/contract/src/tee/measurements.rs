@@ -1,72 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation;
-use near_mpc_contract_interface::types::{ExpectedMeasurements, MeasurementVoteAction};
-use near_sdk::{log, near};
-use std::collections::BTreeMap;
+use near_mpc_contract_interface::types::ExpectedMeasurements;
+use near_sdk::log;
 
 use crate::dto_mapping::IntoContractType as _;
-use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
-
-/// Contract-side [`MeasurementVotes`](near_mpc_contract_interface::types::MeasurementVotes),
-/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
-/// the participant set.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
-}
-
-impl MeasurementVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: MeasurementVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old measurement vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total measurement votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &MeasurementVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all measurement votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new [`MeasurementVotes`] containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        MeasurementVotes {
-            vote_by_account: remaining,
-        }
-    }
-}
 
 /// Collection of allowed OS measurements. Managed via voting (add requires threshold,
 /// remove requires unanimity). Starts empty on fresh contracts (consistent with docker

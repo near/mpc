@@ -16,6 +16,8 @@ use mpc_attestation::{
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::{
     config::Config,
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
@@ -26,6 +28,7 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
+        votes::Votes,
     },
     state::{
         ProtocolContractState,
@@ -33,10 +36,6 @@ use crate::{
         key_event::{KeyEvent, KeyEventInstance},
         resharing::ResharingContractState,
         running::RunningContractState,
-    },
-    tee::{
-        measurements::MeasurementVotes,
-        proposal::{CodeHashesVotes, LauncherHashVotes},
     },
     update::{ProposedUpdates, Update, UpdateId},
 };
@@ -858,6 +857,36 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 // --- Voting types ---
 
+/// Pending votes keyed by the 32-byte proposal identifier `K`:
+/// [`ProposalHash`](crate::primitives::votes::ProposalHash) in general, or the digest
+/// newtype itself where the proposal is one (code-hash votes store the
+/// [`dtos::NodeImageHash`] unhashed).
+fn votes_by_proposal_key<K: From<[u8; 32]> + Ord>(
+    votes: &Votes<AuthenticatedParticipantId>,
+) -> BTreeMap<K, BTreeSet<dtos::AuthenticatedParticipantId>> {
+    votes
+        .iter()
+        .map(|(proposal, voters)| {
+            (
+                K::from((*proposal).into()),
+                voters.iter().map(|v| v.into_dto_type()).collect(),
+            )
+        })
+        .collect()
+}
+
+impl IntoInterfaceType<dtos::VotesByProposal> for &Votes<AuthenticatedParticipantId> {
+    fn into_dto_type(self) -> dtos::VotesByProposal {
+        dtos::VotesByProposal(votes_by_proposal_key(self))
+    }
+}
+
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &Votes<AuthenticatedParticipantId> {
+    fn into_dto_type(self) -> dtos::CodeHashesVotes {
+        dtos::CodeHashesVotes(votes_by_proposal_key(self))
+    }
+}
+
 impl IntoInterfaceType<dtos::GovernanceThresholdParametersVotes>
     for &GovernanceThresholdParametersVotes
 {
@@ -880,42 +909,6 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .proposal_by_account
                 .iter()
                 .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
-                .collect(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
-    fn into_dto_type(self) -> dtos::MeasurementVotes {
-        dtos::MeasurementVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
-                .collect(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
-    fn into_dto_type(self) -> dtos::LauncherHashVotes {
-        dtos::LauncherHashVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
-                .collect(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::CodeHashesVotes> for &CodeHashesVotes {
-    fn into_dto_type(self) -> dtos::CodeHashesVotes {
-        dtos::CodeHashesVotes {
-            proposal_by_account: self
-                .proposal_by_account
-                .iter()
-                .map(|(participant, hash)| (participant.into_dto_type(), *hash))
                 .collect(),
         }
     }

@@ -5,12 +5,12 @@
 //! committing to the `(account_id, code_hash)` pair they audited off-chain.
 
 use crate::{
-    errors::{ConversionError, Error},
+    errors::Error,
     primitives::{
         key_state::AuthenticatedParticipantId,
         participants::Participants,
         thresholds::GovernanceThresholdParameters,
-        votes::{ProposalHash, ProposalHashEncoding, Votes},
+        votes::{ProposalHash, Votes},
     },
     storage_keys::StorageKey,
 };
@@ -32,9 +32,16 @@ pub struct VerifierChangeProposal {
     pub expected_code_hash: TeeVerifierCodeHash,
 }
 
-impl ProposalHashEncoding for VerifierChangeProposal {
-    fn bytes_for_hash(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("borsh serialization of VerifierChangeProposal must succeed")
+/// The [`ProposalHash`] identifying a verifier-change vote: SHA-256 of the proposal's
+/// borsh encoding.
+impl From<&VerifierChangeProposal> for ProposalHash {
+    fn from(proposal: &VerifierChangeProposal) -> Self {
+        let bytes = borsh::to_vec(proposal)
+            .expect("borsh serialization of VerifierChangeProposal must succeed");
+        let hash: [u8; 32] = near_sdk::env::sha256(bytes)
+            .try_into()
+            .expect("sha256 yields 32 bytes");
+        hash.into()
     }
 }
 
@@ -69,15 +76,12 @@ impl TeeVerifierVotes {
     ) -> Result<Option<AccountId>, Error> {
         let governance_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
-        let proposal_hash: ProposalHash = proposal.clone().into();
+        let proposal_hash = ProposalHash::from(&proposal);
 
-        let count_usize = {
-            let voter_set = self.pending.vote(participant, proposal_hash);
-            voter_set.count_for(|p| participants.is_participant_given_participant_id(&p.get()))
-        };
-        let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count_usize} does not fit in u64: {e}"),
-        })?;
+        let count = self
+            .pending
+            .vote(participant, proposal_hash)
+            .count_participants(participants);
 
         if count >= governance_threshold {
             self.pending.clear();
@@ -172,7 +176,8 @@ mod tests {
                 "duplicate voter in expected bucket"
             );
             assert!(
-                map.insert(proposal.into(), voter_set).is_none(),
+                map.insert(ProposalHash::from(&proposal), voter_set)
+                    .is_none(),
                 "duplicate proposal in expected votes"
             );
         }

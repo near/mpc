@@ -123,6 +123,7 @@ mod tests {
     use super::*;
     use crate::api::test_utils::{participant_account_ids, setup_tee_test_contract};
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
+    use crate::primitives::votes::ProposalHash;
     use crate::state::key_event::tests::Environment;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -216,7 +217,7 @@ mod tests {
                 expected_code_hash: code_hash,
             };
             (
-                ProposalHash::from(proposal),
+                ProposalHash::from(&proposal),
                 BTreeSet::from([voter.into_dto_type()]),
             )
         };

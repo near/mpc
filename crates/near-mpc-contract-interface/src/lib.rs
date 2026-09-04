@@ -35,8 +35,8 @@ pub mod types {
         protocol_state_to_string,
     };
     pub use tee::{
-        AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherHashVotes,
-        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
+        AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherVoteAction,
+        MeasurementVoteAction, NodeId, VotesByProposal,
     };
 
     pub use updates::{
@@ -46,7 +46,7 @@ pub mod types {
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
         KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
-        NodeImageHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
+        NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

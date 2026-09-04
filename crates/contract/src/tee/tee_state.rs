@@ -1,10 +1,14 @@
 use crate::{
-    primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    primitives::{
+        key_state::AuthenticatedParticipantId,
+        participants::Participants,
+        votes::{ProposalHash, VoterSet, Votes},
+    },
     storage_keys::StorageKey,
-    tee::measurements::{AllowedMeasurements, MeasurementVotes},
+    tee::measurements::AllowedMeasurements,
     tee::proposal::{
-        AllowedLauncherImageInsertion, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
-        NodeImageHash, StoredDockerImageHashes,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, NodeImageHash,
+        StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -72,20 +76,27 @@ pub(crate) struct NodeAttestation {
     pub(crate) verified_attestation: VerifiedAttestation,
 }
 
+/// TODO(#2955): key the vote maps by `AccountId` instead of participant id.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: StoredDockerImageHashes,
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
-    pub(crate) votes: CodeHashesVotes,
-    pub(crate) launcher_votes: LauncherHashVotes,
+    /// Pending votes to whitelist a node image hash, keyed by the [`NodeImageHash`]
+    /// voted for (already a digest, it converts to [`ProposalHash`](crate::primitives::votes::ProposalHash) unhashed).
+    pub(crate) votes: Votes<AuthenticatedParticipantId>,
+    /// Pending votes to add or remove a launcher image hash, keyed by the proposal hash of
+    /// the [`LauncherVoteAction`] voted for.
+    pub(crate) launcher_votes: Votes<AuthenticatedParticipantId>,
     /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
     /// just for the currently active participants. Callers must not assume this map is
     /// small; use the key-indexed accessors rather than scanning the whole collection.
     pub(crate) stored_attestations: IterableMap<Ed25519PublicKey, NodeAttestation>,
     pub(crate) allowed_measurements: AllowedMeasurements,
-    pub(crate) measurement_votes: MeasurementVotes,
+    /// Pending votes to add or remove an OS measurement set, keyed by the proposal hash of
+    /// the [`MeasurementVoteAction`] voted for.
+    pub(crate) measurement_votes: Votes<AuthenticatedParticipantId>,
 }
 
 impl Default for TeeState {
@@ -93,11 +104,20 @@ impl Default for TeeState {
         Self {
             allowed_docker_image_hashes: Default::default(),
             allowed_launcher_images: Default::default(),
-            votes: Default::default(),
-            launcher_votes: Default::default(),
+            votes: Votes::new(
+                StorageKey::CodeHashVotesByVoter,
+                StorageKey::CodeHashVotesByProposal,
+            ),
+            launcher_votes: Votes::new(
+                StorageKey::LauncherHashVotesByVoter,
+                StorageKey::LauncherHashVotesByProposal,
+            ),
             stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: Default::default(),
-            measurement_votes: Default::default(),
+            measurement_votes: Votes::new(
+                StorageKey::MeasurementVotesByVoter,
+                StorageKey::MeasurementVotesByProposal,
+            ),
         }
     }
 }
@@ -321,12 +341,13 @@ impl TeeState {
         }
     }
 
+    /// Casts a vote for whitelisting a node image hash. Returns the voters for that hash.
     pub fn vote(
         &mut self,
         code_hash: NodeImageHash,
         participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.votes.vote(code_hash, participant)
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.votes.vote(participant.clone(), code_hash.into())
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -352,7 +373,7 @@ impl TeeState {
         tee_proposal: NodeImageHash,
         tee_upgrade_deadline_duration: Duration,
     ) {
-        self.votes.clear_votes();
+        self.votes.clear();
         // Add compose hashes for the new MPC image across all allowed launcher images
         self.allowed_launcher_images
             .add_mpc_image_compose_hashes(&tee_proposal);
@@ -385,14 +406,15 @@ impl TeeState {
         }
     }
 
-    /// Casts a vote for adding or removing a launcher image hash.
-    /// Returns the total number of votes for the same action.
+    /// Casts a vote for adding or removing a launcher image hash. Returns the voters for
+    /// that action.
     pub fn vote_launcher(
         &mut self,
         action: LauncherVoteAction,
         participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.launcher_votes.vote(action, participant)
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.launcher_votes
+            .vote(participant.clone(), ProposalHash::from(&action))
     }
 
     /// Adds a launcher image to the allowed set, computing compose hashes for all currently
@@ -403,7 +425,7 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
         ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
-        self.launcher_votes.clear_votes();
+        self.launcher_votes.clear();
         let mpc_image_hashes = self
             .allowed_docker_image_hashes
             .get_image_hashes(tee_upgrade_deadline_duration);
@@ -413,7 +435,7 @@ impl TeeState {
 
     /// Removes a launcher image from the allowed set. Clears launcher votes.
     pub fn remove_launcher_image(&mut self, launcher_hash: &LauncherImageHash) -> bool {
-        self.launcher_votes.clear_votes();
+        self.launcher_votes.clear();
         self.allowed_launcher_images.remove(launcher_hash)
     }
 
@@ -422,25 +444,26 @@ impl TeeState {
         self.allowed_launcher_images.launcher_hashes()
     }
 
-    /// Casts a vote for adding or removing an OS measurement.
-    /// Returns the total number of votes for the same action.
+    /// Casts a vote for adding or removing an OS measurement. Returns the voters for that
+    /// action.
     pub fn vote_measurement(
         &mut self,
         action: MeasurementVoteAction,
         participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.measurement_votes.vote(action, participant)
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.measurement_votes
+            .vote(participant.clone(), ProposalHash::from(&action))
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
     pub fn add_measurement(&mut self, measurement: ExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.add(measurement)
     }
 
     /// Removes a measurement set from the allowed list. Clears measurement votes.
     pub fn remove_measurement(&mut self, measurement: &ExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.remove(measurement)
     }
 
@@ -460,9 +483,12 @@ impl TeeState {
     /// concludes. Attestation cleanup is handled separately by
     /// [`TeeState::clean_invalid_attestations`].
     pub fn clean_non_participant_votes(&mut self, participants: &Participants) {
-        self.votes = self.votes.get_remaining_votes(participants);
-        self.launcher_votes = self.launcher_votes.get_remaining_votes(participants);
-        self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
+        let is_participant = |p: &AuthenticatedParticipantId| {
+            participants.is_participant_given_participant_id(&p.get())
+        };
+        self.votes.retain_votes(is_participant);
+        self.launcher_votes.retain_votes(is_participant);
+        self.measurement_votes.retain_votes(is_participant);
     }
 
     /// Scans up to `max_scan` entries from `stored_attestations` and removes any whose
@@ -610,7 +636,12 @@ pub(crate) enum AttestationCheckError {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
+    use super::{
+        AttestationCheckError, AttestationSubmissionError, AuthenticatedParticipantId,
+        Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction, MeasurementVoteAction, NodeId,
+        ParticipantInsertion, Participants, TeeQuoteStatus, TeeState, TeeValidationResult,
+        attestation,
+    };
     use crate::primitives::test_utils::{
         authenticate_as, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
         gen_participant, gen_participants, node_id_for,
@@ -618,8 +649,10 @@ mod tests {
     use crate::tee::test_utils::{set_block_timestamp, whitelist_dstack_measurements};
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
+    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
+    use near_sdk::env;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
@@ -1633,7 +1666,16 @@ mod tests {
         assert_eq!(stored.node_id, node_id);
     }
 
-    /// Stale CodeHashesVotes entries from removed participants must not count toward
+    /// Total number of votes across all proposals.
+    fn total_votes(votes: &crate::primitives::votes::Votes<AuthenticatedParticipantId>) -> usize {
+        votes
+            .all()
+            .values()
+            .map(std::collections::BTreeSet::len)
+            .sum()
+    }
+
+    /// Stale code-hash votes from removed participants must not count toward
     /// quorum after resharing.
     ///
     /// Scenario (N=5, T=3):
@@ -1642,8 +1684,8 @@ mod tests {
     /// 3. clean_non_participant_votes removes stale votes.
     /// 4. P3 votes for the same hash — only 1 vote, not 3.
     #[test]
-    fn test_clean_non_participant_votes_removes_stale_votes() {
-        // Build 5 participants
+    fn clean_non_participant_votes__should_remove_stale_votes() {
+        // Given 5 participants where P0 and P1 voted for a malicious hash before resharing
         let mut all_participants = Participants::new();
         let mut account_ids = Vec::new();
         for i in 0..5 {
@@ -1654,33 +1696,31 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        // P0 and P1 vote for a malicious hash before resharing
         let malicious_hash = NodeImageHash::from([0xAA; 32]);
         for account_id in &account_ids[0..2] {
             let auth_id = authenticate_as(account_id, &all_participants);
-            tee_state.votes.vote(malicious_hash, &auth_id);
+            tee_state.vote(malicious_hash, &auth_id);
         }
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
+        assert_eq!(total_votes(&tee_state.votes), 2);
 
-        // Resharing removes P0 and P1. New participant set: {P2, P3, P4}.
+        // When resharing removes P0 and P1 and non-participant votes are cleaned
+        // (as done by CLEAN_TEE_STATUS after resharing)
         let new_participants = all_participants.subset(2..5);
-
-        // Clean non-participants (as done by CLEAN_TEE_STATUS after resharing)
         tee_state.clean_non_participant_votes(&new_participants);
 
-        // Stale votes must be removed
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 0);
-
-        // P2 votes for the same malicious hash — should be only 1 vote, not 3
-        let p2_account = &account_ids[2];
-        let auth_id = authenticate_as(p2_account, &new_participants);
-        let vote_count = tee_state.votes.vote(malicious_hash, &auth_id);
+        // Then the stale votes are removed, and a fresh vote by P2 for the same
+        // malicious hash counts as only 1 vote, not 3
+        assert_eq!(total_votes(&tee_state.votes), 0);
+        let auth_id = authenticate_as(&account_ids[2], &new_participants);
+        let vote_count = tee_state
+            .vote(malicious_hash, &auth_id)
+            .count_for(|p| new_participants.is_participant_given_participant_id(&p.get()));
         assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
     }
 
-    /// Verifies that clean_non_participants also removes stale launcher and measurement votes.
     #[test]
-    fn test_clean_non_participants_removes_stale_launcher_and_measurement_votes() {
+    fn clean_non_participant_votes__should_remove_stale_launcher_and_measurement_votes() {
+        // Given 3 participants where P0 voted for a launcher hash and an OS measurement
         let mut all_participants = Participants::new();
         let mut account_ids = Vec::new();
         for i in 0..3 {
@@ -1691,18 +1731,27 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        // P0 votes for a launcher hash
         let auth_id = authenticate_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
-        tee_state.launcher_votes.vote(launcher_action, &auth_id);
+        tee_state.vote_launcher(launcher_action, &auth_id);
+        let measurement_action = MeasurementVoteAction::Add(ExpectedMeasurements {
+            mrtd: MrtdHash::from([0xCC; 48]),
+            rtmr0: Rtmr0Hash::from([0xCC; 48]),
+            rtmr1: Rtmr1Hash::from([0xCC; 48]),
+            rtmr2: Rtmr2Hash::from([0xCC; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([0xCC; 48]),
+        });
+        tee_state.vote_measurement(measurement_action, &auth_id);
+        assert_eq!(total_votes(&tee_state.launcher_votes), 1);
+        assert_eq!(total_votes(&tee_state.measurement_votes), 1);
 
-        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 1);
-
-        // New participant set excludes P0
+        // When the new participant set excludes P0
         let new_participants = all_participants.subset(1..3);
         tee_state.clean_non_participant_votes(&new_participants);
 
-        assert_eq!(tee_state.launcher_votes.vote_by_account.len(), 0);
+        // Then P0's launcher and measurement votes are removed
+        assert_eq!(total_votes(&tee_state.launcher_votes), 0);
+        assert_eq!(total_votes(&tee_state.measurement_votes), 0);
     }
 
     #[test]

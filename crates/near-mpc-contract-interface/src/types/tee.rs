@@ -2,12 +2,13 @@ use crate::types::primitives::AccountId;
 use crate::types::state::AuthenticatedParticipantId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::{
-    KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, Rtmr0Hash, Rtmr1Hash,
-    Rtmr2Hash,
+    KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, ProposalHash, Rtmr0Hash,
+    Rtmr1Hash, Rtmr2Hash,
 };
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(
     Clone,
@@ -96,17 +97,15 @@ pub enum MeasurementVoteAction {
     Remove(ExpectedMeasurements),
 }
 
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
-#[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
+/// The [`ProposalHash`] identifying a measurement vote: SHA-256 of the action's borsh
+/// encoding.
+impl From<&MeasurementVoteAction> for ProposalHash {
+    fn from(action: &MeasurementVoteAction) -> Self {
+        sha256_proposal_hash(
+            &borsh::to_vec(action)
+                .expect("borsh serialization of MeasurementVoteAction must succeed"),
+        )
+    }
 }
 
 /// The action a participant is voting for on a launcher image hash.
@@ -120,37 +119,69 @@ pub enum LauncherVoteAction {
     Remove(LauncherImageHash),
 }
 
-/// Tracks votes for adding or removing launcher image hashes.
-/// Each participant can have at most one active vote at a time.
-#[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct LauncherHashVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
+/// The [`ProposalHash`] identifying a launcher vote: SHA-256 of the action's borsh
+/// encoding.
+impl From<&LauncherVoteAction> for ProposalHash {
+    fn from(action: &LauncherVoteAction) -> Self {
+        sha256_proposal_hash(
+            &borsh::to_vec(action).expect("borsh serialization of LauncherVoteAction must succeed"),
+        )
+    }
 }
 
-/// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
-/// a code hash to add.
+fn sha256_proposal_hash(bytes: &[u8]) -> ProposalHash {
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    ProposalHash::new(digest)
+}
+
+/// Voters grouped by the [`ProposalHash`] of the action they voted for.
 #[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
 )]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
-}
+pub struct VotesByProposal(pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>);
+
+/// Voters grouped by the [`NodeImageHash`] they voted to whitelist.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
+)]
+#[serde(transparent)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct CodeHashesVotes(pub BTreeMap<NodeImageHash, BTreeSet<AuthenticatedParticipantId>>);
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use crate::types::participants::ParticipantId;
+    use super::{
+        Ed25519PublicKey, ExpectedMeasurements, KeyProviderEventDigest, LauncherImageHash,
+        LauncherVoteAction, MeasurementVoteAction, MrtdHash, NodeId, ProposalHash, Rtmr0Hash,
+        Rtmr1Hash, Rtmr2Hash,
+    };
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -256,54 +287,42 @@ mod tests {
         assert_eq!(json["key_provider_event_digest"], "01".repeat(48));
     }
 
+    /// Golden values computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + payload), so a change to the encoding or hashing fails here.
     #[test]
-    fn measurement_votes__should_serialize_participant_ids_as_object_keys() {
+    fn launcher_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
         // Given
-        let votes = MeasurementVotes {
-            vote_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                MeasurementVoteAction::Add(measurements(0x01)),
-            )]),
-        };
+        let hash = LauncherImageHash::from([0xAB; 32]);
 
-        // When
-        let json = serde_json::to_value(&votes).unwrap();
-
-        // Then
-        assert_eq!(json["vote_by_account"]["7"]["Add"]["mrtd"], "01".repeat(48));
+        // When / Then
+        assert_eq!(
+            ProposalHash::from(&LauncherVoteAction::Add(hash)),
+            "86754e71ab90f305c4faa7eee57b41b89e49ebcdf03a745c855ee611e4597237"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            ProposalHash::from(&LauncherVoteAction::Remove(hash)),
+            "7165f0a4234dd3c248bb18575a214c9c948f925b6717c3aaab16b6cf500f19fa"
+                .parse()
+                .unwrap()
+        );
     }
 
+    /// Golden value computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + the five 48-byte digests), so a change to the encoding
+    /// or hashing fails here.
     #[test]
-    fn launcher_hash_votes__should_serialize_participant_ids_as_object_keys() {
+    fn measurement_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
         // Given
-        let votes = LauncherHashVotes {
-            vote_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                LauncherVoteAction::Add(LauncherImageHash::from([0xAB; 32])),
-            )]),
-        };
+        let measurement = measurements(0xCD);
 
-        // When
-        let json = serde_json::to_value(&votes).unwrap();
-
-        // Then
-        assert_eq!(json["vote_by_account"]["7"]["Add"], "ab".repeat(32));
-    }
-
-    #[test]
-    fn code_hashes_votes__should_serialize_participant_ids_as_object_keys() {
-        // Given
-        let votes = CodeHashesVotes {
-            proposal_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                NodeImageHash::from([0xAB; 32]),
-            )]),
-        };
-
-        // When
-        let json = serde_json::to_value(&votes).unwrap();
-
-        // Then
-        assert_eq!(json["proposal_by_account"]["7"], "ab".repeat(32));
+        // When / Then
+        assert_eq!(
+            ProposalHash::from(&MeasurementVoteAction::Add(measurement)),
+            "179aaa73073c7493dc33b55de9a28735d28f94975b662f22a6aaa63d6c059fcc"
+                .parse()
+                .unwrap()
+        );
     }
 }

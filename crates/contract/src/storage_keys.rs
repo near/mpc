@@ -38,4 +38,10 @@ pub enum StorageKey {
     /// V3: `VerifyForeignTransactionRequest` gained `expected_payload_hash`, changing the
     /// borsh key encoding, so entries pending at upgrade time are abandoned under V2.
     PendingVerifyForeignTxRequestsV3,
+    CodeHashVotesByVoter,
+    CodeHashVotesByProposal,
+    LauncherHashVotesByVoter,
+    LauncherHashVotesByProposal,
+    MeasurementVotesByVoter,
+    MeasurementVotesByProposal,
 }
