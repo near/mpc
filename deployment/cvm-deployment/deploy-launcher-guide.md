@@ -18,7 +18,7 @@ It:
 
 - A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`.
 See Phala's [setup guide](https://github.com/Dstack-TEE/dstack).
-Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-guide.md](https://github.com/near/mpc/blob/main/docs/running-an-mpc-node-in-tdx-external-guide.md#mpc-node-setup-and-deployment)
+Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-guide.md](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide.md#mpc-node-setup-and-deployment)
 - Python 3.6 or higher installed
 - Required Python packages (cryptography, eth_keys, eth_utils)
 - `vmm-cli.py` should be located under $basePath/vmm/src/vmm-cli.py
@@ -130,7 +130,7 @@ EXTERNAL_SSH_PORT=127.0.0.1:9207
 #   <ip>     — bind only to that public IP. Use this when running multiple
 #              CVMs on one host (mainnet + testnet) so each CVM lands on a
 #              distinct IP. See:
-#              docs/running-multiple-mpc-nodes-on-one-host.md
+#              docs/guide/running-multiple-mpc-nodes-on-one-host.md
 EXTERNAL_MPC_PUBLIC_DEBUG_PORT=0.0.0.0:8080
 EXTERNAL_MPC_LOCAL_DEBUG_PORT=127.0.0.1:3030
 EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC=0.0.0.0:24567

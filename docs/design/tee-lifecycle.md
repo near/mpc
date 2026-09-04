@@ -7,7 +7,7 @@ For MPC-network-specific TEE integration (threat model, participant management, 
 [mpc-node]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node
 [backup-service]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/backup-cli
 [archive-signer]: ../archive/design/hot-tee-signing-design.md
-[securing-mpc-with-tee]: ../securing-mpc-with-tee-design-doc.md
+[securing-mpc-with-tee]: securing-mpc-with-tee-design-doc.md
 [dstack]: https://github.com/Dstack-TEE/dstack
 
 ## Overview
@@ -32,7 +32,7 @@ Services run inside Dstack CVMs, booted through a [Launcher][launcher] that meas
 [transaction-sender]: ../archive/design/chain-gateway-design.md#transaction-sender
 [tee-context-design]: tee-context-design.md
 [mpc-context]: ../archive/design/chain-gateway-design.md
-[launcher]: ../securing-mpc-with-tee-design-doc.md#launcher-pattern
+[launcher]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ### Crate Dependencies
 
@@ -135,7 +135,7 @@ sequenceDiagram
 
 Individual services may add steps between "Start application container" and the image hash check — for example, the Archive Signer performs [key import][key-import] on first boot.
 
-[launcher-pattern]: ../securing-mpc-with-tee-design-doc.md#launcher-pattern
+[launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
 [key-import]: ../archive/design/hot-tee-signing-design.md#key-import-process
 
 ## TEE Context
@@ -206,7 +206,7 @@ The [TEE Context][tee-context-design] crate provides the contract interface for 
 
 The governance contract verifies each submitted quote by checking the cryptographic chain of trust, replaying the TDX event log to reconstruct enclave measurements, and confirming that the Docker image and launcher compose hashes match the allowed lists. For the full verification steps, see [Attestation verification on the contract][attestation-verification].
 
-[attestation-verification]: ../securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
+[attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
 
 ## Governance Contract
 
@@ -299,4 +299,4 @@ sequenceDiagram
 
 For the MPC-specific details (node kicking and resharing), see [Kicking out nodes with invalid attestation][kicking-nodes].
 
-[kicking-nodes]: ../securing-mpc-with-tee-design-doc.md#kicking-out-nodes-with-invalid-attestation
+[kicking-nodes]: securing-mpc-with-tee-design-doc.md#kicking-out-nodes-with-invalid-attestation

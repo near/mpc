@@ -23,7 +23,7 @@ To move a node between hosts, follow the supported procedure described in the [N
 
 From an operator’s perspective, the key differences between a **TEE-based** MPC node and a **non-TEE** node are:
 
-For a full architecture review of the TEE-based MPC, see: [design doc](securing-mpc-with-tee-design-doc.md)
+For a full architecture review of the TEE-based MPC, see: [design doc](../design/securing-mpc-with-tee-design-doc.md)
 
 | Category/feature | Non TEE | With TEE |
 | :---- | :---- | :---- |
@@ -50,7 +50,7 @@ The memory, cores, and disk below are the resources consumed by a single MPC CVM
 * (v)Cores - 8 per CVM
 * Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
 
-For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](./cloud-providers-tdx.md).
+For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../archive/guide/cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](./running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
 
@@ -838,7 +838,7 @@ You need your own API keys:
 > **Important:**
 >
 > * The placeholder string in `rpc_url` must exactly match the `placeholder` value (case-sensitive). Do not embed an API key directly in `rpc_url` without `kind = "path"` — it will be logged in plain text on policy mismatch errors.
-> * Before deploying, verify your config with the [foreign-chain config tester](../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
+> * Before deploying, verify your config with the [foreign-chain config tester](../../crates/foreign-chain-config-tester/README.md): `cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet` (or `--network mainnet`). It checks every provider with the same client code the node uses.
 
 Replace the `YOUR_*` placeholders with your actual keys and `YOUR-SLUG` with your QuickNode endpoint name.
 
@@ -1183,9 +1183,9 @@ Use the following custom settings for MPC:
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
-![VMM Web Page (1/2)](./attachments/VMM_web_page_deploy_1.png)
+![VMM Web Page (1/2)](../attachments/VMM_web_page_deploy_1.png)
 
-![VMM Web Page (2/2)](./attachments/VMM_web_page_deploy_2.png)
+![VMM Web Page (2/2)](../attachments/VMM_web_page_deploy_2.png)
 
 > **⚠️ Never change the app-compose (or the vCPU/memory) of a running node** — it will fail to start, since the disk is encrypted with a key derived from those measured inputs. If this happens, see [Troubleshooting: node won't start after an app-compose change](#node-wont-start-after-an-app-compose-change) to recover.
 
@@ -1278,7 +1278,7 @@ http://localhost:17190
 
 #### Example / Screenshot
 
-![CVM Web Page](./attachments/CVM_web_page.png)
+![CVM Web Page](../attachments/CVM_web_page.png)
 
 ### Retrieve Public Keys from the MPC Node
 
@@ -1318,7 +1318,7 @@ The CLI supports two modes:
 - **Online mode** (`--url`) — Fetches attestation data directly from the node's `/public_data` endpoint.
 - **Offline mode** (`--file`) — Reads attestation data from a previously saved JSON file. This is useful if you want to save the data first, inspect it, or verify on an air-gapped machine.
 
-For full documentation, see the [attestation-cli README](../crates/attestation-cli/README.md).
+For full documentation, see the [attestation-cli README](../../crates/attestation-cli/README.md).
 
 #### Install the attestation-cli
 
@@ -1391,7 +1391,7 @@ Verdict: PASS
 
 Confirm that the **TLS Public Key (P2P)** and **Account Public Key** shown in the output match the keys you retrieved in the previous step. If they match and the verdict is PASS, the keys are authenticated — you can proceed to register them.
 
-If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubleshooting](../crates/attestation-cli/README.md#troubleshooting) section for guidance.
+If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubleshooting](../../crates/attestation-cli/README.md#troubleshooting) section for guidance.
 
 #### Check the platform's TCB status
 
@@ -1401,7 +1401,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 attestation-cli tcb-status --url http://<IP>:8080/public_data
 ```
 
-It needs no image hash or compose file, prints the platform's SVNs, and reports the node's own verdict alongside the ones Intel's current and next TCB info give. [TDX platform TCB status](./guide/tdx-tcb-status.md) explains the output and what to do when your host is out of date, or about to be.
+It needs no image hash or compose file, prints the platform's SVNs, and reports the node's own verdict alongside the ones Intel's current and next TCB info give. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do when your host is out of date, or about to be.
 
 ### Add the Node Account Key to Your Account
 
@@ -1829,7 +1829,7 @@ There are three types of upgrades, with different frequencies and operator effor
 
 When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
-The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](./guide/tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
+The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](./tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
 
 ## MPC Node Image Upgrade
 
@@ -1942,7 +1942,7 @@ Restart the CVM (see [CVM management](#cvm-management)). The launcher will pull 
 
 Launcher or CVM upgrades are less frequent than MPC node upgrades. Unlike MPC node upgrades, changing the launcher image or OS measurements affects the sealing key derivation, which means existing encrypted key shares **cannot** be decrypted by the new CVM. This requires deploying a new CVM and migrating key shares from the old one.
 
-For full design details, see the [CVM Upgrades section in the TEE design doc](securing-mpc-with-tee-design-doc.md#cvm-upgrades).
+For full design details, see the [CVM Upgrades section in the TEE design doc](../design/securing-mpc-with-tee-design-doc.md#cvm-upgrades).
 
 **Steps:**
 
@@ -2105,7 +2105,7 @@ near contract call-function as-read-only \
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
 
-For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](./archive/design/migration-service.md).
+For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](../archive/design/migration-service.md).
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 
@@ -2127,9 +2127,9 @@ You usually don't need to edit `user-config.toml` after initial deployment. Howe
 | Start the CVM | Press **Start** |
 | Update `user-config.toml` | Stop the CVM → press **update** → upload the new file → press **Upgrade** → start the CVM |
 
-![](./attachments/cvm_options.png)
+![](../attachments/cvm_options.png)
 
-![](./attachments/config_upgrade.png)
+![](../attachments/config_upgrade.png)
 
 ### Via Command Line
 
@@ -2296,7 +2296,7 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
   update** that bundles a newer Intel TDX module — an `intel-microcode` update
   alone won't move it. `attestation-cli tcb-status --file public_data.json` names
   which SVN is short and by how much, if you captured the node's `/public_data`
-  while it was still up; [TDX platform TCB status](./guide/tdx-tcb-status.md) walks
+  while it was still up; [TDX platform TCB status](./tdx-tcb-status.md) walks
   through the update either way.
 
 > Confirmed in the field: a Granite Rapids host with this signature was fixed by
@@ -2329,7 +2329,7 @@ Common messages:
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
-- **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](./guide/tdx-tcb-status.md), which also explains how to see it coming.
+- **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](./tdx-tcb-status.md), which also explains how to see it coming.
 
 #### 2. NEAR runtime / pre-execution errors — in the node logs
 
