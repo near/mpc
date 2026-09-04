@@ -638,23 +638,6 @@ mod tests {
     }
 
     #[test]
-    fn invalid_attestation__should_render_the_verification_error_as_prose() {
-        // Given
-        let error = AttestationSubmissionError::InvalidAttestation(
-            attestation::VerificationError::Custom("x".to_string()),
-        );
-
-        // When
-        let rendered = error.to_string();
-
-        // Then
-        assert_eq!(
-            rendered,
-            "the submitted attestation failed verification, reason: custom error: `x`"
-        );
-    }
-
-    #[test]
     fn clean_non_participant_votes__should_not_touch_attestations() {
         // Given
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);

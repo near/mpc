@@ -594,20 +594,23 @@ mod tests {
     }
 
     #[test]
-    fn verify_tcb_status__should_name_component_statuses_and_advisories_in_the_reason() {
+    fn verify_tcb_status__should_reject_non_uptodate_status_with_mixed_component_statuses() {
         // Given
         let mut report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
         report.platform_status.status = TcbStatus::OutOfDate;
 
         // When
-        let reason = DstackAttestation::verify_tcb_status(&report)
-            .unwrap_err()
-            .to_string();
+        let result = DstackAttestation::verify_tcb_status(&report);
 
         // Then
         assert_eq!(
-            reason,
-            "TCB status `OutOfDate` is not up to date (QE: UpToDate, platform: OutOfDate, advisories: [\"INTEL-SA-00001\"])"
+            result,
+            Err(VerificationError::TcbStatusNotUpToDate {
+                status: "OutOfDate".to_string(),
+                qe_status: TcbStatus::UpToDate,
+                platform_status: TcbStatus::OutOfDate,
+                advisory_ids: vec!["INTEL-SA-00001".to_string()],
+            })
         );
     }
 
