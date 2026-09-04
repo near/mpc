@@ -801,7 +801,7 @@ sequenceDiagram
 
     For full details see:
 
-    -   Node migration guide: `./docs/node-migration-guide.md`
+    -   Node migration guide: `./docs/guide/node-migration-guide.md`
     -   Migration service design: `./docs/archive/design/migration-service.md`
 
 4.  **Remove Old Measurements**\
