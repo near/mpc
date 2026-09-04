@@ -7,10 +7,11 @@
 use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
 use crate::call_args::{
-    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs, RequestAppPrivateKeyArgs,
-    SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateArgs,
+    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs,
+    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs,
+    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
+    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
+    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -18,17 +19,18 @@ use crate::deposits::{
 };
 use crate::method_names::{
     CANCEL_NODE_MIGRATION, INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAIN_SUPPORT, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION,
-    SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
-    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
-    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REQUEST_APP_PRIVATE_KEY, SIGN,
+    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
+    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, PayloadBytesError, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, SignRequestArgs, SupportedForeignChains,
-    TeeVerifierCodeHash, VerifyForeignTransactionRequestArgs,
+    ForeignChainsConfig, GovernanceThresholdParameters, InitConfig, PayloadBytesError,
+    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
+    SupportedForeignChains, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -157,7 +159,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn vote_update(
         &self,
-        id: u64,
+        id: UpdateId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
         self.call(FunctionCallArgs::no_deposit(
@@ -304,11 +306,25 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn register_foreign_chains_config(
+        &self,
+        foreign_chains_config: ForeignChainsConfig,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args =
+            serde_json::to_vec(&RegisterForeignChainsConfigArgs::new(foreign_chains_config))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REGISTER_FOREIGN_CHAINS_CONFIG,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_update_foreign_chain_providers(
         &self,
         batch: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = borsh::to_vec(&batch)?;
+        let args = serde_json::to_vec(&VoteUpdateForeignChainProvidersArgs::new(batch))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
             args,
@@ -389,7 +405,7 @@ mod tests {
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
         ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
-        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
+        ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
         VerifyForeignTransactionRequestArgs,
     };
     use near_contract_transport::{CallContract, FunctionCallArgs};
@@ -505,7 +521,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                     tx_id: BitcoinTxId([7u8; 32]),
                     confirmations: BlockConfirmations(1),
-                    extractors: vec![BitcoinExtractor::BlockHash],
+                    extractors: [BitcoinExtractor::BlockHash].into(),
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,
@@ -520,7 +536,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                     tx_id: BitcoinTxId([7u8; 32]),
                     confirmations: BlockConfirmations(1),
-                    extractors: vec![BitcoinExtractor::BlockHash],
+                    extractors: [BitcoinExtractor::BlockHash].into(),
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,
@@ -535,7 +551,7 @@ mod tests {
             })
             .await
             .unwrap();
-        handle.vote_update(7).await.unwrap();
+        handle.vote_update(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
                 id: DomainId(0),

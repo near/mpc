@@ -1,11 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
-use attestation::{
-    attestation::VerificationError,
-    measurements::{ExpectedMeasurements, Measurements},
-    tcb_info::TcbInfo,
-};
+use attestation::{ExpectedMeasurements, Measurements, TcbInfo, attestation::VerificationError};
 use mpc_attestation::attestation::{
     AcceptedAttestation, ValidatedDstackAttestation, VerifiedAttestation,
 };

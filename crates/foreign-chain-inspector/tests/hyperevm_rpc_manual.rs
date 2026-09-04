@@ -1,11 +1,13 @@
 use assert_matches::assert_matches;
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
-    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, NetworkFingerprintInspector,
     hyperevm::{
         HyperEvmBlockHash, HyperEvmTransactionHash, MAINNET_CHAIN_ID,
         inspector::{HyperEvmExtractedValue, HyperEvmExtractor, HyperEvmInspector},
     },
 };
+use foreign_chain_rpc_factory::build_http_client;
 
 const HYPEREVM_RPC_URL: &str = "https://rpc.hyperliquid.xyz/evm";
 
@@ -26,10 +28,10 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
             .parse()
             .unwrap();
 
-    let http_client = foreign_chain_inspector::build_http_client(
-        HYPEREVM_RPC_URL.to_string(),
-        RpcAuthentication::KeyInUrl,
-    )
+    let http_client = build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: HYPEREVM_RPC_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
     .unwrap();
     let inspector = HyperEvmInspector::new(http_client);
 
@@ -47,6 +49,9 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     assert_eq!(extracted_values.len(), 4);
@@ -66,10 +71,10 @@ const EXPECTED_NETWORK_FINGERPRINT: u64 = MAINNET_CHAIN_ID;
 #[ignore = "manual test to sanity check against live HyperEVM RPC provider"]
 async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
     // given
-    let http_client = foreign_chain_inspector::build_http_client(
-        HYPEREVM_RPC_URL.to_string(),
-        RpcAuthentication::KeyInUrl,
-    )
+    let http_client = build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: HYPEREVM_RPC_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
     .unwrap();
     let inspector = HyperEvmInspector::new(http_client);
 

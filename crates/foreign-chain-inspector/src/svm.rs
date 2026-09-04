@@ -1,3 +1,5 @@
+//! Inspection of Solana Virtual Machine (SVM) chains: Solana and Fogo.
+
 use near_mpc_contract_interface::types::{SvmAccount, SvmInnerInstruction};
 
 pub mod inspector;

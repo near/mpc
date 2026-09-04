@@ -37,7 +37,7 @@ jobs:
           prefix-key: v0-rust-week-${{ env.WEEK }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@b6b84cf49ebfe0176417bdce007c624f0db37f20 # v2.86.2
+        uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
         with:
           tool: nextest@0.9.126
 
@@ -52,3 +52,7 @@ jobs:
       - name: Run tee-authority tests
         if: always()
         run: cargo nextest run -p tee-authority --features external-services-tests --cargo-profile test-release --locked -E 'test(test_fetch_collateral_from_pccs)'
+
+      - name: Run attestation-cli tests
+        if: always()
+        run: cargo nextest run -p attestation-cli --features external-services-tests --cargo-profile test-release --locked -E 'test(fetch_from_intel)'

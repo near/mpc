@@ -14,13 +14,10 @@ use crate::sandbox::{
     common::{candidates, init_contract, init_contract_running, make_threshold_params},
     utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
 };
-use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
-    primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    AttemptId, DomainConfig, DomainId, DomainPurpose, EpochId, KeyForDomain, Keyset, Protocol,
+    ReconstructionThreshold,
 };
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
@@ -280,11 +277,10 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();
-        let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();
         let key = KeyForDomain {
             attempt: AttemptId::new(),
             domain_id,
-            key: public_key,
+            key: dto_pk.into(),
         };
         let keyset = Keyset::new(EpochId::new(1), vec![key]);
         let domains = vec![domain];

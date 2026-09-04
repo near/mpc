@@ -197,7 +197,7 @@ jobs:
 
   # Independent reproducible path: the Nix derivation produces the contract WASM
   # without a third-party Docker image. Kept exercised alongside the cargo-near
-  # build; see docs/reproducible-builds.md.
+  # build; see docs/guide/reproducible-builds.md.
   nix-build-mpc-contract:
     name: "Nix build mpc-contract"
     needs: changes

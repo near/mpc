@@ -3,6 +3,7 @@ use crate::{
     sign::NotSet,
 };
 
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
 use near_mpc_contract_interface::types::{ExtractedValue, Hash256};
 
 // API types
@@ -27,8 +28,10 @@ pub struct BitcoinRequest<TxId, Confirmations> {
     expected_block_hash: Option<BitcoinBlockHash>,
 }
 
-impl From<BuildableBitcoinRequest> for ForeignChainRpcRequestWithExpectations {
-    fn from(built_request: BuildableBitcoinRequest) -> Self {
+impl TryFrom<BuildableBitcoinRequest> for ForeignChainRpcRequestWithExpectations {
+    type Error = BoundedVecOutOfBounds;
+
+    fn try_from(built_request: BuildableBitcoinRequest) -> Result<Self, Self::Error> {
         let mut extractors = vec![];
         let mut expected_values = vec![];
 
@@ -39,14 +42,14 @@ impl From<BuildableBitcoinRequest> for ForeignChainRpcRequestWithExpectations {
             ));
         }
 
-        ForeignChainRpcRequestWithExpectations {
+        Ok(ForeignChainRpcRequestWithExpectations {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: built_request.tx_id,
                 confirmations: built_request.confirmations,
-                extractors,
+                extractors: extractors.try_into()?,
             }),
             expected_values,
-        }
+        })
     }
 }
 
@@ -188,7 +191,7 @@ mod test {
         let expected_request = ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id,
             confirmations: BlockConfirmations::from(10),
-            extractors: vec![BitcoinExtractor::BlockHash],
+            extractors: [BitcoinExtractor::BlockHash].into(),
         });
         let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: expected_request.clone(),
@@ -231,7 +234,7 @@ mod test {
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id,
                 confirmations: BlockConfirmations::from(10),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
 

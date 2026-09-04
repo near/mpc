@@ -114,7 +114,7 @@ contract: mpc.near
 method:   vote_update_foreign_chain_providers
 gas:      30.0 Tgas
 deposit:  0 NEAR
-args:     0x01000000010100000007000000616c6368656d7912000000687474703a2f2f6c6f63616c686f73743a3703000100000000000000
+args:     {"votes":{"Bitcoin":{"providers":{"alchemy":{"base_url":"http://localhost:7","auth_scheme":"None","chain_routing":"Embedded"}},"quorum":1}}}
 
 contract: mpc.near
 method:   submit_participant_info

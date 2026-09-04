@@ -1,24 +1,23 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
-    tee::measurements::{
-        AllowedMeasurements, ContractExpectedMeasurements, MeasurementVoteAction, MeasurementVotes,
-    },
+    tee::measurements::{AllowedMeasurements, MeasurementVotes},
     tee::proposal::{
         AllowedLauncherImageInsertion, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
-        LauncherVoteAction, NodeImageHash, StoredDockerImageHashes,
+        NodeImageHash, StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
-    attestation::{
-        self, AcceptedAttestation, DstackAttestation, DstackVerify, MockAttestation,
-        VerifiedAttestation,
-    },
+    TcbInfo,
+    attestation::{self, AcceptedAttestation, DstackVerify, MockAttestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
-use near_mpc_contract_interface::types::{self as dtos, AccountId, Ed25519PublicKey};
+use near_mpc_contract_interface::types::{
+    self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
+    MeasurementVoteAction,
+};
 use near_sdk::{env, near, store::IterableMap};
 use std::time::Duration;
 use tee_verifier_interface::VerifiedReport;
@@ -39,7 +38,7 @@ pub enum TeeQuoteStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AttestationSubmissionError {
-    #[error("the submitted attestation failed verification, reason: {:?}", .0)]
+    #[error("the submitted attestation failed verification, reason: {0}")]
     InvalidAttestation(#[from] attestation::VerificationError),
     #[error(
         "TLS public key is already registered to a different account; only the owning account may update it"
@@ -173,12 +172,12 @@ impl TeeState {
         self.store_verified_attestation(node_id, verified_attestation)
     }
 
-    /// Runs the post-DCAP checks for a [`DstackAttestation`] against the
+    /// Runs the post-DCAP checks for a dstack [`TcbInfo`] against the
     /// [`VerifiedReport`] the verifier returned, then stores the result.
     pub(crate) fn verify_and_store_dstack(
         &mut self,
         node_id: NodeId,
-        dstack: &DstackAttestation,
+        tcb_info: &TcbInfo,
         report: &VerifiedReport,
         tee_upgrade_deadline_duration: Duration,
     ) -> Result<ParticipantInsertion, AttestationSubmissionError> {
@@ -187,7 +186,7 @@ impl TeeState {
         let AcceptedAttestation {
             attestation: verified_attestation,
             advisory_ids,
-        } = dstack.verify(
+        } = tcb_info.verify(
             report,
             expected_report_data,
             Self::current_time_seconds(),
@@ -200,7 +199,7 @@ impl TeeState {
         self.store_verified_attestation(node_id, verified_attestation)
     }
 
-    fn expected_report_data(node_id: &NodeId) -> ::attestation::report_data::ReportData {
+    fn expected_report_data(node_id: &NodeId) -> ::attestation_types::ReportData {
         let report_data: ReportData = ReportDataV1::new(
             *node_id.tls_public_key.as_bytes(),
             *node_id.account_public_key.as_bytes(),
@@ -434,19 +433,19 @@ impl TeeState {
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
-    pub fn add_measurement(&mut self, measurement: ContractExpectedMeasurements) -> bool {
+    pub fn add_measurement(&mut self, measurement: ExpectedMeasurements) -> bool {
         self.measurement_votes.clear_votes();
         self.allowed_measurements.add(measurement)
     }
 
     /// Removes a measurement set from the allowed list. Clears measurement votes.
-    pub fn remove_measurement(&mut self, measurement: &ContractExpectedMeasurements) -> bool {
+    pub fn remove_measurement(&mut self, measurement: &ExpectedMeasurements) -> bool {
         self.measurement_votes.clear_votes();
         self.allowed_measurements.remove(measurement)
     }
 
     /// Returns all allowed OS measurements.
-    pub fn get_allowed_measurements(&self) -> Vec<ContractExpectedMeasurements> {
+    pub fn get_allowed_measurements(&self) -> Vec<ExpectedMeasurements> {
         self.allowed_measurements.entries().to_vec()
     }
 
@@ -626,7 +625,7 @@ mod tests {
     use std::time::Duration;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_dstack_attestation_inner, p2p_tls_key, verified_report,
+        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
     };
 
     /// Helper to set up the testing environment with a specific signer
@@ -1580,12 +1579,15 @@ mod tests {
     fn verify_and_store_dstack__should_reject_and_store_nothing_when_post_dcap_checks_fail() {
         // Given
         let mut tee_state = TeeState::default();
-        let dstack = mock_dstack_attestation_inner();
         let node_id = node_id_for(&"alice.near".parse().unwrap());
 
         // When
-        let result =
-            tee_state.verify_and_store_dstack(node_id, &dstack, &verified_report(), Duration::MAX);
+        let result = tee_state.verify_and_store_dstack(
+            node_id,
+            &mock_tcb_info(),
+            &verified_report(),
+            Duration::MAX,
+        );
 
         // Then
         assert_matches!(
@@ -1612,12 +1614,11 @@ mod tests {
             tls_public_key: Ed25519PublicKey(p2p_tls_key()),
             account_public_key: Ed25519PublicKey(account_key()),
         };
-        let dstack = mock_dstack_attestation_inner();
 
         // When
         let result = tee_state.verify_and_store_dstack(
             node_id.clone(),
-            &dstack,
+            &mock_tcb_info(),
             &verified_report(),
             Duration::MAX,
         );

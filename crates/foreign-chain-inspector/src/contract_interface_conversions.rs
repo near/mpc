@@ -506,9 +506,9 @@ impl TryFrom<SvmExtractor> for dtos::SvmExtractor {
                     }
                 })?,
             }),
-            SvmExtractor::AccountState { pubkey } => Ok(dtos::SvmExtractor::AccountState {
-                pubkey: dtos::SvmAddress(pubkey),
-            }),
+            SvmExtractor::AccountState { pubkey } => {
+                Ok(dtos::SvmExtractor::AccountState { pubkey })
+            }
         }
     }
 }
@@ -533,9 +533,9 @@ impl TryFrom<dtos::SvmExtractor> for SvmExtractor {
                     },
                 )?,
             }),
-            dtos::SvmExtractor::AccountState { pubkey } => Ok(SvmExtractor::AccountState {
-                pubkey: pubkey.0,
-            }),
+            dtos::SvmExtractor::AccountState { pubkey } => {
+                Ok(SvmExtractor::AccountState { pubkey })
+            }
             other => Err(ConversionError::UnsupportedVariant {
                 value: format!("{other:?}"),
                 context: "SvmExtractor",
@@ -887,7 +887,9 @@ mod tests {
                 instruction_index: 3,
                 inner_instruction_index: 1,
             },
-            SvmExtractor::AccountState { pubkey: [0x0a; 32] },
+            SvmExtractor::AccountState {
+                pubkey: dtos::SvmAddress([0x0a; 32]),
+            },
         ];
         for inspector in extractors {
             let contract = dtos::SvmExtractor::try_from(inspector.clone()).unwrap();

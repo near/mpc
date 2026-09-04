@@ -54,7 +54,8 @@ pub struct TransactionMeta {
     pub loaded_addresses: Option<LoadedAddresses>,
 }
 
-/// Inner instructions produced by one top-level instruction, flattened in CPI order.
+/// Inner instructions produced by one top-level instruction: every Cross-Program Invocation
+/// (CPI) it made, with the nesting flattened into invocation order.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InnerInstructionsEntry {
@@ -197,32 +198,6 @@ impl ToRpcParams for &GetAccountInfoArgs {
     to_rpc_params_impl!();
 }
 
-/// Request args for `getSlot`: `[config]`. Answers the latest slot at the commitment.
-pub struct GetSlotArgs {
-    pub commitment: Commitment,
-}
-
-impl Serialize for GetSlotArgs {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Config {
-            commitment: Commitment,
-        }
-        [Config {
-            commitment: self.commitment,
-        }]
-        .serialize(serializer)
-    }
-}
-
-impl ToRpcParams for &GetSlotArgs {
-    to_rpc_params_impl!();
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -273,23 +248,6 @@ mod tests {
                 "vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg",
                 { "commitment": "finalized", "encoding": "base64" },
             ])
-        );
-    }
-
-    #[test]
-    fn serialize_get_slot_args__should_wrap_config_in_array() {
-        // Given
-        let args = GetSlotArgs {
-            commitment: Commitment::Finalized,
-        };
-
-        // When
-        let serialized = serde_json::to_value(&args).unwrap();
-
-        // Then
-        assert_eq!(
-            serialized,
-            serde_json::json!([{ "commitment": "finalized" }])
         );
     }
 

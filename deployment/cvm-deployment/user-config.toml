@@ -13,7 +13,7 @@
 [launcher_config]
 image_reference = "nearone/mpc-node"
 # Matches the canonical port list in
-# docs/running-an-mpc-node-in-tdx-external-guide.md#required-ports
+# docs/guide/running-an-mpc-node-in-tdx-external-guide.md#required-ports
 # (80 P2P, 8080 web/metrics, 8079 migration, 3030 debug, 24567 DSS).
 port_mappings = [
     { host = 80, container = 80 },       # MPC P2P (port_override convention)
@@ -130,7 +130,7 @@ timeout_sec = 60
 #
 # Replace the YOUR_* placeholders with your own API keys and YOUR-SLUG with
 # your QuickNode endpoint name. See "Foreign chain RPC providers" in
-# docs/running-an-mpc-node-in-tdx-external-guide.md for details, and verify
+# docs/guide/running-an-mpc-node-in-tdx-external-guide.md for details, and verify
 # with crates/foreign-chain-config-tester before deploying.
 
 [mpc_node_config.node.foreign_chains.bitcoin]

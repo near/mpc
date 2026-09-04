@@ -51,7 +51,6 @@ use std::sync::{Arc, OnceLock};
 use tokio::time::timeout;
 
 pub mod common;
-pub(crate) mod dto_conversions;
 
 mod asset_generation_signing_contention;
 mod basic_cluster;
@@ -499,7 +498,7 @@ pub async fn request_verify_foreign_tx_and_await_response(
             request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: bitcoin_tx_id.into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
             domain_id: domain.id.0.into(),
             payload_version: ForeignTxPayloadVersion::V1,

@@ -24,7 +24,7 @@ use near_sdk::near;
 ///    tracking structure in the running state.
 ///  - The previous running state's keys are needed to copy the public keys.
 ///  - We use the previous running state's DomainRegistry.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {

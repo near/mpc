@@ -6,7 +6,7 @@ edition = { workspace = true }
 repository = "https://github.com/near/mpc"
 
 # Reproducible builds are produced by two coexisting paths
-# (see `docs/reproducible-builds.md`):
+# (see `docs/guide/reproducible-builds.md`):
 #   1. The Nix derivation at `nix/mpc-contract.nix` (exposed as
 #      `packages.<system>.mpc-contract` in `flake.nix`).
 #   2. cargo-near, driven by the NEP-330 metadata below. The pinned
@@ -66,7 +66,6 @@ abi = [
     "mpc-attestation/abi",
     "mpc-primitives/abi",
     "tee-verifier-interface/borsh-schema",
-    "schemars",
 ]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
@@ -75,7 +74,7 @@ __abi-generate = ["abi", "near-sdk/__abi-generate"]
 
 [dependencies]
 assert_matches = { workspace = true }
-attestation = { workspace = true }
+attestation-types = { workspace = true }
 blstrs = { workspace = true }
 borsh = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -98,6 +97,7 @@ near-mpc-contract-interface = { workspace = true, features = [
     "k256",
     "near",
 ] }
+near-mpc-sdk = { workspace = true }
 near-mpc-signature-verifier = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
@@ -114,7 +114,6 @@ near-account-id = { workspace = true, features = [
     "schemars-v0_8",
     "abi",
 ] }
-schemars = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["custom"] }
@@ -134,7 +133,6 @@ mpc-contract = { workspace = true, features = [
 near-abi = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-near-mpc-sdk = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
