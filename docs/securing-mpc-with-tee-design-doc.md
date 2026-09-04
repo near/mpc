@@ -802,7 +802,7 @@ sequenceDiagram
     For full details see:
 
     -   Node migration guide: `./docs/node-migration-guide.md`
-    -   Migration service design: `./docs/migration-service.md`
+    -   Migration service design: `./docs/archive/design/migration-service.md`
 
 4.  **Remove Old Measurements**\
     After all nodes have been migrated, participants vote to remove the

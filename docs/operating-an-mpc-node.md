@@ -9,7 +9,7 @@ All operators are expected to run the following:
 
 1. A TEE **testnet** MPC node
 2. A **mainnet** non-TEE MPC node (until the TEE mainnet rollout completes)
-3. (once implemented) A TEE-enabled [backup service](./migration-service.md) node
+3. (once implemented) A TEE-enabled [backup service](./archive/design/migration-service.md) node
 
 Two things to keep in mind for the setup:
 
@@ -42,7 +42,7 @@ The same applies if we ask you to turn off your node during incident investigati
 ## Incident response
 When an issue with your node comes up, we expect you to pick it up and start investigating as soon as you reasonably can, and to keep others posted on Slack as you work it. This is essential to the reliability of the network.
 
-We'll move to tighter, formal response times once dedicated alerting is in place; until then, prompt best-effort response is what matters.
+We'll move to tighter, formal response times once dedicated alerting is in place; until then, prompt best-effort response is what matters. The [metrics guide](./guide/node-operator-metrics.md) lists what to watch and alert on in the meantime.
 
 When an incident is underway we expect you to be ready to collaborate on actions such as:
 
