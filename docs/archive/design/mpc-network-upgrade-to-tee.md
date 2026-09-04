@@ -1,5 +1,6 @@
-
 # MPC Network Upgrade from Non TEE to TEE
+
+**Status:** ARCHIVED
 
 The approach is to support a 2 phase upgrade process.
 

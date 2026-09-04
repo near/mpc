@@ -2,7 +2,7 @@
 
 This document provides threat model diagrams for the MPC-in-TEE system and AES transport key provisioning flow. For full details see:
 - [TEE Design Doc](securing-mpc-with-tee-design-doc.md)
-- [TDX Deployment Guide](running-an-mpc-node-in-tdx-external-guide.md)
+- [TDX Deployment Guide](../guide/running-an-mpc-node-in-tdx-external-guide.md)
 - [Migration Service](https://github.com/near/mpc/blob/main/docs/archive/design/migration-service.md) — defines the full migration flow and the role of the AES key
 
 ## Summary

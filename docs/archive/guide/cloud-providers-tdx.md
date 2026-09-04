@@ -1,5 +1,7 @@
 # Cloud Providers Supporting Bare Metal Servers with Intel TDX
 
+**Status:** ARCHIVED
+
 _Last updated: August 31, 2025_
 
 This document lists cloud providers that currently support bare metal servers compatible with Intel TDX.
