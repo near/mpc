@@ -1,5 +1,6 @@
 use std::hash::Hash;
 use std::num::NonZeroU64;
+use std::sync::Arc;
 use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
@@ -133,9 +134,64 @@ pub trait NetworkFingerprintInspector {
 /// are tolerated as long as any inspector reached a verdict, so a single unavailable or
 /// misbehaving RPC does not take the whole node out of signing. When no inspector reached a
 /// verdict, the first error is propagated.
-#[derive(Clone, derive_more::Constructor)]
+///
+/// With a recorder set through [`FanOut::measuring`], every provider call is reported once it
+/// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.
+#[derive(Clone)]
 pub struct FanOut<Inspector> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
+    recorder: Option<Arc<dyn RecordProviderCall>>,
+}
+
+impl<Inspector> FanOut<Inspector> {
+    pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
+        Self {
+            inspectors,
+            recorder: None,
+        }
+    }
+
+    pub fn measuring(mut self, recorder: Arc<dyn RecordProviderCall>) -> Self {
+        self.recorder = Some(recorder);
+        self
+    }
+}
+
+/// Receives the outcome of each provider call a [`FanOut`] makes.
+///
+/// Invoked at most once per call, possibly while the call's task is being aborted, so an
+/// implementation must neither block nor panic. `elapsed` is the provider's answer time when
+/// `failure` is [`None`]; otherwise it only says how long the call was waited on.
+pub trait RecordProviderCall: Send + Sync {
+    fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>);
+}
+
+struct TimedCall {
+    recorder: Option<Arc<dyn RecordProviderCall>>,
+    provider: ProviderId,
+    started: tokio::time::Instant,
+}
+
+impl TimedCall {
+    fn start(recorder: Option<Arc<dyn RecordProviderCall>>, provider: ProviderId) -> Self {
+        Self {
+            recorder,
+            provider,
+            started: tokio::time::Instant::now(),
+        }
+    }
+
+    fn report(&mut self, failure: Option<ProviderFailure>) {
+        if let Some(recorder) = self.recorder.take() {
+            recorder.record(&self.provider, self.started.elapsed(), failure);
+        }
+    }
+}
+
+impl Drop for TimedCall {
+    fn drop(&mut self) {
+        self.report(Some(ProviderFailure::TimedOut));
+    }
 }
 
 impl<Inspector> ForeignChainInspector for FanOut<Inspector>
@@ -164,11 +220,12 @@ where
             let extractors = extractors.clone();
             let inspector = inspector.clone();
             let provider = provider.clone();
+            let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                (
-                    provider,
-                    inspector.extract(tx_id, finality, extractors).await,
-                )
+                let mut call = TimedCall::start(recorder, provider.clone());
+                let result = inspector.extract(tx_id, finality, extractors).await;
+                call.report(result.as_ref().err().and_then(|err| err.provider_failure()));
+                (provider, result)
             });
         }
 

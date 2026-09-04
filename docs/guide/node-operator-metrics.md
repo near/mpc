@@ -38,6 +38,53 @@ on-chain confirmation of an attestation submission, in
 | [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. A sustained gap ends in this node being dropped from the participant set. |
 | [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | NEAR block time at which the attestation the contract stores for this node's TLS key expires | subtract `mpc_indexer_latest_block_timestamp_seconds` — the clock the contract expires entries against, not wall clock — for the runway before this node is dropped from the participant set. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry. |
 
+## Foreign chain RPC providers
+
+Recorded in [`metrics.rs`](../../crates/node/src/metrics.rs) by the verify fan-out, which
+measures each provider it queries. Both series carry a `chain` label, the key the chain is
+configured under (`bitcoin`, `hyper_evm`, ...), and a `provider` label, its configured provider
+name:
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_foreign_chain_provider_inspection_seconds`](../../crates/node/src/metrics.rs) | time one provider took to answer one verify request; failed calls are not timed | compare providers of the same chain against each other. One drifting up toward the top bucket is approaching the node's inspection deadline. A provider that times out is invisible here and loud in `mpc_foreign_chain_provider_errors_total{kind="timeout"}`, so read p95 and p99 next to that rate. |
+| [`mpc_foreign_chain_provider_errors_total`](../../crates/node/src/metrics.rs) | requests a provider itself failed to answer, by `kind` | should be near zero. `non_transient` is the one to act on first: the provider is refusing requests or answering with something unusable, and retrying will fix neither. |
+
+`kind` is one of:
+
+* `transient`: no answer arrived. Transport failure, 5xx, or rate limiting.
+* `non_transient`: the provider answered and refused, or answered with something unusable.
+  Retrying cannot change either.
+* `timeout`: the provider had not answered when the node gave up on it, including a call still in
+  flight when the node abandons the inspection at its deadline or on shutdown.
+
+One histogram observation is a whole inspection, one to three serialized RPC calls depending on
+the chain and on where the inspection stopped, not a single round trip. The top bucket is the
+node's inspection deadline.
+
+A failed call is counted but not timed: its duration says nothing about the provider's latency,
+and a timeout observed at the deadline would pin the high quantiles there. p95 and p99 therefore
+describe answers only.
+
+An answer about the transaction is never counted as an error, even when it ends the verification:
+a transaction that is not final yet, has too few confirmations, is absent, reverted, or sits on a
+non-canonical block is an answer. Otherwise every healthy provider would count as failing whenever
+a caller asks about a transaction before it is final.
+
+Every configured provider's series is published once the node enters the contract's `Running`
+state, the point from which it serves verify requests, so a healthy idle node reports zero rather
+than nothing at all. Before that, neither series exists. Solana is the exception: it can be
+configured but has no inspector, so it never appears.
+
+A verify request that never reaches a provider (the chain is unavailable, no inspector is
+configured for it, or the request itself is malformed) is in neither series. The leader and every
+follower run their own inspection, so one user request produces one observation per provider on
+each participating node.
+
+Probe traffic is deliberately excluded, both the node's own periodic provider probe and the
+`foreign-chain-config-tester` CLI: probes share their providers with the verify path, and their
+latencies would drown the ones an operator is looking at.
+
 ## Recommended alerts
 
 ```promql
@@ -54,6 +101,15 @@ increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 # Signature timeouts (warn): the node failed to produce a signature within the
 # deadline. Downstream symptom; cross-check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Provider refusing or garbling answers (warn): a dead API key, a chain the plan
+# does not cover, or a backend serving unusable responses. Needs an operator.
+increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
+
+# Provider not answering (warn): unreachable, rate limited, or hanging past the
+# inspection deadline while its peers on the same chain keep up. Tolerated by the
+# fan-out, so it is silent otherwise. The 15m hold rides out a short rate limit burst.
+increase(mpc_foreign_chain_provider_errors_total{kind=~"transient|timeout"}[5m]) > 0  for 15m
 
 # Backups stale (warn): no keyshares served to the backup service recently. Only
 # meaningful once backups are being taken against this node.
