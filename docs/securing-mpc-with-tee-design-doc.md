@@ -700,7 +700,7 @@ Once the voting threshold is reached:
 -   Multiple Launcher versions may temporarily coexist during migration.
 
 > Launcher hashes left unused past a TTL are now auto-removed without a unanimous
-> vote — see [auto-removal of unused launcher hashes](design/auto-remove-launcher-hashes-design.md).
+> vote — see [auto-removal of unused launcher hashes](archive/design/auto-remove-launcher-hashes-design.md).
 
 ### OS Measurement Upgrade
 
