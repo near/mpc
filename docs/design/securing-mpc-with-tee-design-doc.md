@@ -29,7 +29,7 @@ Our primary goal is to ensure that every MPC node runs inside a TEE—specifical
 
 The MPC network is composed of the following key components:
 
-![](../attachments/system_overview.png " =611x573")
+![](attachments/system_overview.png " =611x573")
 
 ### External Clients
 
@@ -52,7 +52,7 @@ The MPC network is composed of the following key components:
 
 This is a more detailed component view of the MPC solution, covering both on-chain and off-chain elements, and focusing on the MPC node and how it is secured using **Intel TDX**.
 
-![](../attachments/system_design_dtx.png)
+![](attachments/system_design_dtx.png)
 
 ### MPC Signer Contract (On-Chain)
 
@@ -139,7 +139,7 @@ The exposed endpoints are:
 
 We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: Boot](./tee-lifecycle.md#boot) for the generalized description.
 
-![](../attachments/system_design_dtx_with_steps.png)
+![](attachments/system_design_dtx_with_steps.png)
 
 1. **Participants → MPC Signer Contract**
 

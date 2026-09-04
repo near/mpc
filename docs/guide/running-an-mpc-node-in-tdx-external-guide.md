@@ -1183,9 +1183,9 @@ Use the following custom settings for MPC:
 
 7. Key Provider ID: (The MrEnclave for the sgx local key provider) 6b5ed02e549a1c30aaa8e3171a045f1f449b0017353ef595e78e39c348c98d01
 
-![VMM Web Page (1/2)](../attachments/VMM_web_page_deploy_1.png)
+![VMM Web Page (1/2)](attachments/VMM_web_page_deploy_1.png)
 
-![VMM Web Page (2/2)](../attachments/VMM_web_page_deploy_2.png)
+![VMM Web Page (2/2)](attachments/VMM_web_page_deploy_2.png)
 
 > **⚠️ Never change the app-compose (or the vCPU/memory) of a running node** — it will fail to start, since the disk is encrypted with a key derived from those measured inputs. If this happens, see [Troubleshooting: node won't start after an app-compose change](#node-wont-start-after-an-app-compose-change) to recover.
 
@@ -1278,7 +1278,7 @@ http://localhost:17190
 
 #### Example / Screenshot
 
-![CVM Web Page](../attachments/CVM_web_page.png)
+![CVM Web Page](attachments/CVM_web_page.png)
 
 ### Retrieve Public Keys from the MPC Node
 
@@ -2127,9 +2127,9 @@ You usually don't need to edit `user-config.toml` after initial deployment. Howe
 | Start the CVM | Press **Start** |
 | Update `user-config.toml` | Stop the CVM → press **update** → upload the new file → press **Upgrade** → start the CVM |
 
-![](../attachments/cvm_options.png)
+![](attachments/cvm_options.png)
 
-![](../attachments/config_upgrade.png)
+![](attachments/config_upgrade.png)
 
 ### Via Command Line
 
