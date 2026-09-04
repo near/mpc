@@ -2,7 +2,7 @@
 
 # Introduction and Background
 
-This document describes the high level design for integrating a Trusted Execution Environment (TEE) into the existing Multi-Party Computation (MPC) network. For the generic TEE lifecycle patterns (attestation, governance, upgrade) shared across all TEE services, see [TEE Lifecycle](tee-lifecycle.md).
+This document describes the high level design for integrating a Trusted Execution Environment (TEE) into the existing Multi-Party Computation (MPC) network. For the generic TEE lifecycle patterns (attestation, governance, upgrade) shared across all TEE services, see [TEE Lifecycle](./design/tee-lifecycle.md).
 
 ## Multi-Party Computation (MPC)
 
@@ -137,7 +137,7 @@ The exposed endpoints are:
 
 ## **Launcher** Pattern
 
-We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: Boot](tee-lifecycle.md#boot) for the generalized description.
+We are using modified version of the **Launcher Pattern** described below in order to allow secure upgrades of the MPC node. See also [TEE Lifecycle: Boot](./design/tee-lifecycle.md#boot) for the generalized description.
 
 ![](attachments/system_design_dtx_with_steps.png)
 
@@ -466,7 +466,7 @@ For the operator-facing setup details (TOML schema, self-hosted PCCS recipe), se
 
 ## Attestation verification on the contract:
 
-See also [TEE Lifecycle: Attestation](tee-lifecycle.md#attestation) for the generalized verification steps.
+See also [TEE Lifecycle: Attestation](./design/tee-lifecycle.md#attestation) for the generalized verification steps.
 
 Review Dstack [RMTR calculation and attestation](https://github.com/Dstack-TEE/dstack/blob/6b77340cf530b4532c5815039a74bb3a60302378/attestation.md) for more information
 
@@ -583,7 +583,7 @@ This may change in the future (see dstack update section).
 
 # MPC Node Upgradability
 
-See also [TEE Lifecycle: Upgrade](tee-lifecycle.md#upgrade) for the generalized upgrade pattern.
+See also [TEE Lifecycle: Upgrade](./design/tee-lifecycle.md#upgrade) for the generalized upgrade pattern.
 
 ## Bootstrapping
 
@@ -700,7 +700,7 @@ Once the voting threshold is reached:
 -   Multiple Launcher versions may temporarily coexist during migration.
 
 > Launcher hashes left unused past a TTL are now auto-removed without a unanimous
-> vote — see [auto-removal of unused launcher hashes](design/auto-remove-launcher-hashes-design.md).
+> vote — see [auto-removal of unused launcher hashes](archive/design/auto-remove-launcher-hashes-design.md).
 
 ### OS Measurement Upgrade
 

@@ -1,6 +1,6 @@
 # Deploy the TEE verifier contract
 
-This runbook deploys the stateless [`tee-verifier`](../crates/tee-verifier) contract and
+This runbook deploys the stateless [`tee-verifier`](../../crates/tee-verifier) contract and
 makes it the trusted verifier for the MPC contract.
 
 ## Overview

@@ -63,8 +63,8 @@ Each service passes its governance contract address to `TeeContext::new()`. All 
 
 Every TEE service follows the same pattern: start the TEE Context, spawn a watcher loop to write hashes to disk for the [Launcher][launcher-pattern], and periodically re-submit attestations.
 
-[archive-signer]: hot-tee-signing-design.md
-[launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
+[archive-signer]: ../archive/design/hot-tee-signing-design.md
+[launcher-pattern]: ../securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ```rust
 let tee_ctx = TeeContext::new(chain_gateway, governance_contract, signer).await?;

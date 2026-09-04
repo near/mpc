@@ -6,8 +6,8 @@ For MPC-network-specific TEE integration (threat model, participant management, 
 
 [mpc-node]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node
 [backup-service]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/backup-cli
-[archive-signer]: hot-tee-signing-design.md
-[securing-mpc-with-tee]: securing-mpc-with-tee-design-doc.md
+[archive-signer]: ../archive/design/hot-tee-signing-design.md
+[securing-mpc-with-tee]: ../securing-mpc-with-tee-design-doc.md
 [dstack]: https://github.com/Dstack-TEE/dstack
 
 ## Overview
@@ -23,16 +23,16 @@ Services run inside Dstack CVMs, booted through a [Launcher][launcher] that meas
 | [Transaction Sender][transaction-sender] | Submits attestation transactions to the governance contract |
 
 [dstack]: https://github.com/Dstack-TEE/dstack
-[chain-indexer]: design/chain-gateway-design.md
+[chain-indexer]: chain-gateway-design.md
 [tee-authority]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [`tee-authority`]: https://github.com/near/mpc/tree/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/tee-authority
 [mpc-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
 [`mpc-attestation`]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/mpc-attestation/src/attestation.rs#L29
-[contract-state-subscriber]: design/chain-gateway-design.md#state-viewer
-[transaction-sender]: design/chain-gateway-design.md#transaction-sender
+[contract-state-subscriber]: chain-gateway-design.md#state-viewer
+[transaction-sender]: chain-gateway-design.md#transaction-sender
 [tee-context-design]: tee-context-design.md
-[mpc-context]: design/chain-gateway-design.md
-[launcher]: securing-mpc-with-tee-design-doc.md#launcher-pattern
+[mpc-context]: chain-gateway-design.md
+[launcher]: ../securing-mpc-with-tee-design-doc.md#launcher-pattern
 
 ### Crate Dependencies
 
@@ -89,7 +89,7 @@ CHAIN --> CONTRACTS
 
 Depending on the service, the contract the _Chain Gateway_ communicates with is either the MPC signer contract (which embeds [governance](#governance-contract) alongside signing logic) or a standalone governance contract such as the [HOT TEE Governance][hot-tee-governance].
 
-[hot-tee-governance]: hot-tee-signing-design.md#on-chain-contract-hot-tee-governance
+[hot-tee-governance]: ../archive/design/hot-tee-signing-design.md#on-chain-contract-hot-tee-governance
 
 ## Boot
 
@@ -135,14 +135,14 @@ sequenceDiagram
 
 Individual services may add steps between "Start application container" and the image hash check — for example, the Archive Signer performs [key import][key-import] on first boot.
 
-[launcher-pattern]: securing-mpc-with-tee-design-doc.md#launcher-pattern
-[key-import]: hot-tee-signing-design.md#key-import-process
+[launcher-pattern]: ../securing-mpc-with-tee-design-doc.md#launcher-pattern
+[key-import]: ../archive/design/hot-tee-signing-design.md#key-import-process
 
 ## TEE Context
 
 The [TEE Context][tee-context-design] is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services.
 
-[mpc-context]: design/chain-gateway-design.md
+[mpc-context]: chain-gateway-design.md
 
 [remote-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs
 [allowed-hashes-watcher]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/allowed_image_hashes_watcher.rs#L103
@@ -185,7 +185,7 @@ class TEE_CTX ctx;
 
 3. **Poll foreign chain policy** — Subscribes to the governance contract's [`get_foreign_chain_policy()`][get-foreign-chain-policy] view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
 
-[foreign-tx-verification]: foreign-chain-transactions.md
+[foreign-tx-verification]: ../foreign-chain-transactions.md
 
 [foreign-chain-policy-type]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract-interface/src/types/foreign_chain.rs#L570
 [coordinator-fcp]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/coordinator.rs#L378
@@ -206,7 +206,7 @@ The [TEE Context][tee-context-design] crate provides the contract interface for 
 
 The governance contract verifies each submitted quote by checking the cryptographic chain of trust, replaying the TDX event log to reconstruct enclave measurements, and confirming that the Docker image and launcher compose hashes match the allowed lists. For the full verification steps, see [Attestation verification on the contract][attestation-verification].
 
-[attestation-verification]: securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
+[attestation-verification]: ../securing-mpc-with-tee-design-doc.md#attestation-verification-on-the-contract
 
 ## Governance Contract
 
@@ -231,7 +231,7 @@ The following attestation methods must be uniform across all governance contract
 
 > **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
 
-[backup-tee-methods]: migration-service.md#backup-service-tee-methods
+[backup-tee-methods]: ../migration-service.md#backup-service-tee-methods
 
 ### Voting Methods
 
@@ -241,7 +241,7 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 |--------|----------|-------------|
 | `vote_code_hash(code_hash)` | All | Vote for a new Docker image hash |
 | `vote_add_launcher_hash(launcher_hash)` | All | Vote for a new launcher image hash (threshold) |
-| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes also auto-expire — see [auto-removal of unused launcher hashes](design/auto-remove-launcher-hashes-design.md) |
+| `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes also auto-expire — see [auto-removal of unused launcher hashes](../archive/design/auto-remove-launcher-hashes-design.md) |
 | `vote_foreign_chain_policy(policy)` | MPC, HOT | Vote on trusted RPC providers per chain |
 | `vote_new_parameters(...)` | MPC only | Vote for threshold and participant changes |
 | `vote_update_governors(...)` | HOT only | Vote to change the governor set |
@@ -299,4 +299,4 @@ sequenceDiagram
 
 For the MPC-specific details (node kicking and resharing), see [Kicking out nodes with invalid attestation][kicking-nodes].
 
-[kicking-nodes]: securing-mpc-with-tee-design-doc.md#kicking-out-nodes-with-invalid-attestation
+[kicking-nodes]: ../securing-mpc-with-tee-design-doc.md#kicking-out-nodes-with-invalid-attestation
