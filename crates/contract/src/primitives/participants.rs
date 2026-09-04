@@ -1,4 +1,5 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
+use crate::primitives::key_state::AuthenticatedParticipantId;
 
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -200,6 +201,17 @@ impl Participants {
         {
             self.participants.remove(pos);
         }
+    }
+}
+
+/// Membership test for the current participant set, generic over the identifier type `I`.
+pub trait IsParticipant<I> {
+    fn is_participant(&self, id: &I) -> bool;
+}
+
+impl IsParticipant<AuthenticatedParticipantId> for Participants {
+    fn is_participant(&self, id: &AuthenticatedParticipantId) -> bool {
+        self.is_participant_given_participant_id(&id.get())
     }
 }
 
