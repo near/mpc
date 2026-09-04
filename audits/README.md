@@ -1,7 +1,7 @@
 # Security Audits
 
-Every feature and critical code path of the MPC network is independently
-audited.
+We strive to have every feature and critical code path of the MPC network
+independently audited.
 
 | Report | Date | Target |
 |---|---|---|
