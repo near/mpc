@@ -37,7 +37,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
+    tee::measurements::MeasurementVotes,
     update::{ProposedUpdates, Update, UpdateId},
 };
 
@@ -897,15 +897,9 @@ impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
     }
 }
 
-impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
-    fn into_dto_type(self) -> dtos::LauncherHashVotes {
-        dtos::LauncherHashVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
-                .collect(),
-        }
+impl IntoInterfaceType<dtos::VotesByProposal> for &Votes<AuthenticatedParticipantId> {
+    fn into_dto_type(self) -> dtos::VotesByProposal {
+        dtos::VotesByProposal(votes_by_proposal_key(self))
     }
 }
 

@@ -688,7 +688,7 @@ pub fn vote_remove_launcher_hash(
 // view: list currently approved launcher hashes (pre-existing)
 pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash>
 // view: list pending votes
-pub fn launcher_hash_votes(&self) -> LauncherHashVotes
+pub fn launcher_hash_votes(&self) -> VotesByProposal
 ```
 
 Once the voting threshold is reached:

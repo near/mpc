@@ -34,15 +34,14 @@ use crate::{
     storage_keys::StorageKey,
     tee::{
         measurements::{AllowedMeasurements, MeasurementVotes},
-        proposal::{
-            AllowedLauncherImages, LauncherHashVotes, NodeImageHash, StoredDockerImageHashes,
-        },
+        proposal::{AllowedLauncherImages, NodeImageHash, StoredDockerImageHashes},
         tee_state::{NodeAttestation, TeeState},
         verifier_votes::TeeVerifierVotes,
     },
     update::ProposedUpdates,
 };
 use near_mpc_contract_interface::types as dtos;
+use near_mpc_contract_interface::types::LauncherVoteAction;
 
 /// Shadow of the `3.14.0` [`Config`]: the deployed layout predates this release's
 /// `attestation_storage_fee_millinear`, so migrating `3.14.0` state deserializes the old
@@ -231,13 +230,19 @@ struct OldCodeHashesVotes {
     proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
 }
 
-/// Shadow of the `3.14.0` [`TeeState`], carrying the `BTreeMap`-backed vote shadow.
+/// Shadow of the `3.14.0` `LauncherHashVotes`, see [`OldCodeHashesVotes`].
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldLauncherHashVotes {
+    vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
+}
+
+/// Shadow of the `3.14.0` [`TeeState`], carrying the `BTreeMap`-backed vote shadows.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldTeeState {
     allowed_docker_image_hashes: StoredDockerImageHashes,
     allowed_launcher_images: AllowedLauncherImages,
     votes: OldCodeHashesVotes,
-    launcher_votes: LauncherHashVotes,
+    launcher_votes: OldLauncherHashVotes,
     stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
     allowed_measurements: AllowedMeasurements,
     measurement_votes: MeasurementVotes,
@@ -245,12 +250,11 @@ struct OldTeeState {
 
 impl From<OldTeeState> for TeeState {
     fn from(old: OldTeeState) -> Self {
-        // Pending code-hash votes are transient governance state and deliberately
-        // dropped; participants re-vote after the upgrade.
+        // Pending code-hash and launcher votes are transient governance state and
+        // deliberately dropped; participants re-vote after the upgrade.
         TeeState {
             allowed_docker_image_hashes: old.allowed_docker_image_hashes,
             allowed_launcher_images: old.allowed_launcher_images,
-            launcher_votes: old.launcher_votes,
             stored_attestations: old.stored_attestations,
             allowed_measurements: old.allowed_measurements,
             measurement_votes: old.measurement_votes,
@@ -265,7 +269,7 @@ impl From<OldTeeState> for TeeState {
 ///
 /// `protocol_state` carries the public-key layout shift (#1246) and is shadowed by
 /// `OldProtocolContractState`; `config` gains a field and is shadowed by `OldConfig`;
-/// `tee_state` moves its code-hash votes from an inline `BTreeMap` to the
+/// `tee_state` moves its code-hash and launcher votes from inline `BTreeMap`s to the
 /// [`IterableMap`]-backed [`Votes`](crate::primitives::votes::Votes) and is shadowed by
 /// `OldTeeState`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -335,9 +339,9 @@ struct Metrics {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        AllowedLauncherImages, AllowedMeasurements, IterableMap, LauncherHashVotes,
-        MeasurementVotes, NodeAttestation, NodeImageHash, OldCodeHashesVotes, OldPublicKeyExtended,
-        OldTeeState, PublicKeyExtended, StorageKey, StoredDockerImageHashes, dtos,
+        AllowedLauncherImages, AllowedMeasurements, IterableMap, MeasurementVotes, NodeAttestation,
+        NodeImageHash, OldCodeHashesVotes, OldLauncherHashVotes, OldPublicKeyExtended, OldTeeState,
+        PublicKeyExtended, StorageKey, StoredDockerImageHashes, dtos,
     };
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key_extended, gen_authenticated_participants,
@@ -468,12 +472,10 @@ mod tests {
             Duration::from_secs(1000),
         );
         let votes = BTreeMap::from([(voters[0].clone(), NodeImageHash::from([3u8; 32]))]);
-        let launcher_votes = LauncherHashVotes {
-            vote_by_account: BTreeMap::from([(
-                voters[0].clone(),
-                dtos::LauncherVoteAction::Add(LauncherImageHash::from([4u8; 32])),
-            )]),
-        };
+        let launcher_votes = BTreeMap::from([(
+            voters[0].clone(),
+            dtos::LauncherVoteAction::Add(LauncherImageHash::from([4u8; 32])),
+        )]);
         let stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation> =
             IterableMap::new(StorageKey::StoredAttestations);
         let mut allowed_measurements = AllowedMeasurements::default();
@@ -503,7 +505,9 @@ mod tests {
             votes: OldCodeHashesVotes {
                 proposal_by_account: votes,
             },
-            launcher_votes,
+            launcher_votes: OldLauncherHashVotes {
+                vote_by_account: launcher_votes,
+            },
             stored_attestations,
             allowed_measurements,
             measurement_votes,
