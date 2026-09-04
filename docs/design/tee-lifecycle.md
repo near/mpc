@@ -231,7 +231,7 @@ The following attestation methods must be uniform across all governance contract
 
 > **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
 
-[backup-tee-methods]: ../migration-service.md#backup-service-tee-methods
+[backup-tee-methods]: ../archive/design/migration-service.md#backup-service-tee-methods
 
 ### Voting Methods
 

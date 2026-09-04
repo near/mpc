@@ -9,7 +9,7 @@ All operators are expected to run the following:
 
 1. A TEE **testnet** MPC node
 2. A **mainnet** non-TEE MPC node (until the TEE mainnet rollout completes)
-3. (once implemented) A TEE-enabled [backup service](./migration-service.md) node
+3. (once implemented) A TEE-enabled [backup service](./archive/design/migration-service.md) node
 
 Two things to keep in mind for the setup:
 

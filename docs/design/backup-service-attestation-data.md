@@ -139,7 +139,7 @@ The [migration service `impl` block][migration-service-impl] needs:
 
 - **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo`. Write to `backup_service_tee_state` via [`add_participant()`][add-participant]. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`).
 - **[`migration_info()`][migration-info]**: Replace with a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
-- **New methods** (per [migration-service.md §Backup Service TEE methods](../migration-service.md#backup-service-tee-methods)):
+- **New methods** (per [migration-service.md §Backup Service TEE methods](../archive/design/migration-service.md#backup-service-tee-methods)):
   - `vote_backup_service_code_hash(code_hash)`
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
