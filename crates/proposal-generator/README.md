@@ -10,9 +10,8 @@ voting and share the generated payload with operators. It builds the
 cargo run -p proposal-generator -- crates/proposal-generator/proposals/testnet-rpc-whitelist.toml
 ```
 
-Prints the borsh-encoded `NonEmptyBTreeMap<ForeignChain, ChainEntry>` as base64,
-along with the sha256 of the borsh encoding that the contract logs,
-so the transaction that landed can be checked against the bytes you generated.
+Prints the `vote_update_foreign_chain_providers` call argument, so the transaction
+that lands can be read back against the proposal you generated.
 
 ## Config format
 
@@ -39,14 +38,14 @@ chain_routing = "Embedded"
 
 ## Voting
 
-Paste the printed base64 into a `vote_update_foreign_chain_providers` call
+Paste the printed JSON into a `vote_update_foreign_chain_providers` call
 (`$SIGNER` is the MPC signer contract account, `$VOTER` the participant account
 casting the vote, `$NETWORK` the network config):
 
 ```bash
 near contract call-function as-transaction "$SIGNER" \
   vote_update_foreign_chain_providers \
-  base64-args '<GENERATOR_OUTPUT>' \
+  json-args '<GENERATOR_OUTPUT>' \
   prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
   sign-as "$VOTER" network-config "$NETWORK" sign-with-keychain send
 ```

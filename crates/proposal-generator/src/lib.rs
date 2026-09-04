@@ -2,6 +2,7 @@
 
 use anyhow::Context as _;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::call_args::VoteUpdateForeignChainProvidersArgs;
 use near_mpc_contract_interface::types::{ChainEntry, ForeignChain};
 use near_mpc_sdk::foreign_chain::validation::{ChainEntryValidationError, validate_chain_entry};
 use serde::Deserialize;
@@ -19,17 +20,18 @@ pub struct ConfigError {
     pub source: ChainEntryValidationError,
 }
 
-/// Validates each entry with [`validate_chain_entry`], then borsh-encodes
-/// the `vote_update_foreign_chain_providers` argument.
-pub fn build_payload(config: ProposalConfig) -> anyhow::Result<Vec<u8>> {
+/// Validates each entry with [`validate_chain_entry`], then renders the
+/// `vote_update_foreign_chain_providers` call argument.
+pub fn build_payload(config: ProposalConfig) -> anyhow::Result<String> {
     for (chain, entry) in config.chains.iter() {
         validate_chain_entry(entry.clone()).map_err(|source| ConfigError {
             chain: *chain,
             source,
         })?;
     }
-    borsh::to_vec(&config.chains)
-        .with_context(|| format!("failed to serialize chains {:?}", config.chains))
+    let args = VoteUpdateForeignChainProvidersArgs::new(config.chains);
+    serde_json::to_string_pretty(&args)
+        .with_context(|| format!("failed to serialize chains {:?}", args.votes))
 }
 
 #[cfg(test)]
@@ -44,6 +46,11 @@ mod tests {
 
     fn parse(toml: &str) -> ProposalConfig {
         toml::from_str(toml).unwrap()
+    }
+
+    fn votes_of(payload: &str) -> NonEmptyBTreeMap<ForeignChain, ChainEntry> {
+        let args: serde_json::Value = serde_json::from_str(payload).unwrap();
+        serde_json::from_value(args["votes"].clone()).unwrap()
     }
 
     #[test]
@@ -78,8 +85,7 @@ mod tests {
         let payload = build_payload(config).unwrap();
 
         // Then
-        let votes: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
-            borsh::from_slice(&payload).unwrap();
+        let votes = votes_of(&payload);
         assert_eq!(
             votes.keys().collect::<Vec<_>>(),
             vec![&ForeignChain::Bitcoin, &ForeignChain::Aptos]
@@ -124,8 +130,7 @@ mod tests {
         let payload = build_payload(config).unwrap();
 
         // Then
-        let votes: NonEmptyBTreeMap<ForeignChain, ChainEntry> =
-            borsh::from_slice(&payload).unwrap();
+        let votes = votes_of(&payload);
         assert_eq!(
             votes.keys().copied().collect::<Vec<_>>(),
             vec![
