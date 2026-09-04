@@ -506,11 +506,11 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
-  file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' \
+  file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' \
   attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT network-config testnet sign-with-keychain send
 
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
-  file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' \
+  file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' \
   attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
@@ -529,7 +529,7 @@ If the contract is stuck in **Initializing**, this usually means the MPC nodes f
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  sign \
-  file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' \
+  file-args docs/development/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' \
   attached-deposit '100 yoctoNEAR' sign-as $FRODO_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```

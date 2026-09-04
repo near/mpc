@@ -41,7 +41,7 @@ Now, please do the following things:
    We recommend using the GitHub UI to create the branch as it will automatically link it and use a canonical format for the branch name.
 3. Check out the branch and get to work.
 
-Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](./docs/engineering-standards.md),
+Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](./docs/development/engineering-standards.md),
 it's time to open a PR.
 
 When opening the PR, make sure to link the issue in the PR description.

@@ -1,7 +1,7 @@
 # Calculating the whitelisted and available foreign-chain sets
 
 Status: Proposed — supersedes the all-participant intersection rule in
-[`docs/foreign-chain-transactions.md`](../foreign-chain-transactions.md). Tracked by
+[`docs/archive/design/foreign-chain-transactions.md`](../archive/design/foreign-chain-transactions.md). Tracked by
 [#3434](https://github.com/near/mpc/issues/3434).
 
 ## Background
@@ -20,7 +20,7 @@ configured provider, see [Verification behavior](#verification-behavior)).
 ## Proposal: two sets of chains
 
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
-> [Foreign Chain Transaction Verification Design — Terminology](../foreign-chain-transactions.md#terminology).
+> [Foreign Chain Transaction Verification Design — Terminology](../archive/design/foreign-chain-transactions.md#terminology).
 
 The network distinguishes the **whitelisted** set (vote-driven policy, `allowed_foreign_chain_providers()`)
 from the **available** set (servable right now, `get_available_foreign_chains()`):
