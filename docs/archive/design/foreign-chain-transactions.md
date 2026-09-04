@@ -329,7 +329,7 @@ general-purpose `sign()` keys, even if the same account and derivation path are 
 
 Defined here once; the two design docs
 ([calculating the whitelisted/available sets](../../design/calculating-supported-foreign-chains.md),
-[per-node RPC configuration](../../design/allowing-per-node-foreign-chain-rpc-configuration.md)) point
+[per-node RPC configuration](allowing-per-node-foreign-chain-rpc-configuration.md)) point
 back here rather than redefining them.
 
 - **Local RPC config** — a node's `foreign_chains.yaml`: the per-chain set of whitelisted providers
