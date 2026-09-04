@@ -43,7 +43,7 @@ MPC nodes can run inside a trusted execution environment (TEE). For more details
 
 ## Security Audits
 
-We strive to have every feature and critical code path independently audited. The final reports are in [docs/audits](docs/audits/README.md).
+We strive to have every feature and critical code path independently audited. The final reports are in [audits](audits/README.md).
 
 ## Dependencies
 

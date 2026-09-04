@@ -13,4 +13,4 @@ Non-vulnerability-related security issues, such as new ideas for security
 features, are welcome on GitHub Issues.
 
 Reports from our independent security audits are published in
-[docs/audits](../docs/audits/README.md).
+[audits](../audits/README.md).
