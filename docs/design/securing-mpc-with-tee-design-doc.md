@@ -29,7 +29,7 @@ Our primary goal is to ensure that every MPC node runs inside a TEE—specifical
 
 The MPC network is composed of the following key components:
 
-![](attachments/system_overview.png " =611x573")
+![](../attachments/system_overview.png " =611x573")
 
 ### External Clients
 
