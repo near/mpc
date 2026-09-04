@@ -16,7 +16,7 @@ Two things to keep in mind for the setup:
 - Run each component on its own machine — don't co-locate them.
 - Keep your mainnet and testnet setups as close to identical as possible, so testnet catches bugs before they reach mainnet.
 
-See the [TDX node guide](running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
+See the [TDX node guide](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
 
 > **Note** — As of 2026-06, TEE migration is in progress: testnet runs a mix of TEE and non-TEE nodes, and mainnet does not yet require TEE. Until that changes, operators onboarding now should run a non-TEE node for mainnet and a TEE node for testnet. See [Running the MPC Launcher in Non-TEE Mode](../development/using-the-launcher-in-nontee-setup.md) for details.
 

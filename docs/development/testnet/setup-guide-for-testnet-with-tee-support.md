@@ -139,7 +139,7 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 ### Update Bootnodes and IPs
 
-> See [Running multiple MPC nodes on one host](../guide/running-multiple-mpc-nodes-on-one-host.md) for the general framing of why each node needs its own host IP.
+> See [Running multiple MPC nodes on one host](../../guide/running-multiple-mpc-nodes-on-one-host.md) for the general framing of why each node needs its own host IP.
 
 Run this command to get the current testnet bootnodes.
 **Important:** Boot nodes must not contain duplicate addresses or peer IDs, as duplicates will cause the node to crash on startup. The command below deduplicates automatically:
@@ -292,7 +292,7 @@ Prepare arguments for the init call:
 
 ```bash
 mkdir -p "/tmp/$USER"
-envsubst < docs/testnet/args/init_testnet_tee.json > "/tmp/$USER/init_args.json"
+envsubst < docs/development/testnet/args/init_testnet_tee.json > "/tmp/$USER/init_args.json"
 ```
 
 **Note:** Ensure `/tmp/$USER/init_args.json` has correct IPs, keys, accounts before proceeding.

@@ -105,7 +105,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the launcher compose hash. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses `DEFAULT_IMAGE_DIGEST` compiled into it (same pattern as MPC node launcher). On subsequent boots, `TeeContext` will have written updated hashes to disk.
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
-3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Bootstrapping](securing-mpc-with-tee-design-doc.md#bootstrapping)).
+3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Bootstrapping](securing-mpc-with-tee/securing-mpc-with-tee.md#bootstrapping)).
 
 **Attestation registration (periodic — every 7 days, starting on first boot):**
 

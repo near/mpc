@@ -18,7 +18,7 @@ It:
 
 - A working Dstack setup and Dstack VMM service (`vmm-server`) accessible at `$VMM_RPC`.
 See Phala's [setup guide](https://github.com/Dstack-TEE/dstack).
-Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-guide.md](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide.md#mpc-node-setup-and-deployment)
+Also review specific MPC configuration in [running-an-mpc-node-in-tdx-external-guide.md](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#mpc-node-setup-and-deployment)
 - Python 3.6 or higher installed
 - Required Python packages (cryptography, eth_keys, eth_utils)
 - `vmm-cli.py` should be located under $basePath/vmm/src/vmm-cli.py
