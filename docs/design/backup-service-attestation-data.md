@@ -105,7 +105,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the launcher compose hash. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses `DEFAULT_IMAGE_DIGEST` compiled into it (same pattern as MPC node launcher). On subsequent boots, `TeeContext` will have written updated hashes to disk.
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
-3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Bootstrapping](./securing-mpc-with-tee-design-doc.md#bootstrapping)).
+3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Bootstrapping](../securing-mpc-with-tee-design-doc.md#bootstrapping)).
 
 **Attestation registration (periodic — every 7 days, starting on first boot):**
 
@@ -139,7 +139,7 @@ The [migration service `impl` block][migration-service-impl] needs:
 
 - **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo`. Write to `backup_service_tee_state` via [`add_participant()`][add-participant]. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`).
 - **[`migration_info()`][migration-info]**: Replace with a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
-- **New methods** (per [migration-service.md §Backup Service TEE methods](./migration-service.md#backup-service-tee-methods)):
+- **New methods** (per [migration-service.md §Backup Service TEE methods](../migration-service.md#backup-service-tee-methods)):
   - `vote_backup_service_code_hash(code_hash)`
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
