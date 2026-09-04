@@ -284,6 +284,8 @@ impl MpcContract {
 mod tests {
     use super::{Duration, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
+    use crate::dto_mapping::IntoInterfaceType as _;
+    use crate::primitives::test_utils::authenticate_as;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
@@ -295,6 +297,7 @@ mod tests {
         self as dtos, ExpectedMeasurements, LauncherVoteAction, MeasurementVoteAction,
     };
     use near_sdk::test_utils::VMContextBuilder;
+    use std::collections::BTreeSet;
     use near_sdk::testing_env;
     use rstest::rstest;
 
@@ -623,6 +626,7 @@ mod tests {
 
         // First vote
         let (account_0, _, _) = &participant_list[0];
+        let auth_0 = (&authenticate_as(account_0, &participants)).into_dto_type();
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(account_0.clone())
@@ -635,10 +639,11 @@ mod tests {
 
         let votes = contract.launcher_hash_votes();
         assert_eq!(votes.len(), 1);
-        assert_eq!(votes[&expected_proposal].len(), 1);
+        assert_eq!(votes[&expected_proposal], BTreeSet::from([auth_0.clone()]));
 
         // Second vote
         let (account_1, _, _) = &participant_list[1];
+        let auth_1 = (&authenticate_as(account_1, &participants)).into_dto_type();
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(account_1.clone())
@@ -651,7 +656,7 @@ mod tests {
 
         let votes = contract.launcher_hash_votes();
         assert_eq!(votes.len(), 1);
-        assert_eq!(votes[&expected_proposal].len(), 2);
+        assert_eq!(votes[&expected_proposal], BTreeSet::from([auth_0, auth_1]));
 
         // Third vote reaches threshold — votes should be cleared
         let (account_2, _, _) = &participant_list[2];
@@ -685,6 +690,7 @@ mod tests {
 
         assert!(contract.code_hash_votes().is_empty());
 
+        let mut expected_voters = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(
                 VMContextBuilder::new()
@@ -696,10 +702,12 @@ mod tests {
                 .vote_code_hash(code_hash)
                 .expect("vote should succeed");
 
+            expected_voters.insert((&authenticate_as(account, &participants)).into_dto_type());
+
             let votes = contract.code_hash_votes();
             if i < (threshold - 1) as usize {
                 assert_eq!(votes.len(), 1);
-                assert_eq!(votes[&code_hash].len(), i + 1);
+                assert_eq!(votes[&code_hash], expected_voters);
             } else {
                 assert!(
                     votes.is_empty(),
@@ -1059,8 +1067,9 @@ mod tests {
 
         let votes = contract.os_measurement_votes();
         let expected_proposal = ProposalHash::from(&MeasurementVoteAction::Add(measurement));
+        let expected_voter = (&authenticate_as(account_id, &participants)).into_dto_type();
         assert_eq!(votes.len(), 1);
-        assert_eq!(votes[&expected_proposal].len(), 1);
+        assert_eq!(votes[&expected_proposal], BTreeSet::from([expected_voter]));
     }
 
     /// Tests the allowed_os_measurements view method returns the full structs

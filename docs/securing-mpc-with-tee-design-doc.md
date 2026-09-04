@@ -688,7 +688,7 @@ pub fn vote_remove_launcher_hash(
 // view: list currently approved launcher hashes (pre-existing)
 pub fn allowed_launcher_image_hashes(&self) -> Vec<LauncherImageHash>
 // view: list pending votes
-pub fn launcher_hash_votes(&self) -> LauncherHashVotes
+pub fn launcher_hash_votes(&self) -> VotesByProposal
 ```
 
 Once the voting threshold is reached:
@@ -726,7 +726,7 @@ pub fn vote_remove_os_measurement(
 // view: list currently approved measurements
 pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements>
 // view: list pending votes
-pub fn os_measurement_votes(&self) -> MeasurementVotes
+pub fn os_measurement_votes(&self) -> VotesByProposal
 
 pub struct ContractExpectedMeasurements {
     pub mrtd: Sha384Digest,
