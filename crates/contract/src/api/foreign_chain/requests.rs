@@ -251,7 +251,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
         let request = args_into_verify_foreign_tx_request(request_args.clone());
@@ -344,7 +344,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
 
@@ -402,7 +402,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
         let request = args_into_verify_foreign_tx_request(request_args.clone());
@@ -446,7 +446,7 @@ mod tests {
         let rpc_request = dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
             tx_id: [7u8; 32].into(),
             confirmations: 2.into(),
-            extractors: vec![BitcoinExtractor::BlockHash],
+            extractors: [BitcoinExtractor::BlockHash].into(),
         });
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: rpc_request.clone(),
@@ -493,7 +493,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
         let request = args_into_verify_foreign_tx_request(request_args.clone());
@@ -562,7 +562,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
         let request = args_into_verify_foreign_tx_request(request_args.clone());
@@ -606,7 +606,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         });
     }
@@ -704,7 +704,7 @@ mod tests {
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
-                extractors: vec![BitcoinExtractor::BlockHash],
+                extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         }
     }
