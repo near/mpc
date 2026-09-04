@@ -8,7 +8,7 @@ There are two main parts of the binary: NEAR indexer and MPC signing.
 
 ### NEAR Indexer
 
-The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/design/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
+The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/archive/design/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
 
 ### MPC Signing
 
@@ -35,11 +35,11 @@ For each scheme, the participating set is fixed from the offline phase through t
 
 **[Confidential Key Derivation](crates/threshold-signatures/docs/confidential_key_derivation/confidential-key-derivation.md)** (BLS12-381) — Derives application-specific keys without revealing the master secret. Takes an application ID and an ephemeral public key, and produces a deterministic secret using threshold BLS signatures and ElGamal encryption. Two variants are supported: *privately verifiable* (app verifies after decryption) and *publicly verifiable* (anyone can verify the encrypted result on-chain without knowing the app's secret key).
 
-**Foreign chain transaction verification** — The network can verify transactions on foreign chains (Ethereum, Solana, Bitcoin, etc.) before signing. Nodes independently query configured RPC providers, run deterministic extractors over the results, and produce a threshold signature over the observed values. This enables NEAR contracts to react to external chain events without a trusted relayer. See [docs/foreign-chain-transactions.md](docs/foreign-chain-transactions.md) for the full design.
+**Foreign chain transaction verification** — The network can verify transactions on foreign chains (Ethereum, Solana, Bitcoin, etc.) before signing. Nodes independently query configured RPC providers, run deterministic extractors over the results, and produce a threshold signature over the observed values. This enables NEAR contracts to react to external chain events without a trusted relayer. See [docs/archive/design/foreign-chain-transactions.md](docs/archive/design/foreign-chain-transactions.md) for the full design.
 
 ## TEE Integration
 
-MPC nodes can run inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/securing-mpc-with-tee-design-doc.md).
+MPC nodes can run inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/design/securing-mpc-with-tee-design-doc.md).
 
 ## Dependencies
 
@@ -49,7 +49,7 @@ All crates are organized in a [Cargo workspace](Cargo.toml) under `crates/`. All
 
 A Nix flake provides a reproducible development environment with the Rust toolchain, LLVM/Clang, NEAR CLI, and all system dependencies pre-configured. Run `nix develop` to enter the shell.
 
-For setup details (direnv integration, VS Code config, verification), see [docs/nix-dev-environment.md](docs/nix-dev-environment.md).
+For setup details (direnv integration, VS Code config, verification), see [docs/development/nix-dev-environment.md](docs/development/nix-dev-environment.md).
 
 ## Building
 
@@ -125,7 +125,7 @@ cargo install cargo-insta
 
 Both the node and launcher Docker images support reproducible builds, ensuring identical binaries from the same source. Run `./deployment/build-images.sh` from the project root.
 
-For prerequisites and options, see [docs/reproducible-builds.md](docs/reproducible-builds.md).
+For prerequisites and options, see [docs/guide/reproducible-builds.md](docs/guide/reproducible-builds.md).
 
 ## Releases
 
@@ -145,7 +145,7 @@ We welcome contributions in the form of issues, feature requests, and pull reque
 
 ### Development workflow
 
-We run several checks in CI that require tools beyond the default Rust toolchain. The [nix environment](docs/nix-dev-environment.md) installs all of them automatically.
+We run several checks in CI that require tools beyond the default Rust toolchain. The [nix environment](docs/development/nix-dev-environment.md) installs all of them automatically.
 
 - [`cargo-make`](https://github.com/sagiegurari/cargo-make)
 - [`cargo-nextest`](https://github.com/nextest-rs/nextest)
@@ -173,3 +173,25 @@ Running all `cargo-make` supported checks:
 ```console
 cargo make check-all
 ```
+
+### Documentation
+
+Documentation in this repository falls into two categories: live documentation, aiming to explain how something works _right now_, and archived documentation records that may help future developers retrace past decisions. Live documentation _must_ be updated if invalidated by a change, but archived documentation _must not_ be updated, as doing so would undermine its purpose.
+
+Archived documentation must be labeled as such with a status banner: a `**Status:** ARCHIVED` line immediately below the document's title. Any document without such a banner is considered live.
+
+To archive a file, one must open a PR adding the status banner.
+
+### Repository layout
+
+The following is a non-exhaustive list of crates from this repository that may be relevant to the reader of this document:
+
+**The node** [(`mpc-node`)](crates/node) is the binary run by MPC participants: NEAR indexer, P2P networking, and the threshold protocols themselves.
+
+**The contract** [(`mpc-contract`)](crates/contract) is the smart contract deployed on NEAR. It accepts signature requests, manages the participant set and protocol state, and governs upgrades through participant voting.
+
+**The contract interface** [(`near-mpc-contract-interface`)](crates/near-mpc-contract-interface) contains the wire formats accepted by the contract as well as a `client` feature for constructing typed contract calls over generic backends (RPC nodes, nearcore indexer).
+
+**The MPC SDK crate** [(`near-mpc-sdk`)](crates/near-mpc-sdk) contains logic shared between the MPC contract and its callers.
+
+**Threshold Signatures** [(`threshold-signatures`)](crates/threshold-signatures) implements the threshold cryptography itself.

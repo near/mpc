@@ -180,7 +180,7 @@ fn hex_arr<const N: usize>(s: &str) -> [u8; N] {
         .expect("correct length")
 }
 
-/// The localnet guide (`docs/localnet/localnet.md`) calls `verify_quote` from the
+/// The localnet guide (`docs/development/localnet/localnet.md`) calls `verify_quote` from the
 /// command line. Its arguments are binary (borsh), so they are read from a committed
 /// file.
 ///

@@ -118,7 +118,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
         .args_json(json!({}))
         .await?
-        .borsh()?;
+        .json()?;
     assert!(
         whitelist_before.is_empty(),
         "chain should not be applied yet (only 5 of 6 threshold votes cast)"
@@ -134,12 +134,12 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         "vote_update_foreign_chain_providers (vote 6) failed: {result:?}"
     );
 
-    // Then: chain entry is applied (result is borsh-encoded — see the view fn's doc).
+    // Then
     let whitelist: BTreeMap<ForeignChain, ChainEntry> = contract
         .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
         .args_json(json!({}))
         .await?
-        .borsh()?;
+        .json()?;
     let stored = whitelist
         .get(&ForeignChain::Ethereum)
         .expect("Ethereum entry should be present after 6 matching votes");

@@ -54,7 +54,7 @@ Participants can propose and vote on contract updates (code or configuration cha
 
 ### Deposit requirement
 
-Both `sign` and `request_app_private_key` require a **deposit of at least 1 yoctonear**. Any excess deposit is automatically refunded.
+`sign`, `request_app_private_key` and `verify_foreign_transaction` require a **deposit of at least 1 yoctonear**. Any excess deposit is automatically refunded.
 
 The deposit exists to prevent abuse by malicious frontends. On NEAR, a dApp frontend can hold a function-call access key that lets it submit transactions on behalf of a user without prompting for approval each time. By default, however, function-call access keys **cannot attach a deposit**. Requiring a deposit therefore guarantees that the call was authorised by the user's full-access key (or a function-call key with an explicit deposit allowance), preventing a compromised or malicious frontend from silently submitting signature requests without the user's knowledge.
 
@@ -261,7 +261,7 @@ stateDiagram-v2
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
 | `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, path, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`.             | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, derivation path, and app public key) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
-| `verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs)`                   | Submits a foreign-chain transaction verification request to the contract. Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. Duplicate submissions of the same request (same caller, domain, chain, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
+| `verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs)`                   | Submits a foreign-chain transaction verification request to the contract. Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. A request may carry at most 32 extractors. Duplicate submissions of the same request (same caller, domain, chain, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 | `prepay_attestation_storage(account_id: AccountId, grants: u32)` | Prepays attestation-entry storage for `account_id`. One grant permits one stored attestation. Payable and permissionless — anyone may prepay for any account, which is how an operator funds a node whose function-call access key cannot attach a deposit. Requires an attached deposit of exactly `attestation_storage_fee_millinear × grants` (see `config`) and rejects anything else. Nothing is refunded and there is no withdrawal. | `Result<(), Error>` | 30Tgas | ~4Tgas |
@@ -352,7 +352,7 @@ sha256sum target/near/mpc_contract/mpc_contract.wasm
 ```
 
 A Nix-based reproducible build is also available. See
-[reproducible-builds.md](../../docs/reproducible-builds.md#mpc-contract) for the
+[reproducible-builds.md](../../docs/guide/reproducible-builds.md#mpc-contract) for the
 full workflow and the difference between the two.
 
 ## TEE Specific information
@@ -380,7 +380,7 @@ The prospective node operator can retrieve that data from the web endpoint (`:80
 
 The process of doing so is as follows:
 
-1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/running-an-mpc-node-in-tdx-external-guide.md)).
+1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/guide/running-an-mpc-node-in-tdx-external-guide.md)).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
 4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.

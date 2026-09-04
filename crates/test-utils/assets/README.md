@@ -1,6 +1,6 @@
 # Updating Test Assets
 
-Updating test assets is needed when updating launcher code (or when updating other measured components).  See [updating-launcher-internal-guide.md](../../../docs/updating-launcher-internal-guide.md)
+Updating test assets is needed when updating launcher code (or when updating other measured components).  See [updating-launcher-internal-guide.md](../../../docs/development/updating-launcher-internal-guide.md)
 
 
 To update the test asset files, fetch `/public_data` from the MPC node’s public

@@ -13,7 +13,7 @@ use core::fmt;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
-use tee_verifier_interface::{TDReport10, VerifiedReport};
+use tee_verifier_interface::{TDReport10, TcbStatus, VerifiedReport};
 
 #[cfg(feature = "local-verify")]
 use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
@@ -56,8 +56,15 @@ pub enum VerificationError {
     DcapVerification(String),
     #[error("verification report is not TD10")]
     ReportNotTd10,
-    #[error("TCB status `{0}` is not up to date")]
-    TcbStatusNotUpToDate(String),
+    #[error(
+        "TCB status `{status}` is not up to date (QE: {qe_status:?}, platform: {platform_status:?}, advisories: {advisory_ids:?})"
+    )]
+    TcbStatusNotUpToDate {
+        status: String,
+        qe_status: TcbStatus,
+        platform_status: TcbStatus,
+        advisory_ids: Vec<String>,
+    },
     #[error("wrong {name} hash (found {found} expected {expected})")]
     WrongHash {
         name: &'static str,
@@ -263,8 +270,14 @@ impl DstackAttestation {
     ///      [`UpToDate`](tee_verifier_interface::TcbStatus::UpToDate) and do not indicate a vulnerability; they are returned so the
     ///      caller can log/expose them.
     fn verify_tcb_status(report: &VerifiedReport) -> Result<Vec<String>, VerificationError> {
-        (report.status == EXPECTED_QUOTE_STATUS)
-            .or_err(|| VerificationError::TcbStatusNotUpToDate(report.status.clone()))?;
+        (report.status == EXPECTED_QUOTE_STATUS).or_err(|| {
+            VerificationError::TcbStatusNotUpToDate {
+                status: report.status.clone(),
+                qe_status: report.qe_status.status.clone(),
+                platform_status: report.platform_status.status.clone(),
+                advisory_ids: report.advisory_ids.clone(),
+            }
+        })?;
 
         Ok(report.advisory_ids.clone())
     }
@@ -496,9 +509,7 @@ mod tests {
     use super::*;
 
     use alloc::{string::ToString, vec, vec::Vec};
-    use tee_verifier_interface::{
-        EnclaveReport, Report, TcbStatus, TcbStatusWithAdvisory, VerifiedReport,
-    };
+    use tee_verifier_interface::{EnclaveReport, Report, TcbStatusWithAdvisory, VerifiedReport};
 
     fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
         VerifiedReport {
@@ -573,16 +584,20 @@ mod tests {
         // Then
         assert_eq!(
             result,
-            Err(VerificationError::TcbStatusNotUpToDate(
-                "OutOfDate".to_string()
-            ))
+            Err(VerificationError::TcbStatusNotUpToDate {
+                status: "OutOfDate".to_string(),
+                qe_status: TcbStatus::UpToDate,
+                platform_status: TcbStatus::UpToDate,
+                advisory_ids: vec![],
+            })
         );
     }
 
     #[test]
-    fn verify_tcb_status__should_reject_non_uptodate_status_with_advisories() {
+    fn verify_tcb_status__should_reject_non_uptodate_status_with_mixed_component_statuses() {
         // Given
-        let report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
+        let mut report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
+        report.platform_status.status = TcbStatus::OutOfDate;
 
         // When
         let result = DstackAttestation::verify_tcb_status(&report);
@@ -590,9 +605,12 @@ mod tests {
         // Then
         assert_eq!(
             result,
-            Err(VerificationError::TcbStatusNotUpToDate(
-                "OutOfDate".to_string()
-            ))
+            Err(VerificationError::TcbStatusNotUpToDate {
+                status: "OutOfDate".to_string(),
+                qe_status: TcbStatus::UpToDate,
+                platform_status: TcbStatus::OutOfDate,
+                advisory_ids: vec!["INTEL-SA-00001".to_string()],
+            })
         );
     }
 

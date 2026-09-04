@@ -46,7 +46,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.14.0"
+version = "3.15.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
@@ -269,16 +269,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.3" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
 
 ## Outdated dependencies we cannot upgrade ##
 # Version 0.8.3 requires rustc 1.88

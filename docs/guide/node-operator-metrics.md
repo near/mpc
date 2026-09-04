@@ -1,0 +1,143 @@
+# Metrics for node operators
+
+The MPC node exposes Prometheus metrics on its debug port. This guide lists
+the ones worth watching, what each measures, and alert rules to start from.
+
+## Chain-gateway pipeline
+
+Counters in
+[`event_subscriber/metrics.rs`](../../crates/chain-gateway/src/event_subscriber/metrics.rs):
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_blocks_received_from_indexer_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | blocks pulled from the near-indexer stream | if the rate drops significantly, indicates starvation of the event-subscriber pipeline or an issue on the NEAR blockchain |
+| [`mpc_blocks_indexed_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | unique blocks added to the `RecentBlocksTracker` (after dedup) | should track closely with `mpc_blocks_received_from_indexer_total`; divergence means the indexer is replaying hashes we've already seen |
+| [`mpc_finalized_blocks_indexed_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | blocks the tracker has promoted to `Final` | should grow steadily a few seconds behind the received/indexed counters; if it freezes while those keep growing, finality is stalling |
+| [`mpc_block_updates_dropped_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | block updates that won't be received by the node (containing signature requests, responses, etc.) | should be zero or flat. If it increases, the consumer is starved or the MPC node is not working correctly |
+| [`mpc_num_fail_on_timeout_indexed`](../../crates/node/src/metrics.rs) | number of calls to `fail_on_timeout` in the MPC contract. Counts the number of failed requests (aggregate over all request types). May contain false positives if `mpc_finalized_blocks_indexed_total` diverges from `mpc_blocks_indexed_total`, as it may count transactions on non-finalized forks. | should be near zero in healthy operation. Sustained non-zero rate means the node (or the cluster) is missing the response deadline or the blockchain has a lot of forks. |
+
+## Backups
+
+Gauges in [`metrics.rs`](../../crates/node/src/metrics.rs). Set when the node
+serves keyshares over the migration service to the backup service registered for it:
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_last_backup_served_epoch`](../../crates/node/src/metrics.rs) | epoch id of the last keyset served to the backup service | should equal `mpc_current_epoch_id` once a backup has been taken for it. Lagging behind means the latest epoch has not been backed up. |
+| [`mpc_last_backup_served_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last keyshare set served to the backup service | should be recent. A large gap since the last resharing means backups are not being taken. Confirms the node served the keyshares, not that the backup service persisted them. |
+| [`mpc_current_epoch_id`](../../crates/node/src/metrics.rs) | epoch id of the keyset the contract currently holds | the reference point for `mpc_last_backup_served_epoch`. Increments on every resharing; unset until the first keyset exists. During a resharing it stays at the old epoch, which is the one still available to back up. |
+
+## Attestation freshness
+
+Gauges in [`metrics.rs`](../../crates/node/src/metrics.rs). Set from the
+on-chain confirmation of an attestation submission, in
+[`attestation_freshness_metrics.rs`](../../crates/node/src/tee/attestation_freshness_metrics.rs):
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. A sustained gap ends in this node being dropped from the participant set. |
+| [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | NEAR block time at which the attestation the contract stores for this node's TLS key expires | subtract `mpc_indexer_latest_block_timestamp_seconds` — the clock the contract expires entries against, not wall clock — for the runway before this node is dropped from the participant set. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry. |
+
+## Foreign chain RPC providers
+
+Recorded in [`metrics.rs`](../../crates/node/src/metrics.rs) by the verify fan-out, which
+measures each provider it queries. Both series carry a `chain` label, the key the chain is
+configured under (`bitcoin`, `hyper_evm`, ...), and a `provider` label, its configured provider
+name:
+
+| Metric | Measures | How to interpret |
+| --- | --- | --- |
+| [`mpc_foreign_chain_provider_inspection_seconds`](../../crates/node/src/metrics.rs) | time one provider took to answer one verify request; failed calls are not timed | compare providers of the same chain against each other. One drifting up toward the top bucket is approaching the node's inspection deadline. A provider that times out is invisible here and loud in `mpc_foreign_chain_provider_errors_total{kind="timeout"}`, so read p95 and p99 next to that rate. |
+| [`mpc_foreign_chain_provider_errors_total`](../../crates/node/src/metrics.rs) | requests a provider itself failed to answer, by `kind` | should be near zero. `non_transient` is the one to act on first: the provider is refusing requests or answering with something unusable, and retrying will fix neither. |
+
+`kind` is one of:
+
+* `transient`: no answer arrived. Transport failure, 5xx, or rate limiting.
+* `non_transient`: the provider answered and refused, or answered with something unusable.
+  Retrying cannot change either.
+* `timeout`: the provider had not answered when the node gave up on it, including a call still in
+  flight when the node abandons the inspection at its deadline or on shutdown.
+
+One histogram observation is a whole inspection, one to three serialized RPC calls depending on
+the chain and on where the inspection stopped, not a single round trip. The top bucket is the
+node's inspection deadline.
+
+A failed call is counted but not timed: its duration says nothing about the provider's latency,
+and a timeout observed at the deadline would pin the high quantiles there. p95 and p99 therefore
+describe answers only.
+
+An answer about the transaction is never counted as an error, even when it ends the verification:
+a transaction that is not final yet, has too few confirmations, is absent, reverted, or sits on a
+non-canonical block is an answer. Otherwise every healthy provider would count as failing whenever
+a caller asks about a transaction before it is final.
+
+Every configured provider's series is published once the node enters the contract's `Running`
+state, the point from which it serves verify requests, so a healthy idle node reports zero rather
+than nothing at all. Before that, neither series exists. Solana is the exception: it can be
+configured but has no inspector, so it never appears.
+
+A verify request that never reaches a provider (the chain is unavailable, no inspector is
+configured for it, or the request itself is malformed) is in neither series. The leader and every
+follower run their own inspection, so one user request produces one observation per provider on
+each participating node.
+
+Probe traffic is deliberately excluded, both the node's own periodic provider probe and the
+`foreign-chain-config-tester` CLI: probes share their providers with the verify path, and their
+latencies would drown the ones an operator is looking at.
+
+## Recommended alerts
+
+```promql
+# Pipeline stuck (page): no blocks pulled from the indexer.
+rate(mpc_blocks_received_from_indexer_total[1m]) == 0  for 5m
+
+# Falling behind (warn): NEAR produces ~1 b/s; sustained low rate accumulates lag.
+rate(mpc_blocks_received_from_indexer_total[1m]) < 0.5  for 15m
+
+# Dropped block updates (warn): every drop is matched-event data the consumer
+# will never see.
+increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
+
+# Signature timeouts (warn): the node failed to produce a signature within the
+# deadline. Downstream symptom; cross-check the pipeline counters above.
+increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
+
+# Provider refusing or garbling answers (warn): a dead API key, a chain the plan
+# does not cover, or a backend serving unusable responses. Needs an operator.
+increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
+
+# Provider not answering (warn): one provider stops answering while its peers on
+# the same chain keep up. Tolerated by the fan-out, so it is silent otherwise.
+increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0  for 15m
+
+# Backups stale (warn): no keyshares served to the backup service recently. Only
+# meaningful once backups are being taken against this node.
+time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
+
+# Current epoch not backed up (warn): a resharing happened and its keyset has not
+# been served to the backup service since. Also fires if the node has never served
+# a backup, since the gauge starts at 0.
+mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
+
+# Re-attestation stuck (warn): nothing landed in three re-attestation intervals.
+# The primary signal — it fires within hours, while the expiry alert below only
+# does so days later.
+time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
+
+# Attestation runway low (page): under 3 days before the contract drops this node
+# from the participant set. Backstop for the alert above, and reached only about
+# four days after submissions stop landing. The threshold is a plain duration
+# rather than a fraction of the expiry window (7 days today): keep it below the
+# window, and revisit if the window changes. `> 0` drops the sentinels so they are
+# not read as timestamps.
+mpc_attestation_expiry_timestamp_seconds > 0
+  and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
+      < 3 * 86400  for 15m
+
+# No attestation stored (page): the contract holds nothing for our TLS key, so this
+# node is out of the attested set. Also covers a node that never landed one.
+mpc_attestation_expiry_timestamp_seconds == 0  for 15m
+```
+
+A `-1` expiry satisfies neither expiry alert, so a node holding an attestation stored
+without one is covered by the staleness alert alone.
