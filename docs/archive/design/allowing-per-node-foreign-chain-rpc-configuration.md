@@ -1,6 +1,8 @@
 # Configuration of foreign chain RPC providers without full consensus
 
-> **Canonical design:** see [`docs/archive/design/foreign-chain-transactions.md` — "On-chain RPC Provider Whitelist"](../archive/design/foreign-chain-transactions.md#on-chain-rpc-provider-whitelist) for the full end-to-end shape, type definitions, vote semantics, and rationale. This doc captures the *motivation* and the high-level shape; the linked section is the source of truth for the implementation.
+**Status:** ARCHIVED
+
+> **Canonical design:** see [`docs/archive/design/foreign-chain-transactions.md` — "On-chain RPC Provider Whitelist"](foreign-chain-transactions.md#on-chain-rpc-provider-whitelist) for the full end-to-end shape, type definitions, vote semantics, and rationale. This doc captures the *motivation* and the high-level shape; the linked section is the source of truth for the implementation.
 
 ## Background
 For the foreign chain transaction validation feature supported by the MPC network, individual MPC nodes each query a set
@@ -19,7 +21,7 @@ requiring all other nodes to have the exact same configuration.
 ### Requirements
 
 > Terms used below (whitelisted, available, RPC quorum, *covers*, signing threshold) are defined in
-> the [main doc's Terminology](../archive/design/foreign-chain-transactions.md#terminology).
+> the [main doc's Terminology](foreign-chain-transactions.md#terminology).
 
 1. RPC providers are whitelisted by being voted into the contract by node operators submitting votes. The whitelist is **per-chain**, keyed by `(ForeignChain, ProviderId)`.
 2. The contract owns the connection config (`base_url`, `auth_scheme`, `chain_routing`), not the operator. Operator yaml carries `provider_id` + a `token_env` reference only.
@@ -30,7 +32,7 @@ requiring all other nodes to have the exact same configuration.
    served while it is **available** (≥ signing threshold of active nodes cover it), and
    `verify_foreign_transaction` early-rejects a whitelisted-but-unavailable chain. Per-node
    registrations feed the availability computation. See
-   [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
+   [Calculating the whitelisted and available foreign-chain sets](../../design/calculating-supported-foreign-chains.md).
 6. Monitoring and off-chain alert channels notify operators of incomplete coverage (a node not
    covering some whitelisted chain); there is no on-chain penalty.
 
@@ -119,13 +121,13 @@ Since the nodes are running in a Trusted Execution Environment (TEE), this funct
 
 ### Provider agreement for verification requests
 
-When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff every provider that reached a verdict reached the same one; providers that fail to answer are tolerated. On any disagreement the node errors out and produces no signature share. This disagreement outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md#verification-behavior).
+When a foreign TX verification request is processed by a set of nodes, every node individually queries its locally-configured RPC providers for that chain. A node considers the foreign TX verified iff every provider that reached a verdict reached the same one; providers that fail to answer are tolerated. On any disagreement the node errors out and produces no signature share. This disagreement outcome must be **terminal** for the request — the leader does not re-attempt it. This is an implementation requirement, not current behavior. See [Calculating the whitelisted and available foreign-chain sets](../../design/calculating-supported-foreign-chains.md#verification-behavior).
 
 The on-chain `ChainEntry.quorum`, voted in as part of the same `ChainVote` that voted the chain's provider list, is stored for a deferred quorum policy (how many providers must concur before a node accepts a result) and is not yet consumed by verification.
 
 ### Nodes submit the configured foreign chains on-chain
 
-Nodes submit their per-chain provider set on-chain so the network knows which chains they cover. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept, now serving two roles: it feeds the **available**-set computation (which chains have ≥ signing threshold covering nodes) and the alerting that flags any active node not covering a whitelisted chain. See [Calculating the whitelisted and available foreign-chain sets](calculating-supported-foreign-chains.md).
+Nodes submit their per-chain provider set on-chain so the network knows which chains they cover. Functionality for this was added on the contract side in [#2784](https://github.com/near/mpc/pull/2784) and is kept, now serving two roles: it feeds the **available**-set computation (which chains have ≥ signing threshold covering nodes) and the alerting that flags any active node not covering a whitelisted chain. See [Calculating the whitelisted and available foreign-chain sets](../../design/calculating-supported-foreign-chains.md).
 
 ## Rollout
 
