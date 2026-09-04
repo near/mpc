@@ -112,7 +112,8 @@ where
         if !meta.err.is_null() {
             return Ok(Verdict::TransactionFailed);
         }
-        self.extract_values(&tx, meta, commitment, &extractors).await
+        self.extract_values(&tx, meta, commitment, &extractors)
+            .await
     }
 }
 
@@ -215,8 +216,9 @@ where
                     let account = match accounts.get(pubkey) {
                         Some(account) => account.clone(),
                         None => {
-                            let Some(account) =
-                                self.fetch_account_state(pubkey, commitment, tx.slot).await?
+                            let Some(account) = self
+                                .fetch_account_state(pubkey, commitment, tx.slot)
+                                .await?
                             else {
                                 return Ok(Verdict::AccountNotFound);
                             };
