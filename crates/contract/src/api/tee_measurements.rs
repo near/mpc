@@ -136,7 +136,11 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Add(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_measurement(action, &participant)
+            .count_participants(threshold_parameters.participants());
+        log!("total measurement votes for action: {}", votes);
 
         if votes >= self.threshold()?.value() {
             let added = self.tee_state.add_measurement(measurement);
@@ -164,7 +168,11 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Remove(measurement.clone());
-        let votes = self.tee_state.vote_measurement(action, &participant);
+        let votes = self
+            .tee_state
+            .vote_measurement(action, &participant)
+            .count_participants(threshold_parameters.participants());
+        log!("total measurement votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
         let total_participants = threshold_parameters.participants().len() as u64;
@@ -176,8 +184,8 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Returns the current OS measurement votes, showing each participant's vote.
-    pub fn os_measurement_votes(&self) -> dtos::MeasurementVotes {
+    /// Pending OS measurement votes, keyed by the proposal hash of the [`dtos::MeasurementVoteAction`].
+    pub fn os_measurement_votes(&self) -> dtos::VotesByProposal {
         log!("os_measurement_votes");
         (&self.tee_state.measurement_votes).into_dto_type()
     }
@@ -253,7 +261,7 @@ mod tests {
     use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use near_mpc_contract_interface::types as dtos;
-    use near_mpc_contract_interface::types::LauncherVoteAction;
+    use near_mpc_contract_interface::types::{LauncherVoteAction, MeasurementVoteAction};
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
@@ -1001,7 +1009,8 @@ mod tests {
         );
     }
 
-    /// Tests the os_measurement_votes view method returns correct vote data.
+    /// Tests the [`MpcContract::os_measurement_votes`] view method returns the voters
+    /// under the proposal hash of the action.
     #[test]
     fn test_os_measurement_votes_view() {
         let (mut contract, participants, _first) = setup_tee_test_contract(4, 3);
@@ -1009,7 +1018,7 @@ mod tests {
         let measurement = make_measurement(0xCC);
 
         // Initially empty
-        assert!(contract.os_measurement_votes().vote_by_account.is_empty());
+        assert!(contract.os_measurement_votes().is_empty());
 
         // Cast one vote
         let (account_id, _, _) = &participant_list[0];
@@ -1024,9 +1033,10 @@ mod tests {
             .expect("add vote should succeed");
 
         let votes = contract.os_measurement_votes();
-        assert_eq!(votes.vote_by_account.len(), 1);
-        let (_, action) = votes.vote_by_account.iter().next().unwrap();
-        assert_eq!(*action, dtos::MeasurementVoteAction::Add(measurement));
+        let expected_proposal = MeasurementVoteAction::Add(measurement).to_proposal_hash();
+        let expected_voter = (&authenticate_as(account_id, &participants)).into_dto_type();
+        assert_eq!(votes.len(), 1);
+        assert_eq!(votes[&expected_proposal], BTreeSet::from([expected_voter]));
     }
 
     /// Tests the allowed_os_measurements view method returns the full structs

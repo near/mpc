@@ -6,7 +6,7 @@ use crate::{
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
-    tee::measurements::{AllowedMeasurements, MeasurementVotes},
+    tee::measurements::AllowedMeasurements,
     tee::proposal::{
         AllowedLauncherImageInsertion, AllowedLauncherImages, NodeImageHash,
         StoredDockerImageHashes,
@@ -95,7 +95,9 @@ pub struct TeeState {
     /// small; use the key-indexed accessors rather than scanning the whole collection.
     pub(crate) stored_attestations: IterableMap<Ed25519PublicKey, NodeAttestation>,
     pub(crate) allowed_measurements: AllowedMeasurements,
-    pub(crate) measurement_votes: MeasurementVotes,
+    /// Pending votes to add or remove an OS measurement set, keyed by the proposal hash of
+    /// the [`MeasurementVoteAction`] voted for.
+    pub(crate) measurement_votes: Votes<AuthenticatedParticipantId>,
 }
 
 impl Default for TeeState {
@@ -113,7 +115,10 @@ impl Default for TeeState {
             ),
             stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: Default::default(),
-            measurement_votes: Default::default(),
+            measurement_votes: Votes::new(
+                StorageKey::MeasurementVotesByVoter,
+                StorageKey::MeasurementVotesByProposal,
+            ),
         }
     }
 }
@@ -441,25 +446,26 @@ impl TeeState {
         self.allowed_launcher_images.launcher_hashes()
     }
 
-    /// Casts a vote for adding or removing an OS measurement.
-    /// Returns the total number of votes for the same action.
+    /// Casts a vote for adding or removing an OS measurement. Returns the voters for that
+    /// action.
     pub fn vote_measurement(
         &mut self,
         action: MeasurementVoteAction,
         participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.measurement_votes.vote(action, participant)
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.measurement_votes
+            .vote(participant.clone(), action.to_proposal_hash())
     }
 
     /// Adds a new measurement set to the allowed list. Clears measurement votes.
     pub fn add_measurement(&mut self, measurement: ExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.add(measurement)
     }
 
     /// Removes a measurement set from the allowed list. Clears measurement votes.
     pub fn remove_measurement(&mut self, measurement: &ExpectedMeasurements) -> bool {
-        self.measurement_votes.clear_votes();
+        self.measurement_votes.clear();
         self.allowed_measurements.remove(measurement)
     }
 
@@ -482,7 +488,7 @@ impl TeeState {
         let is_participant = |p: &AuthenticatedParticipantId| participants.is_participant(&p.get());
         self.votes.retain_votes(is_participant);
         self.launcher_votes.retain_votes(is_participant);
-        self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
+        self.measurement_votes.retain_votes(is_participant);
     }
 
     /// Scans up to `max_scan` entries from `stored_attestations` and removes any whose
@@ -638,6 +644,7 @@ mod tests {
     use crate::tee::test_utils::{set_block_timestamp, whitelist_dstack_measurements};
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::MockAttestation;
+    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
@@ -1721,18 +1728,28 @@ mod tests {
 
         let mut tee_state = TeeState::default();
 
-        // P0 votes for a launcher hash
+        // P0 votes for a launcher hash and an OS measurement
         let auth_id = authenticate_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
         tee_state.vote_launcher(launcher_action, &auth_id);
+        let measurement_action = MeasurementVoteAction::Add(ExpectedMeasurements {
+            mrtd: MrtdHash::from([0xCC; 48]),
+            rtmr0: Rtmr0Hash::from([0xCC; 48]),
+            rtmr1: Rtmr1Hash::from([0xCC; 48]),
+            rtmr2: Rtmr2Hash::from([0xCC; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([0xCC; 48]),
+        });
+        tee_state.vote_measurement(measurement_action, &auth_id);
 
         assert_eq!(total_votes(&tee_state.launcher_votes), 1);
+        assert_eq!(total_votes(&tee_state.measurement_votes), 1);
 
         // New participant set excludes P0
         let new_participants = all_participants.subset(1..3);
         tee_state.clean_non_participant_votes(&new_participants);
 
         assert_eq!(total_votes(&tee_state.launcher_votes), 0);
+        assert_eq!(total_votes(&tee_state.measurement_votes), 0);
     }
 
     #[test]

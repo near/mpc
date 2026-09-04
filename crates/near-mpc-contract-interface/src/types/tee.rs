@@ -96,19 +96,6 @@ pub enum MeasurementVoteAction {
     Remove(ExpectedMeasurements),
 }
 
-/// Tracks votes for adding or removing OS measurements.
-/// Each participant can have at most one active vote at a time.
-#[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct MeasurementVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>,
-}
-
 /// The action a participant is voting for on a launcher image hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
@@ -271,23 +258,6 @@ mod tests {
     }
 
     #[test]
-    fn measurement_votes__should_serialize_participant_ids_as_object_keys() {
-        // Given
-        let votes = MeasurementVotes {
-            vote_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                MeasurementVoteAction::Add(measurements(0x01)),
-            )]),
-        };
-
-        // When
-        let json = serde_json::to_value(&votes).unwrap();
-
-        // Then
-        assert_eq!(json["vote_by_account"]["7"]["Add"]["mrtd"], "01".repeat(48));
-    }
-
-    #[test]
     fn votes_by_proposal__should_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
         // Given
         let proposal = ProposalHash::new([0xAB; 32]);
@@ -302,7 +272,6 @@ mod tests {
         // Then
         assert_eq!(json[proposal.as_hex()][0], 7);
     }
-
     #[test]
     fn code_hashes_votes__should_serialize_as_a_transparent_map_keyed_by_image_hash() {
         // Given

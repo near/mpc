@@ -666,12 +666,19 @@ expression: abi
       },
       {
         "name": "os_measurement_votes",
-        "doc": " Returns the current OS measurement votes, showing each participant's vote.",
+        "doc": " Pending OS measurement votes, keyed by the proposal hash of the [`dtos::MeasurementVoteAction`].",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/MeasurementVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -4201,50 +4208,6 @@ expression: abi
           "maxLength": 64,
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
-        },
-        "MeasurementVoteAction": {
-          "description": "The action a participant is voting for on an OS measurement set.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/ExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/ExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVotes": {
-          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/MeasurementVoteAction"
-              }
-            }
-          }
         },
         "MockAttestation": {
           "oneOf": [

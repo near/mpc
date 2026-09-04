@@ -726,7 +726,7 @@ pub fn vote_remove_os_measurement(
 // view: list currently approved measurements
 pub fn allowed_os_measurements(&self) -> Vec<ContractExpectedMeasurements>
 // view: list pending votes
-pub fn os_measurement_votes(&self) -> MeasurementVotes
+pub fn os_measurement_votes(&self) -> VotesByProposal
 
 pub struct ContractExpectedMeasurements {
     pub mrtd: Sha384Digest,

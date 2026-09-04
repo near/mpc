@@ -36,7 +36,7 @@ pub mod types {
     };
     pub use tee::{
         AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherVoteAction,
-        MeasurementVoteAction, MeasurementVotes, NodeId, VotesByProposal,
+        MeasurementVoteAction, NodeId, VotesByProposal,
     };
 
     pub use updates::{

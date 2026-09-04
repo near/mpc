@@ -37,7 +37,6 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::measurements::MeasurementVotes,
     update::{ProposedUpdates, Update, UpdateId},
 };
 
@@ -880,18 +879,6 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .proposal_by_account
                 .iter()
                 .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
-                .collect(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::MeasurementVotes> for &MeasurementVotes {
-    fn into_dto_type(self) -> dtos::MeasurementVotes {
-        dtos::MeasurementVotes {
-            vote_by_account: self
-                .vote_by_account
-                .iter()
-                .map(|(participant, action)| (participant.into_dto_type(), action.clone()))
                 .collect(),
         }
     }
