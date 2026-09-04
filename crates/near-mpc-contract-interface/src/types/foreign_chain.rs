@@ -1874,11 +1874,12 @@ impl ForeignTxSignPayload {
     Ord,
     PartialOrd,
     Hash,
+    Serialize,
+    Deserialize,
     BorshSerialize,
     BorshDeserialize,
     derive_more::Display,
 )]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1888,8 +1889,7 @@ pub struct ProviderId(pub String);
 /// Where the operator's API key/token gets injected into the assembled RPC URL.
 /// Lives on the contract (not in operator yaml) so the operator can't pick a custom
 /// auth shape that lets them inject extra path or query components.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1911,8 +1911,7 @@ pub enum AuthScheme {
 
 /// How chain identity is encoded in the RPC URL. Exactly one of the three encodings,
 /// modelled as an enum so a vote can't accidentally produce an "all three" shape.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1936,8 +1935,7 @@ pub enum ChainRouting {
 /// One provider's per-chain configuration, stored as a value in `ChainEntry.providers`
 /// (keyed by [`ProviderId`]). Read by nodes at startup to assemble the actual RPC URL
 /// (`base_url` + `chain_routing` + operator-supplied token via `auth_scheme`).
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -1959,11 +1957,10 @@ pub struct ProviderConfig {
 /// [`ProviderId`] to that provider's per-chain configuration, plus the voted RPC
 /// response quorum. Returned by the
 /// `allowed_foreign_chain_providers` view fn. [`NonEmptyBTreeMap`] enforces a non-empty
-/// provider set and at-most-one entry per [`ProviderId`] at borsh-deserialize time,
+/// provider set and at-most-one entry per [`ProviderId`] at deserialize time,
 /// and the map iterates in [`ProviderId`] order — so the canonical hash matches across
 /// voters without an explicit sort step.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)

@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -118,7 +119,7 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
         .args_json(json!({}))
         .await?
-        .borsh()?;
+        .json()?;
     assert!(
         whitelist_before.is_empty(),
         "chain should not be applied yet (only 5 of 6 threshold votes cast)"
@@ -134,17 +135,86 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         "vote_update_foreign_chain_providers (vote 6) failed: {result:?}"
     );
 
-    // Then: chain entry is applied (result is borsh-encoded — see the view fn's doc).
+    // Then
     let whitelist: BTreeMap<ForeignChain, ChainEntry> = contract
         .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
         .args_json(json!({}))
         .await?
-        .borsh()?;
+        .json()?;
     let stored = whitelist
         .get(&ForeignChain::Ethereum)
         .expect("Ethereum entry should be present after 6 matching votes");
     assert_eq!(stored.providers.len(), 1);
     assert_eq!(stored.providers.get(&proposed_id), Some(&proposed_config));
+    assert_eq!(stored.quorum, 1);
+
+    Ok(())
+}
+
+/// The sandbox setup's signing threshold is 6 of 10.
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn vote_update_foreign_chain_providers__should_accept_handwritten_args() -> anyhow::Result<()>
+{
+    // Given
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::CaitSith])
+        .build()
+        .await;
+    let votes = json!({
+        "votes": {
+            "Ethereum": {
+                "providers": {
+                    "ankr": {
+                        "base_url": "https://rpc.ankr.com",
+                        "auth_scheme": { "Query": { "name": "apikey" } },
+                        "chain_routing": { "PathSegment": { "segment": "eth" } }
+                    }
+                },
+                "quorum": 1
+            }
+        }
+    });
+
+    // When
+    for account in mpc_signer_accounts.iter().take(6) {
+        let result = account
+            .call(
+                contract.id(),
+                method_names::VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+            )
+            .args_json(votes.clone())
+            .transact()
+            .await?
+            .into_result();
+        assert_matches!(result, Ok(_), "vote with JSON args should succeed");
+    }
+
+    // Then
+    let whitelist: BTreeMap<ForeignChain, ChainEntry> = contract
+        .view(method_names::ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    let stored = whitelist
+        .get(&ForeignChain::Ethereum)
+        .expect("Ethereum entry should be present after 6 matching votes");
+    assert_eq!(
+        stored.providers.get(&ProviderId("ankr".to_string())),
+        Some(&ProviderConfig {
+            base_url: "https://rpc.ankr.com".to_string(),
+            auth_scheme: AuthScheme::Query {
+                name: "apikey".to_string(),
+            },
+            chain_routing: ChainRouting::PathSegment {
+                segment: "eth".to_string(),
+            },
+        })
+    );
     assert_eq!(stored.quorum, 1);
 
     Ok(())

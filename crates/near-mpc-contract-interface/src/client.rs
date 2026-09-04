@@ -11,7 +11,7 @@ use crate::call_args::{
     RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs,
     SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
     VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateArgs,
+    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -324,7 +324,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         batch: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = borsh::to_vec(&batch)?;
+        let args = serde_json::to_vec(&VoteUpdateForeignChainProvidersArgs::new(batch))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
             args,

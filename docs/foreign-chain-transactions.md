@@ -389,7 +389,7 @@ pub enum ForeignChain {
 Relevant contract methods:
 
 * `register_available_foreign_chain_config(foreign_chain_configuration: ForeignChainConfiguration)` — call method (formerly `register_foreign_chain_config`; old name kept as a deprecated wrapper). The authenticated participant (re)registers its per-chain provider set. The call is idempotent.
-* `allowed_foreign_chain_providers() -> BTreeMap<ForeignChain, ChainEntry>` — Borsh-encoded view method. Returns the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`); its keys are the whitelisted chains. (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
+* `allowed_foreign_chain_providers() -> BTreeMap<ForeignChain, ChainEntry>` — view method. Returns the on-chain RPC whitelist (`foreign_chain_rpc_whitelist`); its keys are the whitelisted chains. (`get_supported_foreign_chains()` is superseded by these two views and will be removed; see [Migration](design/calculating-supported-foreign-chains.md#migration).)
 * `get_available_foreign_chains() -> AvailableForeignChains` — view method. Returns the chains that ≥ signing threshold active nodes currently cover; `verify_foreign_transaction` gates on this set.
 * `get_available_foreign_chain_by_node() -> ForeignChainSupportByNode` — view method (formerly `get_foreign_chain_support_by_node`; old name kept as a deprecated wrapper). Returns each participant's registered set of covered chains. Feeds the available-set computation and the coverage alerting (does every active node cover every whitelisted chain?).
 
@@ -418,8 +418,7 @@ The per-participant registration model above leaves the network with no shared n
 PR 1 shipped the DTOs and a nested map of providers; PR 2 refactored the storage to the
 snapshot-friendly shape below (one `ChainEntry` per chain, holding both the canonical
 provider list and the RPC response quorum) and added the pending-vote storage. The
-whitelist is exposed via the borsh `allowed_foreign_chain_providers` view fn; serde-JSON
-was avoided because the closure would push WASM past the per-tx size cap.
+whitelist is exposed via the `allowed_foreign_chain_providers` view fn.
 
 ```rust
 pub struct ProviderId(pub String); // newtype around String — typed boundary so a
@@ -504,11 +503,9 @@ pub struct ChainVote {
 #[handle_result]
 pub fn vote_update_foreign_chain_providers(
     &mut self,
-    #[serializer(borsh)] votes: Vec<ChainVote>,
+    votes: Vec<ChainVote>,
 ) -> Result<(), Error>;
 ```
-
-Borsh args (not JSON) because serde::Deserialize for the nested `ChainVote`/`ProviderEntry`/`AuthScheme`/`ChainRouting` closure would push the contract past the per-tx WASM size cap.
 
 - **Vote target = the per-chain snapshot.** For each `ChainVote` in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, quorum)` pairs are byte-identical.
 - **Canonicalization.** Within each `ChainVote`, the contract sorts `providers` by `provider_id` before comparison, so two participants who submitted the same logical set in different orders still count as the same proposal. A duplicate `provider_id` inside a single `ChainVote`, or a duplicate `chain` across the batch, is rejected with `InvalidParameters::MalformedPayload`.

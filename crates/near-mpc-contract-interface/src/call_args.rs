@@ -1,13 +1,15 @@
 //! Argument types for the NEAR MPC signer contract function calls.
 
 use crate::types::{
-    AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse,
-    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, GovernanceThresholdParameters,
-    InitConfig, KeyEventId, Keyset, ProposedGovernanceThresholdParameters, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, SupportedForeignChains,
-    TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
+    AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
+    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
+    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
+    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
+    SignatureResponse, SupportedForeignChains, TeeVerifierCodeHash, UpdateId,
+    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
 };
+use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -145,6 +147,11 @@ impl RegisterForeignChainConfigArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RegisterForeignChainsConfigArgs {
     pub foreign_chains_config: crate::types::ForeignChainsConfig,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteUpdateForeignChainProvidersArgs {
+    pub votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

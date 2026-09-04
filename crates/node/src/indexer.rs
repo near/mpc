@@ -271,42 +271,14 @@ impl IndexerViewClient {
             .await
     }
 
-    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
     pub(crate) async fn get_allowed_foreign_chain_providers(
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
-        let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
-            method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
-            args: vec![].into(),
-        };
-        let query = near_client::Query {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request,
-        };
-
-        let response = self.view_client.send_async(query).await??;
-
-        match response.kind {
-            QueryResponseKind::CallResult(result) => borsh::from_slice::<
-                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
-            >(&result.result)
-            .with_context(|| {
-                let preview: String = result
-                    .result
-                    .iter()
-                    .take(32)
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                format!(
-                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
-                    result.result.len(),
-                    result.result.len().min(32),
-                )
-            }),
-            _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
-        }
+        let (_, whitelist) = self
+            .get_mpc_state(mpc_contract_id, ALLOWED_FOREIGN_CHAIN_PROVIDERS)
+            .await?;
+        Ok(whitelist)
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {

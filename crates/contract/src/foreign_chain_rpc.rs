@@ -101,7 +101,7 @@ impl AllowedProviders {
     }
 
     /// Owned clone of the whitelist as DTOs; required by `allowed_foreign_chain_providers`,
-    /// which borsh-serializes the result across the contract boundary.
+    /// which serializes the result across the contract boundary.
     pub fn snapshot(&self) -> BTreeMap<ForeignChain, dtos::ChainEntry> {
         self.entries
             .iter()
@@ -188,7 +188,7 @@ impl ForeignChainRpcWhitelist {
     /// which is the RPC response quorum nodes use when querying the listed providers.
     ///
     /// The input batch is a `NonEmptyBTreeMap<ForeignChain, ChainEntry>`, so two
-    /// invariants are enforced at borsh-deserialize time and don't need to be re-checked
+    /// invariants are enforced at deserialize time and don't need to be re-checked
     /// here: the batch is non-empty, and each chain appears at most once.
     ///
     /// Returns the chains applied this call.

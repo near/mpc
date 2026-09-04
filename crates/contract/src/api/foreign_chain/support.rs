@@ -134,23 +134,16 @@ impl MpcContract {
     /// and the RPC response quorum for that chain. The chain's stored state is replaced
     /// once the protocol's signing threshold of participants has voted the same
     /// `(providers, quorum)` pair. [`NonEmptyBTreeMap`](near_mpc_bounded_collections::NonEmptyBTreeMap) enforces a non-empty batch and
-    /// at-most-one entry per chain at borsh-deserialize time.
+    /// at-most-one entry per chain at deserialize time.
     #[handle_result]
     pub fn vote_update_foreign_chain_providers(
         &mut self,
-        #[serializer(borsh)] votes: near_mpc_bounded_collections::NonEmptyBTreeMap<
-            dtos::ForeignChain,
-            dtos::ChainEntry,
-        >,
+        votes: near_mpc_bounded_collections::NonEmptyBTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
     ) -> Result<Vec<dtos::ForeignChain>, Error> {
-        let batch_hash = env::sha256_array(
-            borsh::to_vec(&votes).expect("borsh serialization of votes batch must succeed"),
-        );
         log!(
-            "vote_update_foreign_chain_providers: signer={}, n_votes={}, batch_hash={}",
+            "vote_update_foreign_chain_providers: signer={}, n_votes={}",
             env::signer_account_id(),
             votes.len(),
-            hex::encode(batch_hash),
         );
         self.voter_or_panic();
 
@@ -176,8 +169,7 @@ impl MpcContract {
     }
 
     /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at
-    /// startup to validate their local `foreign_chains.yaml`. Borsh-encoded result.
-    #[result_serializer(borsh)]
+    /// startup to validate their local `foreign_chains.yaml`.
     pub fn allowed_foreign_chain_providers(
         &self,
     ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
