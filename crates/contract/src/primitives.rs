@@ -2,6 +2,7 @@ pub mod ckd;
 pub mod domain;
 pub mod key_state;
 pub mod participants;
+pub(crate) mod proposal_hash;
 pub mod signature;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;

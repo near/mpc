@@ -9,8 +9,9 @@ use crate::{
     primitives::{
         key_state::AuthenticatedParticipantId,
         participants::Participants,
+        proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash},
         thresholds::GovernanceThresholdParameters,
-        votes::{ProposalHash, ProposalHashEncoding, Votes},
+        votes::Votes,
     },
     storage_keys::StorageKey,
 };
@@ -32,10 +33,9 @@ pub struct VerifierChangeProposal {
     pub expected_code_hash: TeeVerifierCodeHash,
 }
 
-impl ProposalHashEncoding for VerifierChangeProposal {
-    fn bytes_for_hash(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("borsh serialization of VerifierChangeProposal must succeed")
-    }
+impl ToProposalHash for VerifierChangeProposal {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
 }
 
 /// Pending votes for changing the trusted verifier account.
@@ -69,7 +69,7 @@ impl TeeVerifierVotes {
     ) -> Result<Option<AccountId>, Error> {
         let governance_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
-        let proposal_hash: ProposalHash = proposal.clone().into();
+        let proposal_hash = proposal.to_proposal_hash();
 
         let count_usize = {
             let voter_set = self.pending.vote(participant, proposal_hash);
@@ -172,7 +172,7 @@ mod tests {
                 "duplicate voter in expected bucket"
             );
             assert!(
-                map.insert(proposal.into(), voter_set).is_none(),
+                map.insert(proposal.to_proposal_hash(), voter_set).is_none(),
                 "duplicate proposal in expected votes"
             );
         }
