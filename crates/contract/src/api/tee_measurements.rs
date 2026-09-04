@@ -3,7 +3,7 @@
 //! derived compose hashes, and the OS measurements.
 
 use crate::dto_mapping::IntoInterfaceType as _;
-use crate::errors::{ConversionError, Error, InvalidState};
+use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
@@ -25,14 +25,10 @@ impl MpcContract {
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let count = self.tee_state.vote(code_hash, &participant).count_for(|p| {
-            threshold_parameters
-                .participants()
-                .is_participant_given_participant_id(&p.get())
-        });
-        let votes = u64::try_from(count).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count} does not fit in u64: {e}"),
-        })?;
+        let votes = self
+            .tee_state
+            .vote(code_hash, &participant)
+            .count_participants(threshold_parameters.participants());
         log!("total votes for proposal: {}", votes);
 
         let tee_upgrade_deadline_duration =
@@ -67,17 +63,10 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = dtos::LauncherVoteAction::Add(launcher_hash);
-        let count = self
+        let votes = self
             .tee_state
             .vote_launcher(action, &participant)
-            .count_for(|p| {
-                threshold_parameters
-                    .participants()
-                    .is_participant_given_participant_id(&p.get())
-            });
-        let votes = u64::try_from(count).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count} does not fit in u64: {e}"),
-        })?;
+            .count_participants(threshold_parameters.participants());
         log!("total launcher votes for action: {}", votes);
 
         let tee_upgrade_deadline_duration =
@@ -114,17 +103,10 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = dtos::LauncherVoteAction::Remove(launcher_hash);
-        let count = self
+        let votes = self
             .tee_state
             .vote_launcher(action, &participant)
-            .count_for(|p| {
-                threshold_parameters
-                    .participants()
-                    .is_participant_given_participant_id(&p.get())
-            });
-        let votes = u64::try_from(count).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count} does not fit in u64: {e}"),
-        })?;
+            .count_participants(threshold_parameters.participants());
         log!("total launcher votes for action: {}", votes);
 
         // Removal requires ALL participants to vote
@@ -154,17 +136,10 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Add(measurement.clone());
-        let count = self
+        let votes = self
             .tee_state
             .vote_measurement(action, &participant)
-            .count_for(|p| {
-                threshold_parameters
-                    .participants()
-                    .is_participant_given_participant_id(&p.get())
-            });
-        let votes = u64::try_from(count).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count} does not fit in u64: {e}"),
-        })?;
+            .count_participants(threshold_parameters.participants());
         log!("total measurement votes for action: {}", votes);
 
         if votes >= self.threshold()?.value() {
@@ -193,17 +168,10 @@ impl MpcContract {
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let action = dtos::MeasurementVoteAction::Remove(measurement.clone());
-        let count = self
+        let votes = self
             .tee_state
             .vote_measurement(action, &participant)
-            .count_for(|p| {
-                threshold_parameters
-                    .participants()
-                    .is_participant_given_participant_id(&p.get())
-            });
-        let votes = u64::try_from(count).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count} does not fit in u64: {e}"),
-        })?;
+            .count_participants(threshold_parameters.participants());
         log!("total measurement votes for action: {}", votes);
 
         // Removal requires ALL participants to vote

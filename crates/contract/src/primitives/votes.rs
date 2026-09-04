@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use crate::primitives::participants::IsParticipant;
 use near_sdk::IntoStorageKey;
 use near_sdk::near;
 use near_sdk::require;
@@ -157,6 +158,13 @@ where
         self.0.iter().filter(|voter| predicate(voter)).count()
     }
 
+    /// Counts the voters that are current participants — votes from dropped
+    /// participants don't count toward thresholds.
+    pub fn count_participants(&self, participants: &impl IsParticipant<V>) -> u64 {
+        let count = self.count_for(|voter| participants.is_participant(voter));
+        u64::try_from(count).expect("vote count fits in u64")
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &V> {
         self.0.iter()
     }
@@ -184,6 +192,7 @@ mod tests {
         sync::LazyLock,
     };
 
+    use crate::primitives::test_utils::gen_authenticated_participants;
     use crate::primitives::votes::{ProposalHash, VoterSet, Votes};
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
@@ -490,6 +499,21 @@ mod tests {
         let count = voter_set.count_for(|_| true);
 
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn voter_set_count_participants__should_ignore_votes_from_dropped_participants() {
+        // Given: three voters, of which only the first two are still participants.
+        let (participants, auth_ids) = gen_authenticated_participants(3);
+        let current = participants.subset(0..2);
+        let voter_set = VoterSet(auth_ids.into_iter().collect());
+
+        // When
+        let count = voter_set.count_participants(&current);
+
+        // Then
+        assert_eq!(count, 2);
     }
 
     #[test]
