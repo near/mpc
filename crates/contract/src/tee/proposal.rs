@@ -1,12 +1,10 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
-use near_sdk::{env::sha256, log, near};
-use std::{collections::BTreeMap, time::Duration};
+use near_sdk::{env::sha256, log};
+use std::time::Duration;
 
 use crate::primitives::{
-    key_state::AuthenticatedParticipantId,
-    participants::Participants,
-    proposal_hash::{Identity, ToProposalHash},
+    proposal_hash::{Borsh, Identity, Sha256, ToProposalHash},
     time::Timestamp,
 };
 
@@ -18,73 +16,17 @@ impl ToProposalHash for NodeImageHash {
     type Hasher = Identity;
 }
 
+impl ToProposalHash for LauncherVoteAction {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
+}
+
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
 /// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
 /// - `{{LAUNCHER_IMAGE_HASH}}`: the launcher Docker image hash
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
-
-/// Contract-side [`LauncherHashVotes`](near_mpc_contract_interface::types::LauncherHashVotes),
-/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
-/// the participant set.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LauncherHashVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
-}
-
-impl LauncherHashVotes {
-    /// Casts a vote for the given action and returns the total number of participants
-    /// who have voted for the same action. Replaces any previous vote by this participant.
-    pub fn vote(
-        &mut self,
-        action: LauncherVoteAction,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .vote_by_account
-            .insert(participant.clone(), action.clone())
-            .is_some()
-        {
-            log!("removed old launcher vote for signer");
-        }
-        let total = self.count_votes(&action);
-        log!("total launcher votes for action: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given action.
-    fn count_votes(&self, action: &LauncherVoteAction) -> u64 {
-        u64::try_from(
-            self.vote_by_account
-                .values()
-                .filter(|a| *a == action)
-                .count(),
-        )
-        .expect("participant count should not overflow u64")
-    }
-
-    /// Clears all launcher votes.
-    pub fn clear_votes(&mut self) {
-        self.vote_by_account.clear();
-    }
-
-    /// Returns a new [`LauncherHashVotes`] containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .vote_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
-            .collect();
-        LauncherHashVotes {
-            vote_by_account: remaining,
-        }
-    }
-}
 
 /// An allowed Docker image configuration entry containing the MPC image hash
 /// and when it was added to the allowlist.
@@ -480,7 +422,11 @@ pub fn get_docker_compose_hash(
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
 
-    use super::*;
+    use super::{
+        AllowedLauncherImageInsertion, AllowedLauncherImages, Duration, LauncherImageHash,
+        LauncherVoteAction, NodeImageHash, StoredDockerImageHashes, ToProposalHash,
+        get_docker_compose_hash,
+    };
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -888,6 +834,29 @@ mod tests {
         // Then it stays live past the original deadline (101), within the refreshed window (190).
         set_block_secs(150);
         assert_eq!(allowed.launcher_hashes().len(), 1);
+    }
+
+    /// Golden values computed independently (Python hashlib over the borsh bytes:
+    /// 1-byte variant tag + payload), so a change to the encoding or hashing fails here.
+    #[test]
+    fn launcher_vote_action_proposal_hash__should_match_sha256_of_borsh_bytes() {
+        // Given
+        testing_env!(VMContextBuilder::new().build());
+        let hash = dummy_launcher_hash(0xAB);
+
+        // When / Then
+        assert_eq!(
+            LauncherVoteAction::Add(hash).to_proposal_hash(),
+            "86754e71ab90f305c4faa7eee57b41b89e49ebcdf03a745c855ee611e4597237"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            LauncherVoteAction::Remove(hash).to_proposal_hash(),
+            "7165f0a4234dd3c248bb18575a214c9c948f925b6717c3aaab16b6cf500f19fa"
+                .parse()
+                .unwrap()
+        );
     }
 
     #[test]

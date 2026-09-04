@@ -21,12 +21,6 @@ BorshSchemaContainer {
                 "ProposedGovernanceThresholdParameters",
             ],
         },
-        "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "LauncherVoteAction",
-            ],
-        },
         "(AuthenticatedParticipantId, MeasurementVoteAction)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -125,11 +119,6 @@ BorshSchemaContainer {
             length_width: 4,
             length_range: 0..=4294967295,
             elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
-        },
-        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, LauncherVoteAction)",
         },
         "BTreeMap<AuthenticatedParticipantId, MeasurementVoteAction>": Sequence {
             length_width: 4,
@@ -543,49 +532,10 @@ BorshSchemaContainer {
                 ],
             ),
         },
-        "LauncherHashVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "vote_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>",
-                    ),
-                ],
-            ),
-        },
         "LauncherImageHash": Struct {
             fields: UnnamedFields(
                 [
                     "[u8; 32]",
-                ],
-            ),
-        },
-        "LauncherVoteAction": Enum {
-            tag_width: 1,
-            variants: [
-                (
-                    0,
-                    "Add",
-                    "LauncherVoteAction__Add",
-                ),
-                (
-                    1,
-                    "Remove",
-                    "LauncherVoteAction__Remove",
-                ),
-            ],
-        },
-        "LauncherVoteAction__Add": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
-                ],
-            ),
-        },
-        "LauncherVoteAction__Remove": Struct {
-            fields: UnnamedFields(
-                [
-                    "LauncherImageHash",
                 ],
             ),
         },
@@ -1138,7 +1088,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "launcher_votes",
-                        "LauncherHashVotes",
+                        "Votes<AuthenticatedParticipantId>",
                     ),
                     (
                         "stored_attestations",

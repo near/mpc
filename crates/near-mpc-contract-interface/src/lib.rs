@@ -35,8 +35,8 @@ pub mod types {
         protocol_state_to_string,
     };
     pub use tee::{
-        AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherHashVotes,
-        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
+        AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherVoteAction,
+        MeasurementVoteAction, MeasurementVotes, NodeId, VotesByProposal,
     };
 
     pub use updates::{

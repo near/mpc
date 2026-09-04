@@ -2,8 +2,8 @@ use crate::types::primitives::AccountId;
 use crate::types::state::AuthenticatedParticipantId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::{
-    KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, Rtmr0Hash, Rtmr1Hash,
-    Rtmr2Hash,
+    KeyProviderEventDigest, LauncherImageHash, MrtdHash, NodeImageHash, ProposalHash, Rtmr0Hash,
+    Rtmr1Hash, Rtmr2Hash,
 };
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
@@ -120,18 +120,25 @@ pub enum LauncherVoteAction {
     Remove(LauncherImageHash),
 }
 
-/// Tracks votes for adding or removing launcher image hashes.
-/// Each participant can have at most one active vote at a time.
+/// Voters grouped by the [`ProposalHash`] of the action they voted for.
 #[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
 )]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct LauncherHashVotes {
-    pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
-}
+pub struct VotesByProposal(pub BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>>);
 
 /// Voters grouped by the [`NodeImageHash`] they voted to whitelist.
 #[derive(
@@ -281,20 +288,19 @@ mod tests {
     }
 
     #[test]
-    fn launcher_hash_votes__should_serialize_participant_ids_as_object_keys() {
+    fn votes_by_proposal__should_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
         // Given
-        let votes = LauncherHashVotes {
-            vote_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                LauncherVoteAction::Add(LauncherImageHash::from([0xAB; 32])),
-            )]),
-        };
+        let proposal = ProposalHash::new([0xAB; 32]);
+        let votes = VotesByProposal(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([AuthenticatedParticipantId(ParticipantId::new(7))]),
+        )]));
 
         // When
         let json = serde_json::to_value(&votes).unwrap();
 
         // Then
-        assert_eq!(json["vote_by_account"]["7"]["Add"], "ab".repeat(32));
+        assert_eq!(json[proposal.as_hex()][0], 7);
     }
 
     #[test]
