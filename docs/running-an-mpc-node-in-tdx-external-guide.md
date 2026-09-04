@@ -1401,7 +1401,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 attestation-cli tcb-status --url http://<IP>:8080/public_data
 ```
 
-It needs no image hash or compose file, prints the platform's SVNs, and reports the node's own verdict alongside the ones Intel's current and next TCB info give. [TDX platform TCB status](./tdx-tcb-status.md) explains the output and what to do when your host is out of date, or about to be.
+It needs no image hash or compose file, prints the platform's SVNs, and reports the node's own verdict alongside the ones Intel's current and next TCB info give. [TDX platform TCB status](./guide/tdx-tcb-status.md) explains the output and what to do when your host is out of date, or about to be.
 
 ### Add the Node Account Key to Your Account
 
@@ -1829,7 +1829,7 @@ There are three types of upgrades, with different frequencies and operator effor
 
 When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
-The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](./tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
+The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](./guide/tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
 
 ## MPC Node Image Upgrade
 
@@ -2296,7 +2296,7 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
   update** that bundles a newer Intel TDX module — an `intel-microcode` update
   alone won't move it. `attestation-cli tcb-status --file public_data.json` names
   which SVN is short and by how much, if you captured the node's `/public_data`
-  while it was still up; [TDX platform TCB status](./tdx-tcb-status.md) walks
+  while it was still up; [TDX platform TCB status](./guide/tdx-tcb-status.md) walks
   through the update either way.
 
 > Confirmed in the field: a Granite Rapids host with this signature was fixed by
@@ -2329,7 +2329,7 @@ Common messages:
 - ``custom error: `MPC image hash 0x... is not in the allowed hashes list` `` — your image hash isn't voted in. Same fix.
 - ``custom error: `the allowed mpc launcher compose hashes list is empty` `` / ``custom error: `MPC launcher compose hash 0x... is not in the allowed hashes list` `` — same, for the launcher compose hash (see [Launcher image voting](#launcher-image-voting)).
 - **`the attestation certificate with timestap ... has expired since ...`** — the quote's certificate chain has expired. The node regenerates on the next tick; if it keeps failing, your PCCS endpoints are stale (see [Customizing PCCS endpoints](#customizing-pccs-endpoints-optional)).
-- **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](./tdx-tcb-status.md), which also explains how to see it coming.
+- **``TCB status `OutOfDate` is not up to date``** — Intel raised the TCB bar in a TCB recovery and your platform is now below it, and only `UpToDate` is accepted. Nothing on the node side fixes this: the host needs a BIOS, microcode, or TDX module update. See [TDX platform TCB status](./guide/tdx-tcb-status.md), which also explains how to see it coming.
 
 #### 2. NEAR runtime / pre-execution errors — in the node logs
 

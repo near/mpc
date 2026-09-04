@@ -49,7 +49,7 @@ All crates are organized in a [Cargo workspace](Cargo.toml) under `crates/`. All
 
 A Nix flake provides a reproducible development environment with the Rust toolchain, LLVM/Clang, NEAR CLI, and all system dependencies pre-configured. Run `nix develop` to enter the shell.
 
-For setup details (direnv integration, VS Code config, verification), see [docs/nix-dev-environment.md](docs/nix-dev-environment.md).
+For setup details (direnv integration, VS Code config, verification), see [docs/development/nix-dev-environment.md](docs/development/nix-dev-environment.md).
 
 ## Building
 
@@ -125,7 +125,7 @@ cargo install cargo-insta
 
 Both the node and launcher Docker images support reproducible builds, ensuring identical binaries from the same source. Run `./deployment/build-images.sh` from the project root.
 
-For prerequisites and options, see [docs/reproducible-builds.md](docs/reproducible-builds.md).
+For prerequisites and options, see [docs/guide/reproducible-builds.md](docs/guide/reproducible-builds.md).
 
 ## Releases
 
@@ -145,7 +145,7 @@ We welcome contributions in the form of issues, feature requests, and pull reque
 
 ### Development workflow
 
-We run several checks in CI that require tools beyond the default Rust toolchain. The [nix environment](docs/nix-dev-environment.md) installs all of them automatically.
+We run several checks in CI that require tools beyond the default Rust toolchain. The [nix environment](docs/development/nix-dev-environment.md) installs all of them automatically.
 
 - [`cargo-make`](https://github.com/sagiegurari/cargo-make)
 - [`cargo-nextest`](https://github.com/nextest-rs/nextest)

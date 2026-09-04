@@ -10,7 +10,7 @@ cargo install --path crates/attestation-cli   # from the repository root
 attestation-cli tcb-status --url http://<node-host>:8080/public_data
 ```
 
-Flags: [`tcb-status`](../crates/attestation-cli/README.md#tcb-status) in the
+Flags: [`tcb-status`](../../crates/attestation-cli/README.md#tcb-status) in the
 attestation-cli README.
 
 ## When you are about to be out of date
@@ -32,9 +32,9 @@ and key shares, triples, presignatures and the P2P identity key all live on it.
 
 So before touching firmware: take a fresh backup with the `backup-cli`
 following
-[Backup Keyshares from Old Node](./node-migration-guide.md#step-4-backup-keyshares-from-old-node),
+[Backup Keyshares from Old Node](../node-migration-guide.md#step-4-backup-keyshares-from-old-node),
 and be ready to redeploy the CVM and restore from backup per the
-[node migration guide](./node-migration-guide.md).
+[node migration guide](../node-migration-guide.md).
 
 ### 2. Record what the host has now
 
@@ -68,7 +68,7 @@ candidate BIOS release actually carries the fixes.
 effect without one. Whether the CVM then starts on its existing disk depends on
 the update: if it moved CPUSVN, the sealing key moved with it and that disk will
 never unseal again, so deploy a fresh CVM and restore the step 1 backup into it
-per the [node migration guide](./node-migration-guide.md). Either way a CVM has
+per the [node migration guide](../node-migration-guide.md). Either way a CVM has
 to be running before you can check anything, since `/public_data` serves the
 quote generated at CVM boot, and `tcb-status` answers as soon as the node is up,
 with no need to wait for it to sync. Then:
@@ -87,7 +87,7 @@ If collateral fetches start failing instead, your PCCS may not have a PCK
 certificate for the platform's new TCB level yet. The node then starts with no
 attestation at all and keeps retrying, so `tcb-status` reports that the node is
 not running in a TEE rather than naming a TCB problem. See
-[Self-hosting a local PCCS](./running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs),
+[Self-hosting a local PCCS](../running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs),
 and restart the CVM once the PCCS can serve the new level.
 
 ## Appendix
@@ -133,7 +133,7 @@ near contract call-function as-read-only \
 A platform that has fallen behind can also stop the CVM from booting at all,
 because `gramine-sealing-key-provider` verifies a quote before releasing the
 disk sealing key. See
-[Quote verification fails](./running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
+[Quote verification fails](../running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
 
 ### What this check does not cover
 
@@ -142,6 +142,6 @@ cleared, not that the attestation as a whole is acceptable: the contract also
 requires the RTMR3 event log to replay, the app compose to match, and the boot
 measurements, MPC image hash and launcher compose hash to be in its allow-lists,
 which expire on a clock of their own. Use
-[`attestation-cli verify`](../crates/attestation-cli/README.md) for those, and
-[`submit_participant_info` failures](./running-an-mpc-node-in-tdx-external-guide.md#submit_participant_info-failures)
+[`attestation-cli verify`](../../crates/attestation-cli/README.md) for those, and
+[`submit_participant_info` failures](../running-an-mpc-node-in-tdx-external-guide.md#submit_participant_info-failures)
 for how those rejections present.

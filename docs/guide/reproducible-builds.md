@@ -79,7 +79,7 @@ To verify a release artifact, compare the SHA-256 above against the
 
 ### Nix
 
-The Nix derivation at [`nix/mpc-contract.nix`](../nix/mpc-contract.nix) provides
+The Nix derivation at [`nix/mpc-contract.nix`](../../nix/mpc-contract.nix) provides
 a hermetic toolchain (Rust pinned by `rust-toolchain.toml`, clang/LLVM, vendored
 cargo registry), so the build does not depend on a third-party Docker image. CI
 exercises it on every change as an independent reproducible path, and it is the
