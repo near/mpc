@@ -8,8 +8,8 @@ use crate::sandbox::{
         contract_build::current_contract,
         mpc_contract::{
             get_allowed_docker_image_hashes, get_allowed_launcher_image_hashes,
-            get_code_hash_votes, get_participants, get_state, get_tee_accounts,
-            vote_add_launcher_hash, vote_code_hash,
+            get_code_hash_votes, get_launcher_hash_votes, get_participants, get_state,
+            get_tee_accounts, vote_add_launcher_hash, vote_code_hash,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
@@ -206,6 +206,12 @@ async fn propose_upgrade_from_production_to_current_binary(
         .await
         .unwrap();
 
+    // Same for the launcher vote map.
+    let pending_launcher_hash = mpc_primitives::hash::LauncherImageHash::from([0xBB; 32]);
+    vote_add_launcher_hash(&accounts[0], &contract, &pending_launcher_hash)
+        .await
+        .unwrap();
+
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
@@ -225,10 +231,14 @@ async fn propose_upgrade_from_production_to_current_binary(
         "launcher hash should survive migration to the current binary"
     );
 
-    // Pending code-hash votes are deliberately dropped by the migration.
+    // Pending code-hash and launcher votes are deliberately dropped by the migration.
     assert!(
         get_code_hash_votes(&contract).await.unwrap().is_empty(),
         "pending code-hash votes should be dropped by the migration"
+    );
+    assert!(
+        get_launcher_hash_votes(&contract).await.unwrap().is_empty(),
+        "pending launcher votes should be dropped by the migration"
     );
 
     // Voting still works after the upgrade: a fresh threshold vote gets the hash in.
@@ -245,6 +255,18 @@ async fn propose_upgrade_from_production_to_current_binary(
             .iter()
             .any(|entry| entry.image_hash == pending_code_hash),
         "a fresh threshold vote should succeed after the upgrade"
+    );
+    for account in &accounts[..threshold] {
+        vote_add_launcher_hash(account, &contract, &pending_launcher_hash)
+            .await
+            .unwrap();
+    }
+    assert!(
+        get_allowed_launcher_image_hashes(&contract)
+            .await
+            .unwrap()
+            .contains(&pending_launcher_hash),
+        "a fresh launcher threshold vote should succeed after the upgrade"
     );
 }
 
