@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{GAS_FOR_INIT, PARTICIPANT_LEN},
+    consts::{GAS_FOR_INIT, PARTICIPANT_LEN, TEE_VERIFIER_ACCOUNT_ID},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     mpc_contract::{
@@ -135,7 +135,11 @@ pub async fn init_contract(
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(params.into(), init_config)
+        .init(
+            params.into(),
+            TEE_VERIFIER_ACCOUNT_ID.parse().unwrap(),
+            init_config,
+        )
         .await
         .unwrap();
     assert!(result.is_success(), "init failed: {:?}", result);
@@ -158,6 +162,7 @@ pub async fn init_contract_running(
             "next_domain_id": next_domain_id,
             "keyset": keyset,
             "parameters": dtos::GovernanceThresholdParameters::from(params),
+            "tee_verifier_account_id": TEE_VERIFIER_ACCOUNT_ID,
             "init_config": init_config,
         }))
         .gas(GAS_FOR_INIT)

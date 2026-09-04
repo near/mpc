@@ -33,7 +33,7 @@ impl MpcContract {
         self.voter_or_panic();
 
         // Voting in the already-current verifier is a no-op
-        if self.tee_verifier_account_id.as_ref() == Some(&candidate_account_id) {
+        if self.tee_verifier_account_id == candidate_account_id {
             return Ok(());
         }
 
@@ -49,7 +49,7 @@ impl MpcContract {
                 .vote(proposal, participant, threshold_parameters)?
         {
             log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
-            self.tee_verifier_account_id = Some(new_verifier);
+            self.tee_verifier_account_id = new_verifier;
         }
         Ok(())
     }
@@ -109,9 +109,9 @@ impl MpcContract {
             .collect()
     }
 
-    /// Returns the trusted TEE verifier contract account, or [`None`] until
-    /// participants vote one in via [`Self::vote_tee_verifier_change`].
-    pub fn tee_verifier_account_id(&self) -> Option<AccountId> {
+    /// Returns the trusted TEE verifier contract account, as set at init and
+    /// changed via [`Self::vote_tee_verifier_change`].
+    pub fn tee_verifier_account_id(&self) -> AccountId {
         self.tee_verifier_account_id.clone()
     }
 }
@@ -121,7 +121,9 @@ impl MpcContract {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::api::test_utils::{participant_account_ids, setup_tee_test_contract};
+    use crate::api::test_utils::{
+        bogus_tee_verifier_account_id, participant_account_ids, setup_tee_test_contract,
+    };
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::state::key_event::tests::Environment;
     use near_sdk::test_utils::VMContextBuilder;
@@ -130,10 +132,10 @@ mod tests {
 
     #[test]
     fn vote_tee_verifier_change__should_apply_candidate_when_threshold_reached() {
-        // Given a running contract with 3 participants, governance threshold 2,
-        // starting unconfigured.
+        // Given a running contract with 3 participants, governance threshold 2
         let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
-        assert_eq!(contract.tee_verifier_account_id, None);
+        let initial_verifier = bogus_tee_verifier_account_id();
+        assert_eq!(contract.tee_verifier_account_id, initial_verifier);
         let participant_account_ids: Vec<AccountId> = participants
             .participants()
             .iter()
@@ -156,18 +158,19 @@ mod tests {
 
         // When the first participant votes (below threshold), the verifier is unchanged.
         vote_as(&mut contract, &participant_account_ids[0]);
-        assert_eq!(contract.tee_verifier_account_id, None);
+        assert_eq!(contract.tee_verifier_account_id, initial_verifier);
 
         // When the second participant votes, threshold is reached and the
         // candidate becomes the trusted verifier.
         vote_as(&mut contract, &participant_account_ids[1]);
-        assert_eq!(contract.tee_verifier_account_id, Some(candidate));
+        assert_eq!(contract.tee_verifier_account_id, candidate);
     }
 
     #[test]
-    fn tee_verifier_account_id__should_report_none_until_threshold_then_the_candidate() {
+    fn tee_verifier_account_id__should_report_the_candidate_once_threshold_reached() {
         // Given
         let (mut contract, _, _) = setup_tee_test_contract(3, 2);
+        let initial_verifier = bogus_tee_verifier_account_id();
         let voters = participant_account_ids(&contract);
         let candidate: AccountId = "verifier.near".parse().unwrap();
         let code_hash = dtos::TeeVerifierCodeHash::new([7u8; 32]);
@@ -179,15 +182,15 @@ mod tests {
                 .expect("vote should succeed");
         };
 
-        assert_eq!(contract.tee_verifier_account_id(), None);
+        assert_eq!(contract.tee_verifier_account_id(), initial_verifier);
 
         // When
         vote_as(&mut contract, &voters[0]);
-        assert_eq!(contract.tee_verifier_account_id(), None);
+        assert_eq!(contract.tee_verifier_account_id(), initial_verifier);
         vote_as(&mut contract, &voters[1]);
 
         // Then
-        assert_eq!(contract.tee_verifier_account_id(), Some(candidate));
+        assert_eq!(contract.tee_verifier_account_id(), candidate);
     }
 
     #[test]

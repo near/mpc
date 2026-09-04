@@ -18,7 +18,7 @@ use crate::update::ProposedUpdates;
 use crate::{MpcContract, MpcContractExt, v3_14_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
-use near_sdk::{env, log, near};
+use near_sdk::{AccountId, env, log, near};
 
 #[near]
 impl MpcContract {
@@ -26,16 +26,18 @@ impl MpcContract {
     #[init]
     pub fn init(
         parameters: dtos::GovernanceThresholdParameters,
+        tee_verifier_account_id: AccountId,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init: signer={}, num_participants={}, parameters_hash={:?}, init_config={:?}",
+            "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
             env::signer_account_id(),
             parameters.participants().len(),
             params_hash,
+            tee_verifier_account_id,
             init_config,
         );
         parameters.validate()?;
@@ -72,7 +74,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id: None,
+            tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         })
@@ -87,6 +89,7 @@ impl MpcContract {
         next_domain_id: u64,
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
+        tee_verifier_account_id: AccountId,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         let keyset: Keyset = keyset.try_into_contract_type()?;
@@ -94,13 +97,14 @@ impl MpcContract {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, threshold={}, parameters_hash={:?}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, threshold={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
             parameters.participants().len(),
             parameters.threshold().value(),
             params_hash,
+            tee_verifier_account_id,
             init_config,
         );
         parameters.validate()?;
@@ -160,7 +164,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id: None,
+            tee_verifier_account_id,
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         })
@@ -179,7 +183,7 @@ impl MpcContract {
         log!("migrating contract");
 
         match try_state_read::<v3_14_0_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.into()),
+            Ok(Some(state)) => return Ok(state.try_into()?),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!("failed to deserialize state into 3.14.0 state: {:?}", err);
@@ -218,6 +222,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::api::test_utils::bogus_tee_verifier_account_id;
     use crate::primitives::test_utils::gen_participants;
     use crate::primitives::thresholds::GovernanceThreshold;
     use near_sdk::test_utils::VMContextBuilder;
@@ -245,8 +250,12 @@ mod tests {
         };
 
         // When init is called with that config.
-        let err = MpcContract::init((&parameters).into_dto_type(), Some(bad_config))
-            .expect_err("init must reject a launcher TTL below the attestation validity window");
+        let err = MpcContract::init(
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            Some(bad_config),
+        )
+        .expect_err("init must reject a launcher TTL below the attestation validity window");
 
         // Then it fails, pointing at the invalid config field.
         assert!(

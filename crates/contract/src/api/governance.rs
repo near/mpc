@@ -117,8 +117,9 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        forwarded_participant_call_contract, make_public_key_for_curve, setup_tee_test_contract,
-        submit_attestation, submit_valid_attestations,
+        bogus_tee_verifier_account_id, forwarded_participant_call_contract,
+        make_public_key_for_curve, setup_tee_test_contract, submit_attestation,
+        submit_valid_attestations,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidThreshold};
@@ -292,6 +293,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

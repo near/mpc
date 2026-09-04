@@ -170,11 +170,13 @@ mpc-devnet mpc $MPC_NETWORK_NAME add-keys
 Finally, initialize the contract
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2
+mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2 --tee-verifier-account-id <tee-verifier-account>
 ```
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
+`--tee-verifier-account-id` names the TEE verifier contract the MPC contract calls to
+verify Dstack attestations; see [Deploy the TEE verifier contract](../../docs/deploy-tee-verifier.md).
 
 ### Generating Keys
 

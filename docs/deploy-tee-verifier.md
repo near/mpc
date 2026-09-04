@@ -181,8 +181,7 @@ near contract call-function as-transaction "$SIGNER_CONTRACT" vote_tee_verifier_
 
 ## 7. Confirm the change applied
 
-Read the resolved verifier; once the threshold is reached it returns `$VERIFIER_ACCOUNT`
-(and `null` until then):
+Read the resolved verifier; once the threshold is reached it returns `$VERIFIER_ACCOUNT`:
 
 ```shell
 near contract call-function as-read-only "$SIGNER_CONTRACT" tee_verifier_account_id json-args {} network-config "$NETWORK" now
