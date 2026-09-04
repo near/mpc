@@ -405,7 +405,7 @@ The per-participant registration model above leaves the network with no shared n
 
 | Concern                                | Today                                                                                       | After this change                                                                                                                                                                              |
 |----------------------------------------|---------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by `vote_update_foreign_chain_providers(votes: Vec<ChainVote>)` — each `ChainVote` is a full per-chain snapshot (provider list + RPC response quorum). The chain's stored state is replaced when the protocol's signing threshold of participants holds the same canonical proposal.                                                            |
+| Source of truth for "trusted provider" | Implicit consensus across operator yamls (everyone independently set the same URLs)         | Explicit on-chain `foreign_chain_rpc_whitelist`, mutated by `vote_update_foreign_chain_providers(votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>)` — each `ChainEntry` is a full per-chain snapshot (provider list + RPC response quorum). The chain's stored state is replaced when the protocol's signing threshold of participants holds the same canonical proposal.                                                            |
 | Where the RPC URL lives                | Operator's `foreign_chains.yaml`, as a full string with auth placeholders                   | Contract `ProviderEntry`: `base_url` + `auth_scheme` + `chain_routing` enum (`Embedded` / `PathSegment` / `QueryParam` — exactly one). Node assembles the final URL at startup.                  |
 | Where the operator's API key lives     | Operator's yaml, via `TokenConfig::env`                                                     | Operator's yaml, via `TokenConfig::env` *(unchanged)*                                                                                                                                          |
 | What the operator picks                | Full URL, auth scheme, token reference                                                      | `provider_id` (label) + token reference. When the voted `base_url` carries a `{}`, it is meant for operator specific slug                                                              |
@@ -488,14 +488,13 @@ The node assembles the final URL deterministically: start from `base_url`, fill 
 
 ### Vote semantics
 
-The vote endpoint takes a **batch of per-chain snapshots**, one `ChainVote` per chain
-the caller wants to update. Each `ChainVote` proposes the chain's complete state
+The vote endpoint takes a **batch of per-chain snapshots**, one `ChainEntry` per chain
+the caller wants to update. Each `ChainEntry` proposes the chain's complete state
 (provider list + RPC response quorum), not a diff:
 
 ```rust
-pub struct ChainVote {
-    pub chain: ForeignChain,
-    pub providers: Vec<ProviderEntry>,
+pub struct ChainEntry {
+    pub providers: NonEmptyBTreeMap<ProviderId, ProviderConfig>,
     /// Proposed RPC response quorum (stored, not yet consumed by nodes).
     pub quorum: u64,
 }
@@ -503,14 +502,14 @@ pub struct ChainVote {
 #[handle_result]
 pub fn vote_update_foreign_chain_providers(
     &mut self,
-    votes: Vec<ChainVote>,
-) -> Result<(), Error>;
+    votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
+) -> Result<Vec<ForeignChain>, Error>;
 ```
 
-- **Vote target = the per-chain snapshot.** For each `ChainVote` in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, quorum)` pairs are byte-identical.
-- **Canonicalization.** Within each `ChainVote`, the contract sorts `providers` by `provider_id` before comparison, so two participants who submitted the same logical set in different orders still count as the same proposal. A duplicate `provider_id` inside a single `ChainVote`, or a duplicate `chain` across the batch, is rejected with `InvalidParameters::MalformedPayload`.
+- **Vote target = the per-chain snapshot.** For each entry in the batch, the participant is voting on the chain's *full* proposed state — providers and RPC response quorum together. Two participants count toward the same proposal for a chain when their canonical `(providers, quorum)` pairs are byte-identical.
+- **Canonicalization.** `providers` is a `NonEmptyBTreeMap` keyed by `provider_id`, and the batch itself is a `NonEmptyBTreeMap` keyed by chain, so ordering is structural rather than a sort step: two participants who submitted the same logical set in different orders hash to the same proposal. The map types also make a duplicate `provider_id` within a chain, or a duplicate chain across the batch, inexpressible — they collapse at deserialize time.
 - **One active vote per participant per chain.** Votes are keyed by `(participant, chain)`. Recasting for a chain overwrites that participant's slot for *only that chain*; chains the participant didn't touch in the new call keep their prior slot.
-- **Gated on the protocol signing threshold.** The proposed entry is applied — the chain becomes **whitelisted** (or its existing entry is replaced) — once the count of participants holding the same canonical `(providers, quorum)` pair reaches `self.threshold()?.value()`, the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainVote.quorum` is the *RPC quorum* (a stored runtime knob for nodes, not a voting parameter).
+- **Gated on the protocol signing threshold.** The proposed entry is applied — the chain becomes **whitelisted** (or its existing entry is replaced) — once the count of participants holding the same canonical `(providers, quorum)` pair reaches `self.threshold()?.value()`, the same threshold used by `verify_tee` and `vote_add_os_measurement`. There is no separate per-chain *voting* threshold; the per-chain numeric on `ChainEntry.quorum` is the *RPC quorum* (a stored runtime knob for nodes, not a voting parameter).
 - **Apply = full snapshot replacement.** When threshold is reached for a chain, `AllowedProviders.entries[chain]` is set to the proposed `ChainEntry` — the old provider list is discarded wholesale. The chain's pending votes are cleared (`clear_chain`) so the next round starts fresh. Other chains' pending votes are untouched.
 - **Threshold checked synchronously on every call.** No periodic sweep.
 - **Vote withdraw.** No explicit withdraw endpoint. Recasting overwrites your slot for the chains you touch. A vote is also cleared by being removed from the participant set (`clean_tee_status` → `ProviderVotes::retain_only`) or by the chain applying.
