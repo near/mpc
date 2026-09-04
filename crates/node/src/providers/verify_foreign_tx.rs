@@ -255,6 +255,7 @@ impl VerifyForeignTxProvider {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use ForeignChain::*;
     use mpc_node_config::AuthConfig;
     use mpc_node_config::foreign_chains::RpcProviderName;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -303,7 +304,6 @@ mod tests {
     #[tokio::test]
     async fn foreign_chain_inspectors_build__should_label_each_chain_by_its_own_config_key() {
         // Given
-        use ForeignChain::*;
         let config = ForeignChainsConfig {
             solana: None,
             bitcoin: chain_config(Bitcoin),
