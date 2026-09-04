@@ -66,6 +66,15 @@ pub async fn get_code_hash_votes(
     Ok(contract.view(method_names::CODE_HASH_VOTES).await?.json()?)
 }
 
+pub async fn get_launcher_hash_votes(
+    contract: &Contract,
+) -> anyhow::Result<near_mpc_contract_interface::types::VotesByProposal> {
+    Ok(contract
+        .view(method_names::LAUNCHER_HASH_VOTES)
+        .await?
+        .json()?)
+}
+
 pub async fn get_allowed_launcher_image_hashes(
     contract: &Contract,
 ) -> anyhow::Result<Vec<LauncherImageHash>> {
