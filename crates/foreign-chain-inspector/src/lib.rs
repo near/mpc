@@ -48,8 +48,8 @@ pub trait ForeignChainInspector {
 
 /// The settled answer from a transaction inspection. Inspection producing a negative verdict is
 /// still a successful inspection. Failing to obtain any verdict is instead a
-/// [`ForeignChainInspectionError`]. [`ForeignChainInspector::extract`] must report every answer
-/// a provider gives about the transaction under the variant defined here, not as an error.
+/// [`ForeignChainInspectionError`]. [`ForeignChainInspector::extract`] must report every verdict
+/// given by a provider about a transaction under a variant defined here, not as an error.
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Verdict<V> {
     #[display("extracted {} values", _0.len())]
@@ -57,8 +57,8 @@ pub enum Verdict<V> {
     #[display("the transaction's status was not success")]
     TransactionFailed,
     /// Deliberately a verdict rather than a tolerated error. Honest providers cannot extract
-    /// anything from a transaction that does not exist, so the chain's signal for an unknown
-    /// transaction must map here.
+    /// anything from a transaction that does not exist. [`ForeignChainInspector::extract`] must
+    /// map a chain's signal for an unknown transaction here.
     #[display("the transaction was not found")]
     TransactionNotFound,
     #[display(
