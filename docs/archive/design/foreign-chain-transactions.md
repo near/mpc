@@ -39,7 +39,7 @@ Not all extractors can be satisfied by a single RPC method call.
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`, plus `eth_getBlockByNumber` for the finality-head and canonical-chain checks.
   * **BlockHash (Bitcoin)**: `getrawtransaction` (verbose) for the containing `blockhash` and confirmation count, then `getblockheader` + `getblockhash` for the canonical-chain defense-in-depth check.
   * **BlockHash (Starknet)**: `starknet_getTransactionReceipt` for `block_hash` + `finality_status`, then `starknet_getBlockWithTxHashes` for the canonical-chain defense-in-depth check.
-  * **InnerInstruction (SVM)**: `getTransaction` at the requested commitment for `meta.innerInstructions`, the account keys and the loaded lookup-table addresses, plus a second `getTransaction` at `confirmed` when a `Finalized` request is answered with null, to tell a not-yet-rooted transaction from an unknown one. Unlike the three chains above there is no separate finality-head or canonical-chain call: the commitment on the query *is* the finality check, because the node serves a `finalized` query only from slots it has rooted, and the response carries no identity of its containing block to cross-check.
+  * **InnerInstruction (SVM)**: `getTransaction` for `meta.innerInstructions`, the account keys and the loaded lookup-table addresses, plus `getSlot` for the finality check when `Finalized` is requested.
   * **AccountState (SVM)**: `getAccountInfo` for the account's owner and data, alongside the `getTransaction` gates above.
 * **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
 
@@ -226,7 +226,7 @@ pub enum EthereumExtractor {
 }
 
 pub enum SvmExtractor {
-    // One inner instruction — a Cross-Program Invocation (CPI) — with program id and account indices resolved to pubkeys.
+    // One inner (CPI) instruction, with program id and account indices resolved to pubkeys.
     InnerInstruction { instruction_index: u64, inner_instruction_index: u64 },
     // Current owner and data of the account at `pubkey`.
     AccountState { pubkey: SvmAddress },
@@ -252,16 +252,6 @@ Message-level instructions are not addressable: the initial set covers CPI instr
 replaces the previously defined `SolanaProgramIdIndex` / `SolanaDataHash`, which no inspector ever
 implemented. `SvmExtractor` is `#[non_exhaustive]`, so a message-level variant can be added later.
 
-Finality is asked of the node rather than computed: `getTransaction` carries the request's
-commitment, and at `finalized` the node answers only from slots it has rooted. Reading the latest
-rooted slot separately and comparing the transaction's slot against it would reconstruct the same
-predicate from two answers, which a load-balanced endpoint is free to serve from two backends at
-different heights; one query is self-consistent and asks for the property directly. The one
-ambiguity is that `null` at `finalized` is answered both for an unknown transaction and for one that
-is confirmed but not yet rooted; a second `getTransaction` at `confirmed` separates them, so only
-the first becomes the substantive `TransactionNotFound` and the second stays the transient
-`NotFinalized`. The happy path therefore costs one call, and the ambiguous path two.
-
 `AccountState` reads the account at `pubkey` via `getAccountInfo` at the request's commitment and
 extracts `SvmAccount { owner, data }`. The lamport balance is deliberately left out: anyone can
 credit any account with a bare transfer, so binding the balance in would let a third party
@@ -269,9 +259,7 @@ permanently break verification of a chosen account for one lamport. SVM RPC has 
 account reads, so the
 value reflects the state at query time, which makes it the one extractor whose result is not a
 function of `(tx_id, finality, extractors)` alone. It therefore only suits accounts that no longer
-change. There is a floor but no ceiling: a provider answering at a slot before the transaction's is
-rejected as a transient failure, so a backend that has not yet seen the transaction cannot supply
-pre-transaction state. If an account does change, two failure modes follow and only the first is diagnosed: one
+change. If an account does change, two failure modes follow and only the first is diagnosed: one
 node's own providers disagreeing is caught by the fan-out as a response mismatch, whereas two
 *nodes* observing different states is caught by nothing — they derive different payload hashes and
 the signing session dies, surfacing to the caller as a timeout.
@@ -578,11 +566,11 @@ The per-chain map key prevents *lookup* confusion: when the node resolves the op
 
 At startup and every hour after that, every provider of a chain the node can identify gets its self-identifying RPC called and the response is compared against that chain's `expected_network_fingerprint` from the operator's config. The probe is report-only: a provider serving the wrong network is logged, but is not dropped, because a network blip should not take a chain out of signing. It runs detached, so it never delays startup. Repeating it turns a single snapshot taken at boot into a signal that also catches a provider that starts serving another network, or goes down, while the node is up. A node with no foreign chain configured at all is warned once at startup instead, because it cannot verify foreign-chain transactions.
 
-The result of each round is a line per provider, an `x/y providers healthy` summary counting only the providers a probe covers, and two gauges labelled by chain, which carry the verdicts of the round that ran last: `mpc_foreign_chain_rpc_providers_configured` and `mpc_foreign_chain_rpc_providers_healthy`. The gauges are per chain rather than per provider, because a provider name is operator chosen and would put an unbounded label on a time series. A chain the probe cannot build an inspector for, such as Solana, is left out of both the summary and the gauges: reporting `0` healthy against its configured count would read as every provider failing.
+The result of each round is a line per provider, an `x/y providers healthy` summary counting only the providers a probe covers, and two gauges labelled by chain, which carry the verdicts of the round that ran last: `mpc_foreign_chain_rpc_providers_configured` and `mpc_foreign_chain_rpc_providers_healthy`. The gauges are per chain rather than per provider, because a provider name is operator chosen and would put an unbounded label on a time series. A chain whose providers cannot be identified, such as Solana, is left out of both the summary and the gauges: reporting `0` healthy against its configured count would read as every provider failing.
 
 Taking the expected value from operator config rather than a constant in the attested binary is a deliberate trade. It makes mixed-network and local deployments checkable at all, since a config may pair one chain's mainnet with another's testnet and no binary can ship a value for a devnet. The cost is that the check no longer binds an operator: they can set the wrong value, or omit the field and get no check at all, and either way they fool only their own node's diagnostics. The network-level defenses against a wrong URL are unchanged: threshold voter review of the whitelist, and the provider fan-out, which fails the individual request when a provider disagrees with its siblings.
 
-Every chain in the table below is probed, each by the RPC beside it. `solana`'s inspector has a fingerprint probe (`getGenesisHash`) that the health check does not call yet, so `solana` still ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
+Every chain with an inspector is probed, each by the RPC below. `solana` has none, so it ignores `expected_network_fingerprint`. The fingerprint values themselves are tabulated once, under [Configuration (Node)](#configuration-node).
 
 | chain | probe |
 |---|---|
@@ -592,7 +580,7 @@ Every chain in the table below is probed, each by the RPC beside it. `solana`'s 
 | aptos | the ledger info at the REST root |
 | sui | `GetServiceInfo` |
 
-The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing. Sui's base58 digest and Solana's base58 genesis hash have a single spelling each, so only surrounding whitespace in the configured value is trimmed.
+The reported and the configured value are normalized before they are compared, because the same fingerprint has several legal spellings. Starknet's is the chain id felt in lowercase `0x` hex without leading zeros, which providers and operators alike are free to pad and upper-case. The EVM chain id is compared in decimal, the form it is published and configured in, while `eth_chainId` answers a `0x` hex quantity. Bitcoin's genesis hash is compared in lowercase hex, with the leading zeros kept, since they are digits of the hash. Aptos answers its chain id as a number, so only the configured value needs normalizing, and Sui's base58 digest has a single spelling with nothing to normalize.
 
 An answer that is no fingerprint at all is reported as the wrong network, carrying the text the provider sent, so the report says what was actually claimed. An answer longer than any real fingerprint is cut short and ends in `_TRUNCATED`, because it is repeated into the logs.
 
@@ -694,7 +682,7 @@ foreign_chains:
           token:
             val: "<your-api-key-here>"
       ankr:
-        rpc_url: "https://rpc.ankr.com/solana/{api_key}"
+        rpc_url: "https://rpc.ankr.com/near/{api_key}"
         auth:
           kind: path
           placeholder: "{api_key}"
@@ -750,18 +738,17 @@ separates the test networks from each other where a network *name* would not: te
 `"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"`. Aptos's one-byte id space
 separates mainnet from testnet, but two devnets can collide.
 
+`solana` is configurable but absent from the table: it has no inspector, so
+there is nothing about it to verify in the first place.
+
 The fingerprint is set per chain rather than once per deployment, so a config can mix networks, and
 each value must match the network of the `rpc_url` beside it. The value is always a quoted string,
 including the fingerprints that look numeric.
 
-`solana` is configurable but absent from the table: nothing consumes the value until the health
-check builds an SVM inspector for it.
-
-For every probed chain, leaving the field unset is not a silent skip: every provider of the chain is
-reported as `MissingExpectedFingerprint` and counts against the chain's healthy total, because
-silence reads as healthy on a dashboard. `solana`'s providers are reported as
-`ProbeNotImplemented` instead, and counted in neither the healthy summary nor the per-chain gauges,
-whether the field is set or not.
+Every chain with an inspector is probed, and for those, leaving the field unset is not a silent
+skip: every provider of the chain is reported as `MissingExpectedFingerprint` and counts against the
+chain's healthy total, because silence reads as healthy on a dashboard. `solana` has no inspector, so
+its providers are never asked and no health is reported for it, whether the field is set or not.
 
 ## Risks
 
