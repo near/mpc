@@ -1,8 +1,10 @@
 # Backup and Migration Service
 
+**Status:** ARCHIVED
+
 ## Overview
 
-Near One is currently in the process of migrating the MPC nodes into **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](./securing-mpc-with-tee-design-doc.md) for an introduction to TEEs and their benefits).
+Near One is currently in the process of migrating the MPC nodes into **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](../../securing-mpc-with-tee-design-doc.md) for an introduction to TEEs and their benefits).
 
 Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
@@ -78,7 +80,7 @@ node, but only of the secret shares. The MPC node generates a few secrets that w
 
 Each keyshare set the node hands out is recorded in its `mpc_last_backup_served_epoch` and
 `mpc_last_backup_served_timestamp_seconds` metrics, which let an operator alert on backups
-that stopped happening (see [node-operator-metrics.md](design/node-operator-metrics.md)).
+that stopped happening (see [node-operator-metrics.md](../../guide/node-operator-metrics.md)).
 
 ```mermaid
 ---
@@ -148,7 +150,7 @@ overridable with `RUST_LOG`.
 The RPC endpoint has to be live, and it is trusted for the identity of the keyset
 to back up. A lying endpoint cannot make the node hand out keyshares it does not
 hold, and it cannot downgrade an existing backup:
-[`PermanentKeyStorage::store`](../crates/node/src/keyshare/permanent.rs) rejects
+[`PermanentKeyStorage::store`](../../../crates/node/src/keyshare/permanent.rs) rejects
 an older epoch, a keyset that drops a domain, and a public-key mismatch. It can,
 however, name a **superseded key event** and so waste an epoch's backup. Attempt
 ids are public on-chain, the node keeps the keyshares of failed attempts until a
@@ -375,7 +377,7 @@ pub struct NodeMigrations {
 }
 ```
 
-Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. See [backup-service-attestation-data.md](backup-service-attestation-data.md) for details.
+Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. See [backup-service-attestation-data.md](../../design/backup-service-attestation-data.md) for details.
 
 #### Backup Service Registration
 

@@ -2105,7 +2105,7 @@ near contract call-function as-read-only \
 
 After the new launcher manifest digest and/or OS measurements are approved, deploy a new CVM with the updated configuration and migrate key shares from the old node. Both old and new configurations are accepted by the contract during the migration period.
 
-For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](migration-service.md).
+For the migration procedure, see the [node migration guide](node-migration-guide.md) and [migration service design](./archive/design/migration-service.md).
 
 ### Remove Old Launcher Manifest Digest / OS Measurements
 

@@ -392,7 +392,7 @@ logs, stderr.log any panic)
 ## Test layout conventions
 
 - Follow the `<subject>__should_<assertion>` or `<subject>__<scenario>` naming
-  from `docs/engineering-standards.md`.
+  from `docs/development/engineering-standards.md`.
 - Reserve a unique `port_seed` constant in `tests/common.rs` before adding a
   new test. Don't reuse someone else's seed, even if the test is short.
 - Prefer `common::must_setup_cluster` over calling `MpcCluster::start` directly;
@@ -407,7 +407,7 @@ logs, stderr.log any panic)
 
 ## Related documents
 
-- [`docs/engineering-standards.md`](../../docs/engineering-standards.md) —
+- [`docs/development/engineering-standards.md`](../../docs/development/engineering-standards.md) —
   test naming, panic policy, I/O separation.
 - [Issue #2440](https://github.com/near/mpc/issues/2440) — `MpcNode` design.
 - [Issue #2441](https://github.com/near/mpc/issues/2441) — `MpcCluster`

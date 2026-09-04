@@ -162,7 +162,7 @@ EOF
     RPC_PORT=$((BASE_RPC_PORT + i)) INDEXER_PORT=$((BASE_INDEXER_PORT + i)) jq '.network.addr = "127.0.0.1:" + env.INDEXER_PORT | .rpc.addr = "127.0.0.1:" + env.RPC_PORT' ~/.near/$node_name/config.json >~/.near/$node_name/tmp.json
     mv ~/.near/$node_name/tmp.json ~/.near/$node_name/config.json
 
-    WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
+    WEB_UI_PORT=$((BASE_WEB_UI_PORT + i)) MIGRATION_PORT=$((BASE_MIGRATION_PORT + i)) PPROF_PORT=$((BASE_PPROF_PORT + i)) NEAR_ACCOUNT_NAME=$node_name envsubst <docs/development/localnet/mpc-configs/config.yaml.template >~/.near/$node_name/config.yaml
 
   done
 
@@ -244,7 +244,7 @@ EOF
   pids_adding_domains=()
   for ((i = 1; i <= N; i++)); do
     node_name="mpc-node-$i.test.near"
-    run_quiet_on_success "$(mpc_tx vote_add_domains 'file-args docs/localnet/args/add_domain.json' '0 NEAR' "${node_name}")" &
+    run_quiet_on_success "$(mpc_tx vote_add_domains 'file-args docs/development/localnet/args/add_domain.json' '0 NEAR' "${node_name}")" &
     pids_adding_domains+=($!)
   done
 
@@ -262,11 +262,11 @@ EOF
 
   echo "Executing signature requests"
   for args_file in sign_ecdsa sign_eddsa; do
-    run_quiet_on_success "$(mpc_tx sign "file-args docs/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
+    run_quiet_on_success "$(mpc_tx sign "file-args docs/development/localnet/args/${args_file}.json" '100 yoctoNEAR' "${signer_account}")"
   done
-  run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
+  run_quiet_on_success "$(mpc_tx request_app_private_key 'file-args docs/development/localnet/args/ckd.json' '100 yoctoNEAR' "${signer_account}")"
   for chain in bitcoin abstract aptos sui; do
-    run_quiet_on_success "$(mpc_tx verify_foreign_transaction "file-args docs/localnet/args/verify_foreign_tx_${chain}.json" '100 yoctoNEAR' "${signer_account}")"
+    run_quiet_on_success "$(mpc_tx verify_foreign_transaction "file-args docs/development/localnet/args/verify_foreign_tx_${chain}.json" '100 yoctoNEAR' "${signer_account}")"
   done
 
   read -rp "Press Enter to finish the script and run clean-up steps..."

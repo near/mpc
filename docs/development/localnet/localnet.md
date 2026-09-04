@@ -25,7 +25,7 @@ that is used by the MPC binary defined in the workspace cargo file, `/Cargo.toml
 neard --version
 ```
 
-You should install `neard` from the same nearcore tag this workspace pins (see the `tag = "..."` value on the `near-*` git dependencies in [`Cargo.toml`](../../Cargo.toml)):
+You should install `neard` from the same nearcore tag this workspace pins (see the `tag = "..."` value on the `near-*` git dependencies in [`Cargo.toml`](../../../Cargo.toml)):
 
 ```shell
 cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard --locked
@@ -165,14 +165,14 @@ Now we're ready to initialize the nodes.
 ### Configure Frodo's node
 
 Create a TOML configuration file for Frodo's MPC node using the shared template
-at `docs/localnet/mpc-config.template.toml`. This single file contains all
+at `docs/development/localnet/mpc-config.template.toml`. This single file contains all
 settings (secrets, TEE config, NEAR init, and node parameters). Each node needs
 unique ports for RPC, indexer, web UI, migration, and pprof.
 
 ```shell
 mkdir -p ~/.near/mpc-frodo
 env MPC_NODE_ID=mpc-frodo NEAR_ACCOUNT_ID=frodo.test.near NEAR_BOOT_NODES="$NODE_PUBKEY@0.0.0.0:24566" RPC_PORT=3031 INDEXER_PORT=24568 WEB_UI_PORT=8081 MIGRATION_WEB_UI_PORT=8079 PPROF_PORT=34001 \
-  envsubst < docs/localnet/mpc-config.template.toml > ~/.near/mpc-frodo/mpc-config.toml
+  envsubst < docs/development/localnet/mpc-config.template.toml > ~/.near/mpc-frodo/mpc-config.toml
 ```
 
 ### Configure Sam's node
@@ -182,7 +182,7 @@ Now we can do the same for Sam.
 ```shell
 mkdir -p ~/.near/mpc-sam
 env MPC_NODE_ID=mpc-sam NEAR_ACCOUNT_ID=sam.test.near NEAR_BOOT_NODES="$NODE_PUBKEY@0.0.0.0:24566" RPC_PORT=3032 INDEXER_PORT=24569 WEB_UI_PORT=8082 MIGRATION_WEB_UI_PORT=8078 PPROF_PORT=34002 \
-  envsubst < docs/localnet/mpc-config.template.toml > ~/.near/mpc-sam/mpc-config.toml
+  envsubst < docs/development/localnet/mpc-config.template.toml > ~/.near/mpc-sam/mpc-config.toml
 ```
 
 ### Run the MPC binary
@@ -263,7 +263,7 @@ participants, they name `tee-verifier.test.near` as the TEE verifier contract
 the MPC contract trusts; step 6 deploys it.
 
 ```shell
-envsubst < docs/localnet/args/init.json > /tmp/init_args.json
+envsubst < docs/development/localnet/args/init.json > /tmp/init_args.json
 ```
 
 Now, we should be ready to call the `init` function on the contract.
@@ -292,9 +292,9 @@ Each domain has a **purpose** that controls which contract methods can target it
 Let's have Frodo and Sam both vote to add four domains: Secp256k1 (Sign), Ed25519 (Sign), Bls12381 (CKD), and Secp256k1 (ForeignTx).
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 
-near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 6. (Optional) Deploy the TEE verifier
@@ -352,7 +352,7 @@ Now we should be able to request a signature from the network.
 ### ECDSA request
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/development/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 If this worked, you should see a response like:
@@ -374,7 +374,7 @@ INFO Function execution return value (printed to stdout):
 ### edDSA request
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/development/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ```log
@@ -390,7 +390,7 @@ INFO Function execution return value (printed to stdout): {
 ### CKD request
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/development/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ```log
@@ -412,7 +412,7 @@ only accepts domains with purpose `ForeignTx`.
 #### Bitcoin
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_bitcoin.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ```log
@@ -452,25 +452,25 @@ Function execution return value (printed to stdout):
 #### Abstract
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_abstract.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 #### Aptos
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_aptos.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 #### Starknet
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_starknet.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_starknet.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 #### Sui
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/development/localnet/args/verify_foreign_tx_sui.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ## 8. Clean Up

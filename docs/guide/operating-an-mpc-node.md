@@ -9,16 +9,16 @@ All operators are expected to run the following:
 
 1. A TEE **testnet** MPC node
 2. A **mainnet** non-TEE MPC node (until the TEE mainnet rollout completes)
-3. (once implemented) A TEE-enabled [backup service](./migration-service.md) node
+3. (once implemented) A TEE-enabled [backup service](../archive/design/migration-service.md) node
 
 Two things to keep in mind for the setup:
 
 - Run each component on its own machine — don't co-locate them.
 - Keep your mainnet and testnet setups as close to identical as possible, so testnet catches bugs before they reach mainnet.
 
-See the [TDX node guide](./running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](./node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
+See the [TDX node guide](../running-an-mpc-node-in-tdx-external-guide.md) for how to operate TEE MPC nodes, and the [node migration guide](../node-migration-guide.md) for how to use our backup CLI to migrate nodes between different environments.
 
-> **Note** — As of 2026-06, TEE migration is in progress: testnet runs a mix of TEE and non-TEE nodes, and mainnet does not yet require TEE. Until that changes, operators onboarding now should run a non-TEE node for mainnet and a TEE node for testnet. See [Running the MPC Launcher in Non-TEE Mode](./using-the-launcher-in-nontee-setup.md) for details.
+> **Note** — As of 2026-06, TEE migration is in progress: testnet runs a mix of TEE and non-TEE nodes, and mainnet does not yet require TEE. Until that changes, operators onboarding now should run a non-TEE node for mainnet and a TEE node for testnet. See [Running the MPC Launcher in Non-TEE Mode](../using-the-launcher-in-nontee-setup.md) for details.
 
 ### One node per network per operator
 Each operator runs **exactly one** mainnet node and one testnet node — no more. A decentralized set of independently operated nodes is the whole point, so no single party may run more than one node per network, whether directly or by quietly operating several operators' nodes through subcontracting.
@@ -42,7 +42,7 @@ The same applies if we ask you to turn off your node during incident investigati
 ## Incident response
 When an issue with your node comes up, we expect you to pick it up and start investigating as soon as you reasonably can, and to keep others posted on Slack as you work it. This is essential to the reliability of the network.
 
-We'll move to tighter, formal response times once dedicated alerting is in place; until then, prompt best-effort response is what matters.
+We'll move to tighter, formal response times once dedicated alerting is in place; until then, prompt best-effort response is what matters. The [metrics guide](./node-operator-metrics.md) lists what to watch and alert on in the meantime.
 
 When an incident is underway we expect you to be ready to collaborate on actions such as:
 
@@ -55,10 +55,10 @@ When an incident is underway we expect you to be ready to collaborate on actions
 Upgrades are a regular part of operating a node — expect a new MPC release roughly every one to two weeks, and note that every NEAR protocol upgrade requires a matching MPC upgrade. For each release we typically roll out node upgrades first, then contract upgrades, coordinating both on Slack. We'd like you to independently verify the code before acting, so you can confirm the expected version is what's actually being run.
 
 ### Node upgrades
-Follow our [reproducible builds guide](./guide/reproducible-builds.md) to verify the docker image hashes, then upgrade your nodes to the requested version.
+Follow our [reproducible builds guide](./reproducible-builds.md) to verify the docker image hashes, then upgrade your nodes to the requested version.
 
 ### Host firmware upgrades
-For TEE nodes, keeping the host's BIOS, CPU microcode and TDX module current is part of the job, and it isn't something we can coordinate for you: Intel raises the TCB bar on its own schedule, historically about every six months, and a platform below it has its attestation rejected until the host is updated. Check where your host stands and update it following [TDX platform TCB status](./guide/tdx-tcb-status.md). Doing this proactively, rather than after an attestation failure, is what keeps the network from losing several participants at once.
+For TEE nodes, keeping the host's BIOS, CPU microcode and TDX module current is part of the job, and it isn't something we can coordinate for you: Intel raises the TCB bar on its own schedule, historically about every six months, and a platform below it has its attestation rejected until the host is updated. Check where your host stands and update it following [TDX platform TCB status](./tdx-tcb-status.md). Doing this proactively, rather than after an attestation failure, is what keeps the network from losing several participants at once.
 
 ### Contract upgrades & voting
 Contract upgrades happen through voting. Just like with nodes, reproduce the contract build to verify the code before voting.

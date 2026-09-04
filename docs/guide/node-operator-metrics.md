@@ -1,16 +1,11 @@
-# Meaningful Metrics for Node Operators
+# Metrics for node operators
 
-**Status:** Draft — for team review
-**Issue:** [#3229](https://github.com/near/mpc/issues/3229)
+The MPC node exposes Prometheus metrics on its debug port. This guide lists
+the ones worth watching, what each measures, and alert rules to start from.
 
-## Problem
+## Chain-gateway pipeline
 
-We need meaningful metrics and should provide node operators with recommendations on metrics to track.
-Cf. [#3229](https://github.com/near/mpc/issues/3229).
-
-## Recommendations
-
-Chain-gateway pipeline counters, in
+Counters in
 [`event_subscriber/metrics.rs`](../../crates/chain-gateway/src/event_subscriber/metrics.rs):
 
 | Metric | Measures | How to interpret |
@@ -21,7 +16,9 @@ Chain-gateway pipeline counters, in
 | [`mpc_block_updates_dropped_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | block updates that won't be received by the node (containing signature requests, responses, etc.) | should be zero or flat. If it increases, the consumer is starved or the MPC node is not working correctly |
 | [`mpc_num_fail_on_timeout_indexed`](../../crates/node/src/metrics.rs) | number of calls to `fail_on_timeout` in the MPC contract. Counts the number of failed requests (aggregate over all request types). May contain false positives if `mpc_finalized_blocks_indexed_total` diverges from `mpc_blocks_indexed_total`, as it may count transactions on non-finalized forks. | should be near zero in healthy operation. Sustained non-zero rate means the node (or the cluster) is missing the response deadline or the blockchain has a lot of forks. |
 
-Backup verification, in [`metrics.rs`](../../crates/node/src/metrics.rs). Set when the node
+## Backups
+
+Gauges in [`metrics.rs`](../../crates/node/src/metrics.rs). Set when the node
 serves keyshares over the migration service to the backup service registered for it:
 
 | Metric | Measures | How to interpret |
@@ -30,7 +27,9 @@ serves keyshares over the migration service to the backup service registered for
 | [`mpc_last_backup_served_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last keyshare set served to the backup service | should be recent. A large gap since the last resharing means backups are not being taken. Confirms the node served the keyshares, not that the backup service persisted them. |
 | [`mpc_current_epoch_id`](../../crates/node/src/metrics.rs) | epoch id of the keyset the contract currently holds | the reference point for `mpc_last_backup_served_epoch`. Increments on every resharing; unset until the first keyset exists. During a resharing it stays at the old epoch, which is the one still available to back up. |
 
-Attestation freshness, in [`metrics.rs`](../../crates/node/src/metrics.rs). Set from the
+## Attestation freshness
+
+Gauges in [`metrics.rs`](../../crates/node/src/metrics.rs). Set from the
 on-chain confirmation of an attestation submission, in
 [`attestation_freshness_metrics.rs`](../../crates/node/src/tee/attestation_freshness_metrics.rs):
 

@@ -1,5 +1,7 @@
 # MPC localnet in docker
 
+**Status:** ARCHIVED
+
 Brain dump right now, might clean this up for reproducibility.
 
 # Step 1: Build docker images

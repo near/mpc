@@ -97,7 +97,7 @@ NotInitialized → Running ↔ Initializing/Resharing
 
 ## Code Style
 
-**Before writing or modifying code, read [engineering-standards.md](./docs/engineering-standards.md).** It describes mandatory coding and testing conventions — including test structure, panic policy, and I/O separation — that apply to every change.
+**Before writing or modifying code, read [engineering-standards.md](./docs/development/engineering-standards.md).** It describes mandatory coding and testing conventions — including test structure, panic policy, and I/O separation — that apply to every change.
 
 ### Test Structure
 New tests must use this form:
@@ -116,7 +116,7 @@ fn <system_under_test>__should_<test_assertion>() {
 }
 ```
 
-See `docs/engineering-standards.md` for the full rationale and additional testing conventions.
+See `docs/development/engineering-standards.md` for the full rationale and additional testing conventions.
 
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
@@ -132,7 +132,7 @@ A PR introducing a new contract method must add that method to the `MpcContractH
 ### Trait Naming
 Traits should model a single capability, and be named after the action, not as an agent noun derived from it: `ReadContractState`, not `ContractStateReader`. This follows std-idiomatic patterns (`From*`/`Into*`/`To*` conversions). This applies to new traits and opportunistic renames, existing traits may deviate from this principle.
 
-See `docs/engineering-standards.md` §Name capability traits after the action for the full rationale and a `Don't` / `Do` example.
+See `docs/development/engineering-standards.md` §Name capability traits after the action for the full rationale and a `Don't` / `Do` example.
 
 ### Code Comments
 Default to writing no comments. Add one only in case one of the following applies:
@@ -151,7 +151,7 @@ Prefer concise comments, using correct terminology.
 
 In doc comments, reference other items with rustdoc intra-doc links (`` [`Foo`] ``), not plain `` `Foo` `` backticks. CI rejects broken links in everything rustdoc documents (test code is outside its view), and only linked references are checked at all; a plain backtick reference rots silently when the item is renamed. A backticked word that merely looks like an item (an algorithm name, a type from a crate we do not depend on, a `cfg(test)` item invisible to rustdoc) stays a plain code span.
 
-See `docs/engineering-standards.md` §Write helpful code comments for the full rationale and a `Don't` / `Do` example.
+See `docs/development/engineering-standards.md` §Write helpful code comments for the full rationale and a `Don't` / `Do` example.
 
 ## Test Terminology
 

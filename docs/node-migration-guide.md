@@ -8,7 +8,7 @@ Node migration allows you to move your MPC node from one host to another without
 
 **Changing only your URL?** If your node keeps the same TLS key and you only need to point peers at a new address (e.g. fixing a typo or moving to a new domain), call `update_participant_url` on the contract instead of running a migration. It updates just your registered URL; peers pick it up without a resharing or reconnecting existing sessions.
 
-**Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
+**Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./archive/design/migration-service.md).
 
 ## Prerequisites
 
@@ -172,7 +172,7 @@ This is the key you pass to the backup-cli — if the node is already deployed, 
 - These are two different keys serving different purposes
 
 
-**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. For TEE-to-TEE migrations in the Hard Launch phase, the backup service will run autonomously within a TEE and handle encryption keys securely without file system access. Refer to [migration-service.md](./migration-service.md) for Hard Launch details.
+**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. For TEE-to-TEE migrations in the Hard Launch phase, the backup service will run autonomously within a TEE and handle encryption keys securely without file system access. Refer to [migration-service.md](./archive/design/migration-service.md) for Hard Launch details.
 
 
 ## Step 4: Backup Keyshares from Old Node
@@ -252,7 +252,7 @@ Notes:
 - It re-reads the contract every `--poll-interval-seconds` (default 60) and acts only when the state actually changed. A successful backup logs at `info`, a failed one at `warn`, and a failed backup is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
 - This is the backup direction only. Restoring (Steps 6–8) stays manual.
 
-See [Automatic backups](./migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.
+See [Automatic backups](./archive/design/migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.
 
 
 ## Step 5: Prepare the New Node

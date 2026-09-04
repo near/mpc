@@ -1,6 +1,6 @@
 # Configuration of foreign chain RPC providers without full consensus
 
-> **Canonical design:** see [`docs/foreign-chain-transactions.md` — "On-chain RPC Provider Whitelist"](../foreign-chain-transactions.md#on-chain-rpc-provider-whitelist) for the full end-to-end shape, type definitions, vote semantics, and rationale. This doc captures the *motivation* and the high-level shape; the linked section is the source of truth for the implementation.
+> **Canonical design:** see [`docs/archive/design/foreign-chain-transactions.md` — "On-chain RPC Provider Whitelist"](../archive/design/foreign-chain-transactions.md#on-chain-rpc-provider-whitelist) for the full end-to-end shape, type definitions, vote semantics, and rationale. This doc captures the *motivation* and the high-level shape; the linked section is the source of truth for the implementation.
 
 ## Background
 For the foreign chain transaction validation feature supported by the MPC network, individual MPC nodes each query a set
@@ -19,7 +19,7 @@ requiring all other nodes to have the exact same configuration.
 ### Requirements
 
 > Terms used below (whitelisted, available, RPC quorum, *covers*, signing threshold) are defined in
-> the [main doc's Terminology](../foreign-chain-transactions.md#terminology).
+> the [main doc's Terminology](../archive/design/foreign-chain-transactions.md#terminology).
 
 1. RPC providers are whitelisted by being voted into the contract by node operators submitting votes. The whitelist is **per-chain**, keyed by `(ForeignChain, ProviderId)`.
 2. The contract owns the connection config (`base_url`, `auth_scheme`, `chain_routing`), not the operator. Operator yaml carries `provider_id` + a `token_env` reference only.
