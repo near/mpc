@@ -97,7 +97,7 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        if !running_state.is_participant_given_account_id(&account_id) {
+        if !running_state.is_participant(&account_id) {
             return Err(InvalidState::NotParticipant {
                 account_id: account_id.clone(),
             }
@@ -188,7 +188,7 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        if !running_state.is_participant_given_account_id(&account_id) {
+        if !running_state.is_participant(&account_id) {
             return Err(InvalidState::NotParticipant {
                 account_id: account_id.clone(),
             }

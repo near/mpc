@@ -10,6 +10,7 @@
 //! applied state is reconstructable from the call that crosses threshold — pending
 //! state can stay hash-only without losing data on apply.
 
+use crate::primitives::participants::IsParticipant;
 use std::collections::BTreeMap;
 
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -135,7 +136,7 @@ impl Default for ProviderVotes {
 impl ProviderVotes {
     pub fn retain(&mut self, current: &Participants) {
         self.pending
-            .retain_votes(|(p, _)| current.is_participant_given_participant_id(&p.get()));
+            .retain_votes(|(p, _)| current.is_participant(&p.get()));
     }
 
     /// Records `participant`'s vote for `(chain, hash)`. Returns `true` when `chain`
@@ -155,9 +156,7 @@ impl ProviderVotes {
         // after `count_for`.
         let count_usize = {
             let voter_set = self.pending.vote((participant, chain), hash);
-            voter_set.count_for(|(p, c)| {
-                *c == chain && participants.is_participant_given_participant_id(&p.get())
-            })
+            voter_set.count_for(|(p, c)| *c == chain && participants.is_participant(&p.get()))
         };
         let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
             reason: format!("vote count {count_usize} does not fit in u64: {e}"),

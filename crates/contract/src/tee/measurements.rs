@@ -1,3 +1,4 @@
+use crate::primitives::participants::IsParticipant;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation;
 use near_mpc_contract_interface::types::{ExpectedMeasurements, MeasurementVoteAction};
@@ -57,9 +58,7 @@ impl MeasurementVotes {
         let remaining = self
             .vote_by_account
             .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
+            .filter(|(participant_id, _)| participants.is_participant(&participant_id.get()))
             .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
             .collect();
         MeasurementVotes {

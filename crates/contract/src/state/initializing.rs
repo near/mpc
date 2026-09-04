@@ -6,6 +6,7 @@ use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
+use crate::primitives::participants::IsParticipant;
 use near_account_id::AccountId;
 use near_sdk::near;
 use std::collections::BTreeSet;
@@ -142,11 +143,11 @@ impl InitializingContractState {
         Ok(None)
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
+    pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.generating_key
             .proposed_parameters()
             .participants()
-            .is_participant_given_account_id(account_id)
+            .is_participant(account_id)
     }
 }
 

@@ -1,5 +1,6 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
+use crate::primitives::participants::IsParticipant;
 use crate::primitives::participants::Participants;
 use near_mpc_contract_interface::types::{
     Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -271,9 +272,7 @@ impl AddDomainsVotes {
         let remaining_votes = self
             .proposal_by_account
             .iter()
-            .filter(|&(participant_id, _vote)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
+            .filter(|&(participant_id, _vote)| participants.is_participant(&participant_id.get()))
             .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
             .collect();
         AddDomainsVotes {

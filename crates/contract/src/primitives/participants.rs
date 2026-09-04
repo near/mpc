@@ -1,4 +1,5 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
+use crate::primitives::key_state::AuthenticatedParticipantId;
 
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
@@ -105,18 +106,6 @@ impl Participants {
         Ok(())
     }
 
-    pub fn is_participant_given_account_id(&self, account_id: &AccountId) -> bool {
-        self.participants
-            .iter()
-            .any(|(a_id, _, _)| a_id == account_id)
-    }
-
-    pub fn is_participant_given_participant_id(&self, participant_id: &ParticipantId) -> bool {
-        self.participants
-            .iter()
-            .any(|(_, p_id, _)| p_id == participant_id)
-    }
-
     pub fn init(
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
@@ -203,12 +192,35 @@ impl Participants {
     }
 }
 
+/// Membership test for the current participant set, generic over the identifier type `I`.
+pub trait IsParticipant<I> {
+    fn is_participant(&self, id: &I) -> bool;
+}
+
+impl IsParticipant<ParticipantId> for Participants {
+    fn is_participant(&self, id: &ParticipantId) -> bool {
+        self.participants.iter().any(|(_, p_id, _)| p_id == id)
+    }
+}
+
+impl IsParticipant<AccountId> for Participants {
+    fn is_participant(&self, id: &AccountId) -> bool {
+        self.participants.iter().any(|(a_id, _, _)| a_id == id)
+    }
+}
+
+impl IsParticipant<AuthenticatedParticipantId> for Participants {
+    fn is_participant(&self, id: &AuthenticatedParticipantId) -> bool {
+        self.is_participant(&id.get())
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use crate::{
         errors::{Error, InvalidCandidateSet},
         primitives::{
-            participants::{ParticipantId, Participants},
+            participants::{IsParticipant, ParticipantId, Participants},
             test_utils::{gen_accounts_and_info, gen_participant},
         },
     };
@@ -232,7 +244,7 @@ pub mod tests {
                 participants.id(account_id).unwrap(),
                 ParticipantId(idx as u32)
             );
-            assert!(participants.is_participant_given_account_id(account_id));
+            assert!(participants.is_participant(account_id));
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {

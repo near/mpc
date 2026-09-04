@@ -6,6 +6,7 @@ use crate::errors::{Error, InvalidParameters};
 use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
+use crate::primitives::participants::IsParticipant;
 use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
@@ -196,13 +197,12 @@ impl ResharingContractState {
     }
 
     pub fn is_participant_or_prospective_participant(&self, account_id: &AccountId) -> bool {
-        self.previous_running_state
-            .is_participant_given_account_id(account_id)
+        self.previous_running_state.is_participant(account_id)
             || self
                 .resharing_key
                 .proposed_parameters()
                 .participants()
-                .is_participant_given_account_id(account_id)
+                .is_participant(account_id)
     }
 }
 #[cfg(test)]
