@@ -159,6 +159,10 @@ See `docs/development/engineering-standards.md` §Write helpful code comments fo
 - **Integration test**: Rust test in `/tests` folder
 - **E2E test**: Rust test in `crates/e2e-tests`
 
+## Documentation layout
+
+Markdown under `docs/` is sorted by audience: `docs/guide/` for node operators, `docs/development/` for people working on the code, `docs/design/` for design docs. Archived documents keep their class under `docs/archive/<class>/`. A document that needs attachments (images, argument files, templates) gets its own folder named after it, with the document inside and the assets in an `attachments/` subfolder or alongside it, e.g. `docs/development/localnet/localnet.md`; documents without attachments sit directly in their class folder.
+
 ## Documentation alignment
 
 Archived documents are recognizable by a `**Status:** ARCHIVED` banner directly below the title; such documents must never be modified. When a PR archives a file, flag contents at risk of becoming stale (such as file paths). This is non-blocking, as version history preserves the paths valid at archiving time. The archiving procedure is described in [README.md §Documentation](README.md#documentation).
