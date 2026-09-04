@@ -155,7 +155,7 @@ export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 
 Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for the backup-cli when running `get-keyshares`.
 
-**TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
+**TEE (TDX/dstack) nodes:** `$MPC_HOME_DIR` (`/data`) is inside the CVM's encrypted disk, so you cannot read the auto-generated `backup_encryption_key.hex`. Provide the key yourself instead: set it in the `[mpc_node_config.secrets]` block of the node's `user-config.toml` (see [Prepare MPC Node Configuration](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepare-mpc-node-configuration) in the operator guide) and keep a copy outside the CVM:
 
 ```toml
 [mpc_node_config.secrets]
@@ -262,7 +262,7 @@ Set up your new node on the new host with the following:
 1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
 2. **Set the encryption key** on the backup-cli and the new node, using the same key you pass to `put-keyshares` in [Step 7](#step-7-transfer-keyshares-to-new-node) (it may differ from the old node's key, but re-using one key throughout is simplest). Where to set it on the new node:
 
-   - **TDX / CVM node:** set it in `user-config.toml` under `[mpc_node_config.secrets]` before deploying. On a running CVM, apply it with `update-user-config` + restart (see [CVM management](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide.md#cvm-management)):
+   - **TDX / CVM node:** set it in `user-config.toml` under `[mpc_node_config.secrets]` before deploying. On a running CVM, apply it with `update-user-config` + restart (see [CVM management](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#cvm-management)):
      ```toml
      [mpc_node_config.secrets]
      backup_encryption_key_hex = "<value>"
@@ -277,7 +277,7 @@ Set up your new node on the new host with the following:
 4. **Add the node's `near_signer_public_key` to your account as a restricted access key**
 
 
-See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account)
+See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#add-the-node-account-key-to-your-account)
 
 
 **Note:** The keys can be retrieved using the node's public data endpoint:
