@@ -626,7 +626,7 @@ mod tests {
         let supporters = bitcoin_supporters();
         let ethereum_request = dtos::ForeignChainRpcRequest::Ethereum(dtos::EvmRpcRequest {
             tx_id: dtos::EvmTxId([0; 32]),
-            extractors: vec![],
+            extractors: [].into(),
             finality: dtos::EvmFinality::Finalized,
         });
 
@@ -643,7 +643,7 @@ mod tests {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
             tx_id: dtos::BitcoinTxId([0; 32]),
             confirmations: dtos::BlockConfirmations(6),
-            extractors: vec![dtos::BitcoinExtractor::BlockHash],
+            extractors: [dtos::BitcoinExtractor::BlockHash].into(),
         })
     }
 
