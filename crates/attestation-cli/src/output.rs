@@ -19,7 +19,7 @@ pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
     println!();
     println!("--- Failure Details ---");
     match err {
-        VerificationError::TcbStatusNotUpToDate(status) => {
+        VerificationError::TcbStatusNotUpToDate { status, .. } => {
             println!("Reason:          TCB status is not up to date");
             println!("TCB Status:      {status}");
             println!("Expected Status: UpToDate");

@@ -116,6 +116,7 @@ The node logs the reason once per attempt:
 ```text
 WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
   Attestation is not valid: TCB status `OutOfDate` is not up to date
+  (QE: UpToDate, platform: OutOfDate, advisories: ["INTEL-SA-01192", "INTEL-SA-01245"])
 ```
 
 On chain, `expiry_timestamp_seconds` on the stored attestation stops advancing.

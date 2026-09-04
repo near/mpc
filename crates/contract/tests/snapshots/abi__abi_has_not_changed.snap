@@ -287,27 +287,12 @@ expression: abi
           "private"
         ],
         "params": {
-          "serialization_type": "borsh",
+          "serialization_type": "json",
           "args": [
             {
               "name": "reason",
               "type_schema": {
-                "declaration": "String",
-                "definitions": {
-                  "String": {
-                    "Sequence": {
-                      "length_width": 4,
-                      "length_range": {
-                        "start": 0,
-                        "end": 4294967295
-                      },
-                      "elements": "u8"
-                    }
-                  },
-                  "u8": {
-                    "Primitive": 1
-                  }
-                }
+                "type": "string"
               }
             }
           ]

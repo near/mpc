@@ -435,13 +435,11 @@ impl MpcContract {
             Err(err) => {
                 // Fail the submitter's transaction from a separate receipt so any prior state
                 // commits (a panic here would roll it back)
-                let promise = Promise::new(env::current_account_id()).function_call(
-                    method_names::FAIL_ATTESTATION_SUBMISSION.to_string(),
-                    borsh::to_vec(&err.to_string())
-                        .expect("borsh serialization of reason must succeed"),
-                    NearToken::from_near(0),
-                    Gas::from_tgas(self.config.fail_attestation_submission_tera_gas),
-                );
+                let promise = Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(
+                        self.config.fail_attestation_submission_tera_gas,
+                    ))
+                    .fail_attestation_submission(err.to_string());
                 PromiseOrValue::Promise(promise.as_return())
             }
         }
@@ -505,7 +503,7 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn fail_attestation_submission(#[serializer(borsh)] reason: String) {
+    pub fn fail_attestation_submission(reason: String) {
         log!("fail_attestation_submission: {reason}");
         env::panic_str(&reason);
     }
