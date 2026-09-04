@@ -297,9 +297,9 @@ mod tests {
         self as dtos, ExpectedMeasurements, LauncherVoteAction, MeasurementVoteAction,
     };
     use near_sdk::test_utils::VMContextBuilder;
-    use std::collections::BTreeSet;
     use near_sdk::testing_env;
     use rstest::rstest;
+    use std::collections::BTreeSet;
 
     #[rstest]
     #[case(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
@@ -639,7 +639,7 @@ mod tests {
 
         let votes = contract.launcher_hash_votes();
         assert_eq!(votes.len(), 1);
-        assert_eq!(votes[&expected_proposal], BTreeSet::from([auth_0.clone()]));
+        assert_eq!(votes[&expected_proposal], BTreeSet::from([auth_0]));
 
         // Second vote
         let (account_1, _, _) = &participant_list[1];
