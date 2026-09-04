@@ -17,11 +17,11 @@ impl ProviderCallMetrics {
         for provider in providers {
             metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
                 .with_label_values(&[chain.label(), &provider.0]);
-            for kind in metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_KINDS {
+            for kind in Kind::ALL {
                 metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL.with_label_values(&[
                     chain.label(),
                     &provider.0,
-                    kind,
+                    kind.label(),
                 ]);
             }
         }
@@ -37,19 +37,43 @@ impl RecordProviderCall for ProviderCallMetrics {
                 .observe(elapsed.as_secs_f64());
             return;
         };
-        let kind = match failure {
-            ProviderFailure::Unreachable => metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT,
-            ProviderFailure::Rejected | ProviderFailure::Malformed => {
-                metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT
-            }
-            ProviderFailure::TimedOut => metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT,
-        };
         metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-            .with_label_values(&[self.chain.label(), &provider.0, kind])
+            .with_label_values(&[self.chain.label(), &provider.0, Kind::from(failure).label()])
             .inc();
     }
 }
 
+/// The `kind` label of [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`].
+#[derive(Clone, Copy)]
+enum Kind {
+    Transient,
+    NonTransient,
+    Timeout,
+}
+
+impl Kind {
+    const ALL: [Self; 3] = [Self::Transient, Self::NonTransient, Self::Timeout];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Transient => "transient",
+            Self::NonTransient => "non_transient",
+            Self::Timeout => "timeout",
+        }
+    }
+}
+
+impl From<ProviderFailure> for Kind {
+    fn from(failure: ProviderFailure) -> Self {
+        match failure {
+            ProviderFailure::Unreachable => Self::Transient,
+            ProviderFailure::Rejected | ProviderFailure::Malformed => Self::NonTransient,
+            ProviderFailure::TimedOut => Self::Timeout,
+        }
+    }
+}
+
+/// The registry is process global, so each test records under its own chain label.
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
@@ -58,7 +82,6 @@ mod tests {
 
     const PROVIDER: &str = "a-provider";
 
-    /// The registry is process global, so each test records under its own chain label.
     #[test]
     fn provider_call_metrics__should_time_answers_and_count_failures() {
         // Given
@@ -87,18 +110,9 @@ mod tests {
                 .with_label_values(&[chain.label(), PROVIDER, kind])
                 .get()
         };
-        assert_eq!(
-            counted(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT),
-            1
-        );
-        assert_eq!(
-            counted(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT),
-            2
-        );
-        assert_eq!(
-            counted(metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT),
-            1
-        );
+        assert_eq!(counted(Kind::Transient.label()), 1);
+        assert_eq!(counted(Kind::NonTransient.label()), 2);
+        assert_eq!(counted(Kind::Timeout.label()), 1);
     }
 
     #[test]
@@ -116,7 +130,11 @@ mod tests {
         let series = |metric: &str| {
             exposed
                 .lines()
-                .filter(|line| line.starts_with(metric) && line.contains(r#"chain="ethereum""#))
+                .filter(|line| {
+                    line.starts_with(metric)
+                        && line.contains(r#"chain="ethereum""#)
+                        && line.contains(r#"provider="a-provider""#)
+                })
                 .count()
         };
         assert_eq!(

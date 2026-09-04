@@ -135,7 +135,7 @@ pub trait NetworkFingerprintInspector {
 /// misbehaving RPC does not take the whole node out of signing. When no inspector reached a
 /// verdict, the first error is propagated.
 ///
-/// With a recorder set through [`FanOut::measuring`], each provider call metric is recorded when it
+/// With a recorder set through [`FanOut::measuring`], every provider call is reported once it
 /// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.
 #[derive(Clone)]
 pub struct FanOut<Inspector> {
@@ -157,6 +157,11 @@ impl<Inspector> FanOut<Inspector> {
     }
 }
 
+/// Receives the outcome of each provider call a [`FanOut`] makes.
+///
+/// Invoked at most once per call, possibly while the call's task is being aborted, so an
+/// implementation must neither block nor panic. `elapsed` is the provider's answer time when
+/// `failure` is [`None`]; otherwise it only says how long the call was waited on.
 pub trait RecordProviderCall: Send + Sync {
     fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>);
 }

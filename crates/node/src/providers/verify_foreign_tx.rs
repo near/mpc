@@ -1,6 +1,8 @@
 mod provider_call_metrics;
 mod sign;
 
+pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
+
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, UniqueId};
@@ -246,5 +248,90 @@ impl VerifyForeignTxProvider {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use mpc_node_config::AuthConfig;
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use prometheus::core::Collector as _;
+    use std::collections::BTreeSet;
+    use std::num::NonZeroU64;
+
+    fn provider_of(chain: ForeignChain) -> String {
+        format!("{}-wiring", chain.label())
+    }
+
+    fn chain_config(chain: ForeignChain) -> Option<ForeignChainConfig> {
+        Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(1).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            expected_network_fingerprint: None,
+            providers: NonEmptyBTreeMap::new(
+                RpcProviderName::from(provider_of(chain)),
+                ForeignChainProviderConfig {
+                    rpc_url: "http://127.0.0.1:1/".to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        })
+    }
+
+    fn published_inspection_series() -> BTreeSet<(String, String)> {
+        crate::metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .collect()
+            .iter()
+            .flat_map(|family| family.get_metric())
+            .map(|metric| {
+                let label = |name: &str| {
+                    metric
+                        .get_label()
+                        .iter()
+                        .find(|pair| pair.name() == name)
+                        .map(|pair| pair.value().to_string())
+                        .unwrap_or_default()
+                };
+                (label("chain"), label("provider"))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn foreign_chain_inspectors_build__should_label_each_chain_by_its_own_config_key() {
+        // Given
+        use ForeignChain::*;
+        let config = ForeignChainsConfig {
+            solana: None,
+            bitcoin: chain_config(Bitcoin),
+            ethereum: chain_config(Ethereum),
+            abstract_chain: chain_config(Abstract),
+            starknet: chain_config(Starknet),
+            bnb: chain_config(Bnb),
+            base: chain_config(Base),
+            arbitrum: chain_config(Arbitrum),
+            hyper_evm: chain_config(HyperEvm),
+            polygon: chain_config(Polygon),
+            aptos: chain_config(Aptos),
+            sui: chain_config(Sui),
+            avalanche: chain_config(Avalanche),
+            adi: chain_config(Adi),
+        };
+
+        // When
+        ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        let published = published_inspection_series();
+        for chain in [
+            Bitcoin, Ethereum, Abstract, Starknet, Bnb, Base, Arbitrum, HyperEvm, Polygon, Aptos,
+            Sui, Avalanche, Adi,
+        ] {
+            let series = (chain.label().to_string(), provider_of(chain));
+            assert!(published.contains(&series), "{series:?} was not published");
+        }
     }
 }

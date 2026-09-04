@@ -106,9 +106,10 @@ increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
 # does not cover, or a backend serving unusable responses. Needs an operator.
 increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
 
-# Provider not answering (warn): one provider stops answering while its peers on
-# the same chain keep up. Tolerated by the fan-out, so it is silent otherwise.
-increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0  for 15m
+# Provider not answering (warn): unreachable, rate limited, or hanging past the
+# inspection deadline while its peers on the same chain keep up. Tolerated by the
+# fan-out, so it is silent otherwise. The 15m hold rides out a short rate limit burst.
+increase(mpc_foreign_chain_provider_errors_total{kind=~"transient|timeout"}[5m]) > 0  for 15m
 
 # Backups stale (warn): no keyshares served to the backup service recently. Only
 # meaningful once backups are being taken against this node.

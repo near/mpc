@@ -1,5 +1,7 @@
 use std::{sync::LazyLock, time::Duration};
 
+use crate::providers::verify_foreign_tx::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
+
 pub(crate) mod networking_metrics;
 pub(crate) mod tokio_runtime_metrics;
 pub(crate) mod tokio_task_metrics;
@@ -559,8 +561,20 @@ pub static MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS: LazyLock<prometheus::H
             "Time one foreign chain RPC provider took to answer a verify request. Failed and timed \
              out calls are not timed; see mpc_foreign_chain_provider_errors_total",
             &["chain", "provider"],
-            // An answer cannot outlive the node's inspection deadline, the top bucket.
-            vec![0.025, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.5, 5.0],
+            // Answers cannot outlive the inspection deadline, so nothing lands past the top bucket.
+            vec![
+                0.025,
+                0.05,
+                0.1,
+                0.2,
+                0.35,
+                0.5,
+                0.75,
+                1.0,
+                1.5,
+                2.5,
+                FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs_f64(),
+            ],
         )
         .unwrap()
     });
@@ -574,13 +588,3 @@ pub static MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL: LazyLock<prometheus::IntCoun
         )
         .unwrap()
     });
-
-pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT: &str = "transient";
-pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT: &str = "non_transient";
-pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT: &str = "timeout";
-
-pub const MPC_FOREIGN_CHAIN_PROVIDER_ERROR_KINDS: [&str; 3] = [
-    MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TRANSIENT,
-    MPC_FOREIGN_CHAIN_PROVIDER_ERROR_NON_TRANSIENT,
-    MPC_FOREIGN_CHAIN_PROVIDER_ERROR_TIMEOUT,
-];

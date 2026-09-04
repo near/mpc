@@ -44,13 +44,7 @@ mockall::mock! {
 type ResponseFn =
     Arc<dyn Fn() -> Result<Verdict<u32>, ForeignChainInspectionError> + Send + Sync + 'static>;
 
-/// Builds a mock that returns [`response()`] whenever `extract` is called, and
-/// whose [`clone()`] produces another mock with the same behaviour.
-///
-/// [`FanOut::extract`] calls [`clone()`] on the inspector and only `extract` on the
-/// resulting clone; the inverse never happens. We allow `times(0..)` on both
-/// expectations so a single helper covers both "original" and "cloned" roles
-/// without surprising the test author with expectation failures on drop.
+/// Builds a mock whose `extract` answers with `response()` at once.
 fn mock_returning(response: ResponseFn) -> MockInspector {
     mock_awaiting(Arc::new(move || Box::pin(std::future::ready(response()))))
 }
@@ -59,6 +53,13 @@ type Response =
     Pin<Box<dyn Future<Output = Result<Verdict<u32>, ForeignChainInspectionError>> + Send>>;
 type ResponseFutureFn = Arc<dyn Fn() -> Response + Send + Sync>;
 
+/// Builds a mock whose `extract` awaits the future `respond()` produces, and whose
+/// `clone()` produces another mock with the same behaviour.
+///
+/// [`FanOut::extract`] calls `clone()` on the inspector and only `extract` on the
+/// resulting clone; the inverse never happens. We allow `times(0..)` on both
+/// expectations so a single helper covers both "original" and "cloned" roles
+/// without surprising the test author with expectation failures on drop.
 fn mock_awaiting(respond: ResponseFutureFn) -> MockInspector {
     let mut m = MockInspector::new();
     let for_extract = Arc::clone(&respond);
