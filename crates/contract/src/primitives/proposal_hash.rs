@@ -13,7 +13,7 @@
 
 use borsh::BorshSerialize;
 
-pub(crate) use mpc_primitives::hash::{PROPOSAL_HASH_BYTES, ProposalHash};
+pub(crate) use mpc_primitives::hash::ProposalHash;
 
 pub(crate) trait SerializeProposal<T> {
     fn serialize(value: &T) -> Vec<u8>;
@@ -35,10 +35,7 @@ pub(crate) struct Sha256;
 
 impl HashProposal for Sha256 {
     fn hash(bytes: &[u8]) -> ProposalHash {
-        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(bytes)
-            .try_into()
-            .expect("sha256 digest length matches PROPOSAL_HASH_BYTES");
-        ProposalHash::new(hash)
+        ProposalHash::new(near_sdk::env::sha256_array(bytes))
     }
 }
 
@@ -54,17 +51,28 @@ pub(crate) trait ToProposalHash: Sized {
 #[cfg(test)]
 mod tests {
     use super::{Borsh, Sha256, ToProposalHash};
+    use borsh::BorshSerialize;
 
-    impl ToProposalHash for u64 {
+    #[derive(BorshSerialize)]
+    struct TestProposal(u64);
+
+    impl ToProposalHash for TestProposal {
         type Serializer = Borsh;
         type Hasher = Sha256;
     }
 
     #[test]
     #[expect(non_snake_case)]
-    fn to_proposal_hash__should_be_the_digest_of_the_canonical_encoding() {
+    fn to_proposal_hash__should_be_sha256_of_borsh_bytes() {
+        // Given
+        let proposal = TestProposal(42);
+
+        // When
+        let hash = proposal.to_proposal_hash();
+
+        // Then
         assert_eq!(
-            42u64.to_proposal_hash(),
+            hash,
             "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c"
                 .parse()
                 .unwrap()

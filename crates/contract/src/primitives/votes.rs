@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use crate::primitives::proposal_hash::ProposalHash;
 use near_sdk::IntoStorageKey;
 use near_sdk::near;
 use near_sdk::require;
@@ -127,8 +128,6 @@ where
             .collect()
     }
 }
-
-use crate::primitives::proposal_hash::ProposalHash;
 
 #[expect(rustdoc::private_intra_doc_links)]
 /// The set of voters who voted for a particular proposal. Always non-empty when stored
