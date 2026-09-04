@@ -521,7 +521,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                     tx_id: BitcoinTxId([7u8; 32]),
                     confirmations: BlockConfirmations(1),
-                    extractors: vec![BitcoinExtractor::BlockHash],
+                    extractors: [BitcoinExtractor::BlockHash].into(),
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,
@@ -536,7 +536,7 @@ mod tests {
                 request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                     tx_id: BitcoinTxId([7u8; 32]),
                     confirmations: BlockConfirmations(1),
-                    extractors: vec![BitcoinExtractor::BlockHash],
+                    extractors: [BitcoinExtractor::BlockHash].into(),
                 }),
                 domain_id: DomainId(0),
                 payload_version: ForeignTxPayloadVersion::V1,

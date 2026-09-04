@@ -3287,10 +3287,7 @@ expression: abi
           ],
           "properties": {
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/AptosExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_AptosExtractor_Min0_Max32"
             },
             "finality": {
               "$ref": "#/definitions/AptosFinality"
@@ -3387,10 +3384,7 @@ expression: abi
               "$ref": "#/definitions/BlockConfirmations"
             },
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/BitcoinExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_BitcoinExtractor_Min0_Max32"
             },
             "tx_id": {
               "$ref": "#/definitions/BitcoinTxId"
@@ -3411,6 +3405,62 @@ expression: abi
         },
         "Bls12381G2PublicKey": {
           "type": "string"
+        },
+        "BoundedVec_AptosExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AptosExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_BitcoinExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/BitcoinExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_EvmExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EvmExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_StarknetExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StarknetExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_SuiExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SuiExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_SvmExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SvmExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_TonExtractor_Min0_Max32": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TonExtractor"
+          },
+          "maxItems": 32,
+          "minItems": 0
         },
         "CKDAppPublicKey": {
           "oneOf": [
@@ -3966,10 +4016,7 @@ expression: abi
           ],
           "properties": {
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/EvmExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_EvmExtractor_Min0_Max32"
             },
             "finality": {
               "$ref": "#/definitions/EvmFinality"
@@ -5571,10 +5618,7 @@ expression: abi
           ],
           "properties": {
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/StarknetExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_StarknetExtractor_Min0_Max32"
             },
             "finality": {
               "$ref": "#/definitions/StarknetFinality"
@@ -5629,10 +5673,7 @@ expression: abi
           ],
           "properties": {
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/SuiExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_SuiExtractor_Min0_Max32"
             },
             "finality": {
               "$ref": "#/definitions/SuiFinality"
@@ -5726,10 +5767,7 @@ expression: abi
           ],
           "properties": {
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/SvmExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_SvmExtractor_Min0_Max32"
             },
             "finality": {
               "$ref": "#/definitions/SvmFinality"
@@ -5871,10 +5909,7 @@ expression: abi
               "$ref": "#/definitions/TonAddress"
             },
             "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/TonExtractor"
-              }
+              "$ref": "#/definitions/BoundedVec_TonExtractor_Min0_Max32"
             },
             "finality": {
               "$ref": "#/definitions/TonFinality"
