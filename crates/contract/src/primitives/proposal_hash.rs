@@ -34,6 +34,26 @@ impl HashProposal for Sha256 {
     }
 }
 
+/// The value already is its own [`PROPOSAL_HASH_BYTES`]-byte digest: bytes pass
+/// through unhashed.
+pub(crate) struct Identity;
+
+impl<T: AsRef<[u8; PROPOSAL_HASH_BYTES]>> SerializeProposal<T> for Identity {
+    fn serialize(value: &T) -> Vec<u8> {
+        value.as_ref().to_vec()
+    }
+}
+
+impl HashProposal for Identity {
+    fn hash(bytes: &[u8]) -> ProposalHash {
+        ProposalHash::new(
+            bytes
+                .try_into()
+                .expect("identity digest must be PROPOSAL_HASH_BYTES bytes"),
+        )
+    }
+}
+
 pub(crate) trait ToProposalHash: Sized {
     type Serializer: SerializeProposal<Self>;
     type Hasher: HashProposal;
@@ -45,7 +65,20 @@ pub(crate) trait ToProposalHash: Sized {
 
 #[cfg(test)]
 mod tests {
-    use super::{Borsh, Sha256, ToProposalHash};
+    use super::{Borsh, Identity, PROPOSAL_HASH_BYTES, Sha256, ToProposalHash};
+
+    struct TestDigest([u8; PROPOSAL_HASH_BYTES]);
+
+    impl AsRef<[u8; PROPOSAL_HASH_BYTES]> for TestDigest {
+        fn as_ref(&self) -> &[u8; PROPOSAL_HASH_BYTES] {
+            &self.0
+        }
+    }
+
+    impl ToProposalHash for TestDigest {
+        type Serializer = Identity;
+        type Hasher = Identity;
+    }
 
     impl ToProposalHash for u64 {
         type Serializer = Borsh;
@@ -64,6 +97,17 @@ mod tests {
             "ed049108bc18f2c64369e8d0ea42850bdd1a7d1dd340cfde716315579702a76c"
                 .parse()
                 .unwrap()
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn to_proposal_hash__should_pass_an_identity_digest_through_unhashed() {
+        let digest = TestDigest([0xAB; PROPOSAL_HASH_BYTES]);
+
+        assert_eq!(
+            digest.to_proposal_hash(),
+            [0xAB; PROPOSAL_HASH_BYTES].into()
         );
     }
 }

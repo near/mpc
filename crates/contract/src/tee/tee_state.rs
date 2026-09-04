@@ -1,10 +1,15 @@
 use crate::{
-    primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    primitives::{
+        key_state::AuthenticatedParticipantId,
+        participants::{IsParticipant, Participants},
+        proposal_hash::ToProposalHash,
+        votes::{VoterSet, Votes},
+    },
     storage_keys::StorageKey,
     tee::measurements::{AllowedMeasurements, MeasurementVotes},
     tee::proposal::{
-        AllowedLauncherImageInsertion, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
-        NodeImageHash, StoredDockerImageHashes,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, LauncherHashVotes, NodeImageHash,
+        StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -77,7 +82,10 @@ pub(crate) struct NodeAttestation {
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: StoredDockerImageHashes,
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
-    pub(crate) votes: CodeHashesVotes,
+    /// Pending votes to whitelist a node image hash, keyed by the [`NodeImageHash`]
+    /// voted for (already a digest, it converts to
+    /// [`ProposalHash`](crate::primitives::proposal_hash::ProposalHash) unhashed).
+    pub(crate) votes: Votes<AuthenticatedParticipantId>,
     pub(crate) launcher_votes: LauncherHashVotes,
     /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
@@ -93,7 +101,10 @@ impl Default for TeeState {
         Self {
             allowed_docker_image_hashes: Default::default(),
             allowed_launcher_images: Default::default(),
-            votes: Default::default(),
+            votes: Votes::new(
+                StorageKey::CodeHashVotesByVoter,
+                StorageKey::CodeHashVotesByProposal,
+            ),
             launcher_votes: Default::default(),
             stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: Default::default(),
@@ -321,12 +332,14 @@ impl TeeState {
         }
     }
 
+    /// Casts a vote for whitelisting a node image hash. Returns the voters for that hash.
     pub fn vote(
         &mut self,
         code_hash: NodeImageHash,
         participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.votes.vote(code_hash, participant)
+    ) -> &VoterSet<AuthenticatedParticipantId> {
+        self.votes
+            .vote(participant.clone(), code_hash.to_proposal_hash())
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -352,7 +365,7 @@ impl TeeState {
         tee_proposal: NodeImageHash,
         tee_upgrade_deadline_duration: Duration,
     ) {
-        self.votes.clear_votes();
+        self.votes.clear();
         // Add compose hashes for the new MPC image across all allowed launcher images
         self.allowed_launcher_images
             .add_mpc_image_compose_hashes(&tee_proposal);
@@ -460,7 +473,8 @@ impl TeeState {
     /// concludes. Attestation cleanup is handled separately by
     /// [`TeeState::clean_invalid_attestations`].
     pub fn clean_non_participant_votes(&mut self, participants: &Participants) {
-        self.votes = self.votes.get_remaining_votes(participants);
+        self.votes
+            .retain_votes(|p: &AuthenticatedParticipantId| participants.is_participant(&p.get()));
         self.launcher_votes = self.launcher_votes.get_remaining_votes(participants);
         self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
     }
@@ -1633,7 +1647,16 @@ mod tests {
         assert_eq!(stored.node_id, node_id);
     }
 
-    /// Stale CodeHashesVotes entries from removed participants must not count toward
+    /// Total number of votes across all proposals.
+    fn total_votes(votes: &crate::primitives::votes::Votes<AuthenticatedParticipantId>) -> usize {
+        votes
+            .all()
+            .values()
+            .map(std::collections::BTreeSet::len)
+            .sum()
+    }
+
+    /// Stale code-hash votes from removed participants must not count toward
     /// quorum after resharing.
     ///
     /// Scenario (N=5, T=3):
@@ -1658,9 +1681,9 @@ mod tests {
         let malicious_hash = NodeImageHash::from([0xAA; 32]);
         for account_id in &account_ids[0..2] {
             let auth_id = authenticate_as(account_id, &all_participants);
-            tee_state.votes.vote(malicious_hash, &auth_id);
+            tee_state.vote(malicious_hash, &auth_id);
         }
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
+        assert_eq!(total_votes(&tee_state.votes), 2);
 
         // Resharing removes P0 and P1. New participant set: {P2, P3, P4}.
         let new_participants = all_participants.subset(2..5);
@@ -1669,12 +1692,13 @@ mod tests {
         tee_state.clean_non_participant_votes(&new_participants);
 
         // Stale votes must be removed
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 0);
+        assert_eq!(total_votes(&tee_state.votes), 0);
 
         // P2 votes for the same malicious hash — should be only 1 vote, not 3
-        let p2_account = &account_ids[2];
-        let auth_id = authenticate_as(p2_account, &new_participants);
-        let vote_count = tee_state.votes.vote(malicious_hash, &auth_id);
+        let auth_id = authenticate_as(&account_ids[2], &new_participants);
+        let vote_count = tee_state
+            .vote(malicious_hash, &auth_id)
+            .count_participants(&new_participants);
         assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
     }
 
