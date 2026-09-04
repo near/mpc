@@ -4,7 +4,7 @@
 use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedParticipantId;
-use crate::primitives::votes::ProposalHash;
+use crate::primitives::proposal_hash::ProposalHash;
 use crate::state::ProtocolContractState;
 use crate::tee::verifier_votes::VerifierChangeProposal;
 use crate::{MpcContract, MpcContractExt};
@@ -122,6 +122,7 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{participant_account_ids, setup_tee_test_contract};
+    use crate::primitives::proposal_hash::ToProposalHash;
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::state::key_event::tests::Environment;
     use near_sdk::test_utils::VMContextBuilder;
@@ -216,7 +217,7 @@ mod tests {
                 expected_code_hash: code_hash,
             };
             (
-                ProposalHash::from(proposal),
+                proposal.to_proposal_hash(),
                 BTreeSet::from([voter.into_dto_type()]),
             )
         };
