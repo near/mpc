@@ -21,7 +21,7 @@ The Archive Signer is a custom lightweight binary that replaces HOT's MPC networ
 - **Monitor the HOT governance contract** for allowed Docker image hashes and launcher compose hashes.
 
 [key-import]: #key-import-process
-[block-event-subscriber]: ../../design/chain-gateway-design.md#block-event-subscriber
+[block-event-subscriber]: chain-gateway-design.md#block-event-subscriber
 [hot-mpc]: https://github.com/near/hot-mpc
 [mpc-client]: https://github.com/near/hot-mpc/blob/bd19508821ceb974e107e701cc106866b1442d6f/node/src/hot_protocol/mpc_client.rs
 [validation-verify]: https://github.com/hot-dao/hot-validation-sdk/blob/2c669f97d547d2fc9cfb011ff207282590aa8bc5/core/src/lib.rs#L143
@@ -89,7 +89,7 @@ The Archive Signer is built on three reusable layers from this repository. For t
 - **[TEE Context][tee-context]** — sits on top of the Chain Gateway; provides the contract interface for the [attestation lifecycle][tee-lifecycle].
 
 [tee-lifecycle]: ../../design/tee-lifecycle.md
-[chain-gateway-design]: ../../design/chain-gateway-design.md
+[chain-gateway-design]: chain-gateway-design.md
 
 ### Crate Dependencies
 

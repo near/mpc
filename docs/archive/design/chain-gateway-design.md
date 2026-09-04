@@ -1,5 +1,7 @@
 # MPC Indexer Breakout
 
+**Status:** ARCHIVED
+
 This document outlines the design and efforts for breaking out the indexer into its own crate. It is a living document expected to track the developments. Once sufficiently concluded, we will move this doc there as a readme.
 
 ## Background
