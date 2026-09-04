@@ -16,6 +16,8 @@ use mpc_attestation::{
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::env::sha256_array;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::{
     config::Config,
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
@@ -26,6 +28,7 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
+        votes::Votes,
     },
     state::{
         ProtocolContractState,
@@ -34,10 +37,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::{
-        measurements::MeasurementVotes,
-        proposal::{CodeHashesVotes, LauncherHashVotes},
-    },
+    tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
     update::{ProposedUpdates, Update, UpdateId},
 };
 
@@ -909,15 +909,27 @@ impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
     }
 }
 
-impl IntoInterfaceType<dtos::CodeHashesVotes> for &CodeHashesVotes {
+/// Pending votes keyed by the 32-byte proposal identifier `K`:
+/// [`ProposalHash`](crate::primitives::proposal_hash::ProposalHash) in general, or the digest
+/// newtype itself where the proposal is one (code-hash votes store the
+/// [`dtos::NodeImageHash`] unhashed).
+fn votes_by_proposal_key<K: From<[u8; 32]> + Ord>(
+    votes: &Votes<AuthenticatedParticipantId>,
+) -> BTreeMap<K, BTreeSet<dtos::AuthenticatedParticipantId>> {
+    votes
+        .iter()
+        .map(|(proposal, voters)| {
+            (
+                K::from((*proposal).into()),
+                voters.iter().map(|v| v.into_dto_type()).collect(),
+            )
+        })
+        .collect()
+}
+
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &Votes<AuthenticatedParticipantId> {
     fn into_dto_type(self) -> dtos::CodeHashesVotes {
-        dtos::CodeHashesVotes {
-            proposal_by_account: self
-                .proposal_by_account
-                .iter()
-                .map(|(participant, hash)| (participant.into_dto_type(), *hash))
-                .collect(),
-        }
+        dtos::CodeHashesVotes(votes_by_proposal_key(self))
     }
 }
 

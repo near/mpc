@@ -7,7 +7,7 @@ use mpc_primitives::hash::{
 };
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(
     Clone,
@@ -133,18 +133,25 @@ pub struct LauncherHashVotes {
     pub vote_by_account: BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>,
 }
 
-/// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
-/// a code hash to add.
+/// Voters grouped by the [`NodeImageHash`] they voted to whitelist.
 #[derive(
-    Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Deref,
 )]
+#[serde(transparent)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
-}
+pub struct CodeHashesVotes(pub BTreeMap<NodeImageHash, BTreeSet<AuthenticatedParticipantId>>);
 
 #[cfg(test)]
 #[expect(non_snake_case)]
@@ -291,19 +298,17 @@ mod tests {
     }
 
     #[test]
-    fn code_hashes_votes__should_serialize_participant_ids_as_object_keys() {
+    fn code_hashes_votes__should_serialize_as_a_transparent_map_keyed_by_image_hash() {
         // Given
-        let votes = CodeHashesVotes {
-            proposal_by_account: BTreeMap::from([(
-                AuthenticatedParticipantId(ParticipantId::new(7)),
-                NodeImageHash::from([0xAB; 32]),
-            )]),
-        };
+        let votes = CodeHashesVotes(BTreeMap::from([(
+            NodeImageHash::from([0xAB; 32]),
+            BTreeSet::from([AuthenticatedParticipantId(ParticipantId::new(7))]),
+        )]));
 
         // When
         let json = serde_json::to_value(&votes).unwrap();
 
         // Then
-        assert_eq!(json["proposal_by_account"]["7"], "ab".repeat(32));
+        assert_eq!(json[&"ab".repeat(32)][0], 7);
     }
 }

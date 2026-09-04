@@ -127,6 +127,11 @@ where
             .map(|(p_hash, voter_set)| (*p_hash, voter_set.0.clone()))
             .collect()
     }
+
+    /// Pending votes keyed by proposal, borrowing the stored voter sets.
+    pub fn iter(&self) -> impl Iterator<Item = (&ProposalHash, &VoterSet<V>)> {
+        self.votes_by_proposal.iter()
+    }
 }
 
 use crate::primitives::proposal_hash::ProposalHash;
@@ -158,6 +163,10 @@ where
     pub fn count_participants(&self, participants: &impl IsParticipant<V>) -> u64 {
         let count = self.count_for(|voter| participants.is_participant(voter));
         u64::try_from(count).expect("vote count fits in u64")
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &V> {
+        self.0.iter()
     }
 
     // returns Some(remaining_votes) in case a vote was removed

@@ -4,10 +4,19 @@ use near_sdk::{env::sha256, log, near};
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::primitives::{
-    key_state::AuthenticatedParticipantId, participants::Participants, time::Timestamp,
+    key_state::AuthenticatedParticipantId,
+    participants::Participants,
+    proposal_hash::{Identity, ToProposalHash},
+    time::Timestamp,
 };
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+
+/// A [`NodeImageHash`] is already a 32-byte digest, so it identifies its own proposal.
+impl ToProposalHash for NodeImageHash {
+    type Serializer = Identity;
+    type Hasher = Identity;
+}
 
 /// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
 /// `sha256(template(launcher_hash, mpc_hash))`. Placeholders:
@@ -15,64 +24,6 @@ pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, Nod
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
-
-/// Contract-side [`CodeHashesVotes`](near_mpc_contract_interface::types::CodeHashesVotes),
-/// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in
-/// the participant set.
-#[near(serializers=[borsh])]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CodeHashesVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
-}
-
-impl CodeHashesVotes {
-    /// Casts a vote for the proposal and returns the total number of participants who have voted
-    /// for the same code hash. If the participant already voted, their previous vote is replaced.
-    pub fn vote(
-        &mut self,
-        proposal: NodeImageHash,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        if self
-            .proposal_by_account
-            .insert(participant.clone(), proposal)
-            .is_some()
-        {
-            log!("removed old vote for signer");
-        }
-        let total = self.count_votes(&proposal);
-        log!("total votes for proposal: {}", total);
-        total
-    }
-
-    /// Counts the total number of participants who have voted for the given code hash.
-    fn count_votes(&self, proposal: &NodeImageHash) -> u64 {
-        self.proposal_by_account
-            .values()
-            .filter(|&prop| prop == proposal)
-            .count() as u64
-    }
-
-    /// Clears all proposals.
-    pub fn clear_votes(&mut self) {
-        self.proposal_by_account.clear();
-    }
-
-    /// Returns a new [`CodeHashesVotes`] containing only votes from current participants.
-    pub fn get_remaining_votes(&self, participants: &Participants) -> Self {
-        let remaining = self
-            .proposal_by_account
-            .iter()
-            .filter(|(participant_id, _)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
-            .map(|(participant_id, vote)| (participant_id.clone(), *vote))
-            .collect();
-        CodeHashesVotes {
-            proposal_by_account: remaining,
-        }
-    }
-}
 
 /// Contract-side [`LauncherHashVotes`](near_mpc_contract_interface::types::LauncherHashVotes),
 /// keyed by [`AuthenticatedParticipantId`], which is only constructible for a signer in

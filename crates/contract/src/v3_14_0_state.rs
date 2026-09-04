@@ -7,6 +7,8 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequest;
 use near_sdk::{
@@ -21,7 +23,7 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::{AttemptId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::GovernanceThresholdParameters,
     },
@@ -30,7 +32,14 @@ use crate::{
         resharing::ResharingContractState, running::RunningContractState,
     },
     storage_keys::StorageKey,
-    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
+    tee::{
+        measurements::{AllowedMeasurements, MeasurementVotes},
+        proposal::{
+            AllowedLauncherImages, LauncherHashVotes, NodeImageHash, StoredDockerImageHashes,
+        },
+        tee_state::{NodeAttestation, TeeState},
+        verifier_votes::TeeVerifierVotes,
+    },
     update::ProposedUpdates,
 };
 use near_mpc_contract_interface::types as dtos;
@@ -214,12 +223,51 @@ enum OldProtocolContractState {
     Resharing(ResharingContractState),
 }
 
+/// Shadow of the `3.14.0` `CodeHashesVotes`: a `BTreeMap` stored inline in the contract
+/// state, replaced by the [`IterableMap`]-backed
+/// [`Votes`](crate::primitives::votes::Votes).
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldCodeHashesVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
+}
+
+/// Shadow of the `3.14.0` [`TeeState`], carrying the `BTreeMap`-backed vote shadow.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: StoredDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: OldCodeHashesVotes,
+    launcher_votes: LauncherHashVotes,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: MeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        // Pending code-hash votes are transient governance state and deliberately
+        // dropped; participants re-vote after the upgrade.
+        TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            launcher_votes: old.launcher_votes,
+            stored_attestations: old.stored_attestations,
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: old.measurement_votes,
+            ..TeeState::default()
+        }
+    }
+}
+
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
 /// state written by the `3.14.0` contract still deserializes during migration.
 ///
 /// `protocol_state` carries the public-key layout shift (#1246) and is shadowed by
-/// `OldProtocolContractState`; `config` gains a field and is shadowed by `OldConfig`.
+/// `OldProtocolContractState`; `config` gains a field and is shadowed by `OldConfig`;
+/// `tee_state` moves its code-hash votes from an inline `BTreeMap` to the
+/// [`IterableMap`]-backed [`Votes`](crate::primitives::votes::Votes) and is shadowed by
+/// `OldTeeState`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
@@ -235,7 +283,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: SupportedForeignChainsByNode,
     config: OldConfig,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     metrics: Metrics,
@@ -265,7 +313,7 @@ impl From<MpcContract> for crate::MpcContract {
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config.into(),
-            tee_state: old.tee_state,
+            tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,

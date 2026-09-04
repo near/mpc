@@ -21,12 +21,6 @@ BorshSchemaContainer {
                 "ProposedGovernanceThresholdParameters",
             ],
         },
-        "(AuthenticatedParticipantId, DockerImageHash)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "DockerImageHash",
-            ],
-        },
         "(AuthenticatedParticipantId, LauncherVoteAction)": Tuple {
             elements: [
                 "AuthenticatedParticipantId",
@@ -132,11 +126,6 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "(AuthenticatedAccountId, ProposedGovernanceThresholdParameters)",
         },
-        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, DockerImageHash)",
-        },
         "BTreeMap<AuthenticatedParticipantId, LauncherVoteAction>": Sequence {
             length_width: 4,
             length_range: 0..=4294967295,
@@ -166,16 +155,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 96]",
-                ],
-            ),
-        },
-        "CodeHashesVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, DockerImageHash>",
-                    ),
                 ],
             ),
         },
@@ -1155,7 +1134,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "votes",
-                        "CodeHashesVotes",
+                        "Votes<AuthenticatedParticipantId>",
                     ),
                     (
                         "launcher_votes",

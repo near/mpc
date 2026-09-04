@@ -25,7 +25,11 @@ impl MpcContract {
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
         let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash, &participant);
+        let votes = self
+            .tee_state
+            .vote(code_hash, &participant)
+            .count_participants(threshold_parameters.participants());
+        log!("total votes for proposal: {}", votes);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -203,7 +207,7 @@ impl MpcContract {
         (&self.tee_state.launcher_votes).into_dto_type()
     }
 
-    /// Returns the current code hash votes, showing each participant's vote.
+    /// Pending code hash votes, keyed by the [`dtos::NodeImageHash`] voted for.
     pub fn code_hash_votes(&self) -> dtos::CodeHashesVotes {
         (&self.tee_state.votes).into_dto_type()
     }
@@ -230,16 +234,20 @@ impl MpcContract {
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Duration, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
+    use crate::dto_mapping::IntoInterfaceType as _;
+    use crate::primitives::test_utils::authenticate_as;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+    use std::collections::BTreeSet;
 
     #[rstest]
     #[case(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
@@ -614,9 +622,9 @@ mod tests {
         );
     }
 
-    /// Tests the [`code_hash_votes()`] view method:
+    /// Tests the [`MpcContract::code_hash_votes`] view method:
     /// 1. Starts empty
-    /// 2. After each vote, reflects the correct participant and hash
+    /// 2. After each vote, reflects the voters under the image hash voted for
     /// 3. After threshold is reached, votes are cleared
     #[test]
     fn test_code_hash_votes_view() {
@@ -626,8 +634,9 @@ mod tests {
         let participant_list = participants.participants();
         let code_hash = dtos::NodeImageHash::from([0xAB; 32]);
 
-        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
+        assert!(contract.code_hash_votes().is_empty());
 
+        let mut expected_voters = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(
                 VMContextBuilder::new()
@@ -639,10 +648,12 @@ mod tests {
                 .vote_code_hash(code_hash)
                 .expect("vote should succeed");
 
-            let votes = &contract.code_hash_votes().proposal_by_account;
+            expected_voters.insert((&authenticate_as(account, &participants)).into_dto_type());
+
+            let votes = contract.code_hash_votes();
             if i < (threshold - 1) as usize {
-                assert_eq!(votes.len(), i + 1);
-                assert!(votes.values().all(|v| *v == code_hash));
+                assert_eq!(votes.len(), 1);
+                assert_eq!(votes[&code_hash], expected_voters);
             } else {
                 assert!(
                     votes.is_empty(),
