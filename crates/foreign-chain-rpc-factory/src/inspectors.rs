@@ -7,7 +7,7 @@ use foreign_chain_inspector::evm::inspector::EvmInspector;
 use foreign_chain_inspector::rpc_inspector::RpcInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
-use foreign_chain_inspector::svm::inspector::{Fogo, Solana, SvmInspector};
+use foreign_chain_inspector::svm::inspector::SvmInspector;
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
 use mpc_node_config::ForeignChainProviderConfig;
