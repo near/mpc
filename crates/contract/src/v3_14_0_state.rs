@@ -334,9 +334,21 @@ struct Metrics {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use crate::primitives::test_utils::bogus_ed25519_public_key_extended;
+    use super::{
+        AllowedLauncherImages, AllowedMeasurements, IterableMap, LauncherHashVotes,
+        MeasurementVotes, NodeAttestation, NodeImageHash, OldCodeHashesVotes, OldPublicKeyExtended,
+        OldTeeState, PublicKeyExtended, StorageKey, StoredDockerImageHashes, dtos,
+    };
+    use crate::primitives::test_utils::{
+        bogus_ed25519_public_key_extended, gen_authenticated_participants,
+    };
+    use mpc_primitives::hash::{
+        KeyProviderEventDigest, LauncherImageHash, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+    };
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
+    use std::collections::BTreeMap;
+    use std::time::Duration;
 
     /// An old-layout key, the key material it must migrate to, and the bytes `3.14.0` wrote
     /// for it: the variant tag followed by each field encoded by the type that held it.
@@ -425,5 +437,80 @@ mod tests {
 
         // Then the key material is unchanged.
         assert_eq!(dtos::PublicKey::from(migrated), expected);
+    }
+
+    fn measurement(byte: u8) -> dtos::ExpectedMeasurements {
+        dtos::ExpectedMeasurements {
+            mrtd: MrtdHash::from([byte; 48]),
+            rtmr0: Rtmr0Hash::from([byte; 48]),
+            rtmr1: Rtmr1Hash::from([byte; 48]),
+            rtmr2: Rtmr2Hash::from([byte; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([byte; 48]),
+        }
+    }
+
+    /// Pins the shadow's field order and types against the layout the `3.14.0` contract
+    /// stored: each field encoded in declaration order, with the code-hash vote shadow
+    /// adding nothing beyond its inline `BTreeMap`.
+    #[test]
+    fn old_tee_state__should_encode_as_the_3_14_0_layout() {
+        // Given field values as the `3.14.0` contract stored them.
+        testing_env!(VMContextBuilder::new().build());
+        let (_, voters) = gen_authenticated_participants(2);
+        let code_hash = NodeImageHash::from([1u8; 32]);
+
+        let mut allowed_docker_image_hashes = StoredDockerImageHashes::default();
+        allowed_docker_image_hashes.insert(code_hash, Duration::from_secs(1000));
+        let mut allowed_launcher_images = AllowedLauncherImages::default();
+        allowed_launcher_images.add_or_refresh(
+            LauncherImageHash::from([2u8; 32]),
+            &[code_hash],
+            Duration::from_secs(1000),
+        );
+        let votes = BTreeMap::from([(voters[0].clone(), NodeImageHash::from([3u8; 32]))]);
+        let launcher_votes = LauncherHashVotes {
+            vote_by_account: BTreeMap::from([(
+                voters[0].clone(),
+                dtos::LauncherVoteAction::Add(LauncherImageHash::from([4u8; 32])),
+            )]),
+        };
+        let stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation> =
+            IterableMap::new(StorageKey::StoredAttestations);
+        let mut allowed_measurements = AllowedMeasurements::default();
+        allowed_measurements.add(measurement(5));
+        let measurement_votes = MeasurementVotes {
+            vote_by_account: BTreeMap::from([(
+                voters[1].clone(),
+                dtos::MeasurementVoteAction::Remove(measurement(6)),
+            )]),
+        };
+
+        let expected_bytes = [
+            borsh::to_vec(&allowed_docker_image_hashes).unwrap(),
+            borsh::to_vec(&allowed_launcher_images).unwrap(),
+            borsh::to_vec(&votes).unwrap(),
+            borsh::to_vec(&launcher_votes).unwrap(),
+            borsh::to_vec(&stored_attestations).unwrap(),
+            borsh::to_vec(&allowed_measurements).unwrap(),
+            borsh::to_vec(&measurement_votes).unwrap(),
+        ]
+        .concat();
+
+        // When encoding through the shadow type.
+        let old = OldTeeState {
+            allowed_docker_image_hashes,
+            allowed_launcher_images,
+            votes: OldCodeHashesVotes {
+                proposal_by_account: votes,
+            },
+            launcher_votes,
+            stored_attestations,
+            allowed_measurements,
+            measurement_votes,
+        };
+        let bytes = borsh::to_vec(&old).unwrap();
+
+        // Then
+        assert_eq!(bytes, expected_bytes);
     }
 }

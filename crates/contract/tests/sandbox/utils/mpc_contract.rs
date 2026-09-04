@@ -37,6 +37,35 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
         .unwrap()
 }
 
+pub async fn vote_code_hash(
+    account: &Account,
+    contract: &Contract,
+    code_hash: &NodeImageHash,
+) -> anyhow::Result<()> {
+    let result = account
+        .call(contract.id(), method_names::VOTE_CODE_HASH)
+        .args_json(serde_json::json!({"code_hash": code_hash}))
+        .transact()
+        .await?;
+    all_receipts_successful(result)?;
+    Ok(())
+}
+
+pub async fn get_allowed_docker_image_hashes(
+    contract: &Contract,
+) -> anyhow::Result<Vec<near_mpc_contract_interface::types::AllowedMpcDockerImageHash>> {
+    Ok(contract
+        .view(method_names::ALLOWED_DOCKER_IMAGE_HASHES)
+        .await?
+        .json()?)
+}
+
+pub async fn get_code_hash_votes(
+    contract: &Contract,
+) -> anyhow::Result<near_mpc_contract_interface::types::CodeHashesVotes> {
+    Ok(contract.view(method_names::CODE_HASH_VOTES).await?.json()?)
+}
+
 pub async fn get_allowed_launcher_image_hashes(
     contract: &Contract,
 ) -> anyhow::Result<Vec<LauncherImageHash>> {
