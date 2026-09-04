@@ -30,6 +30,15 @@ pub struct SuiVector {
     pub chain_id: &'static str,
 }
 
+/// Like Sui, SVM chains are verified by chain identity rather than a pinned reference
+/// transaction, since providers prune historical transactions — see
+/// [`check_svm`](crate::checks::check_svm).
+#[derive(Clone, Copy)]
+pub struct SvmVector {
+    /// Base58 of the 32-byte genesis hash, exactly as `getGenesisHash` returns it.
+    pub genesis_hash: &'static str,
+}
+
 pub struct GoldenSet {
     pub ethereum: Option<BlockHashVector>,
     pub base: Option<BlockHashVector>,
@@ -44,6 +53,8 @@ pub struct GoldenSet {
     pub starknet: Option<BlockHashVector>,
     pub aptos: Option<AptosVector>,
     pub sui: Option<SuiVector>,
+    pub solana: Option<SvmVector>,
+    pub fogo: Option<SvmVector>,
 }
 
 pub fn golden_set(network: Network) -> GoldenSet {
@@ -106,6 +117,12 @@ const MAINNET: GoldenSet = GoldenSet {
     sui: Some(SuiVector {
         chain_id: sui::MAINNET_GENESIS_CHECKPOINT_DIGEST,
     }),
+    solana: Some(SvmVector {
+        genesis_hash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+    }),
+    fogo: Some(SvmVector {
+        genesis_hash: "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT",
+    }),
 };
 
 const TESTNET: GoldenSet = GoldenSet {
@@ -136,6 +153,13 @@ const TESTNET: GoldenSet = GoldenSet {
     }),
     sui: Some(SuiVector {
         chain_id: sui::TESTNET_GENESIS_CHECKPOINT_DIGEST,
+    }),
+    // Solana devnet, the network NEAR-testnet bridge deployments verify against.
+    solana: Some(SvmVector {
+        genesis_hash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+    }),
+    fogo: Some(SvmVector {
+        genesis_hash: "9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9",
     }),
 };
 
@@ -234,6 +258,9 @@ mod tests {
             }
             if let Some(v) = set.sui {
                 base58_32(v.chain_id).unwrap();
+            }
+            for v in [set.solana, set.fogo].into_iter().flatten() {
+                base58_32(v.genesis_hash).unwrap();
             }
         }
     }

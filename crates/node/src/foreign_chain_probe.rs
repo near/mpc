@@ -164,7 +164,7 @@ mod tests {
             row(dtos::ForeignChain::Base, "only", ProviderStatus::Healthy),
             row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Unreachable),
             row(
-                dtos::ForeignChain::Solana,
+                dtos::ForeignChain::Ton,
                 "only",
                 ProviderStatus::ProbeNotImplemented,
             ),
@@ -187,7 +187,7 @@ mod tests {
     fn summarize__should_count_nothing_probed_when_no_chain_has_a_probe() {
         // Given
         let rows = [row(
-            dtos::ForeignChain::Solana,
+            dtos::ForeignChain::Ton,
             "only",
             ProviderStatus::ProbeNotImplemented,
         )];
@@ -251,7 +251,7 @@ mod tests {
         let report = ProbeReport::from(vec![
             row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Healthy),
             row(
-                dtos::ForeignChain::Solana,
+                dtos::ForeignChain::Ton,
                 "only",
                 ProviderStatus::ProbeNotImplemented,
             ),
@@ -263,7 +263,7 @@ mod tests {
         // Then
         let chains = labelled_chains(&metrics::FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED);
         assert!(chains.contains("bnb"));
-        assert!(!chains.contains("solana"));
+        assert!(!chains.contains("ton"));
     }
 
     #[test]

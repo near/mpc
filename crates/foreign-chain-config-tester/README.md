@@ -7,9 +7,10 @@ production.
 
 For each configured provider it runs a fixed request against a known reference
 transaction — the same inspector and auth handling the node uses — and compares
-the result against a known-good value. Sui is the exception: its providers prune
-transactions after a few weeks, so the check instead verifies the provider's
-chain identity and inspects a transaction from its latest checkpoint. Every
+the result against a known-good value. Sui and the SVM chains (Solana, Fogo) are
+the exception: their providers prune historical transactions, so the check
+instead verifies the provider's chain identity (for Sui also inspecting a
+transaction from its latest checkpoint). Every
 provider is checked independently: one bad provider does not stop the others
 from being reported.
 
@@ -48,8 +49,9 @@ bitcoin   public     ✓ ok
 starknet  public     ✗ failed
 aptos     public     ✓ ok
 sui       public     ✓ ok
+solana    public     ✓ ok
 
-4 passed, 1 failed, 0 skipped
+5 passed, 1 failed, 0 skipped
 
 Failures:
   starknet / public: the provider ruled the golden transaction out: the transaction was not found

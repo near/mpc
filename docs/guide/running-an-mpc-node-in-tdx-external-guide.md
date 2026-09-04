@@ -947,6 +947,37 @@ rpc_url = "https://YOUR-SLUG.sui-testnet.quiknode.pro"
 kind = "header"
 name = "x-token"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+# Testnet deployments verify against Solana devnet.
+[mpc_node_config.node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
+[mpc_node_config.node.foreign_chains.solana.providers.public]
+rpc_url = "https://api.devnet.solana.com"
+
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy]
+rpc_url = "https://solana-devnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.solana-devnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "9GGSFo95raqzZxWqKM5tGYvJp5iv4Dm565S4r8h5PEu9"
+
+[mpc_node_config.node.foreign_chains.fogo.providers.public]
+rpc_url = "https://testnet.fogo.io"
 ```
 
 **Mainnet:**
@@ -1054,6 +1085,36 @@ rpc_url = "https://YOUR-SLUG.sui-mainnet.quiknode.pro"
 kind = "header"
 name = "x-token"
 token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+
+[mpc_node_config.node.foreign_chains.solana.providers.public]
+rpc_url = "https://api.mainnet-beta.solana.com"
+
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy]
+rpc_url = "https://solana-mainnet.g.alchemy.com/v2/{API_KEY}"
+[mpc_node_config.node.foreign_chains.solana.providers.alchemy.auth]
+kind = "path"
+placeholder = "{API_KEY}"
+token = { val = "YOUR_ALCHEMY_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode]
+rpc_url = "https://YOUR-SLUG.solana-mainnet.quiknode.pro/{api_key}"
+[mpc_node_config.node.foreign_chains.solana.providers.quicknode.auth]
+kind = "path"
+placeholder = "{api_key}"
+token = { val = "YOUR_QUICKNODE_API_KEY" }
+
+[mpc_node_config.node.foreign_chains.fogo]
+timeout_sec = 30
+max_retries = 3
+expected_network_fingerprint = "CDLtwKnaCoK157uaHQDj4fHu72AyD2519Cphmpiq6hvT"
+
+[mpc_node_config.node.foreign_chains.fogo.providers.public]
+rpc_url = "https://mainnet.fogo.io"
 ```
 
 ### Preparing a Docker Compose File
