@@ -1,6 +1,6 @@
 # Development Environment (Nix)
 
-This repository includes a [flake.nix](../flake.nix) file that provides a reproducible development environment using Nix. This environment pre-configures the Rust toolchain, LLVM/Clang tools, NEAR CLI tools, and all necessary system dependencies.
+This repository includes a [flake.nix](../../flake.nix) file that provides a reproducible development environment using Nix. This environment pre-configures the Rust toolchain, LLVM/Clang tools, NEAR CLI tools, and all necessary system dependencies.
 
 Prerequisites
   - **Nix**: [Install Nix](https://nixos.org/download/) with [Flakes enabled](https://nixos.wiki/wiki/Flakes)

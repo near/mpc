@@ -352,7 +352,7 @@ sha256sum target/near/mpc_contract/mpc_contract.wasm
 ```
 
 A Nix-based reproducible build is also available. See
-[reproducible-builds.md](../../docs/reproducible-builds.md#mpc-contract) for the
+[reproducible-builds.md](../../docs/guide/reproducible-builds.md#mpc-contract) for the
 full workflow and the difference between the two.
 
 ## TEE Specific information

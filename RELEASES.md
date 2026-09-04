@@ -111,7 +111,7 @@ exactly what the source produces:
   ./deployment/build-images.sh
   ```
 
-See [reproducible builds](./docs/reproducible-builds.md) for the full
+See [reproducible builds](./docs/guide/reproducible-builds.md) for the full
 procedure. If any hash/digest differs, do **not** publish — investigate first.
 
 ### 4. Run the Release workflow

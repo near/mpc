@@ -1,5 +1,7 @@
 # Issue #1175 — Signing starvation after resharing
 
+**Status:** ARCHIVED
+
 ## Problem
 
 After every resharing, signing latency degrades for hours-to-days until the
