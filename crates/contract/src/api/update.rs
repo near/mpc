@@ -5,6 +5,7 @@ use crate::api::common::refund_to;
 use crate::config::Config;
 use crate::dto_mapping::{IntoContractType, IntoInterfaceType};
 use crate::errors::{Error, InvalidParameters, InvalidState};
+use crate::primitives::participants::IsParticipant;
 use crate::state::ProtocolContractState;
 use crate::update::{ProposedUpdates, Update, UpdateId};
 use crate::{MpcContract, MpcContractExt};
@@ -152,7 +153,7 @@ impl MpcContract {
         // non-participants cannot drive this cleanup.
         let caller = env::predecessor_account_id();
         let is_self_call = caller == env::current_account_id();
-        if !is_self_call && !participants.is_participant_given_account_id(&caller) {
+        if !is_self_call && !participants.is_participant(&caller) {
             return Err(InvalidState::NotParticipant { account_id: caller }.into());
         }
 

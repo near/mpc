@@ -4,8 +4,9 @@
 //! account, chosen by a governance-threshold vote of active participants, each
 //! committing to the `(account_id, code_hash)` pair they audited off-chain.
 
+use crate::primitives::participants::IsParticipant;
 use crate::{
-    errors::{ConversionError, Error},
+    errors::Error,
     primitives::{
         key_state::AuthenticatedParticipantId,
         participants::Participants,
@@ -71,13 +72,10 @@ impl TeeVerifierVotes {
         let participants = threshold_parameters.participants();
         let proposal_hash = proposal.to_proposal_hash();
 
-        let count_usize = {
-            let voter_set = self.pending.vote(participant, proposal_hash);
-            voter_set.count_for(|p| participants.is_participant_given_participant_id(&p.get()))
-        };
-        let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count_usize} does not fit in u64: {e}"),
-        })?;
+        let count = self
+            .pending
+            .vote(participant, proposal_hash)
+            .count_participants(participants);
 
         if count >= governance_threshold {
             self.pending.clear();
@@ -97,7 +95,7 @@ impl TeeVerifierVotes {
     /// a resharing changes the participant set).
     pub fn retain(&mut self, current: &Participants) {
         self.pending
-            .retain_votes(|p| current.is_participant_given_participant_id(&p.get()));
+            .retain_votes(|p| current.is_participant(&p.get()));
     }
 
     /// Pending votes keyed by proposal.

@@ -2,6 +2,7 @@
 
 use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{Error, InvalidParameters};
+use crate::primitives::participants::IsParticipant;
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::tee::tee_state::TeeValidationResult;
 use crate::{MpcContract, MpcContractExt};
@@ -67,8 +68,7 @@ impl MpcContract {
                     .participants()
                     .iter()
                     .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation
-                            .is_participant_given_account_id(account_id)
+                        !participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
 

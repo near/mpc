@@ -6278,6 +6278,7 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "signature 2.2.0",
+ "static_assertions",
  "tee-verifier-interface",
  "test-utils",
  "thiserror 2.0.20",

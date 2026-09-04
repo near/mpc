@@ -5,6 +5,7 @@
 //! This enables detecting performance regressions when changing internal data structures.
 
 use crate::MpcContract;
+use crate::primitives::participants::IsParticipant;
 use crate::primitives::participants::ParticipantInfo;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
@@ -26,7 +27,7 @@ impl MpcContract {
     }
 
     /// Benchmark: Check if an account is a participant using
-    /// [`is_participant_given_account_id()`](crate::primitives::participants::Participants::is_participant_given_account_id).
+    /// [`is_participant()`](crate::primitives::participants::IsParticipant::is_participant).
     ///
     /// Measures the gas cost of the membership check operation. With the current
     /// [`Vec`]-based [`Participants`](crate::primitives::participants::Participants) implementation, this is an **O(n)** linear scan.
@@ -36,14 +37,14 @@ impl MpcContract {
         let account_id: AccountId = account_id.clone();
         self.protocol_state
             .active_participants()
-            .is_participant_given_account_id(&account_id)
+            .is_participant(&account_id)
     }
 
     /// Benchmark: Get participant info using [`info()`](crate::primitives::participants::Participants::info).
     ///
     /// Measures the gas cost of retrieving full [`ParticipantInfo`] for an account.
     /// Similar to
-    /// [`is_participant_given_account_id()`](crate::primitives::participants::Participants::is_participant_given_account_id),
+    /// [`is_participant()`](crate::primitives::participants::IsParticipant::is_participant),
     /// this is an **O(n)** operation with the
     /// current [`Vec`]-based implementation. Returns `true` if info was found.
     ///

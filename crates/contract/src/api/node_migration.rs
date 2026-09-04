@@ -5,6 +5,7 @@ use crate::api::common::require_deposit;
 use crate::dto_mapping::{IntoContractType, TryIntoContractType};
 use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::Keyset;
+use crate::primitives::participants::IsParticipant;
 use crate::primitives::participants::ParticipantInfo;
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{NodeId, TeeQuoteStatus};
@@ -97,7 +98,7 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        if !running_state.is_participant_given_account_id(&account_id) {
+        if !running_state.is_participant(&account_id) {
             return Err(InvalidState::NotParticipant {
                 account_id: account_id.clone(),
             }
@@ -188,7 +189,7 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        if !running_state.is_participant_given_account_id(&account_id) {
+        if !running_state.is_participant(&account_id) {
             return Err(InvalidState::NotParticipant {
                 account_id: account_id.clone(),
             }
