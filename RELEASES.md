@@ -68,6 +68,9 @@ git checkout -b release-prep/v3.11.1
 ./scripts/ops/prepare-github-release.sh 3.11.1
 ```
 
+Pre-release versions carrying a suffix (`3.11.0-rc.1`) are accepted too — the
+[Release workflow](.github/workflows/release.yml) validates the same shape.
+
 Push the working branch and open a PR against `main` (for minor releases)
 or `release/vX.Y` (for patches). Once the PR is reviewed and merged, the
 merge commit is what will be released.
