@@ -258,7 +258,9 @@ export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_publi
 export MPC_HOST=localhost
 ```
 
-With these set, we can prepare the arguments for the init call.
+With these set, we can prepare the arguments for the init call. Besides the
+participants, they name `tee-verifier.test.near` as the TEE verifier contract
+the MPC contract trusts; step 6 deploys it.
 
 ```shell
 envsubst < docs/development/localnet/args/init.json > /tmp/init_args.json
@@ -295,7 +297,7 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/development/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-## 6. (Optional) Deploy and vote in the TEE verifier
+## 6. (Optional) Deploy the TEE verifier
 
 The stateless `tee-verifier` contract exposes `verify_quote`, which the MPC
 contract calls to attest node quotes. Build it with `--no-abi` (its types don't
@@ -316,20 +318,9 @@ near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogene
 near contract deploy tee-verifier.test.near use-file "$TEE_VERIFIER_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
 ```
 
-Now have Frodo and Sam vote it in. `expected_code_hash` commits every voter to
-the same audited WASM; the contract only compares voters' hashes against each
-other, not against the deployed bytes:
-
-```shell
-export TEE_VERIFIER_HASH=$(sha256sum "$TEE_VERIFIER_PATH" | cut -d' ' -f1)
-
-near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
-
-near contract call-function as-transaction mpc-contract.test.near vote_tee_verifier_change json-args '{"candidate_account_id":"tee-verifier.test.near","expected_code_hash":"'"$TEE_VERIFIER_HASH"'"}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
-```
-
-Once both votes agree, the change is applied. Read the resolved verifier; it
-returns `tee-verifier.test.near`:
+The MPC contract already trusts this account since the init call named it; a
+different verifier can later be voted in via `vote_tee_verifier_change`. Read the
+trusted verifier; it returns `tee-verifier.test.near`:
 
 ```shell
 near contract call-function as-read-only mpc-contract.test.near tee_verifier_account_id json-args {} network-config mpc-localnet now

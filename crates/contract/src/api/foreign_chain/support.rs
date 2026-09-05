@@ -306,8 +306,8 @@ mod tests {
         register_foreign_chains_config_for, whitelist_chain,
     };
     use crate::api::test_utils::{
-        basic_setup, basic_setup_with_protocol, forwarded_participant_call_contract,
-        make_public_key_for_curve, participant_account_ids,
+        basic_setup, basic_setup_with_protocol, bogus_tee_verifier_account_id,
+        forwarded_participant_call_contract, make_public_key_for_curve, participant_account_ids,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
@@ -1218,6 +1218,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -1285,6 +1286,7 @@ mod tests {
             2,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

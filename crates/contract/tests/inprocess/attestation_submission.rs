@@ -3,7 +3,7 @@
 use super::common;
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidParameters, InvalidState, TeeError},
+    errors::{Error, InvalidParameters, InvalidState},
     primitives::{
         key_state::EpochId,
         participants::{ParticipantId, ParticipantInfo},
@@ -25,7 +25,6 @@ use near_account_id::AccountId;
 use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
 use std::time::Duration;
-use test_utils::attestation::mock_dto_dstack_attestation;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -463,23 +462,6 @@ fn submit_participant_info__should_reattest_with_zero_deposit() {
         .unwrap()
         .expect("participant attestation should still be stored");
     assert_eq!(stored_before, stored_after);
-}
-
-/// Test that a [`Dstack`] submission is rejected when no verifier is configured.
-#[test]
-fn submit_participant_info__should_reject_dstack_when_verifier_not_configured() {
-    // Given
-    let mut setup = TestSetupBuilder::new().build();
-    let node = setup.get_participant_node_ids()[0].clone();
-
-    // When
-    let result = setup.try_submit_attestation_for_node(&node, mock_dto_dstack_attestation());
-
-    // Then
-    assert_matches!(
-        &result,
-        Err(Error::TeeError(TeeError::VerifierNotConfigured))
-    );
 }
 
 /// **Test that [`clean_tee_status()`] is vote-only** — attestations for non-participants

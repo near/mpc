@@ -5,6 +5,7 @@ use near_sdk::{Gas, NearToken};
 
 /* --- Protocol defaults --- */
 pub const PARTICIPANT_LEN: usize = 10;
+pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee-verifier.near";
 pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
     Protocol::CaitSith,
     Protocol::Frost,

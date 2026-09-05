@@ -66,13 +66,10 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     foreign_chains: Lazy<ForeignChainsMetadata>,
-    /// The verifier contract account trusted for DCAP verification, or [`None`]
-    /// until participants vote one in. An [`Attestation::Dstack`](mpc_attestation::attestation::Attestation::Dstack) submission
-    /// offloads quote verification to this account; while it is [`None`], such
-    /// submissions are rejected with [`TeeError::VerifierNotConfigured`](crate::errors::TeeError::VerifierNotConfigured).
-    // TODO(#3639): once participants have voted a verifier in, make this
-    // non-optional via a migration that requires it be set.
-    tee_verifier_account_id: Option<AccountId>,
+    /// The verifier contract account trusted for DCAP verification. An
+    /// [`Attestation::Dstack`](mpc_attestation::attestation::Attestation::Dstack) submission
+    /// offloads quote verification to this account.
+    tee_verifier_account_id: AccountId,
     tee_verifier_votes: TeeVerifierVotes,
     /// A row is removed at zero, so the map holds no entry for an account with none.
     available_attestation_grants: IterableMap<AccountId, u32>,

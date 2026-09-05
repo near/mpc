@@ -144,10 +144,15 @@ pub(crate) fn basic_setup_with_protocol(
         1,
         (&keyset).into_dto_type(),
         (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
         None,
     )
     .unwrap();
     (context, contract, sk)
+}
+
+pub(crate) fn bogus_tee_verifier_account_id() -> AccountId {
+    "tee-verifier.near".parse().unwrap()
 }
 
 /// Temporarily sets the testing environment so that calls appear
@@ -203,7 +208,12 @@ pub(crate) fn setup_tee_test_contract(
 
     let threshold = GovernanceThreshold::new(threshold_value);
     let parameters = GovernanceThresholdParameters::new(participants.clone(), threshold).unwrap();
-    let contract = MpcContract::init((&parameters).into_dto_type(), None).unwrap();
+    let contract = MpcContract::init(
+        (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        None,
+    )
+    .unwrap();
 
     (contract, participants, first_participant_id)
 }
@@ -286,7 +296,7 @@ impl MpcContract {
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
             ),
-            tee_verifier_account_id: None,
+            tee_verifier_account_id: bogus_tee_verifier_account_id(),
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
         }

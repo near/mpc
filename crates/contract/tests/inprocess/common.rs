@@ -60,7 +60,15 @@ pub fn init_contract(
             .build()
     );
 
-    MpcContract::init_running(domains, 1, keyset, parameters.clone().into(), init_config).unwrap()
+    MpcContract::init_running(
+        domains,
+        1,
+        keyset,
+        parameters.clone().into(),
+        "tee-verifier.near".parse().unwrap(),
+        init_config,
+    )
+    .unwrap()
 }
 
 /// Drives `contract` out of [`Running`] into [`Initializing`] by having every participant vote to
