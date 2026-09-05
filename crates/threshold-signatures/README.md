@@ -89,11 +89,12 @@ The following functionalities are provided:
 
 2) **Key Resharing / Key Refresh**: same as in OT-based ECDSA.
 
-3) **Presigning (offline)**: allows generating presignatures during an offline
-phase using a different approach than OT-based ECDSA. These presignatures are
-later consumed during online signing when the message becomes known.
-More details can be found in
-[docs](docs/ecdsa/robust_ecdsa/signing.md).
+3) **Presigning (offline)**: **stub, not a secure scheme.** The
+[[DJNPO20](https://eprint.iacr.org/2020/501)] implementation was removed and
+replaced by a one-round stub that produces valid signatures while leaking the
+signing key, so that the plumbing built around this protocol stays exercised
+until a real robust scheme replaces it. Read the
+[docs](docs/ecdsa/robust_ecdsa/signing.md) before using it for anything.
 
 4) **Signing (online)**: signing is performed in a single round protocol between the signers. More details can be found in [docs](docs/ecdsa/robust_ecdsa/signing.md).
 
@@ -221,7 +222,9 @@ MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- robust_ecdsa_presign_
 By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.
 The detailed numbers and analysis can be found in the [docs/benches/results.md](docs/benches/results.md) documentation.
 
-In a nutshell, our results show that the Robust ECDSA scheme is better to deploy than the OT based ECDSA in terms of efficiency and network bandwidth. In fact, with 15 maximum malicious parties and 100 ms of latency, the Robust ECDSA offline phase is roughly **4.7 times** faster than the OT based ECDSA offline phase and transmits **130 times** less bytes over the network before completing.
+The Robust ECDSA figures there were measured against the removed implementation, not
+against the stub that replaced it; the `robust_ecdsa` benchmarks now serve as a lower
+bound on what a replacement scheme could cost.
 As for Ed25519 the online phase is relatively slow with the current implementation (which does not split the scheme into presign and sign) compared to the ECDSA. With 100ms of latency, the current implementation (no presigning) is roughly 3 times slower to serve a message signing request (online phase) than both of the ECDSA schemes due to the fact that it has 3 times more rounds.
 
 ## Acknowledgments

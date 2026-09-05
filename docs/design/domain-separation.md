@@ -1,5 +1,13 @@
 # Domain Separation: Protocol & Governance Configuration Design
 
+> **Status: implemented. One premise has since changed.** The domain separation design
+> described here is in place and remains accurate. Robust ECDSA (`DamgardEtAl`), which
+> motivated it, has since had its implementation removed and replaced by an insecure
+> stub — see [`crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md`](../../crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md).
+> The protocol variant, its honest-majority `2t - 1` threshold rule and the routing
+> described below all still exist, but no production domain uses them. Statements below
+> about Robust ECDSA's security properties describe the removed scheme.
+
 The addition of Robust ECDSA (aka DamgardEtAl) invalidates three assumptions in the current design:
 
 ✗ There is one protocol per curve (now: both CaitSith and DamgardEtAl operate over Secp256k1).
