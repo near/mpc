@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use crate::primitives::proposal_hash::ProposalHash;
 use near_sdk::IntoStorageKey;
 use near_sdk::near;
 use near_sdk::require;
@@ -128,27 +129,6 @@ where
     }
 }
 
-pub const PROPOSAL_HASH_BYTES: usize = 32;
-mpc_primitives::define_hash!(ProposalHash, 32);
-
-impl<T> From<T> for ProposalHash
-where
-    T: ProposalHashEncoding,
-{
-    fn from(value: T) -> Self {
-        let encoded = value.bytes_for_hash();
-        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
-            .try_into()
-            .expect("require 32 bytes");
-        hash.into()
-    }
-}
-
-/// This trait allows the user to create their own proposal hash encoding
-pub trait ProposalHashEncoding {
-    fn bytes_for_hash(&self) -> Vec<u8>;
-}
-
 #[expect(rustdoc::private_intra_doc_links)]
 /// The set of voters who voted for a particular proposal. Always non-empty when stored
 /// inside [`Votes::votes_by_proposal`].
@@ -186,7 +166,7 @@ mod tests {
 
     use near_sdk::{
         BorshStorageKey,
-        borsh::{self, BorshDeserialize, BorshSerialize},
+        borsh::{BorshDeserialize, BorshSerialize},
     };
     use std::{
         collections::{BTreeMap, BTreeSet},
@@ -194,24 +174,11 @@ mod tests {
         sync::LazyLock,
     };
 
-    use crate::primitives::votes::{ProposalHash, VoterSet, Votes};
-
-    use super::ProposalHashEncoding;
+    use crate::primitives::proposal_hash::ProposalHash;
+    use crate::primitives::votes::{VoterSet, Votes};
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestVoter(String);
-    #[expect(
-        dead_code,
-        reason = "constructed in tests via Borsh deserialization, which the dead-code analyzer doesn't see."
-    )]
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
-    struct TestProposal(String);
-
-    impl ProposalHashEncoding for TestProposal {
-        fn bytes_for_hash(&self) -> Vec<u8> {
-            borsh::to_vec(&self).expect("borsh serialization of String must succeed")
-        }
-    }
 
     #[derive(Hash, Clone, Debug, PartialEq, Eq, BorshSerialize, BorshStorageKey)]
     pub enum TestStorageKey {
