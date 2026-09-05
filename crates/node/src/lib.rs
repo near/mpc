@@ -32,6 +32,7 @@ pub mod tracing;
 pub mod types;
 pub mod web;
 
+pub(crate) mod log_dedup;
 pub(crate) mod profiler;
 pub(crate) mod trait_extensions;
 
