@@ -742,4 +742,157 @@ mod tests {
         assert!(reported.ends_with(NetworkFingerprint::CUT_SHORT_MARKER));
         assert_eq!(reported.chars().count(), NetworkFingerprint::MAX_CHARS);
     }
+
+    use crate::mock::{MockInspector, MockReply};
+
+    const FINGERPRINT: &str = "mainnet";
+    const ONE_SECOND: Duration = Duration::from_secs(1);
+
+    fn answer(delay: Duration) -> MockReply {
+        MockReply::Answer {
+            delay,
+            fingerprint: FINGERPRINT.to_string(),
+        }
+    }
+
+    fn one_provider(
+        replies: impl IntoIterator<Item = MockReply>,
+    ) -> (FanOut<MockInspector>, MockInspector) {
+        let inspector = MockInspector::new(replies);
+        let inspectors: NonEmptyVec<_> = vec![(ProviderId("only".to_string()), inspector.clone())]
+            .try_into()
+            .expect("one inspector");
+        (FanOut::new(inspectors), inspector)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_retry_a_transient_failure_and_report_the_later_success() {
+        // Given
+        let (fan_out, inspector) =
+            one_provider([MockReply::transient(Duration::ZERO), answer(Duration::ZERO)]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(ONE_SECOND, NonZeroU64::new(3).unwrap())
+            .await;
+
+        // Then
+        let fingerprint = results[0]
+            .1
+            .as_ref()
+            .expect("second attempt should succeed");
+        assert_eq!(fingerprint.to_string(), FINGERPRINT);
+        assert_eq!(inspector.calls(), 2);
+        assert_eq!(started.elapsed(), RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_stop_after_the_configured_number_of_attempts() {
+        // Given
+        let (fan_out, inspector) = one_provider([
+            MockReply::transient(Duration::ZERO),
+            MockReply::transient(Duration::ZERO),
+            MockReply::transient(Duration::ZERO),
+        ]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(ONE_SECOND, NonZeroU64::new(3).unwrap())
+            .await;
+
+        // Then
+        assert_matches!(
+            results[0].1,
+            Err(ForeignChainInspectionError::RpcRequestFailed(_))
+        );
+        assert_eq!(inspector.calls(), 3);
+        assert_eq!(started.elapsed(), 2 * RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_not_retry_a_provider_that_refused_the_request() {
+        // Given
+        let (fan_out, inspector) = one_provider([MockReply::refusal(Duration::ZERO)]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(ONE_SECOND, NonZeroU64::new(3).unwrap())
+            .await;
+
+        // Then
+        assert_matches!(
+            results[0].1,
+            Err(ForeignChainInspectionError::RpcRequestRejected(_))
+        );
+        assert_eq!(inspector.calls(), 1);
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_retry_an_attempt_that_timed_out() {
+        // Given
+        let (fan_out, inspector) = one_provider([MockReply::Hang, answer(Duration::ZERO)]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(ONE_SECOND, NonZeroU64::new(2).unwrap())
+            .await;
+
+        // Then
+        let fingerprint = results[0]
+            .1
+            .as_ref()
+            .expect("second attempt should succeed");
+        assert_eq!(fingerprint.to_string(), FINGERPRINT);
+        assert_eq!(inspector.calls(), 2);
+        assert_eq!(started.elapsed(), ONE_SECOND + RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_give_up_on_a_provider_that_never_answers() {
+        // Given
+        let (fan_out, inspector) = one_provider([MockReply::Hang, MockReply::Hang]);
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = fan_out
+            .network_fingerprints(ONE_SECOND, NonZeroU64::new(2).unwrap())
+            .await;
+
+        // Then
+        assert_matches!(results[0].1, Err(ForeignChainInspectionError::Timeout));
+        assert_eq!(inspector.calls(), 2);
+        assert_eq!(started.elapsed(), 2 * ONE_SECOND + RETRY_BACKOFF);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn network_fingerprints__should_probe_the_providers_concurrently() {
+        // Given
+        let inspectors: NonEmptyVec<_> = vec![
+            (
+                ProviderId("slow".to_string()),
+                MockInspector::new([answer(3 * ONE_SECOND)]),
+            ),
+            (
+                ProviderId("fast".to_string()),
+                MockInspector::new([answer(ONE_SECOND)]),
+            ),
+        ]
+        .try_into()
+        .expect("two inspectors");
+        let started = tokio::time::Instant::now();
+
+        // When
+        let results = FanOut::new(inspectors)
+            .network_fingerprints(5 * ONE_SECOND, NonZeroU64::new(1).unwrap())
+            .await;
+
+        // Then
+        assert!(results.iter().all(|(_, outcome)| outcome.is_ok()));
+        assert_eq!(started.elapsed(), 3 * ONE_SECOND);
+    }
 }
