@@ -99,7 +99,7 @@ pub fn gen_running_state(num_domains: usize) -> RunningContractState {
     gen_running_state_with_params(
         num_domains,
         parameters.participants().len(),
-        parameters.threshold().value(),
+        parameters.threshold(),
     )
 }
 
@@ -108,11 +108,11 @@ pub fn gen_running_state(num_domains: usize) -> RunningContractState {
 pub fn gen_running_state_with_params(
     num_domains: usize,
     num_participants: usize,
-    governance_threshold: u64,
+    governance_threshold: impl Into<GovernanceThreshold>,
 ) -> RunningContractState {
     let threshold_parameters = GovernanceThresholdParameters::new(
         gen_participants(num_participants),
-        GovernanceThreshold::new(governance_threshold),
+        governance_threshold.into(),
     )
     .expect("valid threshold parameters");
 
