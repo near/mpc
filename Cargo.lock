@@ -4004,6 +4004,7 @@ version = "3.15.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "base64 0.23.1",
  "bs58 0.5.1",
  "derive_more 2.1.1",
  "ethereum-types",
@@ -4046,6 +4047,7 @@ dependencies = [
 name = "foreign-chain-rpc-interfaces"
 version = "3.15.0"
 dependencies = [
+ "base64 0.23.1",
  "derive_more 2.1.1",
  "ethereum-types",
  "http",
