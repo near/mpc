@@ -1603,6 +1603,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "borsch-args-cli"
+version = "3.13.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "borsh",
+ "clap",
+ "dcap-qvl",
+ "hex",
+ "near-mpc-bounded-collections",
+ "near-mpc-contract-interface",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tee-verifier-interface",
+]
+
+[[package]]
 name = "borsh"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
