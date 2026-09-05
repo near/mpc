@@ -11,6 +11,7 @@ const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
 const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
 
 const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
+const MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL: &str = "make_online_presign_signature";
 const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
 const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
 
@@ -123,6 +124,8 @@ pub(crate) struct EcdsaTaskMonitors {
     pub(crate) make_signature_leader: TaskMonitor,
     pub(crate) make_signature_follower: TaskMonitor,
 
+    pub(crate) make_online_presign_signature_follower: TaskMonitor,
+
     pub(crate) triple_generation_leader: TaskMonitor,
     pub(crate) triple_generation_follower: TaskMonitor,
 
@@ -190,6 +193,14 @@ impl TaskIntervalProvider for EcdsaTaskMonitors {
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
+            ),
+            (
+                self.make_online_presign_signature_follower.intervals(),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL,
                     FOLLOWER_ROLE_LABEL,
                 ),
             ),

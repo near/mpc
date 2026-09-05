@@ -59,6 +59,7 @@ mod faulty;
 mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
+mod online_presign;
 mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;

@@ -339,6 +339,7 @@ mod tests {
     #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), 0, 2)]
     #[case(EcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0), paired_triple_id: uid() }.into(), 0, 3)]
     #[case(EcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 0, 4)]
+    #[case(EcdsaTaskId::OnlinePresignSignature { id: CryptoHash::default(), paired_triple_id: uid() }.into(), 0, 5)]
     #[case(EddsaTaskId::KeyGeneration { key_event: key_event() }.into(), 1, 0)]
     #[case(EddsaTaskId::KeyResharing { key_event: key_event() }.into(), 1, 1)]
     #[case(EddsaTaskId::Signature { id: CryptoHash::default() }.into(), 1, 2)]
