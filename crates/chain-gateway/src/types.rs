@@ -1,9 +1,13 @@
 use derive_more::Into;
 use near_indexer_primitives::CryptoHash;
+#[cfg(feature = "embedded-node")]
 use near_indexer_primitives::types::Gas;
 
-use near_contract_transport::{NearGas, ObservedState};
+#[cfg(feature = "embedded-node")]
+use near_contract_transport::NearGas;
+use near_contract_transport::ObservedState;
 
+#[cfg(feature = "embedded-node")]
 pub(crate) fn to_action_gas(gas: NearGas) -> Gas {
     Gas::from_gas(gas.as_gas())
 }
