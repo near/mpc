@@ -463,6 +463,7 @@ impl MpcNodeSetup {
                 cores: Some(4),
                 separate_asset_generation_runtime: true,
                 indexer: IndexerConfig {
+                    rpc_url: None,
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),
                     mpc_contract_id: mpc_contract,

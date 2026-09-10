@@ -453,6 +453,7 @@ mod tests {
             migration_web_ui: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8081),
             pprof_bind_address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8082),
             indexer: IndexerConfig {
+                rpc_url: None,
                 concurrency: 1.try_into().unwrap(),
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),

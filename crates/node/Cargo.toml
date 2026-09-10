@@ -5,6 +5,16 @@ version = { workspace = true }
 license = { workspace = true }
 
 [features]
+default = ["embedded-node"]
+embedded-node = [
+    "dep:near-async",
+    "dep:near-client",
+    "dep:near-config-utils",
+    "dep:near-indexer",
+    "dep:near-o11y",
+    "dep:near-store",
+    "chain-gateway/embedded-node",
+]
 network-hardship-simulation = []
 test-utils = ["dep:test-port-allocator", "threshold-signatures/test-utils"]
 
@@ -44,13 +54,16 @@ mpc-node-config = { workspace = true }
 mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
-near-async = { workspace = true }
-near-client = { workspace = true }
-near-config-utils = { workspace = true }
+near-async = { workspace = true, optional = true }
+near-client = { workspace = true, optional = true }
+near-config-utils = { workspace = true, optional = true }
 near-contract-transport = { workspace = true }
 near-crypto = { workspace = true }
-near-indexer = { workspace = true }
+near-indexer = { workspace = true, optional = true }
+near-indexer-client = { workspace = true }
 near-indexer-primitives = { workspace = true }
+near-jsonrpc-node = { workspace = true }
+near-kit = { version = "0.18.0", default-features = false, features = ["rpc"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "call-args",
@@ -60,10 +73,10 @@ near-mpc-contract-interface = { workspace = true, features = [
     "near",
 ] }
 near-mpc-crypto-types = { workspace = true }
-near-o11y = { workspace = true }
+near-o11y = { workspace = true, optional = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
-near-store = { workspace = true }
-near-time = { workspace = true }
+near-store = { workspace = true, optional = true }
+near-time = { workspace = true, features = ["clock"] }
 node-types = { workspace = true }
 num_enum = { workspace = true }
 pprof = { workspace = true }
