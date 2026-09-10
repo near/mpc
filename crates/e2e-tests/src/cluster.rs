@@ -28,7 +28,7 @@ use serde_json::json;
 use crate::NearKitCaller;
 use crate::blockchain::{DeployedContract, NearBlockchain};
 use crate::caller::{CallMpc, WithWaitLevel};
-use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodePorts};
+use crate::mpc_node::{MpcNode, MpcNodeSetup, MpcNodeSetupArgs, NodeIndexer, NodePorts};
 use crate::near_sandbox::NearSandbox;
 use crate::test_dir::TestDir;
 use test_port_allocator::TestPorts;
@@ -86,6 +86,10 @@ pub struct MpcClusterConfig {
     pub domains: Vec<DomainConfig>,
     /// Path to the mpc-node binary. If multiple paths, each node gets the corresponding one.
     pub binary_paths: Vec<PathBuf>,
+    /// Select the same indexer mode for the local cluster.
+    pub node_indexer: NodeIndexer,
+    /// Common protocol and full execution data for the local HTTP comparison.
+    pub sandbox_indexer_comparison: bool,
     /// Compiled contract WASM bytes (pre-compiled by the test).
     pub contract_wasm: Vec<u8>,
     /// Compiled tee-verifier WASM bytes (pre-compiled by the test).
@@ -194,6 +198,8 @@ impl MpcClusterConfig {
                 },
             ],
             binary_paths: vec![default_mpc_binary_path()],
+            node_indexer: NodeIndexer::Default,
+            sandbox_indexer_comparison: false,
             contract_wasm,
             tee_verifier_wasm,
             port_seed,
@@ -278,7 +284,12 @@ impl MpcCluster {
         let threshold = config.threshold;
         let ports = TestPorts::e2e_tests(config.port_seed);
 
-        let sandbox = NearSandbox::start(&ports, &config.sandbox_version).await?;
+        let sandbox = NearSandbox::start_configured(
+            &ports,
+            &config.sandbox_version,
+            config.sandbox_indexer_comparison,
+        )
+        .await?;
         let root_secret_key: near_kit::SecretKey = SANDBOX_ROOT_SECRET_KEY
             .parse()
             .context("invalid sandbox root secret key")?;
@@ -1504,6 +1515,12 @@ fn start_mpc_nodes(
             node_index: i,
             home_dir: test_dir.join(format!("node{i}")),
             binary_path,
+            indexer: match config.node_indexer.clone() {
+                NodeIndexer::Http { rpc_url } => NodeIndexer::Http {
+                    rpc_url: Some(rpc_url.unwrap_or_else(|| sandbox.rpc_url())),
+                },
+                other => other,
+            },
             signer_account_id: node_account(i).parse()?,
             p2p_signing_key: p2p_keys[i].clone(),
             near_signer_key: near_keys[i].clone(),
@@ -1531,6 +1548,12 @@ fn start_mpc_nodes(
             node_index: target_idx,
             home_dir: test_dir.join(format!("node{target_idx}")),
             binary_path: source.binary_path().to_path_buf(),
+            indexer: match config.node_indexer.clone() {
+                NodeIndexer::Http { rpc_url } => NodeIndexer::Http {
+                    rpc_url: Some(rpc_url.unwrap_or_else(|| sandbox.rpc_url())),
+                },
+                other => other,
+            },
             signer_account_id: source.account_id().clone(),
             p2p_signing_key: generate_deterministic_key(KEY_SEED_MIGRATION_P2P + target_idx as u64),
             near_signer_key: source.near_signer_key().clone(),

@@ -335,6 +335,66 @@ cargo make e2e-tests
 
 ## Running the tests
 
+### Local HTTP indexer comparison
+
+The ignored `local_indexer__should_complete_and_verify_real_threshold_signatures`
+test runs three real nodes with a two-participant threshold and one secp256k1
+domain. It completes two sign requests, independently verifies both signatures
+against the derived contract public key, and retains outcomes in
+`verified-signatures.json` in the test artifact directory. Local mock attestation
+is used, as in the other E2E tests.
+
+Set `MPC_E2E_BINARY` to an explicit node binary and `MPC_E2E_INDEXER` to `embedded`
+or `http`. Both choices use optimistic finality and Latest sync. HTTP children
+receive the fresh sandbox endpoint through `MPC_NEAR_RPC_URL`; inherited HTTP
+endpoint settings are cleared for embedded children. `MpcClusterConfig::node_indexer`
+also accepts an explicit HTTP endpoint for local harness callers.
+
+Set `NEAR_SANDBOX_BIN_PATH` to a custom neard built with `sandbox` and the indexer
+RPC method, plus `MPC_CONTRACT_WASM` and `MPC_TEE_VERIFIER_WASM` to matching compiled
+contracts. This test enables the RPC and full execution-data retention, uses
+protocol 86 shared by the two node versions, and sets an epoch of one million
+blocks to avoid upgrades during the comparison. Ordinary tests keep their
+existing sandbox and indexer settings.
+
+If the custom neard also includes `test_features`, its local test invocation
+requires `ADVERSARY_CONSENT=1`.
+
+```sh
+cargo test -p e2e-tests --test e2e local_indexer__should_complete_and_verify_real_threshold_signatures -- --ignored --nocapture
+```
+
+Build the chosen node explicitly; the general `cargo make e2e-tests` task builds
+the hardship-simulation variant. This focused test is a correctness gate, not a
+statistically meaningful performance benchmark.
+
+`MPC_E2E_SAMPLES` selects measured requests (default 2), and `MPC_E2E_WARMUP`
+selects preceding warmup requests (default 0). Every attempt uses a unique
+deterministic payload and is verified, including warmups. The report records
+warmup flags, raw outcomes, errors and whether the run completed; a failure saves
+the report and fails the test rather than dropping that sample. Timing ends
+after signature verification, before the additional raw-outcome evidence query.
+
+Set `MPC_E2E_RESTART=1` with the default sample/warmup counts to test persistence:
+after the first two verified requests, all three nodes receive SIGTERM and restart
+on their existing homes. The test waits for their indexers to advance and for
+presignatures, then verifies two more requests with the same public key. It
+records restart time and preserves pre-restart logs. It does not reset the chain
+or node data. Requests are submitted before and after the restart, so this does
+not test recovery of an in-flight request. Use this separately from the
+measurement run.
+
+The separate ignored test
+`http_indexer__should_recover_pending_request_after_process_interruption`
+stops all three HTTP nodes cleanly, retains their checkpoints, and submits one
+sign request while they are offline. It records the executed sign receipt and
+pending transaction status, changes retained configurations to `Interruption`,
+then restarts the same homes and verifies the resulting signature independently.
+`pending-request-recovery.json` retains the checkpoints, pending receipt, final
+outcome, and any failure. This tests catch-up for a pending request within the
+retained history window; it does not establish exactly-once behavior. Use the
+same binary, sandbox, and WASM environment variables as the signing test.
+
 ```bash
 cargo make e2e-tests                            # Build required binaries and run all tests
 cargo make e2e-tests-skip-build                 # Reuse binaries from a previous run
@@ -362,6 +422,7 @@ local iteration).
 CI runs the same task via the `mpc-e2e-tests` job.
 
 ---
+
 
 ## Debugging a failure
 

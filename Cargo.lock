@@ -3354,6 +3354,7 @@ dependencies = [
  "group 0.13.0",
  "hex",
  "httpmock",
+ "k256 0.13.4",
  "launcher-interface",
  "libc",
  "mpc-node-config",

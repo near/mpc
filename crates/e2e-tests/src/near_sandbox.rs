@@ -22,6 +22,14 @@ pub struct NearSandbox {
 
 impl NearSandbox {
     pub async fn start(ports: &TestPorts, version: &str) -> anyhow::Result<Self> {
+        Self::start_configured(ports, version, false).await
+    }
+
+    pub async fn start_configured(
+        ports: &TestPorts,
+        version: &str,
+        indexer_comparison: bool,
+    ) -> anyhow::Result<Self> {
         let rpc_port = ports.near_node_rpc_port();
         let network_port = ports.near_node_network_port();
 
@@ -37,7 +45,7 @@ impl NearSandbox {
             "refill_rate": UNLIMITED,
             "initial_size": UNLIMITED,
         });
-        let additional_config = serde_json::json!({
+        let mut additional_config = serde_json::json!({
             "network": {
                 "experimental": {
                     "network_config_overrides": {
@@ -56,10 +64,21 @@ impl NearSandbox {
         // Set chain_id to "sandbox" so MPC nodes recognize this as a local
         // network (is_localnet() returns true). Without this, `near-sandbox
         // init` generates a random chain_id like "test-chain-XXXXX".
+        let mut genesis = serde_json::json!({"chain_id": "sandbox"});
+        if indexer_comparison {
+            genesis["protocol_version"] = serde_json::json!(86);
+            genesis["epoch_length"] = serde_json::json!(1_000_000);
+            additional_config["rpc"] = serde_json::json!({"enable_indexer_rpc": true});
+            additional_config["tracked_shards_config"] = serde_json::json!("AllShards");
+            additional_config["save_tx_outcomes"] = serde_json::json!(true);
+            additional_config["save_state_changes"] = serde_json::json!(true);
+            additional_config["save_trie_changes"] = serde_json::json!(true);
+            additional_config["store"] = serde_json::json!({"load_mem_tries_for_shards": [], "load_mem_tries_for_tracked_shards": false});
+        }
         let config = SandboxConfig {
             rpc_port: Some(rpc_port),
             net_port: Some(network_port),
-            additional_genesis: Some(serde_json::json!({"chain_id": "sandbox"})),
+            additional_genesis: Some(genesis),
             additional_config: Some(additional_config),
             ..Default::default()
         };
