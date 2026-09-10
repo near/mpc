@@ -32,7 +32,7 @@ cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard 
 ```
 
 ```shell
-cargo install --path crates/node --locked
+cargo install --path crates/node --features embedded-node --locked
 ```
 
 ## Compile the signer contract

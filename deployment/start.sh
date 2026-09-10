@@ -2,7 +2,7 @@
 set -eo pipefail
 
 # This script is intended to be used for running nearone/mpc.
-# It will initialize the Near node in case it is not initialized yet and start the MPC node.
+# HTTP mode uses MPC_NEAR_RPC_URL; embedded builds initialize a local NEAR node.
 
 MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
@@ -198,23 +198,25 @@ generate_secrets_json() {
     fi
 }
 
-# Check and initialize Near node config if needed
-if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
-    echo "Near node is already initialized"
-else
-    echo "Initializing Near node"
-    initialize_near_node "$MPC_HOME_DIR" && echo "Near node initialized"
-fi
+if [ -z "${MPC_NEAR_RPC_URL:-}" ]; then
+    # Check and initialize Near node config if needed
+    if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
+        echo "Near node is already initialized"
+    else
+        echo "Initializing Near node"
+        initialize_near_node "$MPC_HOME_DIR" && echo "Near node initialized"
+    fi
 
-# MPC_TIER3_PUBLIC_ADDR is optional: nodes that are already publicly reachable
-# don't need it. Nodes behind NAT / not otherwise reachable must set it, or
-# decentralized state sync (set below) stalls silently. Log which case applies.
-if [ "$MPC_ENV" != "mpc-localnet" ] && [ -z "$MPC_TIER3_PUBLIC_ADDR" ]; then
-    echo "INFO: MPC_TIER3_PUBLIC_ADDR is not set; decentralized state sync will rely on auto-detected addresses. Set it to a reachable IP:24567 if this node is not otherwise publicly reachable."
-fi
+    # MPC_TIER3_PUBLIC_ADDR is optional: nodes that are already publicly reachable
+    # don't need it. Nodes behind NAT / not otherwise reachable must set it, or
+    # decentralized state sync (set below) stalls silently. Log which case applies.
+    if [ "$MPC_ENV" != "mpc-localnet" ] && [ -z "$MPC_TIER3_PUBLIC_ADDR" ]; then
+        echo "INFO: MPC_TIER3_PUBLIC_ADDR is not set; decentralized state sync will rely on auto-detected addresses. Set it to a reachable IP:24567 if this node is not otherwise publicly reachable."
+    fi
 
-# Update the Near node config with the MPC ENV variables values
-update_near_node_config && echo "Near node config updated"
+    # Update the Near node config with the MPC ENV variables values
+    update_near_node_config && echo "Near node config updated"
+fi
 
 # Check and initialize MPC config if needed
 if [ -r "$MPC_NODE_CONFIG_FILE" ]; then

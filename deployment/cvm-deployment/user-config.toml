@@ -4,6 +4,7 @@
 # to use when running on mainnet instead.
 #
 # MUST be replaced with real values before deploying:
+#   - node.indexer.rpc_url (external NEAR endpoint)
 #   - my_near_account_id / near_responder_account_id
 #   - secrets.secret_store_key_hex
 #   - secrets.backup_encryption_key_hex
@@ -14,13 +15,12 @@
 image_reference = "nearone/mpc-node"
 # Matches the canonical port list in
 # docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#required-ports
-# (80 P2P, 8080 web/metrics, 8079 migration, 3030 debug, 24567 DSS).
+# (80 P2P, 8080 web/metrics, 8079 migration).
+# Embedded-node builds additionally need 3030 and 24567 on this host.
 port_mappings = [
     { host = 80, container = 80 },       # MPC P2P (port_override convention)
     { host = 8080, container = 8080 },   # web_ui / metrics / /public_data
     { host = 8079, container = 8079 },   # migration_web_ui
-    { host = 3030, container = 3030 },   # debug / telemetry
-    { host = 24567, container = 24567 }, # decentralized state sync
 ]
 
 [mpc_node_config]
@@ -53,22 +53,23 @@ url = "https://api.trustedservices.intel.com/"
 format = "plain"
 filter = "info"
 
-[mpc_node_config.near_init]
-chain_id = "testnet" # mainnet: "mainnet"
+# Embedded-node builds only: HTTP mode ignores this bootstrap section.
+# [mpc_node_config.near_init]
+# chain_id = "testnet" # mainnet: "mainnet"
 # Testnet boot nodes. For mainnet, replace with the mainnet boot-nodes
 # string from https://near-nodes.io/ or the official nearcore mainnet
 # config.json (rpc.mainnet.near.org).
-boot_nodes = "ed25519:2956bsTqWmXcVmXDSovLYS4HRpdyh51euNCiuQjy1h8Y@65.108.141.230:24567,ed25519:2Ej627FDrHUBA1Mp55qw3zyhACSvJHF25sxtZfyFqasc@65.108.133.7:24567,ed25519:2GorYSFQUWB1But3sXLEM6zARfwb9Pj27QhQMsMpK8Dx@150.136.35.62:24567,ed25519:2nGLw9isJYVqCfaYzA6KHBE9YbtjzGQPPtVcRwYvpJj6@23.88.74.249:24567,ed25519:3VCjDXCbJWNr247wLzBas653C8FT69drtu3vDXbRAG2E@35.188.52.109:24567,ed25519:3wdbS6vbahK7pzgn8r8oFcgFthWvcT8mtXcUgtpQngqW@57.129.88.239:24567,ed25519:49F9yZpbQVefzWegVZYTh18WwFPPcfgvkDmhm7zM5MR4@89.58.28.231:24567,ed25519:4Fx8rLhGobUPVie1FXQCAxFaMQ3Dg6PYMDdm5keZcKW6@84.207.214.228:24567,ed25519:4M63uf6ccsjBkFygqx4T45fKSvKsFFMva9g7FRxjwzTH@176.9.105.103:24568,ed25519:4Rj2NR92umGC4xtXeJFkyCUYymdad3zii1zVEMVnVKqH@5.9.40.211:24567,ed25519:4b5MtShRdtu87BTNoPHX4HDBbZGnm5pjEQoGZk5J7L1w@34.12.14.28:24567,ed25519:4gdz1kjG7ndfbSwgMRtgNYZ7D6reHdnBgZN71U3agwtw@198.244.253.126:24567,ed25519:4qCcK9sWsqCpXzjV6kXxkaLyu5o5UpYNLpQzKFDSjfhA@34.123.242.245:24567,ed25519:4xTqirCWWjJ9QpXQbJLkyUbjRuRBgr4ZVpKMQAs4CjcH@57.128.210.54:24567,ed25519:4xmhjdejr2jWHqpiCrkeGXbrqBt98q9ewZ77WKrAz7JT@148.251.70.186:24567,ed25519:5M9DnL5xecA34RTHnkBpGB8SMXc2NcPvue7784D3GaH4@88.198.57.94:24568,ed25519:5MipaupEtQu7SqdMWsP5mdh2wfHQHgngai2BziCXv2T@185.6.13.181:24567,ed25519:5QmANbVUKooCvHq9qyKTd5cRgp4vYrQrAqjuRrA9M5TT@144.76.43.124:24567,ed25519:5T2wfCxjXT2rFPsyWAAxWnMqLajM24FC2ZWKXA62xbQ1@47.129.128.11:24567,ed25519:5VdRi9UAxjppwL2ku3g2hWXjn4oQZA4i1goEWJxpp9uv@113.172.202.5:24568"
-download_genesis = true
-download_config = "rpc"
+# boot_nodes = "ed25519:2956bsTqWmXcVmXDSovLYS4HRpdyh51euNCiuQjy1h8Y@65.108.141.230:24567,ed25519:2Ej627FDrHUBA1Mp55qw3zyhACSvJHF25sxtZfyFqasc@65.108.133.7:24567,ed25519:2GorYSFQUWB1But3sXLEM6zARfwb9Pj27QhQMsMpK8Dx@150.136.35.62:24567,ed25519:2nGLw9isJYVqCfaYzA6KHBE9YbtjzGQPPtVcRwYvpJj6@23.88.74.249:24567,ed25519:3VCjDXCbJWNr247wLzBas653C8FT69drtu3vDXbRAG2E@35.188.52.109:24567,ed25519:3wdbS6vbahK7pzgn8r8oFcgFthWvcT8mtXcUgtpQngqW@57.129.88.239:24567,ed25519:49F9yZpbQVefzWegVZYTh18WwFPPcfgvkDmhm7zM5MR4@89.58.28.231:24567,ed25519:4Fx8rLhGobUPVie1FXQCAxFaMQ3Dg6PYMDdm5keZcKW6@84.207.214.228:24567,ed25519:4M63uf6ccsjBkFygqx4T45fKSvKsFFMva9g7FRxjwzTH@176.9.105.103:24568,ed25519:4Rj2NR92umGC4xtXeJFkyCUYymdad3zii1zVEMVnVKqH@5.9.40.211:24567,ed25519:4b5MtShRdtu87BTNoPHX4HDBbZGnm5pjEQoGZk5J7L1w@34.12.14.28:24567,ed25519:4gdz1kjG7ndfbSwgMRtgNYZ7D6reHdnBgZN71U3agwtw@198.244.253.126:24567,ed25519:4qCcK9sWsqCpXzjV6kXxkaLyu5o5UpYNLpQzKFDSjfhA@34.123.242.245:24567,ed25519:4xTqirCWWjJ9QpXQbJLkyUbjRuRBgr4ZVpKMQAs4CjcH@57.128.210.54:24567,ed25519:4xmhjdejr2jWHqpiCrkeGXbrqBt98q9ewZ77WKrAz7JT@148.251.70.186:24567,ed25519:5M9DnL5xecA34RTHnkBpGB8SMXc2NcPvue7784D3GaH4@88.198.57.94:24568,ed25519:5MipaupEtQu7SqdMWsP5mdh2wfHQHgngai2BziCXv2T@185.6.13.181:24567,ed25519:5QmANbVUKooCvHq9qyKTd5cRgp4vYrQrAqjuRrA9M5TT@144.76.43.124:24567,ed25519:5T2wfCxjXT2rFPsyWAAxWnMqLajM24FC2ZWKXA62xbQ1@47.129.128.11:24567,ed25519:5VdRi9UAxjppwL2ku3g2hWXjn4oQZA4i1goEWJxpp9uv@113.172.202.5:24568"
+# download_genesis = true
+# download_config = "rpc"
 # IP:24567 the node advertises for decentralized (peer-to-peer) state-sync
 # responses. REQUIRED — replace with the public IP your dstack port-forward
 # exposes for :24567. State sync needs a reachable advertised address;
 # leaving this placeholder makes the node fail to start. Especially critical
 # on hosts with more than one external IP, or when running multiple nodes on
 # one host, where auto-discovery would otherwise advertise an unreachable IP
-# and state sync would stall silently.
-tier3_public_addr = "REPLACE_WITH_NODE_PUBLIC_IP:24567"
+# and state sync would stall silently in embedded mode.
+# tier3_public_addr = "REPLACE_WITH_NODE_PUBLIC_IP:24567"
 # Required for node versions before 3.12.0: DSS (decentralized state sync)
 # attempts per state part before falling back to the external storage bucket.
 # Leave at 100 — released 3.11.x nodes default this to 0 (bucket-only), which
@@ -76,7 +77,7 @@ tier3_public_addr = "REPLACE_WITH_NODE_PUBLIC_IP:24567"
 # buckets, and a node left at the default crashes in a state-sync restart
 # loop. Ignored on 3.12.0+, which always uses peer-to-peer ("Peers") state
 # sync, so it is safe to keep set across the upgrade.
-external_storage_fallback_threshold = 100
+# external_storage_fallback_threshold = 100
 
 [mpc_node_config.secrets]
 # MUST replace with real values before deploying. The placeholders below
@@ -98,6 +99,8 @@ migration_web_ui = "0.0.0.0:8079"
 cores = 6
 
 [mpc_node_config.node.indexer]
+# Required by the default HTTP build; the server must support EXPERIMENTAL_indexer_block.
+rpc_url = "http://REPLACE_WITH_YOUR_NEAR_NODE:3030"
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
