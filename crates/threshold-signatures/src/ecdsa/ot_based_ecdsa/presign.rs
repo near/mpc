@@ -2,6 +2,7 @@ use crate::ReconstructionThreshold;
 use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
 use crate::ecdsa::{
     AffinePoint, KeygenOutput, ProjectivePoint, RerandomizationArguments, Scalar, Secp256K1Sha256,
+    Tweak,
 };
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
@@ -62,6 +63,22 @@ impl PartialEq for PresignOutput {
     }
 }
 impl Eq for PresignOutput {}
+
+impl PresignOutput {
+    /// The same presignature for the key derived with `tweak`: `sigma' = sigma + tweak * k`,
+    /// since `sigma` shares `k * x` and the derived key is `x + tweak`.
+    ///
+    /// Only sound when the presignature is consumed by the computation that produced it, as in
+    /// [`presign_and_sign`](super::presign_and_sign::presign_and_sign); a stored presignature
+    /// must go through [`RerandomizedPresignOutput::rerandomize_presign`] instead.
+    pub fn with_tweak(&self, tweak: &Tweak) -> Self {
+        Self {
+            big_r: self.big_r,
+            k: self.k,
+            sigma: self.sigma + tweak.value() * self.k,
+        }
+    }
+}
 
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
@@ -127,6 +144,17 @@ impl RerandomizedPresignOutput {
     }
 }
 
+/// A rerandomized presignature is consumed by the same signing round as a plain one.
+impl From<RerandomizedPresignOutput> for PresignOutput {
+    fn from(presignature: RerandomizedPresignOutput) -> Self {
+        Self {
+            big_r: presignature.big_r,
+            k: presignature.k,
+            sigma: presignature.sigma,
+        }
+    }
+}
+
 /// Maximum incoming buffer entries for the OT-based ECDSA presign protocol.
 pub(crate) const OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES: usize = 2;
 
@@ -142,6 +170,19 @@ pub fn presign(
     me: Participant,
     args: PresignArguments,
 ) -> Result<impl Protocol<Output = PresignOutput> + use<>, InitializationError> {
+    let participants = validate_presign_arguments(participants, me, &args)?;
+
+    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
+    let fut = do_presign(ctx.shared_channel(), participants, me, args);
+    Ok(make_protocol(ctx, fut))
+}
+
+/// Checks the participant set against `args` and returns it as a [`ParticipantList`].
+pub(crate) fn validate_presign_arguments(
+    participants: &[Participant],
+    me: Participant,
+    args: &PresignArguments,
+) -> Result<ParticipantList, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -176,14 +217,23 @@ pub fn presign(
         });
     }
 
-    let ctx = Comms::with_buffer_capacity(OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES);
-    let fut = do_presign(ctx.shared_channel(), participants, me, args);
-    Ok(make_protocol(ctx, fut))
+    Ok(participants)
 }
 
 async fn do_presign(
     mut chan: SharedChannel,
     participants: ParticipantList,
+    me: Participant,
+    args: PresignArguments,
+) -> Result<PresignOutput, ProtocolError> {
+    presign_rounds(&mut chan, &participants, me, args).await
+}
+
+/// The two presigning rounds, run on a caller-owned channel so that a longer protocol can
+/// continue on the same channel with further waitpoints.
+pub(crate) async fn presign_rounds(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
     me: Participant,
     args: PresignArguments,
 ) -> Result<PresignOutput, ProtocolError> {
@@ -231,7 +281,7 @@ async fn do_presign(
     // Spec 1.3
     let mut e = e_i;
 
-    for (_, e_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
+    for (_, e_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
         if e_j.is_zero().into() {
             return Err(ProtocolError::AssertionFailed(
                 "Received zero share of kd, indicating a triple wasn't available.".to_string(),
@@ -269,7 +319,7 @@ async fn do_presign(
     let mut beta = beta_i;
 
     for (_, (alpha_j, beta_j)) in
-        recv_from_others::<(Scalar, Scalar)>(&chan, wait1, &participants, me).await?
+        recv_from_others::<(Scalar, Scalar)>(chan, wait1, participants, me).await?
     {
         // Spec 2.4
         alpha += alpha_j;

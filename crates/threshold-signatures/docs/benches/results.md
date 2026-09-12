@@ -163,3 +163,39 @@ In the case where the protocol allows distinguishing between normal participants
 *Note: The computed data size includes the cryptographic elements sent along with the metadata (e.g., receiver, session number etc…).*
 
 <br>
+
+## Signing without presignatures
+
+`presign_and_sign` folds the two presigning rounds into the online phase, consuming a triple pair
+directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol)).
+The numbers below were measured in September 2026 on a different machine than the tables above,
+so they are comparable with each other but not with the other tables.
+
+Latency simulation (`simulate_ecdsa`, virtual clock, network latency 100 ms), data received per
+participant:
+
+| Parties | Threshold | Protocol | Rounds | Virtual time | Bytes/participant |
+|:-------:|:---------:|:--------:|:------:|-------------:|------------------:|
+| 7 | 4 | Presign | 2 | 200.18 ms | 1403 |
+| 7 | 4 | Sign | 1 | 100.09 ms | 79 |
+| 7 | 4 | Presign+sign online | 3 | 300.31 ms | 1480 |
+| 15 | 8 | Presign | 2 | 200.17 ms | 3284 |
+| 15 | 8 | Sign | 1 | 100.09 ms | 86 |
+| 15 | 8 | Presign+sign online | 3 | 300.31 ms | 3369 |
+
+Reading: the online cost of a signature without presignatures is the network latency of three
+rounds instead of one, with the presign computation (about a millisecond) on top; the bytes moved
+online are the presign bytes plus the signature shares. Nothing is precomputed per signature any
+more, so the offline phase reduces to triple generation and no presignature store has to be kept
+consistent across nodes. The variant is adopted when the extra two round trips on the signing
+path are acceptable, which they are at the latencies seen between MPC nodes.
+
+Reproduce with:
+
+```sh
+NUM_PARTICIPANTS=7 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
+NUM_PARTICIPANTS=15 THRESHOLD=8 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
+```
+
+The simulation harness runs the Damgård et al. scheme alongside, which requires exactly
+`2 * (threshold - 1) + 1` participants.
