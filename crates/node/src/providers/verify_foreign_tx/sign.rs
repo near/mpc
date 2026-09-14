@@ -33,7 +33,7 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
-const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const PRESIGNATURE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
