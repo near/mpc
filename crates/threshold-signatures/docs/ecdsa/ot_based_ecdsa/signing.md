@@ -104,5 +104,27 @@ The inputs to this phase are:
 
 **Output:** the signature $(R, s)$.
 
+# Presigning and signing in one protocol
+
+`presign_and_sign` runs the two presigning rounds and the signing round as a single protocol
+over one channel, for a set of parties $\mathcal{P}_1$ of size $N_1 \geq t$ that already know
+the message. The inputs are those of presigning plus the tweak $\epsilon$ and the message hash
+$h$; there is no entropy input.
+
+**Rounds 1 and 2:** as in [Presigning](#presigning), producing $(R, k_i, \sigma_i)$.
+
+**Key derivation (local):** each $P_i$ sets $\sigma_i \gets \sigma_i + \epsilon \cdot k_i$. This is
+the $\delta = 1$ case of the rerandomization step above. Rerandomization exists to bind a stored
+presignature's $R$ to the message; here $R$ is instead consumed immediately by the run that
+produced it, so that binding is replaced by a caller obligation: a triple pair must never be fed to
+this protocol twice, aborted runs included. $R$ is a deterministic function of $\mathsf{triple}_0$
+and is known to every party after round 1, so two runs over the same pair with different $h$ reveal
+the private key.
+
+**Round 3:** as in [Signing](#signing) Round 1, with the coordinator verifying $(R, s)$ against the
+derived key $X + \epsilon \cdot G$.
+
+**Output:** the signature $(R, s)$, known only to the coordinator.
+
 ---
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).
