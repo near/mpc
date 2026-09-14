@@ -1,3 +1,5 @@
+#![allow(non_snake_case)] // Tests use the `<sut>__should_<assertion>` form mandated by CLAUDE.md.
+
 use crate::sandbox::{
     common::{
         SandboxTestSetup, execute_key_generation_and_add_random_state,
@@ -16,9 +18,15 @@ use crate::sandbox::{
         transactions::CallMpcContract,
     },
 };
+use near_mpc_contract_interface::call_args::VoteUpdateArgs;
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::{ProposeUpdateArgs, ProtocolContractState, UpdateId};
+use near_mpc_contract_interface::types::{
+    self as dtos, ProposeUpdateArgs, Protocol, ProtocolContractState, UpdateId,
+};
+use near_sdk::Gas;
+use near_workspaces::{Contract, result::ExecutionFinalResult};
 use rand_core::OsRng;
+use rstest::rstest;
 
 pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
@@ -564,4 +572,490 @@ async fn migration_function_rejects_external_callers() {
         "migrate call was accepted by external caller. expected method to be private. {:?}",
         error_message
     )
+}
+
+/// Reproduces the mainnet failure of 2026-09-14: the deciding `vote_update` sweeps every stored
+/// entry in a single receipt, and with several full-size code proposals stored the receipt exceeds
+/// the per-receipt storage proof limit. All proposals hold the same binary, mirroring `v1.signer`,
+/// where the four stored entries are byte-identical.
+#[rstest]
+#[case::one_proposal(1)]
+#[case::two_proposals(2)]
+#[case::three_proposals(3)]
+#[case::four_proposals(4)]
+#[case::six_proposals(6)]
+#[tokio::test]
+async fn vote_update__should_apply_the_update_when_several_code_proposals_are_stored(
+    #[case] stored_proposals: usize,
+) {
+    // Given
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::CaitSith])
+        .build()
+        .await;
+
+    let mut proposal_id = None;
+    for (index, account) in mpc_signer_accounts
+        .iter()
+        .cycle()
+        .take(stored_proposals)
+        .enumerate()
+    {
+        let execution = account
+            .call_mpc(contract.id())
+            .propose_update(current_contract_proposal())
+            .await
+            .unwrap();
+        assert!(
+            execution.is_success(),
+            "proposal {index} failed: {execution:#?}"
+        );
+        proposal_id = Some(execution.json().unwrap());
+    }
+    let proposal_id: UpdateId = proposal_id.expect("at least one proposal");
+
+    // When
+    let mut deciding_vote_gas = None;
+    for voter in &mpc_signer_accounts {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
+            .await
+            .unwrap();
+        let gas_burnt = execution.total_gas_burnt;
+        assert!(
+            execution.is_success(),
+            "stored_proposals={stored_proposals} voter={} gas={} TGas failures={:#?}",
+            voter.id(),
+            gas_burnt.as_tgas(),
+            execution.failures()
+        );
+        let update_occurred: bool = execution.json().unwrap();
+        println!(
+            "stored_proposals={stored_proposals} voter={} gas={} TGas update_occurred={update_occurred}",
+            voter.id(),
+            gas_burnt.as_tgas(),
+        );
+        if update_occurred {
+            deciding_vote_gas = Some(gas_burnt);
+            break;
+        }
+    }
+
+    // Then
+    let deciding_vote_gas = deciding_vote_gas.expect("threshold reached");
+    println!(
+        "RESULT stored_proposals={stored_proposals} deciding_vote_gas={} TGas",
+        deciding_vote_gas.as_tgas()
+    );
+    let proposed_updates: dtos::ProposedUpdates = contract
+        .view(method_names::PROPOSED_UPDATES)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(proposed_updates.updates.is_empty());
+}
+
+/// Diagnostic: maps the storage-proof boundary of the deciding `vote_update` against the number of
+/// stored entries and their size, for byte-identical and for distinct payloads. Reports rather than
+/// asserts, so a single run yields the whole table.
+#[rstest]
+#[case::identical_7x500k(7, 500_000, true)]
+#[case::identical_8x500k(8, 500_000, true)]
+#[case::distinct_7x500k(7, 500_000, false)]
+#[case::distinct_8x500k(8, 500_000, false)]
+#[case::distinct_3x1200k(3, 1_200_000, false)]
+#[case::distinct_4x1200k(4, 1_200_000, false)]
+#[tokio::test]
+async fn vote_update__storage_proof_boundary(
+    #[case] proposals: usize,
+    #[case] payload_bytes: usize,
+    #[case] identical: bool,
+) {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::CaitSith])
+        .build()
+        .await;
+
+    let storage_before = contract.view_account().await.unwrap().storage_usage;
+    let mut proposal_id = None;
+    let mut storage_after_first = storage_before;
+    for (index, account) in mpc_signer_accounts
+        .iter()
+        .cycle()
+        .take(proposals)
+        .enumerate()
+    {
+        let mut code = vec![0x42u8; payload_bytes];
+        if !identical {
+            code[0] = u8::try_from(index).unwrap();
+        }
+        let execution = account
+            .call_mpc(contract.id())
+            .propose_update(ProposeUpdateArgs {
+                code: Some(code),
+                config: None,
+            })
+            .await
+            .unwrap();
+        assert!(execution.is_success(), "proposal {index} failed");
+        proposal_id = Some(execution.json().unwrap());
+        if index == 0 {
+            storage_after_first = contract.view_account().await.unwrap().storage_usage;
+        }
+    }
+    let proposal_id: UpdateId = proposal_id.unwrap();
+
+    let mut outcome = "no threshold".to_string();
+    let mut deciding_gas = 0;
+    for voter in &mpc_signer_accounts {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
+            .await
+            .unwrap();
+        deciding_gas = execution.total_gas_burnt.as_tgas();
+        if !execution.is_success() {
+            outcome = format!("FAIL {:?}", execution.failures()[0].clone().into_result());
+            break;
+        }
+        if execution.json::<bool>().unwrap() {
+            outcome = "PASS".to_string();
+            break;
+        }
+    }
+
+    println!(
+        "BOUNDARY proposals={proposals} payload={payload_bytes} identical={identical} \
+         value_bytes={} bytes_times_proposals={} deciding_gas={deciding_gas}TGas outcome={outcome}",
+        storage_after_first - storage_before,
+        (storage_after_first - storage_before) * u64::try_from(proposals).unwrap(),
+    );
+}
+
+/// Number of stored proposals used by the overhead probe, matching mainnet's `v1.signer`.
+const OVERHEAD_PROBE_PROPOSALS: usize = 4;
+
+/// Runs one deciding `vote_update` against `OVERHEAD_PROBE_PROPOSALS` stored proposals of
+/// `payload_bytes` each, and reports whether the receipt stayed inside the storage proof limit.
+async fn probe_deciding_vote(payload_bytes: usize) -> bool {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_number_of_participants(15)
+        .build()
+        .await;
+
+    let mut proposal_id = None;
+    for (index, account) in mpc_signer_accounts
+        .iter()
+        .cycle()
+        .take(OVERHEAD_PROBE_PROPOSALS)
+        .enumerate()
+    {
+        let mut code = vec![0x42u8; payload_bytes];
+        code[0] = u8::try_from(index).unwrap();
+        let execution = account
+            .call_mpc(contract.id())
+            .propose_update(ProposeUpdateArgs {
+                code: Some(code),
+                config: None,
+            })
+            .await
+            .unwrap();
+        assert!(execution.is_success(), "proposal {index} failed");
+        proposal_id = Some(execution.json().unwrap());
+    }
+    let proposal_id: UpdateId = proposal_id.unwrap();
+
+    for voter in &mpc_signer_accounts {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
+            .await
+            .unwrap();
+        if !execution.is_success() {
+            let failure = format!("{:?}", execution.failures()[0].clone().into_result());
+            assert!(
+                failure.contains("recorded trie storage proof"),
+                "unexpected failure: {failure}"
+            );
+            return false;
+        }
+        if execution.json::<bool>().unwrap() {
+            return true;
+        }
+    }
+    panic!("threshold never reached");
+}
+
+/// Measures the non-value overhead the deciding `vote_update` records, by bisecting the payload
+/// size against the live `per_receipt_storage_proof_size_limit`. The stored value of a proposal is
+/// `payload + 25` bytes, so a run passes iff `proposals * (payload + 25) + overhead <= limit`.
+#[tokio::test]
+async fn vote_update__measure_storage_proof_overhead() {
+    const LIMIT: usize = 4_000_000;
+    const VALUE_OVERHEAD_BYTES: usize = 25;
+    const TOLERANCE: usize = 2048;
+
+    let mut passing = 900_000;
+    let mut failing = 1_000_000;
+    assert!(
+        probe_deciding_vote(passing).await,
+        "lower bound should pass"
+    );
+    assert!(
+        !probe_deciding_vote(failing).await,
+        "upper bound should fail"
+    );
+
+    while failing - passing > TOLERANCE {
+        let midpoint = (passing + failing) / 2;
+        if probe_deciding_vote(midpoint).await {
+            passing = midpoint;
+        } else {
+            failing = midpoint;
+        }
+        println!("PROBE passing={passing} failing={failing}");
+    }
+
+    let recorded = |payload: usize| OVERHEAD_PROBE_PROPOSALS * (payload + VALUE_OVERHEAD_BYTES);
+    println!(
+        "OVERHEAD limit={LIMIT} largest_passing_payload={passing} smallest_failing_payload={failing} \
+         overhead_lower_bound={} overhead_upper_bound={}",
+        LIMIT.saturating_sub(recorded(failing)),
+        LIMIT - recorded(passing),
+    );
+}
+
+/// Gas values that halt a `proposed_updates` probe after it has read a given number of stored
+/// entries. The host records an entry's value only once the read has been paid for, about 6.9 TGas
+/// at mainnet's proposal size, and a full iteration over one entry costs about 41 TGas, most of it
+/// hashing the code. So one entry is recorded between roughly 11 and 51 TGas, two between roughly
+/// 52 and 93 TGas.
+const PROBE_GAS_FOR_ONE_ENTRY: Gas = Gas::from_tgas(30);
+const PROBE_GAS_FOR_TWO_ENTRIES: Gas = Gas::from_tgas(70);
+/// Below the read charge for a single entry, so the probe records nothing.
+const PROBE_GAS_BELOW_THE_FIRST_READ: Gas = Gas::from_tgas(10);
+
+/// Gas the interface crate attaches to `vote_update`, and the protocol maximum.
+const CLIENT_VOTE_GAS: Gas = Gas::from_tgas(260);
+const MAX_VOTE_GAS: Gas = Gas::from_tgas(300);
+
+/// Size of each code proposal stored on mainnet `v1.signer` (`signer-3_15_0.wasm`).
+const MAINNET_PROPOSAL_PAYLOAD_BYTES: usize = 1_229_682;
+
+/// Stores `stored_proposals` copies of `payload`, casts every vote below the threshold, asserts the
+/// deciding vote fails on its own, then re-sends it behind a gas-capped `proposed_updates` probe in
+/// the same chunk and returns that outcome together with the contract.
+async fn deciding_vote_behind_probe(
+    stored_proposals: usize,
+    payload: Vec<u8>,
+    probe_gas: Gas,
+    vote_gas: Gas,
+) -> (ExecutionFinalResult, Contract) {
+    let SandboxTestSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_number_of_participants(15)
+        .build()
+        .await;
+
+    let mut proposal_id = None;
+    for account in mpc_signer_accounts.iter().cycle().take(stored_proposals) {
+        let execution = account
+            .call_mpc(contract.id())
+            .propose_update(ProposeUpdateArgs {
+                code: Some(payload.clone()),
+                config: None,
+            })
+            .await
+            .unwrap();
+        assert!(execution.is_success(), "{execution:#?}");
+        proposal_id = Some(execution.json().unwrap());
+    }
+    let proposal_id: UpdateId = proposal_id.unwrap();
+    let vote_args = VoteUpdateArgs::new(proposal_id);
+
+    let threshold = assert_running_return_threshold(&contract).await.0 as usize;
+    for voter in &mpc_signer_accounts[..threshold - 1] {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_update(proposal_id)
+            .await
+            .unwrap();
+        assert!(execution.is_success(), "{execution:#?}");
+        assert!(!execution.json::<bool>().unwrap());
+    }
+
+    let decider = &mpc_signer_accounts[threshold - 1];
+    let cold = decider
+        .call(contract.id(), method_names::VOTE_UPDATE)
+        .args_json(&vote_args)
+        .gas(vote_gas)
+        .transact()
+        .await
+        .unwrap();
+    assert!(
+        format!("{:?}", cold.failures()).contains("recorded trie storage proof"),
+        "the deciding vote is expected to fail without a probe: {cold:#?}"
+    );
+
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let probe = decider
+            .call(contract.id(), method_names::PROPOSED_UPDATES)
+            .args(b"{}".to_vec())
+            .gas(probe_gas)
+            .transact_async()
+            .await
+            .unwrap();
+        let deciding = decider
+            .call(contract.id(), method_names::VOTE_UPDATE)
+            .args_json(&vote_args)
+            .gas(vote_gas)
+            .transact_async()
+            .await
+            .unwrap();
+        let probe = probe.await.unwrap();
+        let deciding = deciding.await.unwrap();
+        let same_chunk =
+            probe.receipt_outcomes()[0].block_hash == deciding.receipt_outcomes()[0].block_hash;
+        println!(
+            "stored_proposals={stored_proposals} payload={} probe_gas={}TGas attempt={attempt} \
+             same_chunk={same_chunk} deciding_gas={}TGas storage_proof_error={}",
+            payload.len(),
+            probe_gas.as_tgas(),
+            deciding.total_gas_burnt.as_tgas(),
+            format!("{:?}", deciding.failures()).contains("recorded trie storage proof"),
+        );
+        if same_chunk {
+            return (deciding, contract);
+        }
+        assert!(
+            attempt < 5,
+            "the probe and the deciding vote never shared a chunk"
+        );
+    }
+}
+
+/// Reads the ids of the proposals the contract still stores.
+async fn stored_proposal_ids(contract: &Contract) -> Vec<UpdateId> {
+    let proposed_updates: dtos::ProposedUpdates = contract
+        .view(method_names::PROPOSED_UPDATES)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    proposed_updates.updates.into_keys().collect()
+}
+
+/// The per-receipt storage proof limit is a delta against a recorder that lives for the whole
+/// chunk, and that recorder bills a trie value once per chunk. A cheap earlier receipt in the same
+/// chunk that reads stored entries therefore takes their bytes off the deciding vote's bill, which
+/// is enough to bring mainnet's four stored proposals back under the limit without touching the
+/// contract, the account or the runtime.
+#[rstest]
+#[case::four_proposals_one_entry_probed(4, PROBE_GAS_FOR_ONE_ENTRY, CLIENT_VOTE_GAS)]
+#[case::four_proposals_two_entries_probed(4, PROBE_GAS_FOR_TWO_ENTRIES, CLIENT_VOTE_GAS)]
+#[case::five_proposals_two_entries_probed(5, PROBE_GAS_FOR_TWO_ENTRIES, MAX_VOTE_GAS)]
+#[tokio::test]
+async fn vote_update__should_apply_when_an_earlier_receipt_in_the_chunk_recorded_proposals(
+    #[case] stored_proposals: usize,
+    #[case] probe_gas: Gas,
+    #[case] vote_gas: Gas,
+) {
+    // Given / When
+    let (deciding, contract) = deciding_vote_behind_probe(
+        stored_proposals,
+        current_contract().to_vec(),
+        probe_gas,
+        vote_gas,
+    )
+    .await;
+
+    // Then
+    assert!(deciding.is_success(), "{deciding:#?}");
+    assert!(deciding.json::<bool>().unwrap());
+    assert!(stored_proposal_ids(&contract).await.is_empty());
+}
+
+/// Mainnet stores four proposals of 1,229,682 bytes each, larger than the contract this test suite
+/// builds. The payload is filler rather than wasm, so the deploy that follows the vote fails and
+/// the cleared proposals are what shows the deciding vote itself applied.
+#[tokio::test]
+async fn vote_update__should_apply_at_the_mainnet_proposal_size_when_one_entry_is_probed() {
+    // Given / When
+    let (deciding, contract) = deciding_vote_behind_probe(
+        4,
+        vec![0x42; MAINNET_PROPOSAL_PAYLOAD_BYTES],
+        PROBE_GAS_FOR_ONE_ENTRY,
+        CLIENT_VOTE_GAS,
+    )
+    .await;
+
+    // Then
+    assert!(
+        !format!("{:?}", deciding.failures()).contains("recorded trie storage proof"),
+        "{deciding:#?}"
+    );
+    assert!(stored_proposal_ids(&contract).await.is_empty());
+}
+
+/// The host records an entry's value only after charging for the read, so a probe that cannot
+/// afford one full entry read leaves the deciding vote with the whole bill.
+#[tokio::test]
+async fn vote_update__should_exceed_the_storage_proof_limit_when_the_probe_cannot_pay_for_a_read() {
+    // Given / When
+    let (deciding, contract) = deciding_vote_behind_probe(
+        4,
+        vec![0x42; MAINNET_PROPOSAL_PAYLOAD_BYTES],
+        PROBE_GAS_BELOW_THE_FIRST_READ,
+        CLIENT_VOTE_GAS,
+    )
+    .await;
+
+    // Then
+    assert!(
+        format!("{:?}", deciding.failures()).contains("recorded trie storage proof"),
+        "{deciding:#?}"
+    );
+    assert_eq!(stored_proposal_ids(&contract).await.len(), 4);
+}
+
+/// A probe only discounts the entries it actually read, so each probed entry buys exactly one
+/// stored proposal of headroom: five stored proposals need two probed entries, not one.
+#[tokio::test]
+async fn vote_update__should_exceed_the_storage_proof_limit_when_the_probe_read_too_few_entries() {
+    // Given / When
+    let (deciding, contract) = deciding_vote_behind_probe(
+        5,
+        current_contract().to_vec(),
+        PROBE_GAS_FOR_ONE_ENTRY,
+        MAX_VOTE_GAS,
+    )
+    .await;
+
+    // Then
+    assert!(
+        format!("{:?}", deciding.failures()).contains("recorded trie storage proof"),
+        "{deciding:#?}"
+    );
+    assert_eq!(stored_proposal_ids(&contract).await.len(), 5);
 }
