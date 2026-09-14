@@ -11,14 +11,14 @@ The legacy `get_supported_foreign_chains()` returned the **strict intersection**
 active participant's registered chains, and `verify_foreign_transaction` rejected any
 request whose target chain was not in it. A single node that registers an empty list
 (or hasn't registered yet) drops **every** chain — one operator can take the whole
-feature down. That is what this proposal fixes.
+feature down. That is what this design fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
 per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
 stored for a deferred quorum policy and not yet consumed: verification compares every
 configured provider, see [Verification behavior](#verification-behavior)).
 
-## Proposal: two sets of chains
+## Design: two sets of chains
 
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
 > [Foreign Chain Transaction Verification Design — Terminology](../archive/design/foreign-chain-transactions.md#terminology).
@@ -145,4 +145,6 @@ node for every chain.
 
 ## Migration
 
-Completed. Node and contract both switch to the new API since version 3.15.0
+The new API is available on both node and contract since 3.14.0. The legacy API is removed by
+[#3630](https://github.com/near/mpc/issues/3630) in the release after 3.15.0, whose contract
+migration also clears the legacy per-account storage.

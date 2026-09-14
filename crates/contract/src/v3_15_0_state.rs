@@ -30,8 +30,6 @@ use crate::{
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
 /// state written by the `3.15.0` contract still deserializes during migration.
-///
-/// `node_foreign_chain_support` is dropped by this release; the migration clears its storage.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -82,7 +80,6 @@ struct OldSupportedForeignChainsByNode {
 }
 
 impl OldSupportedForeignChainsByNode {
-    /// Frees the map's storage; nothing reads it after this release.
     fn clear_storage(mut self) {
         self.foreign_chain_support_by_node.clear();
     }

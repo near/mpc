@@ -23,6 +23,7 @@ use mpc_contract::primitives::{
     participants::Participants,
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
+use mpc_contract::storage_keys::StorageKey;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
@@ -558,6 +559,12 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     assert_eq!(configs_before.len(), PARTICIPANT_LEN);
     assert_eq!(*available_before, BTreeSet::from([chain]));
     assert!(allowed_before.contains_key(&chain));
+    let legacy_prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
+    let legacy_entries = worker
+        .view_state(contract.id())
+        .prefix(&legacy_prefix)
+        .await?;
+    assert!(!legacy_entries.is_empty());
 
     // When
     let contract = upgrade_to_new(contract).await?;
@@ -584,6 +591,14 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     assert_eq!(configs_after, configs_before);
     assert_eq!(available_after, available_before);
     assert_eq!(allowed_after, allowed_before);
+    let legacy_entries = worker
+        .view_state(contract.id())
+        .prefix(&legacy_prefix)
+        .await?;
+    assert!(
+        legacy_entries.is_empty(),
+        "legacy map storage must be reclaimed: {legacy_entries:?}"
+    );
 
     let error = contract
         .view("get_foreign_chain_support_by_node")
