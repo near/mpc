@@ -187,8 +187,7 @@ Reading: the online cost of a signature without presignatures is the network lat
 rounds instead of one, with the presign computation (about a millisecond) on top; the bytes moved
 online are the presign bytes plus the signature shares. Nothing is precomputed per signature any
 more, so the offline phase reduces to triple generation and no presignature store has to be kept
-consistent across nodes. The variant is adopted when the extra two round trips on the signing
-path are acceptable, which they are at the latencies seen between MPC nodes.
+consistent across nodes. The trade is two extra round trips on the signing path.
 
 Reproduce with:
 

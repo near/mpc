@@ -20,9 +20,17 @@ pub(crate) const OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usi
 
 /// Presigning and signing as a single protocol, consuming two triples directly.
 ///
-/// The presignature never leaves this computation, so it is not stored, not rerandomized,
-/// and cannot be reused; the key-derivation `tweak` is applied locally between the
-/// presigning rounds and the signing round. Only the coordinator obtains the signature.
+/// The presignature never leaves this computation and is never stored; the key-derivation
+/// `tweak` is applied locally between the presigning rounds and the signing round. Only the
+/// coordinator obtains the signature.
+///
+/// # Safety contract
+///
+/// A given triple pair must be passed to this function at most once, including across aborted
+/// runs: `big_r` is determined by `triple0` alone and is known to every participant once round 1
+/// completes. Unlike [`sign`](super::sign::sign), no rerandomization binds `big_r` to `msg_hash`,
+/// so a second run on the same `triple0` under a different `tweak` or `msg_hash` leaks the
+/// private key.
 ///
 /// **WARNING** You must absolutely hash an actual message before passing it to
 /// this function. Allowing the signing of arbitrary scalars *is* a security risk,
@@ -381,28 +389,5 @@ mod test {
                 OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
-    }
-
-    #[test]
-    fn with_tweak__should_leave_presignature_unchanged_for_zero_tweak() {
-        // Given
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let setup = Setup::new(3, 2, &mut rng);
-        let presignature = run_presign(
-            setup.key_packages.clone(),
-            setup.triple0.1.clone(),
-            setup.triple1.1.clone(),
-            &setup.triple0.0,
-            &setup.triple1.0,
-            setup.threshold.into(),
-        )
-        .remove(0)
-        .1;
-
-        // When
-        let tweaked = presignature.with_tweak(&Tweak::new(Scalar::ZERO));
-
-        // Then
-        assert_eq!(tweaked, presignature);
     }
 }

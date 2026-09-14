@@ -69,7 +69,7 @@ impl PresignOutput {
     ///
     /// Only sound when the presignature is consumed by the computation that produced it; a
     /// stored one must go through [`RerandomizedPresignOutput::rerandomize_presign`].
-    pub fn with_tweak(&self, tweak: &Tweak) -> Self {
+    pub(crate) fn with_tweak(&self, tweak: &Tweak) -> Self {
         Self {
             big_r: self.big_r,
             k: self.k,
@@ -354,6 +354,7 @@ pub(crate) async fn presign_rounds(
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
     use super::*;
     use crate::{
@@ -475,5 +476,26 @@ mod test {
             },
             |_| OT_ECDSA_PRESIGN_MAX_INCOMING_BUFFER_ENTRIES,
         );
+    }
+
+    #[test]
+    fn with_tweak__should_shift_sigma_by_tweak_times_k() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let k = frost_core::random_nonzero::<Secp256, _>(&mut rng);
+        let presignature = PresignOutput {
+            big_r: (ProjectivePoint::GENERATOR * k.invert().unwrap()).into(),
+            k,
+            sigma: frost_core::random_nonzero::<Secp256, _>(&mut rng),
+        };
+        let tweak = Tweak::new(frost_core::random_nonzero::<Secp256, _>(&mut rng));
+
+        // When
+        let tweaked = presignature.with_tweak(&tweak);
+
+        // Then
+        assert_eq!(tweaked.big_r, presignature.big_r);
+        assert_eq!(tweaked.k, presignature.k);
+        assert_eq!(tweaked.sigma - presignature.sigma, tweak.value() * k);
     }
 }

@@ -183,7 +183,6 @@ fn compute_signature_share(
     Ok(msg_hash * k_i + r * sigma_i)
 }
 
-/// Wraps the coordinator and the participant into a single functions to be called
 async fn fut_wrapper(
     mut chan: SharedChannel,
     participants: ParticipantList,
