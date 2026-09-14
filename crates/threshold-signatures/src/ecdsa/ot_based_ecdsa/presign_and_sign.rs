@@ -10,11 +10,11 @@ use crate::protocol::{
     internal::{Comms, SharedChannel, make_protocol},
 };
 
-/// Maximum incoming buffer entries for the coordinator: the two presigning waitpoints plus
-/// the signature-share waitpoint.
+/// Maximum incoming buffer entries for the coordinator: the two waitpoints before signing
+/// plus the signature-share waitpoint.
 pub(crate) const OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 3;
-/// Maximum incoming buffer entries for non-coordinator participants: the two presigning
-/// waitpoints.
+/// Maximum incoming buffer entries for non-coordinator participants: the two waitpoints
+/// before signing.
 #[cfg(test)]
 pub(crate) const OT_ECDSA_PRESIGN_AND_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 2;
 

@@ -65,12 +65,10 @@ impl PartialEq for PresignOutput {
 impl Eq for PresignOutput {}
 
 impl PresignOutput {
-    /// The same presignature for the key derived with `tweak`: `sigma' = sigma + tweak * k`,
-    /// since `sigma` shares `k * x` and the derived key is `x + tweak`.
+    /// The same presignature under the key derived with `tweak`: `sigma' = sigma + tweak * k`.
     ///
-    /// Only sound when the presignature is consumed by the computation that produced it, as in
-    /// [`presign_and_sign`](super::presign_and_sign::presign_and_sign); a stored presignature
-    /// must go through [`RerandomizedPresignOutput::rerandomize_presign`] instead.
+    /// Only sound when the presignature is consumed by the computation that produced it; a
+    /// stored one must go through [`RerandomizedPresignOutput::rerandomize_presign`].
     pub fn with_tweak(&self, tweak: &Tweak) -> Self {
         Self {
             big_r: self.big_r,

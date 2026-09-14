@@ -84,8 +84,6 @@ where
     Ok(make_protocol(ctx, fut))
 }
 
-/// The signing round, run on a caller-owned channel so that it can follow other rounds on
-/// the same channel.
 pub(crate) async fn sign_round(
     chan: &mut SharedChannel,
     participants: &ParticipantList,
