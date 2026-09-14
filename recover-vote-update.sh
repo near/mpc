@@ -21,7 +21,6 @@
 set -euo pipefail
 
 SIGNER=${SIGNER:?set SIGNER to the account casting the deciding vote}
-KEY_FILE=${KEY_FILE:-$HOME/.near-credentials/mainnet/$SIGNER.json}
 CONTRACT=${CONTRACT:-v1.signer}
 NETWORK=${NETWORK:-mainnet}
 RPC=${RPC:-https://rpc.mainnet.fastnear.com}
@@ -36,7 +35,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # Nonce and a recent block from one query, so both transactions share the block hash.
-public_key=$(jq -r .public_key "$KEY_FILE")
+public_key="ed25519:2kriEWiWbGTPdShjBuiVStURJQNHAzHXERpDDtJ9Z8bD"
 access_key=$(curl -sS "$RPC" -H 'content-type: application/json' -d '{
   "jsonrpc": "2.0", "id": "1", "method": "query",
   "params": {"request_type": "view_access_key", "finality": "final",
