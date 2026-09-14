@@ -51,7 +51,7 @@ sign() { # method json-args tgas nonce output-file
   near --quiet --offline contract call-function as-transaction "$CONTRACT" "$1" json-args "$2" \
     prepaid-gas "$3 Tgas" attached-deposit '0 NEAR' \
     sign-as "$SIGNER" network-config "$NETWORK" \
-    sign-with-access-key-file "$KEY_FILE" \
+    sign-with-keychain \
     --nonce "$4" --block-hash "$block_hash" --block-height "$block_height" \
     save-to-file "$5" >/dev/null 2>&1
 }
