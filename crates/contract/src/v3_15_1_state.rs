@@ -7,6 +7,8 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::{
@@ -22,10 +24,54 @@ use crate::{
     config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
     node_migrations::NodeMigrations,
+    primitives::{key_state::AuthenticatedParticipantId, votes::Votes},
     state::ProtocolContractState,
-    tee::{tee_state::TeeState, verifier_votes::TeeVerifierVotes},
+    storage_keys::StorageKey,
+    tee::{
+        measurements::{AllowedMeasurements, MeasurementVotes},
+        proposal::{
+            AllowedLauncherImages, LauncherHashVotes, NodeImageHash, StoredDockerImageHashes,
+        },
+        tee_state::{NodeAttestation, TeeState},
+        verifier_votes::TeeVerifierVotes,
+    },
     update::ProposedUpdates,
 };
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldCodeHashesVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, NodeImageHash>,
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct OldTeeState {
+    allowed_docker_image_hashes: StoredDockerImageHashes,
+    allowed_launcher_images: AllowedLauncherImages,
+    votes: OldCodeHashesVotes,
+    launcher_votes: LauncherHashVotes,
+    stored_attestations: IterableMap<dtos::Ed25519PublicKey, NodeAttestation>,
+    allowed_measurements: AllowedMeasurements,
+    measurement_votes: MeasurementVotes,
+}
+
+impl From<OldTeeState> for TeeState {
+    fn from(old: OldTeeState) -> Self {
+        // Pending code-hash votes are dropped. We don't need to optimize for this and it's not
+        // worth the review & testing effort.
+        TeeState {
+            allowed_docker_image_hashes: old.allowed_docker_image_hashes,
+            allowed_launcher_images: old.allowed_launcher_images,
+            votes: Votes::new(
+                StorageKey::CodeHashVotesByVoter,
+                StorageKey::CodeHashVotesByProposal,
+            ),
+            launcher_votes: old.launcher_votes,
+            stored_attestations: old.stored_attestations,
+            allowed_measurements: old.allowed_measurements,
+            measurement_votes: old.measurement_votes,
+        }
+    }
+}
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
@@ -39,7 +85,7 @@ pub struct MpcContract {
     proposed_updates: ProposedUpdates,
     node_foreign_chain_support: OldSupportedForeignChainsByNode,
     config: Config,
-    tee_state: TeeState,
+    tee_state: OldTeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
     foreign_chains: Lazy<ForeignChainsMetadata>,
@@ -62,7 +108,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             proposed_updates: old.proposed_updates,
             config: old.config,
-            tee_state: old.tee_state,
+            tee_state: old.tee_state.into(),
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,

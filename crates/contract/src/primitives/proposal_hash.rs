@@ -7,13 +7,19 @@
 //!     type Serializer = Borsh;
 //!     type Hasher = Sha256;
 //! }
+//!
+//! // A proposal that already is a 32-byte digest identifies itself.
+//! impl ToProposalHash for MyDigest {
+//!     type Serializer = Identity;
+//!     type Hasher = Identity;
+//! }
 //! ```
 //!
 //! New encodings (e.g. JSON) join as further strategy types.
 
 use borsh::BorshSerialize;
 
-pub(crate) use mpc_primitives::hash::ProposalHash;
+pub(crate) use mpc_primitives::hash::{PROPOSAL_HASH_BYTES, ProposalHash};
 
 pub(crate) trait SerializeProposal<T> {
     fn serialize(value: &T) -> Vec<u8>;
@@ -39,6 +45,24 @@ impl HashProposal for Sha256 {
     }
 }
 
+pub(crate) struct Identity;
+
+impl<T: AsRef<[u8; PROPOSAL_HASH_BYTES]>> SerializeProposal<T> for Identity {
+    fn serialize(value: &T) -> Vec<u8> {
+        value.as_ref().to_vec()
+    }
+}
+
+impl HashProposal for Identity {
+    fn hash(bytes: &[u8]) -> ProposalHash {
+        ProposalHash::new(
+            bytes
+                .try_into()
+                .unwrap_or_else(|_| panic!("identity digest must be {PROPOSAL_HASH_BYTES} bytes")),
+        )
+    }
+}
+
 pub(crate) trait ToProposalHash: Sized {
     type Serializer: SerializeProposal<Self>;
     type Hasher: HashProposal;
@@ -50,8 +74,21 @@ pub(crate) trait ToProposalHash: Sized {
 
 #[cfg(test)]
 mod tests {
-    use super::{Borsh, Sha256, ToProposalHash};
+    use super::{Borsh, Identity, PROPOSAL_HASH_BYTES, Sha256, ToProposalHash};
     use borsh::BorshSerialize;
+
+    struct TestDigest([u8; PROPOSAL_HASH_BYTES]);
+
+    impl AsRef<[u8; PROPOSAL_HASH_BYTES]> for TestDigest {
+        fn as_ref(&self) -> &[u8; PROPOSAL_HASH_BYTES] {
+            &self.0
+        }
+    }
+
+    impl ToProposalHash for TestDigest {
+        type Serializer = Identity;
+        type Hasher = Identity;
+    }
 
     #[derive(BorshSerialize)]
     struct TestProposal(u64);
@@ -77,5 +114,18 @@ mod tests {
                 .parse()
                 .unwrap()
         );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn to_proposal_hash__should_pass_an_identity_digest_through_unhashed() {
+        // Given
+        let digest = TestDigest([0xAB; PROPOSAL_HASH_BYTES]);
+
+        // When
+        let hash = digest.to_proposal_hash();
+
+        // Then
+        assert_eq!(hash, [0xAB; PROPOSAL_HASH_BYTES].into());
     }
 }
