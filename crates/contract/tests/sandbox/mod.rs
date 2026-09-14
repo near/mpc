@@ -4,6 +4,7 @@ pub mod foreign_chain_configuration;
 pub mod foreign_chain_request;
 pub mod participants_gas;
 pub mod sign;
+pub mod storage_proof_limit_upgrade;
 pub mod tee;
 pub mod tee_cleanup_after_resharing;
 pub mod tee_verifier;
