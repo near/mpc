@@ -4,18 +4,22 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 
 use self::stats::IndexerStats;
 use anyhow::Context;
-use handler::ChainBlockUpdate;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
+#[cfg(feature = "embedded-node")]
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
+#[cfg(feature = "embedded-node")]
 use near_client::{RpcHandlerActor, Status, ViewClientActor, client_actor::ClientActor};
-use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer_primitives::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
     types::{BlockHeight, BlockReference, Finality},
-    views::{BlockView, QueryRequest, QueryResponseKind},
+    views::{BlockView, QueryRequest, QueryResponse, QueryResponseKind},
 };
+use near_jsonrpc_node::types::query::RpcQueryRequest;
+use near_kit::rpc::RpcClient;
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
@@ -26,15 +30,17 @@ use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use tokio::sync::{
-    Mutex, {mpsc, watch},
-};
+use tokio::sync::{Mutex, watch};
 use types::ChainSendTransactionRequest;
+use updates::BlockUpdateReceiver;
 
+#[cfg(feature = "embedded-node")]
 pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
+pub mod http;
 pub mod migrations;
+#[cfg(feature = "embedded-node")]
 pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
@@ -43,6 +49,7 @@ pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
+pub mod updates;
 
 #[cfg(test)]
 pub mod fake;
@@ -63,6 +70,7 @@ pub(crate) struct IndexerState {
 }
 
 impl IndexerState {
+    #[cfg(feature = "embedded-node")]
     pub fn new(
         view_client: MultithreadRuntimeHandle<ViewClientActor>,
         client: TokioRuntimeHandle<ClientActor>,
@@ -70,9 +78,20 @@ impl IndexerState {
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            view_client: IndexerViewClient { view_client },
-            client: IndexerClient { client },
-            rpc_handler: IndexerRpcHandler { rpc_handler },
+            view_client: IndexerViewClient::Embedded(view_client),
+            client: IndexerClient::Embedded(client),
+            rpc_handler: IndexerRpcHandler::Embedded(rpc_handler),
+            mpc_contract_id,
+            stats: Arc::new(Mutex::new(IndexerStats::new())),
+        }
+    }
+
+    fn from_http(url: &str, mpc_contract_id: AccountId) -> Self {
+        let rpc = Arc::new(RpcClient::new(url));
+        Self {
+            view_client: IndexerViewClient::Http(Arc::clone(&rpc)),
+            client: IndexerClient::Http(Arc::clone(&rpc)),
+            rpc_handler: IndexerRpcHandler::Http(rpc),
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
@@ -80,8 +99,10 @@ impl IndexerState {
 }
 
 #[derive(Clone)]
-pub(crate) struct IndexerViewClient {
-    view_client: MultithreadRuntimeHandle<ViewClientActor>,
+pub(crate) enum IndexerViewClient {
+    #[cfg(feature = "embedded-node")]
+    Embedded(MultithreadRuntimeHandle<ViewClientActor>),
+    Http(Arc<RpcClient>),
 }
 
 // TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
@@ -94,6 +115,19 @@ pub(crate) struct IndexerViewClient {
 // This pattern repeats for all the methods.
 // TODO(#1956): There is a lot of duplicate code here that could be simplified
 impl IndexerViewClient {
+    async fn query(&self, query: RpcQueryRequest) -> anyhow::Result<QueryResponse> {
+        match self {
+            #[cfg(feature = "embedded-node")]
+            Self::Embedded(view_client) => Ok(view_client
+                .send_async(near_client::Query {
+                    block_reference: query.block_reference,
+                    request: query.request,
+                })
+                .await??),
+            Self::Http(rpc) => http::query(rpc, query).await,
+        }
+    }
+
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
@@ -112,16 +146,15 @@ impl IndexerViewClient {
         };
         let block_reference = BlockReference::Finality(Finality::Final);
 
-        let query = near_client::Query {
+        let query = RpcQueryRequest {
             block_reference,
             request,
         };
 
         let query_response = self
-            .view_client
-            .send_async(query)
+            .query(query)
             .await
-            .context("failed to query for pending request")??;
+            .context("failed to query for pending request")?;
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => {
@@ -152,16 +185,15 @@ impl IndexerViewClient {
         };
         let block_reference = BlockReference::Finality(Finality::Final);
 
-        let query = near_client::Query {
+        let query = RpcQueryRequest {
             block_reference,
             request,
         };
 
         let query_response = self
-            .view_client
-            .send_async(query)
+            .query(query)
             .await
-            .context("failed to query for pending CKD request")??;
+            .context("failed to query for pending CKD request")?;
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => {
@@ -193,16 +225,15 @@ impl IndexerViewClient {
         };
         let block_reference = BlockReference::Finality(Finality::Final);
 
-        let query = near_client::Query {
+        let query = RpcQueryRequest {
             block_reference,
             request,
         };
 
         let query_response = self
-            .view_client
-            .send_async(query)
+            .query(query)
             .await
-            .context("failed to query for pending verify foreign tx request")??;
+            .context("failed to query for pending verify foreign tx request")?;
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => {
@@ -233,16 +264,15 @@ impl IndexerViewClient {
         };
         let block_reference = BlockReference::Finality(Finality::Final);
 
-        let query = near_client::Query {
+        let query = RpcQueryRequest {
             block_reference,
             request,
         };
 
         let query_response = self
-            .view_client
-            .send_async(query)
+            .query(query)
             .await
-            .context("failed to query for pending request")??;
+            .context("failed to query for pending request")?;
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
@@ -280,12 +310,12 @@ impl IndexerViewClient {
             method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
             args: vec![].into(),
         };
-        let query = near_client::Query {
+        let query = RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
             request,
         };
 
-        let response = self.view_client.send_async(query).await??;
+        let response = self.query(query).await?;
 
         match response.kind {
             QueryResponseKind::CallResult(result) => {
@@ -296,11 +326,19 @@ impl IndexerViewClient {
     }
 
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
-        let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
-        self.view_client
-            .send_async(block_query)
-            .await?
-            .context("failed to get query for final block")
+        match self {
+            #[cfg(feature = "embedded-node")]
+            Self::Embedded(view_client) => {
+                let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
+                view_client
+                    .send_async(block_query)
+                    .await?
+                    .context("failed to get query for final block")
+            }
+            Self::Http(rpc) => Ok(rpc
+                .call("block", serde_json::json!({"finality": "final"}))
+                .await?),
+        }
     }
 
     pub(crate) async fn get_mpc_contract_state_dto(
@@ -349,12 +387,12 @@ impl IndexerViewClient {
             args: vec![].into(),
         };
 
-        let query = near_client::Query {
+        let query = RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
             request,
         };
 
-        let response = self.view_client.send_async(query).await??;
+        let response = self.query(query).await?;
 
         match response.kind {
             QueryResponseKind::CallResult(result) => Ok((
@@ -425,8 +463,10 @@ impl ReadAttestationExpiry for RealAttestationExpiryReader {
 }
 
 #[derive(Clone)]
-struct IndexerClient {
-    client: TokioRuntimeHandle<ClientActor>,
+enum IndexerClient {
+    #[cfg(feature = "embedded-node")]
+    Embedded(TokioRuntimeHandle<ClientActor>),
+    Http(Arc<RpcClient>),
 }
 
 const INTERVAL: Duration = Duration::from_millis(500);
@@ -438,23 +478,30 @@ impl IndexerClient {
     /// Polls sync status, yielding `(syncing, head_height)`, or `None` on a
     /// failed request.
     async fn sync_info(&self) -> Option<(bool, BlockHeight)> {
-        let status_request = Status {
-            is_health_check: false,
-            detailed: false,
-        };
-        let Ok(Ok(status)) = self
-            .client
-            .send_async(
-                near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
-            )
-            .await
-        else {
-            return None;
-        };
-        Some((
-            status.sync_info.syncing,
-            status.sync_info.latest_block_height,
-        ))
+        match self {
+            #[cfg(feature = "embedded-node")]
+            Self::Embedded(client) => {
+                let status_request = Status {
+                    is_health_check: false,
+                    detailed: false,
+                };
+                let Ok(Ok(status)) = client
+                    .send_async(
+                        near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(
+                            status_request,
+                        ),
+                    )
+                    .await
+                else {
+                    return None;
+                };
+                Some((
+                    status.sync_info.syncing,
+                    status.sync_info.latest_block_height,
+                ))
+            }
+            Self::Http(rpc) => http::sync_info(rpc).await.ok(),
+        }
     }
 
     /// Returns once neard clears its `syncing` flag.
@@ -510,27 +557,67 @@ impl SyncProgress {
 }
 
 // #[derive(Debug)]
-struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
+enum IndexerRpcHandler {
+    #[cfg(feature = "embedded-node")]
+    Embedded(MultithreadRuntimeHandle<RpcHandlerActor>),
+    Http(Arc<RpcClient>),
+}
+
+/// What submission established; HTTP queueing is weaker than actor routing.
+#[derive(Clone, Copy, Debug)]
+enum SubmissionAck {
+    #[cfg(any(feature = "embedded-node", test))]
+    Routed,
+    Queued,
+    Unknown,
+}
+
+impl SubmissionAck {
+    fn is_http(self) -> bool {
+        matches!(self, Self::Queued | Self::Unknown)
+    }
+}
+
+#[derive(Deserialize)]
+struct HttpSubmissionResponse {
+    // Require a valid status field rather than accepting a malformed success body.
+    #[serde(rename = "final_execution_status")]
+    _status: near_kit::rpc::TxExecutionStatus,
 }
 
 impl IndexerRpcHandler {
-    /// Creates, signs, and submits a function call with the given method and serialized arguments.
-    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
-        let response = self
-            .rpc_handler
-            .send_async(near_client::ProcessTxRequest {
-                transaction,
-                is_forwarded: false,
-                check_only: false,
-            })
-            .await?;
-
-        match response {
-            // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => Ok(()),
-            _ => {
-                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
+    /// Submits an already signed transaction without changing its bytes.
+    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<SubmissionAck> {
+        match self {
+            Self::Http(rpc) => {
+                let encoded = STANDARD.encode(borsh::to_vec(&transaction)?);
+                let response = rpc
+                    .call::<_, HttpSubmissionResponse>(
+                        "send_tx",
+                        serde_json::json!({"signed_tx_base64": encoded, "wait_until": "NONE"}),
+                    )
+                    .await;
+                Ok(match response {
+                    Ok(_) => SubmissionAck::Queued,
+                    Err(error) => {
+                        tracing::warn!(%error, tx_hash = %transaction.get_hash(), "HTTP submission acknowledgement unknown");
+                        SubmissionAck::Unknown
+                    }
+                })
+            }
+            #[cfg(feature = "embedded-node")]
+            Self::Embedded(rpc_handler) => {
+                let response = rpc_handler
+                    .send_async(near_client::ProcessTxRequest {
+                        transaction,
+                        is_forwarded: false,
+                        check_only: false,
+                    })
+                    .await?;
+                match response {
+                    near_client::ProcessTxResponse::RequestRouted => Ok(SubmissionAck::Routed),
+                    other => anyhow::bail!("unexpected ProcessTxResponse: {other:?}"),
+                }
             }
         }
     }
@@ -548,9 +635,9 @@ pub struct IndexerAPI<TransactionSender> {
     /// change over time (specifically, when we transition from the Running
     /// state to a Resharing state to the Running state again, two different
     /// tasks would successively "own" the receiver).
-    /// We do not want to re-create the channel, because while resharing is
-    /// happening we want to buffer the signature requests.
-    pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
+    /// HTTP consumers rebuild their queues from retained chain history when
+    /// ownership changes; embedded consumers retain the buffered channel.
+    pub block_update_receiver: Arc<tokio::sync::Mutex<BlockUpdateReceiver>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
     /// Watcher that keeps track of [`dtos::AllowedMpcDockerImageHash`]es on the contract
@@ -740,5 +827,150 @@ mod tests {
 
         // Then
         assert_matches!(result, Err(_));
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod http_transaction_tests {
+    use super::{IndexerRpcHandler, STANDARD, SubmissionAck};
+    use crate::indexer::tx_signer::TransactionSigner;
+    use assert_matches::assert_matches;
+    use base64::Engine;
+    use ed25519_dalek::SigningKey;
+    use near_indexer_primitives::types::Gas;
+    use near_kit::rpc::{
+        BoxFuture, RetryConfig, RpcClient, RpcError, RpcTransport, TransportResponse,
+    };
+    use serde_json::{Value, json};
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+
+    struct RecordingTransport {
+        requests: Mutex<Vec<Value>>,
+        responses: Mutex<VecDeque<Result<TransportResponse, RpcError>>>,
+    }
+
+    impl RpcTransport for RecordingTransport {
+        fn post_json(
+            &self,
+            _url: &str,
+            body: Vec<u8>,
+        ) -> BoxFuture<'_, Result<TransportResponse, RpcError>> {
+            Box::pin(async move {
+                self.requests
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::from_slice(&body).unwrap());
+                self.responses.lock().unwrap().pop_front().unwrap()
+            })
+        }
+    }
+
+    fn response(body: Value) -> TransportResponse {
+        TransportResponse {
+            status: 200,
+            body: serde_json::to_vec(&body).unwrap(),
+        }
+    }
+
+    async fn submit_with_responses(
+        responses: Vec<Result<TransportResponse, RpcError>>,
+    ) -> (SubmissionAck, Vec<Value>, String) {
+        let signer = TransactionSigner::from_key(
+            "sender.bench".parse().unwrap(),
+            SigningKey::from_bytes(&[7; 32]),
+        );
+        let transaction = signer.create_and_sign_function_call_tx(
+            "mpc.bench".parse().unwrap(),
+            "respond".into(),
+            b"{}".to_vec(),
+            Gas::from_gas(30_000_000_000_000),
+            Default::default(),
+            100,
+        );
+        let expected = STANDARD.encode(borsh::to_vec(&transaction).unwrap());
+        let transport = Arc::new(RecordingTransport {
+            requests: Mutex::new(vec![]),
+            responses: Mutex::new(responses.into()),
+        });
+        let rpc = RpcClient::with_transport_and_retry_config(
+            "http://fixture.invalid",
+            transport.clone(),
+            RetryConfig {
+                max_retries: 1,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+            },
+        );
+        let ack = IndexerRpcHandler::Http(Arc::new(rpc))
+            .submit_tx(transaction)
+            .await
+            .unwrap();
+        let requests = transport.requests.lock().unwrap().clone();
+        (ack, requests, expected)
+    }
+
+    #[tokio::test]
+    async fn http_submit__should_retry_identical_signed_bytes_and_report_only_queued() {
+        // Given: a response is lost after dispatch, then the identical request is acknowledged.
+        let responses = vec![
+            Err(RpcError::network("response lost", None, true)),
+            Ok(response(
+                json!({"jsonrpc":"2.0", "id":1, "result":{"final_execution_status":"NONE"}}),
+            )),
+        ];
+
+        // When
+        let (ack, requests, expected) = submit_with_responses(responses).await;
+
+        // Then
+        assert_matches!(ack, SubmissionAck::Queued);
+        assert_eq!(requests.len(), 2);
+        for request in requests {
+            assert_eq!(request["method"], "send_tx");
+            assert_eq!(
+                request["params"],
+                json!({"signed_tx_base64":expected, "wait_until":"NONE"})
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn http_submit__should_keep_malformed_success_unknown() {
+        // Given
+        let responses = vec![Ok(response(json!({"jsonrpc":"2.0", "id":1, "result":{}})))];
+
+        // When
+        let (ack, requests, expected) = submit_with_responses(responses).await;
+
+        // Then
+        assert_matches!(ack, SubmissionAck::Unknown);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["params"]["signed_tx_base64"], expected);
+    }
+
+    #[tokio::test]
+    async fn http_submit__should_keep_final_rejection_after_lost_response_unknown() {
+        // Given: a first attempt may have landed; a rejection of the retry cannot disprove that.
+        let responses = vec![
+            Err(RpcError::network("response lost", None, true)),
+            Ok(response(json!({"jsonrpc":"2.0", "id":1, "error": {
+                "name":"HANDLER_ERROR", "cause":{"name":"INVALID_TRANSACTION", "info":{}},
+                "code":-32000, "message":"server error", "data":{"TxExecutionError":{"InvalidTxError":{"InvalidNonce":{"tx_nonce":6,"ak_nonce":20}}}}
+            }}))),
+        ];
+
+        // When
+        let (ack, requests, expected) = submit_with_responses(responses).await;
+
+        // Then
+        assert_matches!(ack, SubmissionAck::Unknown);
+        assert_eq!(requests.len(), 2);
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["params"]["signed_tx_base64"] == expected)
+        );
     }
 }

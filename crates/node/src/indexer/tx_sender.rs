@@ -1,6 +1,6 @@
 use super::ChainSendTransactionRequest::{self, *};
-use super::IndexerState;
 use super::tx_signer::{TransactionSigner, TransactionSigners};
+use super::{IndexerState, SubmissionAck};
 use crate::config::RespondConfig;
 use crate::metrics;
 use crate::tee::attestation_freshness_metrics::{
@@ -151,7 +151,7 @@ async fn submit_tx(
     method: String,
     params_ser: String,
     gas: Gas,
-) -> anyhow::Result<SubmittedTxMetadata> {
+) -> anyhow::Result<(SubmittedTxMetadata, SubmissionAck)> {
     let block = indexer_state.view_client.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
@@ -174,14 +174,17 @@ async fn submit_tx(
         nonce,
     );
 
-    indexer_state.rpc_handler.submit_tx(transaction).await?;
+    let acknowledgement = indexer_state.rpc_handler.submit_tx(transaction).await?;
 
-    Ok(SubmittedTxMetadata {
-        tx_hash,
-        nonce,
-        signature,
-        block_height: block.header.height,
-    })
+    Ok((
+        SubmittedTxMetadata {
+            tx_hash,
+            nonce,
+            signature,
+            block_height: block.header.height,
+        },
+        acknowledgement,
+    ))
 }
 
 fn attestation_expiry_changed(pre_submit_expiry: Option<u64>, stored_expiry: u64) -> bool {
@@ -359,8 +362,8 @@ async fn ensure_send_transaction(
     // debug page reflects when the transaction was actually routed.
     let submitted_at = Clock::real().now_utc();
 
-    let metadata = match submitted_metadata {
-        Ok(metadata) => metadata,
+    let (metadata, acknowledgement) = match submitted_metadata {
+        Ok(submission) => submission,
         Err(err) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                 .with_label_values(&[method, "local_error"])
@@ -377,7 +380,9 @@ async fn ensure_send_transaction(
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
+    let transaction_status = observe_tx_result(indexer_state.clone(), &request)
+        .await
+        .map(|observed| after_submission(acknowledgement, observed));
 
     let (outcome_label, recorded_status) = match &transaction_status {
         Ok(TransactionStatus::Executed) => ("succeeded", SubmittedTransactionStatus::Executed),
@@ -400,12 +405,52 @@ async fn ensure_send_transaction(
     )
 }
 
+// HTTP queueing or a missing acknowledgement cannot establish non-execution.
+// Preserve the existing effect check, but keep an unobserved HTTP attempt unknown.
+fn after_submission(
+    acknowledgement: SubmissionAck,
+    observed: TransactionStatus,
+) -> TransactionStatus {
+    if acknowledgement.is_http() && !matches!(observed, TransactionStatus::Executed) {
+        TransactionStatus::Unknown
+    } else {
+        observed
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        Attestation, VerifiedAttestation, attestation_expiry_changed, submitted_attestation_landed,
+        Attestation, SubmissionAck, TransactionStatus, VerifiedAttestation, after_submission,
+        attestation_expiry_changed, submitted_attestation_landed,
     };
+    use assert_matches::assert_matches;
     use near_mpc_contract_interface::types::MockAttestation;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn http_submission__should_keep_unobserved_effect_unknown() {
+        // Given
+        let acknowledgements = [SubmissionAck::Queued, SubmissionAck::Unknown];
+
+        // When
+        let statuses = acknowledgements.map(|acknowledgement| {
+            [
+                after_submission(acknowledgement, TransactionStatus::NotExecuted),
+                after_submission(acknowledgement, TransactionStatus::Unknown),
+                after_submission(acknowledgement, TransactionStatus::Executed),
+            ]
+        });
+        let routed = after_submission(SubmissionAck::Routed, TransactionStatus::NotExecuted);
+
+        // Then
+        for [not_observed, uncertain, executed] in statuses {
+            assert_matches!(not_observed, TransactionStatus::Unknown);
+            assert_matches!(uncertain, TransactionStatus::Unknown);
+            assert_matches!(executed, TransactionStatus::Executed);
+        }
+        assert_matches!(routed, TransactionStatus::NotExecuted);
+    }
 
     #[test]
     #[expect(non_snake_case)]

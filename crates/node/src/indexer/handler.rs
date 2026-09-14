@@ -1,10 +1,15 @@
+#[cfg(feature = "embedded-node")]
+use super::updates::ChainBatch;
+#[cfg(feature = "embedded-node")]
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
+#[cfg(feature = "embedded-node")]
 use anyhow::Context;
 use chain_gateway::event_subscriber::block_events::BlockContext;
+#[cfg(feature = "embedded-node")]
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
@@ -25,7 +30,9 @@ use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
 use near_mpc_crypto_types::ckd::CKDRequest;
 use near_mpc_crypto_types::sign::SignRequestArgs;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "embedded-node")]
 use std::sync::Arc;
+#[cfg(feature = "embedded-node")]
 use tokio::sync::{Mutex, mpsc};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -91,13 +98,13 @@ pub struct ChainBlockUpdate {
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
 }
 
-#[cfg(feature = "network-hardship-simulation")]
+#[cfg(all(feature = "embedded-node", feature = "network-hardship-simulation"))]
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
-    block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    block_update_sender: mpsc::UnboundedSender<ChainBatch>,
     mut process_blocks_receiver: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
@@ -120,13 +127,16 @@ pub(crate) async fn listen_blocks(
     Ok(())
 }
 
-#[cfg(not(feature = "network-hardship-simulation"))]
+#[cfg(all(
+    feature = "embedded-node",
+    not(feature = "network-hardship-simulation")
+))]
 pub(crate) async fn listen_blocks(
     stream: tokio::sync::mpsc::Receiver<near_indexer_primitives::StreamerMessage>,
     concurrency: std::num::NonZeroU16,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: AccountId,
-    block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    block_update_sender: mpsc::UnboundedSender<ChainBatch>,
 ) -> anyhow::Result<()> {
     let mut handle_messages = tokio_stream::wrappers::ReceiverStream::new(stream)
         .map(|streamer_message| {
@@ -146,17 +156,34 @@ pub(crate) async fn listen_blocks(
     Ok(())
 }
 
+#[cfg(feature = "embedded-node")]
 async fn handle_message(
     streamer_message: near_indexer_primitives::StreamerMessage,
     stats: Arc<Mutex<IndexerStats>>,
     mpc_contract_id: &AccountId,
-    block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
+    block_update_sender: mpsc::UnboundedSender<ChainBatch>,
 ) -> anyhow::Result<()> {
     let block_height = streamer_message.block.header.height;
     let mut stats_lock = stats.lock().await;
     stats_lock.block_heights_processing.insert(block_height);
     drop(stats_lock);
 
+    let update = extract_message(streamer_message, mpc_contract_id);
+    block_update_sender
+        .send(update.into())
+        .context("block update consumer closed")?;
+    let mut stats_lock = stats.lock().await;
+    stats_lock.block_heights_processing.remove(&block_height);
+    stats_lock.blocks_processed_count += 1;
+    stats_lock.last_processed_block_height = block_height;
+    Ok(())
+}
+
+pub(super) fn extract_message(
+    streamer_message: near_indexer_primitives::StreamerMessage,
+    mpc_contract_id: &AccountId,
+) -> ChainBlockUpdate {
+    let block_height = streamer_message.block.header.height;
     let mut signature_requests = vec![];
     let mut completed_signatures = vec![];
     let mut ckd_requests = vec![];
@@ -252,34 +279,22 @@ async fn handle_message(
             .unwrap_or(i64::MAX),
     );
 
-    block_update_sender
-        .send(ChainBlockUpdate {
-            block: BlockContext {
-                hash: streamer_message.block.header.hash,
-                height: streamer_message.block.header.height.into(),
-                prev_hash: streamer_message.block.header.prev_hash,
-                last_final_block: streamer_message.block.header.last_final_block,
-                entropy: streamer_message.block.header.random_value.into(),
-                timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
-            },
-            signature_requests,
-            completed_signatures,
-            ckd_requests,
-            completed_ckds,
-            verify_foreign_tx_requests,
-            completed_verify_foreign_txs,
-        })
-        .inspect_err(|err| {
-            tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
-        })
-        .context("Channel is closed. Could not send block update from indexer to the update.")?;
-
-    let mut stats_lock = stats.lock().await;
-    stats_lock.block_heights_processing.remove(&block_height);
-    stats_lock.blocks_processed_count += 1;
-    stats_lock.last_processed_block_height = block_height;
-    drop(stats_lock);
-    Ok(())
+    ChainBlockUpdate {
+        block: BlockContext {
+            hash: streamer_message.block.header.hash,
+            height: streamer_message.block.header.height.into(),
+            prev_hash: streamer_message.block.header.prev_hash,
+            last_final_block: streamer_message.block.header.last_final_block,
+            entropy: streamer_message.block.header.random_value.into(),
+            timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
+        },
+        signature_requests,
+        completed_signatures,
+        ckd_requests,
+        completed_ckds,
+        verify_foreign_tx_requests,
+        completed_verify_foreign_txs,
+    }
 }
 
 fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArgs, &String)> {
