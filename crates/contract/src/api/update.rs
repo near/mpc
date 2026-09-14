@@ -114,6 +114,27 @@ impl MpcContract {
         Ok(true)
     }
 
+    /// Removes a proposed update, given the id returned by [`Self::propose_update`].
+    ///
+    /// The deposit attached at propose time is not refunded.
+    ///
+    /// Returns [`Error`] if no update with this id exists, and panics if the caller is not a
+    /// participant.
+    #[handle_result]
+    pub fn remove_update_proposal(&mut self, id: dtos::UpdateId) -> Result<(), Error> {
+        log!(
+            "remove_update_proposal: signer={}, id={:?}",
+            env::signer_account_id(),
+            id,
+        );
+        self.voter_or_panic();
+
+        let id: UpdateId = id.into_contract_type();
+        self.proposed_updates
+            .remove_proposal(&id)
+            .ok_or_else(|| InvalidParameters::UpdateNotFound.into())
+    }
+
     /// returns all proposed updates
     pub fn proposed_updates(&self) -> dtos::ProposedUpdates {
         self.proposed_updates.into_dto_type()
@@ -482,6 +503,64 @@ mod tests {
                 .build()
         );
         contract.remove_update_vote();
+    }
+
+    #[test]
+    fn remove_update_proposal__should_remove_the_proposal_and_its_votes() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let participant = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let update_id = UpdateId(0);
+        propose_and_vote_code(update_id, &mut contract);
+        Environment::new(None, Some(participant), None);
+
+        // When
+        let result = contract.remove_update_proposal(update_id.into_dto_type());
+
+        // Then
+        assert_matches!(result, Ok(()));
+        let proposed_updates = contract.proposed_updates();
+        assert!(proposed_updates.updates.is_empty());
+        assert!(proposed_updates.votes.is_empty());
+    }
+
+    #[test]
+    fn remove_update_proposal__should_error_when_the_update_does_not_exist() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let participant = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        Environment::new(None, Some(participant), None);
+
+        // When
+        let result = contract.remove_update_proposal(UpdateId(0).into_dto_type());
+
+        // Then
+        assert_matches!(result, Err(err) => {
+            assert!(format!("{err:?}").contains("UpdateNotFound"), "got: {err:?}");
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
+    fn remove_update_proposal__should_panic_when_the_caller_is_not_a_participant() {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(ProtocolContractState::Running(
+            gen_running_state(NUM_DOMAINS),
+        ));
+        let update_id = UpdateId(0);
+        propose_and_vote_code(update_id, &mut contract);
+        Environment::new(None, Some(gen_account_id()), None);
+
+        // When
+        let _ = contract.remove_update_proposal(update_id.into_dto_type());
     }
 
     /// Test that `vote_update` correctly filters out non-participant votes when checking threshold.

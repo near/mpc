@@ -1023,6 +1023,28 @@ expression: abi
         }
       },
       {
+        "name": "remove_update_proposal",
+        "doc": " Removes a proposed update, given the id returned by [`Self::propose_update`].\n\n The deposit attached at propose time is not refunded.\n\n Returns [`Error`] if no update with this id exists, and panics if the caller is not a\n participant.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "id",
+              "type_schema": {
+                "$ref": "#/definitions/UpdateId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "remove_update_vote",
         "doc": " Removes an update vote by the caller\n panics if the contract is not in a running state or if the caller is not a participant",
         "kind": "call"
