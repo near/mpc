@@ -273,15 +273,20 @@ systemctl status dstack-vmm
 Notice that some of the commands require `sudo`, so they cannot be run using the
 `mpc` user which has no such permissions by default.
 
-After a `systemctl restart dstack-vmm`, check that the CVMs really did survive
-it, and that the restarted daemon re-adopted them rather than leaving orphans:
+Once a CVM is running, the first time you restart the daemon is worth verifying:
+the CVMs should survive it, and the restarted daemon should re-adopt them rather
+than leave orphans.
 
 ```bash
-# same PIDs as before the restart
-pgrep -a qemu-system-x86_64
-# each CVM still listed as running (CLI setup: see CVM management below)
-python $VMM_CLI_PATH --url $VMM_URL lsvm
+pgrep -a supervisor            # holds the CVM handles; same PID as before the restart
+pgrep -af qemu-system-x86_64   # one per CVM, same PIDs as before
 ```
+
+Then confirm the daemon sees them, in the web UI or via `lsvm` (see
+[CVM management](#cvm-management) for the CLI setup). If QEMU is still running
+but the daemon lists no CVM, re-adoption failed: do **not** start the CVM from
+the UI, as that launches a second QEMU against the same disk image. Stop the
+orphaned QEMU process first, then start the CVM normally.
 
 Nothing else should stop this unit on its own; see
 [Host Package Upgrades](#4-host-package-upgrades).
@@ -672,12 +677,15 @@ always a planned operation, never a side effect of a package upgrade. Ubuntu
 defaults to no automatic reboot, but confirm it rather than assume it:
 
 ```bash
-grep -rn "Automatic-Reboot" /etc/apt/apt.conf.d/
+apt-config dump | grep -i 'Unattended-Upgrade::Automatic-Reboot'
 ```
 
-No match at all is fine (the default is off). Any line that does appear must read
-`Unattended-Upgrade::Automatic-Reboot "false";`. A pending reboot then only shows
-up as `/var/run/reboot-required`, which you act on during a maintenance window.
+No output means unset, which is off. Any line that does print must read
+`Unattended-Upgrade::Automatic-Reboot "false";`. Query the effective value like
+this rather than grepping the files: the stock `50unattended-upgrades` ships
+these options `//`-commented, so a grep shows inactive lines that read like live
+config. A pending reboot then only shows up as `/var/run/reboot-required`, which
+you act on during a maintenance window.
 
 ##### Keep upgrades from restarting `dstack-vmm`
 
@@ -695,9 +703,15 @@ $nrconf{override_rc}{qr(^dstack-vmm\.service$)} = 0;
 EOF
 ```
 
-This is defense in depth on top of the `KillMode=process` in the unit above:
-the drop-in keeps the restart from being triggered, `KillMode=process` keeps a
-restart that does happen from taking the CVMs with it.
+This is defense in depth on top of `KillMode=process` in the unit: the drop-in
+keeps the restart from being triggered, `KillMode=process` keeps a restart that
+does happen from taking the CVMs with it. If your `dstack-vmm.service` predates
+this guide it will not have that line, so add it under `[Service]` now (see
+[VMM service persistence](#vmm-service-persistence)) and reload:
+
+```bash
+sudo systemctl daemon-reload   # applies at the next stop; does not bounce the daemon
+```
 
 ##### Hold the packages the sealing key and attestation depend on
 
@@ -713,10 +727,6 @@ sudo apt-mark hold intel-microcode \
   qemu-utils qemu-block-extra qemu-system
 apt-mark showhold
 ```
-
-unattended-upgrades skips held packages and flags them in its result line as
-`[package on hold]`, so they stay visible as pending work rather than silently
-disappearing.
 
 The last three are not measured, but they are version-locked against the ones
 that are: `qemu-block-extra` declares
@@ -748,11 +758,12 @@ Left in place, unattended upgrades pull the whole TDX stack from those PPAs. The
 holds above keep the sealing key out of reach either way, but the rest of that
 stack is the attestation path (`sgx-dcap-pccs`, `tdx-qgs`, `libsgx-ae-tdqe`,
 `libsgx-dcap-default-qpl`) and the host kernel (`linux-image-intel`). A
-quote-generation package changing under a running node costs attestation, and a
-new kernel silently becomes the one you boot at the next maintenance window.
-Neither belongs in an unattended run, so move both PPAs back to manual:
+quote-generation package changing under a running node costs attestation, and
+neither that nor a kernel belongs in an unattended run, so move both PPAs back
+to manual:
 
 ```bash
+shopt -s nullglob
 for f in /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-*release; do
   sudo mv "$f" "$f.disabled"
 done
@@ -762,7 +773,18 @@ apt-config dump | grep Allowed-Origins
 `apt` ignores `*.disabled`, and these files belong to no package, so the change
 sticks. What remains should be the Ubuntu release, security and ESM pockets
 only. Upgrade the TDX stack deliberately instead, alongside a BIOS or TCB
-update.
+update. Note that `setup-tdx-common` writes these files with `tee`, so
+re-running `setup-tdx-host.sh` recreates them; re-check this step after any work
+on the TDX stack.
+
+The kernel caveat applies to the Ubuntu archive kernel too, which stays in
+`Allowed-Origins` by design. A TDX host usually has `linux-image-generic`
+installed next to the PPA's `linux-image-intel`, and with the default
+`GRUB_DEFAULT=0` the boot entry is whichever kernel version sorts highest. A
+generic kernel from a newer upstream series sorts above `6.8.0-10xx-intel` and
+would become the default at the next planned reboot, bringing the host up
+without TDX host support. Check `uname -r` after every reboot, and pin
+`GRUB_DEFAULT` to the intel entry if you want it deterministic.
 
 ## MPC Node Setup and Deployment
 
