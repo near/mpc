@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 
 use crate::sandbox::utils::transactions::CallMpcContract;
 
-use super::transactions::all_receipts_successful;
+use super::transactions::{all_receipts_successful, execute_async_handle_calls};
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
 use near_mpc_contract_interface::{
     method_names,
     types::{
@@ -123,13 +123,33 @@ pub async fn submit_participant_info(
         .map_err(Into::into)
 }
 
-pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
+pub async fn tee_verifier_account_id(contract: &Contract) -> AccountId {
     contract
         .view(method_names::TEE_VERIFIER_ACCOUNT_ID)
         .await
         .unwrap()
         .json()
         .unwrap()
+}
+
+pub async fn vote_tee_verifier_change(
+    accounts: &[Account],
+    contract: &Contract,
+    verifier: &AccountId,
+) {
+    // Arbitrary: the hash only buckets votes (voters must commit to the same
+    // value), the contract never compares it to the deployed verifier code.
+    let expected_code_hash = TeeVerifierCodeHash::new([7u8; 32]);
+    execute_async_handle_calls(accounts, contract, |handle| {
+        let verifier = verifier.clone();
+        async move {
+            handle
+                .vote_tee_verifier_change(verifier, expected_code_hash)
+                .await
+        }
+    })
+    .await
+    .unwrap();
 }
 
 pub async fn get_participant_attestation(

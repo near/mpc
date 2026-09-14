@@ -157,6 +157,8 @@ pub enum ContractInitFormat {
     /// Current [`GovernanceThresholdParameters`] shape.
     #[default]
     Current,
+    /// The 3.14 shape without `tee_verifier_account_id`; the verifier is voted in after `init`.
+    Legacy,
 }
 
 impl MpcClusterConfig {
@@ -320,6 +322,9 @@ impl MpcCluster {
 
         create_node_accounts(&blockchain, &node_near_keys, &operator_keys).await?;
 
+        let tee_verifier_account_id =
+            deploy_tee_verifier(&blockchain, &config.tee_verifier_wasm).await?;
+
         init_contract(
             &blockchain,
             &contract,
@@ -330,18 +335,22 @@ impl MpcCluster {
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
                 init_format: config.init_format,
+                tee_verifier_account_id: tee_verifier_account_id.clone(),
             },
         )
         .await?;
 
-        deploy_and_trust_tee_verifier(
-            &blockchain,
-            &contract,
-            &config.tee_verifier_wasm,
-            &operator_keys,
-            &participant_indices,
-        )
-        .await?;
+        if config.init_format == ContractInitFormat::Legacy {
+            vote_tee_verifier_change(
+                &blockchain,
+                &contract,
+                &tee_verifier_account_id,
+                &config.tee_verifier_wasm,
+                &operator_keys,
+                &participant_indices,
+            )
+            .await?;
+        }
 
         // Start MPC nodes BEFORE adding domains: key generation requires running nodes.
         let mut nodes = start_mpc_nodes(
@@ -1260,6 +1269,7 @@ struct InitContractArgs {
     threshold: usize,
     participant_indices: Vec<usize>,
     init_format: ContractInitFormat,
+    tee_verifier_account_id: ContractAccountId,
 }
 
 /// Prepays one attestation-storage grant for every node in the cluster.
@@ -1334,6 +1344,7 @@ async fn init_contract(
         threshold,
         participant_indices,
         init_format,
+        tee_verifier_account_id,
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
@@ -1360,7 +1371,18 @@ async fn init_contract(
                 .client()
                 .call_mpc(contract.account_id())
                 .with_wait_level::<Final>()
-                .init(params, Some(init_config))
+                .init(params, tee_verifier_account_id, Some(init_config))
+                .await?
+        }
+        ContractInitFormat::Legacy => {
+            contract
+                .call_from_with_deposit(
+                    &contract.client().with_wait_level::<Final>(),
+                    method_names::INIT,
+                    json!({ "parameters": params, "init_config": init_config }),
+                    near_kit::Gas::from_tgas(300),
+                    near_kit::NearToken::from_near(0),
+                )
                 .await?
         }
     };
@@ -1393,16 +1415,13 @@ async fn init_contract(
     .context("contract did not reach Running state after init")
 }
 
-/// Deploys the tee-verifier and votes it in from every participant. Nodes submit mock
-/// attestations, which the contract verifies without calling the verifier; the cross-contract
-/// flow is covered by the mpc-contract sandbox tests.
-async fn deploy_and_trust_tee_verifier(
+/// Deploys the tee-verifier. Nodes submit mock attestations, which the contract verifies
+/// without calling the verifier; the cross-contract flow is covered by the mpc-contract
+/// sandbox tests.
+async fn deploy_tee_verifier(
     blockchain: &NearBlockchain,
-    contract: &DeployedContract,
     verifier_wasm: &[u8],
-    operator_keys: &[SigningKey],
-    participant_indices: &[usize],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ContractAccountId> {
     let verifier_account = format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}");
     let verifier_key = generate_deterministic_key(KEY_SEED_TEE_VERIFIER);
     tracing::info!(account = %verifier_account, "deploying tee-verifier contract");
@@ -1410,13 +1429,22 @@ async fn deploy_and_trust_tee_verifier(
     blockchain
         .create_account_and_deploy(&verifier_account, 100, &verifier_key, verifier_wasm)
         .await?;
+    Ok(verifier_account.parse()?)
+}
 
+async fn vote_tee_verifier_change(
+    blockchain: &NearBlockchain,
+    contract: &DeployedContract,
+    candidate: &ContractAccountId,
+    verifier_wasm: &[u8],
+    operator_keys: &[SigningKey],
+    participant_indices: &[usize],
+) -> anyhow::Result<()> {
     // expected_code_hash commits every voter to the same audited WASM; the
     // contract only compares voters' hashes against each other, not against
     // the deployed bytes.
     let expected_code_hash =
         TeeVerifierCodeHash::new(*near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
-    let candidate: ContractAccountId = verifier_account.parse()?;
     for &i in participant_indices {
         let account = node_account(i);
         let client = blockchain.client_for(&account, &operator_keys[i])?;

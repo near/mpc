@@ -181,13 +181,15 @@ The entry point for tests. `MpcCluster::start(config)` does everything:
 6. Deploy the compiled MPC contract WASM to `mpc.sandbox`.
 7. Create `nodeN.sandbox` accounts, each with a `near_signer_key` and a
    disjoint `operator_key` as full-access keys.
-8. Call `init()` on the contract with the initial participants.
-9. Call `submit_participant_info` for each initial participant (with a
-   `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
-10. Deploy the tee-verifier WASM to `tee-verifier.sandbox` and vote it in from
-    every participant, for topology parity with production. Mock attestations
-    are verified without calling it, so the verifier stays idle; the
-    cross-contract flow is covered by the mpc-contract sandbox tests.
+8. Deploy the tee-verifier WASM to `tee-verifier.sandbox`, for topology parity
+   with production. Mock attestations are verified without calling it, so the
+   verifier stays idle; the cross-contract flow is covered by the mpc-contract
+   sandbox tests.
+9. Call `init()` on the contract with the initial participants and the
+   tee-verifier account. The `Legacy` init format instead sends the pre-3.15
+   shape and votes the verifier in from every participant afterwards.
+10. Call `submit_participant_info` for each initial participant (with a
+    `{"Mock": "Valid"}` attestation — enough to satisfy the contract in tests).
 11. Spawn the `mpc-node` binaries (start *before* adding domains so key
     generation has running nodes to talk to).
 12. Sleep briefly and assert no node exited early.

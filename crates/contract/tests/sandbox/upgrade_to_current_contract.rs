@@ -1,24 +1,28 @@
+#![allow(non_snake_case)]
+
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
         init, propose_and_vote_contract_binary, submit_attestations,
     },
     utils::{
-        consts::PARTICIPANT_LEN,
+        consts::{PARTICIPANT_LEN, TEE_VERIFIER_ACCOUNT_ID},
         contract_build::current_contract,
         mpc_contract::{
             get_allowed_launcher_image_hashes, get_participants, get_state, get_tee_accounts,
-            vote_add_launcher_hash,
+            tee_verifier_account_id, vote_add_launcher_hash, vote_tee_verifier_change,
         },
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
-        transactions::CallMpcContract,
     },
 };
-use mpc_contract::primitives::{
-    key_state::EpochId,
-    participants::Participants,
-    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
+use mpc_contract::{
+    errors::InvalidState,
+    primitives::{
+        key_state::EpochId,
+        participants::Participants,
+        thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
+    },
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
@@ -48,7 +52,7 @@ fn contract_code(network: Network) -> &'static [u8] {
     }
 }
 
-async fn init_old_contract(
+async fn init_old_contract_without_tee_verifier(
     worker: &Worker<Sandbox>,
     contract: &Contract,
     number_of_participants: usize,
@@ -62,11 +66,23 @@ async fn init_old_contract(
             .unwrap()
             .into();
     contract
-        .as_account()
-        .call_mpc(contract.id())
-        .init(threshold_parameters, None)
+        .call(method_names::INIT)
+        .args_json(serde_json::json!({ "parameters": threshold_parameters }))
+        .max_gas()
+        .transact()
         .await?
         .into_result()?;
+    Ok((accounts, participants))
+}
+
+async fn init_old_contract(
+    worker: &Worker<Sandbox>,
+    contract: &Contract,
+    number_of_participants: usize,
+) -> anyhow::Result<(Vec<Account>, Participants)> {
+    let (accounts, participants) =
+        init_old_contract_without_tee_verifier(worker, contract, number_of_participants).await?;
+    vote_tee_verifier_change(&accounts, contract, &TEE_VERIFIER_ACCOUNT_ID.parse()?).await;
     Ok((accounts, participants))
 }
 
@@ -153,6 +169,62 @@ async fn back_compatibility_without_state(
     anyhow::bail!(
         "❌Back compatibility check failed: state() call doesnt work after migration(). Probably you should introduce new logic to the `migrate()` method."
     )
+}
+
+#[rstest]
+#[tokio::test]
+async fn migrate__should_carry_over_the_voted_in_tee_verifier(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
+    // Given
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+    let contract = deploy_old(&worker, network).await?;
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+
+    // When
+    let contract = upgrade_to_new(contract).await?;
+    migrate_and_assert_contract_code(&contract).await?;
+
+    // Then
+    assert_eq!(
+        tee_verifier_account_id(&contract).await,
+        TEE_VERIFIER_ACCOUNT_ID.parse::<AccountId>()?
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn migrate__should_fail_when_no_tee_verifier_is_configured(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
+    // Given
+    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+    let contract = deploy_old(&worker, network).await?;
+    init_old_contract_without_tee_verifier(&worker, &contract, PARTICIPANT_LEN).await?;
+
+    // When
+    let contract = upgrade_to_new(contract).await?;
+    let err = contract
+        .call(method_names::MIGRATE)
+        .transact()
+        .await?
+        .into_result()
+        .expect_err("migrate must fail without a configured TEE verifier");
+
+    // Then
+    assert!(
+        err.to_string()
+            .contains(&InvalidState::TeeVerifierNotConfigured.to_string()),
+        "unexpected migrate failure: {err}"
+    );
+    let contract = contract
+        .as_account()
+        .deploy(contract_code(network))
+        .await?
+        .into_result()?;
+    assert!(healthcheck(&contract).await?);
+    Ok(())
 }
 
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)

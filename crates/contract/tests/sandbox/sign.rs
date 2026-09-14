@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{SandboxTestSetup, candidates, create_account_given_id, init},
     utils::{
-        consts::ALL_PROTOCOLS,
+        consts::{ALL_PROTOCOLS, TEE_VERIFIER_ACCOUNT_ID},
         shared_key_utils::SharedSecretKey,
         sign_utils::{
             CKDRequestTest, DomainResponseTest, gen_secp_256k1_sign_test,
@@ -296,6 +296,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
     let (_, contract) = init().await;
+    let tee_verifier: AccountId = TEE_VERIFIER_ACCOUNT_ID.parse()?;
 
     // Empty candidates should fail.
     let participants = Participants::new();
@@ -305,7 +306,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters, None)
+        .init(proposed_parameters, tee_verifier.clone(), None)
         .await?;
     assert!(
         result.is_failure(),
@@ -319,7 +320,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters.clone(), None)
+        .init(proposed_parameters.clone(), tee_verifier.clone(), None)
         .await?;
     assert!(
         result.is_success(),
@@ -330,7 +331,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
     let result = contract
         .as_account()
         .call_mpc(contract.id())
-        .init(proposed_parameters.clone(), None)
+        .init(proposed_parameters.clone(), tee_verifier.clone(), None)
         .await?;
     assert!(
         result.is_failure(),

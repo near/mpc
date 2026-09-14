@@ -234,11 +234,7 @@ impl MpcContract {
         node_id: NodeId,
         attestation: DstackAttestation,
     ) -> Result<Promise, Error> {
-        let Some(verifier_account_id) = self.tee_verifier_account_id.clone() else {
-            return Err(TeeError::VerifierNotConfigured.into());
-        };
-
-        Ok(Promise::new(verifier_account_id)
+        Ok(Promise::new(self.tee_verifier_account_id.clone())
             .function_call(
                 method_names::VERIFY_QUOTE.to_string(),
                 borsh::to_vec(&(&attestation.quote, &attestation.collateral))
@@ -515,7 +511,8 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, make_public_key_for_curve, setup_tee_test_contract, submit_valid_attestations,
+        basic_setup, bogus_tee_verifier_account_id, make_public_key_for_curve,
+        setup_tee_test_contract, submit_valid_attestations,
     };
     use crate::config::Config;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
@@ -1027,6 +1024,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();
@@ -1151,6 +1149,7 @@ mod tests {
             1,
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
             None,
         )
         .unwrap();

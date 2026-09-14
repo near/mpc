@@ -17,6 +17,7 @@ use near_sdk::{
 use crate::{
     config::Config,
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
+    errors::InvalidState,
     foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
     node_migrations::NodeMigrations,
     primitives::{
@@ -244,13 +245,15 @@ pub struct MpcContract {
     tee_verifier_votes: TeeVerifierVotes,
 }
 
-impl From<MpcContract> for crate::MpcContract {
-    fn from(old: MpcContract) -> Self {
+impl TryFrom<MpcContract> for crate::MpcContract {
+    type Error = InvalidState;
+
+    fn try_from(old: MpcContract) -> Result<Self, Self::Error> {
         let OldProtocolContractState::Running(running) = old.protocol_state else {
-            env::panic_str("Contract must be in running state when migrating.");
+            return Err(InvalidState::ProtocolStateNotRunning);
         };
 
-        crate::MpcContract {
+        Ok(crate::MpcContract {
             protocol_state: ProtocolContractState::Running(running.into()),
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
@@ -269,10 +272,12 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
             foreign_chains: old.foreign_chains,
-            tee_verifier_account_id: old.tee_verifier_account_id,
+            tee_verifier_account_id: old
+                .tee_verifier_account_id
+                .ok_or(InvalidState::TeeVerifierNotConfigured)?,
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
-        }
+        })
     }
 }
 
