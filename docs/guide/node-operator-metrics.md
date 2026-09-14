@@ -58,7 +58,9 @@ multiple of the number of configured providers:
 * `non_transient`: the provider answered and refused, or answered with something unusable.
   Retrying cannot change either.
 * `timeout`: the provider had not answered when the node gave up on it, including a call still in
-  flight when the node abandons the inspection at its deadline or on shutdown.
+  flight when the node abandons the inspection at its deadline or on shutdown. The one kind the
+  fan-out does not absorb: it waits for every provider, so outside shutdowns a timeout means the
+  inspection missed its deadline and the verify request failed for that chain.
 
 One histogram observation is a whole inspection, one to three serialized RPC calls depending on
 the chain and on where the inspection stopped, not a single round trip. The top bucket is the
@@ -98,7 +100,7 @@ the node asks each configured provider for its network and compares the answer w
 | Metric | Measures | How to interpret |
 | --- | --- | --- |
 | [`mpc_foreign_chain_rpc_providers_configured`](../../crates/node/src/metrics.rs) | providers configured for the chain | the denominator for the gauge below. |
-| [`mpc_foreign_chain_rpc_providers_healthy`](../../crates/node/src/metrics.rs) | providers that answered the latest probe with the expected network | should equal the configured count. Anything less is a provider that failed the probe (unreachable, refusing, timing out, or serving another network), or a chain configured without an `expected_network_fingerprint`, since the probe cannot check those providers. |
+| [`mpc_foreign_chain_rpc_providers_healthy`](../../crates/node/src/metrics.rs) | providers that answered the latest probe with the expected network | should equal the configured count. Anything less is a provider that failed the probe (unreachable, refusing, timing out, answering unusably, an auth token the node could not resolve, a client that failed to build, or serving another network), or a chain configured without an `expected_network_fingerprint`, since the probe cannot check those providers. |
 
 Solana has no probe and is left out of both gauges.
 
@@ -123,13 +125,18 @@ increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
 # does not cover, or a backend serving unusable responses. Needs an operator.
 increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
 
-# Provider not answering (warn): unreachable, rate limited, or hanging past the
-# inspection deadline while its peers on the same chain keep up. Tolerated by the
-# fan-out, so it is silent otherwise. The 15m hold rides out a short rate limit burst.
-increase(mpc_foreign_chain_provider_errors_total{kind=~"transient|timeout"}[5m]) > 0  for 15m
+# Provider not answering (warn): unreachable or rate limited while its peers on the
+# same chain keep up. Tolerated by the fan-out, so it is silent otherwise. The 15m
+# hold rides out a short rate limit burst.
+increase(mpc_foreign_chain_provider_errors_total{kind="transient"}[5m]) > 0  for 15m
+
+# Provider hanging (page): the fan-out waits for every provider, so one that stops
+# answering without erroring stalls the whole inspection past its deadline and fails
+# the verify request for that chain, however healthy its peers are.
+increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0  for 5m
 
 # Provider unhealthy at the probe (warn): unreachable, refusing, or serving another
-# network. Unlike the two rules above this needs no verify traffic. The probe runs
+# network. Unlike the provider rules above this needs no verify traffic. The probe runs
 # hourly, so the 2h hold waits for two rounds to agree. Also fires for a chain
 # configured without an expected_network_fingerprint, since the probe cannot check it.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h

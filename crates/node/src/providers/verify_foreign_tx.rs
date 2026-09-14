@@ -326,10 +326,7 @@ mod tests {
 
         // Then
         let published = published_inspection_series();
-        for chain in [
-            Bitcoin, Ethereum, Abstract, Starknet, Bnb, Base, Arbitrum, HyperEvm, Polygon, Aptos,
-            Sui, Avalanche, Adi,
-        ] {
+        for (chain, _) in config.iter_chains() {
             let series = (chain.label().to_string(), provider_of(chain));
             assert!(published.contains(&series), "{series:?} was not published");
         }
