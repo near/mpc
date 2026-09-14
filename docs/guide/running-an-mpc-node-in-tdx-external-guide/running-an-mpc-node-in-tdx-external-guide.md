@@ -74,11 +74,12 @@ Although a node can be accessed using a public IP address, it is recommended to 
 
 This section describes how to enable TDX on your machine (BIOS, operating system, and software configurations), and how to install and configure Dstack.
 
-Follow the three steps below to ensure you have a working TDX machine with Dstack configured:
+Follow the four steps below to ensure you have a working TDX machine with Dstack configured, and that routine host upgrades leave it that way:
 
 1. [Set up a bare-metal TDX server](#1-tdx-bare-metal-server-setup)
 2. [Dstack Setup and Configuration](#2-dstack-setup-and-configuration)
 3. [Set up a Local Gramine-Sealing-Key-Provider](#3-local-gramine-sealing-key-provider-setup)
+4. [Configure host package upgrades](#4-host-package-upgrades)
 
 ---
 
@@ -117,7 +118,9 @@ sudo apt install build-essential qemu-system-x86=1:8.2.2* docker.io docker-compo
 
 > **Note:** The QEMU version is pinned to **8.2.2** because TDX attestation measurements
 > (MRTD/RTMR0) depend on the QEMU version. Using a different version will produce different
-> measurements and attestation might fail.
+> measurements and attestation might fail. The `=` pin only applies to this install, so also
+> hold the package against later upgrades, as described in
+> [Host Package Upgrades](#4-host-package-upgrades).
 
 * Create `mpc` user and installation folder
 
@@ -244,6 +247,10 @@ WorkingDirectory=/opt/mpc/dstack/vmm-data/
 ExecStart=/opt/mpc/dstack/vmm-data/dstack-vmm -c vmm.toml
 Restart=on-failure
 RestartSec=5
+# The qemu CVMs are children of this unit. Without KillMode=process, systemd's
+# default (control-group) sends SIGTERM to every CVM whenever the daemon is
+# stopped or restarted.
+KillMode=process
 User=mpc
 Group=mpc
 
@@ -265,6 +272,19 @@ systemctl status dstack-vmm
 
 Notice that some of the commands require `sudo`, so they cannot be run using the
 `mpc` user which has no such permissions by default.
+
+After a `systemctl restart dstack-vmm`, check that the CVMs really did survive
+it, and that the restarted daemon re-adopted them rather than leaving orphans:
+
+```bash
+# same PIDs as before the restart
+pgrep -a qemu-system-x86_64
+# each CVM still listed as running (CLI setup: see CVM management below)
+python $VMM_CLI_PATH --url $VMM_URL lsvm
+```
+
+Nothing else should stop this unit on its own; see
+[Host Package Upgrades](#4-host-package-upgrades).
 
 ---
 
@@ -630,6 +650,119 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    `AESM service returned error 44` or `DCAP error`, see
    [`gramine-sealing-key-provider` failures](#gramine-sealing-key-provider-failures)
    in the Troubleshooting section.
+
+---
+
+#### 4. Host Package Upgrades
+
+Leave unattended security upgrades enabled: a patched host is part of what keeps
+the node trustworthy, and it is the standard for servers of this kind. What has
+to be prevented is an upgrade disturbing the CVMs underneath it, in one of three
+ways: rebooting the host, restarting `dstack-vmm`, or changing a package the
+sealing key and the attestation measurements derive from.
+
+The four settings below cover those three routes. Because dstack CVMs are
+near-independent of the host, they are enough on their own; there is no need to
+stagger upgrade windows across operators.
+
+##### Keep automatic reboots off
+
+A reboot stops every CVM, and TCB SVNs latch at platform reset, so rebooting is
+always a planned operation, never a side effect of a package upgrade. Ubuntu
+defaults to no automatic reboot, but confirm it rather than assume it:
+
+```bash
+grep -rn "Automatic-Reboot" /etc/apt/apt.conf.d/
+```
+
+No match at all is fine (the default is off). Any line that does appear must read
+`Unattended-Upgrade::Automatic-Reboot "false";`. A pending reboot then only shows
+up as `/var/run/reboot-required`, which you act on during a maintenance window.
+
+##### Keep upgrades from restarting `dstack-vmm`
+
+`needrestart` runs from a `DPkg::Post-Invoke` hook on every apt transaction, and
+in the non-interactive unattended-upgrades context it restarts affected services
+without asking. `dstack-vmm` maps the host's libc and OpenSSL, so an ordinary
+security upgrade is enough to bounce it, and with it every CVM in its cgroup.
+Exclude the unit:
+
+```bash
+sudo mkdir -p /etc/needrestart/conf.d
+sudo tee /etc/needrestart/conf.d/dstack-vmm.conf <<'EOF'
+# The MPC CVMs run under dstack-vmm; never bounce it from an apt transaction.
+$nrconf{override_rc}{qr(^dstack-vmm\.service$)} = 0;
+EOF
+```
+
+This is defense in depth on top of the `KillMode=process` in the unit above:
+the drop-in keeps the restart from being triggered, `KillMode=process` keeps a
+restart that does happen from taking the CVMs with it.
+
+##### Hold the packages the sealing key and attestation depend on
+
+The CVM's disk-sealing key derives from the CPU microcode (via CPUSVN), and its
+attestation measurements from the QEMU version (via MRTD/RTMR0). An unattended
+upgrade of either can leave the CVM unable to unseal its disk, or produce
+measurements the contract does not allow. With automatic upgrades on, holding
+them is what keeps that from happening unannounced:
+
+```bash
+sudo apt-mark hold intel-microcode \
+  qemu-system-x86 qemu-system-common qemu-system-data \
+  qemu-utils qemu-block-extra qemu-system
+apt-mark showhold
+```
+
+unattended-upgrades skips held packages and flags them in its result line as
+`[package on hold]`, so they stay visible as pending work rather than silently
+disappearing.
+
+The last three are not measured, but they are version-locked against the ones
+that are: `qemu-block-extra` declares
+`qemu-system-any (= <version>) | qemu-utils (= <version>)`, so leaving
+`qemu-utils` free lets the block modules move ahead of the pinned emulator, and
+QEMU then refuses to load modules built for a different version. That breaks
+starting a CVM rather than unsealing it, but holding the whole set is free.
+
+Lifting a hold is a deliberate step in a planned TCB update
+(`sudo apt-mark unhold intel-microcode`), performed after backing up the key
+shares. [TDX platform TCB status](../tdx-tcb-status.md) walks through that,
+including why a microcode change means redeploying the CVM. Note that a
+`qemu-system-x86` upgrade needs the same care for a different reason: the
+measurements it changes must already be approved on-chain (see
+[OS Measurement Voting](#os-measurement-voting)) before you install it.
+
+##### Keep the TDX PPAs out of unattended upgrades
+
+The `canonical/tdx` setup adds two Launchpad PPAs, and each drops a file into
+`/etc/apt/apt.conf.d/` adding itself to `Unattended-Upgrade::Allowed-Origins`
+(and, incidentally, setting `Unattended-Upgrade::Allow-downgrade "true"`):
+
+```bash
+cat /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-release \
+    /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-attestation-release
+```
+
+Left in place, unattended upgrades pull the whole TDX stack from those PPAs. The
+holds above keep the sealing key out of reach either way, but the rest of that
+stack is the attestation path (`sgx-dcap-pccs`, `tdx-qgs`, `libsgx-ae-tdqe`,
+`libsgx-dcap-default-qpl`) and the host kernel (`linux-image-intel`). A
+quote-generation package changing under a running node costs attestation, and a
+new kernel silently becomes the one you boot at the next maintenance window.
+Neither belongs in an unattended run, so move both PPAs back to manual:
+
+```bash
+for f in /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-*release; do
+  sudo mv "$f" "$f.disabled"
+done
+apt-config dump | grep Allowed-Origins
+```
+
+`apt` ignores `*.disabled`, and these files belong to no package, so the change
+sticks. What remains should be the Ubuntu release, security and ESM pockets
+only. Upgrade the TDX stack deliberately instead, alongside a BIOS or TCB
+update.
 
 ## MPC Node Setup and Deployment
 
@@ -1819,17 +1952,20 @@ The contract will retry with a fresh attempt; repeated failures need investigati
 
 ## Upgrades
 
-There are three types of upgrades, with different frequencies and operator effort:
+There are four types of upgrades, with different frequencies and operator effort:
 
 | Upgrade Type | Frequency | Operator Effort | Sealing Key Changes |
 | :--- | :--- | :--- | :--- |
 | MPC node image | High (~monthly) | Vote + restart CVM | No |
 | Launcher / CVM | Low | Vote + deploy new CVM + migrate key shares | Yes |
 | Host BIOS / microcode / TDX module | Whenever Intel publishes a TCB recovery | Vendor firmware update + reboot + deploy a new CVM and move the key shares into it | Yes (microcode moves CPUSVN) |
+| Host OS packages | Continuous (unattended security upgrades) | None, once configured | No, the packages that would move it are held |
 
 When either the MPC image or the launcher hash is voted in, the contract automatically derives the expected launcher docker compose hash from an on-chain template. Operators do not need to vote on compose hashes separately.
 
 The third type is not driven by us: Intel raises the TCB bar on its own schedule, and a platform below it has its attestation rejected until the host is updated. Because the microcode update moves CPUSVN, the existing CVM's disk may not unseal afterwards, so plan for a new CVM: either migrate the node to another host first and migrate back onto a new CVM after the update, or back up the key shares and restore them into the new CVM. See [TDX platform TCB status](../tdx-tcb-status.md) for how to check where your host stands and how to update it without losing your key share.
+
+The fourth type is the routine patching of the host itself, which should stay automatic and should never touch a running CVM. Configure it once as described in [Host Package Upgrades](#4-host-package-upgrades); after that it needs no coordination with the rest of the network.
 
 ## MPC Node Image Upgrade
 
