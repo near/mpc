@@ -465,7 +465,7 @@ fn verify_dstack_mpc_hashes(
             .get_single_event(MPC_IMAGE_HASH_EVENT)?
             .event_payload;
 
-        // TODO(#2478): decode raw bytes
+        // dstack hex-encodes event payloads in its event log; the launcher emits raw bytes.
         let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload).map_err(|err| {
             VerificationError::Custom(format!("provided mpc image is not hex encoded: {:?}", err))
         })?;
