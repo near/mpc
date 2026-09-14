@@ -9,6 +9,7 @@ pub mod tee_cleanup_after_resharing;
 pub mod tee_verifier;
 pub mod update_votes_cleanup_after_resharing;
 pub mod upgrade_from_current_contract;
+pub mod upgrade_proof_limit_recovery;
 pub mod upgrade_to_current_contract;
 pub mod user_views;
 pub mod vote;
