@@ -21,8 +21,9 @@ use near_sdk::near;
 use near_sdk::store::IterableMap;
 
 use crate::errors::{ConversionError, Error, InvalidParameters};
+use crate::primitives::proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash};
 use crate::primitives::thresholds::GovernanceThresholdParameters;
-use crate::primitives::votes::{ProposalHash, ProposalHashEncoding, Votes};
+use crate::primitives::votes::Votes;
 use crate::primitives::{key_state::AuthenticatedParticipantId, participants::Participants};
 use crate::storage_keys::StorageKey;
 
@@ -75,10 +76,9 @@ impl From<ChainEntry> for dtos::ChainEntry {
     }
 }
 
-impl ProposalHashEncoding for ChainEntry {
-    fn bytes_for_hash(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("borsh serialization of ChainEntry must succeed")
-    }
+impl ToProposalHash for ChainEntry {
+    type Serializer = Borsh;
+    type Hasher = Sha256;
 }
 
 #[near(serializers=[borsh])]
@@ -202,7 +202,7 @@ impl ForeignChainRpcWhitelist {
         let votes: BTreeMap<ForeignChain, dtos::ChainEntry> = votes.into();
         for (chain, entry) in votes {
             let entry: ChainEntry = entry.try_into()?;
-            let hash = ProposalHash::from(entry.clone());
+            let hash = entry.to_proposal_hash();
             if self
                 .votes
                 .vote(chain, hash, participant.clone(), threshold_parameters)?
@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(voters_for_p0_polygon, 1);
 
         let expected_entry: ChainEntry = chain_entry(&["ankr", "drpc"], 2).try_into().unwrap();
-        let expected_hash = ProposalHash::from(expected_entry);
+        let expected_hash = expected_entry.to_proposal_hash();
         let actual_hash = pending_proposal_hash_for(&wl, &(p0, ForeignChain::Polygon))
             .expect("expected pending row for (p0, Polygon)");
         assert_eq!(actual_hash, expected_hash);

@@ -9,4 +9,5 @@ pub mod threshold_votes;
 pub mod thresholds;
 pub mod votes;
 
+pub(crate) mod proposal_hash;
 pub(crate) mod time;
