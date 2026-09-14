@@ -854,9 +854,6 @@ const PROBE_GAS_BELOW_THE_FIRST_READ: Gas = Gas::from_tgas(10);
 const CLIENT_VOTE_GAS: Gas = Gas::from_tgas(260);
 const MAX_VOTE_GAS: Gas = Gas::from_tgas(300);
 
-/// Size of each code proposal stored on mainnet `v1.signer` (`signer-3_15_0.wasm`).
-const MAINNET_PROPOSAL_PAYLOAD_BYTES: usize = 1_229_682;
-
 /// Stores `stored_proposals` copies of `payload`, casts every vote below the threshold, asserts the
 /// deciding vote fails on its own, then re-sends it behind a gas-capped `proposed_updates` probe in
 /// the same chunk and returns that outcome together with the contract.
@@ -996,26 +993,28 @@ async fn vote_update__should_apply_when_an_earlier_receipt_in_the_chunk_recorded
     assert!(stored_proposal_ids(&contract).await.is_empty());
 }
 
-/// Mainnet stores four proposals of 1,229,682 bytes each, larger than the contract this test suite
-/// builds. The payload is filler rather than wasm, so the deploy that follows the vote fails and
-/// the cleared proposals are what shows the deciding vote itself applied.
+/// The four proposals stored on mainnet `v1.signer` are four copies of `signer-3_15_0.wasm`, at
+/// 1,229,682 bytes larger than the contract this test suite builds, so this case reproduces the
+/// stuck upgrade byte for byte, through to the deploy and the migration the vote triggers.
 #[tokio::test]
 async fn vote_update__should_apply_at_the_mainnet_proposal_size_when_one_entry_is_probed() {
     // Given / When
     let (deciding, contract) = deciding_vote_behind_probe(
         4,
-        vec![0x42; MAINNET_PROPOSAL_PAYLOAD_BYTES],
+        contract_history::version_3_15_0().to_vec(),
         PROBE_GAS_FOR_ONE_ENTRY,
         CLIENT_VOTE_GAS,
     )
     .await;
 
     // Then
-    assert!(
-        !format!("{:?}", deciding.failures()).contains("recorded trie storage proof"),
-        "{deciding:#?}"
-    );
+    assert!(deciding.is_success(), "{deciding:#?}");
+    assert!(deciding.json::<bool>().unwrap());
     assert!(stored_proposal_ids(&contract).await.is_empty());
+    assert_eq!(
+        contract.view_code().await.unwrap(),
+        contract_history::version_3_15_0()
+    );
 }
 
 /// The host records an entry's value only after charging for the read, so a probe that cannot
@@ -1025,7 +1024,7 @@ async fn vote_update__should_exceed_the_storage_proof_limit_when_the_probe_canno
     // Given / When
     let (deciding, contract) = deciding_vote_behind_probe(
         4,
-        vec![0x42; MAINNET_PROPOSAL_PAYLOAD_BYTES],
+        contract_history::version_3_15_0().to_vec(),
         PROBE_GAS_BELOW_THE_FIRST_READ,
         CLIENT_VOTE_GAS,
     )
