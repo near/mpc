@@ -271,9 +271,7 @@ impl AddDomainsVotes {
         let remaining_votes = self
             .proposal_by_account
             .iter()
-            .filter(|&(participant_id, _vote)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
+            .filter(|&(participant_id, _vote)| participants.is_participant(participant_id))
             .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
             .collect();
         AddDomainsVotes {

@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use crate::primitives::participants::{IdentifiesParticipant, Participants};
 use crate::primitives::proposal_hash::ProposalHash;
 use near_sdk::IntoStorageKey;
 use near_sdk::near;
@@ -151,6 +152,14 @@ where
         self.0.iter().filter(|voter| predicate(voter)).count()
     }
 
+    pub fn count_participants(&self, participants: &Participants) -> u64
+    where
+        V: IdentifiesParticipant,
+    {
+        let count = self.count_for(|voter| participants.is_participant(voter));
+        u64::try_from(count).expect("usize should never fail to convert to u64 on wasm32")
+    }
+
     // returns Some(remaining_votes) in case a vote was removed
     pub(super) fn remove(&mut self, vote: &V) -> Option<usize> {
         if self.0.remove(vote) {
@@ -175,6 +184,7 @@ mod tests {
     };
 
     use crate::primitives::proposal_hash::ProposalHash;
+    use crate::primitives::test_utils::gen_authenticated_participants;
     use crate::primitives::votes::{VoterSet, Votes};
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
@@ -481,6 +491,21 @@ mod tests {
         let count = voter_set.count_for(|_| true);
 
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn voter_set_count_participants__should_ignore_votes_from_dropped_participants() {
+        // Given
+        let (participants, auth_ids) = gen_authenticated_participants(3);
+        let voter_set = VoterSet(auth_ids.into_iter().collect());
+        let current = participants.subset(0..2);
+
+        // When
+        let count = voter_set.count_participants(&current);
+
+        // Then
+        assert_eq!(count, 2);
     }
 
     #[test]

@@ -196,13 +196,12 @@ impl ResharingContractState {
     }
 
     pub fn is_participant_or_prospective_participant(&self, account_id: &AccountId) -> bool {
-        self.previous_running_state
-            .is_participant_given_account_id(account_id)
+        self.previous_running_state.is_participant(account_id)
             || self
                 .resharing_key
                 .proposed_parameters()
                 .participants()
-                .is_participant_given_account_id(account_id)
+                .is_participant(account_id)
     }
 }
 #[cfg(test)]

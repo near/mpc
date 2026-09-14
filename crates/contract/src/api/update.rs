@@ -152,7 +152,7 @@ impl MpcContract {
         // non-participants cannot drive this cleanup.
         let caller = env::predecessor_account_id();
         let is_self_call = caller == env::current_account_id();
-        if !is_self_call && !participants.is_participant_given_account_id(&caller) {
+        if !is_self_call && !participants.is_participant(&caller) {
             return Err(InvalidState::NotParticipant { account_id: caller }.into());
         }
 
