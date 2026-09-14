@@ -516,7 +516,7 @@ async fn remove_update_proposal__should_drop_the_proposal_and_its_votes() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
+        .with_number_of_participants(3)
         .build()
         .await;
     let alice = mpc_signer_accounts[0].call_mpc(contract.id());
@@ -553,7 +553,6 @@ async fn remove_update_proposal__should_not_pass_votes_on_to_a_later_proposal() 
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
         .with_number_of_participants(3)
         .build()
         .await;
@@ -608,7 +607,7 @@ async fn remove_update_proposal__should_fail_for_an_unknown_id() {
         mpc_signer_accounts,
         ..
     } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
+        .with_number_of_participants(3)
         .build()
         .await;
 

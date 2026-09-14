@@ -45,8 +45,8 @@ use near_sdk::{
 pub struct UpdateId(pub(crate) u64);
 
 impl UpdateId {
-    /// Returns the next id. Nothing rewinds the counter, so an id is never reused and a vote
-    /// recorded against one proposal can never be applied to another.
+    /// Nothing rewinds the counter, so a vote recorded against one proposal can never be
+    /// applied to another.
     pub fn generate(&mut self) -> Self {
         let id = self.0;
         self.0 += 1;

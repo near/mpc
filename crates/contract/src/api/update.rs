@@ -116,7 +116,10 @@ impl MpcContract {
 
     /// Removes a proposed update, given the id returned by [`Self::propose_update`].
     ///
-    /// The deposit attached at propose time is not refunded.
+    /// The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and
+    /// unlike [`Self::remove_update_vote`], this is not restricted to the running state.
+    ///
+    /// TODO(#4419): restrict removal to the account that proposed the update.
     ///
     /// Returns [`Error`] if no update with this id exists, and panics if the caller is not a
     /// participant.
@@ -543,9 +546,10 @@ mod tests {
         let result = contract.remove_update_proposal(UpdateId(0).into_dto_type());
 
         // Then
-        assert_matches!(result, Err(err) => {
-            assert!(format!("{err:?}").contains("UpdateNotFound"), "got: {err:?}");
-        });
+        assert_matches!(
+            result,
+            Err(Error::InvalidParameters(InvalidParameters::UpdateNotFound))
+        );
     }
 
     #[test]
