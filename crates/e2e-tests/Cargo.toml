@@ -22,7 +22,7 @@ near-indexer-primitives = { workspace = true }
 near-kit = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek", "blstrs"] }
+near-mpc-crypto-types = { workspace = true, features = ["ed25519-dalek", "blstrs", "k256"] }
 near-sandbox = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
@@ -39,6 +39,7 @@ tracing = { workspace = true }
 blstrs = { workspace = true }
 contract-history = { workspace = true }
 group = { workspace = true }
+k256 = { workspace = true }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-sdk = { workspace = true }

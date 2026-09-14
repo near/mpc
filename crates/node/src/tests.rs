@@ -208,6 +208,7 @@ impl IntegrationTestSetup {
                 separate_asset_generation_runtime: true,
                 // Indexer config is just a dummy.
                 indexer: IndexerConfig {
+                    rpc_url: None,
                     concurrency: 1.try_into().unwrap(),
                     finality: Finality::Final,
                     mpc_contract_id: "test".parse().unwrap(),
