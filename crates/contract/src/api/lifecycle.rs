@@ -67,7 +67,6 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
@@ -155,7 +154,6 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
-            node_foreign_chain_support: Default::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),
