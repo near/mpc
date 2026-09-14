@@ -43,16 +43,21 @@ access_key=$(curl -sS "$RPC" -H 'content-type: application/json' -d '{
 nonce=$(jq -r .result.nonce <<<"$access_key")
 block_hash=$(jq -r .result.block_hash <<<"$access_key")
 block_height=$(jq -r .result.block_height <<<"$access_key")
+echo "access key: nonce $nonce, block $block_height ($block_hash)" >&2
 
 # near-cli-rs honours --nonce only in offline mode, which is what lets the two transactions carry
 # consecutive nonces without either of them having landed yet.
 sign() { # method json-args tgas nonce output-file
+  echo "signing $1 at $3 TGas, nonce $4 -> $5" >&2
+  # stdin closed on purpose: near-cli-rs prompts interactively for anything it cannot resolve
+  # from the arguments, and a prompt here would block forever instead of failing.
   near --quiet --offline contract call-function as-transaction "$CONTRACT" "$1" json-args "$2" \
     prepaid-gas "$3 Tgas" attached-deposit '0 NEAR' \
     sign-as "$SIGNER" network-config "$NETWORK" \
     sign-with-keychain \
     --nonce "$4" --block-hash "$block_hash" --block-height "$block_height" \
-    save-to-file "$5" >/dev/null 2>&1
+    save-to-file "$5" </dev/null
+  echo "signed $1" >&2
 }
 
 sign proposed_updates '{}' "$PROBE_GAS" "$((nonce + 1))" "$work/probe.json"
