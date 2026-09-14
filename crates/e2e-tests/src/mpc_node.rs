@@ -173,6 +173,18 @@ impl Drop for ProcessGuard {
     }
 }
 
+/// Indexer selection for a local comparison; defaults preserve existing tests.
+#[derive(Clone, Debug, Default)]
+pub enum NodeIndexer {
+    #[default]
+    Default,
+    EmbeddedOptimisticLatest,
+    /// None selects the cluster's sandbox RPC endpoint.
+    Http {
+        rpc_url: Option<String>,
+    },
+}
+
 /// All configuration and state needed to start an mpc-node process.
 /// Represents a node that is NOT running. Can wipe DB, modify config, etc.
 /// Config files (secrets.json, start_config.toml) are written on creation.
@@ -180,6 +192,7 @@ pub struct MpcNodeSetup {
     node_index: usize,
     home_dir: PathBuf,
     binary_path: PathBuf,
+    indexer: NodeIndexer,
     signer_account_id: AccountId,
     p2p_signing_key: SigningKey,
     /// Key used by the node to sign NEAR transactions (must have access key on account).
@@ -228,6 +241,7 @@ impl MpcNodeSetup {
             node_index: args.node_index,
             home_dir: args.home_dir,
             binary_path: args.binary_path,
+            indexer: args.indexer,
             signer_account_id: args.signer_account_id,
             p2p_signing_key: args.p2p_signing_key,
             near_signer_key: args.near_signer_key,
@@ -368,7 +382,16 @@ impl MpcNodeSetup {
         let stderr_file = std::fs::File::create(self.home_dir.join(STDERR_LOG))
             .context("failed to create stderr log")?;
 
-        let child = Command::new(&self.binary_path)
+        let mut command = Command::new(&self.binary_path);
+        command.env_remove("MPC_NEAR_RPC_URL");
+        command.env_remove("MPC_HTTP_INDEXER_PROOF_URL");
+        if let NodeIndexer::Http { rpc_url } = &self.indexer {
+            command.env(
+                "MPC_NEAR_RPC_URL",
+                rpc_url.as_ref().context("missing HTTP endpoint")?,
+            );
+        }
+        let child = command
             .arg("start-with-config-file")
             .arg(&self.config_path)
             .env(
@@ -438,7 +461,7 @@ impl MpcNodeSetup {
             gcp: None,
             log: LogConfig {
                 format: LogFormat::Plain,
-                filter: Some("debug".to_string()),
+                filter: Some(std::env::var("MPC_NODE_LOG").unwrap_or_else(|_| "DEBUG".to_string())),
             },
             near_init: Some(NearInitConfig {
                 chain_id: ChainId::Custom(self.chain_id.clone()),
@@ -463,11 +486,16 @@ impl MpcNodeSetup {
                 cores: Some(4),
                 separate_asset_generation_runtime: true,
                 indexer: IndexerConfig {
+                    rpc_url: None,
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),
                     mpc_contract_id: mpc_contract,
                     finality: Finality::None,
-                    sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
+                    sync_mode: if matches!(self.indexer, NodeIndexer::Default) {
+                        SyncMode::Block(BlockArgs { height: 0 })
+                    } else {
+                        SyncMode::Latest
+                    },
                     port_override: None,
                     wipe_near_data_token: 0,
                 },
@@ -505,6 +533,7 @@ pub struct MpcNodeSetupArgs {
     pub node_index: usize,
     pub home_dir: PathBuf,
     pub binary_path: PathBuf,
+    pub indexer: NodeIndexer,
     pub signer_account_id: AccountId,
     pub p2p_signing_key: SigningKey,
     pub near_signer_key: SigningKey,

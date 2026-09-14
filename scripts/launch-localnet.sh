@@ -2,12 +2,17 @@
 # Script to launch a localnet. The end result is a cluster of mpc-nodes
 # with all domains added, ready to accept transactions.
 #
-# Requirements: jq envsubst near neard mpc-node
+# Requirements: jq envsubst near neard mpc-node (built with --features embedded-node)
 #
 # Usage:
 #   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--tee-verifier-path <TEE_VERIFIER_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
 
 set -euo pipefail
+
+if ! mpc-node init --help >/dev/null 2>&1; then
+  echo "This localnet launcher requires: cargo install --path crates/node --features embedded-node --locked" >&2
+  exit 1
+fi
 
 MPC_CONTRACT_PATH="./target/near/mpc_contract/mpc_contract.wasm"
 

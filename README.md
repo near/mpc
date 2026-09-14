@@ -8,7 +8,7 @@ There are two main parts of the binary: NEAR indexer and MPC signing.
 
 ### NEAR Indexer
 
-The indexer is a NEAR node that tracks the shard where the signing smart contract lives (for mainnet, `v1.signer`). See the [chain-gateway design doc](docs/archive/design/chain-gateway-design.md) for details. It monitors incoming requests by looking at successful calls to the `sign` function. Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
+The indexer reads complete execution messages from an external NEAR node over HTTP. Configure its endpoint using the [HTTP indexing guide](docs/guide/http-indexer.md); the optional `embedded-node` feature retains the embedded NEAR implementation. The indexer monitors incoming requests by looking at successful calls to the `sign` function on the signing contract (for mainnet, `v1.signer`). Each request is hashed and mapped to a specific node in the MPC network — the *leader* for that request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, a secondary leader can take over.
 
 ### MPC Signing
 

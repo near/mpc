@@ -1,8 +1,9 @@
+#[cfg(feature = "embedded-node")]
+use crate::config::start::{StartConfigExt, read_near_config_json};
 use crate::{
     config::{
         PersistentSecrets, RespondConfig, SecretsConfig,
-        generate_and_write_backup_encryption_key_to_disk,
-        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
+        generate_and_write_backup_encryption_key_to_disk, start::TeeAuthorityImpl as _,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -53,7 +54,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
     // after `init_logging` so its logs are emitted. No-op for the `start` path.
-    config.ensure_near_initialized()?;
+    let _use_http = crate::indexer::http::configured_url(&config.node.indexer)?.is_some();
+    #[cfg(feature = "embedded-node")]
+    if !_use_http {
+        config.ensure_near_initialized()?;
+    }
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
@@ -196,7 +201,17 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
-            read_near_config_json(&config.home_dir),
+            {
+                #[cfg(feature = "embedded-node")]
+                let value = if _use_http {
+                    serde_json::Value::Null
+                } else {
+                    read_near_config_json(&config.home_dir)
+                };
+                #[cfg(not(feature = "embedded-node"))]
+                let value = serde_json::Value::Null;
+                value
+            },
             recent_transactions.clone(),
         ))
         .context("Failed to create web server.")?;
@@ -302,8 +317,11 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
 
     // Stop nearcore's actor system so its tasks have a chance to commit any
     // in-flight RocksDB batches before the process exits.
-    info!("Stopping nearcore actor system.");
-    near_async::shutdown_all_actors();
+    #[cfg(feature = "embedded-node")]
+    if !_use_http {
+        info!("Stopping nearcore actor system.");
+        near_async::shutdown_all_actors();
+    }
 
     // Cancel the indexer's terminal `listen_blocks` race; that lets the
     // indexer thread's `block_on` return, its tokio runtime drop, and every
@@ -316,9 +334,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     // mirroring what neard's standalone binary does on its SIGTERM path.
     // Without the cancellation above this call would hang forever because
     // the indexer thread's monitor tasks keep their Arc<RocksDB> alive.
-    info!("Waiting for RocksDB instances to gracefully shut down.");
-    near_store::db::RocksDB::block_until_all_instances_are_dropped();
-    info!("RocksDB shutdown complete.");
+    #[cfg(feature = "embedded-node")]
+    if !_use_http {
+        info!("Waiting for RocksDB instances to gracefully shut down.");
+        near_store::db::RocksDB::block_until_all_instances_are_dropped();
+        info!("RocksDB shutdown complete.");
+    }
 
     exit_reason
 }

@@ -71,22 +71,26 @@ pub struct WebUIConfig {
     pub port: u16,
 }
 
-/// Configures behavior of the near indexer.
+/// Configures NEAR indexing over HTTP or the optional embedded node.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexerConfig {
-    /// Tells whether to validate the genesis file before starting
+    /// RPC endpoint serving complete indexer messages. `MPC_NEAR_RPC_URL` overrides it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rpc_url: Option<String>,
+    /// Whether the embedded node validates its genesis file before starting.
     pub validate_genesis: bool,
     /// Sets the starting point for indexing
     pub sync_mode: SyncMode,
     /// Sets the finality level at which blocks are streamed
     pub finality: Finality,
-    /// Sets the concurrency for indexing
+    /// Concurrency for embedded indexing; HTTP consumes one acknowledged batch at a time.
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id
     pub mpc_contract_id: AccountId,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
-    /// Wipe token for the nearcore data dir (`home_dir/data`). On startup, whenever
+    /// Wipe token for the embedded nearcore data dir (`home_dir/data`). Ignored by HTTP.
+    /// On startup, whenever
     /// this value is non-zero and differs from the last value the node acted on
     /// (persisted across restarts), the node records the new value and then wipes the data.
     /// Change it and restart the node to force a wipe (the wipe runs once at startup, before the store is
@@ -111,6 +115,34 @@ pub enum SyncMode {
 pub struct BlockArgs {
     /// block height for block sync mode
     pub height: u64,
+}
+
+#[cfg(test)]
+mod indexer_tests {
+    use super::IndexerConfig;
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn indexer_config__should_accept_existing_configs_and_round_trip_rpc_url() {
+        // Given
+        let text = r#"
+            validate_genesis = false
+            sync_mode = "Latest"
+            finality = "optimistic"
+            concurrency = 1
+            mpc_contract_id = "v1.signer"
+        "#;
+
+        // When
+        let mut config: IndexerConfig = toml::from_str(text).unwrap();
+
+        // Then
+        assert_eq!(config.rpc_url, None);
+        assert!(!toml::to_string(&config).unwrap().contains("rpc_url"));
+        config.rpc_url = Some("http://127.0.0.1:3030".into());
+        let restored: IndexerConfig = toml::from_str(&toml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(restored, config);
+    }
 }
 
 /// The contents of the on-disk config.yaml file. Contains no secrets.

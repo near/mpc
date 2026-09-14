@@ -1,8 +1,8 @@
-use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainSendTransactionRequest, SignatureRespondArgsExt, VerifyForeignTransactionRespondArgsExt,
 };
+use crate::indexer::updates::BlockUpdateReceiver;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -145,14 +145,12 @@ impl MpcClient {
     pub async fn run(
         self: &Arc<Self>,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<BlockUpdateReceiver>,
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
-        let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
+        let _metrics_emitter = tracking::spawn("periodically emits metrics", async move {
             loop {
                 client.emit_metrics();
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -178,7 +176,7 @@ impl MpcClient {
             )
         };
 
-        let tee_verification_handle = {
+        let _tee_verification_handle = {
             let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn("tee_verification", async move {
                 loop {
@@ -201,7 +199,7 @@ impl MpcClient {
         // Background asset generation runs on the lower-priority gen runtime. The
         // inner `tracking::spawn` calls in each provider inherit it via
         // `Handle::current()`.
-        let ecdsa_background_tasks = tracking::spawn_on(
+        let _ecdsa_background_tasks = tracking::spawn_on(
             &self.gen_runtime_handle,
             "ecdsa_background_tasks",
             self.ecdsa_signature_provider
@@ -209,7 +207,7 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
-        let robust_ecdsa_background_tasks = tracking::spawn_on(
+        let _robust_ecdsa_background_tasks = tracking::spawn_on(
             &self.gen_runtime_handle,
             "robust_ecdsa_background_tasks",
             self.robust_ecdsa_signature_provider
@@ -217,7 +215,7 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
-        let eddsa_background_tasks = tracking::spawn_on(
+        let _eddsa_background_tasks = tracking::spawn_on(
             &self.gen_runtime_handle,
             "eddsa_background_tasks",
             self.eddsa_signature_provider
@@ -225,32 +223,24 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
-        let ckd_background_tasks = tracking::spawn_on(
+        let _ckd_background_tasks = tracking::spawn_on(
             &self.gen_runtime_handle,
             "ckd_background_tasks",
             self.ckd_provider.clone().spawn_background_tasks(),
         );
 
-        let _ = monitor_passive_channels.await?;
-        metrics_emitter.await?;
-        monitor_chain.await?;
-        let _ = robust_ecdsa_background_tasks.await?;
-        let _ = ecdsa_background_tasks.await?;
-        let _ = eddsa_background_tasks.await?;
-        let _ = ckd_background_tasks.await?;
-        tee_verification_handle.await?;
-
-        Ok(())
+        tokio::select! {
+            result = monitor_chain => result?,
+            result = monitor_passive_channels => result?,
+        }
     }
 
     async fn monitor_block_updates(
         self: Arc<Self>,
-        mut block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
+        mut block_update_receiver: tokio::sync::OwnedMutexGuard<BlockUpdateReceiver>,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -281,19 +271,23 @@ impl MpcClient {
         );
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
+        block_update_receiver.restart()?;
         let start_time = Clock::real().now();
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(CHECK_EACH_REQUEST_INTERVAL.unsigned_abs()) => {
                 }
                 block_update = block_update_receiver.recv() => {
-                    let Some(block_update) = block_update else {
+                    let Some(batch) = block_update else {
                         // If this branch hits, it means the channel is closed, meaning the
                         // indexer is being shutdown. So just quit this task.
                         break;
                     };
 
-                    self.client.update_indexer_height(block_update.block.height.into());
+                    for block_update in batch.blocks {
+                    if batch.head.is_none() {
+                        self.client.update_indexer_height(block_update.block.height.into());
+                    }
 
                     let AddBlockResult{ block_status } = recent_blocks.add_block(&block_update.block);
 
@@ -306,7 +300,11 @@ impl MpcClient {
 
                     // TODO(#3031): add batch request and unify stores
                     for request in &signature_requests.requests {
-                        self.sign_request_store.add(request);
+                        if batch.head.is_some() {
+                            self.sign_request_store.add_checked(request)?;
+                        } else {
+                            self.sign_request_store.add(request);
+                        }
                     }
 
                     // TODO(#3032): remove completed & finalized requests from store
@@ -319,7 +317,11 @@ impl MpcClient {
                         block_update.completed_ckds
                     );
                     for request in &ckd_requests.requests {
-                        self.ckd_request_store.add(request);
+                        if batch.head.is_some() {
+                            self.ckd_request_store.add_checked(request)?;
+                        } else {
+                            self.ckd_request_store.add(request);
+                        }
                     }
 
                     pending_ckds.notify_new_block(ckd_requests);
@@ -332,9 +334,21 @@ impl MpcClient {
                     );
 
                     for request in &verify_foreign_tx_requests.requests {
-                        self.verify_foreign_tx_request_store.add(request);
+                        if batch.head.is_some() {
+                            self.verify_foreign_tx_request_store.add_checked(request)?;
+                        } else {
+                            self.verify_foreign_tx_request_store.add(request);
+                        }
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
+                    }
+                    if let Some((head, height)) = batch.head {
+                        recent_blocks.select_head(head)?;
+                        self.client.update_indexer_height(height);
+                    }
+                    if let Some(acknowledge) = batch.acknowledge {
+                        let _ = acknowledge.send(());
+                    }
                 }
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
@@ -518,6 +532,7 @@ impl MpcClient {
                 );
             }
         }
+        Ok(())
     }
 
     async fn compute_signature_response(

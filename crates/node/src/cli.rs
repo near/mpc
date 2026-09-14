@@ -1,5 +1,6 @@
+#[cfg(feature = "embedded-node")]
+use crate::config::start::NearInitConfigExt;
 use crate::{
-    config::start::NearInitConfigExt,
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -41,6 +42,7 @@ pub enum CliCommand {
     },
     Start(StartCmd),
     /// Generates/downloads required files for Near node to run
+    #[cfg(feature = "embedded-node")]
     Init(InitConfigArgs),
     /// Imports a keyshare from JSON and stores it in the local encrypted storage
     ImportKeyshare(ImportKeyshareCmd),
@@ -224,6 +226,7 @@ impl Cli {
                 let node_configuration = start.into_start_config(config_file, self.log_format);
                 run_mpc_node(node_configuration).await
             }
+            #[cfg(feature = "embedded-node")]
             CliCommand::Init(config) => {
                 let dir = config.dir.clone();
                 let near_init = config.into_near_init_config();

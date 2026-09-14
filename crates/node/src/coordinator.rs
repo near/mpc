@@ -6,11 +6,11 @@ use crate::foreign_chain_policy::{
     spawn_supporters_by_foreign_chain,
 };
 use crate::indexer::foreign_chain::ForeignChainSupporters;
-use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
 use crate::indexer::types::ChainSendTransactionRequest;
+use crate::indexer::updates::BlockUpdateReceiver;
 use crate::indexer::{IndexerAPI, tx_sender};
 use crate::key_events::{
     ResharingArgs, keygen_follower, keygen_leader, resharing_follower, resharing_leader,
@@ -378,9 +378,7 @@ where
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
-        block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<BlockUpdateReceiver>,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
         contract_state_receiver: watch::Receiver<ContractState>,

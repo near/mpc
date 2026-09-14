@@ -55,7 +55,7 @@ repository = "https://github.com/near/mpc"
 #workspace members
 attestation = { path = "crates/attestation" }
 attestation-types = { path = "crates/attestation-types" }
-chain-gateway = { path = "crates/chain-gateway" }
+chain-gateway = { path = "crates/chain-gateway", default-features = false }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
 foreign-chain-health-check = { path = "crates/foreign-chain-health-check" }
@@ -274,7 +274,9 @@ near-client = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
 near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
 near-crypto = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
 near-indexer = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-indexer-client = "0.1.0"
 near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
+near-jsonrpc-node = { package = "near-jsonrpc-primitives", git = "https://github.com/near/nearcore", tag = "2.13.4" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
 near-store = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
