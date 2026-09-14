@@ -664,9 +664,9 @@ Leave unattended security upgrades enabled: a patched host is part of what keeps
 the node trustworthy, and it is the standard for servers of this kind. What has
 to be prevented is an upgrade disturbing the CVMs underneath it, in one of three
 ways: rebooting the host, restarting `dstack-vmm`, or changing a package the
-sealing key and the attestation measurements derive from.
+CVM's identity or its attestation depends on.
 
-The four settings below cover those three routes. Because dstack CVMs are
+The settings below cover those three routes. Because dstack CVMs are
 near-independent of the host, they are enough on their own; there is no need to
 stagger upgrade windows across operators.
 
@@ -713,78 +713,96 @@ this guide it will not have that line, so add it under `[Service]` now (see
 sudo systemctl daemon-reload   # applies at the next stop; does not bounce the daemon
 ```
 
-##### Hold the packages the sealing key and attestation depend on
+##### Freeze the TDX stack
 
 The CVM's disk-sealing key derives from the CPU microcode (via CPUSVN), and its
 attestation measurements from the QEMU version (via MRTD/RTMR0). An unattended
 upgrade of either can leave the CVM unable to unseal its disk, or produce
-measurements the contract does not allow. With automatic upgrades on, holding
-them is what keeps that from happening unannounced:
+measurements the contract does not allow. The rest of what the `canonical/tdx`
+PPAs provide is less sharp but no more welcome as an unobserved change: the
+quote path (`sgx-dcap-pccs`, `tdx-qgs`, `libsgx-*`, `libtdx-attest*`) and the
+host kernel (`linux-image-intel`), which installs silently and becomes the
+kernel you boot at the next maintenance window. Those PPAs publish every few
+months, so freezing the whole set costs nothing:
 
 ```bash
-sudo apt-mark hold intel-microcode \
-  qemu-system-x86 qemu-system-common qemu-system-data \
-  qemu-utils qemu-block-extra qemu-system
+PPA_PKGS=$(comm -12 \
+  <(awk '/^Package: /{print $2}' /var/lib/apt/lists/ppa.launchpadcontent.net_kobuk-team_*_Packages | sort -u) \
+  <(dpkg-query -W -f='${Package}\n' | sort -u))
+
+sudo apt-mark hold intel-microcode $PPA_PKGS
 apt-mark showhold
 ```
 
-The last three are not measured, but they are version-locked against the ones
-that are: `qemu-block-extra` declares
-`qemu-system-any (= <version>) | qemu-utils (= <version>)`, so leaving
-`qemu-utils` free lets the block modules move ahead of the pinned emulator, and
-QEMU then refuses to load modules built for a different version. That breaks
-starting a CVM rather than unsealing it, but holding the whole set is free.
+`intel-microcode` comes from the Ubuntu archive rather than a PPA, hence the
+separate mention. Holds are origin-agnostic, so they stop both the PPA and the
+archive from moving these packages.
 
-Lifting a hold is a deliberate step in a planned TCB update
-(`sudo apt-mark unhold intel-microcode`), performed after backing up the key
-shares. [TDX platform TCB status](../tdx-tcb-status.md) walks through that,
-including why a microcode change means redeploying the CVM. Note that a
-`qemu-system-x86` upgrade needs the same care for a different reason: the
-measurements it changes must already be approved on-chain (see
-[OS Measurement Voting](#os-measurement-voting)) before you install it.
+Nothing else needs freezing for the measurements: the guest firmware, kernel and
+rootfs come from the dstack image directory, not from packages. Check with
+`pgrep -af qemu-system-x86_64` that the running CVM is started with
+`-bios .../images/dstack-0.5.8/ovmf.fd`, `-kernel .../bzImage` and
+`-drive file=.../rootfs.img.verity`. The host's `ovmf` and `qemu-efi-*` packages
+are not in that path.
 
-##### Keep the TDX PPAs out of unattended upgrades
-
-The `canonical/tdx` setup adds two Launchpad PPAs, and each drops a file into
-`/etc/apt/apt.conf.d/` adding itself to `Unattended-Upgrade::Allowed-Origins`
-(and, incidentally, setting `Unattended-Upgrade::Allow-downgrade "true"`):
+Updating any of it is then explicit:
 
 ```bash
-cat /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-release \
-    /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-attestation-release
+sudo apt-mark unhold $PPA_PKGS
+sudo apt-get install $PPA_PKGS
+sudo apt-mark hold $PPA_PKGS
 ```
 
-Left in place, unattended upgrades pull the whole TDX stack from those PPAs. The
-holds above keep the sealing key out of reach either way, but the rest of that
-stack is the attestation path (`sgx-dcap-pccs`, `tdx-qgs`, `libsgx-ae-tdqe`,
-`libsgx-dcap-default-qpl`) and the host kernel (`linux-image-intel`). A
-quote-generation package changing under a running node costs attestation, and
-neither that nor a kernel belongs in an unattended run, so move both PPAs back
-to manual:
+A QEMU change needs its new measurements approved on-chain first (see
+[OS Measurement Voting](#os-measurement-voting)). A microcode change means
+redeploying the CVM, so back up the key shares and follow
+[TDX platform TCB status](../tdx-tcb-status.md).
+
+##### Leave the TDX PPAs' apt priority intact
+
+`setup-tdx-common` installs two pieces per PPA that only work together: a
+`Pin-Priority: 4000` file in `/etc/apt/preferences.d/`, and a
+`99unattended-upgrades-kobuk-*` file in `/etc/apt/apt.conf.d/` adding the PPA to
+`Unattended-Upgrade::Allowed-Origins` with `Allow-downgrade "true"`. Keep both:
 
 ```bash
-shopt -s nullglob
-for f in /etc/apt/apt.conf.d/99unattended-upgrades-kobuk-tdx-*release; do
-  sudo mv "$f" "$f.disabled"
-done
-apt-config dump | grep Allowed-Origins
+apt-config dump | grep -c kobuk            # expect 2
+ls /etc/apt/preferences.d/ | grep -c kobuk # expect 2
 ```
 
-`apt` ignores `*.disabled`, and these files belong to no package, so the change
-sticks. What remains should be the Ubuntu release, security and ESM pockets
-only. Upgrade the TDX stack deliberately instead, alongside a BIOS or TCB
-update. Note that `setup-tdx-common` writes these files with `tee`, so
-re-running `setup-tdx-host.sh` recreates them; re-check this step after any work
-on the TDX stack.
+Removing a PPA from `Allowed-Origins` does not make unattended-upgrades ignore
+it. It stamps that repository with a never-install pin (-32768), overriding the
+4000, after which the Ubuntu archive at priority 500 wins and any archive
+version sorting above the installed `+tdx` one silently replaces it. Together
+with the holds above, the archive cannot take a package off the PPA and the PPA
+cannot move one on its own.
 
-The kernel caveat applies to the Ubuntu archive kernel too, which stays in
-`Allowed-Origins` by design. A TDX host usually has `linux-image-generic`
-installed next to the PPA's `linux-image-intel`, and with the default
-`GRUB_DEFAULT=0` the boot entry is whichever kernel version sorts highest. A
-generic kernel from a newer upstream series sorts above `6.8.0-10xx-intel` and
-would become the default at the next planned reboot, bringing the host up
-without TDX host support. Check `uname -r` after every reboot, and pin
-`GRUB_DEFAULT` to the intel entry if you want it deterministic.
+Audit for drift after any work on the TDX stack, such as re-running
+`setup-tdx-host.sh`:
+
+```bash
+apt-get -s install --allow-downgrades $PPA_PKGS | grep -c '^Inst'   # 0 = in sync
+```
+
+A non-zero count means something pulled a TDX package onto an archive build.
+Dropping `-s` puts it back, since the 4000 pin already makes the PPA build the
+candidate.
+
+##### Watch which kernel you boot
+
+A TDX host usually has `linux-image-generic` installed next to the PPA's
+`linux-image-intel`, and `canonical/tdx` leaves GRUB on `GRUB_DEFAULT=saved`
+with `GRUB_SAVEDEFAULT=true` (`/etc/default/grub.d/99-tdx-kernel.cfg`), so the
+default is whichever entry booted last. One manual boot of another entry becomes
+permanent, and the host can come back up without TDX host support:
+
+```bash
+uname -r   # expect the -intel kernel
+```
+
+Check it after every reboot. How to make it deterministic (a pinned
+`saved_entry`, an explicit `GRUB_DEFAULT`, or dropping the generic kernel) is
+left to your setup.
 
 ## MPC Node Setup and Deployment
 
