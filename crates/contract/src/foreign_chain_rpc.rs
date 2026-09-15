@@ -20,7 +20,7 @@ use near_mpc_sdk::foreign_chain::validation::{
 use near_sdk::near;
 use near_sdk::store::IterableMap;
 
-use crate::errors::{ConversionError, Error, InvalidParameters};
+use crate::errors::{Error, InvalidParameters};
 use crate::primitives::proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash};
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::primitives::votes::Votes;
@@ -135,7 +135,7 @@ impl Default for ProviderVotes {
 impl ProviderVotes {
     pub fn retain(&mut self, current: &Participants) {
         self.pending
-            .retain_votes(|(p, _)| current.is_participant_given_participant_id(&p.get()));
+            .retain_votes(|(p, _)| current.is_participant(p));
     }
 
     /// Records `participant`'s vote for `(chain, hash)`. Returns `true` when `chain`
@@ -148,27 +148,22 @@ impl ProviderVotes {
         hash: ProposalHash,
         participant: AuthenticatedParticipantId,
         threshold_parameters: &GovernanceThresholdParameters,
-    ) -> Result<bool, Error> {
+    ) -> bool {
         let protocol_threshold = threshold_parameters.threshold().value();
         let participants = threshold_parameters.participants();
-        // Scope the borrow on `self.pending.vote` so we can mutate `self.pending`
-        // after `count_for`.
-        let count_usize = {
-            let voter_set = self.pending.vote((participant, chain), hash);
-            voter_set.count_for(|(p, c)| {
-                *c == chain && participants.is_participant_given_participant_id(&p.get())
-            })
-        };
-        let count = u64::try_from(count_usize).map_err(|e| ConversionError::DataConversion {
-            reason: format!("vote count {count_usize} does not fit in u64: {e}"),
-        })?;
+        let count_usize = self
+            .pending
+            .vote((participant, chain), hash)
+            .count_for(|(p, c)| *c == chain && participants.is_participant(p));
+        let count = u64::try_from(count_usize)
+            .expect("usize should never fail to convert to u64 on wasm32");
         if count >= protocol_threshold {
             // Drop ALL pending rows for this chain regardless of which proposal
             // they held — matches the previous `clear_chain` semantics.
             self.pending.retain_votes(|(_, c)| *c != chain);
-            Ok(true)
+            true
         } else {
-            Ok(false)
+            false
         }
     }
 }
@@ -205,7 +200,7 @@ impl ForeignChainRpcWhitelist {
             let hash = entry.to_proposal_hash();
             if self
                 .votes
-                .vote(chain, hash, participant.clone(), threshold_parameters)?
+                .vote(chain, hash, participant.clone(), threshold_parameters)
             {
                 self.entries.replace(chain, entry);
                 applied.push(chain);

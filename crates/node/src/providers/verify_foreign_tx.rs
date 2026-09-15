@@ -25,6 +25,7 @@ use foreign_chain_inspector::hyperevm::inspector::HyperEvmInspector;
 use foreign_chain_inspector::polygon::inspector::PolygonInspector;
 use foreign_chain_inspector::starknet::inspector::StarknetInspector;
 use foreign_chain_inspector::sui::inspector::SuiInspector;
+use foreign_chain_inspector::svm::inspector::{FogoInspector, SolanaInspector};
 use foreign_chain_rpc_factory::{build_http_client, resolve_provider_auth};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
@@ -57,6 +58,8 @@ pub(crate) struct ForeignChainInspectors<Client> {
     pub adi: Option<FanOut<AdiInspector<Client>>>,
     pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
     pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
+    pub solana: Option<FanOut<SolanaInspector<Client>>>,
+    pub fogo: Option<FanOut<FogoInspector<Client>>>,
 }
 
 impl ForeignChainInspectors<HttpClient> {
@@ -175,6 +178,16 @@ impl ForeignChainInspectors<HttpClient> {
                 new_aptos_inspector,
             )?,
             sui: build_fanout(ForeignChain::Sui, config.sui.as_ref(), new_sui_inspector)?,
+            solana: build_fanout(
+                ForeignChain::Solana,
+                config.solana.as_ref(),
+                with_http_client(SolanaInspector::new),
+            )?,
+            fogo: build_fanout(
+                ForeignChain::Fogo,
+                config.fogo.as_ref(),
+                with_http_client(FogoInspector::new),
+            )?,
         })
     }
 }
@@ -305,7 +318,6 @@ mod tests {
     async fn foreign_chain_inspectors_build__should_label_each_chain_by_its_own_config_key() {
         // Given
         let config = ForeignChainsConfig {
-            solana: None,
             bitcoin: chain_config(Bitcoin),
             ethereum: chain_config(Ethereum),
             abstract_chain: chain_config(Abstract),
@@ -319,6 +331,8 @@ mod tests {
             sui: chain_config(Sui),
             avalanche: chain_config(Avalanche),
             adi: chain_config(Adi),
+            solana: chain_config(Solana),
+            fogo: chain_config(Fogo),
         };
 
         // When
@@ -330,5 +344,39 @@ mod tests {
             let series = (chain.label().to_string(), provider_of(chain));
             assert!(published.contains(&series), "{series:?} was not published");
         }
+    }
+
+    // The chain markers cannot check which *config* feeds `build` — a
+    // `config.solana`/`config.fogo` swap still type-checks — so these pin it.
+    #[test]
+    fn build__should_wire_the_solana_config_to_the_solana_slot_only() {
+        // Given
+        let config = ForeignChainsConfig {
+            solana: chain_config(Solana),
+            ..Default::default()
+        };
+
+        // When
+        let inspectors = ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        assert!(inspectors.solana.is_some());
+        assert!(inspectors.fogo.is_none());
+    }
+
+    #[test]
+    fn build__should_wire_the_fogo_config_to_the_fogo_slot_only() {
+        // Given
+        let config = ForeignChainsConfig {
+            fogo: chain_config(Fogo),
+            ..Default::default()
+        };
+
+        // When
+        let inspectors = ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        assert!(inspectors.fogo.is_some());
+        assert!(inspectors.solana.is_none());
     }
 }

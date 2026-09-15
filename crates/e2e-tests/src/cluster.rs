@@ -896,36 +896,6 @@ impl MpcCluster {
             .await
             .context("failed to register backup service")
     }
-    /// View the legacy supported-chains set; requests are gated on the available set instead.
-    pub async fn view_foreign_chains_supported_by_contract(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
-        self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
-            .await
-    }
-
-    /// View the per-node foreign chain configurations registered with the contract.
-    pub async fn view_foreign_chain_configurations(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-            .await
-    }
-
-    /// Registers on the legacy supported-chains pipeline, which no longer gates requests.
-    pub async fn register_legacy_foreign_chain_support(
-        &self,
-        node_index: usize,
-        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id())
-            .register_foreign_chain_support(foreign_chain_support.clone())
-            .await
-            .context("failed to register foreign chain support")
-    }
 
     pub async fn view_available_foreign_chains(
         &self,
@@ -1272,10 +1242,7 @@ async fn prepay_attestation_grants(
     contract: &DeployedContract,
     near_keys: &[SigningKey],
 ) -> anyhow::Result<()> {
-    let Some(fee) = attestation_storage_fee(contract).await? else {
-        tracing::info!("contract config has no attestation storage fee; skipping prepayment");
-        return Ok(());
-    };
+    let fee = attestation_storage_fee(contract).await?;
 
     // Granting the initial participants too is harmless: their attestations update the
     // sentinel entry written at init, so they consume nothing and the grant stays unspent.
@@ -1292,34 +1259,24 @@ async fn prepay_attestation_grants(
             )
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
-        if !outcome.is_success() {
-            let failure = format!("{:?}", outcome.failure_message());
-            // A contract binary predating grants, as run by the upgrade-compatibility tests:
-            // it has no `prepay_attestation_storage` and needs no prepayment. Delete this
-            // branch, and `attestation_storage_fee`'s `None` case, once
-            // `contract_history::current_{mainnet,testnet}` point past 3.14.0, the last
-            // release without grants.
-            anyhow::ensure!(
-                failure.contains("method not found"),
-                "prepay for node {i} failed: {failure}"
-            );
-            tracing::info!("contract has no prepay_attestation_storage; skipping grant prepayment");
-            break;
-        }
+        anyhow::ensure!(
+            outcome.is_success(),
+            "prepay for node {i} failed: {:?}",
+            outcome.failure_message()
+        );
     }
 
     Ok(())
 }
 
-/// `None` when `config()` carries no fee field: a contract binary older than grants (3.14.0 and
-/// earlier), which the upgrade-compatibility tests run and which needs no prepayment.
 async fn attestation_storage_fee(
     contract: &DeployedContract,
-) -> anyhow::Result<Option<near_kit::NearToken>> {
+) -> anyhow::Result<near_kit::NearToken> {
     let config: serde_json::Value = contract.view("config").await?;
-    Ok(config["attestation_storage_fee_millinear"]
+    let millinear = config["attestation_storage_fee_millinear"]
         .as_u64()
-        .map(|millinear| near_kit::NearToken::from_millinear(u128::from(millinear))))
+        .context("config() has no attestation_storage_fee_millinear")?;
+    Ok(near_kit::NearToken::from_millinear(u128::from(millinear)))
 }
 
 async fn init_contract(

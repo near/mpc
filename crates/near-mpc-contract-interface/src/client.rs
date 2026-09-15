@@ -2,35 +2,42 @@
 //!
 //! [`MpcContractHandle`] is the single source of each method's wire format
 //! (method name, argument struct, gas, deposit), generic over a transport
-//! backend implementing [`CallContract`].
+//! backend implementing [`CallContract`]. Backends implementing
+//! [`ViewContract`] get the typed view methods.
 
-use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
+use near_contract_transport::{
+    CallContract, FunctionCallArgs, Json, NearGas, NearToken, ViewArgs, ViewCall, ViewContract,
+};
+use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs,
-    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs,
-    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
+    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
+    RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
+    VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
+    VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
     STORAGE_BYTE_COST_YOCTONEAR, propose_update_required_deposit_yoctonear,
 };
 use crate::method_names::{
-    CANCEL_NODE_MIGRATION, INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REQUEST_APP_PRIVATE_KEY, SIGN,
-    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES,
+    ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, CODE_HASH_VOTES, INIT, LAUNCHER_HASH_VOTES,
+    OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG,
+    REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION,
+    SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
+    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
-    DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    ForeignChainsConfig, GovernanceThresholdParameters, InitConfig, PayloadBytesError,
-    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
-    SupportedForeignChains, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
+    AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
+    CKDRequestArgs, ChainEntry, CodeHashesVotes, DestinationNodeInfo, DomainConfig,
+    Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
+    GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash, LauncherHashVotes,
+    LauncherImageHash, MeasurementVotes, PayloadBytesError, ProposeUpdateArgs,
+    ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+    VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -170,6 +177,20 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn remove_update_proposal(
+        &self,
+        id: UpdateId,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RemoveUpdateProposalArgs::new(id))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REMOVE_UPDATE_PROPOSAL,
+            args,
+            // Cost scales with the size of the removed proposal, which can be a full contract.
+            MAX_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_add_domains(
         &self,
         domains: Vec<DomainConfig>,
@@ -292,20 +313,6 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    pub async fn register_foreign_chain_support(
-        &self,
-        foreign_chain_support: SupportedForeignChains,
-    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args =
-            serde_json::to_vec(&RegisterForeignChainSupportArgs::new(foreign_chain_support))?;
-        self.call(FunctionCallArgs::no_deposit(
-            REGISTER_FOREIGN_CHAIN_SUPPORT,
-            args,
-            MAX_GAS,
-        ))
-        .await
-    }
-
     pub async fn register_foreign_chains_config(
         &self,
         foreign_chains_config: ForeignChainsConfig,
@@ -372,6 +379,40 @@ impl<C: CallContract> MpcContractHandle<C> {
     }
 }
 
+impl<C: ViewContract + Clone> MpcContractHandle<C> {
+    pub fn allowed_docker_image_hashes(&self) -> ViewCall<C, Vec<AllowedMpcDockerImageHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_DOCKER_IMAGE_HASHES))
+    }
+
+    pub fn allowed_launcher_image_hashes(&self) -> ViewCall<C, Vec<LauncherImageHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_LAUNCHER_IMAGE_HASHES))
+    }
+
+    pub fn allowed_launcher_compose_hashes(&self) -> ViewCall<C, Vec<LauncherDockerComposeHash>> {
+        self.view(ViewArgs::no_args(ALLOWED_LAUNCHER_COMPOSE_HASHES))
+    }
+
+    pub fn allowed_os_measurements(&self) -> ViewCall<C, Vec<ExpectedMeasurements>> {
+        self.view(ViewArgs::no_args(ALLOWED_OS_MEASUREMENTS))
+    }
+
+    pub fn code_hash_votes(&self) -> ViewCall<C, CodeHashesVotes> {
+        self.view(ViewArgs::no_args(CODE_HASH_VOTES))
+    }
+
+    pub fn launcher_hash_votes(&self) -> ViewCall<C, LauncherHashVotes> {
+        self.view(ViewArgs::no_args(LAUNCHER_HASH_VOTES))
+    }
+
+    pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
+        self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
+    }
+
+    fn view<T: DeserializeOwned>(&self, args: ViewArgs) -> ViewCall<C, T> {
+        self.caller.view::<T, Json>(self.contract_id.clone(), args)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MpcContractHandleError<E> {
     #[error("failed to serialize call arguments: {0}")]
@@ -408,10 +449,12 @@ mod tests {
         ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
         VerifyForeignTransactionRequestArgs,
     };
-    use near_contract_transport::{CallContract, FunctionCallArgs};
+    use near_contract_transport::{
+        CallContract, FunctionCallArgs, ObservedState, mock::MockViewContract,
+    };
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
@@ -552,6 +595,7 @@ mod tests {
             .await
             .unwrap();
         handle.vote_update(UpdateId(7)).await.unwrap();
+        handle.remove_update_proposal(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
                 id: DomainId(0),
@@ -602,10 +646,6 @@ mod tests {
             .unwrap();
         handle.cancel_node_migration().await.unwrap();
         handle
-            .register_foreign_chain_support(BTreeSet::from([ForeignChain::Bitcoin]).into())
-            .await
-            .unwrap();
-        handle
             .vote_update_foreign_chain_providers(NonEmptyBTreeMap::new(
                 ForeignChain::Bitcoin,
                 ChainEntry {
@@ -633,10 +673,48 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 21);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        insta::assert_snapshot!(catalog);
+    }
+
+    /// One catalog snapshot for the handle's views: every view is called once
+    /// and its wire format becomes a section of the snapshot. New view
+    /// methods add a call here.
+    #[tokio::test]
+    async fn mpc_contract_handle__should_match_the_view_catalog() {
+        // Given
+        let viewer = MockViewContract::new(Ok(ObservedState {
+            observed_at: 0.into(),
+            value: Vec::new(),
+        }));
+        let handle = MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap());
+
+        // When: every view, once, in declaration order; only the recorded
+        // calls matter, so the empty mock response is left undecoded
+        let _ = handle.allowed_docker_image_hashes().await;
+        let _ = handle.allowed_launcher_image_hashes().await;
+        let _ = handle.allowed_launcher_compose_hashes().await;
+        let _ = handle.allowed_os_measurements().await;
+        let _ = handle.code_hash_votes().await;
+        let _ = handle.launcher_hash_votes().await;
+        let _ = handle.os_measurement_votes().await;
+
+        // Then
+        let catalog = viewer
+            .calls()
+            .iter()
+            .map(|call| {
+                format!(
+                    "contract: {}\nmethod:   {}\nargs:     {}",
+                    call.contract_id,
+                    call.method_name,
+                    String::from_utf8_lossy(&call.args)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n\n");
         insta::assert_snapshot!(catalog);

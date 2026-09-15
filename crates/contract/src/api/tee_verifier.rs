@@ -46,7 +46,7 @@ impl MpcContract {
         };
         if let Some(new_verifier) =
             self.tee_verifier_votes
-                .vote(proposal, participant, threshold_parameters)?
+                .vote(proposal, participant, threshold_parameters)
         {
             log!("vote_tee_verifier_change: new verifier = {}", new_verifier);
             self.tee_verifier_account_id = Some(new_verifier);

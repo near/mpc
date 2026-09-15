@@ -1,5 +1,6 @@
 #![allow(clippy::indexing_slicing, clippy::missing_panics_doc)]
 
+use frost_core::Field;
 use rand::RngCore;
 use rand_core::SeedableRng;
 
@@ -133,6 +134,23 @@ fn bench_cait_sith(
             ot_run_sign(
                 participants,
                 &presign_outputs,
+                threshold,
+                coordinator,
+                pk,
+                &config.latency,
+                &mut rng,
+            )
+        },
+        config.samples,
+    );
+    bench_simulation(
+        "Cait-Sith: presign+sign online",
+        &|| {
+            let mut rng = MockCryptoRng::seed_from_u64(77);
+            ot_run_presign_and_sign(
+                participants,
+                &triples,
+                key_packages,
                 threshold,
                 coordinator,
                 pk,
@@ -297,6 +315,61 @@ fn ot_run_sign(
     let (results, metrics) = run_simulation(protocols, latency);
     assert_eq!(results.len(), participants.len());
     assert!(results.iter().any(|(_, sig)| sig.is_some()));
+    metrics
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ot_run_presign_and_sign(
+    participants: &[Participant],
+    two_triples: &[(Participant, Vec<TriplePair>)],
+    key_packages: &[(Participant, ecdsa::KeygenOutput)],
+    threshold: ReconstructionThreshold,
+    coordinator: Participant,
+    pk: frost_secp256k1::VerifyingKey,
+    latency: &LatencyModel,
+    rng: &mut MockCryptoRng,
+) -> SimulationMetrics {
+    let mut sorted_triples = two_triples.to_owned();
+    sorted_triples.sort_by_key(|(p, _)| *p);
+
+    let (shares, pubs): (Vec<_>, Vec<_>) =
+        sorted_triples.into_iter().flat_map(|(_, vec)| vec).unzip();
+    let (shares0, shares1) = split_even_odd(shares);
+    let (pub0, pub1) = split_even_odd(pubs);
+
+    let tweak = ecdsa::Tweak::new(frost_core::random_nonzero::<ecdsa::Secp256K1Sha256, _>(rng));
+    let msg_hash = frost_secp256k1::Secp256K1ScalarField::random(rng);
+    let derived_pk = tweak.derive_verifying_key(&pk).to_element().to_affine();
+
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
+    )> = Vec::with_capacity(participants.len());
+    for (((p, keygen_out), share0), share1) in key_packages.iter().zip(shares0).zip(shares1) {
+        let protocol = ot_based_ecdsa::presign_and_sign(
+            participants,
+            coordinator,
+            *p,
+            ot_based_ecdsa::PresignArguments {
+                triple0: (share0, pub0[0].clone()),
+                triple1: (share1, pub1[0].clone()),
+                keygen_out: keygen_out.clone(),
+                threshold,
+            },
+            tweak,
+            msg_hash,
+        )
+        .expect("Presign and sign should succeed");
+        protocols.push((*p, Box::new(protocol)));
+    }
+
+    let (results, metrics) = run_simulation(protocols, latency);
+    assert_eq!(results.len(), participants.len());
+    let signature = results
+        .iter()
+        .find_map(|(p, sig)| (*p == coordinator).then(|| sig.clone()).flatten())
+        .expect("coordinator should output a signature");
+    assert!(signature.verify(&derived_pk, &msg_hash));
     metrics
 }
 
