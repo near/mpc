@@ -170,7 +170,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
-    let mpc = worker.view_mpc(contract.id());
+    let mpc_contract = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
 
@@ -193,7 +193,8 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap();
     }
     assert!(
-        mpc.allowed_launcher_image_hashes()
+        mpc_contract
+            .allowed_launcher_image_hashes()
             .await
             .unwrap()
             .value
@@ -213,7 +214,8 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert!(
-        mpc.allowed_launcher_image_hashes()
+        mpc_contract
+            .allowed_launcher_image_hashes()
             .await
             .unwrap()
             .value

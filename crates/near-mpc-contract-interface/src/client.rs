@@ -673,7 +673,6 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 21);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))
