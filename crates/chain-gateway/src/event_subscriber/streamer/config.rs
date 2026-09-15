@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
 use derive_more::{Deref, DerefMut};
-use near_account_id::AccountId;
+use near_indexer_primitives::types::AccountId;
 
-use crate::event_subscriber::{
-    block_events::BlockEventId,
-    subscriber::{BlockEventSubscription, BlockEventSubscriptions},
+use crate::{
+    account_id_compat::to_near_internal,
+    event_subscriber::{
+        block_events::BlockEventId,
+        subscriber::{BlockEventSubscription, BlockEventSubscriptions},
+    },
 };
 
 pub(super) struct StreamerConfig {
@@ -19,6 +22,8 @@ pub(super) struct BlockEvents {
     pub(super) receipt_receiver_events: ReceiptReceiverEventIdsByContractIds,
 }
 
+/// Keyed by the `nearcore` [`AccountId`] flavour so that matching a receipt costs
+/// no conversion: lookups happen once per receipt, insertions only at startup.
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptReceiverEventIdsByContractIds(
     BTreeMap<AccountId, ReceiptReceiverEventIdsByMethodNames>,
@@ -27,6 +32,8 @@ pub(super) struct ReceiptReceiverEventIdsByContractIds(
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptReceiverEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
+/// Keyed by the `nearcore` [`AccountId`] flavour, for the same reason as
+/// [`ReceiptReceiverEventIdsByContractIds`].
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptExecutorEventIdsByContractIds(
     BTreeMap<AccountId, ReceiptExecutorEventIdsByMethodNames>,
@@ -46,7 +53,7 @@ impl From<BlockEventSubscriptions> for StreamerConfig {
                     method_name,
                 } => {
                     receipt_executor_events
-                        .entry(transaction_outcome_executor_id)
+                        .entry(to_near_internal(&transaction_outcome_executor_id))
                         .or_default()
                         .entry(method_name)
                         .or_default()
@@ -57,7 +64,7 @@ impl From<BlockEventSubscriptions> for StreamerConfig {
                     method_name,
                 } => {
                     receipt_receiver_events
-                        .entry(receipt_receiver_id)
+                        .entry(to_near_internal(&receipt_receiver_id))
                         .or_default()
                         .entry(method_name)
                         .or_default()

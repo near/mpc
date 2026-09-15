@@ -6,6 +6,7 @@ use near_indexer_primitives::{
 };
 
 use crate::{
+    account_id_compat::from_near_internal,
     errors::ChainGatewayError,
     event_subscriber::{
         block_events::{
@@ -178,7 +179,7 @@ impl BlockEvents {
                 event_data: EventData::ExecutorFunctionCallSuccessWithPromise(
                     ExecutorFunctionCallSuccessWithPromiseData {
                         receipt_id: receipt.receipt_id,
-                        predecessor_id: receipt.predecessor_id.clone(),
+                        predecessor_id: from_near_internal(&receipt.predecessor_id),
                         next_receipt_id: *next_receipt_id,
                         args_raw: args.to_vec(),
                     },
