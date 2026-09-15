@@ -29,7 +29,7 @@ use crate::{
 
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
-/// state written by the `3.15.0` contract still deserializes during migration.
+/// state written by the `3.15.1` contract still deserializes during migration.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -73,7 +73,7 @@ impl From<MpcContract> for crate::MpcContract {
     }
 }
 
-/// Shadow of the `3.15.0` legacy account-keyed support map; the migration clears it.
+/// Shadow of the `3.15.1` legacy account-keyed support map; the migration clears it.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldSupportedForeignChainsByNode {
     foreign_chain_support_by_node: IterableMap<dtos::AccountId, BTreeSet<dtos::ForeignChain>>,
