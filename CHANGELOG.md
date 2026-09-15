@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.15.1] - 2026-09-15
+
+### 🚀 Features
+
+- [#4425](https://github.com/near/mpc/pull/4417)(@netrome): Allow participants to remove their update proposals (#4417) (#4418)
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4425](https://github.com/near/mpc/pull/4425)(@netrome): *(contract)* Update contract migrations after 3.15.0 release (#4400) (#4425)
+
+
 ## [3.15.0] - 2026-09-04
 
 ### 🚀 Features
