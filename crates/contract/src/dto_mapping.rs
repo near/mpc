@@ -669,7 +669,10 @@ impl TryFrom<near_mpc_contract_interface::types::Config> for Config {
 // Gated behind `test-utils` so they stay out of the production/WASM surface.
 #[cfg(feature = "test-utils")]
 mod test_conversions {
-    use super::*;
+    use super::{
+        GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, ParticipantInfo,
+        ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+    };
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
