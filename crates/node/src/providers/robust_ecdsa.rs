@@ -76,22 +76,25 @@ impl RobustEcdsaSignatureProvider {
     }
 }
 
+/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum RobustEcdsaTaskId {
     KeyGeneration {
         key_event: KeyEventId,
-    },
+    } = 0,
     KeyResharing {
         key_event: KeyEventId,
-    },
+    } = 1,
     Presignature {
         id: UniqueId,
         domain_id: DomainId,
-    },
+    } = 2,
     Signature {
         id: SignatureId,
         presignature_id: UniqueId,
-    },
+    } = 3,
 }
 
 impl From<RobustEcdsaTaskId> for MpcTaskId {

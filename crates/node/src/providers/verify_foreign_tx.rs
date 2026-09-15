@@ -225,12 +225,15 @@ pub struct VerifyForeignTxProvider {
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
 
+/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum VerifyForeignTxTaskId {
     VerifyForeignTx {
         id: VerifyForeignTxId,
         presignature_id: UniqueId,
-    },
+    } = 0,
 }
 
 impl From<VerifyForeignTxTaskId> for MpcTaskId {

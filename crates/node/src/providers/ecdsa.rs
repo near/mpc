@@ -124,27 +124,30 @@ impl EcdsaSignatureProvider {
     }
 }
 
+/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum EcdsaTaskId {
     KeyGeneration {
         key_event: KeyEventId,
-    },
+    } = 0,
     KeyResharing {
         key_event: KeyEventId,
-    },
+    } = 1,
     ManyTriples {
         start: UniqueId,
         count: u32,
-    },
+    } = 2,
     Presignature {
         id: UniqueId,
         domain_id: DomainId,
         paired_triple_id: UniqueId,
-    },
+    } = 3,
     Signature {
         id: SignatureId,
         presignature_id: UniqueId,
-    },
+    } = 4,
 }
 
 impl From<EcdsaTaskId> for MpcTaskId {
@@ -242,7 +245,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
             },
 
             _ => anyhow::bail!(
-                "eddsa task handler: received unexpected task id: {:?}",
+                "ecdsa task handler: received unexpected task id: {:?}",
                 channel.task_id()
             ),
         }

@@ -1,4 +1,5 @@
 use crate::primitives::ParticipantId;
+use crate::protocol_version::CommunicationProtocols;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
@@ -217,6 +218,11 @@ pub trait SenderConnectionId {
     fn sender_connection_id(&self) -> u32;
 }
 
+/// The protocol version the remote side of a connection advertised in the handshake.
+pub trait AdvertiseProtocolVersion {
+    fn peer_protocol_version(&self) -> CommunicationProtocols;
+}
+
 impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
     OptionSenderConnectionId for NodeConnectivity<I, O>
 {
@@ -226,19 +232,46 @@ impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
     }
 }
 
+impl<
+    I: AdvertiseProtocolVersion + Send + Sync + 'static,
+    O: AdvertiseProtocolVersion + Send + Sync + 'static,
+> NodeConnectivity<I, O>
+{
+    /// The protocol version the peer advertised in the handshake of whichever connection is
+    /// currently up; `None` while it is not connected. Both directions carry the peer's own
+    /// version, so either answers.
+    pub fn peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+        let outgoing = self
+            .outgoing_receiver
+            .borrow()
+            .connection
+            .upgrade()
+            .map(|conn| conn.peer_protocol_version());
+        outgoing.or_else(|| {
+            self.incoming_receiver
+                .borrow()
+                .connection
+                .upgrade()
+                .map(|conn| conn.peer_protocol_version())
+        })
+    }
+}
+
 #[async_trait::async_trait]
 pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn connection_version(&self) -> ConnectionVersion;
     fn was_connection_interrupted(&self, version: ConnectionVersion) -> bool;
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
     fn is_bidirectionally_connected(&self) -> bool;
+    /// The protocol version the peer advertised in its handshake; `None` while not connected.
+    fn peer_protocol_version(&self) -> Option<CommunicationProtocols>;
 }
 
 #[async_trait::async_trait]
 impl<I, O> NodeConnectivityInterface for NodeConnectivity<I, O>
 where
-    I: Send + Sync + 'static,
-    O: Send + Sync + 'static,
+    I: AdvertiseProtocolVersion + Send + Sync + 'static,
+    O: AdvertiseProtocolVersion + Send + Sync + 'static,
 {
     fn connection_version(&self) -> ConnectionVersion {
         NodeConnectivity::connection_version(self)
@@ -280,6 +313,10 @@ where
 
     fn is_bidirectionally_connected(&self) -> bool {
         NodeConnectivity::is_bidirectionally_connected(self)
+    }
+
+    fn peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+        NodeConnectivity::peer_protocol_version(self)
     }
 }
 
@@ -355,6 +392,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::network::conn::{
@@ -362,16 +400,62 @@ mod tests {
         OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
+    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
     use futures::FutureExt;
     use rstest::rstest;
     use std::sync::{Arc, Weak};
 
-    use super::SenderConnectionId;
+    use super::{AdvertiseProtocolVersion, SenderConnectionId};
 
     impl SenderConnectionId for usize {
         fn sender_connection_id(&self) -> u32 {
             *self as u32
         }
+    }
+
+    impl AdvertiseProtocolVersion for usize {
+        fn peer_protocol_version(&self) -> CommunicationProtocols {
+            CURRENT_PROTOCOL_VERSION
+        }
+    }
+
+    struct VersionedConnection(CommunicationProtocols);
+
+    impl SenderConnectionId for VersionedConnection {
+        fn sender_connection_id(&self) -> u32 {
+            0
+        }
+    }
+
+    impl AdvertiseProtocolVersion for VersionedConnection {
+        fn peer_protocol_version(&self) -> CommunicationProtocols {
+            self.0
+        }
+    }
+
+    #[rstest]
+    #[case::both_up(true, true, Some(CommunicationProtocols::Dec2025))]
+    #[case::only_outgoing_up(true, false, Some(CommunicationProtocols::Dec2025))]
+    #[case::only_incoming_up(false, true, Some(CommunicationProtocols::Jan2026))]
+    #[case::neither_up(false, false, None)]
+    fn node_connectivity__should_report_the_protocol_version_of_a_live_connection_only(
+        #[case] keep_outgoing: bool,
+        #[case] keep_incoming: bool,
+        #[case] expected: Option<CommunicationProtocols>,
+    ) {
+        // Given
+        let connectivity = NodeConnectivity::<VersionedConnection, VersionedConnection>::new();
+        let outgoing = Arc::new(VersionedConnection(CommunicationProtocols::Dec2025));
+        connectivity.set_outgoing_connection(&outgoing);
+        let incoming = Arc::new(VersionedConnection(CommunicationProtocols::Jan2026));
+        connectivity.set_incoming_connection(&incoming).unwrap();
+
+        // When
+        let _outgoing = keep_outgoing.then_some(outgoing);
+        let _incoming = keep_incoming.then_some(incoming);
+
+        // Then
+        assert_eq!(connectivity.peer_protocol_version(), expected);
     }
 
     #[test]
