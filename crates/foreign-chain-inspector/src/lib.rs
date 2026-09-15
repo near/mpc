@@ -73,10 +73,8 @@ pub enum Verdict<V> {
     },
     #[display("a requested log index is out of bounds")]
     LogIndexOutOfBounds,
-    /// A verdict rather than a tolerated error, for the same reason as
-    /// [`Self::TransactionNotFound`]: an absent account is the chain's answer, not a provider
-    /// fault. Only as settled as the account read behind it — an extractor that reads mutable
-    /// state can have honest providers disagree.
+    /// Similar to [`Self::TransactionNotFound`], an absent account is the chain's answer, not a provider fault.
+    /// A mutable account may leave two honest providers with different answers.
     #[display("a requested account was not found")]
     AccountNotFound,
 }
