@@ -1,17 +1,80 @@
-//! Operator-driven one-time wipe of nearcore's data dir, triggered by a wipe
-//! token config flag.
+//! Wipes of nearcore's chain-store data dir. Two triggers, both using the atomic
+//! rename-into-trash in [`wipe_store_dir`]: the operator-driven `wipe_near_data_token`,
+//! and the automatic epoch-sync data reset ([`wipe_near_data_if_epoch_sync_reset`], #3909).
 //!
-//! The node persists the last token value it acted on in a file under `home_dir`
-//! (a sibling of `data`, so it survives the wipe). When the configured
-//! `wipe_near_data_token` is non-zero and differs from that value, the node
-//! records it, then renames the data dir into a trash dir (one atomic step) and
-//! deletes it. The rename makes the store vanish atomically, so a delete
-//! interrupted by a crash leaves only the trash behind — which is cleaned on the
-//! next startup.
+//! For the token wipe the node persists the last value it acted on in a file under
+//! `home_dir` (a sibling of `data`, so it survives the wipe). When the configured
+//! `wipe_near_data_token` is non-zero and differs from that value, the node records it,
+//! then renames the data dir into a trash dir (one atomic step) and deletes it. The
+//! rename makes the store vanish atomically, so a delete interrupted by a crash leaves
+//! only the trash behind — which is cleaned on the next startup.
 
-use crate::home_paths::{near_data_trash_dir, wipe_token_file};
+use crate::home_paths::{epoch_sync_reset_marker_file, near_data_trash_dir, wipe_token_file};
 use std::io::Write;
 use std::path::{Component, Path};
+
+/// Records that nearcore's epoch-sync asked for a data reset, consumed by
+/// [`wipe_near_data_if_epoch_sync_reset`] on the next startup. The caller only restarts
+/// when this succeeds, so a persistent write failure leaves the node up and wedged rather
+/// than restart-looping.
+pub(crate) fn record_epoch_sync_reset_request(home_dir: &Path) -> std::io::Result<()> {
+    std::fs::write(epoch_sync_reset_marker_file(home_dir), b"1")
+}
+
+/// If nearcore requested an epoch-sync data reset on a previous run, wipe the
+/// chain store now — before nearcore reopens it — and clear the marker. Mirrors
+/// `neard`'s `check_epoch_sync_data_reset_marker`. Reuses the same atomic
+/// rename-into-trash the token wipe uses. Skipped, with a warning, on archival
+/// nodes. Keyshares/secrets/config are untouched (only the store dir is moved).
+pub(crate) fn wipe_near_data_if_epoch_sync_reset(
+    home_dir: &Path,
+    hot_store_path: &Path,
+    is_archival: bool,
+) -> std::io::Result<()> {
+    let marker = epoch_sync_reset_marker_file(home_dir);
+    if !marker.exists() {
+        return Ok(());
+    }
+    if is_archival {
+        tracing::warn!(
+            ?hot_store_path,
+            "epoch-sync data-reset marker found but node is archival; skipping wipe"
+        );
+        remove_marker(&marker);
+        return Ok(());
+    }
+
+    let wiped = wipe_store_dir(home_dir, hot_store_path).inspect_err(|err| {
+        tracing::error!(
+            ?hot_store_path,
+            ?err,
+            "failed to move nearcore data dir aside for epoch-sync reset"
+        );
+    })?;
+    // Clear the marker only after the store is gone, so a crash mid-wipe retries.
+    remove_marker(&marker);
+    if wiped {
+        tracing::info!(
+            ?hot_store_path,
+            "wiped nearcore data dir (epoch-sync data reset)"
+        );
+    }
+    Ok(())
+}
+
+/// Best-effort removal of the epoch-sync reset marker. Logged at `error`: a marker left
+/// behind after a successful wipe would re-wipe and full-resync on the next startup.
+fn remove_marker(marker: &Path) {
+    if let Err(err) = std::fs::remove_file(marker)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::error!(
+            ?marker,
+            ?err,
+            "could not remove epoch-sync data-reset marker"
+        );
+    }
+}
 
 /// Cleans any leftover wipe trash, then — if `requested_token` is non-zero and
 /// differs from the last recorded value — records it and wipes the data dir.
@@ -22,8 +85,9 @@ pub(crate) fn wipe_near_data_if_requested(
     requested_token: u64,
     is_archival: bool,
 ) -> std::io::Result<()> {
-    let trash_path = near_data_trash_dir(home_dir);
-    remove_trash(&trash_path);
+    // Clean any leftover trash from a prior interrupted wipe. Runs on every startup,
+    // including when no wipe is requested.
+    remove_trash(&near_data_trash_dir(home_dir));
 
     // 0 is the "off" value: never wipe.
     if requested_token == 0 {
@@ -43,18 +107,20 @@ pub(crate) fn wipe_near_data_if_requested(
         return Ok(());
     }
 
-    // Guard against a misconfigured store.path (absolute, `..`, or the home dir
-    // itself) turning the wipe into a rename/remove outside the node's data tree.
+    // Validate the store path *before* recording the token: a guard rejection is not a
+    // partial wipe, so recording the token here would suppress the retry after the
+    // operator fixes the path.
     ensure_within_home(home_dir, hot_store_path)?;
-
     write_last_token(&token_path, requested_token)?;
 
-    // Move the store aside in one atomic rename, so the data dir is gone for good
-    // even if the process dies before the (best-effort) delete below runs.
-    match std::fs::rename(hot_store_path, &trash_path) {
-        Ok(()) => {}
+    match wipe_store_dir(home_dir, hot_store_path) {
+        Ok(true) => tracing::info!(
+            ?hot_store_path,
+            requested_token,
+            "wiped nearcore data dir (wipe_near_data_token)"
+        ),
         // Fresh node: nothing to wipe.
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Ok(false) => {}
         Err(err) => {
             tracing::error!(
                 ?hot_store_path,
@@ -67,13 +133,27 @@ pub(crate) fn wipe_near_data_if_requested(
             return Err(err);
         }
     }
-    remove_trash(&trash_path);
-    tracing::info!(
-        ?hot_store_path,
-        requested_token,
-        "wiped nearcore data dir (wipe_near_data_token)"
-    );
     Ok(())
+}
+
+/// Atomically moves the chain store aside (rename into the trash dir) and deletes
+/// it, refusing a store path outside `home_dir`. Returns whether there was a store
+/// to wipe — `false` means the store dir was already absent (a fresh node).
+fn wipe_store_dir(home_dir: &Path, hot_store_path: &Path) -> std::io::Result<bool> {
+    // Guard against a misconfigured store.path (absolute, `..`, or the home dir
+    // itself) turning the wipe into a rename/remove outside the node's data tree.
+    ensure_within_home(home_dir, hot_store_path)?;
+    let trash_path = near_data_trash_dir(home_dir);
+    remove_trash(&trash_path);
+    // One atomic rename, so the store is gone for good even if the process dies
+    // before the (best-effort) delete below runs.
+    match std::fs::rename(hot_store_path, &trash_path) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err),
+    }
+    remove_trash(&trash_path);
+    Ok(true)
 }
 
 /// Best-effort recursive delete of the wipe trash dir. Never fatal.
@@ -164,13 +244,17 @@ fn write_last_token(token_path: &Path, token: u64) -> std::io::Result<()> {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::home_paths::near_data_dir;
+    use crate::home_paths::{near_data_dir, secrets_file};
     use rstest::rstest;
 
     fn read_recorded(home: &Path) -> Option<u64> {
         std::fs::read_to_string(wipe_token_file(home))
             .ok()
             .map(|s| s.trim().parse().unwrap())
+    }
+
+    fn marker_exists(home: &Path) -> bool {
+        epoch_sync_reset_marker_file(home).exists()
     }
 
     #[rstest]
@@ -260,5 +344,89 @@ mod tests {
         let home = tmp.path();
         let hot_store_path = home.join(sub);
         assert_eq!(ensure_within_home(home, &hot_store_path).is_ok(), expect_ok);
+    }
+
+    #[rstest]
+    #[case::marker_present_wipes_and_clears(true, true, false, false, false)]
+    #[case::no_marker_is_noop(false, true, false, true, false)]
+    #[case::archival_skips_wipe_but_clears_marker(true, true, true, true, false)]
+    #[case::missing_data_dir_clears_marker(true, false, false, false, false)]
+    fn wipe_near_data_if_epoch_sync_reset__should_clear_marker_and_wipe_store_except_when_archival(
+        #[case] create_marker: bool,
+        #[case] create_data_dir: bool,
+        #[case] is_archival: bool,
+        #[case] expect_data_dir_exists: bool,
+        #[case] expect_marker_exists: bool,
+    ) {
+        // Given
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let data_dir = near_data_dir(home);
+        if create_data_dir {
+            std::fs::create_dir_all(&data_dir).unwrap();
+            std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
+        }
+        if create_marker {
+            record_epoch_sync_reset_request(home).unwrap();
+        }
+
+        // When
+        wipe_near_data_if_epoch_sync_reset(home, &data_dir, is_archival).unwrap();
+
+        // Then
+        assert_eq!(data_dir.exists(), expect_data_dir_exists);
+        assert_eq!(marker_exists(home), expect_marker_exists);
+    }
+
+    #[test]
+    fn wipe_near_data_if_epoch_sync_reset__should_wipe_only_the_store_and_preserve_siblings() {
+        // Given a synced node: a chain store plus a keyshare-like sibling file, and
+        // nearcore having requested a reset (recorded at shutdown, as in `real.rs`).
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let data_dir = near_data_dir(home);
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(data_dir.join("CURRENT"), b"db-content").unwrap();
+        let keyshare = secrets_file(home);
+        std::fs::write(&keyshare, b"keyshare-secret").unwrap();
+        record_epoch_sync_reset_request(home).unwrap();
+
+        // When the node restarts and runs the startup wipe.
+        wipe_near_data_if_epoch_sync_reset(home, &data_dir, false).unwrap();
+
+        // Then only the chain store is gone; the marker is cleared and the keyshare survives.
+        assert!(!data_dir.exists());
+        assert!(!marker_exists(home));
+        assert_eq!(std::fs::read(&keyshare).unwrap(), b"keyshare-secret");
+    }
+
+    #[test]
+    fn wipe_near_data_if_epoch_sync_reset__should_error_when_store_path_escapes_home() {
+        // Given a reset marker but a misconfigured store path outside the home tree.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        record_epoch_sync_reset_request(home).unwrap();
+        let escaping = home.join("../escape");
+
+        // When / Then — the path guard rejects it and the data is left untouched. The
+        // marker must survive so the caller keeps the restart disarmed instead of looping.
+        assert!(wipe_near_data_if_epoch_sync_reset(home, &escaping, false).is_err());
+        assert!(marker_exists(home));
+    }
+
+    #[test]
+    fn wipe_near_data_if_requested__should_not_record_token_when_store_path_escapes_home() {
+        // Given a wipe requested but a misconfigured store path outside the home tree.
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let escaping = home.join("../escape");
+
+        // When
+        let result = wipe_near_data_if_requested(home, &escaping, 1, false);
+
+        // Then — the guard rejects and NO token is recorded, so the wipe is retried
+        // after the operator fixes store.path (not silently suppressed).
+        assert!(result.is_err());
+        assert_eq!(read_recorded(home), None);
     }
 }
