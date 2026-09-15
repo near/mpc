@@ -129,6 +129,11 @@ pub struct VoteUpdateArgs {
     pub id: UpdateId,
 }
 
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RemoveUpdateProposalArgs {
+    pub id: UpdateId,
+}
+
 #[derive(Serialize, Debug)]
 pub struct RegisterForeignChainConfigArgs {
     #[expect(deprecated)]
