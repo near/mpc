@@ -26,6 +26,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+base64 = { workspace = true }
 foreign-chain-rpc-factory = { workspace = true }
 http = { workspace = true }
 httpmock = { workspace = true }

@@ -60,6 +60,9 @@ Follow our [reproducible builds guide](./reproducible-builds.md) to verify the d
 ### Host firmware upgrades
 For TEE nodes, keeping the host's BIOS, CPU microcode and TDX module current is part of the job, and it isn't something we can coordinate for you: Intel raises the TCB bar on its own schedule, historically about every six months, and a platform below it has its attestation rejected until the host is updated. Check where your host stands and update it following [TDX platform TCB status](./tdx-tcb-status.md). Doing this proactively, rather than after an attestation failure, is what keeps the network from losing several participants at once.
 
+### Host package upgrades
+Keep unattended security upgrades enabled on the host: we want it as well patched as any other production server. Configure them so they cannot disturb a running CVM, following [Host Package Upgrades](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#4-host-package-upgrades).
+
 ### Contract upgrades & voting
 Contract upgrades happen through voting. Just like with nodes, reproduce the contract build to verify the code before voting.
 
