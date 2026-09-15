@@ -33,6 +33,7 @@ use near_mpc_sdk::sign::SignatureRequestResponse;
 use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rand_core::OsRng;
 use rstest::rstest;
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -584,12 +585,16 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     assert_eq!(configs_before.len(), LEGACY_PARTICIPANT_LEN);
     assert_eq!(*available_before, BTreeSet::from([chain]));
     assert!(allowed_before.contains_key(&chain));
-    let legacy_prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
-    let legacy_entries = worker
-        .view_state(contract.id())
-        .prefix(&legacy_prefix)
-        .await?;
-    assert!(!legacy_entries.is_empty());
+    let legacy_keys = legacy_support_storage_keys(&accounts)?;
+    let state_before = worker.view_state(contract.id()).await?;
+    let missing: Vec<_> = legacy_keys
+        .iter()
+        .filter(|key| !state_before.contains_key(*key))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "legacy map storage keys must exist before the upgrade: {missing:?}"
+    );
 
     // When
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
@@ -613,13 +618,14 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     assert_eq!(configs_after, configs_before);
     assert_eq!(available_after, available_before);
     assert_eq!(allowed_after, allowed_before);
-    let legacy_entries = worker
-        .view_state(contract.id())
-        .prefix(&legacy_prefix)
-        .await?;
+    let state_after = worker.view_state(contract.id()).await?;
+    let leftover: Vec<_> = legacy_keys
+        .iter()
+        .filter(|key| state_after.contains_key(*key))
+        .collect();
     assert!(
-        legacy_entries.is_empty(),
-        "legacy map storage must be reclaimed: {legacy_entries:?}"
+        leftover.is_empty(),
+        "legacy map storage must be reclaimed: {leftover:?}"
     );
 
     let error = contract
@@ -632,4 +638,22 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
         "{error}"
     );
     Ok(())
+}
+
+/// Raw storage keys written by the `3.15.0` `IterableMap<AccountId, BTreeSet<ForeignChain>>`.
+fn legacy_support_storage_keys(accounts: &[Account]) -> anyhow::Result<Vec<Vec<u8>>> {
+    let prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
+    let indices_prefix = [prefix.as_slice(), b"v"].concat();
+    let values_prefix = [prefix.as_slice(), b"m"].concat();
+
+    let mut keys = Vec::with_capacity(accounts.len() * 2);
+    for (index, account) in accounts.iter().enumerate() {
+        let index = u32::try_from(index)?;
+        keys.push([indices_prefix.as_slice(), &index.to_le_bytes()].concat());
+        keys.push(
+            Sha256::digest([values_prefix.as_slice(), &borsh::to_vec(account.id())?].concat())
+                .to_vec(),
+        );
+    }
+    Ok(keys)
 }
