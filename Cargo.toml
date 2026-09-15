@@ -266,7 +266,7 @@ wycheproof = { version = "0.6", default-features = false, features = [
 ] }
 x509-parser = "0.18.1"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
-zstd = "0.13.3"
+zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
 near-async = { git = "https://github.com/near/nearcore", tag = "2.13.4" }
