@@ -13,6 +13,7 @@ use crate::hyperevm::inspector::HyperEvm;
 use crate::polygon::inspector::Polygon;
 use crate::starknet::inspector::StarknetInspector;
 use crate::sui::inspector::SuiInspector;
+use crate::svm::inspector::{Fogo, Solana, SvmInspector};
 use crate::{ForeignChainInspectionError, NetworkFingerprint, NetworkFingerprintInspector};
 use foreign_chain_rpc_interfaces::aptos::ReqwestAptosClient;
 use foreign_chain_rpc_interfaces::sui::GrpcSuiClient;
@@ -28,8 +29,10 @@ pub enum RpcInspector {
     Bitcoin(BitcoinInspector<HttpClient>),
     Bnb(EvmInspector<HttpClient, Bnb>),
     Ethereum(EvmInspector<HttpClient, Ethereum>),
+    Fogo(SvmInspector<HttpClient, Fogo>),
     HyperEvm(EvmInspector<HttpClient, HyperEvm>),
     Polygon(EvmInspector<HttpClient, Polygon>),
+    Solana(SvmInspector<HttpClient, Solana>),
     Starknet(StarknetInspector<HttpClient>),
     Sui(SuiInspector<GrpcSuiClient>),
 }
@@ -46,8 +49,10 @@ impl NetworkFingerprintInspector for RpcInspector {
             Self::Bitcoin(inspector) => inspector.network_fingerprint().await,
             Self::Bnb(inspector) => inspector.network_fingerprint().await,
             Self::Ethereum(inspector) => inspector.network_fingerprint().await,
+            Self::Fogo(inspector) => inspector.network_fingerprint().await,
             Self::HyperEvm(inspector) => inspector.network_fingerprint().await,
             Self::Polygon(inspector) => inspector.network_fingerprint().await,
+            Self::Solana(inspector) => inspector.network_fingerprint().await,
             Self::Starknet(inspector) => inspector.network_fingerprint().await,
             Self::Sui(inspector) => inspector.network_fingerprint().await,
         }
@@ -64,8 +69,10 @@ impl NetworkFingerprintInspector for RpcInspector {
             Self::Bitcoin(inspector) => inspector.canonical_fingerprint(fingerprint),
             Self::Bnb(inspector) => inspector.canonical_fingerprint(fingerprint),
             Self::Ethereum(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Fogo(inspector) => inspector.canonical_fingerprint(fingerprint),
             Self::HyperEvm(inspector) => inspector.canonical_fingerprint(fingerprint),
             Self::Polygon(inspector) => inspector.canonical_fingerprint(fingerprint),
+            Self::Solana(inspector) => inspector.canonical_fingerprint(fingerprint),
             Self::Starknet(inspector) => inspector.canonical_fingerprint(fingerprint),
             Self::Sui(inspector) => inspector.canonical_fingerprint(fingerprint),
         }

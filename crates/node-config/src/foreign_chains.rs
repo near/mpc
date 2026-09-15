@@ -41,6 +41,8 @@ pub struct ForeignChainsConfig {
     pub avalanche: Option<ForeignChainConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adi: Option<ForeignChainConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fogo: Option<ForeignChainConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -162,6 +164,7 @@ impl ForeignChainsConfig {
             (self.sui.as_ref(), dtos::ForeignChain::Sui),
             (self.avalanche.as_ref(), dtos::ForeignChain::Avalanche),
             (self.adi.as_ref(), dtos::ForeignChain::Adi),
+            (self.fogo.as_ref(), dtos::ForeignChain::Fogo),
         ]
         .into_iter()
         .filter_map(|(config, dto_identifier)| config.map(|config| (config, dto_identifier)))
@@ -537,6 +540,33 @@ ckd:
     }
 
     #[test]
+    fn config_parsing__should_succeed_with_fogo_section() {
+        // Given
+        let yaml = config_with_chains(
+            r#"
+  fogo:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://testnet.fogo.io"
+        auth:
+          kind: none
+"#,
+        );
+
+        // When
+        let config: ConfigFile =
+            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
+
+        // Then
+        config
+            .validate()
+            .expect("config with fogo section should be valid");
+        assert!(config.foreign_chains.fogo.is_some());
+    }
+
+    #[test]
     fn config_parsing__should_succeed_with_sui_auth_providers() {
         // Given — gRPC providers authenticate via headers; one bearer token and one API key.
         let yaml = config_with_chains(
@@ -640,6 +670,7 @@ ckd:
             sui: Some(section()),
             avalanche: Some(section()),
             adi: Some(section()),
+            fogo: Some(section()),
         };
 
         // When
