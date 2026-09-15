@@ -1,5 +1,14 @@
 # Benchmarking
 
+> **Note on the Robust ECDSA figures.** Every Robust ECDSA number below was measured
+> against the [[DJNPO20](https://eprint.iacr.org/2020/501)] implementation, which has
+> since been removed and replaced by an insecure stub (see
+> [`docs/ecdsa/robust_ecdsa/signing.md`](../ecdsa/robust_ecdsa/signing.md)). They are
+> retained as a record of what that scheme cost, and as a target for whichever robust
+> scheme replaces the stub. They do **not** describe what the `robust_ecdsa`
+> benchmarks measure today: the stub's one-round presigning is far cheaper than any
+> real scheme, so its current numbers are a lower bound, not a comparison.
+
 Prior to this work, we had multiple implemented schemes that lacked practical performance comparison. We came up with two approaches that rely on Criterion to measure the computation time.
 To provide fair measurements of the implemented schemes, we allow the comparison of schemes with similar functionalities under the same invariant: the security level, a.k.a. the **maximum number of malicious parties**. For the same maximum number of malicious parties, different schemes may require different numbers of active participants.
 
