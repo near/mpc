@@ -39,7 +39,11 @@ For each scheme, the participating set is fixed from the offline phase through t
 
 ## TEE Integration
 
-MPC nodes can run inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/design/securing-mpc-with-tee-design-doc.md).
+MPC nodes can run inside a trusted execution environment (TEE). For more details, see the [TEE design doc](docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md).
+
+## Security Audits
+
+We strive to have every feature and critical code path independently audited. The final reports are in [audits](audits/README.md).
 
 ## Dependencies
 

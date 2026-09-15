@@ -8,10 +8,10 @@ use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken
 
 use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs,
-    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs,
-    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
+    RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs, RequestAppPrivateKeyArgs, SignArgs,
+    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
+    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -19,11 +19,11 @@ use crate::deposits::{
 };
 use crate::method_names::{
     CANCEL_NODE_MIGRATION, INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REQUEST_APP_PRIVATE_KEY, SIGN,
-    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL,
+    REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
+    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
+    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE,
+    VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
@@ -166,6 +166,20 @@ impl<C: CallContract> MpcContractHandle<C> {
             VOTE_UPDATE,
             args,
             VOTE_UPDATE_GAS,
+        ))
+        .await
+    }
+
+    pub async fn remove_update_proposal(
+        &self,
+        id: UpdateId,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RemoveUpdateProposalArgs::new(id))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REMOVE_UPDATE_PROPOSAL,
+            args,
+            // Cost scales with the size of the removed proposal, which can be a full contract.
+            MAX_GAS,
         ))
         .await
     }
@@ -552,6 +566,7 @@ mod tests {
             .await
             .unwrap();
         handle.vote_update(UpdateId(7)).await.unwrap();
+        handle.remove_update_proposal(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
                 id: DomainId(0),
@@ -633,7 +648,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 21);
+        assert_eq!(calls.len(), 22);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))

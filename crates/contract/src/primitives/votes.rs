@@ -3,6 +3,8 @@ use std::collections::BTreeSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use crate::primitives::participants::{IdentifiesParticipant, Participants};
+use crate::primitives::proposal_hash::ProposalHash;
 use near_sdk::IntoStorageKey;
 use near_sdk::near;
 use near_sdk::require;
@@ -128,27 +130,6 @@ where
     }
 }
 
-pub const PROPOSAL_HASH_BYTES: usize = 32;
-mpc_primitives::define_hash!(ProposalHash, 32);
-
-impl<T> From<T> for ProposalHash
-where
-    T: ProposalHashEncoding,
-{
-    fn from(value: T) -> Self {
-        let encoded = value.bytes_for_hash();
-        let hash: [u8; PROPOSAL_HASH_BYTES] = near_sdk::env::sha256(encoded)
-            .try_into()
-            .expect("require 32 bytes");
-        hash.into()
-    }
-}
-
-/// This trait allows the user to create their own proposal hash encoding
-pub trait ProposalHashEncoding {
-    fn bytes_for_hash(&self) -> Vec<u8>;
-}
-
 #[expect(rustdoc::private_intra_doc_links)]
 /// The set of voters who voted for a particular proposal. Always non-empty when stored
 /// inside [`Votes::votes_by_proposal`].
@@ -171,6 +152,14 @@ where
         self.0.iter().filter(|voter| predicate(voter)).count()
     }
 
+    pub fn count_participants(&self, participants: &Participants) -> u64
+    where
+        V: IdentifiesParticipant,
+    {
+        let count = self.count_for(|voter| participants.is_participant(voter));
+        u64::try_from(count).expect("usize should never fail to convert to u64 on wasm32")
+    }
+
     // returns Some(remaining_votes) in case a vote was removed
     pub(super) fn remove(&mut self, vote: &V) -> Option<usize> {
         if self.0.remove(vote) {
@@ -186,7 +175,7 @@ mod tests {
 
     use near_sdk::{
         BorshStorageKey,
-        borsh::{self, BorshDeserialize, BorshSerialize},
+        borsh::{BorshDeserialize, BorshSerialize},
     };
     use std::{
         collections::{BTreeMap, BTreeSet},
@@ -194,24 +183,12 @@ mod tests {
         sync::LazyLock,
     };
 
-    use crate::primitives::votes::{ProposalHash, VoterSet, Votes};
-
-    use super::ProposalHashEncoding;
+    use crate::primitives::proposal_hash::ProposalHash;
+    use crate::primitives::test_utils::gen_authenticated_participants;
+    use crate::primitives::votes::{VoterSet, Votes};
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestVoter(String);
-    #[expect(
-        dead_code,
-        reason = "constructed in tests via Borsh deserialization, which the dead-code analyzer doesn't see."
-    )]
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
-    struct TestProposal(String);
-
-    impl ProposalHashEncoding for TestProposal {
-        fn bytes_for_hash(&self) -> Vec<u8> {
-            borsh::to_vec(&self).expect("borsh serialization of String must succeed")
-        }
-    }
 
     #[derive(Hash, Clone, Debug, PartialEq, Eq, BorshSerialize, BorshStorageKey)]
     pub enum TestStorageKey {
@@ -514,6 +491,21 @@ mod tests {
         let count = voter_set.count_for(|_| true);
 
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn voter_set_count_participants__should_ignore_votes_from_dropped_participants() {
+        // Given
+        let (participants, auth_ids) = gen_authenticated_participants(3);
+        let voter_set = VoterSet(auth_ids.into_iter().collect());
+        let current = participants.subset(0..2);
+
+        // When
+        let count = voter_set.count_participants(&current);
+
+        // Then
+        assert_eq!(count, 2);
     }
 
     #[test]

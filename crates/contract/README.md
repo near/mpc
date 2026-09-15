@@ -312,6 +312,7 @@ These functions require the caller to be a participant or candidate.
 | `vote_cancel_keygen(next_domain_id: u64)`                                           | For Initializing state only. Votes to cancel the key generation (identified by the next_domain_id) and revert to the Running state.                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
 | `propose_update(args: ProposeUpdateArgs)`                                           | Proposes an update to the contract, requiring an attached deposit.                                                                                                                                                                      | `Result<UpdateId, Error>` | TBD             | TBD                |
 | `vote_update(id: UpdateId)`                                                         | Votes on a proposed update. If the threshold is met, the update is executed.                                                                                                                                                            | `Result<bool, Error>`     | TBD             | TBD                |
+| `remove_update_proposal(id: UpdateId)`                                              | Removes a proposed update together with the votes cast for it. Any participant may currently remove any proposal, to be restricted to the proposer in [#4419](https://github.com/near/mpc/issues/4419); the deposit attached at propose time is not refunded. | `Result<(), Error>`       | TBD             | TBD                |
 | `submit_participant_info(proposed_participant_attestation: Attestation, tls_public_key: Ed25519PublicKey)` | Submits the tee participant info for a potential candidate. c.f. TEE section. Storing a new attestation entry consumes one attestation-storage grant, so the account must have one prepaid via `prepay_attestation_storage`; re-submitting for a TLS key the account already owns does not. | `Result<(), Error>` | TBD | TBD |
 
 ### Developer API
@@ -380,7 +381,7 @@ The prospective node operator can retrieve that data from the web endpoint (`:80
 
 The process of doing so is as follows:
 
-1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/guide/running-an-mpc-node-in-tdx-external-guide.md)).
+1. The prospective participants set up their MPC inside their TEE environment (see [running an MPC node in TDX](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md)).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
 4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.

@@ -16,6 +16,7 @@ use foreign_chain_inspector::{
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
+use rstest::rstest;
 
 mockall::mock! {
     Inspector {}
@@ -210,12 +211,23 @@ mod extracted_values_disagree {
 mod split_extracted_and_failing {
     use super::*;
 
+    #[rstest]
+    #[case::transaction_failed(Verdict::TransactionFailed)]
+    #[case::transaction_not_found(Verdict::TransactionNotFound)]
+    #[case::non_canonical_block(Verdict::NonCanonicalBlock {
+        block_number: 1,
+        receipt_hash: HexBytes(vec![1]),
+        canonical_hash: HexBytes(vec![2]),
+    })]
+    #[case::log_index_out_of_bounds(Verdict::LogIndexOutOfBounds)]
     #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_some_extract_and_others_rule_the_tx_out() {
+    async fn fan_out__should_return_mismatch_when_some_extract_and_others_rule_the_tx_out(
+        #[case] ruling_out: Verdict<u32>,
+    ) {
         // Given: one extraction, one failing verdict, one tolerated error. The error does not
         // mask the substantive disagreement.
         let extracting = mock_returning(ok(vec![1]));
-        let failing = mock_returning(verdict(|| Verdict::TransactionFailed));
+        let failing = mock_returning(verdict(move || ruling_out.clone()));
         let erring = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
         let fan_out = fan_out_of(vec![extracting, failing, erring]);
 

@@ -239,6 +239,12 @@ define_hash!(
     48
 );
 
+define_hash!(
+    /// SHA-256 digest identifying a governance proposal by its encoded content.
+    ProposalHash,
+    32
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;

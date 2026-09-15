@@ -24,13 +24,7 @@ impl GovernanceThresholdParametersVotes {
         u64::try_from(
             self.proposal_by_account
                 .iter()
-                .filter(|&(acc, prop)| {
-                    participants
-                        .participants()
-                        .iter()
-                        .any(|(acc_id, _, _)| acc.get() == acc_id)
-                        && prop == proposal
-                })
+                .filter(|&(acc, prop)| participants.is_participant(acc) && prop == proposal)
                 .count(),
         )
         .expect("usize should never fail to convert to u64 on wasm32")

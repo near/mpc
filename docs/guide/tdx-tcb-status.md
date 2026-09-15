@@ -87,7 +87,7 @@ If collateral fetches start failing instead, your PCCS may not have a PCK
 certificate for the platform's new TCB level yet. The node then starts with no
 attestation at all and keeps retrying, so `tcb-status` reports that the node is
 not running in a TEE rather than naming a TCB problem. See
-[Self-hosting a local PCCS](running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs),
+[Self-hosting a local PCCS](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#appendix-self-hosting-a-local-pccs),
 and restart the CVM once the PCCS can serve the new level.
 
 ## Appendix
@@ -133,7 +133,7 @@ near contract call-function as-read-only \
 A platform that has fallen behind can also stop the CVM from booting at all,
 because `gramine-sealing-key-provider` verifies a quote before releasing the
 disk sealing key. See
-[Quote verification fails](running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
+[Quote verification fails](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#quote-verification-fails--dcap-error--failed-to-get-sealing-key).
 
 ### What this check does not cover
 
@@ -143,5 +143,5 @@ requires the RTMR3 event log to replay, the app compose to match, and the boot
 measurements, MPC image hash and launcher compose hash to be in its allow-lists,
 which expire on a clock of their own. Use
 [`attestation-cli verify`](../../crates/attestation-cli/README.md) for those, and
-[`submit_participant_info` failures](running-an-mpc-node-in-tdx-external-guide.md#submit_participant_info-failures)
+[`submit_participant_info` failures](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#submit_participant_info-failures)
 for how those rejections present.
