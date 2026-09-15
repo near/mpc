@@ -5,9 +5,8 @@ use crate::types::{
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
     GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
     ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, SupportedForeignChains, TeeVerifierCodeHash, UpdateId,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    SignatureResponse, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -70,11 +69,6 @@ pub struct StartNodeMigrationArgs {
     pub destination_node_info: DestinationNodeInfo,
 }
 
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RegisterForeignChainSupportArgs {
-    pub foreign_chain_support: SupportedForeignChains,
-}
-
 #[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
 pub struct SignatureRespondArgs {
     pub request: SignatureRequest,
@@ -132,21 +126,6 @@ pub struct VoteUpdateArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RemoveUpdateProposalArgs {
     pub id: UpdateId,
-}
-
-#[derive(Serialize, Debug)]
-pub struct RegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub foreign_chain_configuration: crate::types::ForeignChainConfiguration,
-}
-
-impl RegisterForeignChainConfigArgs {
-    #[expect(deprecated)]
-    pub fn new(foreign_chain_configuration: crate::types::ForeignChainConfiguration) -> Self {
-        Self {
-            foreign_chain_configuration,
-        }
-    }
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

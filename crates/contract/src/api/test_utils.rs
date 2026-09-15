@@ -278,7 +278,6 @@ impl MpcContract {
             ),
             accept_requests: true,
             proposed_updates: Default::default(),
-            node_foreign_chain_support: Default::default(),
             config: Default::default(),
             tee_state: Default::default(),
             node_migrations: Default::default(),

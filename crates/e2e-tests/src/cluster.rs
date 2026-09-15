@@ -896,36 +896,6 @@ impl MpcCluster {
             .await
             .context("failed to register backup service")
     }
-    /// View the legacy supported-chains set; requests are gated on the available set instead.
-    pub async fn view_foreign_chains_supported_by_contract(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::SupportedForeignChains> {
-        self.contract
-            .view(method_names::GET_SUPPORTED_FOREIGN_CHAINS)
-            .await
-    }
-
-    /// View the per-node foreign chain configurations registered with the contract.
-    pub async fn view_foreign_chain_configurations(
-        &self,
-    ) -> anyhow::Result<near_mpc_contract_interface::types::ForeignChainSupportByNode> {
-        self.contract
-            .view(method_names::GET_FOREIGN_CHAIN_SUPPORT_BY_NODE)
-            .await
-    }
-
-    /// Registers on the legacy supported-chains pipeline, which no longer gates requests.
-    pub async fn register_legacy_foreign_chain_support(
-        &self,
-        node_index: usize,
-        foreign_chain_support: &near_mpc_contract_interface::types::SupportedForeignChains,
-    ) -> anyhow::Result<near_kit::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
-            .call_mpc(self.contract_id())
-            .register_foreign_chain_support(foreign_chain_support.clone())
-            .await
-            .context("failed to register foreign chain support")
-    }
 
     pub async fn view_available_foreign_chains(
         &self,

@@ -1,5 +1,3 @@
-// applied on module since near proc macro is unable to apply the expect lint
-#![expect(deprecated, reason = "ForeignChainConfiguration is being deprecated")]
 #![doc = include_str!("../README.md")]
 
 pub mod api;
@@ -32,10 +30,8 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::{ForeignChainsMetadata, SupportedForeignChainsByNode},
-    tee::tee_state::TeeState,
-    tee::verifier_votes::TeeVerifierVotes,
-    update::ProposedUpdates,
+    foreign_chains_metadata::ForeignChainsMetadata, tee::tee_state::TeeState,
+    tee::verifier_votes::TeeVerifierVotes, update::ProposedUpdates,
 };
 use config::Config;
 use near_mpc_contract_interface::types::{
@@ -58,9 +54,6 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
-    // TODO(#3475): drop this once we upgrade the contract and nodes start using
-    // the new API.
-    node_foreign_chain_support: SupportedForeignChainsByNode,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,

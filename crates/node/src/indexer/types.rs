@@ -19,9 +19,6 @@ use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
-#[expect(deprecated)]
-use near_mpc_contract_interface::method_names::REGISTER_FOREIGN_CHAIN_CONFIG;
-
 const MAX_GAS: Gas = Gas::from_teragas(300);
 
 const MAX_RECOVERY_ID: u8 = 3;
@@ -55,7 +52,6 @@ pub enum ChainSendTransactionRequest {
     VotePk(contract_args::VotePkArgs),
     StartKeygen(contract_args::StartKeygenArgs),
     VoteReshared(contract_args::VoteResharedArgs),
-    RegisterForeignChainConfig(contract_args::RegisterForeignChainConfigArgs),
     RegisterForeignChainsConfig(contract_args::RegisterForeignChainsConfigArgs),
     StartReshare(contract_args::StartReshareArgs),
     VoteAbortKeyEventInstance(contract_args::VoteAbortKeyEventInstanceArgs),
@@ -86,11 +82,6 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::CKDRespond(_) => RESPOND_CKD,
             ChainSendTransactionRequest::VotePk(_) => VOTE_PK,
             ChainSendTransactionRequest::VoteReshared(_) => VOTE_RESHARED,
-            ChainSendTransactionRequest::RegisterForeignChainConfig(_) =>
-            {
-                #[expect(deprecated)]
-                REGISTER_FOREIGN_CHAIN_CONFIG
-            }
             ChainSendTransactionRequest::RegisterForeignChainsConfig(_) => {
                 REGISTER_FOREIGN_CHAINS_CONFIG
             }
@@ -114,7 +105,6 @@ impl ChainSendTransactionRequest {
             | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
-            | Self::RegisterForeignChainConfig(_)
             | Self::RegisterForeignChainsConfig(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)

@@ -70,7 +70,7 @@ impl MpcContract {
     /// This check reaches every signer-authenticated mutating method through one of three
     /// paths (the list below is illustrative, not exhaustive):
     /// - Called directly: `vote_new_parameters`, `vote_add_domains`, `vote_cancel_resharing`,
-    ///   `vote_cancel_keygen`, `register_foreign_chain_support`, `submit_participant_info`,
+    ///   `vote_cancel_keygen`, `register_foreign_chains_config`, `submit_participant_info`,
     ///   and the node-migration methods.
     /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
     ///   `remove_update_proposal`,
