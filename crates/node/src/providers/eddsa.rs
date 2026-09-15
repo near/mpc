@@ -63,11 +63,14 @@ impl EddsaSignatureProvider {
     }
 }
 
+/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum EddsaTaskId {
-    KeyGeneration { key_event: KeyEventId },
-    KeyResharing { key_event: KeyEventId },
-    Signature { id: SignatureId },
+    KeyGeneration { key_event: KeyEventId } = 0,
+    KeyResharing { key_event: KeyEventId } = 1,
+    Signature { id: SignatureId } = 2,
 }
 
 impl From<EddsaTaskId> for MpcTaskId {
