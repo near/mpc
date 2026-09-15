@@ -50,7 +50,7 @@ The memory, cores, and disk below are the resources consumed by a single MPC CVM
 * (v)Cores - 8 per CVM
 * Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
 
-For a list of supported cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../../archive/guide/cloud-providers-tdx.md).
+For a non-exhaustive list of cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
 

@@ -67,8 +67,7 @@ impl MpcContract {
                     .participants()
                     .iter()
                     .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation
-                            .is_participant_given_account_id(account_id)
+                        !participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
 

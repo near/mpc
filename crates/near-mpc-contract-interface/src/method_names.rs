@@ -33,6 +33,7 @@ pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain
 pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
 pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
+pub const REMOVE_UPDATE_PROPOSAL: &str = "remove_update_proposal";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
 // Protocol management
