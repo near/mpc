@@ -17,7 +17,9 @@ use crate::tracking;
 use mpc_node_config::ConfigFile;
 
 use crate::types::SignatureId;
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
+use k256::elliptic_curve::PrimeField;
 use mpc_primitives::ReconstructionThreshold;
 use mpc_primitives::domain::DomainId;
 use near_time::Clock;
@@ -47,6 +49,17 @@ pub struct EcdsaMessageHash([u8; 32]);
 impl EcdsaMessageHash {
     pub fn to_bytes(self) -> [u8; 32] {
         self.0
+    }
+
+    fn validate(self) -> anyhow::Result<Self> {
+        let scalar = k256::Scalar::from_repr(self.0.into())
+            .into_option()
+            .context("ECDSA payload cannot be converted to Scalar")?;
+        anyhow::ensure!(
+            !bool::from(scalar.is_zero()),
+            "ECDSA does not support a zero message hash"
+        );
+        Ok(self)
     }
 }
 
