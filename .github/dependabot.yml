@@ -26,8 +26,15 @@ updates:
       - dependency-name: "httpmock"
       # This cannot be upgraded because it conflicts the prometheus version required by nearcore
       - dependency-name: "prometheus"
-      # TODO(#690): This cannot be upgraded until nearcore does
+      # Must stay on the same `links = "rocksdb"` native library as nearcore's
+      # `near-store`; bumped manually in lockstep with the nearcore pin.
       - dependency-name: "rocksdb"
+      # Capped by the `links = "jemalloc"` version that nearcore's rocksdb pulls
+      # in; see the comments in the workspace Cargo.toml.
+      - dependency-name: "tikv-jemallocator"
+      - dependency-name: "jemalloc_pprof"
+      - dependency-name: "pprof_util"
+      - dependency-name: "mappings"
       # This version needs to be exactly the same as in `near_sdk::schemars`
       - dependency-name: "schemars"
       # This is deprecated, we should find an alterantive
