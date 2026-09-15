@@ -38,6 +38,7 @@ ignore = [
   "RUSTSEC-2026-0247", # bitmaps is unmaintained
   "RUSTSEC-2026-0248", # im is unmaintained
   "RUSTSEC-2026-0251", # sized-chunks is unmaintained
+  # TODO(#4423): remove once nearcore's aws-lc-rs pin lets cargo resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore pins aws-lc-rs to
   # =1.16.2 (2.13.4 and master), so the fix cannot be resolved until that pin moves. The
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
