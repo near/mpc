@@ -119,10 +119,9 @@ impl MpcContract {
     /// The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and
     /// unlike [`Self::remove_update_vote`], this is not restricted to the running state.
     ///
-    /// TODO(#4419): restrict removal to the account that proposed the update.
-    ///
     /// Returns [`Error`] if no update with this id exists, and panics if the caller is not a
     /// participant.
+    // TODO(#4419): restrict removal to the account that proposed the update.
     #[handle_result]
     pub fn remove_update_proposal(&mut self, id: dtos::UpdateId) -> Result<(), Error> {
         log!(

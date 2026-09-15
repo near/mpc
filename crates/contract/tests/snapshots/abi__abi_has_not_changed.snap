@@ -1024,7 +1024,7 @@ expression: abi
       },
       {
         "name": "remove_update_proposal",
-        "doc": " Removes a proposed update, given the id returned by [`Self::propose_update`].\n\n The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and\n unlike [`Self::remove_update_vote`], this is not restricted to the running state.\n\n TODO(#4419): restrict removal to the account that proposed the update.\n\n Returns [`Error`] if no update with this id exists, and panics if the caller is not a\n participant.",
+        "doc": " Removes a proposed update, given the id returned by [`Self::propose_update`].\n\n The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and\n unlike [`Self::remove_update_vote`], this is not restricted to the running state.\n\n Returns [`Error`] if no update with this id exists, and panics if the caller is not a\n participant.",
         "kind": "call",
         "params": {
           "serialization_type": "json",

@@ -178,7 +178,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::no_deposit(
             REMOVE_UPDATE_PROPOSAL,
             args,
-            // Removing an entry reads back the proposed payload, which can be a full contract.
+            // Cost scales with the size of the removed proposal, which can be a full contract.
             MAX_GAS,
         ))
         .await
