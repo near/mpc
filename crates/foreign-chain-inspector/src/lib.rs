@@ -32,6 +32,7 @@ pub mod polygon;
 pub mod rpc_inspector;
 pub mod starknet;
 pub mod sui;
+pub mod svm;
 
 pub trait ForeignChainInspector {
     type TransactionId;
@@ -72,6 +73,12 @@ pub enum Verdict<V> {
     },
     #[display("a requested log index is out of bounds")]
     LogIndexOutOfBounds,
+    /// A verdict rather than a tolerated error, for the same reason as
+    /// [`Self::TransactionNotFound`]: an absent account is the chain's answer, not a provider
+    /// fault. Only as settled as the account read behind it — an extractor that reads mutable
+    /// state can have honest providers disagree.
+    #[display("a requested account was not found")]
+    AccountNotFound,
 }
 
 impl<V> Verdict<V> {
@@ -431,7 +438,10 @@ impl ForeignChainInspectionError {
 }
 
 /// Some providers report throttling as a JSON-RPC error object over HTTP 200 rather than a 429, and
-/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`.
+/// it is the one refusal worth retrying. Alchemy and Infura send `-32005`, others `-32029`. SVM
+/// nodes reuse `-32005` for `NodeUnhealthy`, which is a different condition but equally worth a
+/// retry; codes that mean something else per chain are intercepted by that chain's inspector before
+/// they reach here.
 fn is_rate_limit_error_code(code: i32) -> bool {
     const LIMIT_EXCEEDED: i32 = -32005;
     const TOO_MANY_REQUESTS: i32 = -32029;
