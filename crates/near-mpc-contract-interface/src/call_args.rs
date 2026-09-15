@@ -5,7 +5,7 @@ use crate::types::{
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
     GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
     ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
+    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -125,12 +125,7 @@ pub struct VoteResharedArgs {
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteUpdateArgs {
-    pub id: UpdateId,
-}
-
-#[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct RemoveUpdateProposalArgs {
-    pub id: UpdateId,
+    pub update_hash: UpdateHash,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

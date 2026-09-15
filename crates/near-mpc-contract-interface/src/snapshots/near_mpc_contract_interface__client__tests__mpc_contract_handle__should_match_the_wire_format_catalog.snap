@@ -39,16 +39,16 @@ deposit:  1 yoctoNEAR
 args:     {"request":{"request":{"Bitcoin":{"tx_id":"0707070707070707070707070707070707070707070707070707070707070707","confirmations":1,"extractors":["BlockHash"]}},"domain_id":0,"payload_version":1}}
 
 contract: mpc.near
-method:   propose_update
+method:   submit_update
 gas:      300.0 Tgas
-deposit:  0.32772 NEAR
-args:     0x01040000000707070700
+deposit:  0.04 NEAR
+args:     0x000400000007070707
 
 contract: mpc.near
 method:   vote_update
-gas:      260.0 Tgas
+gas:      22.0 Tgas
 deposit:  0 NEAR
-args:     {"id":7}
+args:     {"update_hash":{"Code":"0707070707070707070707070707070707070707070707070707070707070707"}}
 
 contract: mpc.near
 method:   remove_update_proposal
@@ -127,3 +127,15 @@ method:   verify_tee
 gas:      300.0 Tgas
 deposit:  0 NEAR
 args:     {}
+
+contract: mpc.near
+method:   propose_update
+gas:      300.0 Tgas
+deposit:  0.32772 NEAR
+args:     0x01040000000707070700
+
+contract: mpc.near
+method:   vote_update
+gas:      260.0 Tgas
+deposit:  0 NEAR
+args:     {"id":7}

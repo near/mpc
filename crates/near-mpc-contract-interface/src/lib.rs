@@ -4,6 +4,11 @@ pub mod call_args;
 
 pub mod deposits;
 
+#[deprecated(
+    note = "contract-update API of contract 3.15.0; current contracts take `submit_update` / `vote_update(update_hash)`"
+)]
+pub mod legacy;
+
 #[cfg(feature = "client")]
 pub mod client;
 
@@ -39,14 +44,12 @@ pub mod types {
         LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
     };
 
-    pub use updates::{
-        PayloadBytesError, ProposeUpdateArgs, ProposedUpdates, UpdateHash, UpdateId,
-    };
+    pub use updates::{Update, UpdateHash};
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
         KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
-        NodeImageHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
+        NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

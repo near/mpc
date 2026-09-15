@@ -30,11 +30,11 @@ use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
-    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, ProposeUpdateArgs, Protocol,
-    ReconstructionThreshold, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality,
-    SuiRpcRequest, SuiTxId, SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality,
-    SvmInnerInstruction, SvmRpcRequest, SvmTxId, TonAddress, TonCellBody, TonExtractedValue,
-    TonExtractor, TonFinality, TonLog, TonRpcRequest, TonTxId, UpdateId,
+    AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiFinality, SuiRpcRequest, SuiTxId,
+    SvmAddress, SvmExtractedValue, SvmExtractor, SvmFinality, SvmInnerInstruction, SvmRpcRequest,
+    SvmTxId, TonAddress, TonCellBody, TonExtractedValue, TonExtractor, TonFinality, TonLog,
+    TonRpcRequest, TonTxId, Update, UpdateHash,
 };
 use near_mpc_contract_interface::{
     method_names,
@@ -335,80 +335,64 @@ impl SandboxTestSetupBuilder {
     }
 }
 
-/// Upgrades the given contract to the [`current_contract`] binary.
+/// Upgrades the given contract to `new_contract_binary`.
 ///
 /// This function:
-/// 1. Submits a proposal to upgrade the contract.
-/// 2. Casts votes until the proposal is executed.
+/// 1. Casts votes for the binary's hash until it is approved.
+/// 2. Submits the binary from `accounts[0]`.
 /// 3. Verifies the contract was upgraded by checking the contract's binary.
 ///
 /// Panics if:
-/// - The proposal transaction fails,
-/// - The state call is not deserializable,
+/// - A vote or the submission fails,
 /// - Or the post-upgrade code does not match the expected binary.
-pub async fn propose_and_vote_contract_binary(
+pub async fn vote_and_submit_contract_binary(
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
 ) {
-    let propose_update_execution = accounts[0]
+    let update = Update::Code(new_contract_binary.to_vec());
+    vote_update_till_approved(contract, accounts, near_mpc_sdk::update::hash(&update)).await;
+
+    let execution = accounts[0]
         .call_mpc(contract.id())
-        .propose_update(ProposeUpdateArgs {
-            code: Some(new_contract_binary.to_vec()),
-            config: None,
-        })
+        .submit_update(update)
         .await
-        .expect("propose update call succeeds");
-
+        .expect("submit update call succeeds");
     assert!(
-        propose_update_execution.is_success(),
-        "propose update call failed"
+        execution.failures().is_empty(),
+        "submit update failed: {execution:#?}"
     );
-
-    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
-
-    // Try calling into state and see if it works.
-    let state_request_execution = accounts[0]
-        .call(contract.id(), method_names::STATE)
-        .transact()
-        .await
-        .expect("state request succeeds");
-
-    let _state: ProtocolContractState = state_request_execution
-        .json()
-        .expect("state is deserializable.");
-
-    vote_update_till_completion(contract, accounts, proposal_id).await;
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
         hash(new_contract_binary),
         hash(&contract_binary_post_upgrade),
-        "Code hash post upgrade is not matching the proposed binary."
+        "Code hash post upgrade is not matching the submitted binary."
     );
 }
 
-pub async fn vote_update_till_completion(
+/// Casts votes for `update_hash` until `vote_update` reports it approved.
+pub async fn vote_update_till_approved(
     contract: &Contract,
     accounts: &[Account],
-    proposal_id: UpdateId,
+    update_hash: UpdateHash,
 ) {
     for voter in accounts {
         let execution = voter
             .call_mpc(contract.id())
-            .vote_update(proposal_id)
+            .vote_update(update_hash.clone())
             .await
             .unwrap();
 
         dbg!(&execution);
 
-        let update_occurred: bool = execution.json().expect("Vote cast was unsuccessful");
+        let approved: bool = execution.json().expect("Vote cast was unsuccessful");
 
-        if update_occurred {
+        if approved {
             return;
         }
     }
-    panic!("Update didn't occurred")
+    panic!("update hash was not approved")
 }
 
 /// Returns the [`dtos::Ed25519PublicKey`] corresponding to the [`Account`]'s

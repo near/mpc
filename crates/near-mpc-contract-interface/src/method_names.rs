@@ -41,7 +41,7 @@ pub const INIT_RUNNING: &str = "init_running";
 pub const MIGRATE: &str = "migrate";
 pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
-pub const PROPOSE_UPDATE: &str = "propose_update";
+pub const SUBMIT_UPDATE: &str = "submit_update";
 pub const UPDATE_CONFIG: &str = "update_config";
 pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
@@ -80,7 +80,7 @@ pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";
 pub const LATEST_KEY_VERSION: &str = "latest_key_version";
-pub const PROPOSED_UPDATES: &str = "proposed_updates";
+pub const UPDATE_VOTES: &str = "update_votes";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";

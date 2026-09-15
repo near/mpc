@@ -3,7 +3,7 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, make_foreign_chain_available, propose_and_vote_contract_binary, submit_attestations,
+        init, make_foreign_chain_available, submit_attestations,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -157,8 +157,53 @@ async fn back_compatibility_without_state(
     )
 }
 
+/// Upgrades a contract running the production binary to `new_contract_binary` through the
+/// production binary's own update API: `propose_update` stores the binary, the threshold
+/// `vote_update(id)` deploys it.
+#[expect(deprecated)]
+async fn legacy_propose_and_vote_contract_binary(
+    accounts: &[Account],
+    contract: &Contract,
+    new_contract_binary: &[u8],
+) {
+    use near_mpc_contract_interface::legacy::{ProposeUpdateArgs, UpdateId};
+
+    let execution = accounts[0]
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
+            code: Some(new_contract_binary.to_vec()),
+            config: None,
+        })
+        .await
+        .expect("propose update call succeeds");
+    assert!(execution.is_success(), "propose update call failed");
+    let proposal_id: UpdateId = execution.json().unwrap();
+
+    let mut deployed = false;
+    for voter in accounts {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_update_by_id(proposal_id)
+            .await
+            .unwrap();
+        deployed = execution.json().expect("Vote cast was unsuccessful");
+        if deployed {
+            break;
+        }
+    }
+    assert!(deployed, "the threshold vote did not deploy the update");
+
+    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
+    assert_eq!(
+        sha2::Sha256::digest(new_contract_binary),
+        sha2::Sha256::digest(&contract_binary_post_upgrade),
+        "Code hash post upgrade is not matching the proposed binary."
+    );
+}
+
 /// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
-/// can be upgraded to the [`current_contract`] binary using the proposal-and-vote flow.
+/// can be upgraded to the [`current_contract`] binary using the production binary's
+/// proposal-and-vote flow.
 #[rstest]
 #[tokio::test]
 async fn propose_upgrade_from_production_to_current_binary(
@@ -205,7 +250,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+    legacy_propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
@@ -597,7 +642,7 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     );
 
     // When
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+    legacy_propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     // Then
     let configs_after: dtos::ForeignChainsConfigs = contract

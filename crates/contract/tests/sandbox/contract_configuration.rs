@@ -1,9 +1,10 @@
 use crate::sandbox::utils::transactions::CallMpcContract;
 use crate::sandbox::{
-    common::SandboxTestSetup, upgrade_from_current_contract::current_contract_proposal,
+    common::{SandboxTestSetup, vote_update_till_approved},
+    upgrade_from_current_contract::current_contract_update,
 };
 use near_mpc_contract_interface::method_names;
-use near_mpc_contract_interface::types::UpdateId;
+use near_mpc_sdk::update::hash;
 
 #[tokio::test]
 async fn test_high_gas_deposit_config_value_passes_upgrades() {
@@ -43,41 +44,18 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .build()
         .await;
 
+    let update = current_contract_update();
+    vote_update_till_approved(&contract, &mpc_signer_accounts, hash(&update)).await;
+
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
-        .propose_update(current_contract_proposal())
+        .submit_update(update)
         .await
         .unwrap();
+    dbg!(&execution);
 
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
-
-    let mut saw_completion = false;
-    let mut saw_failure = false;
-
-    for voter in mpc_signer_accounts {
-        let execution = voter
-            .call_mpc(contract.id())
-            .vote_update(proposal_id)
-            .await
-            .unwrap();
-
-        dbg!(&execution);
-
-        if !execution.is_success() {
-            saw_failure = true;
-            break;
-        }
-
-        let update_completed: bool = execution.json().expect("Vote cast was unsuccessful");
-
-        if update_completed {
-            saw_completion = true;
-            break;
-        }
-    }
-
-    (saw_completion, saw_failure)
+    let saw_failure = !execution.failures().is_empty();
+    (!saw_failure, saw_failure)
 }
 
 #[tokio::test]

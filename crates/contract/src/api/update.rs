@@ -1,159 +1,114 @@
-//! Contract-update proposals: proposing, voting, and applying code and config
-//! updates, plus sweeping votes from departed participants.
+//! Contract updates: participants vote for the hash of the next code or config update; once a
+//! hash crosses the governance threshold, a participant submits the matching payload and the
+//! contract applies it.
 
-use crate::api::common::refund_to;
 use crate::config::Config;
-use crate::dto_mapping::{IntoContractType, IntoInterfaceType};
 use crate::errors::{Error, InvalidParameters, InvalidState};
+use crate::primitives::key_state::AuthenticatedAccountId;
+use crate::primitives::proposal_hash::ProposalHash;
 use crate::state::ProtocolContractState;
-use crate::update::{ProposedUpdates, Update, UpdateId};
+use crate::update::Update;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, env, log, near};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[near]
 impl MpcContract {
-    /// Propose update to either code or config, but not both of them at the same time.
+    /// Applies `update` if a governance threshold of current participants currently backs its
+    /// hash, consuming every update vote. Code updates deploy the code and call `migrate`;
+    /// config updates call `update_config`. An attached deposit stays with the contract to cover
+    /// the storage staking of code larger than the deployed one.
     #[payable]
     #[handle_result]
-    pub fn propose_update(
+    pub fn submit_update(
         &mut self,
-        #[serializer(borsh)] args: dtos::ProposeUpdateArgs,
-    ) -> Result<dtos::UpdateId, Error> {
-        // Only voters can propose updates:
-        let proposer = self.voter_or_panic();
-        let payload_bytes =
-            args.payload_bytes()
-                .map_err(|err| InvalidParameters::MalformedPayload {
-                    reason: err.to_string(),
-                })?;
-        let update: Update = args.try_into()?;
-
-        let attached = env::attached_deposit();
-        let required = ProposedUpdates::required_deposit(payload_bytes).map_err(|err| {
-            InvalidParameters::MalformedPayload {
-                reason: err.to_string(),
-            }
-        })?;
-        if attached < required {
-            return Err(InvalidParameters::InsufficientDeposit {
-                attached: attached.as_yoctonear(),
-                required: required.as_yoctonear(),
-            }
-            .into());
-        }
-
-        let id = self.proposed_updates.propose(update);
-
+        #[serializer(borsh)] update: dtos::Update,
+    ) -> Result<(), Error> {
+        let update_hash =
+            near_mpc_sdk::update::hash_with(&update, |bytes| env::sha256_array(bytes));
         log!(
-            "propose_update: signer={}, id={:?}",
+            "submit_update: signer={}, update_hash={:?}",
             env::signer_account_id(),
-            id,
+            update_hash,
         );
-
-        // Refund the difference if the proposer attached more than required.
-        if let Some(diff) = attached.checked_sub(required) {
-            refund_to(&proposer, diff);
-        }
-
-        Ok(id.into_dto_type())
-    }
-
-    /// Vote for a proposed update, given the id returned by [`Self::propose_update`].
-    ///
-    /// Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was
-    /// executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.
-    /// Returns [`Error`] if the update was not found or if the voter is not a participant
-    /// in the protocol.
-    #[handle_result]
-    pub fn vote_update(&mut self, id: dtos::UpdateId) -> Result<bool, Error> {
-        log!(
-            "vote_update: signer={}, id={:?}",
-            env::signer_account_id(),
-            id,
-        );
-        let id: UpdateId = id.into_contract_type();
-
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
-
-        let threshold = self.threshold()?;
-
-        let voter = self.voter_or_panic();
-        if self.proposed_updates.vote(&id, voter).is_none() {
-            return Err(InvalidParameters::UpdateNotFound.into());
-        }
-
-        // Filter votes to only count current participants voting for this specific update.
-        // This ensures correctness even if the cleanup promise in MpcContract::vote_reshared() fails.
-        let valid_votes_count = running_state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .filter(|(account_id, _, _)| {
-                self.proposed_updates
-                    .vote_by_participant
-                    .get(account_id)
-                    .is_some_and(|voted_id| *voted_id == id)
-            })
-            .count();
-
-        // Not enough votes from current participants, wait for more.
-        if (valid_votes_count as u64) < threshold.value() {
-            return Ok(false);
-        }
-
-        let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
-
-        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
-            return Err(InvalidParameters::UpdateNotFound.into());
-        };
-
-        Ok(true)
-    }
-
-    /// Removes a proposed update, given the id returned by [`Self::propose_update`].
-    ///
-    /// The deposit attached at propose time is not refunded. Like [`Self::propose_update`], and
-    /// unlike [`Self::remove_update_vote`], this is not restricted to the running state.
-    ///
-    /// Returns [`Error`] if no update with this id exists, and panics if the caller is not a
-    /// participant.
-    // TODO(#4419): restrict removal to the account that proposed the update.
-    #[handle_result]
-    pub fn remove_update_proposal(&mut self, id: dtos::UpdateId) -> Result<(), Error> {
-        log!(
-            "remove_update_proposal: signer={}, id={:?}",
-            env::signer_account_id(),
-            id,
-        );
         self.voter_or_panic();
 
-        let id: UpdateId = id.into_contract_type();
-        self.proposed_updates
-            .remove_proposal(&id)
-            .ok_or_else(|| InvalidParameters::UpdateNotFound.into())
+        if !self
+            .update_votes
+            .take_if_approved(&update_hash, &running_state.parameters)
+        {
+            return Err(InvalidParameters::UpdateNotApproved.into());
+        }
+        let update: Update = update.try_into()?;
+        update
+            .into_promise(Gas::from_tgas(
+                self.config.contract_upgrade_deposit_tera_gas,
+            ))
+            .detach();
+        Ok(())
     }
 
-    /// returns all proposed updates
-    pub fn proposed_updates(&self) -> dtos::ProposedUpdates {
-        self.proposed_updates.into_dto_type()
-    }
-
-    /// Removes an update vote by the caller
-    /// panics if the contract is not in a running state or if the caller is not a participant
-    pub fn remove_update_vote(&mut self) {
-        log!("remove_update_vote: signer={}", env::signer_account_id(),);
-        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+    /// Votes for `update_hash` as the next update to apply; a participant holds one vote at a
+    /// time, so a new vote replaces the previous one. Returns whether the hash is now approved,
+    /// i.e. whether [`Self::submit_update`] would accept the matching payload.
+    ///
+    /// Approval is not permanent: it lasts only while a governance threshold of current
+    /// participants backs the hash, so [`Self::remove_update_vote`] takes it back.
+    #[handle_result]
+    pub fn vote_update(&mut self, update_hash: dtos::UpdateHash) -> Result<bool, Error> {
+        log!(
+            "vote_update: signer={}, update_hash={:?}",
+            env::signer_account_id(),
+            update_hash,
+        );
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
-        let voter = self.voter_or_panic();
-        self.proposed_updates.remove_vote(&voter);
+        self.voter_or_panic();
+        let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
+
+        Ok(self
+            .update_votes
+            .vote(&update_hash, voter, &running_state.parameters))
     }
 
-    /// Cleans update votes from non-participants after resharing.
+    /// Update votes keyed by proposal: the SHA-256 of the compact JSON encoding of the voted
+    /// [`dtos::UpdateHash`], e.g. `sha256sum <<< '{"Code":"<hex>"}'`. The hash backed by a
+    /// governance threshold of current participants is the one [`Self::submit_update`] accepts.
+    pub fn update_votes(&self) -> BTreeMap<ProposalHash, BTreeSet<dtos::AccountId>> {
+        self.update_votes
+            .pending()
+            .into_iter()
+            .map(|(proposal, voters)| {
+                (
+                    proposal,
+                    voters.iter().map(|voter| voter.get().clone()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// Withdraws the caller's update vote, un-approving the hash they backed if it falls below
+    /// the governance threshold. Panics outside the running state or when the caller is not a
+    /// participant.
+    #[handle_result]
+    pub fn remove_update_vote(&mut self) -> Result<(), Error> {
+        log!("remove_update_vote: signer={}", env::signer_account_id());
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+        self.voter_or_panic();
+        let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
+
+        self.update_votes.remove_vote(&voter);
+        Ok(())
+    }
+
+    /// Drops update votes from non-participants after resharing.
     /// Can only be called by participants or by the contract itself.
     #[handle_result]
     pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
@@ -179,8 +134,7 @@ impl MpcContract {
             return Err(InvalidState::NotParticipant { account_id: caller }.into());
         }
 
-        self.proposed_updates
-            .remove_non_participant_votes(participants);
+        self.update_votes.retain(participants);
         Ok(())
     }
 
@@ -196,481 +150,271 @@ impl MpcContract {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::*;
-    use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS};
+    use crate::MpcContract;
+    use crate::api::test_utils::NUM_DOMAINS;
+    use crate::errors::{Error, InvalidParameters, InvalidState};
+    use crate::primitives::key_state::AuthenticatedAccountId;
+    use crate::primitives::participants::Participants;
+    use crate::primitives::proposal_hash::{ProposalHash, ToProposalHash};
     use crate::primitives::test_utils::{gen_account_id, gen_participants};
-    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
-    use crate::state::key_event::tests::Environment;
-    use crate::state::test_utils::{
-        gen_initializing_state, gen_resharing_state, gen_running_state,
-        gen_running_state_with_params,
-    };
+    use crate::state::ProtocolContractState;
+    use crate::state::test_utils::{gen_resharing_state, gen_running_state_with_params};
+    use crate::tee::test_utils::Environment;
     use assert_matches::assert_matches;
+    use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::{AccountId, testing_env};
-    use rand::SeedableRng;
-    use rand::seq::SliceRandom;
+    use near_sdk::{AccountId, env, testing_env};
     use rstest::rstest;
-    use sha2::{Digest, Sha256};
-    use std::collections::{BTreeMap, HashSet};
-    use std::panic;
-    use test_utils::contract_types::dummy_config;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    fn propose_and_vote(
-        contract: &mut MpcContract,
-        update: Update,
-        expected_update_id: UpdateId,
-    ) -> Vec<dtos::AccountId> {
-        let update_id = contract.proposed_updates.propose(update.clone());
-        assert_eq!(update_id, expected_update_id);
-        // generate two accounts for voting
-        let account_id_0 = gen_account_id();
-        let account_id_1 = gen_account_id();
-        contract
-            .proposed_updates
-            .vote(&update_id, account_id_0.clone())
-            .unwrap();
-        contract
-            .proposed_updates
-            .vote(&update_id, account_id_1.clone())
-            .unwrap();
+    const THRESHOLD: u64 = 2;
 
-        let mut expected_votes = vec![account_id_0.clone(), account_id_1.clone()];
-        expected_votes.sort();
-        expected_votes
-    }
-
-    /// Test helper struct that combines update metadata with its votes for convenient comparison.
-    /// Used to convert BTreeMap-based [`ProposedUpdates`] into a sortable vector format for assertions.
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-    struct TestUpdate {
-        update_id: dtos::UpdateId,
-        update_hash: dtos::UpdateHash,
-        votes: Vec<dtos::AccountId>,
-    }
-
-    impl TestUpdate {
-        fn from_proposed_updates(
-            update_id: dtos::UpdateId,
-            update_hash: dtos::UpdateHash,
-            proposed_updates: &dtos::ProposedUpdates,
-        ) -> Self {
-            let votes: Vec<dtos::AccountId> = proposed_updates
-                .votes
-                .iter()
-                .filter(|&(_, &uid)| uid == update_id)
-                .map(|(account, _)| account.clone())
-                .collect();
-            TestUpdate {
-                update_id,
-                update_hash,
-                votes,
-            }
-        }
-    }
-
-    fn propose_and_vote_code(
-        expected_update_id: UpdateId,
-        contract: &mut MpcContract,
-    ) -> TestUpdate {
-        let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
-        let hash = Sha256::digest(code);
-        let update = Update::Contract(code.into());
-        let expected_update_hash = dtos::UpdateHash::Code(hash.into());
-        let expected_votes = propose_and_vote(contract, update, expected_update_id);
-        TestUpdate {
-            update_id: expected_update_id.into_dto_type(),
-            update_hash: expected_update_hash,
-            votes: expected_votes,
-        }
-    }
-
-    fn assert_proposed_update_has_expected_voters(
-        proposed_updates: &ProposedUpdates,
-        expected_update_id: UpdateId,
-        expected_voters: &HashSet<AccountId>,
-    ) {
-        let actual_voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
-        assert_eq!(actual_voters, *expected_voters);
-
-        let all_updates = proposed_updates.all_updates();
-        assert_eq!(all_updates.updates.len(), 1);
-
-        assert!(all_updates.updates.contains_key(&expected_update_id));
-        let update = all_updates.updates.get(&expected_update_id).unwrap();
-        assert_matches!(update, dtos::UpdateHash::Code(_));
-
-        let actual_voters: HashSet<_> = all_updates
-            .votes
-            .iter()
-            .filter(|&(_, &update_id)| update_id == expected_update_id)
-            .map(|(account, _)| account.clone())
-            .collect();
-        assert_eq!(actual_voters, *expected_voters);
-    }
-
-    fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
-        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
-
-        let empty_result = contract.proposed_updates();
-        assert_eq!(empty_result.votes, BTreeMap::new());
-        assert_eq!(empty_result.updates, BTreeMap::new());
-
-        // Propose and vote for code update
-        let code_update_id = UpdateId(0);
-        let mut code_update = propose_and_vote_code(code_update_id, &mut contract);
-
-        // Propose and vote for config update
-        let mut config_update = {
-            let update_config = dummy_config(1);
-            let config_hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
-            let config_update_obj = Update::Config(update_config.try_into().unwrap());
-            let config_update_id = UpdateId(1);
-            let config_votes = propose_and_vote(&mut contract, config_update_obj, config_update_id);
-            TestUpdate {
-                update_id: config_update_id.into_dto_type(),
-                update_hash: dtos::UpdateHash::Config(config_hash.into()),
-                votes: config_votes,
-            }
-        };
-
-        // Sort votes for consistent comparison
-        code_update.votes.sort();
-        config_update.votes.sort();
-
-        let mut expected = vec![code_update, config_update];
-        // sorting to have consistent order
-        expected.sort();
-
-        let res = contract.proposed_updates();
-
-        // Convert result to vector of TestUpdate for comparison
-        let mut actual: Vec<TestUpdate> = res
-            .updates
-            .iter()
-            .map(|(update_id, update_hash)| {
-                TestUpdate::from_proposed_updates(*update_id, update_hash.clone(), &res)
-            })
-            .collect();
-
-        // Sort votes within each update
-        actual.iter_mut().for_each(|update| update.votes.sort());
-        // sorting to have consistent order
-        actual.sort();
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    pub fn test_proposed_updates_interface_running() {
-        let protocol_contract_state =
-            ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));
-        test_proposed_updates_case_given_state(protocol_contract_state);
-    }
-
-    #[test]
-    pub fn test_proposed_updates_interface_resharing() {
-        let protocol_contract_state =
-            ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
-        test_proposed_updates_case_given_state(protocol_contract_state);
-    }
-
-    #[test]
-    pub fn test_proposed_updates_interface_initialzing() {
-        let protocol_contract_state = ProtocolContractState::Initializing(
-            gen_initializing_state(NUM_DOMAINS, NUM_GENERATED_DOMAINS).1,
-        );
-        test_proposed_updates_case_given_state(protocol_contract_state);
-    }
-
-    #[test]
-    pub fn test_remove_update_vote_running() {
-        let running_state = gen_running_state(NUM_DOMAINS);
-        let participants = running_state.parameters.participants().clone();
-        let protocol_contract_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
-
-        // Propose and vote for code update
-        let update_id = UpdateId(0);
-        let test_update = propose_and_vote_code(update_id, &mut contract);
-
-        for (account_id, _, _) in participants.participants() {
-            contract
-                .proposed_updates
-                .vote(&update_id, account_id.clone());
-
-            let proposed_updates = contract.proposed_updates();
-            assert_eq!(proposed_updates.updates.len(), 1);
-            assert_eq!(
-                *proposed_updates
-                    .updates
-                    .get(&update_id.into_dto_type())
-                    .unwrap(),
-                test_update.update_hash
-            );
-
-            // Check that participant vote was added
-            let mut expected_voters: Vec<_> = test_update.votes.to_vec();
-            expected_voters.push(account_id.clone());
-            let actual_voters: Vec<_> = proposed_updates
-                .votes
-                .iter()
-                .filter(|&(_, &uid)| uid == update_id.into_dto_type())
-                .map(|(voter, _)| voter.clone())
-                .collect();
-            assert_eq!(actual_voters.len(), expected_voters.len());
-            for voter in &actual_voters {
-                assert!(expected_voters.contains(voter));
-            }
-
-            // Remove the vote
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
-
-            contract.remove_update_vote();
-
-            let res = contract.proposed_updates();
-            assert_eq!(res.updates.len(), 1);
-
-            // Check that participant vote was removed
-            let actual_voters: Vec<_> = res
-                .votes
-                .iter()
-                .filter(|&(_, &uid)| uid == update_id.into_dto_type())
-                .map(|(voter, _)| voter.clone())
-                .collect();
-            assert_eq!(actual_voters.len(), test_update.votes.len());
-            for voter in &actual_voters {
-                assert!(test_update.votes.contains(voter));
-            }
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "not a voter")]
-    fn test_remove_update_vote_panics_if_non_voter() {
-        let running_state = gen_running_state(NUM_DOMAINS);
-        let protocol_contract_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
-
-        // Propose and vote for code update
-        let update_id = UpdateId(0);
-        let test_update = propose_and_vote_code(update_id, &mut contract);
-
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let account_id = test_update.votes.choose(&mut rng).unwrap();
-        let account_id: AccountId = account_id.clone();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id)
-                .build()
-        );
-
-        contract.remove_update_vote();
-    }
-
-    #[test]
-    #[should_panic(expected = "protocol must be in running state")]
-    pub fn test_remove_update_vote_resharing() {
-        let protocol_contract_state =
-            ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
-        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
-        let account_id = gen_account_id();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id)
-                .build()
-        );
-        contract.remove_update_vote();
-    }
-
-    #[test]
-    #[should_panic(expected = "protocol must be in running state")]
-    pub fn test_remove_update_vote_initializing() {
-        let protocol_contract_state = ProtocolContractState::Initializing(
-            gen_initializing_state(NUM_DOMAINS, NUM_GENERATED_DOMAINS).1,
-        );
-        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
-        let account_id = gen_account_id();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id)
-                .build()
-        );
-        contract.remove_update_vote();
-    }
-
-    #[test]
-    fn remove_update_proposal__should_remove_the_proposal_and_its_votes() {
-        // Given
-        let running_state = gen_running_state(NUM_DOMAINS);
-        let participant = running_state.parameters.participants().participants()[0]
-            .0
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-        let update_id = UpdateId(0);
-        propose_and_vote_code(update_id, &mut contract);
-        Environment::new(None, Some(participant), None);
-
-        // When
-        let result = contract.remove_update_proposal(update_id.into_dto_type());
-
-        // Then
-        assert_matches!(result, Ok(()));
-        let proposed_updates = contract.proposed_updates();
-        assert!(proposed_updates.updates.is_empty());
-        assert!(proposed_updates.votes.is_empty());
-    }
-
-    #[test]
-    fn remove_update_proposal__should_error_when_the_update_does_not_exist() {
-        // Given
-        let running_state = gen_running_state(NUM_DOMAINS);
-        let participant = running_state.parameters.participants().participants()[0]
-            .0
-            .clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-        Environment::new(None, Some(participant), None);
-
-        // When
-        let result = contract.remove_update_proposal(UpdateId(0).into_dto_type());
-
-        // Then
-        assert_matches!(
-            result,
-            Err(Error::InvalidParameters(InvalidParameters::UpdateNotFound))
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "not a voter")]
-    fn remove_update_proposal__should_panic_when_the_caller_is_not_a_participant() {
-        // Given
-        let mut contract = MpcContract::new_from_protocol_state(ProtocolContractState::Running(
-            gen_running_state(NUM_DOMAINS),
-        ));
-        let update_id = UpdateId(0);
-        propose_and_vote_code(update_id, &mut contract);
-        Environment::new(None, Some(gen_account_id()), None);
-
-        // When
-        let _ = contract.remove_update_proposal(update_id.into_dto_type());
-    }
-
-    /// Test that `vote_update` correctly filters out non-participant votes when checking threshold.
-    ///
-    /// This is a regression test for a bug where votes from accounts that were no longer
-    /// participants (e.g., after resharing) were still counted toward the update threshold.
-    ///
-    /// The test verifies that only votes from current participants are counted:
-    /// - With threshold=2 and 3 participants, we need 2 valid participant votes
-    /// - Adding 2 non-participant votes + 1 participant vote should NOT meet threshold (returns false)
-    /// - Adding a 2nd participant vote should meet threshold (returns true)
-    #[test]
-    pub fn test_vote_update_filters_non_participant_votes() {
-        // given: a running state with 3 participants and threshold of 2
-        let mut running_state = gen_running_state(1);
-        running_state.parameters =
-            GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
-                .unwrap();
-
-        let participants = running_state.parameters.participants().participants();
-        let participant_1 = participants[0].0.clone();
-        let participant_2 = participants[1].0.clone();
-
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        let update_id = contract
-            .proposed_updates
-            .propose(Update::Contract([0; 1000].into()));
-
-        // given: 2 non-participant votes + 1 participant vote (simulating old voters from before resharing)
-        contract.proposed_updates.vote(&update_id, gen_account_id());
-        contract.proposed_updates.vote(&update_id, gen_account_id());
-        contract
-            .proposed_updates
-            .vote(&update_id, participant_1.clone());
-
-        // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(participant_1.clone())
-                .predecessor_account_id(participant_1)
-                .build()
-        );
-        // then: threshold not met (need 2 valid votes, have only 1)
-        assert!(!contract.vote_update(update_id.into_dto_type()).unwrap());
-
-        // given: a 2nd participant vote is added
-        contract
-            .proposed_updates
-            .vote(&update_id, participant_2.clone());
-
-        // when: second participant calls vote_update (2 valid participant votes out of 4 total)
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(participant_2.clone())
-                .predecessor_account_id(participant_2)
-                .build()
-        );
-        // then: threshold met (have 2 valid votes, need 2)
-        assert!(contract.vote_update(update_id.into_dto_type()).unwrap());
-    }
-
-    #[test]
-    fn propose_update__should_charge_a_deposit_covering_the_worst_case_storage_cost() {
-        // Given
-        let running_state = gen_running_state_with_params(1, 129, 129);
-        let voters: Vec<AccountId> = running_state
+    /// A running contract with three participants and governance threshold two.
+    fn running_contract() -> (MpcContract, Vec<AccountId>) {
+        let running_state = gen_running_state_with_params(1, 3, THRESHOLD);
+        let participants: Vec<AccountId> = running_state
             .parameters
             .participants()
             .participants()
             .iter()
             .map(|(account_id, _, _)| account_id.clone())
             .collect();
-        let mut contract =
+        let contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-        let code = vec![0xff; 4096];
-        let required_deposit = ProposedUpdates::required_deposit(
-            u128::try_from(code.len()).expect("usize always fits in u128"),
-        )
-        .expect("the deposit for a 4 KiB payload fits in u128");
+        (contract, participants)
+    }
+
+    fn update_hash(byte: u8) -> dtos::UpdateHash {
+        dtos::UpdateHash::Code(dtos::Hash256([byte; 32]))
+    }
+
+    fn expected_votes(
+        buckets: &[(u8, &[AccountId])],
+    ) -> BTreeMap<ProposalHash, BTreeSet<AccountId>> {
+        buckets
+            .iter()
+            .map(|(hash, voters)| {
+                (
+                    update_hash(*hash).to_proposal_hash(),
+                    voters.iter().cloned().collect::<BTreeSet<_>>(),
+                )
+            })
+            .collect()
+    }
+
+    /// Authenticates `account_id` against `participants`, a set it may no longer belong to.
+    fn authenticated(
+        participants: &Participants,
+        account_id: &AccountId,
+    ) -> AuthenticatedAccountId {
+        Environment::new(None, Some(account_id.clone()), None);
+        AuthenticatedAccountId::new(participants).unwrap()
+    }
+
+    #[test]
+    fn vote_update__should_approve_the_hash_once_threshold_participants_voted() {
+        // Given
+        let (mut contract, participants) = running_contract();
 
         // When
-        let mut environment = Environment::new(None, Some(voters[0].clone()), None);
-        environment.set_deposit(required_deposit);
-        let storage_before = env::storage_usage();
-        let id = contract
-            .propose_update(dtos::ProposeUpdateArgs {
-                code: Some(code),
-                config: None,
-            })
-            .unwrap();
-        for voter in &voters[1..] {
-            Environment::new(None, Some(voter.clone()), None);
-            assert!(!contract.vote_update(id).unwrap());
+        Environment::new(None, Some(participants[0].clone()), None);
+        let first = contract.vote_update(update_hash(1)).unwrap();
+        let after_first = contract.update_votes();
+        Environment::new(None, Some(participants[1].clone()), None);
+        let second = contract.vote_update(update_hash(1)).unwrap();
+
+        // Then the approving vote is reported, and both votes stay on record so that a later
+        // withdrawal can take the approval back.
+        assert!(!first);
+        assert_eq!(
+            after_first,
+            expected_votes(&[(1, &[participants[0].clone()])])
+        );
+        assert!(second);
+        assert_eq!(
+            contract.update_votes(),
+            expected_votes(&[(1, &[participants[0].clone(), participants[1].clone()])])
+        );
+    }
+
+    #[test]
+    fn remove_update_vote__should_take_back_an_approval_and_block_submission() {
+        // Given an approved update.
+        let (mut contract, participants) = running_contract();
+        let code = vec![1, 2, 3];
+        let approved_hash = near_mpc_sdk::update::hash(&dtos::Update::Code(code.clone()));
+        for participant in &participants[..THRESHOLD as usize] {
+            Environment::new(None, Some(participant.clone()), None);
+            contract.vote_update(approved_hash.clone()).unwrap();
         }
-        // near-sdk `store` collections write their cached changes to storage
-        // in `Drop`; dropping the contract persists the entry and the votes.
-        drop(contract);
-        let bytes_grown = u128::from(env::storage_usage() - storage_before);
-        let storage_cost = env::storage_byte_cost().saturating_mul(bytes_grown);
+
+        // When one of its backers withdraws.
+        Environment::new(None, Some(participants[0].clone()), None);
+        contract.remove_update_vote().unwrap();
+
+        // Then the payload is refused until the threshold is restored.
+        Environment::new(None, Some(participants[2].clone()), None);
+        let refused = contract.submit_update(dtos::Update::Code(code.clone()));
+        assert_matches!(
+            refused,
+            Err(Error::InvalidParameters(
+                InvalidParameters::UpdateNotApproved
+            ))
+        );
+
+        Environment::new(None, Some(participants[2].clone()), None);
+        assert!(contract.vote_update(approved_hash).unwrap());
+        contract
+            .submit_update(dtos::Update::Code(code))
+            .expect("restoring the threshold makes the update submittable again");
+    }
+
+    #[test]
+    fn vote_update__should_replace_the_voters_previous_vote() {
+        // Given
+        let (mut contract, participants) = running_contract();
+        Environment::new(None, Some(participants[0].clone()), None);
+        contract.vote_update(update_hash(1)).unwrap();
+
+        // When
+        contract.vote_update(update_hash(2)).unwrap();
 
         // Then
-        assert!(
-            required_deposit >= storage_cost,
-            "deposit {required_deposit} does not cover {storage_cost} of storage"
+        assert_eq!(
+            contract.update_votes(),
+            expected_votes(&[(2, &[participants[0].clone()])])
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "protocol must be in running state")]
+    fn vote_update__should_panic_when_not_running() {
+        let (_, resharing_state) = gen_resharing_state(NUM_DOMAINS);
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing_state));
+        Environment::new(None, Some(gen_account_id()), None);
+
+        let _ = contract.vote_update(update_hash(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
+    fn vote_update__should_panic_for_non_participants() {
+        let (mut contract, _) = running_contract();
+        Environment::new(None, Some(gen_account_id()), None);
+
+        let _ = contract.vote_update(update_hash(1));
+    }
+
+    #[test]
+    fn submit_update__should_reject_a_hash_that_is_not_approved() {
+        // Given
+        let (mut contract, participants) = running_contract();
+        Environment::new(None, Some(participants[0].clone()), None);
+
+        // When
+        let result = contract.submit_update(dtos::Update::Code(vec![1, 2, 3]));
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::InvalidParameters(
+                InvalidParameters::UpdateNotApproved
+            ))
+        );
+    }
+
+    #[test]
+    fn submit_update__should_apply_the_approved_update_once() {
+        // Given
+        let (mut contract, participants) = running_contract();
+        let code = vec![1, 2, 3];
+        let approved_hash = near_mpc_sdk::update::hash(&dtos::Update::Code(code.clone()));
+        for participant in &participants[..THRESHOLD as usize] {
+            Environment::new(None, Some(participant.clone()), None);
+            contract.vote_update(approved_hash.clone()).unwrap();
+        }
+        assert_eq!(
+            contract.update_votes(),
+            BTreeMap::from([(
+                approved_hash.to_proposal_hash(),
+                participants[..THRESHOLD as usize]
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+            )])
+        );
+
+        // When
+        Environment::new(None, Some(participants[2].clone()), None);
+        let first = contract.submit_update(dtos::Update::Code(code.clone()));
+        let second = contract.submit_update(dtos::Update::Code(code));
+
+        // Then applying it consumes every vote, so it cannot be applied twice.
+        first.unwrap();
+        assert_eq!(contract.update_votes(), BTreeMap::new());
+        assert_matches!(
+            second,
+            Err(Error::InvalidParameters(
+                InvalidParameters::UpdateNotApproved
+            ))
+        );
+    }
+
+    #[test]
+    fn submit_update__should_reject_an_approved_but_invalid_config() {
+        // Given an approved config whose launcher TTL is below the attestation validity window.
+        let (mut contract, participants) = running_contract();
+        let mut config = test_utils::contract_types::dummy_config(1);
+        config.launcher_hash_unused_ttl_seconds = 0;
+        let update = dtos::Update::Config(config);
+        for participant in &participants[..THRESHOLD as usize] {
+            Environment::new(None, Some(participant.clone()), None);
+            contract
+                .vote_update(near_mpc_sdk::update::hash(&update))
+                .unwrap();
+        }
+
+        // When
+        let result = contract.submit_update(update);
+
+        // Then
+        let err = result.expect_err("invalid config must be rejected");
+        assert!(
+            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
+            "error should point at the invalid field, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn remove_update_vote__should_drop_the_callers_vote() {
+        // Given
+        let (mut contract, participants) = running_contract();
+        Environment::new(None, Some(participants[0].clone()), None);
+        contract.vote_update(update_hash(1)).unwrap();
+        Environment::new(None, Some(participants[1].clone()), None);
+        contract.vote_update(update_hash(2)).unwrap();
+
+        // When
+        Environment::new(None, Some(participants[0].clone()), None);
+        contract.remove_update_vote().unwrap();
+
+        // Then
+        assert_eq!(
+            contract.update_votes(),
+            expected_votes(&[(2, &[participants[1].clone()])])
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "protocol must be in running state")]
+    fn remove_update_vote__should_panic_when_not_running() {
+        let (_, resharing_state) = gen_resharing_state(NUM_DOMAINS);
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing_state));
+        Environment::new(None, Some(gen_account_id()), None);
+
+        let _ = contract.remove_update_vote();
     }
 
     /// Callers authorized to drive `remove_non_participant_update_votes`.
@@ -681,38 +425,45 @@ mod tests {
         Participant,
     }
 
-    /// An authorized caller (the contract itself or a current participant) drives the cleanup,
-    /// leaving only the participant votes (simulating post-resharing cleanup).
+    /// Votes from two accounts that are no longer participants plus one from a current one.
+    fn contract_with_stale_votes() -> (MpcContract, Vec<AccountId>, Vec<AccountId>) {
+        let (mut contract, participants) = running_contract();
+        let former_set = gen_participants(2);
+        let former: Vec<AccountId> = former_set
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+        let ProtocolContractState::Running(running_state) = &contract.protocol_state else {
+            unreachable!("running_contract builds a running state")
+        };
+        let threshold_parameters = running_state.parameters.clone();
+        for account_id in &former {
+            contract.update_votes.vote(
+                &update_hash(1),
+                authenticated(&former_set, account_id),
+                &threshold_parameters,
+            );
+        }
+        Environment::new(None, Some(participants[0].clone()), None);
+        contract.vote_update(update_hash(1)).unwrap();
+        (contract, participants, former)
+    }
+
     #[rstest]
     #[case::contract_itself(AuthorizedCaller::ContractItself)]
     #[case::participant(AuthorizedCaller::Participant)]
-    fn remove_non_participant_update_votes__should_clean_when_called_by_authorized_caller(
+    fn remove_non_participant_update_votes__should_keep_only_participant_votes(
         #[case] caller_kind: AuthorizedCaller,
     ) {
-        // Given: a running state with update votes from both participants and non-participants.
-        let running_state = gen_running_state(NUM_DOMAINS);
-        let participants = running_state.parameters.participants().clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        // propose_and_vote_code adds 2 non-participant votes.
-        let update_id = UpdateId(0);
-        let _ = propose_and_vote_code(update_id, &mut contract);
-
-        // Add votes from 2 current participants.
-        let participants = participants.participants();
-        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
-        contract.proposed_updates.vote(&update_id, p1.clone());
-        contract.proposed_updates.vote(&update_id, p2.clone());
-
-        // Resolve the caller account for this case. The contract account differs from any
-        // participant account, so the self-call and participant branches are distinct.
+        // Given
+        let (mut contract, participants, _) = contract_with_stale_votes();
         let caller = match caller_kind {
             AuthorizedCaller::ContractItself => env::current_account_id(),
-            AuthorizedCaller::Participant => p1.clone(),
+            AuthorizedCaller::Participant => participants[0].clone(),
         };
 
-        // When: the authorized caller invokes the cleanup directly.
+        // When
         testing_env!(
             VMContextBuilder::new()
                 .current_account_id(env::current_account_id())
@@ -722,37 +473,26 @@ mod tests {
         );
         contract.remove_non_participant_update_votes().unwrap();
 
-        // Then: only the 2 participant votes remain.
-        let participant_voters = HashSet::from([p1, p2]);
-        assert_proposed_update_has_expected_voters(
-            &contract.proposed_updates,
-            update_id,
-            &participant_voters,
+        // Then
+        assert_eq!(
+            contract.update_votes(),
+            expected_votes(&[(1, &[participants[0].clone()])])
         );
     }
 
-    /// A caller that is neither the contract itself nor a current participant is rejected with
-    /// [`NotParticipant`], and the votes are left untouched.
     #[test]
     fn remove_non_participant_update_votes__should_reject_unauthorized_caller() {
-        // Given: a running state with update votes from both participants and non-participants.
-        let running_state = gen_running_state(NUM_DOMAINS);
-        let participants = running_state.parameters.participants().clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        // Given
+        let (mut contract, participants, former) = contract_with_stale_votes();
+        let before = contract.update_votes();
+        let all_voters: Vec<AccountId> = former
+            .iter()
+            .chain(std::iter::once(&participants[0]))
+            .cloned()
+            .collect();
+        assert_eq!(before, expected_votes(&[(1, &all_voters)]));
 
-        let update_id = UpdateId(0);
-        let test_update = propose_and_vote_code(update_id, &mut contract);
-        let non_participants: HashSet<AccountId> = test_update.votes.iter().cloned().collect();
-
-        let participants = participants.participants();
-        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
-        contract.proposed_updates.vote(&update_id, p1.clone());
-        contract.proposed_updates.vote(&update_id, p2.clone());
-
-        let voters_before: HashSet<_> = [p1, p2].into_iter().chain(non_participants).collect();
-
-        // When: an account that is neither the contract nor a participant calls the cleanup.
+        // When
         let outsider = gen_account_id();
         testing_env!(
             VMContextBuilder::new()
@@ -763,16 +503,24 @@ mod tests {
         );
         let result = contract.remove_non_participant_update_votes();
 
-        // Then: the call is rejected with NotParticipant and the votes are left untouched.
+        // Then
         assert_matches!(
             result,
             Err(Error::InvalidState(InvalidState::NotParticipant { account_id }))
                 if account_id == outsider
         );
-        assert_proposed_update_has_expected_voters(
-            &contract.proposed_updates,
-            update_id,
-            &voters_before,
-        );
+        assert_eq!(contract.update_votes(), before);
+    }
+
+    #[test]
+    fn update_votes__should_start_empty() {
+        // Given
+        let (contract, _) = running_contract();
+
+        // When
+        let votes = contract.update_votes();
+
+        // Then
+        assert_eq!(votes, BTreeMap::new());
     }
 }

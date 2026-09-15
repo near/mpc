@@ -17,9 +17,9 @@ use near_mpc_contract_interface::{
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
         GovernanceThreshold, GovernanceThresholdParameters, InitConfig, MockAttestation,
-        ParticipantId, ParticipantInfo, Participants, Payload, ProposeUpdateArgs,
+        ParticipantId, ParticipantInfo, Participants, Payload,
         ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+        ProviderId, ReconstructionThreshold, SignRequestArgs, TeeVerifierCodeHash,
     },
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -1032,11 +1032,18 @@ impl MpcCluster {
             .context("failed to send verify_foreign_transaction request")
     }
 
-    /// Propose a contract code update and cast votes until `vote_update` reports
-    /// the threshold reached. Pair with [`Self::ensure_deployed_code`]: the deploy
-    /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
-    /// rolls the deploy back without changing the threshold-reached signal.
-    pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
+    /// Upgrades a contract running the production binary through that binary's update API
+    /// (`propose_update`, then `vote_update(id)` until the threshold vote deploys). Pair with
+    /// [`Self::ensure_deployed_code`]: the deploy and `migrate()` promise runs asynchronously,
+    /// and a panicking `migrate` rolls the deploy back without changing the threshold-reached
+    /// signal.
+    #[expect(deprecated)]
+    pub async fn legacy_propose_and_vote_contract_update(
+        &self,
+        new_wasm: &[u8],
+    ) -> anyhow::Result<()> {
+        use near_mpc_contract_interface::legacy::{ProposeUpdateArgs, UpdateId};
+
         anyhow::ensure!(
             !self.nodes.is_empty(),
             "cannot propose contract update with no nodes"
@@ -1068,7 +1075,7 @@ impl MpcCluster {
         for (i, node) in self.nodes.iter().enumerate() {
             let vote_outcome = self
                 .contract_handle(node.account_id())
-                .vote_update(proposal_id)
+                .vote_update_by_id(proposal_id)
                 .await
                 .with_context(|| format!("node {i} failed to call vote_update"))?;
             anyhow::ensure!(

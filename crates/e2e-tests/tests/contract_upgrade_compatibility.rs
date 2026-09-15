@@ -61,9 +61,10 @@ async fn contract_upgrade_compatibility__current_node_runs_against_production_co
         .await
         .expect("ckd request failed against production contract");
 
-    // When: we propose and vote in an update to the current contract WASM.
+    // When: we propose and vote in an update to the current contract WASM through the
+    // production contract's update API.
     cluster
-        .propose_and_vote_contract_update(&current_contract_wasm)
+        .legacy_propose_and_vote_contract_update(&current_contract_wasm)
         .await
         .expect("contract upgrade to current WASM failed");
     cluster

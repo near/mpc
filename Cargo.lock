@@ -6295,6 +6295,7 @@ dependencies = [
  "near-jsonrpc-primitives 0.37.3",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "near-mpc-sdk",
  "near-primitives 0.37.3",
  "near-sdk",
  "node-types",
@@ -7303,9 +7304,12 @@ dependencies = [
  "assert_matches",
  "borsh",
  "derive_more 2.1.1",
+ "hex",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-signature-verifier",
+ "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
 ]
 

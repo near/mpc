@@ -118,8 +118,10 @@ pub enum InvalidParameters {
     InsufficientGas { provided: u64, required: u64 },
     #[error("This sign request has timed out, was completed, or never existed.")]
     RequestNotFound,
-    #[error("Update not found.")]
-    UpdateNotFound,
+    #[error(
+        "The submitted update is not backed by a governance threshold of current participants."
+    )]
+    UpdateNotApproved,
     #[error("Participant already in set.")]
     ParticipantAlreadyInSet,
     #[error("Participant id already used.")]
