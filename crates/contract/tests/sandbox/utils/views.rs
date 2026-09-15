@@ -28,7 +28,7 @@ impl ViewMpcContract for Worker<Sandbox> {
 /// Queries the sandbox RPC directly: near-workspaces' `view` drops the block height of the
 /// response, which [`ObservedState`] needs.
 #[derive(Clone)]
-pub struct SandboxViewer(pub JsonRpcClient);
+pub struct SandboxViewer(JsonRpcClient);
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
