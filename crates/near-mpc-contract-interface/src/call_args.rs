@@ -124,6 +124,26 @@ pub struct VoteUpdateArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RemoveUpdateProposalArgs {
+    pub id: UpdateId,
+}
+
+#[derive(Serialize, Debug)]
+pub struct RegisterForeignChainConfigArgs {
+    #[expect(deprecated)]
+    pub foreign_chain_configuration: crate::types::ForeignChainConfiguration,
+}
+
+impl RegisterForeignChainConfigArgs {
+    #[expect(deprecated)]
+    pub fn new(foreign_chain_configuration: crate::types::ForeignChainConfiguration) -> Self {
+        Self {
+            foreign_chain_configuration,
+        }
+    }
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RegisterForeignChainsConfigArgs {
     pub foreign_chains_config: crate::types::ForeignChainsConfig,
 }

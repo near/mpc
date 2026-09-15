@@ -73,6 +73,7 @@ impl MpcContract {
     ///   `vote_cancel_keygen`, `register_foreign_chains_config`, `submit_participant_info`,
     ///   and the node-migration methods.
     /// - Via [`Self::voter_or_panic`]: `propose_update`, `vote_update`, `remove_update_vote`,
+    ///   `remove_update_proposal`,
     ///   `vote_code_hash`, the launcher/OS-measurement votes,
     ///   `vote_update_foreign_chain_providers`, and `verify_tee`.
     /// - Via [`Self::assert_caller_is_attested_participant_and_protocol_active`]: the key-event
