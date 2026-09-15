@@ -13,6 +13,9 @@ impl IndexerConfigExt for IndexerConfig {
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::StreamWhileSyncing,
             finality: self.finality.clone(),
             validate_genesis: self.validate_genesis,
+            // Skipping a block would silently drop the signature requests it carries,
+            // so we let the streamer terminate and rely on a restart to re-index.
+            skip_broken_blocks: false,
         }
     }
 }

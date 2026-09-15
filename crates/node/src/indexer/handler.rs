@@ -4,6 +4,7 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
+use chain_gateway::account_id_compat::from_near_internal;
 use chain_gateway::event_subscriber::block_events::BlockContext;
 use futures::StreamExt;
 use mpc_primitives::domain::DomainId;
@@ -183,7 +184,7 @@ async fn handle_message(
                                 signature_id,
                                 receipt_id: receipt.receipt_id,
                                 request: sign_args,
-                                predecessor_id: receipt.predecessor_id.clone(),
+                                predecessor_id: from_near_internal(&receipt.predecessor_id),
                             });
                             metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                         }
@@ -310,7 +311,7 @@ fn try_extract_next_receipt_id(
     expected_executor_id: &AccountId,
 ) -> Option<CryptoHash> {
     let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id != expected_executor_id {
+    if outcome.executor_id.as_str() != expected_executor_id.as_str() {
         return None;
     }
     let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
@@ -369,7 +370,7 @@ fn try_get_ckd_args(
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
         ckd_args.request.domain_id,
-        &receipt.predecessor_id,
+        &from_near_internal(&receipt.predecessor_id),
         &ckd_args.request.derivation_path,
     );
 
@@ -427,7 +428,7 @@ fn try_get_verify_foreign_tx_args(
 }
 
 fn try_get_request_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {
-    if &receipt.receiver_id != mpc_contract_id {
+    if receipt.receiver_id.as_str() != mpc_contract_id.as_str() {
         None
     } else {
         Some(receipt.receipt_id)
