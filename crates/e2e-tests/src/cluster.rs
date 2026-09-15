@@ -741,6 +741,20 @@ impl MpcCluster {
             .with_context(|| format!("node {node_index} failed to send cancel resharing vote"))
     }
 
+    /// Every sample of a labelled metric on one node; see [`MpcNode::get_labelled_metric`].
+    /// Empty if the node is stopped.
+    pub async fn get_labelled_metric(
+        &self,
+        node_index: usize,
+        name: &str,
+    ) -> anyhow::Result<Vec<(String, i64)>> {
+        match self.nodes.get(node_index) {
+            Some(MpcNodeState::Running(node)) => node.get_labelled_metric(name).await,
+            Some(MpcNodeState::Stopped(_)) => Ok(Vec::new()),
+            None => anyhow::bail!("no node at index {node_index}"),
+        }
+    }
+
     pub async fn get_metric_all_nodes(&self, name: &str) -> anyhow::Result<Vec<Option<i64>>> {
         let mut results = Vec::new();
         for node in &self.nodes {

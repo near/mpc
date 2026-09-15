@@ -16,10 +16,7 @@ The node supports multiple threshold signature schemes, organized into *domains*
 
 #### Supported schemes
 
-**[OT-based ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md)** (Secp256k1) — Originally derived from [Cait-Sith](https://github.com/cronokirby/cait-sith). Uses an offline phase with two protocols:
-  - *Triple generation*: runs continuously in the background (target: up to 1M Beaver triples per node).
-  - *Presignature generation*: also runs in the background; each presignature consumes two triples.
-  - *Signing*: one round of communication using a presignature.
+**[OT-based ECDSA](crates/threshold-signatures/docs/ecdsa/ot_based_ecdsa/intro.md)** (Secp256k1) — Originally derived from [Cait-Sith](https://github.com/cronokirby/cait-sith). Uses an offline phase; see [asset generation](docs/development/asset-generation.md) for how triples, presignatures and signatures are produced and consumed.
 
 **[Robust ECDSA](crates/threshold-signatures/docs/ecdsa/robust_ecdsa/signing.md)** (Secp256k1) — Based on [DJNPO20](https://eprint.iacr.org/2020/501). Skips triple generation entirely:
   - *Presignature generation*: a single 3-round protocol using degree-2t polynomials.

@@ -141,6 +141,37 @@ impl MpcNode {
         Ok(None)
     }
 
+    /// Every sample of a labelled metric as `(labels, value)`, in scrape order; `labels` is
+    /// the raw `{...}` text so callers can filter on a label value.
+    pub async fn get_labelled_metric(&self, name: &str) -> anyhow::Result<Vec<(String, i64)>> {
+        let url = format!("http://{}/metrics", self.web_address());
+        let body = reqwest::get(&url)
+            .await
+            .context("failed to fetch metrics")?
+            .text()
+            .await
+            .context("failed to read metrics body")?;
+        let mut samples = Vec::new();
+        for line in body.lines() {
+            if line.starts_with('#') {
+                continue;
+            }
+            let Some((key_and_labels, value_str)) = line.rsplit_once(' ') else {
+                continue;
+            };
+            let (metric_key, labels) = key_and_labels
+                .split_once('{')
+                .map_or((key_and_labels, ""), |(key, rest)| (key, rest));
+            if metric_key != name {
+                continue;
+            }
+            if let Ok(v) = value_str.parse::<f64>() {
+                samples.push((labels.to_string(), v as i64));
+            }
+        }
+        Ok(samples)
+    }
+
     /// Writes a flag file that controls block ingestion. Requires the
     /// `network-hardship-simulation` feature on the mpc-node binary.
     pub fn set_block_ingestion(&self, active: bool) -> anyhow::Result<()> {
@@ -482,7 +513,10 @@ impl MpcNodeSetup {
                     desired_presignatures_to_buffer: self.presignatures_to_buffer,
                     timeout_sec: 60,
                 },
-                signature: SignatureConfig { timeout_sec: 60 },
+                signature: SignatureConfig {
+                    timeout_sec: 60,
+                    online_presign: true,
+                },
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),

@@ -52,7 +52,7 @@ This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain
 2. **MPC Signing**: Threshold ECDSA based on cait-sith library with:
    - Background Beaver triple generation (up to 1M per node)
    - Presignature generation (requires 2 triples each)
-   - Signature generation (1 round using a presignature)
+   - Signature generation (from a presignature, or merged with presigning over a triple pair)
 
 ### Key Crates
 

@@ -312,6 +312,32 @@ where
         }
     }
 
+    /// Like [`Self::take_owned_matching`], but returns `None` instead of waiting when no
+    /// asset currently satisfies both conditions.
+    pub fn try_take_owned_matching(&self, cond_val: CondVal) -> Option<(UniqueId, T)> {
+        let (taken, ingested) = {
+            let mut cold = self.cold_queue.lock().unwrap();
+            let mut ingested = false;
+            let mut taken = None;
+            while let Ok((id, value)) = self.hot_receiver.try_recv() {
+                if cold.satisfies_condition(&cond_val, &value) {
+                    taken = Some((id, value));
+                    break;
+                }
+                cold.ingest(id, value);
+                ingested = true;
+            }
+            (
+                taken.or_else(|| cold.take_first_matching(&cond_val)),
+                ingested,
+            )
+        };
+        if ingested {
+            self.cold_queue_new_elements.notify_waiters();
+        }
+        taken
+    }
+
     pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
         loop {
             let cold_queue_new_elements = self.cold_queue_new_elements.notified();
@@ -667,6 +693,18 @@ where
             // in this file.
             .expect("Unrecoverable error writing to database");
         (id, val)
+    }
+
+    /// Like [`Self::take_owned_matching`], but returns `None` instead of waiting when no
+    /// asset currently satisfies both conditions.
+    pub fn try_take_owned_matching(&self, eligible: Vec<ParticipantId>) -> Option<(UniqueId, T)> {
+        let (id, val) = self.owned_queue.try_take_owned_matching(eligible)?;
+        let mut update = self.db.update();
+        update.delete(self.col, &self.make_key(id));
+        update
+            .commit()
+            .expect("Unrecoverable error writing to database");
+        Some((id, val))
     }
 
     fn take_unowned_inner(&self, id: UniqueId) -> anyhow::Result<T> {
@@ -1527,6 +1565,50 @@ mod tests {
         assert_eq!(taken, Some((id2, 3)));
         assert_eq!(queue.available(), 2);
         assert_eq!(queue.offline(), 0);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn try_take_owned_matching__should_return_none_without_blocking_when_nothing_matches() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            |cond: &Vec<i32>, val| cond.contains(val),
+            Arc::new(|| vec![2, 3]),
+        );
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        queue.add_owned(id1, 2);
+
+        // When
+        let taken = queue.try_take_owned_matching(vec![3]);
+
+        // Then
+        assert_eq!(taken, None);
+        assert_eq!(queue.available(), 1);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn try_take_owned_matching__should_take_asset_satisfying_both_conditions() {
+        // Given
+        let clock = FakeClock::default();
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            |cond: &Vec<i32>, val| cond.contains(val),
+            Arc::new(|| vec![2, 3]),
+        );
+        let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id2 = id1.add_to_counter(1).unwrap();
+        queue.add_owned(id1, 2);
+        queue.add_owned(id2, 3);
+
+        // When
+        let taken = queue.try_take_owned_matching(vec![3]);
+
+        // Then
+        assert_eq!(taken, Some((id2, 3)));
+        assert_eq!(queue.available(), 1);
     }
 
     // A take with a supplied value nothing matches yet parks; it completes once

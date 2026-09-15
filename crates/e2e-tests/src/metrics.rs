@@ -21,6 +21,9 @@ pub const CKDS_QUEUE_ATTEMPTS: &str = "mpc_pending_ckds_queue_attempts_generated
 
 pub const INDEXER_LATEST_BLOCK_HEIGHT: &str = "mpc_indexer_latest_block_height";
 
+pub const PEER_PROTOCOL_VERSION: &str = "mpc_peer_protocol_version";
+pub const ECDSA_SIGNATURES_LED_BY_MODE: &str = "mpc_num_ecdsa_signatures_led_by_mode";
+
 pub const TIMEOUTS_INDEXED: &str = "mpc_num_fail_on_timeout_indexed";
 
 pub const LAST_BACKUP_SERVED_EPOCH: &str = "mpc_last_backup_served_epoch";

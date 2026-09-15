@@ -1,7 +1,8 @@
 use crate::primitives::ParticipantId;
+use crate::protocol_version::CommunicationProtocols;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, RwLock, Weak};
 use tracing::info;
 
 /// Represents a version of a bidirectional connection with another node.
@@ -75,6 +76,10 @@ pub struct NodeConnectivity<I, O> {
     incoming_receiver: tokio::sync::watch::Receiver<ConnectionWithVersion<O>>,
     outgoing_version: AtomicUsize,
     incoming_version: AtomicUsize,
+    /// Protocol version the peer advertised in its latest handshake, in either direction.
+    /// Deliberately kept across disconnects so that a peer restarting does not look like a
+    /// peer of unknown version.
+    last_seen_protocol_version: RwLock<Option<CommunicationProtocols>>,
 }
 
 impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> {
@@ -96,13 +101,28 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             incoming_receiver,
             outgoing_version: AtomicUsize::new(0),
             incoming_version: AtomicUsize::new(0),
+            last_seen_protocol_version: RwLock::new(None),
         }
     }
 
+    fn record_peer_protocol_version(&self, version: CommunicationProtocols) {
+        *self.last_seen_protocol_version.write().unwrap() = Some(version);
+    }
+
+    /// The protocol version the peer advertised in its latest handshake, if it ever connected.
+    pub fn last_seen_peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+        *self.last_seen_protocol_version.read().unwrap()
+    }
+}
+
+impl<I: AdvertiseProtocolVersion + Send + Sync + 'static, O: Send + Sync + 'static>
+    NodeConnectivity<I, O>
+{
     /// Sets a new outgoing connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
     pub fn set_outgoing_connection(&self, conn: &Arc<I>) {
+        self.record_peer_protocol_version(conn.peer_protocol_version());
         let version = self.outgoing_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.outgoing_sender
             .send(ConnectionWithVersion {
@@ -113,8 +133,10 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     }
 }
 
-impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
-    NodeConnectivity<I, O>
+impl<
+    I: Send + Sync + 'static,
+    O: SenderConnectionId + AdvertiseProtocolVersion + Send + Sync + 'static,
+> NodeConnectivity<I, O>
 {
     /// Sets a new incoming connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
@@ -137,6 +159,7 @@ impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
             if !should_replace {
                 return false;
             }
+            self.record_peer_protocol_version(conn.peer_protocol_version());
             let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
             *existing = ConnectionWithVersion {
                 connection: Arc::downgrade(conn),
@@ -217,6 +240,11 @@ pub trait SenderConnectionId {
     fn sender_connection_id(&self) -> u32;
 }
 
+/// The protocol version the remote side of a connection advertised in the handshake.
+pub trait AdvertiseProtocolVersion {
+    fn peer_protocol_version(&self) -> CommunicationProtocols;
+}
+
 impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
     OptionSenderConnectionId for NodeConnectivity<I, O>
 {
@@ -232,6 +260,8 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn was_connection_interrupted(&self, version: ConnectionVersion) -> bool;
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
     fn is_bidirectionally_connected(&self) -> bool;
+    /// The protocol version the peer advertised in its latest handshake, if it ever connected.
+    fn last_seen_peer_protocol_version(&self) -> Option<CommunicationProtocols>;
 }
 
 #[async_trait::async_trait]
@@ -280,6 +310,10 @@ where
 
     fn is_bidirectionally_connected(&self) -> bool {
         NodeConnectivity::is_bidirectionally_connected(self)
+    }
+
+    fn last_seen_peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+        NodeConnectivity::last_seen_peer_protocol_version(self)
     }
 }
 
@@ -362,16 +396,72 @@ mod tests {
         OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
+    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
     use futures::FutureExt;
     use rstest::rstest;
     use std::sync::{Arc, Weak};
 
-    use super::SenderConnectionId;
+    use super::{AdvertiseProtocolVersion, SenderConnectionId};
 
     impl SenderConnectionId for usize {
         fn sender_connection_id(&self) -> u32 {
             *self as u32
         }
+    }
+
+    impl AdvertiseProtocolVersion for usize {
+        fn peer_protocol_version(&self) -> CommunicationProtocols {
+            CURRENT_PROTOCOL_VERSION
+        }
+    }
+
+    struct VersionedConnection(CommunicationProtocols);
+
+    impl SenderConnectionId for VersionedConnection {
+        fn sender_connection_id(&self) -> u32 {
+            0
+        }
+    }
+
+    impl AdvertiseProtocolVersion for VersionedConnection {
+        fn peer_protocol_version(&self) -> CommunicationProtocols {
+            self.0
+        }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn node_connectivity__should_expose_no_peer_protocol_version_before_first_connection() {
+        // Given
+        let connectivity = NodeConnectivity::<VersionedConnection, VersionedConnection>::new();
+
+        // When
+        let version = connectivity.last_seen_peer_protocol_version();
+
+        // Then
+        assert_eq!(version, None);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn node_connectivity__should_remember_last_seen_peer_protocol_version_after_disconnect() {
+        // Given
+        let connectivity = NodeConnectivity::<VersionedConnection, VersionedConnection>::new();
+        let outgoing = Arc::new(VersionedConnection(CommunicationProtocols::Jan2026));
+        connectivity.set_outgoing_connection(&outgoing);
+        let incoming = Arc::new(VersionedConnection(CommunicationProtocols::Sep2026));
+        connectivity.set_incoming_connection(&incoming).unwrap();
+
+        // When
+        drop(outgoing);
+        drop(incoming);
+
+        // Then
+        assert!(!connectivity.is_bidirectionally_connected());
+        assert_eq!(
+            connectivity.last_seen_peer_protocol_version(),
+            Some(CommunicationProtocols::Sep2026)
+        );
     }
 
     #[test]

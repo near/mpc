@@ -5,7 +5,7 @@ use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
 
 /// Arbitrary magic byte to distinguish from older protocol where we didn't send
 /// the protocol version at all.
-const MAGIC_BYTE: u8 = 0xcc;
+pub(crate) const MAGIC_BYTE: u8 = 0xcc;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DialerData {
@@ -79,7 +79,9 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
             // if we get here, the connection is always accepted
             HandshakeOutcome::Dec2025(true)
         }
-        CommunicationProtocols::Jan2026 | CommunicationProtocols::Unknown(_) => {
+        CommunicationProtocols::Jan2026
+        | CommunicationProtocols::Sep2026
+        | CommunicationProtocols::Unknown(_) => {
             conn.write_u32(sender_connection_id).await?;
             let min_expected_connection_id = conn.read_u32().await?;
             HandshakeOutcome::Jan2026(ConnectionInfo {
@@ -163,7 +165,9 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
                 HandshakeOutcome::Dec2025(false)
             }
         }
-        CommunicationProtocols::Jan2026 | CommunicationProtocols::Unknown(_) => {
+        CommunicationProtocols::Jan2026
+        | CommunicationProtocols::Sep2026
+        | CommunicationProtocols::Unknown(_) => {
             write_magic_byte_protocol_version_and_expected_connection_version(
                 conn,
                 min_expected_connection_id,

@@ -176,14 +176,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .map(Participant::from)
             .collect::<Vec<_>>();
 
-        let tweak = Scalar::from_repr(self.tweak.as_bytes().into())
-            .into_option()
-            .context("Couldn't construct k256 point")?;
-        let tweak = threshold_signatures::Tweak::new(tweak);
-
-        let msg_hash = Scalar::from_repr(self.msg_hash.into())
-            .into_option()
-            .context("Couldn't construct k256 point")?;
+        let (tweak, msg_hash) = parse_tweak_and_msg_hash(&self.tweak, &self.msg_hash)?;
 
         let derived_public_key = tweak
             .derive_verifying_key(&self.keygen_out.public_key)
@@ -219,6 +212,20 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
     fn leader_waits_for_success(&self) -> bool {
         false
     }
+}
+
+/// Converts the on-chain tweak and payload hash into the scalars the signing protocols take.
+pub(super) fn parse_tweak_and_msg_hash(
+    tweak: &Tweak,
+    msg_hash: &[u8; 32],
+) -> anyhow::Result<(threshold_signatures::ecdsa::Tweak, Scalar)> {
+    let tweak = Scalar::from_repr(tweak.as_bytes().into())
+        .into_option()
+        .context("Couldn't construct k256 scalar from tweak")?;
+    let msg_hash = Scalar::from_repr((*msg_hash).into())
+        .into_option()
+        .context("Couldn't construct k256 scalar from message hash")?;
+    Ok((threshold_signatures::ecdsa::Tweak::new(tweak), msg_hash))
 }
 
 /// Performs an MPC signature operation as a follower.

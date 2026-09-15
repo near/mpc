@@ -46,6 +46,8 @@ pub struct PresignatureConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
+    #[serde(default = "default_true")]
+    pub online_presign: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

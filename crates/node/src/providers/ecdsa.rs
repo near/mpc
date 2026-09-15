@@ -3,6 +3,7 @@ pub mod key_resharing;
 pub mod presign;
 pub mod triple;
 
+mod online_presign;
 mod sign;
 
 use near_mpc_contract_interface::types::KeyEventId;
@@ -16,6 +17,7 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
+use crate::protocol_version::CommunicationProtocols;
 use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
@@ -47,6 +49,10 @@ pub struct EcdsaSignatureProvider {
 }
 
 pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
+
+/// Handshake protocol version that introduced [`EcdsaTaskId::OnlinePresignSignature`].
+pub const ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: CommunicationProtocols =
+    CommunicationProtocols::Sep2026;
 
 impl EcdsaSignatureProvider {
     pub fn new(
@@ -124,27 +130,37 @@ impl EcdsaSignatureProvider {
     }
 }
 
+/// Discriminants are explicit and part of the wire format: a variant is only ever appended,
+/// never reordered or renumbered, so that nodes on different versions keep decoding each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum EcdsaTaskId {
     KeyGeneration {
         key_event: KeyEventId,
-    },
+    } = 0,
     KeyResharing {
         key_event: KeyEventId,
-    },
+    } = 1,
     ManyTriples {
         start: UniqueId,
         count: u32,
-    },
+    } = 2,
     Presignature {
         id: UniqueId,
         domain_id: DomainId,
         paired_triple_id: UniqueId,
-    },
+    } = 3,
     Signature {
         id: SignatureId,
         presignature_id: UniqueId,
-    },
+    } = 4,
+    /// Presigning and signing in one computation over the leader's triple pair; no
+    /// presignature is involved.
+    OnlinePresignSignature {
+        id: SignatureId,
+        paired_triple_id: UniqueId,
+    } = 5,
 }
 
 impl From<EcdsaTaskId> for MpcTaskId {
@@ -166,7 +182,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         ECDSA_TASK_MONITORS
             .make_signature_leader
-            .instrument(self.make_signature_leader(id))
+            .instrument(self.make_signature_leader_choosing_flow(id))
             .await
     }
 
@@ -239,10 +255,23 @@ impl SignatureProvider for EcdsaSignatureProvider {
                         .instrument(self.make_signature_follower(channel, id, presignature_id))
                         .await?;
                 }
+                EcdsaTaskId::OnlinePresignSignature {
+                    id,
+                    paired_triple_id,
+                } => {
+                    ECDSA_TASK_MONITORS
+                        .make_online_presign_signature_follower
+                        .instrument(self.make_online_presign_signature_follower(
+                            channel,
+                            id,
+                            paired_triple_id,
+                        ))
+                        .await?;
+                }
             },
 
             _ => anyhow::bail!(
-                "eddsa task handler: received unexpected task id: {:?}",
+                "ecdsa task handler: received unexpected task id: {:?}",
                 channel.task_id()
             ),
         }
@@ -302,5 +331,42 @@ impl SignatureProvider for EcdsaSignatureProvider {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::EcdsaTaskId;
+    use crate::primitives::{ParticipantId, UniqueId};
+    use mpc_primitives::domain::DomainId;
+    use mpc_primitives::{AttemptId, EpochId, KeyEventId};
+    use near_indexer_primitives::CryptoHash;
+    use rstest::rstest;
+
+    fn uid() -> UniqueId {
+        UniqueId::new(ParticipantId::from_raw(0), 1, 0)
+    }
+
+    fn key_event() -> KeyEventId {
+        KeyEventId::new(EpochId::new(0), DomainId(0), AttemptId(0))
+    }
+
+    #[rstest]
+    #[case(EcdsaTaskId::KeyGeneration { key_event: key_event() }, 0)]
+    #[case(EcdsaTaskId::KeyResharing { key_event: key_event() }, 1)]
+    #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }, 2)]
+    #[case(EcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0), paired_triple_id: uid() }, 3)]
+    #[case(EcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }, 4)]
+    #[case(EcdsaTaskId::OnlinePresignSignature { id: CryptoHash::default(), paired_triple_id: uid() }, 5)]
+    fn ecdsa_task_id__should_keep_borsh_discriminants_stable(
+        #[case] task_id: EcdsaTaskId,
+        #[case] discriminant: u8,
+    ) {
+        // When
+        let encoded = borsh::to_vec(&task_id).unwrap();
+
+        // Then
+        assert_eq!(encoded[0], discriminant);
     }
 }

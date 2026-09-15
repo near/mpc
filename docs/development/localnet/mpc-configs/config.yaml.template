@@ -19,6 +19,7 @@ presignature:
   timeout_sec: 60
 signature:
   timeout_sec: 60
+  online_presign: true
 indexer:
   validate_genesis: false
   sync_mode: Latest

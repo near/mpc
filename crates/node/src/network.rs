@@ -4,12 +4,13 @@ pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
 
-use crate::metrics::networking_metrics;
+use crate::metrics::{MPC_PEER_PROTOCOL_VERSION, networking_metrics};
 use crate::network::indexer_heights::IndexerHeightTracker;
 use crate::primitives::{
     ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
     MpcTaskId, ParticipantId, PeerMessage, UniqueId,
 };
+use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
@@ -151,6 +152,7 @@ impl MeshNetworkClient {
             self.my_participant_id(),
             task_id
         );
+        self.ensure_participants_understand(task_id, &participants)?;
         let channel_id = self.generate_unique_channel_id();
         let start_message = MpcStartMessage {
             task_id,
@@ -182,6 +184,58 @@ impl MeshNetworkClient {
 
     pub fn all_participant_ids(&self) -> Vec<ParticipantId> {
         self.transport_sender.all_participant_ids()
+    }
+
+    /// The protocol version `participant` advertised in its latest handshake; `None` if it has
+    /// not connected since we started. Our own version is always known.
+    pub fn peer_protocol_version(
+        &self,
+        participant: ParticipantId,
+    ) -> Option<CommunicationProtocols> {
+        if participant == self.my_participant_id() {
+            Some(CURRENT_PROTOCOL_VERSION)
+        } else {
+            self.transport_sender
+                .connectivity(participant)
+                .last_seen_peer_protocol_version()
+        }
+    }
+
+    /// Participants, ourselves included, known to run at least `required`.
+    pub fn participants_supporting(&self, required: CommunicationProtocols) -> Vec<ParticipantId> {
+        self.all_participant_ids()
+            .into_iter()
+            .filter(|participant| {
+                self.peer_protocol_version(*participant)
+                    .is_some_and(|version| version.supports(required))
+            })
+            .collect()
+    }
+
+    /// A peer that does not know `task_id` fails to decode the Start message and drops the
+    /// whole connection, so refuse to send it rather than let that happen. A peer of unknown
+    /// version is only trusted with task ids every supported version understands.
+    fn ensure_participants_understand(
+        &self,
+        task_id: MpcTaskId,
+        participants: &[ParticipantId],
+    ) -> anyhow::Result<()> {
+        let required = task_id.min_protocol_version();
+        for participant in participants {
+            match self.peer_protocol_version(*participant) {
+                Some(version) if version.supports(required) => {}
+                Some(version) => anyhow::bail!(
+                    "participant {participant} runs protocol version {version}; task {task_id:?} \
+                     requires {required}"
+                ),
+                None if required == CommunicationProtocols::Dec2025 => {}
+                None => anyhow::bail!(
+                    "protocol version of participant {participant} is unknown; task {task_id:?} \
+                     requires {required}"
+                ),
+            }
+        }
+        Ok(())
     }
 
     /// Returns the participant IDs of all nodes in the network that are currently alive.
@@ -381,11 +435,13 @@ impl MeshNetworkClient {
             if id == my_participant_id {
                 metric.set(1);
             } else {
-                let is_live_participant = self
-                    .transport_sender
-                    .connectivity(id)
-                    .is_bidirectionally_connected();
-                metric.set(is_live_participant.into());
+                let connectivity = self.transport_sender.connectivity(id);
+                metric.set(connectivity.is_bidirectionally_connected().into());
+                if let Some(version) = connectivity.last_seen_peer_protocol_version() {
+                    MPC_PEER_PROTOCOL_VERSION
+                        .with_label_values(&[&id.to_string()])
+                        .set(u32::from(version).into());
+                }
             }
         }
     }
@@ -875,6 +931,7 @@ pub mod testing {
         ChannelId, MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelSender,
     };
     use crate::primitives::{MpcPeerMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId};
+    use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, CommunicationProtocols};
     use crate::tracking;
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
@@ -883,6 +940,19 @@ pub mod testing {
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
         senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<PeerMessage>>,
+        /// Protocol version each peer is reported to run; a peer missing here reports `None`,
+        /// like a peer that never connected.
+        protocol_versions: HashMap<ParticipantId, CommunicationProtocols>,
+    }
+
+    /// Every participant reported to run the current protocol version.
+    pub fn current_protocol_versions(
+        participants: &[ParticipantId],
+    ) -> HashMap<ParticipantId, CommunicationProtocols> {
+        participants
+            .iter()
+            .map(|participant| (*participant, CURRENT_PROTOCOL_VERSION))
+            .collect()
     }
 
     pub struct TestMeshTransportSender {
@@ -894,12 +964,18 @@ pub mod testing {
         receiver: tokio::sync::mpsc::UnboundedReceiver<PeerMessage>,
     }
 
-    pub struct TestConnectivityInterface;
+    pub struct TestConnectivityInterface {
+        peer_protocol_version: Option<CommunicationProtocols>,
+    }
 
     #[async_trait::async_trait]
     impl NodeConnectivityInterface for TestConnectivityInterface {
         fn is_bidirectionally_connected(&self) -> bool {
             true
+        }
+
+        fn last_seen_peer_protocol_version(&self) -> Option<CommunicationProtocols> {
+            self.peer_protocol_version
         }
 
         async fn wait_for_connection(
@@ -930,9 +1006,15 @@ pub mod testing {
 
         fn connectivity(
             &self,
-            _participant_id: ParticipantId,
+            participant_id: ParticipantId,
         ) -> Arc<dyn NodeConnectivityInterface> {
-            Arc::new(TestConnectivityInterface)
+            Arc::new(TestConnectivityInterface {
+                peer_protocol_version: self
+                    .transport
+                    .protocol_versions
+                    .get(&participant_id)
+                    .copied(),
+            })
         }
 
         fn send(
@@ -990,6 +1072,7 @@ pub mod testing {
         let transport = Arc::new(TestMeshTransport {
             participant_ids: participants.clone(),
             senders: sender_by_participant_id,
+            protocol_versions: current_protocol_versions(&participants),
         });
 
         let mut transports = Vec::new();
@@ -1007,15 +1090,27 @@ pub mod testing {
         transports
     }
 
-    /// Synchronous [`MeshNetworkClient`] for unit tests. All participants are reported alive.
+    /// Synchronous [`MeshNetworkClient`] for unit tests. All participants are reported alive
+    /// and on the current protocol version.
     pub fn new_test_client(
         participants: Vec<ParticipantId>,
         my_participant_id: ParticipantId,
+    ) -> Arc<super::MeshNetworkClient> {
+        let protocol_versions = current_protocol_versions(&participants);
+        new_test_client_with_versions(participants, my_participant_id, protocol_versions)
+    }
+
+    /// Like [`new_test_client`], with the protocol version each peer is reported to run.
+    pub fn new_test_client_with_versions(
+        participants: Vec<ParticipantId>,
+        my_participant_id: ParticipantId,
+        protocol_versions: HashMap<ParticipantId, CommunicationProtocols>,
     ) -> Arc<super::MeshNetworkClient> {
         let transport = Arc::new(TestMeshTransportSender {
             transport: Arc::new(TestMeshTransport {
                 participant_ids: participants.clone(),
                 senders: HashMap::new(),
+                protocol_versions,
             }),
             my_participant_id,
         });
@@ -1042,6 +1137,7 @@ pub mod testing {
         let transport = Arc::new(TestMeshTransport {
             participant_ids: participants.clone(),
             senders: HashMap::new(),
+            protocol_versions: current_protocol_versions(&participants),
         });
         let transport_sender = Arc::new(TestMeshTransportSender {
             transport,
@@ -1113,15 +1209,19 @@ mod tests {
         run_receive_message,
     };
     use crate::network::indexer_heights::IndexerHeightTracker;
-    use crate::network::testing::{new_test_transports, run_test_clients};
+    use crate::network::testing::{
+        new_test_client_with_versions, new_test_transports, run_test_clients,
+    };
     use crate::primitives::{
         ChannelId, MpcMessage, MpcMessageKind, MpcStartMessage, MpcTaskId, ParticipantId, UniqueId,
     };
+    use crate::protocol_version::CommunicationProtocols;
     use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
+    use near_indexer_primitives::CryptoHash;
     use rstest::rstest;
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
@@ -1131,6 +1231,86 @@ mod tests {
 
     /// Just some big prime number
     static MOD: u64 = 1_000_000_007;
+
+    fn gated_task() -> EcdsaTaskId {
+        EcdsaTaskId::OnlinePresignSignature {
+            id: CryptoHash::default(),
+            paired_triple_id: UniqueId::new(ParticipantId::from_raw(1), 1, 0),
+        }
+    }
+
+    fn ungated_task() -> EcdsaTaskId {
+        EcdsaTaskId::ManyTriples {
+            start: UniqueId::new(ParticipantId::from_raw(1), 1, 0),
+            count: 64,
+        }
+    }
+
+    #[rstest]
+    #[case::gated_task_refused_for_peer_on_older_version(
+        gated_task(),
+        Some(CommunicationProtocols::Jan2026),
+        false
+    )]
+    #[case::gated_task_refused_for_peer_of_unknown_version(gated_task(), None, false)]
+    #[case::gated_task_allowed_when_all_peers_support_it(
+        gated_task(),
+        Some(CommunicationProtocols::Sep2026),
+        true
+    )]
+    #[case::gated_task_allowed_for_peer_on_future_version(
+        gated_task(),
+        Some(CommunicationProtocols::Unknown(42)),
+        true
+    )]
+    #[case::ungated_task_allowed_for_peer_of_unknown_version(ungated_task(), None, true)]
+    #[case::ungated_task_allowed_for_peer_on_older_version(
+        ungated_task(),
+        Some(CommunicationProtocols::Dec2025),
+        true
+    )]
+    #[tokio::test]
+    async fn ensure_participants_understand__should_gate_task_id_on_peer_protocol_versions(
+        #[case] task_id: EcdsaTaskId,
+        #[case] peer_version: Option<CommunicationProtocols>,
+        #[case] allowed: bool,
+    ) {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let current_peer = ParticipantId::from_raw(2);
+        let tested_peer = ParticipantId::from_raw(3);
+        let participants = vec![me, current_peer, tested_peer];
+        let mut versions = HashMap::from([(current_peer, CommunicationProtocols::Sep2026)]);
+        if let Some(version) = peer_version {
+            versions.insert(tested_peer, version);
+        }
+        let client = new_test_client_with_versions(participants.clone(), me, versions);
+
+        // When
+        let result = client.ensure_participants_understand(task_id.into(), &participants);
+
+        // Then
+        assert_eq!(result.is_ok(), allowed, "{:?}", result.err());
+    }
+
+    #[tokio::test]
+    async fn participants_supporting__should_include_self_and_peers_at_or_above_version() {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let peers = [2, 3, 4].map(ParticipantId::from_raw);
+        let participants = vec![me, peers[0], peers[1], peers[2]];
+        let versions = HashMap::from([
+            (peers[0], CommunicationProtocols::Sep2026),
+            (peers[1], CommunicationProtocols::Jan2026),
+        ]);
+        let client = new_test_client_with_versions(participants, me, versions);
+
+        // When
+        let supporting = client.participants_supporting(CommunicationProtocols::Sep2026);
+
+        // Then
+        assert_eq!(supporting, vec![me, peers[0]]);
+    }
 
     #[tokio::test]
     async fn test_network_basic() {

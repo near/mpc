@@ -53,6 +53,27 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
     .unwrap()
 });
 
+pub static MPC_ONLINE_PRESIGN_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
+    LazyLock::new(|| {
+        prometheus::register_histogram!(
+            "near_mpc_online_presign_signature_time_elapsed",
+            "Time taken to generate a signature directly from a triple pair (presigning \
+             included)",
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_BAD_PEER_ONLINE_PRESIGN_REQUESTS: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_bad_peer_online_presign_requests",
+            "Signature-from-triples requests from a peer whose participant-set size did not \
+             match the domain's reconstruction threshold",
+            &["domain_id"]
+        )
+        .unwrap()
+    });
+
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     prometheus::register_histogram!(
         "near_mpc_ckd_time_elapsed",
@@ -417,6 +438,30 @@ pub static PEERS_INDEXER_HEIGHTS: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     )
     .unwrap()
 });
+
+pub static MPC_PEER_PROTOCOL_VERSION: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
+    prometheus::register_int_gauge_vec!(
+        "mpc_peer_protocol_version",
+        "P2P protocol version each peer advertised in its latest handshake",
+        &["participant"]
+    )
+    .unwrap()
+});
+
+/// Signing flows labelling [`MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE`].
+pub const STORED_PRESIGNATURE_MODE_LABEL: &str = "stored_presignature";
+pub const ONLINE_PRESIGN_MODE_LABEL: &str = "online_presign";
+
+pub static MPC_NUM_ECDSA_SIGNATURES_LED_BY_MODE: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_ecdsa_signatures_led_by_mode",
+            "Number of cait-sith signature computations led by this node, by signing flow \
+             (presignature or online_presign)",
+            &["mode"]
+        )
+        .unwrap()
+    });
 
 pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(

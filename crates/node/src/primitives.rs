@@ -1,4 +1,6 @@
+use crate::protocol_version::CommunicationProtocols;
 use crate::providers::EcdsaTaskId;
+use crate::providers::ecdsa::ONLINE_PRESIGN_MIN_PROTOCOL_VERSION;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
 use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
@@ -257,13 +259,41 @@ pub struct MpcPeerMessage {
     pub message: MpcMessage,
 }
 
+/// Discriminants are explicit and part of the wire format: a variant is only ever appended,
+/// never reordered or renumbered, so that nodes on different versions keep decoding each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum MpcTaskId {
-    EcdsaTaskId(EcdsaTaskId),
-    EddsaTaskId(EddsaTaskId),
-    CKDTaskId(CKDTaskId),
-    RobustEcdsaTaskId(RobustEcdsaTaskId),
-    VerifyForeignTxTaskId(VerifyForeignTxTaskId),
+    EcdsaTaskId(EcdsaTaskId) = 0,
+    EddsaTaskId(EddsaTaskId) = 1,
+    CKDTaskId(CKDTaskId) = 2,
+    RobustEcdsaTaskId(RobustEcdsaTaskId) = 3,
+    VerifyForeignTxTaskId(VerifyForeignTxTaskId) = 4,
+}
+
+impl MpcTaskId {
+    /// The oldest handshake protocol version whose nodes understand this task id. A leader
+    /// must not send a task id to a peer below this version: the peer would fail to decode
+    /// it and drop the whole connection.
+    pub fn min_protocol_version(&self) -> CommunicationProtocols {
+        match self {
+            MpcTaskId::EcdsaTaskId(EcdsaTaskId::OnlinePresignSignature { .. }) => {
+                ONLINE_PRESIGN_MIN_PROTOCOL_VERSION
+            }
+            MpcTaskId::EcdsaTaskId(
+                EcdsaTaskId::KeyGeneration { .. }
+                | EcdsaTaskId::KeyResharing { .. }
+                | EcdsaTaskId::ManyTriples { .. }
+                | EcdsaTaskId::Presignature { .. }
+                | EcdsaTaskId::Signature { .. },
+            )
+            | MpcTaskId::EddsaTaskId(_)
+            | MpcTaskId::CKDTaskId(_)
+            | MpcTaskId::RobustEcdsaTaskId(_)
+            | MpcTaskId::VerifyForeignTxTaskId(_) => CommunicationProtocols::Dec2025,
+        }
+    }
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -291,8 +321,54 @@ pub struct Version {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::providers::ckd::CKDTaskId;
+    use mpc_primitives::domain::DomainId;
+    use near_indexer_primitives::CryptoHash;
+    use rstest::rstest;
+
+    fn uid() -> UniqueId {
+        UniqueId::new(ParticipantId::from_raw(0), 1, 0)
+    }
+
+    #[rstest]
+    #[case(EcdsaTaskId::OnlinePresignSignature { id: CryptoHash::default(), paired_triple_id: uid() }.into(), CommunicationProtocols::Sep2026)]
+    #[case(EcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), CommunicationProtocols::Dec2025)]
+    #[case(EcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0), paired_triple_id: uid() }.into(), CommunicationProtocols::Dec2025)]
+    #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), CommunicationProtocols::Dec2025)]
+    #[case(EddsaTaskId::Signature { id: CryptoHash::default() }.into(), CommunicationProtocols::Dec2025)]
+    #[case(CKDTaskId::Ckd { id: CryptoHash::default() }.into(), CommunicationProtocols::Dec2025)]
+    #[case(RobustEcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), CommunicationProtocols::Dec2025)]
+    #[case(VerifyForeignTxTaskId::VerifyForeignTx { id: CryptoHash::default(), presignature_id: uid() }.into(), CommunicationProtocols::Dec2025)]
+    fn mpc_task_id__should_require_sep2026_only_for_online_presign_signature(
+        #[case] task_id: MpcTaskId,
+        #[case] expected: CommunicationProtocols,
+    ) {
+        // When
+        let required = task_id.min_protocol_version();
+
+        // Then
+        assert_eq!(required, expected);
+    }
+
+    #[rstest]
+    #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), 0)]
+    #[case(EddsaTaskId::Signature { id: CryptoHash::default() }.into(), 1)]
+    #[case(CKDTaskId::Ckd { id: CryptoHash::default() }.into(), 2)]
+    #[case(RobustEcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 3)]
+    #[case(VerifyForeignTxTaskId::VerifyForeignTx { id: CryptoHash::default(), presignature_id: uid() }.into(), 4)]
+    fn mpc_task_id__should_keep_borsh_discriminants_stable(
+        #[case] task_id: MpcTaskId,
+        #[case] discriminant: u8,
+    ) {
+        // When
+        let encoded = borsh::to_vec(&task_id).unwrap();
+
+        // Then
+        assert_eq!(encoded[0], discriminant);
+    }
 
     #[test]
     fn test_validate_owned_by_accepts_matching_participant() {

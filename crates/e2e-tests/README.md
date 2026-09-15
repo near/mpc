@@ -60,8 +60,11 @@ graph TD
 
 4. **Support for mixed node versions.** `MpcClusterConfig::binary_paths` takes a
    vec of paths; if it has a single entry, all nodes use it, otherwise each
-   node uses the corresponding entry. This enables compatibility tests across
-   `mpc-node` versions (not yet in routine use, but wired up).
+   node uses the corresponding entry. `tests/mixed_version_cluster.rs` uses it
+   to run two previous-release nodes next to two current ones; it is ignored by
+   default because CI has no previous-release binary, so build one from the last
+   release tag, point `MPC_NODE_OLD_BINARY` at it, and run
+   `cargo make e2e-tests-skip-build mixed_version_cluster --run-ignored all`.
 
 5. **Separate "operator" keys.** Each node account has two full-access keys on
    chain: one used by the mpc-node process itself for its NEAR transactions
