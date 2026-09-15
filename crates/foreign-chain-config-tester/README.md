@@ -75,5 +75,8 @@ Failures:
 | `failed` | the provider is unhealthy; the reason is listed under `Failures` |
 | `skipped` | the chain is not configured |
 
-The output names chains and providers only. It carries no URLs, tokens, or
-provider error text, so it can be shared as is.
+The table and the failure reasons name chains and providers only. They carry no
+URLs, tokens, or provider error text, so they can be shared as is. When the
+tester refuses the config it reports a validation error instead, and that error
+may quote a provider URL, along with a key embedded in it: scrub it before
+sharing.
