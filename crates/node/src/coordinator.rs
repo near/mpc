@@ -1076,22 +1076,11 @@ fn stop_initializing(
     }
 }
 
-/// Dual-writes the node's foreign-chain registration (legacy + new endpoint);
-/// an empty config still registers so that dropping every chain propagates.
-/// TODO(#3630): drop the legacy RegisterForeignChainConfig half.
+/// An empty config still registers so that dropping every chain propagates.
 async fn register_foreign_chains(
     chain_txn_sender: &impl tx_sender::TransactionSender,
     foreign_chains: &mpc_node_config::ForeignChainsConfig,
 ) {
-    let foreign_chain_configuration = foreign_chains.configured_chains();
-    if let Err(err) = chain_txn_sender
-        .send(ChainSendTransactionRequest::RegisterForeignChainConfig(
-            contract_args::RegisterForeignChainConfigArgs::new(foreign_chain_configuration),
-        ))
-        .await
-    {
-        tracing::warn!(error = ?err, "failed to send register supported foreign chains transaction");
-    }
     let foreign_chains_config: dtos::ForeignChainsConfig = foreign_chains
         .iter_chains()
         .map(|(chain, _)| chain)
@@ -1345,10 +1334,8 @@ mod tests {
         assert_eq!(joining_peer, Some("carol.example.com:7000".to_string()));
     }
 
-    /// Guards the upgrade-window dual-write: the legacy registration must keep
-    /// being emitted alongside the new one until #3630 drops it.
     #[tokio::test]
-    async fn register_foreign_chains__should_send_legacy_and_new_registrations() {
+    async fn register_foreign_chains__should_send_registration() {
         // Given: a node config covering Solana.
         let foreign_chains = ForeignChainsConfig {
             solana: Some(ForeignChainConfig {
@@ -1373,13 +1360,7 @@ mod tests {
         // When
         register_foreign_chains(&txn_sender, &foreign_chains).await;
 
-        // Then: the legacy registration is emitted first, then the new one.
-        let expected_legacy = foreign_chains.configured_chains();
-        assert_matches!(
-            receiver.try_recv(),
-            Ok(ChainSendTransactionRequest::RegisterForeignChainConfig(args))
-                if args.foreign_chain_configuration == expected_legacy
-        );
+        // Then
         let expected: dtos::ForeignChainsConfig =
             BTreeSet::from([dtos::ForeignChain::Solana]).into();
         assert_matches!(

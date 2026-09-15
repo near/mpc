@@ -11,11 +11,11 @@ use near_contract_transport::{
 use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs,
-    RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs, RequestAppPrivateKeyArgs, SignArgs,
-    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
+    InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
+    RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
+    VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
+    VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -24,12 +24,11 @@ use crate::deposits::{
 use crate::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES,
     ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, CODE_HASH_VOTES, INIT, LAUNCHER_HASH_VOTES,
-    OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAIN_SUPPORT,
-    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN,
-    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG,
+    REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION,
+    SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
+    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
@@ -37,8 +36,8 @@ use crate::types::{
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
     GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash, LauncherHashVotes,
     LauncherImageHash, MeasurementVotes, PayloadBytesError, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, SignRequestArgs, SupportedForeignChains,
-    TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
+    ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
+    VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 
@@ -314,20 +313,6 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    pub async fn register_foreign_chain_support(
-        &self,
-        foreign_chain_support: SupportedForeignChains,
-    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args =
-            serde_json::to_vec(&RegisterForeignChainSupportArgs::new(foreign_chain_support))?;
-        self.call(FunctionCallArgs::no_deposit(
-            REGISTER_FOREIGN_CHAIN_SUPPORT,
-            args,
-            MAX_GAS,
-        ))
-        .await
-    }
-
     pub async fn register_foreign_chains_config(
         &self,
         foreign_chains_config: ForeignChainsConfig,
@@ -469,7 +454,7 @@ mod tests {
     };
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_crypto_types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
 
     /// A [`CallContract`] that records the calls it is handed, so a test can
@@ -661,10 +646,6 @@ mod tests {
             .unwrap();
         handle.cancel_node_migration().await.unwrap();
         handle
-            .register_foreign_chain_support(BTreeSet::from([ForeignChain::Bitcoin]).into())
-            .await
-            .unwrap();
-        handle
             .vote_update_foreign_chain_providers(NonEmptyBTreeMap::new(
                 ForeignChain::Bitcoin,
                 ChainEntry {
@@ -692,7 +673,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 22);
+        assert_eq!(calls.len(), 21);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))

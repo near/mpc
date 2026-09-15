@@ -1,23 +1,24 @@
 # Calculating the whitelisted and available foreign-chain sets
 
-Status: Proposed — supersedes the all-participant intersection rule in
-[`docs/archive/design/foreign-chain-transactions.md`](../archive/design/foreign-chain-transactions.md). Tracked by
-[#3434](https://github.com/near/mpc/issues/3434).
+Status: Implemented — supersedes the all-participant intersection rule described in the archived
+[`docs/archive/design/foreign-chain-transactions.md`](../archive/design/foreign-chain-transactions.md).
+Tracked by [#3434](https://github.com/near/mpc/issues/3434); the legacy API was removed in
+[#3630](https://github.com/near/mpc/issues/3630).
 
 ## Background
 
-Today, `get_supported_foreign_chains()` returns the **strict intersection** of every
-active participant's registered chains, and `verify_foreign_transaction` rejects any
-request whose target chain is not in it. A single node that registers an empty list
+The legacy `get_supported_foreign_chains()` returned the **strict intersection** of every
+active participant's registered chains, and `verify_foreign_transaction` rejected any
+request whose target chain was not in it. A single node that registers an empty list
 (or hasn't registered yet) drops **every** chain — one operator can take the whole
-feature down. That is what this proposal fixes.
+feature down. That is what this design fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
 per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
 stored for a deferred quorum policy and not yet consumed: verification compares every
 configured provider, see [Verification behavior](#verification-behavior)).
 
-## Proposal: two sets of chains
+## Design: two sets of chains
 
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
 > [Foreign Chain Transaction Verification Design — Terminology](../archive/design/foreign-chain-transactions.md#terminology).
@@ -34,7 +35,7 @@ from the **available** set (servable right now, `get_available_foreign_chains()`
 instead of accepting a request that can't reach the signing threshold and letting it time out. The
 rejection is temporary — `C` becomes serviceable again as soon as enough nodes report coverage.
 
-The legacy `get_supported_foreign_chains()` (the intersection rule) is **deprecated** in favour
+The legacy `get_supported_foreign_chains()` (the intersection rule) has been removed in favour
 of the two views above.
 
 ## Why two sets
@@ -101,8 +102,8 @@ underlying queue — which could subsume this limitation — is tracked in
 
 ## Per-node registration
 
-Per-node registration (`register_available_foreign_chain_config` /
-`get_available_foreign_chain_by_node`) reports which chains each node currently covers,
+Per-node registration (`register_foreign_chains_config` / `get_foreign_chains_configs`)
+reports which chains each node currently covers,
 and serves two roles:
 
 - it **feeds the available set** — the contract counts, per chain, how many active
@@ -114,12 +115,8 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
-Because this data now feeds the *available* set, the methods are renamed to reflect that:
-`register_foreign_chain_config` → `register_available_foreign_chain_config` and
-`get_foreign_chain_support_by_node` → `get_available_foreign_chain_by_node`. The old names are kept as thin
-wrappers delegating to the new ones, then deprecated and removed once node and contract have both
-migrated — the same independent node/contract rollout used for the view methods, so the rename needs
-no flag-day coordination.
+Registrations are keyed by the node's TLS public key rather than its NEAR account, so an
+operator running several nodes gets one entry per node.
 
 ## Guarantees preserved
 
@@ -148,14 +145,6 @@ node for every chain.
 
 ## Migration
 
-`get_supported_foreign_chains()` stays working throughout, so the new node version
-can roll out before the contract upgrade (node and contract migrate independently):
-
-1. Keep `get_supported_foreign_chains()` unchanged.
-2. Add `allowed_foreign_chain_providers()` and `get_available_foreign_chains()` (additive).
-3. Vote the RPC providers / chains into the whitelist. This must precede step 4 on every
-   network: `available ⊆ whitelisted`, so with an empty whitelist the new gate rejects every
-   request.
-4. Upgrade the contract: `verify_foreign_transaction` gates on the available set instead of
-   the supported set, and `get_supported_foreign_chains()` is deprecated.
-5. Switch node code to the new methods and drop the legacy registration.
+The new API is available on both node and contract since 3.14.0. The legacy API is removed by
+[#3630](https://github.com/near/mpc/issues/3630) in the release after 3.15.0, whose contract
+migration also clears the legacy per-account storage.
