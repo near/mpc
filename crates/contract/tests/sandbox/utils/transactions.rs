@@ -4,7 +4,7 @@ use near_contract_transport::{
 use near_jsonrpc_client::{JsonRpcClient, methods::query::RpcQueryRequest};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::client::{MpcContractHandle, MpcContractHandleError};
-use near_primitives::types::{BlockReference, Finality};
+use near_primitives::types::BlockReference;
 use near_primitives::views::QueryRequest;
 use near_sdk::Gas;
 use near_workspaces::{
@@ -78,7 +78,7 @@ impl ViewContract for SandboxViewer {
         let response = self
             .0
             .call(RpcQueryRequest {
-                block_reference: BlockReference::Finality(Finality::Final),
+                block_reference: BlockReference::latest(),
                 request: QueryRequest::CallFunction {
                     account_id: contract_id.clone(),
                     method_name: view_args.method_name,
