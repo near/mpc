@@ -6,13 +6,11 @@ use crate::sandbox::{
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
-        mpc_contract::{
-            get_allowed_launcher_image_hashes, get_participants, get_state, get_tee_accounts,
-            vote_add_launcher_hash,
-        },
+        mpc_contract::{get_participants, get_state, get_tee_accounts, vote_add_launcher_hash},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
         transactions::CallMpcContract,
+        views::ViewMpcContract,
     },
 };
 use mpc_contract::primitives::{
@@ -169,6 +167,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
         .await
         .unwrap();
+    let mpc = worker.view_mpc(contract.id());
 
     submit_attestations(&contract, &accounts, &participants).await;
 
@@ -191,9 +190,10 @@ async fn propose_upgrade_from_production_to_current_binary(
             .unwrap();
     }
     assert!(
-        get_allowed_launcher_image_hashes(&contract)
+        mpc.allowed_launcher_image_hashes()
             .await
             .unwrap()
+            .value
             .contains(&launcher_hash),
         "launcher hash should be voted in before the upgrade"
     );
@@ -210,9 +210,10 @@ async fn propose_upgrade_from_production_to_current_binary(
     );
 
     assert!(
-        get_allowed_launcher_image_hashes(&contract)
+        mpc.allowed_launcher_image_hashes()
             .await
             .unwrap()
+            .value
             .contains(&launcher_hash),
         "launcher hash should survive migration to the current binary"
     );

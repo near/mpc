@@ -22,7 +22,7 @@ use crate::sandbox::{
 };
 use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
@@ -213,18 +213,6 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
     Ok(())
 }
 
-async fn get_allowed_launcher_compose_hashes(
-    contract: &Contract,
-) -> Result<Vec<LauncherDockerComposeHash>> {
-    Ok(contract
-        .call(method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES)
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?
-        .json::<Vec<LauncherDockerComposeHash>>()?)
-}
-
 async fn assert_allowed_docker_image_hashes(
     mpc: &MpcContractHandle<SandboxViewer>,
     expected: &[NodeImageHash],
@@ -232,7 +220,7 @@ async fn assert_allowed_docker_image_hashes(
     let entries = mpc
         .allowed_docker_image_hashes()
         .await
-        .expect("allowed_docker_image_hashes method is infallible")
+        .expect("allowed_docker_image_hashes view should succeed")
         .value;
 
     let hashes: Vec<NodeImageHash> = entries.iter().map(|entry| entry.image_hash).collect();
@@ -748,6 +736,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
 #[tokio::test]
 async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -755,11 +744,9 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc = worker.view_mpc(contract.id());
 
-    assert_eq!(
-        get_allowed_launcher_compose_hashes(&contract).await?.len(),
-        0
-    );
+    assert_eq!(mpc.allowed_launcher_compose_hashes().await?.value.len(), 0);
 
     // Vote in an MPC image hash — no compose hashes yet (no launcher images)
     let allowed_mpc_image_digest = image_digest();
@@ -767,7 +754,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
     }
     assert_eq!(
-        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        mpc.allowed_launcher_compose_hashes().await?.value.len(),
         0,
         "no compose hashes without a launcher image"
     );
@@ -778,7 +765,7 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_add_launcher_hash(account, &contract, &launcher_hash).await?;
     }
     assert_eq!(
-        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        mpc.allowed_launcher_compose_hashes().await?.value.len(),
         1,
         "1 compose hash: launcher x MPC image"
     );
@@ -1050,12 +1037,13 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc = worker.view_mpc(contract.id());
     let image_hash = image_digest();
     for account in &mpc_signer_accounts {
         vote_for_hash(account, &contract, &image_hash).await?;
         vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
     }
-    let [compose_hash] = get_allowed_launcher_compose_hashes(&contract).await?[..] else {
+    let [compose_hash] = mpc.allowed_launcher_compose_hashes().await?.value[..] else {
         panic!("the launcher and image hashes must derive exactly one compose hash");
     };
     let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;
