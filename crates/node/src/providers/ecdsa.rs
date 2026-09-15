@@ -16,6 +16,7 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
+use crate::protocol_version::CommunicationProtocols;
 use crate::providers::{DomainKeyshare, SignatureProvider, ecdsa_common};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
@@ -47,6 +48,10 @@ pub struct EcdsaSignatureProvider {
 }
 
 pub(super) type EcdsaKeyshare = ecdsa_common::EcdsaKeyshare<PresignOutput>;
+
+/// Handshake protocol version that introduced [`EcdsaTaskId::OnlinePresignSignature`].
+pub const ONLINE_PRESIGN_MIN_PROTOCOL_VERSION: CommunicationProtocols =
+    CommunicationProtocols::Sep2026;
 
 impl EcdsaSignatureProvider {
     pub fn new(
@@ -148,6 +153,12 @@ pub enum EcdsaTaskId {
         id: SignatureId,
         presignature_id: UniqueId,
     } = 4,
+    /// Presigning and signing in one computation over the leader's triple pair; no
+    /// presignature is involved.
+    OnlinePresignSignature {
+        id: SignatureId,
+        paired_triple_id: UniqueId,
+    } = 5,
 }
 
 impl From<EcdsaTaskId> for MpcTaskId {
@@ -240,6 +251,19 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     ECDSA_TASK_MONITORS
                         .make_signature_follower
                         .instrument(self.make_signature_follower(channel, id, presignature_id))
+                        .await?;
+                }
+                EcdsaTaskId::OnlinePresignSignature {
+                    id,
+                    paired_triple_id,
+                } => {
+                    ECDSA_TASK_MONITORS
+                        .make_online_presign_signature_follower
+                        .instrument(self.make_online_presign_signature_follower(
+                            channel,
+                            id,
+                            paired_triple_id,
+                        ))
                         .await?;
                 }
             },

@@ -206,8 +206,6 @@ impl MeshNetworkClient {
     /// This is a version filter only, and a peer connected in a single direction already
     /// qualifies. Callers choosing a participant set must still intersect the result with
     /// [`Self::all_alive_participant_ids`].
-    // TODO(#4399): drop the attribute, the online-presign leader selects participants with this.
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn participants_supporting(&self, required: CommunicationProtocols) -> Vec<ParticipantId> {
         self.all_participant_ids()
             .into_iter()
