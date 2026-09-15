@@ -508,16 +508,38 @@ async fn init_running_rejects_external_callers_pre_initialization() {
 }
 
 /// Legacy per-node support registered on the old contract must not break the
-/// upgrade, and the current foreign-chain state must survive it.
+/// upgrade, and the current foreign-chain state must survive it. The upgrade runs
+/// through the proposal-and-vote flow so the migration is bound by the production gas
+/// budget while clearing more legacy entries.
 #[rstest]
 #[tokio::test]
 async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) -> anyhow::Result<()> {
     // Given
+    const LEGACY_PARTICIPANT_LEN: usize = 20;
+    let all_chains = [
+        dtos::ForeignChain::Solana,
+        dtos::ForeignChain::Bitcoin,
+        dtos::ForeignChain::Ethereum,
+        dtos::ForeignChain::Base,
+        dtos::ForeignChain::Bnb,
+        dtos::ForeignChain::Arbitrum,
+        dtos::ForeignChain::Abstract,
+        dtos::ForeignChain::Starknet,
+        dtos::ForeignChain::Polygon,
+        dtos::ForeignChain::HyperEvm,
+        dtos::ForeignChain::Ton,
+        dtos::ForeignChain::Aptos,
+        dtos::ForeignChain::Sui,
+        dtos::ForeignChain::Avalanche,
+        dtos::ForeignChain::Adi,
+        dtos::ForeignChain::Fogo,
+    ];
     let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
     let contract = deploy_old(&worker, network).await?;
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+    let (accounts, participants) =
+        init_old_contract(&worker, &contract, LEGACY_PARTICIPANT_LEN).await?;
     submit_attestations(&contract, &accounts, &participants).await;
     call_contract_key_generation(
         &[DomainConfig {
@@ -536,7 +558,7 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     for account in &accounts {
         account
             .call(contract.id(), "register_foreign_chain_support")
-            .args_json(serde_json::json!({ "foreign_chain_support": [chain] }))
+            .args_json(serde_json::json!({ "foreign_chain_support": all_chains }))
             .transact()
             .await?
             .into_result()?;
@@ -556,7 +578,7 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
         .await?
         .json()
         .context("ALLOWED_FOREIGN_CHAIN_PROVIDERS json")?;
-    assert_eq!(configs_before.len(), PARTICIPANT_LEN);
+    assert_eq!(configs_before.len(), LEGACY_PARTICIPANT_LEN);
     assert_eq!(*available_before, BTreeSet::from([chain]));
     assert!(allowed_before.contains_key(&chain));
     let legacy_prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
@@ -567,10 +589,7 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     assert!(!legacy_entries.is_empty());
 
     // When
-    let contract = upgrade_to_new(contract).await?;
-    migrate_and_assert_contract_code(&contract)
-        .await
-        .expect("migration() failed");
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     // Then
     let configs_after: dtos::ForeignChainsConfigs = contract
