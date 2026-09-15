@@ -738,12 +738,12 @@ apt-mark showhold
 separate mention. Holds are origin-agnostic, so they stop both the PPA and the
 archive from moving these packages.
 
-Nothing else needs freezing for the measurements: the guest firmware, kernel and
-rootfs come from the dstack image directory, not from packages. Check with
-`pgrep -af qemu-system-x86_64` that the running CVM is started with
-`-bios .../images/dstack-0.5.8/ovmf.fd`, `-kernel .../bzImage` and
-`-drive file=.../rootfs.img.verity`. The host's `ovmf` and `qemu-efi-*` packages
-are not in that path.
+The measurements have no other host-package inputs: the guest firmware, kernel
+and rootfs come from the dstack image directory. `pgrep -af qemu-system-x86_64`
+shows the CVM started with `-bios .../images/dstack-0.5.8/ovmf.fd`,
+`-kernel .../bzImage` and `-drive file=.../rootfs.img.verity`. The host's own
+`ovmf` and `qemu-efi-*` are held above as PPA members, but nothing measured
+comes from them.
 
 Updating any of it is then explicit:
 
