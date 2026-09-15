@@ -434,6 +434,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case::both_up(true, true, Some(CommunicationProtocols::Dec2025))]
     #[case::only_outgoing_up(true, false, Some(CommunicationProtocols::Dec2025))]
     #[case::only_incoming_up(false, true, Some(CommunicationProtocols::Jan2026))]
     #[case::neither_up(false, false, None)]

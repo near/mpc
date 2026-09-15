@@ -202,6 +202,10 @@ impl MeshNetworkClient {
 
     /// Participants, ourselves included, known to run at least `required`. Intended to pick a
     /// participant set before a task starts, so a peer is never chosen for work it cannot decode.
+    ///
+    /// This is a version filter only, and a peer connected in a single direction already
+    /// qualifies. Callers choosing a participant set must still intersect the result with
+    /// [`Self::all_alive_participant_ids`].
     // TODO(#4399): drop the attribute, the online-presign leader selects participants with this.
     #[cfg_attr(not(test), expect(dead_code))]
     pub fn participants_supporting(&self, required: CommunicationProtocols) -> Vec<ParticipantId> {
@@ -914,8 +918,7 @@ pub mod testing {
     pub struct TestMeshTransport {
         participant_ids: Vec<ParticipantId>,
         senders: HashMap<ParticipantId, tokio::sync::mpsc::UnboundedSender<PeerMessage>>,
-        /// Protocol version each peer is reported to run; a peer missing here reports `None`,
-        /// like a peer that never connected.
+        /// Protocol version each peer is reported to run; a peer missing here reports `None`.
         protocol_versions: HashMap<ParticipantId, CommunicationProtocols>,
     }
 
