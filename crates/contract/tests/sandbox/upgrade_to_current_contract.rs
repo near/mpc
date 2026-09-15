@@ -640,7 +640,7 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     Ok(())
 }
 
-/// Raw storage keys written by the `3.15.0` `IterableMap<AccountId, BTreeSet<ForeignChain>>`.
+/// Raw storage keys written by the `3.15.1` `IterableMap<AccountId, BTreeSet<ForeignChain>>`.
 fn legacy_support_storage_keys(accounts: &[Account]) -> anyhow::Result<Vec<Vec<u8>>> {
     let prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
     let indices_prefix = [prefix.as_slice(), b"v"].concat();
