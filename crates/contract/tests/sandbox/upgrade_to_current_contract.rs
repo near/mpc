@@ -587,7 +587,14 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     assert!(allowed_before.contains_key(&chain));
     let legacy_keys = legacy_support_storage_keys(&accounts)?;
     let state_before = worker.view_state(contract.id()).await?;
-    assert!(legacy_keys.iter().all(|key| state_before.contains_key(key)));
+    let missing: Vec<_> = legacy_keys
+        .iter()
+        .filter(|key| !state_before.contains_key(*key))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "legacy map storage keys must exist before the upgrade: {missing:?}"
+    );
 
     // When
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
@@ -633,10 +640,7 @@ async fn upgrade__should_drop_legacy_support_and_preserve_foreign_chains_state(
     Ok(())
 }
 
-/// Raw storage keys written by the `3.15.0` `IterableMap<AccountId, BTreeSet<ForeignChain>>`:
-/// one `Vector` slot per entry index, plus one `LookupMap` slot addressed by
-/// `sha256(prefix ++ borsh(account_id))`. The hashed slots keep no trace of the collection
-/// prefix, so scanning state by prefix would both miss them and match unrelated collections.
+/// Raw storage keys written by the `3.15.0` `IterableMap<AccountId, BTreeSet<ForeignChain>>`.
 fn legacy_support_storage_keys(accounts: &[Account]) -> anyhow::Result<Vec<Vec<u8>>> {
     let prefix = borsh::to_vec(&StorageKey::_DeprecatedSupportedForeignChainsByNode)?;
     let indices_prefix = [prefix.as_slice(), b"v"].concat();
