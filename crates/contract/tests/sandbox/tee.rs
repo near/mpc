@@ -16,7 +16,8 @@ use crate::sandbox::{
         },
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
-        transactions::{CallMpcContract, SandboxViewer, ViewMpcContract},
+        transactions::CallMpcContract,
+        views::{SandboxViewer, ViewMpcContract},
     },
 };
 use anyhow::Result;
