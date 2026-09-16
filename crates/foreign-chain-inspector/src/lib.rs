@@ -1,6 +1,6 @@
+use std::convert::Infallible;
 use std::hash::Hash;
 use std::num::NonZeroU64;
-use std::sync::Arc;
 use std::time::Duration;
 
 use derive_more::{Deref, Display, From};
@@ -147,9 +147,9 @@ pub trait NetworkFingerprintInspector {
 /// With a recorder set through [`FanOut::measuring`], every provider call is reported once it
 /// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.
 #[derive(Clone)]
-pub struct FanOut<Inspector> {
+pub struct FanOut<Inspector, Recorder = Infallible> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
-    recorder: Option<Arc<dyn RecordProviderCall>>,
+    recorder: Option<Recorder>,
 }
 
 impl<Inspector> FanOut<Inspector> {
@@ -160,9 +160,11 @@ impl<Inspector> FanOut<Inspector> {
         }
     }
 
-    pub fn measuring(mut self, recorder: Arc<dyn RecordProviderCall>) -> Self {
-        self.recorder = Some(recorder);
-        self
+    pub fn measuring<Recorder>(self, recorder: Recorder) -> FanOut<Inspector, Recorder> {
+        FanOut {
+            inspectors: self.inspectors,
+            recorder: Some(recorder),
+        }
     }
 }
 
@@ -175,14 +177,22 @@ pub trait RecordProviderCall: Send + Sync {
     fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>);
 }
 
-struct TimedCall {
-    recorder: Option<Arc<dyn RecordProviderCall>>,
+/// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default: its recorder slot is
+/// `Option<Infallible>`, which is provably [`None`], so this can never run.
+impl RecordProviderCall for Infallible {
+    fn record(&self, _: &ProviderId, _: Duration, _: Option<ProviderFailure>) {
+        match *self {}
+    }
+}
+
+struct TimedCall<Recorder: RecordProviderCall> {
+    recorder: Option<Recorder>,
     provider: ProviderId,
     started: tokio::time::Instant,
 }
 
-impl TimedCall {
-    fn start(recorder: Option<Arc<dyn RecordProviderCall>>, provider: ProviderId) -> Self {
+impl<Recorder: RecordProviderCall> TimedCall<Recorder> {
+    fn start(recorder: Option<Recorder>, provider: ProviderId) -> Self {
         Self {
             recorder,
             provider,
@@ -197,19 +207,20 @@ impl TimedCall {
     }
 }
 
-impl Drop for TimedCall {
+impl<Recorder: RecordProviderCall> Drop for TimedCall<Recorder> {
     fn drop(&mut self) {
         self.report(Some(ProviderFailure::TimedOut));
     }
 }
 
-impl<Inspector> ForeignChainInspector for FanOut<Inspector>
+impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
 where
     Inspector: ForeignChainInspector + Clone + Send + Sync + 'static,
     Inspector::TransactionId: Clone + Send + 'static,
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
     Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
+    Recorder: RecordProviderCall + Clone + 'static,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -308,7 +319,7 @@ pub trait BuildInspectors: Sync {
 /// Pause between two tries at the same provider.
 pub const RETRY_BACKOFF: Duration = Duration::from_millis(200);
 
-impl<Inspector> FanOut<Inspector>
+impl<Inspector, Recorder> FanOut<Inspector, Recorder>
 where
     Inspector: ChainInspector,
 {

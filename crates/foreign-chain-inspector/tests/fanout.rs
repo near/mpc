@@ -129,6 +129,7 @@ fn fan_out_of(inspectors: Vec<MockInspector>) -> FanOut<MockInspector> {
 
 type ReportedCall = (ProviderId, Duration, Option<ProviderFailure>);
 
+#[derive(Clone)]
 struct ReportedCalls(mpsc::UnboundedSender<ReportedCall>);
 
 impl RecordProviderCall for ReportedCalls {
@@ -139,9 +140,12 @@ impl RecordProviderCall for ReportedCalls {
 
 fn measured_fan_out_of(
     inspectors: Vec<MockInspector>,
-) -> (FanOut<MockInspector>, mpsc::UnboundedReceiver<ReportedCall>) {
+) -> (
+    FanOut<MockInspector, ReportedCalls>,
+    mpsc::UnboundedReceiver<ReportedCall>,
+) {
     let (calls, reported) = mpsc::unbounded_channel();
-    let fan_out = fan_out_of(inspectors).measuring(Arc::new(ReportedCalls(calls)));
+    let fan_out = fan_out_of(inspectors).measuring(ReportedCalls(calls));
     (fan_out, reported)
 }
 
