@@ -56,11 +56,9 @@ impl ForeignChainSignatureVerifier {
         public_key: &PublicKey,
     ) -> Result<(), VerifyForeignChainError> {
         let payload_hash = match &response.negative_verdict {
-            Some(verdict) => ForeignTxSignPayload::NegativeVerdict {
-                request: self.request,
-                verdict: *verdict,
+            Some(verdict) => {
+                ForeignTxSignPayload::negative_verdict(self.request, *verdict).compute_msg_hash()
             }
-            .compute_msg_hash(),
             None => expected_payload_hash(self.request, self.expected_extracted_values),
         }
         .map_err(|_| VerifyForeignChainError::FailedToComputeMsgHash)?;
@@ -246,10 +244,10 @@ mod tests {
         // Given
         let signing_key = signing_key();
         let request = ethereum_request();
-        let payload_hash = ForeignTxSignPayload::NegativeVerdict {
-            request: request.clone(),
-            verdict: ForeignTxNegativeVerdict::TransactionNotFound,
-        }
+        let payload_hash = ForeignTxSignPayload::negative_verdict(
+            request.clone(),
+            ForeignTxNegativeVerdict::TransactionNotFound,
+        )
         .compute_msg_hash()
         .unwrap();
         let signature = sign_payload_hash(&signing_key, &payload_hash);
@@ -285,12 +283,10 @@ mod tests {
         })
         .compute_msg_hash()
         .unwrap();
-        let expected_negative_hash = ForeignTxSignPayload::NegativeVerdict {
-            request: request.clone(),
-            verdict,
-        }
-        .compute_msg_hash()
-        .unwrap();
+        let expected_negative_hash =
+            ForeignTxSignPayload::negative_verdict(request.clone(), verdict)
+                .compute_msg_hash()
+                .unwrap();
         let signature = sign_payload_hash(&signing_key, &wrong_payload_hash);
         let response = VerifyForeignTransactionResponse {
             payload_hash: wrong_payload_hash.clone(),
@@ -318,10 +314,10 @@ mod tests {
         let signing_key = signing_key();
         let wrong_signing_key = k256::ecdsa::SigningKey::from_bytes(&[7u8; 32].into()).unwrap();
         let request = ethereum_request();
-        let payload_hash = ForeignTxSignPayload::NegativeVerdict {
-            request: request.clone(),
-            verdict: ForeignTxNegativeVerdict::TransactionNotFound,
-        }
+        let payload_hash = ForeignTxSignPayload::negative_verdict(
+            request.clone(),
+            ForeignTxNegativeVerdict::TransactionNotFound,
+        )
         .compute_msg_hash()
         .unwrap();
         let signature = sign_payload_hash(&wrong_signing_key, &payload_hash);
