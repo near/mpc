@@ -45,22 +45,25 @@ use tokio::sync::watch;
 /// Built once at startup so that request handling fans out over ready clients instead of re-parsing
 /// config and constructing them on every call.
 pub(crate) struct ForeignChainInspectors<Client> {
-    pub bitcoin: Option<FanOut<BitcoinInspector<Client>>>,
-    pub ethereum: Option<FanOut<EthereumInspector<Client>>>,
-    pub abstract_chain: Option<FanOut<AbstractInspector<Client>>>,
-    pub bnb: Option<FanOut<BnbInspector<Client>>>,
-    pub starknet: Option<FanOut<StarknetInspector<Client>>>,
-    pub base: Option<FanOut<BaseInspector<Client>>>,
-    pub arbitrum: Option<FanOut<ArbitrumInspector<Client>>>,
-    pub hyper_evm: Option<FanOut<HyperEvmInspector<Client>>>,
-    pub polygon: Option<FanOut<PolygonInspector<Client>>>,
-    pub avalanche: Option<FanOut<AvalancheInspector<Client>>>,
-    pub adi: Option<FanOut<AdiInspector<Client>>>,
-    pub aptos: Option<FanOut<AptosInspector<ReqwestAptosClient>>>,
-    pub sui: Option<FanOut<SuiInspector<GrpcSuiClient>>>,
-    pub solana: Option<FanOut<SolanaInspector<Client>>>,
-    pub fogo: Option<FanOut<FogoInspector<Client>>>,
+    pub bitcoin: Option<MeasuredFanOut<BitcoinInspector<Client>>>,
+    pub ethereum: Option<MeasuredFanOut<EthereumInspector<Client>>>,
+    pub abstract_chain: Option<MeasuredFanOut<AbstractInspector<Client>>>,
+    pub bnb: Option<MeasuredFanOut<BnbInspector<Client>>>,
+    pub starknet: Option<MeasuredFanOut<StarknetInspector<Client>>>,
+    pub base: Option<MeasuredFanOut<BaseInspector<Client>>>,
+    pub arbitrum: Option<MeasuredFanOut<ArbitrumInspector<Client>>>,
+    pub hyper_evm: Option<MeasuredFanOut<HyperEvmInspector<Client>>>,
+    pub polygon: Option<MeasuredFanOut<PolygonInspector<Client>>>,
+    pub avalanche: Option<MeasuredFanOut<AvalancheInspector<Client>>>,
+    pub adi: Option<MeasuredFanOut<AdiInspector<Client>>>,
+    pub aptos: Option<MeasuredFanOut<AptosInspector<ReqwestAptosClient>>>,
+    pub sui: Option<MeasuredFanOut<SuiInspector<GrpcSuiClient>>>,
+    pub solana: Option<MeasuredFanOut<SolanaInspector<Client>>>,
+    pub fogo: Option<MeasuredFanOut<FogoInspector<Client>>>,
 }
+
+/// A [`FanOut`] whose provider calls are reported to the node's Prometheus metrics.
+pub(crate) type MeasuredFanOut<Inspector> = FanOut<Inspector, ProviderCallMetrics>;
 
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
@@ -68,7 +71,7 @@ impl ForeignChainInspectors<HttpClient> {
             chain: ForeignChain,
             chain_config: Option<&ForeignChainConfig>,
             new_inspector: impl Fn(&ForeignChainProviderConfig, Duration) -> anyhow::Result<I>,
-        ) -> anyhow::Result<Option<FanOut<I>>> {
+        ) -> anyhow::Result<Option<MeasuredFanOut<I>>> {
             let Some(c) = chain_config else {
                 return Ok(None);
             };
@@ -79,7 +82,7 @@ impl ForeignChainInspectors<HttpClient> {
             })?;
             let providers = inspectors.iter().map(|(provider, _)| provider);
             let recorder = ProviderCallMetrics::new(chain, providers);
-            Ok(Some(FanOut::new(inspectors).measuring(Arc::new(recorder))))
+            Ok(Some(FanOut::new(inspectors).measuring(recorder)))
         }
 
         /// Adapts an inspector constructor over a jsonrpsee [`HttpClient`] to `build_fanout`'s
