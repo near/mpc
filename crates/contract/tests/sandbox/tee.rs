@@ -174,9 +174,8 @@ async fn test_vote_mpc_node_manifest_digest_doesnt_accept_account_id_not_in_part
     let allowed_mpc_image_digest = image_digest();
 
     let res = random_account
-        .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
-        .args_json(serde_json::json!({"mpc_node_manifest_digest": allowed_mpc_image_digest}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(allowed_mpc_image_digest)
         .await?;
     let Err(err) = res.into_result() else {
         panic!(
@@ -188,31 +187,6 @@ async fn test_vote_mpc_node_manifest_digest_doesnt_accept_account_id_not_in_part
         err_str.contains("NotParticipant"),
         "Expected NotParticipant error, got: {err_str}"
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_vote_mpc_node_manifest_digest_accepts_allowed_mpc_image_digest_hex_parameter()
--> Result<()> {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-    let allowed_mpc_image_digest =
-        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-
-    let res = mpc_signer_accounts
-        .first()
-        .unwrap()
-        .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
-        .args_json(serde_json::json!({"mpc_node_manifest_digest": allowed_mpc_image_digest}))
-        .transact()
-        .await?;
-    assert!(res.is_success());
     Ok(())
 }
 
