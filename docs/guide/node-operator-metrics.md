@@ -75,6 +75,8 @@ are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
   help; this needs a human.
 * `malformed`: the provider answered with something the node could not use.
   Needs a human.
+* `mismatched`: the provider answered, but differently from its peers, so the
+  check fails for the whole chain even though every provider answered.
 * `timed_out`: the provider's RPC client gave up waiting for the answer.
 
 A dropped check is different from an error: the node itself stopped waiting,
@@ -106,10 +108,8 @@ Reading the numbers:
   sits on a block outside the canonical chain is an answer. Only failure to
   answer counts as an error.
 * A provider whose answers disagree with its peers also fails the whole check
-  for that chain, and these metrics do not show it: its answers count as
-  answers here. When verify requests fail for a chain while every error
-  counter stays at zero, suspect a disagreeing provider and compare the node
-  logs.
+  for that chain. Its answers still count as answers here, and the providers
+  that disagreed are counted under `kind="mismatched"`.
 * Every configured provider's series appears, at zero, as soon as the node
   serves requests, so an idle node reports zero rather than nothing. Solana can
   be configured but is not checked, so it never appears.

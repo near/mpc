@@ -240,6 +240,39 @@ mod measurement {
             .expect("the abandoned call must be observed");
         assert_matches!(call, Some((_, CallEnd::Dropped)));
     }
+
+    #[tokio::test]
+    async fn fan_out_extract__should_report_mismatching_providers_as_failed() {
+        // Given
+        let (fan_out, mut reported) = measured_fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_returning(ok(vec![2])),
+            mock_returning(ok(vec![1])),
+        ]);
+
+        // When
+        let result = fan_out.extract((), (), vec![]).await;
+
+        // Then: the provider whose verdict differs from the first verdict is reported as
+        // failed, and the agreeing ones stay timed as answers.
+        assert_matches!(
+            result,
+            Err(ForeignChainInspectionError::InspectorResponseMismatch)
+        );
+        let calls = reported_by_provider(&mut reported);
+        let failures: Vec<(&str, Option<ProviderFailure>)> = calls
+            .iter()
+            .map(|(provider, _, failure)| (provider.0.as_str(), *failure))
+            .collect();
+        assert_eq!(
+            failures,
+            [
+                ("provider-0", None),
+                ("provider-1", Some(ProviderFailure::MismatchedVerdict)),
+                ("provider-2", None),
+            ]
+        );
+    }
 }
 
 mod all_extract {

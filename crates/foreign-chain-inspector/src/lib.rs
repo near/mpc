@@ -144,7 +144,7 @@ pub trait NetworkFingerprintInspector {
 /// deadline. When no inspector reached a verdict, the first error is propagated.
 ///
 /// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
-/// provider returns, or by dropping its timer if the future is dropped first.
+/// verdict comparison settles, or by dropping its timer if the future is dropped first.
 #[derive(Clone)]
 pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
@@ -221,21 +221,25 @@ where
             let recorder = self.recorder.clone();
             join_set.spawn(async move {
                 // Started inside the task so the clock excludes scheduling delay. A task aborted
-                // before its first poll makes no call and reports nothing.
+                // before its first poll makes no call and reports nothing. Reporting waits for
+                // the comparison below, which decides whether an answer is an answer or a
+                // dissent; an abandoned task reports from the timer's destructor.
                 let timer = recorder.start_timer(&provider);
                 let result = inspector.extract(tx_id, finality, extractors).await;
-                let failure = result.as_ref().err().and_then(|err| err.provider_failure());
-                recorder.observe(timer, &provider, failure);
-                (provider, result)
+                (provider, timer, result)
             });
         }
 
-        let mut verdicts: Vec<(ProviderId, Verdict<Self::ExtractedValue>)> = Vec::new();
+        let mut answers: Vec<(
+            ProviderId,
+            Recorder::Timer,
+            Verdict<Self::ExtractedValue>,
+        )> = Vec::new();
         let mut first_error: Option<ForeignChainInspectionError> = None;
 
-        for (provider, result) in join_set.join_all().await {
+        for (provider, timer, result) in join_set.join_all().await {
             match result {
-                Ok(verdict) => verdicts.push((provider, verdict)),
+                Ok(verdict) => answers.push((provider, timer, verdict)),
                 Err(err) => {
                     if err.provider_failure() == Some(ProviderFailure::Malformed) {
                         tracing::error!(
@@ -250,33 +254,47 @@ where
                             "fan-out inspector failed to reach a verdict",
                         );
                     }
+                    self.recorder.observe(timer, &provider, err.provider_failure());
                     first_error.get_or_insert(err);
                 }
             }
         }
 
-        let mut verdicts = verdicts.into_iter();
-        let Some((first_provider, first_verdict)) = verdicts.next() else {
+        if answers.is_empty() {
             return Err(first_error.expect(
                 "inspectors is a `NonEmptyVec`, so with no verdicts at least one error must \
                  have been recorded",
             ));
         };
+        let (first_provider, first_timer, first_verdict) = answers.remove(0);
 
-        let (agreeing, disagreeing): (Vec<_>, Vec<_>) =
-            verdicts.partition(|(_, verdict)| *verdict == first_verdict);
-        if !disagreeing.is_empty() {
-            tracing::error!(
-                %first_provider,
-                ?first_verdict,
-                ?agreeing,
-                ?disagreeing,
-                "fan-out: inspectors returned mismatching verdicts",
-            );
-            return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+        let (agreeing, dissenting): (Vec<_>, Vec<_>) = answers
+            .into_iter()
+            .partition(|(_, _, verdict)| *verdict == first_verdict);
+
+        self.recorder.observe(first_timer, &first_provider, None);
+        for (provider, timer, _) in agreeing {
+            self.recorder.observe(timer, &provider, None);
+        }
+        if dissenting.is_empty() {
+            return Ok(first_verdict);
         }
 
-        Ok(first_verdict)
+        let dissenting_verdicts: Vec<_> = dissenting
+            .iter()
+            .map(|(provider, _, verdict)| (provider, verdict))
+            .collect();
+        tracing::error!(
+            %first_provider,
+            ?first_verdict,
+            ?dissenting_verdicts,
+            "fan-out: inspectors returned mismatching verdicts",
+        );
+        for (provider, timer, _) in dissenting {
+            self.recorder
+                .observe(timer, &provider, Some(ProviderFailure::MismatchedVerdict));
+        }
+        Err(ForeignChainInspectionError::InspectorResponseMismatch)
     }
 }
 
@@ -533,15 +551,19 @@ pub enum ProviderFailure {
     Rejected,
     /// The provider answered with something the caller could not use.
     Malformed,
+    /// The provider answered, but differently from its peers, so the fan-out failed the
+    /// unanimity check.
+    MismatchedVerdict,
     /// The RPC client gave up waiting for an answer.
     TimedOut,
 }
 
 impl ProviderFailure {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Unreachable,
         Self::Rejected,
         Self::Malformed,
+        Self::MismatchedVerdict,
         Self::TimedOut,
     ];
 }

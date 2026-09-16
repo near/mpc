@@ -128,6 +128,7 @@ fn kind_label(failure: ProviderFailure) -> &'static str {
         ProviderFailure::Unreachable => "unreachable",
         ProviderFailure::Rejected => "rejected",
         ProviderFailure::Malformed => "malformed",
+        ProviderFailure::MismatchedVerdict => "mismatched",
         ProviderFailure::TimedOut => "timed_out",
     }
 }
@@ -181,13 +182,14 @@ mod tests {
             Some(ProviderFailure::Rejected),
             Some(ProviderFailure::Malformed),
             Some(ProviderFailure::TimedOut),
+            Some(ProviderFailure::MismatchedVerdict),
         ] {
             recorder.observe(recorder.start_timer(&provider), &provider, failure);
         }
 
         // Then
         assert_eq!(timed(chain, "p0", Outcome::Answered), 1);
-        assert_eq!(timed(chain, "p0", Outcome::Failed), 4);
+        assert_eq!(timed(chain, "p0", Outcome::Failed), 5);
         assert_eq!(dropped(chain, "p0"), 0);
         for failure in ProviderFailure::ALL {
             assert_eq!(errored(chain, "p0", failure), 1);
@@ -265,6 +267,6 @@ mod tests {
             2
         );
         assert_eq!(count("mpc_foreign_chain_provider_dropped_seconds_count"), 1);
-        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 4);
+        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 5);
     }
 }
