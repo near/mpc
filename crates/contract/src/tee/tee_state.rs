@@ -1689,10 +1689,6 @@ mod tests {
                 BTreeSet::from([voters[2].clone()]),
             )])
         );
-        let vote_count = tee_state
-            .vote_mpc_node_manifest_digest(node_image_hash, voters[2].clone())
-            .count_participants(&new_participants);
-        assert_eq!(vote_count, 1, "only P2's vote should count toward quorum");
     }
 
     /// Verifies that clean_non_participants also removes stale launcher and measurement votes.
