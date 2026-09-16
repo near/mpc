@@ -14,8 +14,8 @@ use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
     RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
     UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
-    VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
-    VoteUpdateForeignChainProvidersArgs,
+    VoteCancelKeygenArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -28,15 +28,15 @@ use crate::method_names::{
     REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN,
     START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VOTE_CANCEL_RESHARING, VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
     CKDRequestArgs, ChainEntry, CodeHashesVotes, DestinationNodeInfo, DomainConfig,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
     GovernanceThresholdParameters, InitConfig, LauncherDockerComposeHash, LauncherHashVotes,
-    LauncherImageHash, MeasurementVotes, PayloadBytesError, ProposeUpdateArgs,
+    LauncherImageHash, MeasurementVotes, NodeImageHash, PayloadBytesError, ProposeUpdateArgs,
     ProposedGovernanceThresholdParameters, SignRequestArgs, TeeVerifierCodeHash, UpdateId,
     VerifyForeignTransactionRequestArgs,
 };
@@ -59,6 +59,8 @@ pub const VOTE_NEW_PARAMETERS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
+// TODO(#166): not benchmarked, carried over from the callers.
+pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
@@ -239,6 +241,21 @@ impl<C: CallContract> MpcContractHandle<C> {
             VOTE_CANCEL_RESHARING,
             b"{}".to_vec(),
             VOTE_CANCEL_RESHARING_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_mpc_node_manifest_digest(
+        &self,
+        mpc_node_manifest_digest: NodeImageHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteMpcNodeManifestDigestArgs::new(
+            mpc_node_manifest_digest,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_MPC_NODE_MANIFEST_DIGEST,
+            args,
+            VOTE_MPC_NODE_MANIFEST_DIGEST_GAS,
         ))
         .await
     }

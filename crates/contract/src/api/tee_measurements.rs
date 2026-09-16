@@ -14,11 +14,14 @@ use std::time::Duration;
 #[near]
 impl MpcContract {
     #[handle_result]
-    pub fn vote_code_hash(&mut self, code_hash: dtos::NodeImageHash) -> Result<(), Error> {
+    pub fn vote_mpc_node_manifest_digest(
+        &mut self,
+        mpc_node_manifest_digest: dtos::NodeImageHash,
+    ) -> Result<(), Error> {
         log!(
-            "vote_code_hash: signer={}, code_hash={:?}",
+            "vote_mpc_node_manifest_digest: signer={}, mpc_node_manifest_digest={:?}",
             env::signer_account_id(),
-            code_hash,
+            mpc_node_manifest_digest,
         );
         self.voter_or_panic();
 
@@ -27,7 +30,7 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let votes = self
             .tee_state
-            .vote_mpc_node_manifest_digest(code_hash, voter)
+            .vote_mpc_node_manifest_digest(mpc_node_manifest_digest, voter)
             .count_participants(threshold_parameters.participants());
         log!("total votes for proposal: {}", votes);
 
@@ -38,7 +41,7 @@ impl MpcContract {
         // update the state
         if votes >= self.threshold()?.value() {
             self.tee_state
-                .whitelist_tee_proposal(code_hash, tee_upgrade_deadline_duration);
+                .whitelist_tee_proposal(mpc_node_manifest_digest, tee_upgrade_deadline_duration);
         }
 
         Ok(())
@@ -277,7 +280,7 @@ mod tests {
             );
 
             contract
-                .vote_code_hash(code_hash.into())
+                .vote_mpc_node_manifest_digest(code_hash.into())
                 .expect("vote succeeds");
         }
 
@@ -485,7 +488,7 @@ mod tests {
                     .build()
             );
             contract
-                .vote_code_hash(mpc_hash)
+                .vote_mpc_node_manifest_digest(mpc_hash)
                 .expect("mpc vote should succeed");
         }
 
@@ -647,7 +650,7 @@ mod tests {
 
             // When
             contract
-                .vote_code_hash(code_hash)
+                .vote_mpc_node_manifest_digest(code_hash)
                 .expect("vote should succeed");
 
             // Then
@@ -682,7 +685,7 @@ mod tests {
                     .build()
             );
             contract
-                .vote_code_hash(mpc_hash_1)
+                .vote_mpc_node_manifest_digest(mpc_hash_1)
                 .expect("mpc vote should succeed");
         }
 
@@ -712,7 +715,7 @@ mod tests {
                     .build()
             );
             contract
-                .vote_code_hash(mpc_hash_2)
+                .vote_mpc_node_manifest_digest(mpc_hash_2)
                 .expect("mpc vote 2 should succeed");
         }
 
@@ -753,7 +756,7 @@ mod tests {
                         .build()
                 );
                 contract
-                    .vote_code_hash(hash)
+                    .vote_mpc_node_manifest_digest(hash)
                     .expect("mpc vote should succeed");
             }
         };

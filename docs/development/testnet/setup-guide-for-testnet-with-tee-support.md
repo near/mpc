@@ -374,14 +374,14 @@ docker start mpc-node
 
 Hash format: 00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e  (no prefix)
 ```bash
-export CODE_HASH=<hash used to start the nodes>
+export MPC_NODE_MANIFEST_DIGEST=<hash used to start the nodes>
 ```
 
 ### Frodo votes
 
 ```bash
-near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" prepaid-gas '100.0 Tgas' \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
@@ -389,8 +389,8 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash
 ### Sam votes
 
 ```bash
-near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" prepaid-gas '100.0 Tgas' \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```

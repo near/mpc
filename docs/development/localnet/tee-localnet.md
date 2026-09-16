@@ -282,10 +282,10 @@ near transaction view-status <transaction_Id> network-config mpc-localnet
 ### Vote Commands
 
 
-Set **CODE_HASH** to value you want to vote for.
+Set **MPC_NODE_MANIFEST_DIGEST** to value you want to vote for.
 for example:
 ```bash
-export CODE_HASH=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
+export MPC_NODE_MANIFEST_DIGEST=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
 Note: this hash should be the same as the `MPC_MANIFEST_DIGEST` set in the env file.
@@ -297,14 +297,14 @@ MPC_MANIFEST_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8
 ```bash
 
 # Sam votes
-near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" \
+near contract call-function as-transaction mpc-contract.test.near vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 
 # Frodo votes
-near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
-  json-args "{\"code_hash\": \"$CODE_HASH\"}" \
+near contract call-function as-transaction mpc-contract.test.near vote_mpc_node_manifest_digest \
+  json-args "{\"mpc_node_manifest_digest\": \"$MPC_NODE_MANIFEST_DIGEST\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```

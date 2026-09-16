@@ -3,7 +3,7 @@
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
+    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, NodeImageHash,
     ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
     SignatureResponse, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
@@ -46,6 +46,11 @@ pub struct VoteNewParametersArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteCancelKeygenArgs {
     pub next_domain_id: u64,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteMpcNodeManifestDigestArgs {
+    pub mpc_node_manifest_digest: NodeImageHash,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
