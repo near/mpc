@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, bail};
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
 use foreign_chain_inspector::adi::inspector::AdiExtractor;
 use foreign_chain_inspector::aptos::inspector::{AptosExtractor, AptosFinality};
@@ -16,8 +17,9 @@ use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
-use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
-use foreign_chain_inspector::{ForeignChainInspectionError, Verdict};
+use foreign_chain_inspector::{
+    EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
+};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
@@ -115,7 +117,8 @@ impl VerifyForeignTxProvider {
                 &foreign_tx_request.request,
                 foreign_tx_request.payload_version,
             )
-            .await?;
+            .await
+            .inspect_err(|err| count_verdict_mismatch(err, requested_chain))?;
 
         // Build and validate the request before the presignature is popped, so invalid/malicious
         // requests don't cost a presignature.
@@ -173,7 +176,8 @@ impl VerifyForeignTxProvider {
                 &foreign_tx_request.request,
                 foreign_tx_request.payload_version,
             )
-            .await?;
+            .await
+            .inspect_err(|err| count_verdict_mismatch(err, foreign_tx_request.request.chain()))?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
@@ -218,7 +222,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -257,7 +261,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, block_confirmations, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 extracted_values.into_iter().map(Into::into).collect()
             }
@@ -281,7 +285,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -305,7 +309,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -329,7 +333,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -353,7 +357,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -377,7 +381,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -401,7 +405,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -425,7 +429,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -449,7 +453,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -474,7 +478,7 @@ impl VerifyForeignTxProvider {
                         .extract(transaction_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
 
                 extracted_values.into_iter().map(Into::into).collect()
@@ -503,7 +507,7 @@ impl VerifyForeignTxProvider {
                         .extract(tx_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
 
                 extracted_values.into_iter().map(Into::into).collect()
@@ -529,7 +533,7 @@ impl VerifyForeignTxProvider {
                         .extract(tx_id, finality, extractors)
                         .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                         .await
-                        .context("timed out during execution of foreign chain request")?,
+                        .context("timed out during execution of foreign chain request")??,
                 )?;
 
                 extracted_values.into_iter().map(Into::into).collect()
@@ -570,7 +574,7 @@ where
             .extract(tx_id, finality, extractors)
             .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
             .await
-            .context("timed out during execution of foreign chain request")?,
+            .context("timed out during execution of foreign chain request")??,
     )?;
 
     Ok(values.into_iter().map(Into::into).collect())
@@ -600,17 +604,23 @@ fn ensure_chain_is_available(
     }
 }
 
-fn require_extracted<V>(
-    verdict: Result<Verdict<V>, ForeignChainInspectionError>,
-) -> anyhow::Result<Vec<V>> {
+fn require_extracted<V>(verdict: Verdict<V>) -> anyhow::Result<Vec<V>> {
     verdict
-        .inspect_err(|err| {
-            if matches!(err, ForeignChainInspectionError::InspectorResponseMismatch) {
-                metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES.inc();
-            }
-        })?
         .into_extracted()
         .map_err(|failing| anyhow::anyhow!("the transaction failed verification: {failing}"))
+}
+
+/// A mismatched verdict is a node level event, not a provider failure: an honest provider may
+/// just lag behind its peers. The node log names the disagreeing providers.
+fn count_verdict_mismatch(error: &anyhow::Error, chain: dtos::ForeignChain) {
+    if error
+        .downcast_ref::<ForeignChainInspectionError>()
+        .is_some_and(|err| matches!(err, ForeignChainInspectionError::InspectorResponseMismatch))
+    {
+        metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
+            .with_label_values(&[chain.label()])
+            .inc();
+    }
 }
 
 #[cfg(test)]
@@ -629,28 +639,35 @@ mod tests {
     }
 
     #[test]
-    fn require_extracted__should_count_a_mismatched_verdicts_error() {
+    fn count_verdict_mismatch__should_count_an_inspector_response_mismatch() {
+        // Given
+        let error = anyhow::Error::from(ForeignChainInspectionError::InspectorResponseMismatch);
+
         // When
-        let result =
-            require_extracted::<u32>(Err(ForeignChainInspectionError::InspectorResponseMismatch));
+        count_verdict_mismatch(&error, dtos::ForeignChain::Bitcoin);
 
         // Then
-        result.unwrap_err();
         assert_eq!(
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES.get(),
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
+                .with_label_values(&["bitcoin"])
+                .get(),
             1
         );
     }
 
     #[test]
-    fn require_extracted__should_not_count_other_extraction_errors() {
+    fn count_verdict_mismatch__should_not_count_other_errors() {
+        // Given
+        let error = anyhow::Error::from(ForeignChainInspectionError::NotFinalized);
+
         // When
-        let result = require_extracted::<u32>(Err(ForeignChainInspectionError::NotFinalized));
+        count_verdict_mismatch(&error, dtos::ForeignChain::Bitcoin);
 
         // Then
-        result.unwrap_err();
         assert_eq!(
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES.get(),
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_VERDICT_MISMATCHES
+                .with_label_values(&["bitcoin"])
+                .get(),
             0
         );
     }
