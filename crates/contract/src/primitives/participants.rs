@@ -11,12 +11,30 @@ pub mod hpke {
     pub type PublicKey = [u8; 32];
 }
 
+/// `Participants` is stored inline in the contract state, which every method deserializes, so the
+/// url is bounded well above real usage — the longest in the mainnet set is 48 bytes.
+pub const MAX_PARTICIPANT_URL_BYTES: usize = 256;
+
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantInfo {
     pub url: String,
     /// The Ed25519 public key used for P2P TLS.
     pub tls_public_key: Ed25519PublicKey,
+}
+
+impl ParticipantInfo {
+    fn validate_url(&self, account_id: &AccountId) -> Result<(), Error> {
+        if self.url.len() > MAX_PARTICIPANT_URL_BYTES {
+            return Err(InvalidCandidateSet::ParticipantUrlTooLong {
+                account_id: account_id.clone(),
+                len: self.url.len(),
+                max: MAX_PARTICIPANT_URL_BYTES,
+            }
+            .into());
+        }
+        Ok(())
+    }
 }
 
 #[near(serializers=[borsh])]
@@ -82,10 +100,12 @@ impl Participants {
     ///  - All participant IDs are unique.
     ///  - All account IDs are unique.
     ///  - The next_id is greater than all participant IDs.
+    ///  - No url exceeds [`MAX_PARTICIPANT_URL_BYTES`].
     pub fn validate(&self) -> Result<(), Error> {
         let mut ids: BTreeSet<ParticipantId> = BTreeSet::new();
         let mut accounts: BTreeSet<AccountId> = BTreeSet::new();
-        for (acc_id, pid, _) in &self.participants {
+        for (acc_id, pid, info) in &self.participants {
+            info.validate_url(acc_id)?;
             accounts.insert(acc_id.clone());
             ids.insert(*pid);
             if self.next_id.get() <= pid.get() {
@@ -131,6 +151,7 @@ impl Participants {
         account_id: AccountId,
         new_info: ParticipantInfo,
     ) -> Result<(), Error> {
+        new_info.validate_url(&account_id)?;
         for (participant_account_id, _, participant_info) in self.participants.iter_mut() {
             if *participant_account_id == account_id {
                 *participant_info = new_info.clone();
@@ -218,6 +239,7 @@ impl IdentifiesParticipant for ParticipantId {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use crate::{
         errors::{Error, InvalidCandidateSet},
@@ -227,6 +249,62 @@ pub mod tests {
         },
     };
     use rand::Rng;
+    use rstest::rstest;
+
+    use crate::primitives::participants::{MAX_PARTICIPANT_URL_BYTES, ParticipantInfo};
+
+    fn participant_with_url(url: String) -> (near_account_id::AccountId, ParticipantInfo) {
+        let (account_id, mut info) = gen_participant(0);
+        info.url = url;
+        (account_id, info)
+    }
+
+    #[rstest]
+    #[case::at_the_limit(MAX_PARTICIPANT_URL_BYTES, true)]
+    #[case::one_byte_over(MAX_PARTICIPANT_URL_BYTES + 1, false)]
+    fn validate__should_accept_a_url_only_up_to_the_byte_limit(
+        #[case] url_len: usize,
+        #[case] is_accepted: bool,
+    ) {
+        // Given
+        let (account_id, info) = participant_with_url("u".repeat(url_len));
+        let mut participants = Participants::new();
+        participants.insert(account_id, info).unwrap();
+
+        // When
+        let result = participants.validate();
+
+        // Then
+        assert_eq!(result.is_ok(), is_accepted);
+    }
+
+    #[test]
+    fn update_info__should_reject_a_url_over_the_byte_limit() {
+        // Given an existing participant
+        let (account_id, info) = gen_participant(0);
+        let mut participants = Participants::new();
+        participants
+            .insert(account_id.clone(), info.clone())
+            .unwrap();
+
+        // When they update to an oversized url
+        let oversized = ParticipantInfo {
+            url: "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1),
+            ..info.clone()
+        };
+        let result = participants.update_info(account_id.clone(), oversized);
+
+        // Then the update is rejected and the stored info is untouched
+        assert_eq!(
+            result,
+            Err(Error::from(InvalidCandidateSet::ParticipantUrlTooLong {
+                account_id: account_id.clone(),
+                len: MAX_PARTICIPANT_URL_BYTES + 1,
+                max: MAX_PARTICIPANT_URL_BYTES,
+            }))
+        );
+        assert_eq!(*participants.info(&account_id).unwrap(), info);
+    }
 
     #[test]
     fn test_participants() {

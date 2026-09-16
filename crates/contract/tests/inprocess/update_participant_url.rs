@@ -6,8 +6,9 @@ use super::common::{
 };
 use mpc_contract::{
     MpcContract,
-    errors::{Error, InvalidState},
+    errors::{Error, InvalidCandidateSet, InvalidState},
     primitives::{
+        participants::MAX_PARTICIPANT_URL_BYTES,
         test_utils::gen_participants,
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
@@ -78,6 +79,36 @@ fn update_participant_url__should_reject_when_no_deposit_attached() {
     // When, Then
     testing_env!(participant_context(&account_id));
     let _ = contract.update_participant_url("https://relocated.example.com:9000".to_string());
+}
+
+#[test]
+fn update_participant_url__should_reject_a_url_over_the_byte_limit() {
+    // Given
+    let participants = gen_participants(3);
+    let participant_list = participants.participants().clone();
+    let parameters =
+        GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap();
+    let mut contract = init_contract(&parameters, None);
+    let (account_id, _, original_info) = participant_list[0].clone();
+
+    // When
+    testing_env!(participant_context_with_deposit(
+        &account_id,
+        NearToken::from_yoctonear(1)
+    ));
+    let result = contract.update_participant_url("u".repeat(MAX_PARTICIPANT_URL_BYTES + 1));
+
+    // Then the call is rejected and the registered url is unchanged
+    assert_matches!(
+        result,
+        Err(Error::InvalidCandidateSet(
+            InvalidCandidateSet::ParticipantUrlTooLong { .. }
+        ))
+    );
+    assert_eq!(
+        participant_info(&contract, &account_id).url,
+        original_info.url
+    );
 }
 
 #[test]
