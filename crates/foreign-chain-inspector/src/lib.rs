@@ -138,10 +138,11 @@ pub trait NetworkFingerprintInspector {
 ///
 /// All inner inspectors are queried concurrently. Every [`Verdict`] reached must be identical;
 /// any disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors
-/// are tolerated as long as any inspector reached a verdict, so a single unavailable or
-/// misbehaving RPC does not take the whole node out of signing. A hanging one still stalls the
-/// extraction: it waits for every inspector, up to the caller's deadline. When no inspector
-/// reached a verdict, the first error is propagated.
+/// are tolerated as long as any inspector reached a verdict, so a single unavailable RPC does
+/// not take the whole node out of signing. On the other hand, a provider that answers a
+/// different verdict or different values will cause a mismatch and fail the whole extraction.
+/// A hanging one still stalls the extraction: it waits for every inspector, up to the caller's
+/// deadline. When no inspector reached a verdict, the first error is propagated.
 ///
 /// With a recorder set through [`FanOut::measuring`], every provider call is reported once it
 /// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.

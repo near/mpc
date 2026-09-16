@@ -1,174 +1,173 @@
 # Metrics for node operators
 
-The MPC node exposes Prometheus metrics on its debug port. This guide lists
-the ones worth watching, what each measures, and alert rules to start from.
+The MPC node exposes Prometheus metrics on its debug port. This guide lists the
+ones worth watching, what each one tells you about your node, and alert rules
+you can start from.
 
-## Chain-gateway pipeline
+## NEAR chain pipeline
 
-Counters in
-[`event_subscriber/metrics.rs`](../../crates/chain-gateway/src/event_subscriber/metrics.rs):
+The node watches the NEAR blockchain for incoming signature requests. These
+counters tell you whether that is working:
 
-| Metric | Measures | How to interpret |
+| Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| [`mpc_blocks_received_from_indexer_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | blocks pulled from the near-indexer stream | if the rate drops significantly, indicates starvation of the event-subscriber pipeline or an issue on the NEAR blockchain |
-| [`mpc_blocks_indexed_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | unique blocks added to the `RecentBlocksTracker` (after dedup) | should track closely with `mpc_blocks_received_from_indexer_total`; divergence means the indexer is replaying hashes we've already seen |
-| [`mpc_finalized_blocks_indexed_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | blocks the tracker has promoted to `Final` | should grow steadily a few seconds behind the received/indexed counters; if it freezes while those keep growing, finality is stalling |
-| [`mpc_block_updates_dropped_total`](../../crates/chain-gateway/src/event_subscriber/metrics.rs) | block updates that won't be received by the node (containing signature requests, responses, etc.) | should be zero or flat. If it increases, the consumer is starved or the MPC node is not working correctly |
-| [`mpc_num_fail_on_timeout_indexed`](../../crates/node/src/metrics.rs) | number of calls to `fail_on_timeout` in the MPC contract. Counts the number of failed requests (aggregate over all request types). May contain false positives if `mpc_finalized_blocks_indexed_total` diverges from `mpc_blocks_indexed_total`, as it may count transactions on non-finalized forks. | should be near zero in healthy operation. Sustained non-zero rate means the node (or the cluster) is missing the response deadline or the blockchain has a lot of forks. |
+| `mpc_blocks_received_from_indexer_total` | blocks received from the NEAR indexer stream | should roughly match NEAR block production, about one block per second. Zero for minutes means the node is cut off from the chain. |
+| `mpc_blocks_indexed_total` | received blocks kept for processing, after skipping ones the node has already seen | should move together with the counter above. |
+| `mpc_finalized_blocks_indexed_total` | processed blocks that reached finality on NEAR | should grow steadily a few seconds behind the two counters above. If it freezes while they keep growing, finality is stalling. |
+| `mpc_block_updates_dropped_total` | block updates the node dropped, including signature requests it will never process | should stay flat. Every increase is user requests the cluster may never answer. |
+| `mpc_num_fail_on_timeout_indexed` | requests the MPC contract marked as failed because no answer arrived in time | should be near zero. A sustained rate means this node, or the whole cluster, is too slow to answer. May overcount when NEAR has many forks. |
 
 ## Backups
 
-Gauges in [`metrics.rs`](../../crates/node/src/metrics.rs). Set when the node
-serves keyshares over the migration service to the backup service registered for it:
+After every resharing, the node hands its key shares to the backup service
+registered for it. These gauges say whether that happened:
 
-| Metric | Measures | How to interpret |
+| Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| [`mpc_last_backup_served_epoch`](../../crates/node/src/metrics.rs) | epoch id of the last keyset served to the backup service | should equal `mpc_current_epoch_id` once a backup has been taken for it. Lagging behind means the latest epoch has not been backed up. |
-| [`mpc_last_backup_served_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last keyshare set served to the backup service | should be recent. A large gap since the last resharing means backups are not being taken. Confirms the node served the keyshares, not that the backup service persisted them. |
-| [`mpc_current_epoch_id`](../../crates/node/src/metrics.rs) | epoch id of the keyset the contract currently holds | the reference point for `mpc_last_backup_served_epoch`. Increments on every resharing; unset until the first keyset exists. During a resharing it stays at the old epoch, which is the one still available to back up. |
+| `mpc_current_epoch_id` | the key epoch the contract currently holds | rises by one on every resharing. It is the reference point for the two gauges below. |
+| `mpc_last_backup_served_epoch` | the last epoch this node backed up | should reach `mpc_current_epoch_id` shortly after each resharing. |
+| `mpc_last_backup_served_timestamp_seconds` | when this node last served key shares to the backup service | should be recent. A large gap means backups are not being taken. This only proves the node handed the shares over, not that the backup service kept them. |
 
 ## Attestation freshness
 
-Gauges in [`metrics.rs`](../../crates/node/src/metrics.rs). Set from the
-on-chain confirmation of an attestation submission, in
-[`attestation_freshness_metrics.rs`](../../crates/node/src/tee/attestation_freshness_metrics.rs):
+The node runs in trusted hardware and proves this by submitting an attestation
+on chain. If it stops doing so, the contract eventually drops the node from the
+participant set. These gauges tell you how much runway is left:
 
-| Metric | Measures | How to interpret |
+| Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| [`mpc_attestation_last_landed_timestamp_seconds`](../../crates/node/src/metrics.rs) | Unix time of the last attestation submission this node confirmed on chain | should be under an `ATTESTATION_RESUBMISSION_INTERVAL` (1h) old. A sustained gap ends in this node being dropped from the participant set. |
-| [`mpc_attestation_expiry_timestamp_seconds`](../../crates/node/src/metrics.rs) | NEAR block time at which the attestation the contract stores for this node's TLS key expires | subtract `mpc_indexer_latest_block_timestamp_seconds` — the clock the contract expires entries against, not wall clock — for the runway before this node is dropped from the participant set. `0` = nothing stored (evicted, or never landed one), `-1` = stored without an expiry. |
+| `mpc_attestation_last_landed_timestamp_seconds` | when the last attestation from this node was confirmed on chain | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
+| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node is already out. `-1` means an attestation is stored that carries no expiry. |
 
 ## Foreign chain RPC providers
 
-Recorded in [`metrics.rs`](../../crates/node/src/metrics.rs) by the verify fan-out, which
-measures each provider it queries. Both series carry a `chain` label, the key the chain is
-configured under (`bitcoin`, `hyper_evm`, ...), and a `provider` label, its configured provider
-name. Both labels are bounded by the node's own config, so the number of series is a small
-multiple of the number of configured providers:
+The node verifies user transactions on other chains through RPC providers you
+configure. Two metric families describe them: what happens during real
+verification traffic, and an hourly probe that needs no traffic.
 
-| Metric | Measures | How to interpret |
-| --- | --- | --- |
-| [`mpc_foreign_chain_provider_inspection_seconds`](../../crates/node/src/metrics.rs) | time one provider took to answer one verify request; failed calls are not timed | compare providers of the same chain against each other. One drifting up toward the top bucket is approaching the node's inspection deadline. A provider that fails or hangs is invisible here and loud in `mpc_foreign_chain_provider_errors_total`, so read p95 and p99 next to that counter's rate. |
-| [`mpc_foreign_chain_provider_errors_total`](../../crates/node/src/metrics.rs) | requests a provider itself failed to answer, by `kind` | should be near zero. `non_transient` is the one to act on first: the provider is refusing requests or answering with something unusable, and retrying will fix neither. |
+### During traffic
+
+When a transaction must be checked, the node asks every provider configured for
+that chain and compares their answers. Each provider gets two series, labeled
+with the `chain` (the key it is configured under, such as `bitcoin`) and the
+`provider` (its name in the same config):
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_foreign_chain_provider_inspection_seconds` | how long one provider took to answer one check. Failed calls are not timed. |
+| `mpc_foreign_chain_provider_errors_total` | checks a provider failed to answer, counted by `kind` |
 
 `kind` is one of:
 
-* `transient`: no usable answer, for a reason that can clear on its own: transport failure, 5xx,
-  or rate limiting.
-* `non_transient`: the provider answered and refused, or answered with something unusable.
-  Retrying cannot change either.
-* `timeout`: the provider had not answered when the node gave up on it, including a call still in
-  flight when the node abandons the inspection at its deadline or on shutdown. The one kind the
-  fan-out does not absorb: it waits for every provider, so outside shutdowns a timeout means the
-  inspection missed its deadline and the verify request failed for that chain.
+* `transient`: the provider gave no usable answer, for a reason that can clear
+  on its own: connection trouble, a 5xx, or rate limiting.
+* `non_transient`: the provider answered but refused the request, or returned
+  something unusable. Retrying will not help; this needs a human.
+* `timeout`: the provider did not answer before the node gave up, either at its
+  deadline or at shutdown. The node waits for every provider, so outside
+  shutdowns a timeout fails the whole check for that chain.
 
-One histogram observation is a whole inspection, one to three serialized RPC calls depending on
-the chain and on where the inspection stopped, not a single round trip. The top bucket is the
-node's inspection deadline.
+Reading the numbers:
 
-A failed call is counted but not timed: its duration says nothing about the provider's latency,
-and a timeout observed at the deadline would pin the high quantiles there. p95 and p99 therefore
-describe answers only.
+* Error counts should stay at zero. Start with `non_transient`, then `timeout`;
+  `transient` often clears on its own.
+* For latency, compare providers of the same chain with each other. The top
+  bucket is the deadline the node enforces, and one observation is a whole
+  check (one to three RPC calls), not a single round trip. A provider drifting
+  toward the top bucket is the one to watch.
+* Latency percentiles describe successful answers only, because failed calls
+  are counted but not timed.
+* An answer is never an error, even when it ends the check: a transaction that
+  is not final yet, has too few confirmations, was reverted, is missing, or
+  sits on a block outside the canonical chain is an answer. Only failure to
+  answer counts as an error.
+* A provider whose answers disagree with its peers also fails the whole check
+  for that chain, and these metrics do not show it: its answers count as
+  answers here. When verify requests fail for a chain while every error
+  counter stays at zero, suspect a disagreeing provider and compare the node
+  logs.
+* Every configured provider's series appears, at zero, as soon as the node
+  serves requests, so an idle node reports zero rather than nothing. Solana can
+  be configured but is not checked, so it never appears.
+* With no traffic, both series stay flat whether providers are healthy or down.
+  On a quiet node, the probe below is the health signal.
+* Every participating node checks for itself: one user request produces one
+  observation per provider on each node. Counts are per node, not cluster
+  totals.
+* Probe traffic is not counted here, so it cannot distort these numbers.
 
-An answer about the transaction is never counted as an error, even when it ends the verification:
-a transaction that is not final yet, has too few confirmations, is absent, reverted, or sits on a
-non-canonical block is an answer. Otherwise every healthy provider would count as failing whenever
-a caller asks about a transaction before it is final.
+### The hourly probe
 
-Every configured provider's series is published once the node enters the contract's `Running`
-state and starts serving verify requests, so an idle node reports zero rather than nothing at
-all. Before that, neither series exists. Solana is the exception: it can be configured but has no
-inspector, so it never appears.
+Once per hour, whether or not any traffic exists, the node asks each configured
+provider which network it is serving and compares the answer with the chain's
+`expected_network_fingerprint` from your config:
 
-Zero means no failures or no verify traffic. Without requests both series stay flat for a healthy
-provider and a down one alike, so on an idle node the probe gauges below are the health signal.
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain |
+| `mpc_foreign_chain_rpc_providers_healthy` | providers that passed the latest probe |
 
-A verify request that never reaches a provider (the chain is unavailable, no inspector is
-configured for it, or the request itself is malformed) is in neither series. The leader and every
-follower run their own inspection, so one user request produces one observation per provider on
-each participating node.
-
-Probe traffic is deliberately excluded, both the node's own periodic provider probe and the
-`foreign-chain-config-tester` CLI: probes share their providers with the verify path, and their
-latencies would drown the ones an operator is looking at.
-
-The probe has its own gauges, set in [`foreign_chain_probe.rs`](../../crates/node/src/foreign_chain_probe.rs).
-Every `FOREIGN_CHAIN_PROBE_INTERVAL` (1h), from process start and regardless of the contract state,
-the node asks each configured provider for its network and compares the answer with the chain's
-`expected_network_fingerprint`:
-
-| Metric | Measures | How to interpret |
-| --- | --- | --- |
-| [`mpc_foreign_chain_rpc_providers_configured`](../../crates/node/src/metrics.rs) | providers configured for the chain | the denominator for the gauge below. |
-| [`mpc_foreign_chain_rpc_providers_healthy`](../../crates/node/src/metrics.rs) | providers that answered the latest probe with the expected network | should equal the configured count. Anything less is a provider that failed the probe (unreachable, refusing, timing out, answering unusably, an auth token the node could not resolve, a client that failed to build, or serving another network), or a chain configured without an `expected_network_fingerprint`, since the probe cannot check those providers. |
-
-Solana has no probe and is left out of both gauges.
+`healthy` should equal `configured`. Anything less is a provider the probe
+could not confirm: unreachable, refusing, too slow, serving a different
+network, or a chain configured without an `expected_network_fingerprint`,
+which the probe cannot check. Solana has no probe and is left out of both
+gauges.
 
 ## Recommended alerts
 
 ```promql
-# Pipeline stuck (page): no blocks pulled from the indexer.
+# Page: the node receives no blocks from NEAR at all.
 rate(mpc_blocks_received_from_indexer_total[1m]) == 0  for 5m
 
-# Falling behind (warn): NEAR produces ~1 b/s; sustained low rate accumulates lag.
+# Warn: the node receives well under one block per second and falls behind.
 rate(mpc_blocks_received_from_indexer_total[1m]) < 0.5  for 15m
 
-# Dropped block updates (warn): every drop is matched-event data the consumer
-# will never see.
+# Warn: block updates are being dropped. Each one is data the node will never see.
 increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
 
-# Signature timeouts (warn): the node failed to produce a signature within the
-# deadline. Downstream symptom; cross-check the pipeline counters above.
+# Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
 
-# Provider refusing or garbling answers (warn): a dead API key, a chain the plan
-# does not cover, or a backend serving unusable responses. Needs an operator.
+# Warn: a provider refuses or garbles answers: a dead API key, the wrong chain,
+# or a broken backend. Needs a human; retrying does not help.
 increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
 
-# Provider not answering (warn): unreachable or rate limited while its peers on the
-# same chain keep up. Tolerated by the fan-out, so it is silent otherwise. The 15m
-# hold rides out a short rate limit burst.
+# Warn: a provider is unreachable or rate limited while its peers on the same
+# chain answer. The node tolerates this; the 15m hold rides out a short burst.
 increase(mpc_foreign_chain_provider_errors_total{kind="transient"}[5m]) > 0  for 15m
 
-# Provider hanging (page): the fan-out waits for every provider, so one that stops
-# answering without erroring stalls the whole inspection past its deadline and fails
-# the verify request for that chain, however healthy its peers are.
+# Page: a provider stops answering without erroring. The node waits for every
+# provider, so one silent provider fails the check for that whole chain.
 increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0  for 5m
 
-# Provider unhealthy at the probe (warn): unreachable, refusing, or serving another
-# network. Unlike the provider rules above this needs no verify traffic. The probe runs
-# hourly, so the 2h hold waits for two rounds to agree. Also fires for a chain
-# configured without an expected_network_fingerprint, since the probe cannot check it.
+# Warn: a provider failed the hourly probe, or a chain is configured without an
+# expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
+# 2h hold waits for two rounds to agree.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
 
-# Backups stale (warn): no keyshares served to the backup service recently. Only
-# meaningful once backups are being taken against this node.
+# Warn: no backup for over a day. Only meaningful once backups are being taken
+# against this node.
 time() - mpc_last_backup_served_timestamp_seconds > 86400  for 1h
 
-# Current epoch not backed up (warn): a resharing happened and its keyset has not
-# been served to the backup service since. Also fires if the node has never served
-# a backup, since the gauge starts at 0.
+# Warn: a resharing happened and the new epoch has not been backed up since.
+# Also fires if this node has never served a backup, because the gauge starts at 0.
 mpc_last_backup_served_epoch < mpc_current_epoch_id  for 1h
 
-# Re-attestation stuck (warn): nothing landed in three re-attestation intervals.
-# The primary signal — it fires within hours, while the expiry alert below only
-# does so days later.
+# Warn: no attestation has landed in three resubmission intervals. This fires
+# within hours; the expiry alerts below only fire days later.
 time() - mpc_attestation_last_landed_timestamp_seconds > 3 * 3600  for 15m
 
-# Attestation runway low (page): under 3 days before the contract drops this node
-# from the participant set. Backstop for the alert above, and reached only about
-# four days after submissions stop landing. The threshold is a plain duration
-# rather than a fraction of the expiry window (7 days today): keep it below the
-# window, and revisit if the window changes. `> 0` drops the sentinels so they are
-# not read as timestamps.
+# Page: under three days of attestation runway left. Backstop for the alert
+# above; reached about four days after submissions stop landing. `> 0` keeps
+# the sentinel values out.
 mpc_attestation_expiry_timestamp_seconds > 0
   and mpc_attestation_expiry_timestamp_seconds - mpc_indexer_latest_block_timestamp_seconds
       < 3 * 86400  for 15m
 
-# No attestation stored (page): the contract holds nothing for our TLS key, so this
-# node is out of the attested set. Also covers a node that never landed one.
+# Page: nothing is stored for this node's TLS key, so the node is out of the
+# attested set. Also covers a node that never landed one.
 mpc_attestation_expiry_timestamp_seconds == 0  for 15m
 ```
 
-A `-1` expiry satisfies neither expiry alert, so a node holding an attestation stored
-without one is covered by the staleness alert alone.
+A `-1` expiry satisfies neither expiry alert, so a node holding an attestation
+without an expiry is covered by the staleness alert alone.
