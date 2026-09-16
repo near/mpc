@@ -5,7 +5,7 @@ pub mod call_args;
 pub mod deposits;
 
 #[deprecated(
-    note = "contract-update API of contract 3.15.0; current contracts take `submit_update` / `vote_update(update_hash)`"
+    note = "contract-update API of contract 3.15.1; current contracts take `submit_update` / `vote_update(update_hash)`"
 )]
 pub mod legacy;
 

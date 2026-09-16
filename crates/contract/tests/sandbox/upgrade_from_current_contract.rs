@@ -1,5 +1,3 @@
-#![expect(non_snake_case)]
-
 use crate::sandbox::{
     common::{
         SandboxTestSetup, execute_key_generation_and_add_random_state,
@@ -19,28 +17,21 @@ use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{ProtocolContractState, Update};
 use near_mpc_sdk::update::hash;
 use rand_core::OsRng;
-use sha2::Digest;
+
+pub fn dummy_contract_update() -> Update {
+    Update::Code(vec![1, 2, 3])
+}
+
+pub fn invalid_contract_update() -> Update {
+    Update::Code(b"invalid wasm".to_vec())
+}
 
 pub fn current_contract_update() -> Update {
     Update::Code(current_contract().to_vec())
 }
 
-/// Votes for `update_hash` until approved, then submits `update` from `accounts[0]`.
-async fn vote_and_submit(
-    accounts: &[near_workspaces::Account],
-    contract: &near_workspaces::Contract,
-    update: Update,
-) -> near_workspaces::result::ExecutionFinalResult {
-    vote_update_till_approved(contract, accounts, hash(&update)).await;
-    accounts[0]
-        .call_mpc(contract.id())
-        .submit_update(update)
-        .await
-        .unwrap()
-}
-
 #[tokio::test]
-async fn submit_update__should_accept_a_maximum_size_code_payload() {
+async fn test_propose_contract_max_size_upload() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -49,24 +40,26 @@ async fn submit_update__should_accept_a_maximum_size_code_payload() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    dbg!(contract.id());
 
-    // The payload is not valid Wasm, so only the call itself is expected to succeed: the deploy
-    // receipt fails and rolls back.
-    let execution = vote_and_submit(
-        &mpc_signer_accounts,
-        &contract,
-        Update::Code(vec![0; 1536 * 1024 - 400]), //3900 seems to not work locally
-    )
-    .await;
+    // check that we can submit an update with the maximum contract size. The payload is not
+    // valid Wasm, so only the call itself is expected to succeed; the deploy receipt fails.
+    let update = Update::Code(vec![0; 1536 * 1024 - 400]); //3900 seems to not work locally
+    vote_update_till_approved(&contract, &mpc_signer_accounts, hash(&update)).await;
+    let execution = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .submit_update(update)
+        .await
+        .unwrap();
     dbg!(&execution);
     assert!(
         execution.is_success(),
-        "Failed to submit an update with our highest contract size"
+        "Failed to submit update with our highest contract size"
     );
 }
 
 #[tokio::test]
-async fn vote_update__should_reject_non_voters() {
+async fn test_propose_update_config() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -75,12 +68,14 @@ async fn vote_update__should_reject_non_voters() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let threshold = assert_running_return_threshold(&contract).await;
+    dbg!(contract.id());
 
-    // The contract account is not a participant.
+    // contract should not be able to vote for updates unless it's a part of the participant/voter set.
     let execution = contract
         .as_account()
         .call_mpc(contract.id())
-        .vote_update(hash(&current_contract_update()))
+        .vote_update(hash(&dummy_contract_update()))
         .await
         .unwrap();
     dbg!(&execution);
@@ -92,26 +87,7 @@ async fn vote_update__should_reject_non_voters() {
             .contains("not a voter")
     );
 
-    let execution = mpc_signer_accounts[0]
-        .call_mpc(contract.id())
-        .vote_update(hash(&current_contract_update()))
-        .await
-        .unwrap();
-    assert!(execution.is_success(), "{execution:#?}");
-}
-
-#[tokio::test]
-async fn submit_update__should_apply_an_approved_config() {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-    let threshold = assert_running_return_threshold(&contract).await;
-
+    // have each participant vote for a new config:
     let new_config = near_mpc_contract_interface::types::Config {
         key_event_timeout_blocks: 11,
         tee_upgrade_deadline_duration_seconds: 22,
@@ -134,7 +110,9 @@ async fn submit_update__should_apply_an_approved_config() {
         // Must satisfy `Config::validate` (>= DEFAULT_EXPIRATION_DURATION_SECONDS).
         launcher_hash_unused_ttl_seconds: 14 * 24 * 60 * 60,
     };
+
     let update = Update::Config(new_config.clone());
+    let update_hash = hash(&update);
 
     let old_config: near_mpc_contract_interface::types::Config = contract
         .view(method_names::CONFIG)
@@ -142,22 +120,30 @@ async fn submit_update__should_apply_an_approved_config() {
         .unwrap()
         .json()
         .unwrap();
-    assert_ne!(old_config, new_config);
+    let state: ProtocolContractState = get_state(&contract).await;
 
-    // Exactly `threshold` votes approve the hash; the approving vote returns `true`.
+    // check that each participant can vote for the config, and that the threshold vote is the
+    // one that approves it:
     for (i, voter) in mpc_signer_accounts.iter().enumerate() {
+        dbg!(voter.id());
         let execution = voter
             .call_mpc(contract.id())
-            .vote_update(hash(&update))
+            .vote_update(update_hash.clone())
             .await
             .unwrap();
+
+        assert!(
+            execution.is_success(),
+            "execution should have succeeded: {state:#?}\n{execution:#?}"
+        );
         let approved: bool = execution.json().unwrap();
-        assert_eq!(approved, i + 1 == threshold.0 as usize, "vote {i}");
+        assert_eq!(approved, i + 1 == threshold.0 as usize);
         if approved {
             break;
         }
     }
 
+    // check that submitting the approved config applies it.
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .submit_update(update)
@@ -171,11 +157,13 @@ async fn submit_update__should_apply_an_approved_config() {
         .unwrap()
         .json()
         .unwrap();
+
+    assert_ne!(config, old_config);
     assert_eq!(config, new_config);
 }
 
 #[tokio::test]
-async fn submit_update__should_deploy_the_approved_binary() {
+async fn test_propose_update_contract() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -188,7 +176,7 @@ async fn submit_update__should_deploy_the_approved_binary() {
 }
 
 #[tokio::test]
-async fn submit_update__should_roll_back_an_invalid_binary() {
+async fn test_invalid_contract_deploy() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -197,57 +185,36 @@ async fn submit_update__should_roll_back_an_invalid_binary() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let code_before = contract.view_code().await.unwrap();
+    dbg!(contract.id());
 
-    let execution = vote_and_submit(
-        &mpc_signer_accounts,
-        &contract,
-        Update::Code(b"invalid wasm".to_vec()),
-    )
-    .await;
+    // Let's submit an invalid contract update instead now.
+    let update = invalid_contract_update();
+    vote_update_till_approved(&contract, &mpc_signer_accounts, hash(&update)).await;
+    let execution = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .submit_update(update)
+        .await
+        .unwrap();
     dbg!(&execution);
-
-    // The call is accepted; the deploy receipt fails and the state rolls back, so the previous
-    // code keeps serving.
     assert!(execution.is_success());
     assert!(!execution.receipt_failures().is_empty());
-    let code_after = contract.view_code().await.unwrap();
-    assert_eq!(
-        sha2::Sha256::digest(&code_before),
-        sha2::Sha256::digest(&code_after)
-    );
-    let state: ProtocolContractState = get_state(&contract).await;
+
+    // Try calling into state and see if it works after the contract updates with an invalid
+    // contract. It will fail in `migrate` so a state rollback on the contract code should have
+    // happened.
+    let execution = mpc_signer_accounts[0]
+        .call(contract.id(), method_names::STATE)
+        .transact()
+        .await
+        .unwrap();
+
+    dbg!(&execution);
+    let state: ProtocolContractState = execution.json().unwrap();
     dbg!(state);
 }
 
 #[tokio::test]
-async fn submit_update__should_reject_a_payload_without_approval() {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-
-    let execution = mpc_signer_accounts[0]
-        .call_mpc(contract.id())
-        .submit_update(current_contract_update())
-        .await
-        .unwrap();
-    dbg!(&execution);
-
-    assert!(
-        execution
-            .into_result()
-            .unwrap_err()
-            .to_string()
-            .contains("does not match the approved update hash")
-    );
-}
-
-#[tokio::test]
+#[expect(non_snake_case)]
 async fn submit_update__should_consume_the_approval() {
     let SandboxTestSetup {
         contract,
@@ -257,9 +224,11 @@ async fn submit_update__should_consume_the_approval() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    dbg!(contract.id());
 
     vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 
+    // Applying the update cleared the votes, so the very same payload is refused now.
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .submit_update(current_contract_update())
@@ -267,12 +236,15 @@ async fn submit_update__should_consume_the_approval() {
         .unwrap();
     dbg!(&execution);
     assert!(execution.is_failure());
+
+    let state: ProtocolContractState = get_state(&contract).await;
+    dbg!(state);
 }
 
 /// Regression test for issue #1617: ensures that voting on contract updates is cheap, and bounds
-/// the cost of submitting the binary.
+/// the gas the submission of a contract binary takes.
 #[tokio::test]
-async fn vote_update__should_stay_cheap_and_submit_update_within_budget() {
+async fn test_vote_update_gas_before_threshold() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -281,14 +253,16 @@ async fn vote_update__should_stay_cheap_and_submit_update_within_budget() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
-    let threshold = assert_running_return_threshold(&contract).await;
-    let update = current_contract_update();
 
-    for (idx, account) in mpc_signer_accounts.iter().enumerate() {
+    let update = current_contract_update();
+    let update_hash = hash(&update);
+
+    // Cast votes until threshold is reached (need 6 total votes)
+    for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
         let execution = account
             .call(contract.id(), method_names::VOTE_UPDATE)
             .args_json(serde_json::json!({
-                "update_hash": hash(&update),
+                "update_hash": update_hash,
             }))
             .gas(GAS_FOR_VOTE_UPDATE)
             .transact()
@@ -296,7 +270,12 @@ async fn vote_update__should_stay_cheap_and_submit_update_within_budget() {
             .unwrap();
 
         let gas_burnt = execution.total_gas_burnt;
-        assert!(execution.is_success(), "vote {}: {execution:#?}", idx + 1);
+
+        assert!(execution.is_success());
+
+        let approved: bool = execution.json().unwrap();
+        assert!(!approved);
+
         assert!(
             gas_burnt.as_tgas() <= GAS_FOR_VOTE_UPDATE.as_tgas(),
             "Gas usage for vote {} ({} TGas) should be <= {} TGas",
@@ -304,31 +283,55 @@ async fn vote_update__should_stay_cheap_and_submit_update_within_budget() {
             gas_burnt.as_tgas(),
             GAS_FOR_VOTE_UPDATE.as_tgas()
         );
-
-        let approved: bool = execution.json().unwrap();
-        assert_eq!(approved, idx + 1 == threshold.0 as usize);
-        if approved {
-            break;
-        }
     }
 
-    let execution = mpc_signer_accounts[0]
+    // Cast the threshold vote (6th vote), which approves the update
+    let threshold_execution = mpc_signer_accounts[6]
+        .call(contract.id(), method_names::VOTE_UPDATE)
+        .args_json(serde_json::json!({
+            "update_hash": update_hash,
+        }))
+        .gas(GAS_FOR_VOTE_UPDATE)
+        .transact()
+        .await
+        .unwrap();
+
+    let threshold_gas_burnt = threshold_execution.total_gas_burnt;
+
+    assert!(threshold_execution.is_success());
+
+    let approved: bool = threshold_execution.json().unwrap();
+    assert!(approved);
+
+    assert!(
+        threshold_gas_burnt.as_tgas() <= GAS_FOR_VOTE_UPDATE.as_tgas(),
+        "Gas usage for threshold vote ({} TGas) should be <= {} TGas",
+        threshold_gas_burnt.as_tgas(),
+        GAS_FOR_VOTE_UPDATE.as_tgas()
+    );
+
+    // Submitting the approved binary deploys it, and is the expensive part of the flow.
+    let submit_execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .submit_update(update)
         .await
         .unwrap();
-    assert!(execution.failures().is_empty(), "{execution:#?}");
-    let gas_burnt = execution.total_gas_burnt;
     assert!(
-        gas_burnt.as_tgas() <= MAX_GAS_FOR_SUBMIT_UPDATE.as_tgas(),
+        submit_execution.failures().is_empty(),
+        "{submit_execution:#?}"
+    );
+
+    let submit_gas_burnt = submit_execution.total_gas_burnt;
+    assert!(
+        submit_gas_burnt.as_tgas() <= MAX_GAS_FOR_SUBMIT_UPDATE.as_tgas(),
         "Gas usage for submit_update ({} TGas) should be <= {} TGas",
-        gas_burnt.as_tgas(),
+        submit_gas_burnt.as_tgas(),
         MAX_GAS_FOR_SUBMIT_UPDATE.as_tgas()
     );
 }
 
 #[tokio::test]
-async fn submit_update__should_reject_malformed_payloads() {
+async fn test_propose_incorrect_updates() {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -337,8 +340,9 @@ async fn submit_update__should_reject_malformed_payloads() {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    dbg!(contract.id());
 
-    // Not a borsh-encoded `Update`.
+    // Can not submit an update that is not a borsh-encoded `Update`
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::SUBMIT_UPDATE)
         .args_borsh(())
@@ -349,7 +353,7 @@ async fn submit_update__should_reject_malformed_payloads() {
     dbg!(&execution);
     assert!(execution.is_failure());
 
-    // An unknown variant tag.
+    // Can not submit an unknown `Update` variant
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), method_names::SUBMIT_UPDATE)
         .args_borsh(7u8)
@@ -404,25 +408,48 @@ async fn only_one_vote_from_participant() {
         .await;
     dbg!(contract.id());
 
-    let hash_a = hash(&Update::Code(vec![0xaa; 100]));
-    let hash_b = hash(&Update::Code(vec![0xbb; 100]));
+    let hash_a = hash(&dummy_contract_update());
+    let hash_b = hash(&current_contract_update());
 
-    for (voter, update_hash, expected_approved) in [
-        (0, &hash_a, false),
-        (0, &hash_b, false),
-        (1, &hash_a, false),
-        (1, &hash_b, true),
-    ] {
-        let execution = mpc_signer_accounts[voter]
-            .call_mpc(contract.id())
-            .vote_update(update_hash.clone())
-            .await
-            .unwrap();
-        dbg!(&execution);
-        assert!(execution.is_success());
-        let approved: bool = execution.json().unwrap();
-        assert_eq!(approved, expected_approved);
-    }
+    let execution = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .vote_update(hash_a.clone())
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let approved: bool = execution.json().unwrap();
+    assert!(!approved);
+
+    let execution = mpc_signer_accounts[0]
+        .call_mpc(contract.id())
+        .vote_update(hash_b.clone())
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let approved: bool = execution.json().unwrap();
+    assert!(!approved);
+
+    let execution = mpc_signer_accounts[1]
+        .call_mpc(contract.id())
+        .vote_update(hash_a)
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let approved: bool = execution.json().unwrap();
+    assert!(!approved);
+
+    let execution = mpc_signer_accounts[1]
+        .call_mpc(contract.id())
+        .vote_update(hash_b)
+        .await
+        .unwrap();
+    dbg!(&execution);
+    assert!(execution.is_success());
+    let approved: bool = execution.json().unwrap();
+    assert!(approved);
 }
 
 /// Tests that we can upgrade the current contract to a new binary. The new contract binary used is

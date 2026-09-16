@@ -8,27 +8,21 @@ use near_mpc_sdk::update::hash;
 
 #[tokio::test]
 async fn test_high_gas_deposit_config_value_passes_upgrades() {
-    let (saw_completion, saw_failure) = run_upgrade_scenario(1).await;
-
-    assert!(saw_completion, "Update never completed");
-    assert!(!saw_failure, "Upgrade unexpectedly failed");
+    assert!(run_upgrade_scenario(1).await, "Upgrade unexpectedly failed");
 }
 
 #[tokio::test]
 async fn test_zero_gas_deposit_config_value_fails_upgrades() {
-    let (saw_completion, saw_failure) = run_upgrade_scenario(0).await;
-
     assert!(
-        saw_failure,
-        "Upgrade never failed; expected failure with zero gas"
-    );
-    assert!(
-        !saw_completion,
+        !run_upgrade_scenario(0).await,
         "Upgrade unexpectedly completed with zero gas"
     );
 }
 
-async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
+/// Votes in and submits the current binary, with `min_gas` configured as the gas the contract
+/// attaches to the `migrate` call. Returns whether `submit_update` was accepted: a zero gas
+/// deposit makes the promise it spawns an invalid receipt, which fails the call itself.
+async fn run_upgrade_scenario(min_gas: u64) -> bool {
     let init_config = near_mpc_contract_interface::types::InitConfig {
         contract_upgrade_deposit_tera_gas: Some(min_gas),
         ..Default::default()
@@ -54,8 +48,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         .unwrap();
     dbg!(&execution);
 
-    let saw_failure = !execution.failures().is_empty();
-    (!saw_failure, saw_failure)
+    execution.is_success()
 }
 
 #[tokio::test]

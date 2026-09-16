@@ -1,4 +1,4 @@
-//! Contract-update API of contract `3.15.0`, the version deployed on mainnet and testnet: an
+//! Contract-update API of contract `3.15.1`, the version deployed on mainnet and testnet: an
 //! update is stored on-chain via `propose_update` and applied by the threshold `vote_update(id)`.
 //! Kept only so tests can upgrade a production contract to the current build; remove once
 //! production runs the vote-then-submit API (`submit_update` / `vote_update(update_hash)`).
@@ -87,7 +87,7 @@ mod client {
     use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
     /// Gas for the threshold `vote_update(id)`, which deploys the proposed code.
-    pub const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
+    const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
 
     impl<C: CallContract> MpcContractHandle<C> {
         pub async fn propose_update(
@@ -135,6 +135,3 @@ mod client {
         }
     }
 }
-
-#[cfg(feature = "client")]
-pub use client::VOTE_UPDATE_GAS;

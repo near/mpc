@@ -1032,16 +1032,13 @@ impl MpcCluster {
             .context("failed to send verify_foreign_transaction request")
     }
 
-    /// Upgrades a contract running the production binary through that binary's update API
-    /// (`propose_update`, then `vote_update(id)` until the threshold vote deploys). Pair with
-    /// [`Self::ensure_deployed_code`]: the deploy and `migrate()` promise runs asynchronously,
-    /// and a panicking `migrate` rolls the deploy back without changing the threshold-reached
-    /// signal.
+    /// Propose a contract code update and cast votes until `vote_update` reports
+    /// the threshold reached, through the update API of the production binary the
+    /// cluster runs. Pair with [`Self::ensure_deployed_code`]: the deploy
+    /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
+    /// rolls the deploy back without changing the threshold-reached signal.
     #[expect(deprecated)]
-    pub async fn legacy_propose_and_vote_contract_update(
-        &self,
-        new_wasm: &[u8],
-    ) -> anyhow::Result<()> {
+    pub async fn propose_and_vote_contract_update(&self, new_wasm: &[u8]) -> anyhow::Result<()> {
         use near_mpc_contract_interface::legacy::{ProposeUpdateArgs, UpdateId};
 
         anyhow::ensure!(

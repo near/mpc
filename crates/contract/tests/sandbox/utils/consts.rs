@@ -24,7 +24,8 @@ pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
 /// approved.
 pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for `submit_update` of a contract binary, which hashes the payload,
-/// deploys it and runs the migration function.
-pub const MAX_GAS_FOR_SUBMIT_UPDATE: Gas = Gas::from_tgas(190);
+/// deploys it and runs the migration function. Hashing the payload on-chain accounts for
+/// roughly 24 GGas per byte of it.
+pub const MAX_GAS_FOR_SUBMIT_UPDATE: Gas = Gas::from_tgas(210);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);

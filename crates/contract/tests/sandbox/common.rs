@@ -28,6 +28,8 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+#[expect(deprecated)]
+use near_mpc_contract_interface::legacy::{ProposeUpdateArgs, UpdateId};
 use near_mpc_contract_interface::types::{
     AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosFinality, AptosRpcRequest,
     AptosTxId, Curve, DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -335,16 +337,89 @@ impl SandboxTestSetupBuilder {
     }
 }
 
-/// Upgrades the given contract to `new_contract_binary`.
+/// Upgrades the given contract to the [`current_contract`] binary.
 ///
 /// This function:
-/// 1. Casts votes for the binary's hash until it is approved.
-/// 2. Submits the binary from `accounts[0]`.
+/// 1. Submits a proposal to upgrade the contract.
+/// 2. Casts votes until the proposal is executed.
 /// 3. Verifies the contract was upgraded by checking the contract's binary.
 ///
 /// Panics if:
-/// - A vote or the submission fails,
+/// - The proposal transaction fails,
+/// - The state call is not deserializable,
 /// - Or the post-upgrade code does not match the expected binary.
+///
+/// Only contracts running the production binary still take this flow; the current contract
+/// takes [`vote_and_submit_contract_binary`].
+#[expect(deprecated)]
+pub async fn propose_and_vote_contract_binary(
+    accounts: &[Account],
+    contract: &Contract,
+    new_contract_binary: &[u8],
+) {
+    let propose_update_execution = accounts[0]
+        .call_mpc(contract.id())
+        .propose_update(ProposeUpdateArgs {
+            code: Some(new_contract_binary.to_vec()),
+            config: None,
+        })
+        .await
+        .expect("propose update call succeeds");
+
+    assert!(
+        propose_update_execution.is_success(),
+        "propose update call failed"
+    );
+
+    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+
+    // Try calling into state and see if it works.
+    let state_request_execution = accounts[0]
+        .call(contract.id(), method_names::STATE)
+        .transact()
+        .await
+        .expect("state request succeeds");
+
+    let _state: ProtocolContractState = state_request_execution
+        .json()
+        .expect("state is deserializable.");
+
+    vote_update_till_completion(contract, accounts, proposal_id).await;
+
+    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
+    assert_eq!(
+        hash(new_contract_binary),
+        hash(&contract_binary_post_upgrade),
+        "Code hash post upgrade is not matching the proposed binary."
+    );
+}
+
+#[expect(deprecated)]
+pub async fn vote_update_till_completion(
+    contract: &Contract,
+    accounts: &[Account],
+    proposal_id: UpdateId,
+) {
+    for voter in accounts {
+        let execution = voter
+            .call_mpc(contract.id())
+            .vote_update_by_id(proposal_id)
+            .await
+            .unwrap();
+
+        dbg!(&execution);
+
+        let update_occurred: bool = execution.json().expect("Vote cast was unsuccessful");
+
+        if update_occurred {
+            return;
+        }
+    }
+    panic!("Update didn't occurred")
+}
+
+/// [`propose_and_vote_contract_binary`] for the current contract: votes for the binary's hash
+/// until it is approved, then submits the binary from `accounts[0]`.
 pub async fn vote_and_submit_contract_binary(
     accounts: &[Account],
     contract: &Contract,

@@ -1,9 +1,6 @@
 //! Contract updates: participants vote for the [`UpdateHash`] of an [`Update`], and while a
 //! governance threshold of them backs that hash, a participant may submit the payload.
 
-pub use near_mpc_contract_interface::method_names::{
-    SUBMIT_UPDATE as SUBMIT_UPDATE_METHOD_NAME, VOTE_UPDATE as VOTE_UPDATE_METHOD_NAME,
-};
 pub use near_mpc_contract_interface::types::{Hash256, Update, UpdateHash};
 use sha2::{Digest, Sha256};
 

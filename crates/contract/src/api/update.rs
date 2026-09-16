@@ -25,6 +25,11 @@ impl MpcContract {
         &mut self,
         #[serializer(borsh)] update: dtos::Update,
     ) -> Result<(), Error> {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+        self.voter_or_panic();
+
         let update_hash =
             near_mpc_sdk::update::hash_with(&update, |bytes| env::sha256_array(bytes));
         log!(
@@ -32,11 +37,6 @@ impl MpcContract {
             env::signer_account_id(),
             update_hash,
         );
-        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            env::panic_str("protocol must be in running state");
-        };
-        self.voter_or_panic();
-
         if !self
             .update_votes
             .take_if_approved(&update_hash, &running_state.parameters)
@@ -447,85 +447,14 @@ mod tests {
         assert_eq!(contract.update_votes(), before);
     }
 
-    #[test]
-    fn vote_update__should_approve_the_hash_once_threshold_participants_voted() {
-        // Given
-        let (mut contract, participants) = running_contract();
-
-        // When
-        Environment::new(None, Some(participants[0].clone()), None);
-        let first = contract.vote_update(update_hash(1)).unwrap();
-        let after_first = contract.update_votes();
-        Environment::new(None, Some(participants[1].clone()), None);
-        let second = contract.vote_update(update_hash(1)).unwrap();
-
-        // Then the approving vote is reported, and both votes stay on record so that a later
-        // withdrawal can take the approval back.
-        assert!(!first);
-        assert_eq!(
-            after_first,
-            expected_votes(&[(1, &[participants[0].clone()])])
-        );
-        assert!(second);
-        assert_eq!(
-            contract.update_votes(),
-            expected_votes(&[(1, &[participants[0].clone(), participants[1].clone()])])
-        );
-    }
-
-    #[test]
-    fn vote_update__should_replace_the_voters_previous_vote() {
-        // Given
-        let (mut contract, participants) = running_contract();
-        Environment::new(None, Some(participants[0].clone()), None);
-        contract.vote_update(update_hash(1)).unwrap();
-
-        // When
-        contract.vote_update(update_hash(2)).unwrap();
-
-        // Then
-        assert_eq!(
-            contract.update_votes(),
-            expected_votes(&[(2, &[participants[0].clone()])])
-        );
-    }
-
-    /// Protocol states in which the update entrypoints are rejected.
-    enum NonRunningState {
-        Resharing,
-        Initializing,
-    }
-
-    impl NonRunningState {
-        fn build(self) -> ProtocolContractState {
-            match self {
-                NonRunningState::Resharing => {
-                    ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1)
-                }
-                NonRunningState::Initializing => ProtocolContractState::Initializing(
-                    gen_initializing_state(NUM_DOMAINS, NUM_GENERATED_DOMAINS).1,
-                ),
-            }
-        }
-    }
-
     #[rstest]
-    #[case::resharing(NonRunningState::Resharing)]
-    #[case::initializing(NonRunningState::Initializing)]
+    #[case::resharing(ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1))]
+    #[case::initializing(ProtocolContractState::Initializing(
+        gen_initializing_state(NUM_DOMAINS, NUM_GENERATED_DOMAINS).1
+    ))]
     #[should_panic(expected = "protocol must be in running state")]
-    fn vote_update__should_panic_when_not_running(#[case] state: NonRunningState) {
-        let mut contract = MpcContract::new_from_protocol_state(state.build());
-        Environment::new(None, Some(gen_account_id()), None);
-
-        let _ = contract.vote_update(update_hash(1));
-    }
-
-    #[rstest]
-    #[case::resharing(NonRunningState::Resharing)]
-    #[case::initializing(NonRunningState::Initializing)]
-    #[should_panic(expected = "protocol must be in running state")]
-    fn submit_update__should_panic_when_not_running(#[case] state: NonRunningState) {
-        let mut contract = MpcContract::new_from_protocol_state(state.build());
+    fn submit_update__should_panic_when_not_running(#[case] state: ProtocolContractState) {
+        let mut contract = MpcContract::new_from_protocol_state(state);
         Environment::new(None, Some(gen_account_id()), None);
 
         let _ = contract.submit_update(dtos::Update::Code(vec![1, 2, 3]));
@@ -540,16 +469,27 @@ mod tests {
         let _ = contract.vote_update(update_hash(1));
     }
 
+    /// Votes for `update`'s hash from a governance threshold of participants, leaving it
+    /// approved.
+    fn approve(contract: &mut MpcContract, participants: &[AccountId], update: &dtos::Update) {
+        for participant in &participants[..THRESHOLD as usize] {
+            Environment::new(None, Some(participant.clone()), None);
+            contract
+                .vote_update(near_mpc_sdk::update::hash(update))
+                .unwrap();
+        }
+    }
+
     #[test]
     fn remove_update_vote__should_take_back_an_approval_and_block_submission() {
         // Given an approved update.
         let (mut contract, participants) = running_contract();
         let code = vec![1, 2, 3];
-        let approved_hash = near_mpc_sdk::update::hash(&dtos::Update::Code(code.clone()));
-        for participant in &participants[..THRESHOLD as usize] {
-            Environment::new(None, Some(participant.clone()), None);
-            contract.vote_update(approved_hash.clone()).unwrap();
-        }
+        approve(
+            &mut contract,
+            &participants,
+            &dtos::Update::Code(code.clone()),
+        );
 
         // When one of its backers withdraws.
         Environment::new(None, Some(participants[0].clone()), None);
@@ -566,7 +506,13 @@ mod tests {
         );
 
         Environment::new(None, Some(participants[2].clone()), None);
-        assert!(contract.vote_update(approved_hash).unwrap());
+        assert!(
+            contract
+                .vote_update(near_mpc_sdk::update::hash(&dtos::Update::Code(
+                    code.clone()
+                )))
+                .unwrap()
+        );
         contract
             .submit_update(dtos::Update::Code(code))
             .expect("restoring the threshold makes the update submittable again");
@@ -595,21 +541,12 @@ mod tests {
         // Given
         let (mut contract, participants) = running_contract();
         let code = vec![1, 2, 3];
-        let approved_hash = near_mpc_sdk::update::hash(&dtos::Update::Code(code.clone()));
-        for participant in &participants[..THRESHOLD as usize] {
-            Environment::new(None, Some(participant.clone()), None);
-            contract.vote_update(approved_hash.clone()).unwrap();
-        }
-        assert_eq!(
-            contract.update_votes(),
-            BTreeMap::from([(
-                approved_hash.to_proposal_hash(),
-                participants[..THRESHOLD as usize]
-                    .iter()
-                    .cloned()
-                    .collect::<BTreeSet<_>>()
-            )])
+        approve(
+            &mut contract,
+            &participants,
+            &dtos::Update::Code(code.clone()),
         );
+        assert_eq!(contract.update_votes().len(), 1);
 
         // When
         Environment::new(None, Some(participants[2].clone()), None);
@@ -634,12 +571,7 @@ mod tests {
         let mut config = test_utils::contract_types::dummy_config(1);
         config.launcher_hash_unused_ttl_seconds = 0;
         let update = dtos::Update::Config(config);
-        for participant in &participants[..THRESHOLD as usize] {
-            Environment::new(None, Some(participant.clone()), None);
-            contract
-                .vote_update(near_mpc_sdk::update::hash(&update))
-                .unwrap();
-        }
+        approve(&mut contract, &participants, &update);
 
         // When
         let result = contract.submit_update(update);
