@@ -189,24 +189,6 @@ expression: abi
         }
       },
       {
-        "name": "code_hash_votes",
-        "doc": " Returns pending code hash votes.",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/AuthenticatedAccountId"
-              },
-              "uniqueItems": true
-            }
-          }
-        }
-      },
-      {
         "name": "conclude_node_migration",
         "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid",
         "kind": "call",
@@ -633,6 +615,24 @@ expression: abi
               ],
               "maxItems": 2,
               "minItems": 2
+            }
+          }
+        }
+      },
+      {
+        "name": "mpc_node_manifest_digest_votes",
+        "doc": " Returns pending MPC node manifest digest votes.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
             }
           }
         }

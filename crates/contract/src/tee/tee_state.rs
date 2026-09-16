@@ -329,7 +329,7 @@ impl TeeState {
         }
     }
 
-    pub fn vote_mpc_node_image_hash(
+    pub fn vote_mpc_node_manifest_digest(
         &mut self,
         code_hash: NodeImageHash,
         voter: &AuthenticatedAccountId,
@@ -1667,7 +1667,7 @@ mod tests {
         let node_image_hash = NodeImageHash::from([0xAA; 32]);
         let mut tee_state = TeeState::default();
         for voter in &voters {
-            tee_state.vote_mpc_node_image_hash(node_image_hash, voter);
+            tee_state.vote_mpc_node_manifest_digest(node_image_hash, voter);
         }
         assert_eq!(
             tee_state.votes.all(),
@@ -1690,7 +1690,7 @@ mod tests {
             )])
         );
         let vote_count = tee_state
-            .vote_mpc_node_image_hash(node_image_hash, &voters[2])
+            .vote_mpc_node_manifest_digest(node_image_hash, &voters[2])
             .count_participants(&new_participants);
         assert_eq!(vote_count, 1, "only P2's vote should count toward quorum");
     }

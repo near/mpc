@@ -27,7 +27,7 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let votes = self
             .tee_state
-            .vote_mpc_node_image_hash(code_hash, &voter)
+            .vote_mpc_node_manifest_digest(code_hash, &voter)
             .count_participants(threshold_parameters.participants());
         log!("total votes for proposal: {}", votes);
 
@@ -207,8 +207,8 @@ impl MpcContract {
         (&self.tee_state.launcher_votes).into_dto_type()
     }
 
-    /// Returns pending code hash votes.
-    pub fn code_hash_votes(&self) -> dtos::CodeHashesVotes {
+    /// Returns pending MPC node manifest digest votes.
+    pub fn mpc_node_manifest_digest_votes(&self) -> dtos::CodeHashesVotes {
         (&self.tee_state.votes).into_dto_type()
     }
 
@@ -621,19 +621,19 @@ mod tests {
         );
     }
 
-    /// Tests the [`MpcContract::code_hash_votes`] view method:
+    /// Tests the [`MpcContract::mpc_node_manifest_digest_votes`] view method:
     /// 1. Starts empty
     /// 2. After each vote, asserts registered votes match expected values
     /// 3. After threshold is reached, votes are cleared
     #[test]
-    fn code_hash_votes__should_list_voters_until_the_threshold_clears_them() {
+    fn mpc_node_manifest_digest_votes__should_list_voters_until_the_threshold_clears_them() {
         // Given
         let num_participants = 4;
         let threshold = 3;
         let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
         let code_hash = dtos::NodeImageHash::from([0xAB; 32]);
-        assert!(contract.code_hash_votes().is_empty());
+        assert!(contract.mpc_node_manifest_digest_votes().is_empty());
 
         let mut expected_voters = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
@@ -651,7 +651,7 @@ mod tests {
                 .expect("vote should succeed");
 
             // Then
-            let votes = contract.code_hash_votes();
+            let votes = contract.mpc_node_manifest_digest_votes();
             if i < (threshold - 1) as usize {
                 assert_eq!(votes.len(), 1);
                 assert_eq!(votes[&code_hash], expected_voters);

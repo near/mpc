@@ -2159,7 +2159,7 @@ Returns the list of currently-accepted image hashes, most recent first.
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  code_hash_votes \
+  mpc_node_manifest_digest_votes \
   json-args '{}' \
   network-config testnet \
   now
