@@ -621,7 +621,7 @@ expression: abi
       },
       {
         "name": "mpc_node_manifest_digest_votes",
-        "doc": " Returns pending MPC node manifest digest votes.",
+        "doc": " Returns pending MPC node manifest digest votes, may include former participants' votes",
         "kind": "view",
         "result": {
           "serialization_type": "json",

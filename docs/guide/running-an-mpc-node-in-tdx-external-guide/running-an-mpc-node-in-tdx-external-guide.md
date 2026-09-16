@@ -2165,7 +2165,7 @@ near contract call-function as-read-only \
   now
 ```
 
-Shows the voters grouped by the image hash they voted for, so you can see how many more votes are needed to reach threshold.
+Shows the voters grouped by the image hash they voted for. May include former participants' votes, which don't count toward the threshold.
 
 ### Update the MPC Node
 

@@ -207,7 +207,7 @@ impl MpcContract {
         (&self.tee_state.launcher_votes).into_dto_type()
     }
 
-    /// Returns pending MPC node manifest digest votes.
+    /// Returns pending MPC node manifest digest votes, may include former participants' votes
     pub fn mpc_node_manifest_digest_votes(&self) -> dtos::CodeHashesVotes {
         (&self.tee_state.votes).into_dto_type()
     }
