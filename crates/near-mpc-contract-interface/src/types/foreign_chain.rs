@@ -1743,9 +1743,11 @@ pub enum ForeignTxNegativeVerdict {
 /// `msg_hash` that the MPC network signs. Callers select the payload version
 /// via [`VerifyForeignTransactionRequestArgs::payload_version`].
 ///
-/// IMPORTANT: Never reorder existing enum variants or struct fields, as this
-/// would change the Borsh encoding and break signature verification. Append
-/// new variants only, so existing variant ordinals stay stable.
+/// The variants are payload versions; new outcomes are added to the newest
+/// version's outcome enum, not to this enum. IMPORTANT: Never reorder existing
+/// enum variants or struct fields, as this would change the Borsh encoding and
+/// break signature verification. Append new variants only, so existing variant
+/// ordinals stay stable.
 #[derive(
     Debug,
     Clone,
@@ -1765,10 +1767,7 @@ pub enum ForeignTxNegativeVerdict {
 )]
 pub enum ForeignTxSignPayload {
     V1(ForeignTxSignPayloadV1),
-    NegativeVerdict {
-        request: ForeignChainRpcRequest,
-        verdict: ForeignTxNegativeVerdict,
-    },
+    V2(ForeignTxSignPayloadV2),
 }
 
 #[derive(
@@ -1793,6 +1792,52 @@ pub struct ForeignTxSignPayloadV1 {
     pub values: Vec<ExtractedValue>,
 }
 
+/// Version two payload: the original request echoed back with the validation
+/// outcome. The outcome enum is append-only, so new outcomes never shift the
+/// Borsh ordinal of existing ones.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct ForeignTxSignPayloadV2 {
+    pub request: ForeignChainRpcRequest,
+    pub outcome: ForeignTxSignPayloadV2Outcome,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub enum ForeignTxSignPayloadV2Outcome {
+    NegativeVerdict(ForeignTxNegativeVerdict),
+}
+
 impl ForeignTxSignPayload {
     pub fn new(
         version: ForeignTxPayloadVersion,
@@ -1802,6 +1847,16 @@ impl ForeignTxSignPayload {
         match version {
             ForeignTxPayloadVersion::V1 => Self::V1(ForeignTxSignPayloadV1 { request, values }),
         }
+    }
+
+    pub fn negative_verdict(
+        request: ForeignChainRpcRequest,
+        verdict: ForeignTxNegativeVerdict,
+    ) -> Self {
+        Self::V2(ForeignTxSignPayloadV2 {
+            request,
+            outcome: ForeignTxSignPayloadV2Outcome::NegativeVerdict(verdict),
+        })
     }
 
     pub fn compute_msg_hash(&self) -> std::io::Result<Hash256> {
@@ -2272,10 +2327,10 @@ mod tests {
             request: request.clone(),
             values: vec![],
         });
-        let negative_payload = ForeignTxSignPayload::NegativeVerdict {
+        let negative_payload = ForeignTxSignPayload::negative_verdict(
             request,
-            verdict: ForeignTxNegativeVerdict::TransactionNotFound,
-        };
+            ForeignTxNegativeVerdict::TransactionNotFound,
+        );
 
         // When
         let success_hash = success_payload.compute_msg_hash().unwrap();
