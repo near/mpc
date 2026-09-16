@@ -22,16 +22,20 @@ use borsh::BorshSerialize;
 pub(crate) use mpc_primitives::hash::{PROPOSAL_HASH_BYTES, ProposalHash};
 
 pub(crate) trait SerializeProposal<T> {
-    fn serialize(value: &T) -> Vec<u8>;
+    type Output;
+
+    fn serialize(value: &T) -> Self::Output;
 }
 
-pub(crate) trait HashProposal {
-    fn hash(bytes: &[u8]) -> ProposalHash;
+pub(crate) trait HashProposal<B> {
+    fn hash(bytes: B) -> ProposalHash;
 }
 
 pub(crate) struct Borsh;
 
 impl<T: BorshSerialize> SerializeProposal<T> for Borsh {
+    type Output = Vec<u8>;
+
     fn serialize(value: &T) -> Vec<u8> {
         borsh::to_vec(value).expect("borsh serialization must succeed")
     }
@@ -39,36 +43,34 @@ impl<T: BorshSerialize> SerializeProposal<T> for Borsh {
 
 pub(crate) struct Sha256;
 
-impl HashProposal for Sha256 {
-    fn hash(bytes: &[u8]) -> ProposalHash {
-        ProposalHash::new(near_sdk::env::sha256_array(bytes))
+impl<B: AsRef<[u8]>> HashProposal<B> for Sha256 {
+    fn hash(bytes: B) -> ProposalHash {
+        ProposalHash::new(near_sdk::env::sha256_array(bytes.as_ref()))
     }
 }
 
 pub(crate) struct Identity;
 
 impl<T: AsRef<[u8; PROPOSAL_HASH_BYTES]>> SerializeProposal<T> for Identity {
-    fn serialize(value: &T) -> Vec<u8> {
-        value.as_ref().to_vec()
+    type Output = [u8; PROPOSAL_HASH_BYTES];
+
+    fn serialize(value: &T) -> [u8; PROPOSAL_HASH_BYTES] {
+        *value.as_ref()
     }
 }
 
-impl HashProposal for Identity {
-    fn hash(bytes: &[u8]) -> ProposalHash {
-        ProposalHash::new(
-            bytes
-                .try_into()
-                .unwrap_or_else(|_| panic!("identity digest must be {PROPOSAL_HASH_BYTES} bytes")),
-        )
+impl HashProposal<[u8; PROPOSAL_HASH_BYTES]> for Identity {
+    fn hash(bytes: [u8; PROPOSAL_HASH_BYTES]) -> ProposalHash {
+        ProposalHash::new(bytes)
     }
 }
 
 pub(crate) trait ToProposalHash: Sized {
     type Serializer: SerializeProposal<Self>;
-    type Hasher: HashProposal;
+    type Hasher: HashProposal<<Self::Serializer as SerializeProposal<Self>>::Output>;
 
     fn to_proposal_hash(&self) -> ProposalHash {
-        Self::Hasher::hash(&Self::Serializer::serialize(self))
+        Self::Hasher::hash(Self::Serializer::serialize(self))
     }
 }
 
