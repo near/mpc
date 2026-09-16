@@ -242,25 +242,20 @@ where
             let recorder = self.recorder.clone();
             join_set.spawn(async move {
                 // Started inside the task so the clock excludes scheduling delay. A task aborted
-                // before its first poll made no call and reports nothing. Reporting waits for the
-                // comparison below, which decides whether an answer is an answer or a dissent;
-                // an abandoned task reports from `Drop`.
-                let call = TimedCall::start(recorder, provider.clone());
+                // before its first poll made no call and reports nothing.
+                let mut call = TimedCall::start(recorder, provider.clone());
                 let result = inspector.extract(tx_id, finality, extractors).await;
-                (provider, call, result)
+                call.report(result.as_ref().err().and_then(|err| err.provider_failure()));
+                (provider, result)
             });
         }
 
-        let mut answers: Vec<(
-            ProviderId,
-            TimedCall<Recorder>,
-            Verdict<Self::ExtractedValue>,
-        )> = Vec::new();
+        let mut verdicts: Vec<(ProviderId, Verdict<Self::ExtractedValue>)> = Vec::new();
         let mut first_error: Option<ForeignChainInspectionError> = None;
 
-        for (provider, mut call, result) in join_set.join_all().await {
+        for (provider, result) in join_set.join_all().await {
             match result {
-                Ok(verdict) => answers.push((provider, call, verdict)),
+                Ok(verdict) => verdicts.push((provider, verdict)),
                 Err(err) => {
                     if err.provider_failure() == Some(ProviderFailure::Malformed) {
                         tracing::error!(
@@ -275,46 +270,33 @@ where
                             "fan-out inspector failed to reach a verdict",
                         );
                     }
-                    call.report(err.provider_failure());
                     first_error.get_or_insert(err);
                 }
             }
         }
 
-        if answers.is_empty() {
+        let mut verdicts = verdicts.into_iter();
+        let Some((first_provider, first_verdict)) = verdicts.next() else {
             return Err(first_error.expect(
                 "inspectors is a `NonEmptyVec`, so with no verdicts at least one error must \
                  have been recorded",
             ));
         };
-        let (first_provider, mut first_call, first_verdict) = answers.remove(0);
 
-        let (agreeing, dissenting): (Vec<_>, Vec<_>) = answers
-            .into_iter()
-            .partition(|(_, _, verdict)| *verdict == first_verdict);
-
-        first_call.report(None);
-        for (_, mut call, _) in agreeing {
-            call.report(None);
-        }
-        if dissenting.is_empty() {
-            return Ok(first_verdict);
-        }
-
-        let dissenting_verdicts: Vec<_> = dissenting
-            .iter()
-            .map(|(provider, _, verdict)| (provider, verdict))
+        let disagreeing: Vec<_> = verdicts
+            .filter(|(_, verdict)| *verdict != first_verdict)
             .collect();
-        tracing::error!(
-            %first_provider,
-            ?first_verdict,
-            ?dissenting_verdicts,
-            "fan-out: inspectors returned mismatching verdicts",
-        );
-        for (_, mut call, _) in dissenting {
-            call.report(Some(ProviderFailure::MismatchedVerdict));
+        if !disagreeing.is_empty() {
+            tracing::error!(
+                %first_provider,
+                ?first_verdict,
+                ?disagreeing,
+                "fan-out: inspectors returned mismatching verdicts",
+            );
+            return Err(ForeignChainInspectionError::InspectorResponseMismatch);
         }
-        Err(ForeignChainInspectionError::InspectorResponseMismatch)
+
+        Ok(first_verdict)
     }
 }
 
@@ -571,9 +553,6 @@ pub enum ProviderFailure {
     Rejected,
     /// The provider answered with something the caller could not use.
     Malformed,
-    /// The provider answered, but differently from its peers, so the fan-out failed the
-    /// unanimity check.
-    MismatchedVerdict,
     TimedOut,
 }
 

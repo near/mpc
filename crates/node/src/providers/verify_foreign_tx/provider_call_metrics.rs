@@ -72,23 +72,16 @@ enum Kind {
     Transient,
     NonTransient,
     Timeout,
-    Mismatched,
 }
 
 impl Kind {
-    const ALL: [Self; 4] = [
-        Self::Transient,
-        Self::NonTransient,
-        Self::Timeout,
-        Self::Mismatched,
-    ];
+    const ALL: [Self; 3] = [Self::Transient, Self::NonTransient, Self::Timeout];
 
     fn label(self) -> &'static str {
         match self {
             Self::Transient => "transient",
             Self::NonTransient => "non_transient",
             Self::Timeout => "timeout",
-            Self::Mismatched => "mismatched",
         }
     }
 }
@@ -99,7 +92,6 @@ impl From<ProviderFailure> for Kind {
             ProviderFailure::Unreachable => Self::Transient,
             ProviderFailure::Rejected | ProviderFailure::Malformed => Self::NonTransient,
             ProviderFailure::TimedOut => Self::Timeout,
-            ProviderFailure::MismatchedVerdict => Self::Mismatched,
         }
     }
 }
@@ -147,7 +139,6 @@ mod tests {
             Some(ProviderFailure::Rejected),
             Some(ProviderFailure::Malformed),
             Some(ProviderFailure::TimedOut),
-            Some(ProviderFailure::MismatchedVerdict),
         ] {
             recorder.record(&provider, Duration::from_millis(10), failure);
         }
@@ -157,7 +148,6 @@ mod tests {
         assert_eq!(errored(chain, "p0", Kind::Transient), 1);
         assert_eq!(errored(chain, "p0", Kind::NonTransient), 2);
         assert_eq!(errored(chain, "p0", Kind::Timeout), 1);
-        assert_eq!(errored(chain, "p0", Kind::Mismatched), 1);
     }
 
     #[test]
@@ -209,6 +199,6 @@ mod tests {
             count("mpc_foreign_chain_provider_inspection_seconds_count"),
             1
         );
-        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 4);
+        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 3);
     }
 }

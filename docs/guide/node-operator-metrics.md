@@ -69,8 +69,6 @@ are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
 * `timeout`: the provider did not answer before the node gave up, either at its
   deadline or at shutdown. The node waits for every provider, so outside
   shutdowns a timeout fails the whole check for that chain.
-* `mismatched`: the provider answered, but differently from its peers, so the
-  check fails for the whole chain even though every provider answered.
 
 Reading the numbers:
 
@@ -90,8 +88,11 @@ Reading the numbers:
   sits on a block outside the canonical chain is an answer. Only failure to
   answer counts as an error.
 * A provider whose answers disagree with its peers also fails the whole check
-  for that chain. Its answers still count as answers here, and the providers
-  that disagreed are counted under `kind="mismatched"`.
+  for that chain, and these metrics do not show it: its answers count as
+  answers here, since a provider that answers differently is not necessarily
+  malfunctioning; it may just be slow and lag behind its peers. The node counts
+  the failed check itself under `mpc_num_verify_foreign_tx_verdict_mismatches`,
+  and the node logs name the providers that disagreed.
 * Every configured provider's series appears, at zero, as soon as the node
   serves requests, so an idle node reports zero rather than nothing. Solana can
   be configured but is not checked, so it never appears.

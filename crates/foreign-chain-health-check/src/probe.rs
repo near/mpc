@@ -197,9 +197,6 @@ fn classify(
             Some(ProviderFailure::Rejected) => ProviderStatus::RequestRejected,
             Some(ProviderFailure::TimedOut) => ProviderStatus::TimedOut,
             Some(ProviderFailure::Malformed) => ProviderStatus::MalformedResponse,
-            // The probe never compares verdicts, so no provider can be reported as
-            // disagreeing here.
-            Some(ProviderFailure::MismatchedVerdict) => ProviderStatus::MalformedResponse,
             // Probing does not inspect transactions, so an answer about transaction state
             // means an impl answered outside its contract.
             None => ProviderStatus::MalformedResponse,
