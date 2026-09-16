@@ -175,7 +175,7 @@ async fn test_vote_mpc_node_manifest_digest_doesnt_accept_account_id_not_in_part
 
     let res = random_account
         .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
-        .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
+        .args_json(serde_json::json!({"mpc_node_manifest_digest": allowed_mpc_image_digest}))
         .transact()
         .await?;
     let Err(err) = res.into_result() else {
@@ -209,7 +209,7 @@ async fn test_vote_mpc_node_manifest_digest_accepts_allowed_mpc_image_digest_hex
         .first()
         .unwrap()
         .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
-        .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
+        .args_json(serde_json::json!({"mpc_node_manifest_digest": allowed_mpc_image_digest}))
         .transact()
         .await?;
     assert!(res.is_success());

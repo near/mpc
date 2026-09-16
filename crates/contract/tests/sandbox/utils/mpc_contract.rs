@@ -167,9 +167,8 @@ pub async fn vote_for_hash(
     image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
-        .args_json(serde_json::json!({"mpc_node_manifest_digest": image_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(*image_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())

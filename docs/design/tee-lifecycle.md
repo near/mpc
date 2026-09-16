@@ -239,7 +239,7 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 
 | Method | Contract | Description |
 |--------|----------|-------------|
-| `vote_mpc_node_manifest_digest(code_hash)` | All | Vote for a new Docker image hash |
+| `vote_mpc_node_manifest_digest(mpc_node_manifest_digest)` | All | Vote for a new Docker image hash |
 | `vote_add_launcher_hash(launcher_hash)` | All | Vote for a new launcher image hash (threshold) |
 | `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes also auto-expire — see [auto-removal of unused launcher hashes](../archive/design/auto-remove-launcher-hashes-design.md) |
 | `vote_foreign_chain_policy(policy)` | MPC, HOT | Vote on trusted RPC providers per chain |

@@ -24,17 +24,15 @@ use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, NodeImageHash,
-    ParticipantId, ParticipantInfo, Participants, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
-    ReconstructionThreshold, UpdateId, protocol_state_to_string,
+    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, ParticipantId,
+    ParticipantInfo, Participants, ProposeUpdateArgs, ProposedGovernanceThresholdParameters,
+    Protocol, ProtocolContractState, ReconstructionThreshold, UpdateId, protocol_state_to_string,
 };
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use node_types::http_server::StaticWebData;
 use rand::rngs::OsRng;
 use reqwest::Client;
-use serde::Serialize;
 use std::sync::Arc;
 
 impl ListMpcCmd {
@@ -774,25 +772,12 @@ impl MpcVoteApprovedHashCmd {
 
         for account_id in accounts.iter().take(threshold as usize) {
             let account = setup.accounts.account(account_id);
-            let key = account.any_access_key_handle();
-            let contract = contract.clone();
+            let handle = account.call_mpc(&contract);
             let mpc_node_manifest_digest = self.mpc_docker_image_hash.into();
 
             voting_futures.push(async move {
-                key.lock()
-                    .await
-                    .submit_tx_to_call_function(
-                        &contract,
-                        method_names::VOTE_MPC_NODE_MANIFEST_DIGEST,
-                        &serde_json::to_vec(&VoteMpcNodeManifestDigestArgs {
-                            mpc_node_manifest_digest,
-                        })
-                        .unwrap(),
-                        300,
-                        0,
-                        near_primitives::views::TxExecutionStatus::Final,
-                        true,
-                    )
+                handle
+                    .vote_mpc_node_manifest_digest(mpc_node_manifest_digest)
                     .await
             });
         }
@@ -850,11 +835,6 @@ pub async fn read_contract_state(
             panic!("Unexpected error: {:?}", err);
         }
     }
-}
-
-#[derive(Serialize)]
-struct VoteMpcNodeManifestDigestArgs {
-    mpc_node_manifest_digest: NodeImageHash,
 }
 
 impl MpcDescribeCmd {
