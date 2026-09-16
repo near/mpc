@@ -17,14 +17,14 @@ use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
 use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
-use foreign_chain_inspector::{EthereumFinality, FanOut, ForeignChainInspector};
+use foreign_chain_inspector::{EthereumFinality, ForeignChainInspector};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::metrics;
 use crate::primitives::ParticipantId;
-use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
+use crate::providers::verify_foreign_tx::{MeasuredFanOut, VerifyForeignTxTaskId};
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
@@ -550,7 +550,7 @@ impl VerifyForeignTxProvider {
 }
 
 async fn execute_svm_request<Chain>(
-    inspector: &FanOut<SvmInspector<HttpClient, Chain>>,
+    inspector: &MeasuredFanOut<SvmInspector<HttpClient, Chain>>,
     request: &dtos::SvmRpcRequest,
 ) -> anyhow::Result<Vec<dtos::ExtractedValue>>
 where

@@ -8,7 +8,8 @@ use crate::metrics;
 
 /// Records provider calls under pseudonymous labels (`p0`, `p1`, ...). The `/metrics`
 /// endpoint is public, so real provider names would reveal which RPC vendors the node uses.
-pub(super) struct ProviderCallMetrics {
+#[derive(Clone)]
+pub(crate) struct ProviderCallMetrics {
     chain: ForeignChain,
     labels: BTreeMap<ProviderId, String>,
 }
