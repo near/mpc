@@ -47,10 +47,13 @@ verification traffic, and an hourly probe that needs no traffic.
 
 ### During traffic
 
-When a transaction must be checked, the node asks every provider configured for
-that chain and compares their answers. Each provider gets two series, labeled
-with the `chain` (the key it is configured under, such as `bitcoin`) and the
-`provider` (its name in the same config):
+Each provider gets two metrics, labeled with the `chain` (the key it is
+configured under, such as `bitcoin`) and a `provider` pseudonym, so the
+public metrics endpoint never shows which RPC vendors you use. The pseudonyms
+are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
+(`Alchemy` sorts before `alchemy`): with providers `alchemy`, `quicknode`, and
+`ankr`, `alchemy` becomes `p0`, `ankr` becomes `p1`, and `quicknode` becomes
+`p2`. Adding, removing, or renaming a provider in the config shifts the labels after it.
 
 | Metric | What it tracks |
 | --- | --- |
@@ -71,7 +74,10 @@ Reading the numbers:
 
 * Error counts should stay at zero. Start with `non_transient`, then `timeout`;
   `transient` often clears on its own.
-* For latency, compare providers of the same chain with each other. The top
+* For latency, compare providers of the same chain with each other. To see a
+  whole chain in one graph instead, `sum by (chain)` aggregates over the
+  providers, and keeping `provider` in the `by` clause keeps them separate;
+  the same works for the error counters. The top
   bucket is the deadline the node enforces, and one observation is a whole
   check (one to three RPC calls), not a single round trip. A provider drifting
   toward the top bucket is the one to watch.

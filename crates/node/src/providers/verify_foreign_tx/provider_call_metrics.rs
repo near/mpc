@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use foreign_chain_inspector::{ProviderFailure, RecordProviderCall};
@@ -5,8 +6,11 @@ use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 
 use crate::metrics;
 
+/// Records provider calls under pseudonymous labels (`p0`, `p1`, ...). The `/metrics`
+/// endpoint is public, so real provider names would reveal which RPC vendors the node uses.
 pub(super) struct ProviderCallMetrics {
     chain: ForeignChain,
+    labels: BTreeMap<ProviderId, String>,
 }
 
 impl ProviderCallMetrics {
@@ -14,31 +18,49 @@ impl ProviderCallMetrics {
         chain: ForeignChain,
         providers: impl IntoIterator<Item = &'a ProviderId>,
     ) -> Self {
-        for provider in providers {
+        let mut names: Vec<_> = providers.into_iter().collect();
+        names.sort();
+        let labels: BTreeMap<_, _> = names
+            .into_iter()
+            .enumerate()
+            .map(|(index, provider)| (provider.clone(), format!("p{index}")))
+            .collect();
+        for label in labels.values() {
             metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
-                .with_label_values(&[chain.label(), &provider.0]);
+                .with_label_values(&[chain.label(), label]);
             for kind in Kind::ALL {
                 metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL.with_label_values(&[
                     chain.label(),
-                    &provider.0,
+                    label,
                     kind.label(),
                 ]);
             }
         }
-        Self { chain }
+        Self { chain, labels }
     }
 }
 
 impl RecordProviderCall for ProviderCallMetrics {
     fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>) {
+        // The node builds fan-out and this recorder from the same provider list, so this is
+        // unreachable in practice. If this were to happen somehow, we drop the observation
+        // instead of panicing.
+        let Some(label) = self.labels.get(provider) else {
+            tracing::debug!(
+                chain = self.chain.label(),
+                %provider,
+                "provider call reported for an unknown provider; dropping the observation"
+            );
+            return;
+        };
         let Some(failure) = failure else {
             metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
-                .with_label_values(&[self.chain.label(), &provider.0])
+                .with_label_values(&[self.chain.label(), label])
                 .observe(elapsed.as_secs_f64());
             return;
         };
         metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-            .with_label_values(&[self.chain.label(), &provider.0, Kind::from(failure).label()])
+            .with_label_values(&[self.chain.label(), label, Kind::from(failure).label()])
             .inc();
     }
 }
@@ -82,6 +104,26 @@ mod tests {
 
     const PROVIDER: &str = "a-provider";
 
+    fn timed(chain: ForeignChain, label: &str) -> u64 {
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .with_label_values(&[chain.label(), label])
+            .get_sample_count()
+    }
+
+    fn errored(chain: ForeignChain, label: &str, kind: Kind) -> u64 {
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
+            .with_label_values(&[chain.label(), label, kind.label()])
+            .get()
+    }
+
+    fn exposed_registry() -> String {
+        let mut buffer = Vec::new();
+        prometheus::TextEncoder::new()
+            .encode(&prometheus::default_registry().gather(), &mut buffer)
+            .unwrap();
+        String::from_utf8(buffer).unwrap()
+    }
+
     #[test]
     fn provider_call_metrics__should_time_answers_and_count_failures() {
         // Given
@@ -101,18 +143,37 @@ mod tests {
         }
 
         // Then
-        let timed = metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
-            .with_label_values(&[chain.label(), PROVIDER])
-            .get_sample_count();
-        assert_eq!(timed, 1);
-        let counted = |kind: &str| {
-            metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-                .with_label_values(&[chain.label(), PROVIDER, kind])
-                .get()
-        };
-        assert_eq!(counted(Kind::Transient.label()), 1);
-        assert_eq!(counted(Kind::NonTransient.label()), 2);
-        assert_eq!(counted(Kind::Timeout.label()), 1);
+        assert_eq!(timed(chain, "p0"), 1);
+        assert_eq!(errored(chain, "p0", Kind::Transient), 1);
+        assert_eq!(errored(chain, "p0", Kind::NonTransient), 2);
+        assert_eq!(errored(chain, "p0", Kind::Timeout), 1);
+    }
+
+    #[test]
+    fn provider_call_metrics__should_assign_labels_by_sorted_provider_name() {
+        // Given
+        let chain = ForeignChain::Starknet;
+        let providers: Vec<ProviderId> = ["zeta", "alpha", "mid"]
+            .into_iter()
+            .map(|name| ProviderId(name.to_string()))
+            .collect();
+        let recorder = ProviderCallMetrics::new(chain, &providers);
+
+        // When: the alphabetically middle provider answers once and fails once.
+        recorder.record(&providers[2], Duration::from_millis(10), None);
+        recorder.record(
+            &providers[2],
+            Duration::from_millis(10),
+            Some(ProviderFailure::Unreachable),
+        );
+
+        // Then: its series is p1, not p2, so input order does not matter.
+        assert_eq!(timed(chain, "p1"), 1);
+        assert_eq!(errored(chain, "p1", Kind::Transient), 1);
+        assert_eq!(timed(chain, "p0"), 0);
+        assert_eq!(timed(chain, "p2"), 0);
+        assert_eq!(errored(chain, "p0", Kind::Transient), 0);
+        assert_eq!(errored(chain, "p2", Kind::Transient), 0);
     }
 
     #[test]
@@ -122,25 +183,21 @@ mod tests {
             ProviderCallMetrics::new(ForeignChain::Ethereum, [&ProviderId(PROVIDER.to_string())]);
 
         // Then
-        let mut buffer = Vec::new();
-        prometheus::TextEncoder::new()
-            .encode(&prometheus::default_registry().gather(), &mut buffer)
-            .unwrap();
-        let exposed = String::from_utf8(buffer).unwrap();
-        let series = |metric: &str| {
+        let exposed = exposed_registry();
+        let count = |metric: &str| {
             exposed
                 .lines()
                 .filter(|line| {
                     line.starts_with(metric)
                         && line.contains(r#"chain="ethereum""#)
-                        && line.contains(r#"provider="a-provider""#)
+                        && line.contains(r#"provider="p0""#)
                 })
                 .count()
         };
         assert_eq!(
-            series("mpc_foreign_chain_provider_inspection_seconds_count"),
+            count("mpc_foreign_chain_provider_inspection_seconds_count"),
             1
         );
-        assert_eq!(series("mpc_foreign_chain_provider_errors_total"), 3);
+        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 3);
     }
 }

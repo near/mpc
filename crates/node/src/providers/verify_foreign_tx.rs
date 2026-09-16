@@ -276,22 +276,32 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU64;
 
-    fn provider_of(chain: ForeignChain) -> String {
-        format!("{}-wiring", chain.label())
+    fn provider_names(chain: ForeignChain) -> [String; 2] {
+        let label = chain.label();
+        [format!("{label}-wiring-a"), format!("{label}-wiring-b")]
+    }
+
+    fn provider(name: &str) -> (RpcProviderName, ForeignChainProviderConfig) {
+        (
+            RpcProviderName::from(name.to_string()),
+            ForeignChainProviderConfig {
+                rpc_url: "http://127.0.0.1:1/".to_string(),
+                auth: AuthConfig::None,
+            },
+        )
     }
 
     fn chain_config(chain: ForeignChain) -> Option<ForeignChainConfig> {
+        let [a, b] = provider_names(chain);
+        let (a_name, a_config) = provider(&a);
+        let (b_name, b_config) = provider(&b);
+        let mut providers = NonEmptyBTreeMap::new(a_name, a_config);
+        providers.insert(b_name, b_config);
         Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(1).unwrap(),
             max_retries: NonZeroU64::new(1).unwrap(),
             expected_network_fingerprint: None,
-            providers: NonEmptyBTreeMap::new(
-                RpcProviderName::from(provider_of(chain)),
-                ForeignChainProviderConfig {
-                    rpc_url: "http://127.0.0.1:1/".to_string(),
-                    auth: AuthConfig::None,
-                },
-            ),
+            providers,
         })
     }
 
@@ -315,7 +325,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn foreign_chain_inspectors_build__should_label_each_chain_by_its_own_config_key() {
+    async fn foreign_chain_inspectors_build__should_wire_provider_metrics_for_every_configured_chain()
+     {
         // Given
         let config = ForeignChainsConfig {
             bitcoin: chain_config(Bitcoin),
@@ -341,8 +352,10 @@ mod tests {
         // Then
         let published = published_inspection_series();
         for (chain, _) in config.iter_chains() {
-            let series = (chain.label().to_string(), provider_of(chain));
-            assert!(published.contains(&series), "{series:?} was not published");
+            for index in 0..2 {
+                let series = (chain.label().to_string(), format!("p{index}"));
+                assert!(published.contains(&series), "{series:?} was not published");
+            }
         }
     }
 
