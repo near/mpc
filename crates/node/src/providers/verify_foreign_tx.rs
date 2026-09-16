@@ -1,4 +1,7 @@
+mod provider_call_metrics;
 mod sign;
+
+pub(crate) use sign::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::network::NetworkTaskChannel;
@@ -30,7 +33,8 @@ use mpc_node_config::{
     ConfigFile, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
 };
 use mpc_primitives::ReconstructionThreshold;
-use near_mpc_contract_interface::types::ProviderId;
+use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
+use provider_call_metrics::ProviderCallMetrics;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -61,6 +65,7 @@ pub(crate) struct ForeignChainInspectors<Client> {
 impl ForeignChainInspectors<HttpClient> {
     fn build(config: &ForeignChainsConfig) -> anyhow::Result<Self> {
         fn build_fanout<I>(
+            chain: ForeignChain,
             chain_config: Option<&ForeignChainConfig>,
             new_inspector: impl Fn(&ForeignChainProviderConfig, Duration) -> anyhow::Result<I>,
         ) -> anyhow::Result<Option<FanOut<I>>> {
@@ -72,7 +77,9 @@ impl ForeignChainInspectors<HttpClient> {
                 let inspector = new_inspector(p, timeout)?;
                 anyhow::Ok((ProviderId(name.as_str().to_owned()), inspector))
             })?;
-            Ok(Some(FanOut::new(inspectors)))
+            let providers = inspectors.iter().map(|(provider, _)| provider);
+            let recorder = ProviderCallMetrics::new(chain, providers);
+            Ok(Some(FanOut::new(inspectors).measuring(Arc::new(recorder))))
         }
 
         /// Adapts an inspector constructor over a jsonrpsee [`HttpClient`] to `build_fanout`'s
@@ -111,106 +118,77 @@ impl ForeignChainInspectors<HttpClient> {
 
         Ok(Self {
             bitcoin: build_fanout(
+                ForeignChain::Bitcoin,
                 config.bitcoin.as_ref(),
                 with_http_client(BitcoinInspector::new),
             )?,
             ethereum: build_fanout(
+                ForeignChain::Ethereum,
                 config.ethereum.as_ref(),
                 with_http_client(EthereumInspector::new),
             )?,
             abstract_chain: build_fanout(
+                ForeignChain::Abstract,
                 config.abstract_chain.as_ref(),
                 with_http_client(AbstractInspector::new),
             )?,
-            base: build_fanout(config.base.as_ref(), with_http_client(BaseInspector::new))?,
-            bnb: build_fanout(config.bnb.as_ref(), with_http_client(BnbInspector::new))?,
+            base: build_fanout(
+                ForeignChain::Base,
+                config.base.as_ref(),
+                with_http_client(BaseInspector::new),
+            )?,
+            bnb: build_fanout(
+                ForeignChain::Bnb,
+                config.bnb.as_ref(),
+                with_http_client(BnbInspector::new),
+            )?,
             starknet: build_fanout(
+                ForeignChain::Starknet,
                 config.starknet.as_ref(),
                 with_http_client(StarknetInspector::new),
             )?,
             arbitrum: build_fanout(
+                ForeignChain::Arbitrum,
                 config.arbitrum.as_ref(),
                 with_http_client(ArbitrumInspector::new),
             )?,
             hyper_evm: build_fanout(
+                ForeignChain::HyperEvm,
                 config.hyper_evm.as_ref(),
                 with_http_client(HyperEvmInspector::new),
             )?,
             polygon: build_fanout(
+                ForeignChain::Polygon,
                 config.polygon.as_ref(),
                 with_http_client(PolygonInspector::new),
             )?,
             avalanche: build_fanout(
+                ForeignChain::Avalanche,
                 config.avalanche.as_ref(),
                 with_http_client(AvalancheInspector::new),
             )?,
-            adi: build_fanout(config.adi.as_ref(), with_http_client(AdiInspector::new))?,
-            aptos: build_fanout(config.aptos.as_ref(), new_aptos_inspector)?,
-            sui: build_fanout(config.sui.as_ref(), new_sui_inspector)?,
+            adi: build_fanout(
+                ForeignChain::Adi,
+                config.adi.as_ref(),
+                with_http_client(AdiInspector::new),
+            )?,
+            aptos: build_fanout(
+                ForeignChain::Aptos,
+                config.aptos.as_ref(),
+                new_aptos_inspector,
+            )?,
+            sui: build_fanout(ForeignChain::Sui, config.sui.as_ref(), new_sui_inspector)?,
             solana: build_fanout(
+                ForeignChain::Solana,
                 config.solana.as_ref(),
                 with_http_client(SolanaInspector::new),
             )?,
-            fogo: build_fanout(config.fogo.as_ref(), with_http_client(FogoInspector::new))?,
+            fogo: build_fanout(
+                ForeignChain::Fogo,
+                config.fogo.as_ref(),
+                with_http_client(FogoInspector::new),
+            )?,
         })
-    }
-}
-
-/// The chain markers cannot check which *config* feeds `build` — a
-/// `config.solana`/`config.fogo` swap still type-checks — so these tests pin it.
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod tests {
-    use super::*;
-    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
-    use near_mpc_bounded_collections::NonEmptyBTreeMap;
-    use std::num::NonZeroU64;
-
-    fn chain_config() -> ForeignChainConfig {
-        ForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).unwrap(),
-            max_retries: NonZeroU64::new(3).unwrap(),
-            expected_network_fingerprint: None,
-            providers: NonEmptyBTreeMap::new(
-                "public".to_string().into(),
-                ForeignChainProviderConfig {
-                    rpc_url: "https://rpc.example.com".to_string(),
-                    auth: AuthConfig::None,
-                },
-            ),
-        }
-    }
-
-    #[test]
-    fn build__should_wire_the_solana_config_to_the_solana_slot_only() {
-        // Given
-        let config = ForeignChainsConfig {
-            solana: Some(chain_config()),
-            ..Default::default()
-        };
-
-        // When
-        let inspectors = ForeignChainInspectors::build(&config).unwrap();
-
-        // Then
-        assert!(inspectors.solana.is_some());
-        assert!(inspectors.fogo.is_none());
-    }
-
-    #[test]
-    fn build__should_wire_the_fogo_config_to_the_fogo_slot_only() {
-        // Given
-        let config = ForeignChainsConfig {
-            fogo: Some(chain_config()),
-            ..Default::default()
-        };
-
-        // When
-        let inspectors = ForeignChainInspectors::build(&config).unwrap();
-
-        // Then
-        assert!(inspectors.fogo.is_some());
-        assert!(inspectors.solana.is_none());
     }
 }
 
@@ -283,5 +261,122 @@ impl VerifyForeignTxProvider {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use ForeignChain::*;
+    use mpc_node_config::AuthConfig;
+    use mpc_node_config::foreign_chains::RpcProviderName;
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use prometheus::core::Collector as _;
+    use std::collections::BTreeSet;
+    use std::num::NonZeroU64;
+
+    fn provider_of(chain: ForeignChain) -> String {
+        format!("{}-wiring", chain.label())
+    }
+
+    fn chain_config(chain: ForeignChain) -> Option<ForeignChainConfig> {
+        Some(ForeignChainConfig {
+            timeout_sec: NonZeroU64::new(1).unwrap(),
+            max_retries: NonZeroU64::new(1).unwrap(),
+            expected_network_fingerprint: None,
+            providers: NonEmptyBTreeMap::new(
+                RpcProviderName::from(provider_of(chain)),
+                ForeignChainProviderConfig {
+                    rpc_url: "http://127.0.0.1:1/".to_string(),
+                    auth: AuthConfig::None,
+                },
+            ),
+        })
+    }
+
+    fn published_inspection_series() -> BTreeSet<(String, String)> {
+        crate::metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .collect()
+            .iter()
+            .flat_map(|family| family.get_metric())
+            .map(|metric| {
+                let label = |name: &str| {
+                    metric
+                        .get_label()
+                        .iter()
+                        .find(|pair| pair.name() == name)
+                        .map(|pair| pair.value().to_string())
+                        .unwrap_or_default()
+                };
+                (label("chain"), label("provider"))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn foreign_chain_inspectors_build__should_label_each_chain_by_its_own_config_key() {
+        // Given
+        let config = ForeignChainsConfig {
+            bitcoin: chain_config(Bitcoin),
+            ethereum: chain_config(Ethereum),
+            abstract_chain: chain_config(Abstract),
+            starknet: chain_config(Starknet),
+            bnb: chain_config(Bnb),
+            base: chain_config(Base),
+            arbitrum: chain_config(Arbitrum),
+            hyper_evm: chain_config(HyperEvm),
+            polygon: chain_config(Polygon),
+            aptos: chain_config(Aptos),
+            sui: chain_config(Sui),
+            avalanche: chain_config(Avalanche),
+            adi: chain_config(Adi),
+            solana: chain_config(Solana),
+            fogo: chain_config(Fogo),
+        };
+
+        // When
+        ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        let published = published_inspection_series();
+        for (chain, _) in config.iter_chains() {
+            let series = (chain.label().to_string(), provider_of(chain));
+            assert!(published.contains(&series), "{series:?} was not published");
+        }
+    }
+
+    // The chain markers cannot check which *config* feeds `build` — a
+    // `config.solana`/`config.fogo` swap still type-checks — so these pin it.
+    #[test]
+    fn build__should_wire_the_solana_config_to_the_solana_slot_only() {
+        // Given
+        let config = ForeignChainsConfig {
+            solana: chain_config(Solana),
+            ..Default::default()
+        };
+
+        // When
+        let inspectors = ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        assert!(inspectors.solana.is_some());
+        assert!(inspectors.fogo.is_none());
+    }
+
+    #[test]
+    fn build__should_wire_the_fogo_config_to_the_fogo_slot_only() {
+        // Given
+        let config = ForeignChainsConfig {
+            fogo: chain_config(Fogo),
+            ..Default::default()
+        };
+
+        // When
+        let inspectors = ForeignChainInspectors::build(&config).unwrap();
+
+        // Then
+        assert!(inspectors.fogo.is_some());
+        assert!(inspectors.solana.is_none());
     }
 }
