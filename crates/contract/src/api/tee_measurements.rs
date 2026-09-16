@@ -4,7 +4,7 @@
 
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
-use crate::primitives::key_state::AuthenticatedParticipantId;
+use crate::primitives::key_state::{AuthenticatedAccountId, AuthenticatedParticipantId};
 use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
@@ -24,8 +24,12 @@ impl MpcContract {
 
         let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
 
-        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash, &participant);
+        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
+        let votes = self
+            .tee_state
+            .vote_mpc_node_manifest_digest(code_hash, voter)
+            .count_participants(threshold_parameters.participants());
+        log!("total votes for proposal: {}", votes);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -203,8 +207,8 @@ impl MpcContract {
         (&self.tee_state.launcher_votes).into_dto_type()
     }
 
-    /// Returns the current code hash votes, showing each participant's vote.
-    pub fn code_hash_votes(&self) -> dtos::CodeHashesVotes {
+    /// Returns pending MPC node manifest digest votes, may include former participants' votes
+    pub fn mpc_node_manifest_digest_votes(&self) -> dtos::CodeHashesVotes {
         (&self.tee_state.votes).into_dto_type()
     }
 
@@ -229,17 +233,20 @@ impl MpcContract {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::*;
+    use super::{Duration, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use rstest::rstest;
+    use std::collections::BTreeSet;
 
     #[rstest]
     #[case(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
@@ -614,20 +621,21 @@ mod tests {
         );
     }
 
-    /// Tests the [`code_hash_votes()`] view method:
+    /// Tests the [`MpcContract::mpc_node_manifest_digest_votes`] view method:
     /// 1. Starts empty
-    /// 2. After each vote, reflects the correct participant and hash
+    /// 2. After each vote, asserts registered votes match expected values
     /// 3. After threshold is reached, votes are cleared
     #[test]
-    fn test_code_hash_votes_view() {
+    fn mpc_node_manifest_digest_votes__should_list_voters_until_the_threshold_clears_them() {
+        // Given
         let num_participants = 4;
         let threshold = 3;
         let (mut contract, participants, _) = setup_tee_test_contract(num_participants, threshold);
         let participant_list = participants.participants();
         let code_hash = dtos::NodeImageHash::from([0xAB; 32]);
+        assert!(contract.mpc_node_manifest_digest_votes().is_empty());
 
-        assert!(contract.code_hash_votes().proposal_by_account.is_empty());
-
+        let mut expected_voters = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
             testing_env!(
                 VMContextBuilder::new()
@@ -635,14 +643,18 @@ mod tests {
                     .predecessor_account_id(account.clone())
                     .build()
             );
+            expected_voters.insert(dtos::AuthenticatedAccountId(account.clone()));
+
+            // When
             contract
                 .vote_code_hash(code_hash)
                 .expect("vote should succeed");
 
-            let votes = &contract.code_hash_votes().proposal_by_account;
+            // Then
+            let votes = contract.mpc_node_manifest_digest_votes();
             if i < (threshold - 1) as usize {
-                assert_eq!(votes.len(), i + 1);
-                assert!(votes.values().all(|v| *v == code_hash));
+                assert_eq!(votes.len(), 1);
+                assert_eq!(votes[&code_hash], expected_voters);
             } else {
                 assert!(
                     votes.is_empty(),

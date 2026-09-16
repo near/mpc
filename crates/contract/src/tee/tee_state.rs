@@ -1,10 +1,15 @@
 use crate::{
-    primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
+    primitives::{
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
+        participants::Participants,
+        proposal_hash::ToProposalHash,
+        votes::{VoterSet, Votes},
+    },
     storage_keys::StorageKey,
     tee::measurements::{AllowedMeasurements, MeasurementVotes},
     tee::proposal::{
-        AllowedLauncherImageInsertion, AllowedLauncherImages, CodeHashesVotes, LauncherHashVotes,
-        NodeImageHash, StoredDockerImageHashes,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, LauncherHashVotes, NodeImageHash,
+        StoredDockerImageHashes,
     },
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -77,7 +82,7 @@ pub(crate) struct NodeAttestation {
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: StoredDockerImageHashes,
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
-    pub(crate) votes: CodeHashesVotes,
+    pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: LauncherHashVotes,
     /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
@@ -93,7 +98,10 @@ impl Default for TeeState {
         Self {
             allowed_docker_image_hashes: Default::default(),
             allowed_launcher_images: Default::default(),
-            votes: Default::default(),
+            votes: Votes::new(
+                StorageKey::CodeHashVotesByVoter,
+                StorageKey::CodeHashVotesByProposal,
+            ),
             launcher_votes: Default::default(),
             stored_attestations: IterableMap::new(StorageKey::StoredAttestations),
             allowed_measurements: Default::default(),
@@ -321,12 +329,12 @@ impl TeeState {
         }
     }
 
-    pub fn vote(
+    pub fn vote_mpc_node_manifest_digest(
         &mut self,
         code_hash: NodeImageHash,
-        participant: &AuthenticatedParticipantId,
-    ) -> u64 {
-        self.votes.vote(code_hash, participant)
+        voter: AuthenticatedAccountId,
+    ) -> &VoterSet<AuthenticatedAccountId> {
+        self.votes.vote(voter, code_hash.to_proposal_hash())
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -352,7 +360,7 @@ impl TeeState {
         tee_proposal: NodeImageHash,
         tee_upgrade_deadline_duration: Duration,
     ) {
-        self.votes.clear_votes();
+        self.votes.clear();
         // Add compose hashes for the new MPC image across all allowed launcher images
         self.allowed_launcher_images
             .add_mpc_image_compose_hashes(&tee_proposal);
@@ -460,7 +468,8 @@ impl TeeState {
     /// concludes. Attestation cleanup is handled separately by
     /// [`TeeState::clean_invalid_attestations`].
     pub fn clean_non_participant_votes(&mut self, participants: &Participants) {
-        self.votes = self.votes.get_remaining_votes(participants);
+        self.votes
+            .retain_votes(|voter: &AuthenticatedAccountId| participants.is_participant(voter));
         self.launcher_votes = self.launcher_votes.get_remaining_votes(participants);
         self.measurement_votes = self.measurement_votes.get_remaining_votes(participants);
     }
@@ -612,8 +621,8 @@ pub(crate) enum AttestationCheckError {
 mod tests {
     use super::*;
     use crate::primitives::test_utils::{
-        authenticate_as, bogus_ed25519_near_public_key, bogus_ed25519_public_key, create_node_id,
-        gen_participant, gen_participants, node_id_for,
+        authenticate_account_as, authenticate_as, bogus_ed25519_near_public_key,
+        bogus_ed25519_public_key, create_node_id, gen_participant, gen_participants, node_id_for,
     };
     use crate::tee::test_utils::{set_block_timestamp, whitelist_dstack_measurements};
     use assert_matches::assert_matches;
@@ -622,6 +631,7 @@ mod tests {
     use near_account_id::AccountId;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::time::Duration;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
@@ -1633,17 +1643,16 @@ mod tests {
         assert_eq!(stored.node_id, node_id);
     }
 
-    /// Stale CodeHashesVotes entries from removed participants must not count toward
+    /// Stale code-hash votes from removed participants must not count toward
     /// quorum after resharing.
     ///
     /// Scenario (N=5, T=3):
-    /// 1. P1 and P2 vote for malicious hash before resharing.
-    /// 2. Resharing removes P1 and P2. New set: {P3, P4, P5}.
-    /// 3. clean_non_participant_votes removes stale votes.
-    /// 4. P3 votes for the same hash — only 1 vote, not 3.
+    /// 1. P0, P1 and P2 vote for a node image hash before resharing.
+    /// 2. Resharing removes P0 and P1. New set: {P2, P3, P4}.
+    /// 3. clean_non_participant_votes keeps only P2's vote — 1 vote toward quorum, not 3.
     #[test]
-    fn test_clean_non_participant_votes_removes_stale_votes() {
-        // Build 5 participants
+    fn clean_non_participant_votes__should_keep_only_votes_of_current_participants() {
+        // Given
         let mut all_participants = Participants::new();
         let mut account_ids = Vec::new();
         for i in 0..5 {
@@ -1651,31 +1660,35 @@ mod tests {
             account_ids.push(account_id.clone());
             all_participants.insert(account_id, info).unwrap();
         }
-
+        let voters: Vec<_> = account_ids[..3]
+            .iter()
+            .map(|account_id| authenticate_account_as(account_id, &all_participants))
+            .collect();
+        let node_image_hash = NodeImageHash::from([0xAA; 32]);
         let mut tee_state = TeeState::default();
-
-        // P0 and P1 vote for a malicious hash before resharing
-        let malicious_hash = NodeImageHash::from([0xAA; 32]);
-        for account_id in &account_ids[0..2] {
-            let auth_id = authenticate_as(account_id, &all_participants);
-            tee_state.votes.vote(malicious_hash, &auth_id);
+        for voter in &voters {
+            tee_state.vote_mpc_node_manifest_digest(node_image_hash, voter.clone());
         }
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 2);
-
-        // Resharing removes P0 and P1. New participant set: {P2, P3, P4}.
+        assert_eq!(
+            tee_state.votes.all(),
+            BTreeMap::from([(
+                node_image_hash.to_proposal_hash(),
+                voters.iter().cloned().collect::<BTreeSet<_>>(),
+            )])
+        );
         let new_participants = all_participants.subset(2..5);
 
-        // Clean non-participants (as done by CLEAN_TEE_STATUS after resharing)
+        // When
         tee_state.clean_non_participant_votes(&new_participants);
 
-        // Stale votes must be removed
-        assert_eq!(tee_state.votes.proposal_by_account.len(), 0);
-
-        // P2 votes for the same malicious hash — should be only 1 vote, not 3
-        let p2_account = &account_ids[2];
-        let auth_id = authenticate_as(p2_account, &new_participants);
-        let vote_count = tee_state.votes.vote(malicious_hash, &auth_id);
-        assert_eq!(vote_count, 1, "Only the fresh vote from P2 should count");
+        // Then
+        assert_eq!(
+            tee_state.votes.all(),
+            BTreeMap::from([(
+                node_image_hash.to_proposal_hash(),
+                BTreeSet::from([voters[2].clone()]),
+            )])
+        );
     }
 
     /// Verifies that clean_non_participants also removes stale launcher and measurement votes.

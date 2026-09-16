@@ -19,7 +19,7 @@ method:   allowed_os_measurements
 args:     {}
 
 contract: mpc.near
-method:   code_hash_votes
+method:   mpc_node_manifest_digest_votes
 args:     {}
 
 contract: mpc.near

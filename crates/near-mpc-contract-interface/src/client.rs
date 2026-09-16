@@ -23,12 +23,13 @@ use crate::deposits::{
 };
 use crate::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES,
-    ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, CODE_HASH_VOTES, INIT, LAUNCHER_HASH_VOTES,
-    OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG,
-    REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN, START_NODE_MIGRATION,
-    SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE,
-    VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS,
-    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_OS_MEASUREMENTS, CANCEL_NODE_MIGRATION, INIT, LAUNCHER_HASH_VOTES,
+    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY, SIGN,
+    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
+    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, CKDAppPublicKey,
@@ -396,8 +397,8 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(ALLOWED_OS_MEASUREMENTS))
     }
 
-    pub fn code_hash_votes(&self) -> ViewCall<C, CodeHashesVotes> {
-        self.view(ViewArgs::no_args(CODE_HASH_VOTES))
+    pub fn mpc_node_manifest_digest_votes(&self) -> ViewCall<C, CodeHashesVotes> {
+        self.view(ViewArgs::no_args(MPC_NODE_MANIFEST_DIGEST_VOTES))
     }
 
     pub fn launcher_hash_votes(&self) -> ViewCall<C, LauncherHashVotes> {
@@ -699,7 +700,7 @@ mod tests {
         let _ = handle.allowed_launcher_image_hashes().await;
         let _ = handle.allowed_launcher_compose_hashes().await;
         let _ = handle.allowed_os_measurements().await;
-        let _ = handle.code_hash_votes().await;
+        let _ = handle.mpc_node_manifest_digest_votes().await;
         let _ = handle.launcher_hash_votes().await;
         let _ = handle.os_measurement_votes().await;
 

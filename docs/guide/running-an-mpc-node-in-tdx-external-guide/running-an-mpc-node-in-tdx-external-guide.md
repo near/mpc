@@ -2159,13 +2159,13 @@ Returns the list of currently-accepted image hashes, most recent first.
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  code_hash_votes \
+  mpc_node_manifest_digest_votes \
   json-args '{}' \
   network-config testnet \
   now
 ```
 
-Shows per-participant votes so you can see how many more are needed to reach threshold.
+Shows the voters grouped by the image hash they voted for. May include former participants' votes, which don't count toward the threshold.
 
 ### Update the MPC Node
 

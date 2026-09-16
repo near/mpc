@@ -26,6 +26,7 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
+        votes::Votes,
     },
     state::{
         ProtocolContractState,
@@ -34,10 +35,7 @@ use crate::{
         resharing::ResharingContractState,
         running::RunningContractState,
     },
-    tee::{
-        measurements::MeasurementVotes,
-        proposal::{CodeHashesVotes, LauncherHashVotes},
-    },
+    tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
     update::{ProposedUpdates, Update, UpdateId},
 };
 
@@ -909,15 +907,19 @@ impl IntoInterfaceType<dtos::LauncherHashVotes> for &LauncherHashVotes {
     }
 }
 
-impl IntoInterfaceType<dtos::CodeHashesVotes> for &CodeHashesVotes {
+impl IntoInterfaceType<dtos::CodeHashesVotes> for &Votes<AuthenticatedAccountId> {
     fn into_dto_type(self) -> dtos::CodeHashesVotes {
-        dtos::CodeHashesVotes {
-            proposal_by_account: self
-                .proposal_by_account
-                .iter()
-                .map(|(participant, hash)| (participant.into_dto_type(), *hash))
+        dtos::CodeHashesVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (
+                        dtos::NodeImageHash::new(*proposal),
+                        voters.iter().map(|v| v.into_dto_type()).collect(),
+                    )
+                })
                 .collect(),
-        }
+        )
     }
 }
 
