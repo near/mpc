@@ -11,8 +11,8 @@ pub mod hpke {
     pub type PublicKey = [u8; 32];
 }
 
-/// `Participants` is stored inline in the contract state, which every method deserializes, so the
-/// url is bounded well above real usage — the longest in the mainnet set is 48 bytes.
+/// [`Participants`] is stored inline in the contract state, which every method deserializes, so
+/// the url is bounded well above what a real endpoint needs.
 pub const MAX_PARTICIPANT_URL_BYTES: usize = 256;
 
 #[near(serializers=[borsh])]
@@ -24,7 +24,7 @@ pub struct ParticipantInfo {
 }
 
 impl ParticipantInfo {
-    fn validate_url(&self, account_id: &AccountId) -> Result<(), Error> {
+    pub(crate) fn validate_url(&self, account_id: &AccountId) -> Result<(), Error> {
         if self.url.len() > MAX_PARTICIPANT_URL_BYTES {
             return Err(InvalidCandidateSet::ParticipantUrlTooLong {
                 account_id: account_id.clone(),
@@ -269,13 +269,22 @@ pub mod tests {
         // Given
         let (account_id, info) = participant_with_url("u".repeat(url_len));
         let mut participants = Participants::new();
-        participants.insert(account_id, info).unwrap();
+        participants.insert(account_id.clone(), info).unwrap();
 
         // When
         let result = participants.validate();
 
         // Then
-        assert_eq!(result.is_ok(), is_accepted);
+        let expected = if is_accepted {
+            Ok(())
+        } else {
+            Err(Error::from(InvalidCandidateSet::ParticipantUrlTooLong {
+                account_id,
+                len: url_len,
+                max: MAX_PARTICIPANT_URL_BYTES,
+            }))
+        };
+        assert_eq!(result, expected);
     }
 
     #[test]

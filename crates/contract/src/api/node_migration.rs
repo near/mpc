@@ -76,6 +76,8 @@ impl MpcContract {
     /// # Errors
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
+    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong):
+    ///   if the destination node's url exceeds [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
@@ -105,6 +107,13 @@ impl MpcContract {
         }
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
+        // Validated here rather than only at `conclude_node_migration`, so an operator finds out
+        // before running the migration and the contract does not stake storage for the entry.
+        destination_node_info
+            .destination_node_info
+            .clone()
+            .into_contract_type()
+            .validate_url(&account_id)?;
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
         Ok(())
@@ -174,6 +183,9 @@ impl MpcContract {
     /// - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller
     /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
+    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong):
+    ///   if the destination node's url exceeds [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES). Unreachable for
+    ///   migrations started after the check was added to [`Self::start_node_migration`].
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();
@@ -592,6 +604,37 @@ mod tests {
         let initializing_state = ProtocolContractState::Initializing(initializing_state);
         let contract = MpcContract::new_from_protocol_state(initializing_state);
         test_register_backup_service_success(&participants, contract);
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_url_over_the_byte_limit() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let account_id = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.url =
+            "u".repeat(crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES + 1);
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then the migration is rejected and nothing is stored
+        assert_matches!(
+            result,
+            Err(Error::InvalidCandidateSet(
+                crate::errors::InvalidCandidateSet::ParticipantUrlTooLong { .. }
+            ))
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
     }
 
     #[test]
