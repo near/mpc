@@ -47,7 +47,7 @@ fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
 /// and additional votes don't change the allowed state or latest hash.
 #[tokio::test]
-async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> Result<()> {
     let SandboxTestSetup {
         worker,
         contract,
@@ -99,7 +99,8 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 /// Tests that once a code hash reaches voting threshold and becomes allowed,
 /// it remains in the allowed list even when participants change their votes away from it.
 #[tokio::test]
-async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_changes()
+-> Result<()> {
     let SandboxTestSetup {
         worker,
         contract,
@@ -158,10 +159,11 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     Ok(())
 }
 
-/// Tests that vote_code_hash does not accept votes from a randomly generated
+/// Tests that vote_mpc_node_manifest_digest does not accept votes from a randomly generated
 /// account id that is not in the participant list
 #[tokio::test]
-async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_doesnt_accept_account_id_not_in_participant_list()
+-> Result<()> {
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
@@ -172,13 +174,13 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     let allowed_mpc_image_digest = image_digest();
 
     let res = random_account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
+        .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
         .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
         .transact()
         .await?;
     let Err(err) = res.into_result() else {
         panic!(
-            "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
+            "vote_mpc_node_manifest_digest should not accept votes from a randomly generated account id that is not in the participant list"
         );
     };
     let err_str = format!("{:?}", err);
@@ -190,7 +192,8 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
 }
 
 #[tokio::test]
-async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_accepts_allowed_mpc_image_digest_hex_parameter()
+-> Result<()> {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
@@ -205,7 +208,7 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
     let res = mpc_signer_accounts
         .first()
         .unwrap()
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
+        .call(contract.id(), method_names::VOTE_MPC_NODE_MANIFEST_DIGEST)
         .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
         .transact()
         .await?;

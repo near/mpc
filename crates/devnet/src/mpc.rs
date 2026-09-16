@@ -776,15 +776,18 @@ impl MpcVoteApprovedHashCmd {
             let account = setup.accounts.account(account_id);
             let key = account.any_access_key_handle();
             let contract = contract.clone();
-            let code_hash = self.mpc_docker_image_hash.into();
+            let mpc_node_manifest_digest = self.mpc_docker_image_hash.into();
 
             voting_futures.push(async move {
                 key.lock()
                     .await
                     .submit_tx_to_call_function(
                         &contract,
-                        method_names::VOTE_CODE_HASH,
-                        &serde_json::to_vec(&VoteCodeHashArgs { code_hash }).unwrap(),
+                        method_names::VOTE_MPC_NODE_MANIFEST_DIGEST,
+                        &serde_json::to_vec(&VoteMpcNodeManifestDigestArgs {
+                            mpc_node_manifest_digest,
+                        })
+                        .unwrap(),
                         300,
                         0,
                         near_primitives::views::TxExecutionStatus::Final,
@@ -798,11 +801,14 @@ impl MpcVoteApprovedHashCmd {
         for (participant_index, voting_result) in voting_results.into_iter().enumerate() {
             match voting_result.into_return_value() {
                 Ok(_) => {
-                    println!("Participant {} vote_code_hash succeed", participant_index);
+                    println!(
+                        "Participant {} vote_mpc_node_manifest_digest succeed",
+                        participant_index
+                    );
                 }
                 Err(err) => {
                     println!(
-                        "Participant {} vote_code_hash failed: {:?}",
+                        "Participant {} vote_mpc_node_manifest_digest failed: {:?}",
                         participant_index, err
                     );
                 }
@@ -847,8 +853,8 @@ pub async fn read_contract_state(
 }
 
 #[derive(Serialize)]
-struct VoteCodeHashArgs {
-    code_hash: NodeImageHash,
+struct VoteMpcNodeManifestDigestArgs {
+    mpc_node_manifest_digest: NodeImageHash,
 }
 
 impl MpcDescribeCmd {

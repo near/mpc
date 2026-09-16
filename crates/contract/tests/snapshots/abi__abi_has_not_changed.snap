@@ -2215,13 +2215,13 @@ expression: abi
         }
       },
       {
-        "name": "vote_code_hash",
+        "name": "vote_mpc_node_manifest_digest",
         "kind": "call",
         "params": {
           "serialization_type": "json",
           "args": [
             {
-              "name": "code_hash",
+              "name": "mpc_node_manifest_digest",
               "type_schema": {
                 "$ref": "#/definitions/DockerImageHash"
               }

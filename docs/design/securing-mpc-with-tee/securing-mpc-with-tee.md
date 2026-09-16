@@ -371,7 +371,7 @@ pub struct Contract {
     ///If the vote threshold is reached and the new Docker image hash
     ///   is allowed by the TEE's RTMR3 measurement, the proposed hash is added
     ///   to the whitelist of approved MPC Docker images.
-    pub fn vote_code_hash(&mut self, code_hash: NodeImageHash) -> Result<(), Error>
+    pub fn vote_mpc_node_manifest_digest(&mut self, code_hash: NodeImageHash) -> Result<(), Error>
 
     ///Returns all whitelisted Docker image hashes that have been approved
     ///     by the DAO and verified by the TEE.
@@ -535,7 +535,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
 
-Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_code_hash`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
+Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_mpc_node_manifest_digest`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following
 
 ```yaml
