@@ -6,6 +6,11 @@ license.workspace = true
 repository.workspace = true
 description = "SDK for requesting, verifying threshold signatures from the NEAR MPC network and validation shared between the contract and its clients."
 
+# Never referenced by name: the unit-testing feature provides the mocked ecrecover
+# host functions that near-mpc-signature-verifier needs in native test builds.
+[package.metadata.cargo-shear]
+ignored = ["near-sdk"]
+
 [features]
 abi = [
     "near-mpc-contract-interface/abi",
