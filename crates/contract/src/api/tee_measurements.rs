@@ -27,7 +27,7 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
         let votes = self
             .tee_state
-            .vote_mpc_node_manifest_digest(code_hash, &voter)
+            .vote_mpc_node_manifest_digest(code_hash, voter)
             .count_participants(threshold_parameters.participants());
         log!("total votes for proposal: {}", votes);
 

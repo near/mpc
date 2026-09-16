@@ -332,9 +332,9 @@ impl TeeState {
     pub fn vote_mpc_node_manifest_digest(
         &mut self,
         code_hash: NodeImageHash,
-        voter: &AuthenticatedAccountId,
+        voter: AuthenticatedAccountId,
     ) -> &VoterSet<AuthenticatedAccountId> {
-        self.votes.vote(voter.clone(), code_hash.to_proposal_hash())
+        self.votes.vote(voter, code_hash.to_proposal_hash())
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -1667,7 +1667,7 @@ mod tests {
         let node_image_hash = NodeImageHash::from([0xAA; 32]);
         let mut tee_state = TeeState::default();
         for voter in &voters {
-            tee_state.vote_mpc_node_manifest_digest(node_image_hash, voter);
+            tee_state.vote_mpc_node_manifest_digest(node_image_hash, voter.clone());
         }
         assert_eq!(
             tee_state.votes.all(),
@@ -1690,7 +1690,7 @@ mod tests {
             )])
         );
         let vote_count = tee_state
-            .vote_mpc_node_manifest_digest(node_image_hash, &voters[2])
+            .vote_mpc_node_manifest_digest(node_image_hash, voters[2].clone())
             .count_participants(&new_participants);
         assert_eq!(vote_count, 1, "only P2's vote should count toward quorum");
     }
