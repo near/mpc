@@ -24,6 +24,9 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+k256 = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["k256"] }
+near-sdk = { workspace = true, features = ["unit-testing"] }
 
 [lints]
 workspace = true
