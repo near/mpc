@@ -235,6 +235,7 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
             dtos::VerifyForeignTransactionResponse {
                 payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
+                negative_verdict: None,
             },
         ))
     }

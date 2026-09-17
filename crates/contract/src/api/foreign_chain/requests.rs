@@ -310,6 +310,7 @@ mod tests {
             signature: dtos::SignatureResponse::Secp256k1(
                 dtos::K256Signature::from_ecdsa_recoverable(&signature, recovery_id),
             ),
+            negative_verdict: None,
         };
 
         with_active_participant_and_attested_context(&contract);
@@ -544,6 +545,7 @@ mod tests {
         dtos::VerifyForeignTransactionResponse {
             payload_hash,
             signature,
+            negative_verdict: None,
         }
     }
 
