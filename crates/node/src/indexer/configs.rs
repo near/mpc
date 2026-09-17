@@ -13,12 +13,6 @@ impl IndexerConfigExt for IndexerConfig {
             await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::StreamWhileSyncing,
             finality: self.finality.clone(),
             validate_genesis: self.validate_genesis,
-            // Skipping a block would silently drop the signature requests it carries.
-            // Opting out makes nearcore's streamer panic on a block it cannot build,
-            // which `panic = "abort"` in the shipped `reproducible` profile turns into a
-            // non-zero exit, so the deployment's `restart: on-failure` re-indexes it.
-            // Note this restart only holds for that profile: under unwinding panics the
-            // streamer's task dies alone, the block stream ends, and the node exits 0.
             skip_broken_blocks: false,
         }
     }
