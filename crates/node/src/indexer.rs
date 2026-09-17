@@ -4,6 +4,7 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 
 use self::stats::IndexerStats;
 use anyhow::Context;
+use chain_gateway::account_id_compat::to_near_internal;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
@@ -106,7 +107,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_PENDING_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -146,7 +147,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_PENDING_CKD_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -187,7 +188,7 @@ impl IndexerViewClient {
             .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -227,7 +228,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_ATTESTATION.to_string(),
             args: get_attestation_args.into(),
         };
@@ -276,7 +277,7 @@ impl IndexerViewClient {
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
+            account_id: to_near_internal(&mpc_contract_id),
             method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
             args: vec![].into(),
         };
@@ -344,7 +345,7 @@ impl IndexerViewClient {
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
+            account_id: to_near_internal(&mpc_contract_id),
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };

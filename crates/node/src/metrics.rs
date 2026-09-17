@@ -126,6 +126,17 @@ pub static MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: LazyLock<prometheus::IntC
         .unwrap()
     });
 
+pub static MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_unconvertible_predecessor_ids",
+            "Number of requests dropped because the receipt's predecessor could not be \
+             converted between the two `near-account-id` versions in the dependency graph. \
+             Expected to stay at zero; a non-zero value means those versions have diverged"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_SIGN_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_requests_indexed",

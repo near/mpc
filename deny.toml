@@ -21,7 +21,6 @@ allow = [
 [advisories]
 ignore = [
   "RUSTSEC-2022-0054", # wee_alloc is unmaintained
-  "RUSTSEC-2024-0370", # proc-macro-error is unmaintained
   "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
   "RUSTSEC-2024-0436", # paste is unmaintained
   "RUSTSEC-2024-0384", # instant is unmaintained
@@ -34,13 +33,9 @@ ignore = [
   # shares a Store across Engines and does not depend on `wasmtime-wasi`.
   "RUSTSEC-2026-0222", # wasmtime stores can mix up type indices between engines
   "RUSTSEC-2026-0269", # wasmtime-wasi filesystem sandbox escape via trailing slashes
-  # TODO(#4117): remove once nearcore moves `near-network` off `im`, whose maintained fork is `imbl`.
-  "RUSTSEC-2026-0247", # bitmaps is unmaintained
-  "RUSTSEC-2026-0248", # im is unmaintained
-  "RUSTSEC-2026-0251", # sized-chunks is unmaintained
   # TODO(#4423): remove once nearcore's aws-lc-rs pin lets cargo resolve rustls >= 0.23.45.
   # Fixed in rustls >= 0.23.45, which requires aws-lc-rs ^1.18; nearcore pins aws-lc-rs to
-  # =1.16.2 (2.13.4 and master), so the fix cannot be resolved until that pin moves. The
+  # =1.16.2 (2.14.0-rc.2 and master), so the fix cannot be resolved until that pin moves. The
   # handshake transcript stays authenticated: the flaw only lets a peer send handshake
   # messages that should be encrypted in plaintext without rustls rejecting them.
   "RUSTSEC-2026-0285", # rustls accepts TLS 1.3 handshake messages across encryption levels
