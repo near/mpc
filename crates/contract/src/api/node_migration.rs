@@ -606,6 +606,67 @@ mod tests {
         test_register_backup_service_success(&participants, contract);
     }
 
+    /// Records written before the bound existed stay recoverable: `ongoing_migrations` holds
+    /// the interface type, whose url is unbounded, so `IterableMap::remove` still deserializes.
+    /// TODO(#4456): revisit when the interface type carries the bound.
+    #[test]
+    fn cancel_node_migration__should_clear_a_record_whose_url_exceeds_the_bound() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let account_id = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.url = "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
+        contract
+            .node_migrations
+            .set_destination_node_info(account_id.clone(), destination);
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+
+        // When
+        let result = contract.cancel_node_migration();
+
+        // Then
+        assert_matches!(result, Ok(()));
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+    }
+
+    #[test]
+    fn start_node_migration__should_reject_a_url_over_the_byte_limit() {
+        // Given
+        let running_state = gen_running_state(NUM_DOMAINS);
+        let account_id = running_state.parameters.participants().participants()[0]
+            .0
+            .clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let mut test_env = Environment::new(None, Some(account_id.clone()), None);
+        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
+        let mut destination = gen_random_destination_info();
+        destination.destination_node_info.url = "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
+
+        // When
+        let result = contract.start_node_migration(destination);
+
+        // Then the migration is rejected and nothing is stored
+        assert_matches!(
+            result,
+            Err(Error::InvalidCandidateSet(
+                InvalidCandidateSet::ParticipantUrlTooLong { .. }
+            ))
+        );
+        assert_eq!(
+            migration_info(&contract, &account_id),
+            (account_id.clone(), None, None)
+        );
+    }
+
     #[test]
     fn start_node_migration__should_reject_a_url_over_the_byte_limit() {
         // Given
