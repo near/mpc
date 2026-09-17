@@ -173,13 +173,29 @@ impl BlockEvents {
             return;
         };
 
+        // The two `near-account-id` versions accept identical strings today, so this only
+        // fails if they ever diverge; dropping the event beats failing the whole block.
+        let predecessor_id = match from_near_internal(&receipt.predecessor_id) {
+            Ok(predecessor_id) => predecessor_id,
+            Err(err) => {
+                tracing::error!(
+                    %err,
+                    receipt_id = %receipt.receipt_id,
+                    predecessor_id = %receipt.predecessor_id,
+                    "skipping executor event: predecessor is not a valid account ID for this \
+                     workspace's `near-account-id`",
+                );
+                return;
+            }
+        };
+
         for event_id in executor_event_ids {
             processed_events.push(MatchedEvent {
                 id: *event_id,
                 event_data: EventData::ExecutorFunctionCallSuccessWithPromise(
                     ExecutorFunctionCallSuccessWithPromiseData {
                         receipt_id: receipt.receipt_id,
-                        predecessor_id: from_near_internal(&receipt.predecessor_id),
+                        predecessor_id: predecessor_id.clone(),
                         next_receipt_id: *next_receipt_id,
                         args_raw: args.to_vec(),
                     },

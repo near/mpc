@@ -203,9 +203,10 @@ pprof = { version = "0.15.0", features = [
     "cpp",
     "flamegraph",
 ], default-features = false }
-# Shares the `tikv-jemalloc-ctl 0.6` constraint with `jemalloc_pprof`; needed
-# to render heap dumps as flamegraphs in-process since `jemalloc_pprof` has no
-# built-in `dump_flamegraph`.
+# Shares the `tikv-jemalloc-ctl 0.6` constraint with `jemalloc_pprof`. Used to render
+# heap dumps as flamegraphs in-process. Note `jemalloc_pprof 0.8` gained a built-in
+# `dump_flamegraph`, so the hand-rolled symbolication in `node/src/profiler/jemalloc.rs`
+# can likely go, and this dependency with it.
 pprof_util = "0.8"
 proc-macro2 = "1.0"
 quote = "1.0"
