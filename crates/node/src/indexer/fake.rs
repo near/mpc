@@ -19,6 +19,7 @@ use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::domain::AddDomainsVotes;
+use mpc_contract::primitives::participants::ParticipantUrl;
 use mpc_contract::primitives::{
     domain::DomainRegistry,
     key_state::{EpochId, KeyEventId, Keyset},
@@ -423,7 +424,8 @@ impl FakeMpcContractState {
 pub fn participant_info_from_config(info: &config::ParticipantInfo) -> ParticipantInfo {
     ParticipantInfo {
         tls_public_key: (&info.p2p_public_key).into(),
-        url: format!("http://{}:{}", info.address, info.port),
+        url: ParticipantUrl::new(format!("http://{}:{}", info.address, info.port))
+            .expect("test fixture url must fit the bound"),
     }
 }
 

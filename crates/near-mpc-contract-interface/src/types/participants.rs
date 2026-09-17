@@ -1,9 +1,21 @@
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_bounded_collections::BoundedString;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
 pub use mpc_primitives::ParticipantId;
+
+/// Longest accepted participant url, in bytes.
+///
+/// [`ParticipantInfo`] is stored inline in the contract state, which every contract method
+/// deserializes, so the url is bounded well above what a real endpoint needs.
+pub const MAX_PARTICIPANT_URL_BYTES: usize = 256;
+
+/// A participant url, bounded at [`MAX_PARTICIPANT_URL_BYTES`].
+///
+/// Serializes as a plain string, so the wire format is unchanged.
+pub type ParticipantUrl = BoundedString<MAX_PARTICIPANT_URL_BYTES>;
 
 #[derive(
     Clone,
