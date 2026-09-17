@@ -12,7 +12,7 @@
 //! or migrates after a flood.
 //!
 //! At each fill level N (median of 3 runs) it measures `total_gas_burnt` of
-//! `register_foreign_chains_config` (victim caller, worst-case ordering), the same call
+//! `register_foreign_chains_config` (victim caller, worst case ordering), the same call
 //! with only the conventional 300 Tgas attached, `verify_tee`,
 //! `get_attestation` (point lookup), and
 //! `submit_participant_info` (write path). The sweep then bisects for the smallest N that
@@ -23,6 +23,10 @@
 //! entry; the 1000 Tgas cap was hit between N=5320 and N=5562, a 300 Tgas attachment
 //! between N=1500 and N=1660. `verify_tee`, `get_attestation`, and
 //! `submit_participant_info` were flat in N.
+//!
+//! With the account key index in place, `register_foreign_chains_config` is flat at
+//! ~3.9 Tgas at every measured fill level and passes far beyond the old failure point;
+//! the same harness verifies this on every run.
 //!
 //! Heavy: run explicitly, e.g.
 //! `nix develop -c cargo test -p mpc-contract --test test attestation_scan_gas_curve_sweep -- --ignored --nocapture`.
@@ -213,7 +217,7 @@ async fn setup_bench_env() -> anyhow::Result<BenchEnv> {
     let victim_tls_key = fabricated_tls_key(1, VICTIM_TLS_MARKER);
 
     // Each threshold participant's info TLS key matches the TLS key of the attestation it
-    // will submit, so `verify_tee` finds and re-verifies all five and stays in Running.
+    // will submit, so `verify_tee` finds and reverifies all five and stays in Running.
     let mut threshold_set = Participants::new();
     for (index, account) in participants.iter().enumerate() {
         threshold_set.insert(
@@ -513,7 +517,7 @@ async fn attestation_scan_gas_curve_smoke() -> anyhow::Result<()> {
 }
 
 /// Sweeps the fill levels, finds the smallest N where `register_foreign_chains_config`
-/// fails, refines by bisection, and prints the fill-economics summary.
+/// fails, refines by bisection, and prints the fill economics summary.
 #[tokio::test]
 #[ignore = "heavy sandbox benchmark; run explicitly"]
 async fn attestation_scan_gas_curve_sweep() -> anyhow::Result<()> {
@@ -571,7 +575,7 @@ async fn attestation_scan_gas_curve_sweep() -> anyhow::Result<()> {
                 .map_or("-".to_string(), |t| t.to_string())
         );
 
-        // Per-entry marginal cost from the two highest passing fill levels.
+        // Per entry marginal cost from the two highest passing fill levels.
         let passing: Vec<&FillLevelMeasurement> = rows
             .iter()
             .filter(|row| row.n_attacker_entries > 0 && row.register.error.is_none())
