@@ -48,7 +48,7 @@ The contract tracks the following information:
 
 ## Contract Updates
 
-Contract updates (code or configuration changes) follow a vote-then-submit scheme. Participants vote for the hash of the update (`vote_update`): the SHA-256 of the new code, or of the compact JSON encoding of the new config. An update may be submitted exactly while its hash is backed by a governance threshold of *current* participants; approval is not latched, so withdrawing a vote (`remove_update_vote`) takes it back, and so does a resharing that drops enough of its backers. Any participant can then submit the matching payload (`submit_update`); the contract recomputes its hash, checks the vote count, clears every update vote and applies the update (deploying the code and running `migrate`, or calling `update_config`). Payloads are never stored on-chain; `update_votes` shows the votes keyed by the SHA-256 of the voted hash's JSON encoding.
+Participants can propose and vote on contract updates (code or configuration changes). They do so by voting on the hash of the contract code or config they want to include (via `vote_update`). Once a hash has received sufficient votes, any participant can submit the matching code or config (via `submit_update`).
 
 ## Usage
 
