@@ -306,11 +306,9 @@ fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArg
     Some((args, method_name))
 }
 
-/// Converts a receipt's predecessor into the workspace's `AccountId` flavour, dropping
-/// the request if the two `near-account-id` versions ever disagree on it. The versions
-/// currently accept identical strings (see [`chain_gateway::account_id_compat`]), so this
-/// returning `None` means that equivalence broke — one unusable request is a far better
-/// outcome there than a node that cannot index past the receipt.
+/// `None` means the two `near-account-id` versions disagree on this predecessor
+/// (see [`chain_gateway::account_id_compat`]); the request is dropped rather than
+/// failing the whole block.
 fn try_convert_predecessor_id(receipt: &ReceiptView, method_name: &str) -> Option<AccountId> {
     match from_near_internal(&receipt.predecessor_id) {
         Ok(account_id) => Some(account_id),

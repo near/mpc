@@ -1,25 +1,20 @@
-//! Bridges the two `near-account-id` major versions in our dependency graph.
+//! Bridges the two `near-account-id` major versions in our dependency graph:
+//! `nearcore` is on 3.x while the `near-sdk` stack the rest of the workspace
+//! shares is on 2.x, making the two `AccountId` types distinct to rustc even
+//! though both accept the same set of strings.
 //!
-//! `nearcore` is on `near-account-id 3`, while the crates.io `near-sdk` / `near-kit`
-//! stack that the rest of the workspace shares is still capped at 2.x. That makes
-//! the two `AccountId` types distinct to rustc, even though 3.0 left the validation
-//! rules byte-for-byte unchanged — it only added the `UniversalAccount` classification
-//! for `0u…` addresses. Both versions therefore accept exactly the same set of strings.
-//!
-//! That equivalence is not type-checked, though: it is a property of two version pins
-//! that move independently (`near-account-id` on crates.io, and whatever the nearcore
-//! tag vendors). So only the config-derived direction, [`to_near_internal`], treats it
-//! as an invariant; [`from_near_internal`] runs on chain data and stays fallible, so a
-//! future divergence costs one skipped request instead of the whole node.
+//! Nothing type-checks that equivalence, so only the config-derived direction,
+//! [`to_near_internal`], treats it as an invariant; [`from_near_internal`] runs
+//! on chain data and stays fallible, so a future divergence costs one skipped
+//! request instead of the whole node.
 
 use near_account_id::{AccountId, ParseAccountError};
 use near_indexer_primitives::types::AccountId as NearInternalAccountId;
 
 /// Converts an account ID into the flavour the `nearcore` internals expect.
 ///
-/// Infallible by the equivalence described in the module docs. Callers pass
-/// config-derived IDs, already parsed at startup, so a divergence would surface
-/// as an immediate crash on a value an operator can fix — not mid-stream.
+/// Panics if the two versions diverge (see module docs) — only pass
+/// config-derived IDs, never chain data.
 pub fn to_near_internal(account_id: &AccountId) -> NearInternalAccountId {
     account_id
         .as_str()
@@ -29,9 +24,6 @@ pub fn to_near_internal(account_id: &AccountId) -> NearInternalAccountId {
 
 /// Converts an account ID coming out of the `nearcore` internals into the flavour
 /// the rest of the workspace uses.
-///
-/// Fallible on purpose: the inputs are receipt fields chosen by arbitrary callers, so
-/// this must not be the place the node dies if the two versions ever drift apart.
 pub fn from_near_internal(
     account_id: &NearInternalAccountId,
 ) -> Result<AccountId, ParseAccountError> {
@@ -43,9 +35,8 @@ pub fn from_near_internal(
 mod tests {
     use super::*;
 
-    /// Accepted by both versions: the named, implicit and ETH-implicit flavours, the
-    /// 2- and 64-character length bounds, and one canonical `0u…` address — the only
-    /// shape 3.0 classifies differently (as a `UniversalAccount`).
+    /// Named, implicit, ETH-implicit and universal (`0u…`) flavours, plus both
+    /// length bounds.
     const ACCEPTED_ACCOUNT_IDS: &[&str] = &[
         "alice.near",
         "v1.signer",
@@ -55,12 +46,8 @@ mod tests {
         "0u000g40r40m30e209185gr38e1w8124gk2gahc5rr34d1p70x3rfg",
     ];
 
-    /// Near-misses for the `0u…` scheme: too short, dotted, one symbol under and over the
-    /// 54-character length, and a non-canonical final symbol. All are accepted by both
-    /// versions today — as ordinary named accounts, since none satisfies `is_universal` —
-    /// which is exactly why they are the first inputs a change to the classification rules
-    /// would move. Listed separately from [`ACCEPTED_ACCOUNT_IDS`] because what matters
-    /// here is that the two versions agree, not the verdict itself.
+    /// Near-misses for the `0u…` universal-account scheme: the inputs most likely
+    /// to move first if the two versions' classification rules drift.
     const UNIVERSAL_NEAR_MISS_ACCOUNT_IDS: &[&str] = &[
         "0u",
         "0ufoo.near",
@@ -69,8 +56,6 @@ mod tests {
         "0u000g40r40m30e209185gr38e1w8124gk2gahc5rr34d1p70x3rfz",
     ];
 
-    /// Rejected by both versions: below the 2-character minimum, uppercase, an empty
-    /// separator-delimited part, and one over the 64-character maximum.
     const REJECTED_ACCOUNT_IDS: &[&str] = &[
         "a",
         "Alice.near",

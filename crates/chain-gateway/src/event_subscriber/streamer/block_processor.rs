@@ -173,8 +173,6 @@ impl BlockEvents {
             return;
         };
 
-        // The two `near-account-id` versions accept identical strings today, so this only
-        // fails if they ever diverge; dropping the event beats failing the whole block.
         let predecessor_id = match from_near_internal(&receipt.predecessor_id) {
             Ok(predecessor_id) => predecessor_id,
             Err(err) => {
