@@ -22,8 +22,6 @@ pub(super) struct BlockEvents {
     pub(super) receipt_receiver_events: ReceiptReceiverEventIdsByContractIds,
 }
 
-/// Keyed by the `nearcore` [`AccountId`] flavour so that matching a receipt costs
-/// no conversion: lookups happen once per receipt, insertions only at startup.
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptReceiverEventIdsByContractIds(
     BTreeMap<AccountId, ReceiptReceiverEventIdsByMethodNames>,
@@ -32,8 +30,6 @@ pub(super) struct ReceiptReceiverEventIdsByContractIds(
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptReceiverEventIdsByMethodNames(BTreeMap<String, Vec<BlockEventId>>);
 
-/// Keyed by the `nearcore` [`AccountId`] flavour, for the same reason as
-/// [`ReceiptReceiverEventIdsByContractIds`].
 #[derive(Default, Deref, DerefMut)]
 pub(super) struct ReceiptExecutorEventIdsByContractIds(
     BTreeMap<AccountId, ReceiptExecutorEventIdsByMethodNames>,
