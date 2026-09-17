@@ -108,7 +108,7 @@ pub struct MpcClusterConfig {
     /// Migration targets: each entry is a source node index. The i-th entry
     /// produces a target node at index `num_nodes + i` that shares the
     /// source's NEAR account but gets a distinct P2P key. Started with the
-    /// cluster so their indexers sync before blocks accumulate (`start_near_node`
+    /// cluster so their indexers sync before blocks accumulate (node startup
     /// blocks until synced).
     pub migration_targets: Vec<usize>,
     /// Wire format used when calling `init`. See [`ContractInitFormat`].
