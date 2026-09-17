@@ -138,6 +138,6 @@ pub fn fan_out_of<Inspector>(inspectors: Vec<Inspector>) -> FanOut<Inspector> {
         .collect();
     let inspectors: NonEmptyVec<(ProviderId, Inspector)> = named
         .try_into()
-        .expect("test must provider at least one inspector");
+        .expect("test must provide at least one inspector");
     FanOut::new(inspectors)
 }
