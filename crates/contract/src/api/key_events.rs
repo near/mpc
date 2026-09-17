@@ -111,7 +111,6 @@ impl MpcContract {
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
-            // Note: MpcContract::vote_update only counts current participants, so correctness does not depend on this cleanup.
             Promise::new(env::current_account_id())
                 .function_call(
                     method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
