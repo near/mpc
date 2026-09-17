@@ -22,8 +22,6 @@ pub fn from_near_internal(
 mod tests {
     use super::*;
 
-    /// Named, implicit, ETH-implicit and universal (`0u…`) flavours, plus both
-    /// length bounds.
     const ACCEPTED_ACCOUNT_IDS: &[&str] = &[
         "alice.near",
         "v1.signer",
@@ -33,8 +31,8 @@ mod tests {
         "0u000g40r40m30e209185gr38e1w8124gk2gahc5rr34d1p70x3rfg",
     ];
 
-    /// Near-misses for the `0u…` universal-account scheme: the inputs most likely
-    /// to move first if the two versions' classification rules drift.
+    /// The inputs most likely to move first if the two versions' account
+    /// classification rules ever drift.
     const UNIVERSAL_NEAR_MISS_ACCOUNT_IDS: &[&str] = &[
         "0u",
         "0ufoo.near",
