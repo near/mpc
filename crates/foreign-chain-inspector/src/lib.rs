@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use std::hash::Hash;
 use std::num::NonZeroU64;
 use std::time::Duration;
@@ -11,6 +10,7 @@ use jsonrpsee::http_client::transport::Error as HttpTransportError;
 use mpc_node_config::ForeignChainProviderConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
+use scopeguard::ScopeGuard;
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -147,23 +147,23 @@ pub trait NetworkFingerprintInspector {
 /// With a recorder set through [`FanOut::measuring`], every provider call is reported once it
 /// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.
 #[derive(Clone)]
-pub struct FanOut<Inspector, Recorder = Infallible> {
+pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
-    recorder: Option<Recorder>,
+    recorder: Recorder,
 }
 
 impl<Inspector> FanOut<Inspector> {
     pub fn new(inspectors: NonEmptyVec<(ProviderId, Inspector)>) -> Self {
         Self {
             inspectors,
-            recorder: None,
+            recorder: (),
         }
     }
 
     pub fn measuring<Recorder>(self, recorder: Recorder) -> FanOut<Inspector, Recorder> {
         FanOut {
             inspectors: self.inspectors,
-            recorder: Some(recorder),
+            recorder,
         }
     }
 }
@@ -178,38 +178,26 @@ pub trait RecordProviderCall: Send + Sync {
 }
 
 /// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default.
-impl RecordProviderCall for Infallible {
-    fn record(&self, _: &ProviderId, _: Duration, _: Option<ProviderFailure>) {
-        match *self {}
-    }
+impl RecordProviderCall for () {
+    fn record(&self, _: &ProviderId, _: Duration, _: Option<ProviderFailure>) {}
 }
 
-struct TimedCall<Recorder: RecordProviderCall> {
-    recorder: Option<Recorder>,
-    provider: ProviderId,
-    started: tokio::time::Instant,
-}
-
-impl<Recorder: RecordProviderCall> TimedCall<Recorder> {
-    fn start(recorder: Option<Recorder>, provider: ProviderId) -> Self {
-        Self {
-            recorder,
-            provider,
-            started: tokio::time::Instant::now(),
-        }
-    }
-
-    fn report(&mut self, failure: Option<ProviderFailure>) {
-        if let Some(recorder) = self.recorder.take() {
-            recorder.record(&self.provider, self.started.elapsed(), failure);
-        }
-    }
-}
-
-impl<Recorder: RecordProviderCall> Drop for TimedCall<Recorder> {
-    fn drop(&mut self) {
-        self.report(Some(ProviderFailure::TimedOut));
-    }
+async fn measured<Recorder, Value>(
+    recorder: Recorder,
+    provider: &ProviderId,
+    call: impl Future<Output = Result<Value, ForeignChainInspectionError>>,
+) -> Result<Value, ForeignChainInspectionError>
+where
+    Recorder: RecordProviderCall,
+{
+    let started = tokio::time::Instant::now();
+    let guard = scopeguard::guard(recorder, move |recorder| {
+        recorder.record(provider, started.elapsed(), Some(ProviderFailure::TimedOut));
+    });
+    let result = call.await;
+    let failure = result.as_ref().err().and_then(|err| err.provider_failure());
+    ScopeGuard::into_inner(guard).record(provider, started.elapsed(), failure);
+    result
 }
 
 impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
@@ -241,11 +229,14 @@ where
             let provider = provider.clone();
             let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                // Started inside the task so the clock excludes scheduling delay. A task aborted
-                // before its first poll made no call and reports nothing.
-                let mut call = TimedCall::start(recorder, provider.clone());
-                let result = inspector.extract(tx_id, finality, extractors).await;
-                call.report(result.as_ref().err().and_then(|err| err.provider_failure()));
+                // Measured inside the task so the clock excludes scheduling delay. A task aborted
+                // before its first poll makes no call and reports nothing.
+                let result = measured(
+                    recorder,
+                    &provider,
+                    inspector.extract(tx_id, finality, extractors),
+                )
+                .await;
                 (provider, result)
             });
         }
