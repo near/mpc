@@ -2,14 +2,6 @@ use crate::bounded_vec::BoundedVecOutOfBounds;
 
 /// A [`String`] whose UTF-8 length is at most `U` bytes, checked on construction and on
 /// deserialization.
-///
-/// Serialization delegates to the inner [`String`], so the JSON and borsh representations are
-/// identical to an unbounded string: adopting this type on a field changes neither the wire
-/// format nor stored bytes.
-///
-/// Deserialization is the enforcement point: a value over the bound is rejected, not truncated.
-/// Adopting it on an already-persisted field therefore needs care — data written before the
-/// bound existed becomes unreadable.
 #[derive(PartialEq, Eq, Debug, Clone, Hash, PartialOrd, Ord)]
 pub struct BoundedString<const U: usize>(String);
 
@@ -23,14 +15,6 @@ impl<const U: usize> BoundedString<U> {
             });
         }
         Ok(Self(inner))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
     }
 }
 
@@ -53,6 +37,14 @@ impl<const U: usize> TryFrom<String> for BoundedString<U> {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+impl<const U: usize> TryFrom<&str> for BoundedString<U> {
+    type Error = BoundedVecOutOfBounds;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value.to_string())
     }
 }
 
@@ -163,7 +155,7 @@ mod tests {
 
         // Then
         if len <= MAX {
-            assert_eq!(result.unwrap().as_str(), input);
+            assert_eq!(&*result.unwrap(), input);
         } else {
             assert_eq!(
                 result,

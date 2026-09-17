@@ -709,7 +709,7 @@ mod test_conversions {
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
-                url: info.url.into_inner(),
+                url: info.url.into(),
                 tls_public_key: info.tls_public_key,
             }
         }

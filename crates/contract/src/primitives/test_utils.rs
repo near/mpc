@@ -3,7 +3,7 @@ use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
-        participants::{ParticipantInfo, ParticipantUrl, Participants},
+        participants::{ParticipantInfo, Participants},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
             ProposedGovernanceThresholdParameters, governance_threshold_lower_relative_bound,
@@ -125,7 +125,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: ParticipantUrl::new(format!("https://www.near{}.com", i)).unwrap(),
+            url: format!("https://www.near{}.com", i).try_into().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
         },
     )

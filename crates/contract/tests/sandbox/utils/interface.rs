@@ -1,7 +1,6 @@
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
-use mpc_contract::primitives::participants::ParticipantUrl;
 use mpc_contract::primitives::participants::{ParticipantInfo, Participants};
 use near_mpc_contract_interface::types::{self as dtos};
 
@@ -17,7 +16,7 @@ impl IntoContractType<Participants> for &dtos::Participants {
                 .insert_with_id(
                     account_id.clone(),
                     ParticipantInfo {
-                        url: ParticipantUrl::new(info.url.clone()).unwrap(),
+                        url: info.url.clone().try_into().unwrap(),
                         tls_public_key: info.tls_public_key.clone(),
                     },
                     mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
