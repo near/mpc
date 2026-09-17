@@ -20,6 +20,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_node_config::IndexerConfig;
 use near_account_id::AccountId;
 use near_async::ActorSystem;
+use near_client::client_actor::ShutdownReason;
 use near_indexer::Indexer;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use std::future::Future;
@@ -27,7 +28,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -50,6 +51,10 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
         }
     }
 }
+
+/// Exit code for the epoch-sync data-reset restart: non-zero so the container's
+/// `restart: on-failure` policy brings the node back to run nearcore's startup wipe.
+const EPOCH_SYNC_RESET_EXIT_CODE: i32 = 70;
 
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerAPI`].
 ///
@@ -106,10 +111,10 @@ pub fn spawn_real_indexer(
 
             // Operator-driven one-time wipe: when `wipe_near_data_token` is non-zero
             // and differs from the last applied value, wipe the data dir. Must run
-            // here, after the config is loaded but before `start_near_node` below
-            // opens the store, because the dir can't be removed while nearcore holds
-            // it open. Runs once per process start, so a changed token takes effect on
-            // the next restart.
+            // here, after the config is loaded but before nearcore opens the store
+            // below, because the dir can't be removed while nearcore holds it open.
+            // Runs once per process start, so a changed token takes effect on the
+            // next restart.
             let hot_store_path = match near_config.config.store.path.as_deref() {
                 Some(path) => home_dir.join(path),
                 None => near_data_dir(&home_dir),
@@ -125,10 +130,24 @@ pub fn spawn_real_indexer(
                  fix the cause and set wipe_near_data_token to a new value to retry",
             );
 
-            let near_node = Indexer::start_near_node(
-                &near_indexer_config,
+            // A node that fell behind the epoch-sync horizon can only recover by wiping its
+            // chain store (#3909). nearcore records that as a marker before sending the reason,
+            // and wipes the store on the next start; exit so the container restarts the node.
+            let (shutdown_tx, mut shutdown_rx) = broadcast::channel(1);
+            tokio::spawn(async move {
+                if let Ok(ShutdownReason::EpochSyncDataReset) = shutdown_rx.recv().await {
+                    tracing::error!(
+                        "nearcore requested an epoch-sync data reset; exiting to restart and re-sync"
+                    );
+                    std::process::exit(EPOCH_SYNC_RESET_EXIT_CODE);
+                }
+            });
+            let near_node = nearcore::start_with_config_and_synchronization(
+                &home_dir,
                 near_config.clone(),
                 ActorSystem::new(),
+                Some(shutdown_tx),
+                None,
             )
             .await
             .expect("near node has started");

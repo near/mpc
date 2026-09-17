@@ -192,6 +192,9 @@ fn run_node(
 
     rt.block_on(async move {
         let actor_system = ActorSystem::new();
+        // TODO: pass a shutdown signal via `start_with_config_and_synchronization` and act on
+        // `ShutdownReason::EpochSyncDataReset` as `indexer/real.rs` does; with `None` a stale
+        // node only recovers on the next restart.
         let near_node =
             match nearcore::start_with_config(home_dir, near_config, actor_system.clone()).await {
                 Ok(node) => node,
