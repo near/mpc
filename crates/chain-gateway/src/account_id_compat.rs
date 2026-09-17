@@ -6,10 +6,8 @@
 use near_account_id::{AccountId, ParseAccountError};
 use near_indexer_primitives::types::AccountId as NearInternalAccountId;
 
-/// Converts an account ID into the flavour the `nearcore` internals expect.
-///
-/// Panics if the two versions ever diverge — only pass config-derived IDs,
-/// never chain data.
+/// Only pass config-derived IDs, never chain data: panics if the two versions
+/// ever diverge.
 pub fn to_near_internal(account_id: &AccountId) -> NearInternalAccountId {
     account_id
         .as_str()
@@ -17,8 +15,6 @@ pub fn to_near_internal(account_id: &AccountId) -> NearInternalAccountId {
         .expect("a `near-account-id 2` account ID is always valid under `near-account-id 3`")
 }
 
-/// Converts an account ID coming out of the `nearcore` internals into the flavour
-/// the rest of the workspace uses.
 pub fn from_near_internal(
     account_id: &NearInternalAccountId,
 ) -> Result<AccountId, ParseAccountError> {
