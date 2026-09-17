@@ -106,8 +106,7 @@ impl MpcContract {
         }
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
-        // `ongoing_migrations` stores the interface type, whose url is still unbounded, so the
-        // bound is not enforced by the stored type here.
+        // `ongoing_migrations` stores the unbounded interface type.
         // TODO(#4456): drop this once the interface type carries the bound.
         destination_node_info
             .destination_node_info
@@ -185,8 +184,7 @@ impl MpcContract {
     /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
     /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong): if the destination node's url exceeds
-    ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES). Unreachable for migrations started after the check was
-    ///   added to [`Self::start_node_migration`].
+    ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
         let account_id = Self::assert_caller_is_signer();

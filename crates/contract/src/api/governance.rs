@@ -314,9 +314,8 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
     }
 
-    /// The DTO conversion is the only place the url bound is enforced for `init`,
-    /// `init_running` and this method, so an oversized url has to be rejected here even though
-    /// the contract-internal type cannot represent one.
+    /// Mutates the wire form directly: the contract-internal type cannot represent an
+    /// oversized url, which is what makes the DTO conversion the enforcement point.
     #[test]
     fn vote_new_parameters__should_reject_a_url_over_the_byte_limit() {
         // Given: a Running contract, and a proposal whose wire form carries an oversized url

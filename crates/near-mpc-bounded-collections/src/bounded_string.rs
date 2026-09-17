@@ -7,9 +7,9 @@ use crate::bounded_vec::BoundedVecOutOfBounds;
 /// identical to an unbounded string: adopting this type on a field changes neither the wire
 /// format nor stored bytes.
 ///
-/// Deserialization is the enforcement point — a value over the bound is rejected rather than
-/// truncated. Adopting it on a field that is *already persisted* therefore needs care: data
-/// written before the bound existed becomes unreadable.
+/// Deserialization is the enforcement point: a value over the bound is rejected, not truncated.
+/// Adopting it on an already-persisted field therefore needs care — data written before the
+/// bound existed becomes unreadable.
 #[derive(PartialEq, Eq, Debug, Clone, Hash, PartialOrd, Ord)]
 pub struct BoundedString<const U: usize>(String);
 
@@ -152,8 +152,6 @@ mod tests {
     const MAX: usize = 4;
     type Bounded = BoundedString<MAX>;
 
-    /// The multibyte cases pin that the bound counts bytes, which is what the storage cost
-    /// depends on, rather than characters.
     #[rstest]
     #[case::ascii_at_the_bound("abcd", 4)]
     #[case::ascii_over_the_bound("abcde", 5)]
