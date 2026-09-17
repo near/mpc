@@ -83,14 +83,24 @@ doubles as a better operator health signal. Costs +8 bytes (entry 599 → 607, s
 `WORST_CASE_ENTRY_BYTES` moves off 604 and the fee floor needs re-checking) and a state migration.
 Supersedes [#4301](https://github.com/near/mpc/issues/4301).
 
-**2. Launcher-image TTL.** `re_verify` re-checks a stored attestation's launcher hash against the
-*current* allowed set, so evicting a hash kicks a node whose attestation is still valid. Today
-`Config::validate` prevents this by requiring `launcher_hash_unused_ttl_seconds` (14 days) to exceed
-the 7-day constant, which disappears. Fix: make eviction reference-aware rather than time-bounded,
-skipping any hash still referenced by a **current participant's** non-expired attestation. That
-mirrors how refreshing already works (`refresh_launcher_usage` is gated on
-`AuthenticatedParticipantId`), and it is cheap: `cleanup_expired()` runs inside
-`reverify_and_cleanup_participants`, which already iterates the stored attestations.
+**2. Launcher-image eviction.** A launcher hash is evicted once unused for
+`launcher_hash_unused_ttl_seconds` (14 days), where "used" means an accepted attestation by a
+current participant refreshed it. `re_verify` re-checks a stored attestation's launcher hash against
+the *current* allowed set, so evicting a hash kicks a node whose attestation is still valid. Today
+`Config::validate` rules that out by requiring the TTL to exceed the 7-day expiry constant — which
+disappears.
+
+Without that invariant, a node that attests once with 30 days of certificate validity and then stops
+loses its hash at day 14 and is kicked with 16 days left: effective validity becomes
+`min(certificate expiry, 14 days since the last attestation)`, turning launcher cleanup into a
+second, implicit attestation deadline.
+
+Fix: keep the TTL, but never evict a hash still referenced by a current participant's non-expired
+attestation. The TTL then does only the job it is still needed for — retiring hashes nobody adopted
+— and retention is driven by use. This mirrors the existing refresh gate
+(`refresh_launcher_usage` requires `AuthenticatedParticipantId`) and is cheap, since
+`cleanup_expired()` runs inside `reverify_and_cleanup_participants`, which already iterates the
+stored attestations. `cleanup_expired()` keeps its rule of never emptying the list.
 
 **3. Shortening after a verifier rotation.** [#3734](https://github.com/near/mpc/issues/3734) wants a
 short window after a rotation so entries a rotated-away verifier may have wrongly accepted age out
@@ -164,6 +174,8 @@ signal.
 - **How much gas does `claims()` add?** Measure, then choose between re-balancing against
   `resolve_verification` and the lean fallback.
 - **How early should a node refuse to submit collateral** (item 4)? Needs a number.
+- **Whose attestation protects a launcher hash** (item 2)? Current participants only, matching the
+  existing refresh gate, leaves a joining node's hash unprotected during resharing.
 
 ## Alternatives considered
 
