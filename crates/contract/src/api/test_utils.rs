@@ -277,7 +277,7 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             accept_requests: true,
-            update_votes: Default::default(),
+            contract_update_votes: Default::default(),
             config: Default::default(),
             tee_state: Default::default(),
             node_migrations: Default::default(),

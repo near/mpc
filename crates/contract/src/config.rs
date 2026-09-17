@@ -30,7 +30,7 @@ const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// TODO(#1164): benchmark
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 4;
-/// Prepaid gas for a `remove_non_participant_update_votes` call
+/// Prepaid gas for a `remove_non_participant_contract_update_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 /// Prepaid gas for a `clean_foreign_chain_data` call
 const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 5;
@@ -76,7 +76,7 @@ pub(crate) struct Config {
     pub(crate) clean_invalid_attestations_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub(crate) cleanup_orphaned_node_migrations_tera_gas: u64,
-    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    /// Prepaid gas for a `remove_non_participant_contract_update_votes` call.
     pub(crate) remove_non_participant_update_votes_tera_gas: u64,
     /// Prepaid gas for a `clean_foreign_chain_data` call.
     pub(crate) clean_foreign_chain_data_tera_gas: u64,

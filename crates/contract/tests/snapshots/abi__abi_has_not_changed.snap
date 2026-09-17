@@ -225,6 +225,25 @@ expression: abi
         "kind": "view"
       },
       {
+        "name": "contract_update_votes",
+        "doc": " Update votes keyed by proposal: the SHA-256 of the compact JSON encoding of the voted\n [`dtos::UpdateHash`], e.g. `sha256sum <<< '{\"Code\":\"<hex>\"}'`. The hash backed by a\n governance threshold of current participants is the one [`Self::submit_update`] accepts.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "derived_public_key",
         "doc": " This is the derived public key of the caller given path and predecessor\n if predecessor is not provided, it will be the caller of the contract.\n\n The domain parameter specifies which domain we're deriving the public key for;\n the default is the first domain.",
         "kind": "view",
@@ -759,12 +778,9 @@ expression: abi
         }
       },
       {
-        "name": "remove_non_participant_tee_verifier_votes",
-        "doc": " Private endpoint to drop verifier-change votes cast by non-participants\n after resharing.",
+        "name": "remove_non_participant_contract_update_votes",
+        "doc": " Drops update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
         "kind": "call",
-        "modifiers": [
-          "private"
-        ],
         "result": {
           "serialization_type": "json",
           "type_schema": {
@@ -773,9 +789,12 @@ expression: abi
         }
       },
       {
-        "name": "remove_non_participant_update_votes",
-        "doc": " Drops update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
+        "name": "remove_non_participant_tee_verifier_votes",
+        "doc": " Private endpoint to drop verifier-change votes cast by non-participants\n after resharing.",
         "kind": "call",
+        "modifiers": [
+          "private"
+        ],
         "result": {
           "serialization_type": "json",
           "type_schema": {
@@ -1775,7 +1794,7 @@ expression: abi
       },
       {
         "name": "submit_update",
-        "doc": " Applies `update` if a governance threshold of current participants currently backs its\n hash, consuming every update vote. Code updates deploy the code and call `migrate`;\n config updates call `update_config`. An attached deposit stays with the contract to cover\n the storage staking of code larger than the deployed one.",
+        "doc": " Submits an update (contract code or config).\n Applies the update if sufficient participants have voted in favor of it, fails otherwise.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1996,25 +2015,6 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "type": "null"
-          }
-        }
-      },
-      {
-        "name": "update_votes",
-        "doc": " Update votes keyed by proposal: the SHA-256 of the compact JSON encoding of the voted\n [`dtos::UpdateHash`], e.g. `sha256sum <<< '{\"Code\":\"<hex>\"}'`. The hash backed by a\n governance threshold of current participants is the one [`Self::submit_update`] accepts.",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "array",
-              "items": {
-                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-                "type": "string"
-              },
-              "uniqueItems": true
-            }
           }
         }
       },
@@ -2358,7 +2358,7 @@ expression: abi
       },
       {
         "name": "vote_update",
-        "doc": " Votes for `update_hash` as the next update to apply; a participant holds one vote at a\n time, so a new vote replaces the previous one. Returns whether the hash is now approved,\n i.e. whether [`Self::submit_update`] would accept the matching payload.\n\n Approval is not permanent: it lasts only while a governance threshold of current\n participants backs the hash, so [`Self::remove_update_vote`] takes it back.",
+        "doc": " Votes for `update_hash` as the next update to apply; a participant holds one vote at a\n time, so a new vote replaces the previous one. Returns whether the hash is now approved,\n i.e. whether [`Self::submit_update`] would accept the matching payload.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -3091,7 +3091,7 @@ expression: abi
               "minimum": 0.0
             },
             "remove_non_participant_update_votes_tera_gas": {
-              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "description": "Prepaid gas for a `remove_non_participant_contract_update_votes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3811,7 +3811,7 @@ expression: abi
               "minimum": 0.0
             },
             "remove_non_participant_update_votes_tera_gas": {
-              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
+              "description": "Prepaid gas for a `remove_non_participant_contract_update_votes` call.",
               "type": [
                 "integer",
                 "null"

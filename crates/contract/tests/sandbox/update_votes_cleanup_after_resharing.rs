@@ -47,8 +47,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     })
     .await?;
 
-    let votes_before: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract.view(method_names::UPDATE_VOTES).await?.json()?;
+    let votes_before: BTreeMap<ProposalHash, BTreeSet<AccountId>> = contract
+        .view(method_names::CONTRACT_UPDATE_VOTES)
+        .await?
+        .json()?;
 
     assert_eq!(
         votes_before,
@@ -94,8 +96,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // then: the cleanup promise removes participant 0's vote from storage
     let final_participants = assert_running_return_participants(&contract).await?;
-    let votes_after: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract.view(method_names::UPDATE_VOTES).await?.json()?;
+    let votes_after: BTreeMap<ProposalHash, BTreeSet<AccountId>> = contract
+        .view(method_names::CONTRACT_UPDATE_VOTES)
+        .await?
+        .json()?;
 
     assert_eq!(
         votes_after,

@@ -32,8 +32,8 @@ pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain
 pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
 pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
-pub const REMOVE_UPDATE_PROPOSAL: &str = "remove_update_proposal";
-pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
+pub const REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES: &str =
+    "remove_non_participant_contract_update_votes";
 
 // Protocol management
 pub const INIT: &str = "init";
@@ -80,7 +80,7 @@ pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";
 pub const LATEST_KEY_VERSION: &str = "latest_key_version";
-pub const UPDATE_VOTES: &str = "update_votes";
+pub const CONTRACT_UPDATE_VOTES: &str = "contract_update_votes";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";

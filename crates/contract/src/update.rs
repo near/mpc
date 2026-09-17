@@ -77,22 +77,22 @@ impl ToProposalHash for dtos::UpdateHash {
 /// vote, so at most one hash is approved at a time.
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-pub struct UpdateVotes {
+pub struct ContractUpdateVotes {
     pending: Votes<AuthenticatedAccountId>,
 }
 
-impl Default for UpdateVotes {
+impl Default for ContractUpdateVotes {
     fn default() -> Self {
         Self {
             pending: Votes::new(
-                StorageKey::UpdateVotesByVoter,
-                StorageKey::UpdateVotesByProposal,
+                StorageKey::ContractUpdateVotesByVoter,
+                StorageKey::ContractUpdateVotesByProposal,
             ),
         }
     }
 }
 
-impl UpdateVotes {
+impl ContractUpdateVotes {
     /// Records `voter`'s vote for `update_hash`, replacing any earlier vote of theirs. Returns
     /// whether the hash is now approved.
     pub fn vote(

@@ -240,6 +240,16 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "ContractUpdateVotes": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "pending",
+                        "Votes<AuthenticatedAccountId>",
+                    ),
+                ],
+            ),
+        },
         "DockerImageHash": Struct {
             fields: UnnamedFields(
                 [
@@ -668,8 +678,8 @@ BorshSchemaContainer {
                         "LookupMap",
                     ),
                     (
-                        "update_votes",
-                        "UpdateVotes",
+                        "contract_update_votes",
+                        "ContractUpdateVotes",
                     ),
                     (
                         "config",
@@ -1137,16 +1147,6 @@ BorshSchemaContainer {
             fields: UnnamedFields(
                 [
                     "[u8; 8]",
-                ],
-            ),
-        },
-        "UpdateVotes": Struct {
-            fields: NamedFields(
-                [
-                    (
-                        "pending",
-                        "Votes<AuthenticatedAccountId>",
-                    ),
                 ],
             ),
         },

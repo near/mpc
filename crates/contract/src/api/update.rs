@@ -15,10 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[near]
 impl MpcContract {
-    /// Applies `update` if a governance threshold of current participants currently backs its
-    /// hash, consuming every update vote. Code updates deploy the code and call `migrate`;
-    /// config updates call `update_config`. An attached deposit stays with the contract to cover
-    /// the storage staking of code larger than the deployed one.
+    /// Submits an update (contract code or config).
+    /// Applies the update if sufficient participants have voted in favor of it, fails otherwise.
     #[payable]
     #[handle_result]
     pub fn submit_update(
@@ -38,7 +36,7 @@ impl MpcContract {
             update_hash,
         );
         if !self
-            .update_votes
+            .contract_update_votes
             .take_if_approved(&update_hash, &running_state.parameters)
         {
             return Err(InvalidParameters::UpdateNotApproved.into());
@@ -55,9 +53,6 @@ impl MpcContract {
     /// Votes for `update_hash` as the next update to apply; a participant holds one vote at a
     /// time, so a new vote replaces the previous one. Returns whether the hash is now approved,
     /// i.e. whether [`Self::submit_update`] would accept the matching payload.
-    ///
-    /// Approval is not permanent: it lasts only while a governance threshold of current
-    /// participants backs the hash, so [`Self::remove_update_vote`] takes it back.
     #[handle_result]
     pub fn vote_update(&mut self, update_hash: dtos::UpdateHash) -> Result<bool, Error> {
         log!(
@@ -72,15 +67,15 @@ impl MpcContract {
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
 
         Ok(self
-            .update_votes
+            .contract_update_votes
             .vote(&update_hash, voter, &running_state.parameters))
     }
 
     /// Update votes keyed by proposal: the SHA-256 of the compact JSON encoding of the voted
     /// [`dtos::UpdateHash`], e.g. `sha256sum <<< '{"Code":"<hex>"}'`. The hash backed by a
     /// governance threshold of current participants is the one [`Self::submit_update`] accepts.
-    pub fn update_votes(&self) -> BTreeMap<ProposalHash, BTreeSet<dtos::AccountId>> {
-        self.update_votes
+    pub fn contract_update_votes(&self) -> BTreeMap<ProposalHash, BTreeSet<dtos::AccountId>> {
+        self.contract_update_votes
             .pending()
             .into_iter()
             .map(|(proposal, voters)| {
@@ -104,16 +99,16 @@ impl MpcContract {
         self.voter_or_panic();
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
 
-        self.update_votes.remove_vote(&voter);
+        self.contract_update_votes.remove_vote(&voter);
         Ok(())
     }
 
     /// Drops update votes from non-participants after resharing.
     /// Can only be called by participants or by the contract itself.
     #[handle_result]
-    pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
+    pub fn remove_non_participant_contract_update_votes(&mut self) -> Result<(), Error> {
         log!(
-            "remove_non_participant_update_votes: signer={}",
+            "remove_non_participant_contract_update_votes: signer={}",
             env::signer_account_id()
         );
 
@@ -134,7 +129,7 @@ impl MpcContract {
             return Err(InvalidState::NotParticipant { account_id: caller }.into());
         }
 
-        self.update_votes.retain(participants);
+        self.contract_update_votes.retain(participants);
         Ok(())
     }
 
@@ -224,20 +219,20 @@ mod tests {
             .clone();
         let voter = authenticated(parameters.participants(), account_id);
         contract
-            .update_votes
+            .contract_update_votes
             .vote(&update_hash(hash), voter, &parameters);
     }
 
     fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
-        assert_eq!(contract.update_votes(), BTreeMap::new());
+        assert_eq!(contract.contract_update_votes(), BTreeMap::new());
 
         let voters = participant_account_ids(&contract);
         record_vote(&mut contract, 0, &voters[0]);
         record_vote(&mut contract, 1, &voters[1]);
 
         assert_eq!(
-            contract.update_votes(),
+            contract.contract_update_votes(),
             expected_votes(&[(0, &[voters[0].clone()]), (1, &[voters[1].clone()]),])
         );
     }
@@ -275,12 +270,12 @@ mod tests {
             Environment::new(None, Some(account_id.clone()), None);
             contract.vote_update(update_hash(0)).unwrap();
             assert_eq!(
-                contract.update_votes(),
+                contract.contract_update_votes(),
                 expected_votes(&[(0, std::slice::from_ref(account_id))])
             );
 
             contract.remove_update_vote().unwrap();
-            assert_eq!(contract.update_votes(), BTreeMap::new());
+            assert_eq!(contract.contract_update_votes(), BTreeMap::new());
         }
     }
 
@@ -336,7 +331,7 @@ mod tests {
                 .unwrap()
                 .clone();
             contract
-                .update_votes
+                .contract_update_votes
                 .vote(&update_hash(0), voter, &parameters);
         }
 
@@ -351,7 +346,7 @@ mod tests {
         assert!(contract.vote_update(update_hash(0)).unwrap());
     }
 
-    /// Callers authorized to drive `remove_non_participant_update_votes`.
+    /// Callers authorized to drive `remove_non_participant_contract_update_votes`.
     enum AuthorizedCaller {
         /// The contract calling itself (the cleanup promise spawned after resharing).
         ContractItself,
@@ -374,7 +369,7 @@ mod tests {
             .unwrap()
             .clone();
         for account_id in &former {
-            contract.update_votes.vote(
+            contract.contract_update_votes.vote(
                 &update_hash(1),
                 authenticated(&former_set, account_id),
                 &parameters,
@@ -388,7 +383,7 @@ mod tests {
     #[rstest]
     #[case::contract_itself(AuthorizedCaller::ContractItself)]
     #[case::participant(AuthorizedCaller::Participant)]
-    fn remove_non_participant_update_votes__should_clean_when_called_by_authorized_caller(
+    fn remove_non_participant_contract_update_votes__should_clean_when_called_by_authorized_caller(
         #[case] caller_kind: AuthorizedCaller,
     ) {
         // Given
@@ -406,20 +401,22 @@ mod tests {
                 .signer_account_id(caller)
                 .build()
         );
-        contract.remove_non_participant_update_votes().unwrap();
+        contract
+            .remove_non_participant_contract_update_votes()
+            .unwrap();
 
         // Then
         assert_eq!(
-            contract.update_votes(),
+            contract.contract_update_votes(),
             expected_votes(&[(1, &[participants[0].clone()])])
         );
     }
 
     #[test]
-    fn remove_non_participant_update_votes__should_reject_unauthorized_caller() {
+    fn remove_non_participant_contract_update_votes__should_reject_unauthorized_caller() {
         // Given
         let (mut contract, participants, former) = contract_with_stale_votes();
-        let before = contract.update_votes();
+        let before = contract.contract_update_votes();
         let all_voters: Vec<AccountId> = former
             .iter()
             .chain(std::iter::once(&participants[0]))
@@ -436,7 +433,7 @@ mod tests {
                 .signer_account_id(outsider.clone())
                 .build()
         );
-        let result = contract.remove_non_participant_update_votes();
+        let result = contract.remove_non_participant_contract_update_votes();
 
         // Then
         assert_matches!(
@@ -444,7 +441,7 @@ mod tests {
             Err(Error::InvalidState(InvalidState::NotParticipant { account_id }))
                 if account_id == outsider
         );
-        assert_eq!(contract.update_votes(), before);
+        assert_eq!(contract.contract_update_votes(), before);
     }
 
     #[rstest]
@@ -546,7 +543,7 @@ mod tests {
             &participants,
             &dtos::Update::Code(code.clone()),
         );
-        assert_eq!(contract.update_votes().len(), 1);
+        assert_eq!(contract.contract_update_votes().len(), 1);
 
         // When
         Environment::new(None, Some(participants[2].clone()), None);
@@ -555,7 +552,7 @@ mod tests {
 
         // Then applying it consumes every vote, so it cannot be applied twice.
         first.unwrap();
-        assert_eq!(contract.update_votes(), BTreeMap::new());
+        assert_eq!(contract.contract_update_votes(), BTreeMap::new());
         assert_matches!(
             second,
             Err(Error::InvalidParameters(

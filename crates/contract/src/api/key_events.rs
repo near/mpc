@@ -113,7 +113,7 @@ impl MpcContract {
             // Spawn a promise to clean up votes from non-participants.
             Promise::new(env::current_account_id())
                 .function_call(
-                    method_names::REMOVE_NON_PARTICIPANT_UPDATE_VOTES.to_string(),
+                    method_names::REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES.to_string(),
                     vec![],
                     NearToken::from_near(0),
                     Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
