@@ -20,6 +20,7 @@ use crate::protocol_version::CURRENT_PROTOCOL_VERSION;
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
+use backon::{BackoffBuilder, ExponentialBuilder};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
@@ -379,7 +380,8 @@ impl OutgoingConnection {
 }
 
 impl PersistentConnection {
-    const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+    const MIN_CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+    const MAX_CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
 
     /// Sends a message over the connection. If the connection was reset, fail.
     fn send_mpc_message(
@@ -419,6 +421,15 @@ impl PersistentConnection {
             &format!("Persistent connection to {}", target_participant_id),
             async move {
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
+                let new_backoff = || {
+                    ExponentialBuilder::default()
+                        .with_min_delay(Self::MIN_CONNECTION_RETRY_DELAY)
+                        .with_max_delay(Self::MAX_CONNECTION_RETRY_DELAY)
+                        .without_max_times()
+                        .with_jitter()
+                        .build()
+                };
+                let mut backoff = new_backoff();
                 loop {
                     // Re-resolve on every (re)connect so a peer URL update is picked up; only the
                     // next dial is affected, established connections are untouched.
@@ -440,19 +451,26 @@ impl PersistentConnection {
                                 "outgoing connection established"
                             );
 
+                            // Reset backoff now that we've reconnected; a future disconnect
+                            // should retry quickly rather than pick up where we left off.
+                            backoff = new_backoff();
+
                             new_conn
                         }
                         Err(e) => {
+                            let delay = backoff.next().unwrap_or(Self::MAX_CONNECTION_RETRY_DELAY);
+
                             tracing::info!(
                                 my_id = %my_id,
                                 target_participant_id = %target_participant_id,
                                 error = %format_args!("{e:#}"),
+                                retry_delay = ?delay,
                                 "could not connect, retrying"
                             );
 
-                            // Don't immediately retry, to avoid spamming the network with
-                            // connection attempts.
-                            tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
+                            // Back off exponentially, to avoid spamming the network (and our
+                            // own logs) with connection attempts while a peer is down.
+                            tokio::time::sleep(delay).await;
                             continue;
                         }
                     };
