@@ -188,7 +188,7 @@ mod tests {
         // Then the wire format is a plain string
         assert_eq!(json, "\"abcd\"");
         assert_eq!(serde_json::from_str::<Bounded>(&json).unwrap(), value);
-        assert!(serde_json::from_str::<Bounded>("\"abcde\"").is_err());
+        serde_json::from_str::<Bounded>("\"abcde\"").unwrap_err();
     }
 
     #[test]
@@ -204,6 +204,6 @@ mod tests {
         assert_eq!(borsh::from_slice::<Bounded>(&bytes).unwrap(), value);
 
         let oversized = borsh::to_vec(&"abcde".to_string()).unwrap();
-        assert!(borsh::from_slice::<Bounded>(&oversized).is_err());
+        borsh::from_slice::<Bounded>(&oversized).unwrap_err();
     }
 }

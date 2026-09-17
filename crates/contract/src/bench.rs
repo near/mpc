@@ -5,7 +5,7 @@
 //! This enables detecting performance regressions when changing internal data structures.
 
 use crate::MpcContract;
-use crate::primitives::participants::ParticipantInfo;
+use crate::primitives::participants::{ParticipantInfo, ParticipantUrl};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::near;
@@ -99,7 +99,7 @@ impl MpcContract {
             tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                 .parse()
                 .unwrap(),
-            url: "http://bench.test".to_string(),
+            url: ParticipantUrl::new("http://bench.test".to_string()).unwrap(),
         };
         participants.insert(account_id, info).unwrap();
         participants.len()
@@ -116,7 +116,7 @@ impl MpcContract {
             tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                 .parse()
                 .unwrap(),
-            url: "http://updated.test".to_string(),
+            url: ParticipantUrl::new("http://updated.test".to_string()).unwrap(),
         };
         self.protocol_state
             .active_participants_mut()
