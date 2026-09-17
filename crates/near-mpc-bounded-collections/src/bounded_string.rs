@@ -126,10 +126,9 @@ mod serde_impl {
                 format!("BoundedString_{U}")
             }
 
+            /// `maxLength` counts characters, so it cannot express a byte bound.
             fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-                let mut schema = String::json_schema(generator).into_object();
-                schema.string().max_length = u32::try_from(U).ok();
-                Schema::Object(schema)
+                String::json_schema(generator)
             }
         }
     }
