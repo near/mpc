@@ -19,7 +19,7 @@ use near_sdk::env::sha256_array;
 use crate::{
     config::Config,
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
-    errors::{ConversionError, Error},
+    errors::{ConversionError, Error, InvalidCandidateSet},
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, KeyForDomain, Keyset},
@@ -187,25 +187,35 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
     }
 }
 
-impl IntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
-    fn into_contract_type(self) -> ParticipantInfo {
-        ParticipantInfo {
-            url: self.url,
+impl TryIntoContractType<ParticipantInfo> for dtos::ParticipantInfo {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<ParticipantInfo, Self::Error> {
+        let len = self.url.len();
+        Ok(ParticipantInfo {
+            url: dtos::ParticipantUrl::new(self.url).map_err(|_| {
+                InvalidCandidateSet::ParticipantUrlTooLong {
+                    len,
+                    max: dtos::MAX_PARTICIPANT_URL_BYTES,
+                }
+            })?,
             tls_public_key: self.tls_public_key,
-        }
+        })
     }
 }
 
-impl IntoContractType<Participants> for dtos::Participants {
-    fn into_contract_type(self) -> Participants {
+impl TryIntoContractType<Participants> for dtos::Participants {
+    type Error = Error;
+
+    fn try_into_contract_type(self) -> Result<Participants, Self::Error> {
         let participants = self
             .participants
             .into_iter()
             .map(|(account_id, participant_id, info)| {
-                (account_id, participant_id, info.into_contract_type())
+                Ok((account_id, participant_id, info.try_into_contract_type()?))
             })
-            .collect();
-        Participants::init(self.next_id, participants)
+            .collect::<Result<Vec<_>, Self::Error>>()?;
+        Ok(Participants::init(self.next_id, participants))
     }
 }
 
@@ -214,7 +224,10 @@ impl TryIntoContractType<GovernanceThresholdParameters> for dtos::GovernanceThre
 
     fn try_into_contract_type(self) -> Result<GovernanceThresholdParameters, Self::Error> {
         // Validate eagerly at the DTO boundary so invalid proposal parameters are rejected here.
-        GovernanceThresholdParameters::new(self.participants.into_contract_type(), self.threshold)
+        GovernanceThresholdParameters::new(
+            self.participants.try_into_contract_type()?,
+            self.threshold,
+        )
     }
 }
 
@@ -696,7 +709,7 @@ mod test_conversions {
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
             dtos::ParticipantInfo {
-                url: info.url,
+                url: info.url.into(),
                 tls_public_key: info.tls_public_key,
             }
         }
@@ -704,7 +717,8 @@ mod test_conversions {
 
     impl From<dtos::ParticipantInfo> for ParticipantInfo {
         fn from(info: dtos::ParticipantInfo) -> Self {
-            info.into_contract_type()
+            info.try_into_contract_type()
+                .expect("test fixture url must fit the bound")
         }
     }
 }
@@ -821,7 +835,7 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
                     account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
                     dtos::ParticipantInfo {
-                        url: info.url.clone(),
+                        url: info.url.to_string(),
                         tls_public_key: info.tls_public_key.clone(),
                     },
                 )

@@ -99,7 +99,7 @@ impl MpcContract {
             tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                 .parse()
                 .unwrap(),
-            url: "http://bench.test".to_string(),
+            url: "http://bench.test".try_into().unwrap(),
         };
         participants.insert(account_id, info).unwrap();
         participants.len()
@@ -116,7 +116,7 @@ impl MpcContract {
             tls_public_key: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
                 .parse()
                 .unwrap(),
-            url: "http://updated.test".to_string(),
+            url: "http://updated.test".try_into().unwrap(),
         };
         self.protocol_state
             .active_participants_mut()

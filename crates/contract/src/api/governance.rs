@@ -122,6 +122,7 @@ mod tests {
     use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
+    use crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES;
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::gen_participants;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
@@ -311,6 +312,41 @@ mod tests {
                 .build()
         );
         contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
+    }
+
+    /// Mutates the wire form directly: the contract-internal type cannot represent an
+    /// oversized url, which is what makes the DTO conversion the enforcement point.
+    #[test]
+    fn vote_new_parameters__should_reject_a_url_over_the_byte_limit() {
+        // Given: a Running contract, and a proposal whose wire form carries an oversized url
+        let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+        let mut args = (&proposal).into_dto_type();
+        args.parameters.participants.participants[0].2.url =
+            "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
+
+        // When
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(signer.clone())
+                .predecessor_account_id(signer)
+                .attached_deposit(NearToken::from_near(0))
+                .build()
+        );
+        let result = contract.vote_new_parameters(dtos::EpochId::new(1), args);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidCandidateSet(InvalidCandidateSet::ParticipantUrlTooLong { .. })
+        );
     }
 
     #[test]
