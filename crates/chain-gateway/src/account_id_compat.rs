@@ -1,7 +1,5 @@
-//! Bridges the two `near-account-id` major versions in our dependency graph:
-//! `nearcore` is on 3.x while the `near-sdk` stack the rest of the workspace
-//! shares is on 2.x, making the two `AccountId` types distinct to rustc even
-//! though both accept the same set of strings.
+//! Exists only while the `near-sdk` stack pins an older `near-account-id`
+//! major than nearcore; delete once they agree on one.
 
 use near_account_id::{AccountId, ParseAccountError};
 use near_indexer_primitives::types::AccountId as NearInternalAccountId;
