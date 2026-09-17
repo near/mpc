@@ -283,13 +283,13 @@ where
             ));
         };
 
-        let disagreeing: Vec<_> = verdicts
-            .filter(|(_, verdict)| *verdict != first_verdict)
-            .collect();
+        let (agreeing, disagreeing): (Vec<_>, Vec<_>) =
+            verdicts.partition(|(_, verdict)| *verdict == first_verdict);
         if !disagreeing.is_empty() {
             tracing::error!(
                 %first_provider,
                 ?first_verdict,
+                ?agreeing,
                 ?disagreeing,
                 "fan-out: inspectors returned mismatching verdicts",
             );
