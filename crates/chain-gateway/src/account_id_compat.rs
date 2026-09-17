@@ -2,19 +2,14 @@
 //! `nearcore` is on 3.x while the `near-sdk` stack the rest of the workspace
 //! shares is on 2.x, making the two `AccountId` types distinct to rustc even
 //! though both accept the same set of strings.
-//!
-//! Nothing type-checks that equivalence, so only the config-derived direction,
-//! [`to_near_internal`], treats it as an invariant; [`from_near_internal`] runs
-//! on chain data and stays fallible, so a future divergence costs one skipped
-//! request instead of the whole node.
 
 use near_account_id::{AccountId, ParseAccountError};
 use near_indexer_primitives::types::AccountId as NearInternalAccountId;
 
 /// Converts an account ID into the flavour the `nearcore` internals expect.
 ///
-/// Panics if the two versions diverge (see module docs) — only pass
-/// config-derived IDs, never chain data.
+/// Panics if the two versions ever diverge — only pass config-derived IDs,
+/// never chain data.
 pub fn to_near_internal(account_id: &AccountId) -> NearInternalAccountId {
     account_id
         .as_str()
