@@ -6,8 +6,6 @@
 use near_account_id::{AccountId, ParseAccountError};
 use near_indexer_primitives::types::AccountId as NearInternalAccountId;
 
-/// Only pass config-derived IDs, never chain data: panics if the two versions
-/// ever diverge.
 pub fn to_near_internal(account_id: &AccountId) -> NearInternalAccountId {
     account_id
         .as_str()
