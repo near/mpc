@@ -304,10 +304,9 @@ macro_rules! evm_inspector_tests {
                 assert_matches!(response, Ok(Verdict::TransactionNotFound));
             }
 
-            // Single malicious provider returns finalized, two other providers answer null.
             #[tokio::test]
             async fn fan_out__should_return_mismatch_when_one_provider_fabricates_a_receipt() {
-                // given
+                // given: single malicious provider returns finalized, two other providers answer null
                 let tx_id = TxHash::from([3;32]);
                 let tx_response = GetTransactionReceiptResponse {
                     transaction_hash: H256::from([3;32]),

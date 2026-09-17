@@ -82,12 +82,14 @@ pub struct SequentialResponseMockClientBuilder {
     responses: Vec<QueuedResponse>,
 }
 
-#[derive(Clone)]
 enum QueuedResponse {
     Value(serde_json::Value),
     Error(fn() -> RpcClientError),
 }
 
+/// Builds a mock RPC client that returns pre-configured responses.
+///
+/// Clones share the queue and its cursor.
 impl SequentialResponseMockClientBuilder {
     pub fn new() -> Self {
         Self::default()
