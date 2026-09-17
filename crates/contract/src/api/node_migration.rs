@@ -310,8 +310,8 @@ impl MpcContract {
 
 /// Parses an operator-supplied url into [`ParticipantUrl`].
 ///
-/// `update_participant_url` still takes a plain `String` so the contract interface and the node
-/// stay unchanged; the bound is applied here, at the boundary.
+/// [`MpcContract::update_participant_url`] still takes a plain [`String`] so the contract
+/// interface and the node stay unchanged; the bound is applied here, at the boundary.
 fn participant_url(url: String) -> Result<ParticipantUrl, Error> {
     let len = url.len();
     ParticipantUrl::new(url).map_err(|_| {

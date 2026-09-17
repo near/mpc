@@ -9,7 +9,7 @@ use crate::bounded_vec::BoundedVecOutOfBounds;
 ///
 /// Deserialization is the enforcement point — a value over the bound is rejected rather than
 /// truncated. Adopting it on a field that is *already persisted* therefore needs care: data
-/// written before the bound existed becomes unreadable. See the crate README before doing so.
+/// written before the bound existed becomes unreadable.
 #[derive(PartialEq, Eq, Debug, Clone, Hash, PartialOrd, Ord)]
 pub struct BoundedString<const U: usize>(String);
 
@@ -31,10 +31,6 @@ impl<const U: usize> BoundedString<U> {
 
     pub fn into_inner(self) -> String {
         self.0
-    }
-
-    pub const fn upper_bound() -> usize {
-        U
     }
 }
 
@@ -151,29 +147,34 @@ mod serde_impl {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     const MAX: usize = 4;
     type Bounded = BoundedString<MAX>;
 
-    #[test]
-    fn new__should_accept_up_to_the_bound_and_reject_beyond_it() {
-        // Given / When / Then
-        assert_eq!(Bounded::new("abcd".to_string()).unwrap().as_str(), "abcd");
-        assert_eq!(
-            Bounded::new("abcde".to_string()),
-            Err(BoundedVecOutOfBounds::UpperBoundError {
-                upper_bound: MAX,
-                got: 5
-            })
-        );
-    }
+    /// The multibyte cases pin that the bound counts bytes, which is what the storage cost
+    /// depends on, rather than characters.
+    #[rstest]
+    #[case::ascii_at_the_bound("abcd", 4)]
+    #[case::ascii_over_the_bound("abcde", 5)]
+    #[case::multibyte_at_the_bound("éé", 4)]
+    #[case::multibyte_over_the_bound("ééé", 6)]
+    fn new__should_bound_by_byte_length(#[case] input: &str, #[case] len: usize) {
+        // Given / When
+        let result = Bounded::new(input.to_string());
 
-    #[test]
-    fn new__should_count_bytes_not_characters() {
-        // Given a 2-char string of 4 bytes, and a 3-char one of 6
-        // When / Then
-        assert!(Bounded::new("éé".to_string()).is_ok());
-        assert!(Bounded::new("ééé".to_string()).is_err());
+        // Then
+        if len <= MAX {
+            assert_eq!(result.unwrap().as_str(), input);
+        } else {
+            assert_eq!(
+                result,
+                Err(BoundedVecOutOfBounds::UpperBoundError {
+                    upper_bound: MAX,
+                    got: len
+                })
+            );
+        }
     }
 
     #[test]
