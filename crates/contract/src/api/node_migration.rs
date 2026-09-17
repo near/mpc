@@ -3,9 +3,8 @@
 
 use crate::api::common::require_deposit;
 use crate::dto_mapping::TryIntoContractType;
-use crate::errors::{self, Error, InvalidCandidateSet, InvalidParameters, InvalidState};
+use crate::errors::{self, Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::Keyset;
-use crate::primitives::participants::{MAX_PARTICIPANT_URL_BYTES, ParticipantInfo, ParticipantUrl};
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{NodeId, TeeQuoteStatus};
 use crate::{MpcContract, MpcContractExt};
@@ -76,8 +75,8 @@ impl MpcContract {
     /// # Errors
     /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
-    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`] if the destination node's url exceeds
-    ///   [`MAX_PARTICIPANT_URL_BYTES`].
+    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong) if the destination node's url exceeds
+    ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).
     ///
     /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
     /// the call must be signed by a full-access key rather than the node's function-call access
@@ -108,10 +107,12 @@ impl MpcContract {
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         // `ongoing_migrations` stores the interface type, whose url is still unbounded, so the
-        // bound is applied explicitly here rather than at `conclude_node_migration`: an operator
-        // finds out before running the migration, and no record is stored that the bounded
-        // contract type could not later accept.
-        participant_url(destination_node_info.destination_node_info.url.clone())?;
+        // bound is not enforced by the stored type here.
+        // TODO(#4456): drop this once the interface type carries the bound.
+        destination_node_info
+            .destination_node_info
+            .clone()
+            .try_into_contract_type()?;
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
         Ok(())
@@ -157,13 +158,15 @@ impl MpcContract {
             return Err(InvalidState::NotParticipant { account_id }.into());
         };
 
-        let new_info = ParticipantInfo {
-            url: participant_url(url)?,
+        let new_info = dtos::ParticipantInfo {
+            url,
             tls_public_key: existing_info.tls_public_key.clone(),
         };
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
-        running_state.parameters.update_info(account_id, new_info)
+        running_state
+            .parameters
+            .update_info(account_id, new_info.try_into_contract_type()?)
     }
 
     /// Finalizes a node migration for the calling account.
@@ -181,8 +184,8 @@ impl MpcContract {
     /// - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller
     /// - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node
     /// - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid
-    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`]: if the destination node's url exceeds
-    ///   [`MAX_PARTICIPANT_URL_BYTES`]. Unreachable for migrations started after the check was
+    /// - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong): if the destination node's url exceeds
+    ///   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES). Unreachable for migrations started after the check was
     ///   added to [`Self::start_node_migration`].
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: dtos::Keyset) -> Result<(), Error> {
@@ -308,21 +311,6 @@ impl MpcContract {
     }
 }
 
-/// Parses an operator-supplied url into [`ParticipantUrl`].
-///
-/// [`MpcContract::update_participant_url`] still takes a plain [`String`] so the contract
-/// interface and the node stay unchanged; the bound is applied here, at the boundary.
-fn participant_url(url: String) -> Result<ParticipantUrl, Error> {
-    let len = url.len();
-    ParticipantUrl::new(url).map_err(|_| {
-        InvalidCandidateSet::ParticipantUrlTooLong {
-            len,
-            max: MAX_PARTICIPANT_URL_BYTES,
-        }
-        .into()
-    })
-}
-
 /// Minimum deposit required for the operator-authenticated node-management methods
 /// (`register_backup_service`, `start_node_migration`, `update_participant_url`, `cancel_node_migration`).
 ///
@@ -339,7 +327,8 @@ mod tests {
     use super::*;
     use crate::api::test_utils::NUM_DOMAINS;
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::errors::NodeMigrationError;
+    use crate::errors::{InvalidCandidateSet, NodeMigrationError};
+    use crate::primitives::participants::{MAX_PARTICIPANT_URL_BYTES, ParticipantInfo};
     use crate::primitives::participants::{ParticipantId, Participants};
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key, gen_account_id, gen_participant,

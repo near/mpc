@@ -76,6 +76,12 @@ impl From<OldTeeState> for TeeState {
 /// Keep this module in sync with [`crate::MpcContract`]: the moment a field's borsh
 /// layout diverges, shadow the old type here (see this module's history for examples) so
 /// state written by the `3.15.1` contract still deserializes during migration.
+///
+/// This module reads the *current* [`ProtocolContractState`], so a bound added to a stored type
+/// is also an upgrade gate: state the new type rejects cannot be migrated. That is deliberate for
+/// [`ParticipantUrl`](crate::primitives::participants::ParticipantUrl) — a url over the bound
+/// fails [`crate::MpcContract::migrate`] and rolls the deploy back, rather than being silently
+/// truncated. Check the participant set before deploying a change of that kind.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
