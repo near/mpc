@@ -317,6 +317,9 @@ where
             let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let (taken, ingested) = {
                 let mut cold = self.cold_queue.lock().unwrap();
+                // Refresh before selecting: an element that satisfies a stale condition value
+                // would be handed out and then fail downstream.
+                cold.update_condition_value();
                 let mut ingested = false;
                 let mut taken = None;
                 while let Ok((id, value)) = self.hot_receiver.try_recv() {
@@ -1527,6 +1530,49 @@ mod tests {
         assert_eq!(taken, Some((id2, 3)));
         assert_eq!(queue.available(), 2);
         assert_eq!(queue.offline(), 0);
+    }
+
+    // The condition value (the alive set) can change after the queue last observed it.
+    // `take_owned_matching` must refresh before selecting, or it hands out an asset that
+    // only satisfies the stale value and the computation fails downstream.
+    #[test]
+    #[expect(non_snake_case)]
+    fn take_owned_matching__should_refresh_condition_value_before_selecting() {
+        // Given
+        let offline_participant = "offline".to_owned();
+        let online_participant = "online".to_owned();
+        let clock = FakeClock::default();
+        let condition_value = Arc::new(Mutex::new(vec![
+            offline_participant.clone(),
+            online_participant.clone(),
+        ]));
+        let queue = {
+            let condition_value = condition_value.clone();
+            DoubleQueue::new(
+                clock.clock(),
+                |cond: &Vec<String>, val| cond.contains(val),
+                Arc::new(move || condition_value.lock().unwrap().clone()),
+            )
+        };
+        // make the queue cache this value, so the change below leaves it stale
+        queue.cold_queue.lock().unwrap().update_condition_value();
+
+        *condition_value.lock().unwrap() = vec![online_participant.clone()];
+        let id_stale = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
+        let id_fresh = id_stale.add_to_counter(1).unwrap();
+        queue.add_owned(id_stale, offline_participant.clone());
+        queue.add_owned(id_fresh, online_participant.clone());
+
+        // When: the caller's own value still accepts both
+        let taken = queue
+            .take_owned_matching(vec![offline_participant, online_participant.clone()])
+            .now_or_never();
+
+        // Then: the one the stale value would have allowed is skipped
+        assert_eq!(taken, Some((id_fresh, online_participant)));
+        // and it is parked rather than dropped, so it becomes usable again on reconnect
+        assert_eq!(queue.offline(), 1);
+        assert_eq!(queue.available(), 0);
     }
 
     // A take with a supplied value nothing matches yet parks; it completes once
