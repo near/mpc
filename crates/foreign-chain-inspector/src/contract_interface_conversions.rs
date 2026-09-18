@@ -12,6 +12,8 @@ use crate::starknet::StarknetExtractedValue;
 use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
 use crate::sui::SuiExtractedValue;
 use crate::sui::inspector::{SuiExtractor, SuiFinality};
+use crate::svm::SvmExtractedValue;
+use crate::svm::inspector::{SvmExtractor, SvmFinality};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
@@ -461,6 +463,124 @@ impl From<SuiExtractedValue> for dtos::ExtractedValue {
     }
 }
 
+impl From<SvmFinality> for dtos::SvmFinality {
+    fn from(value: SvmFinality) -> Self {
+        match value {
+            SvmFinality::Confirmed => dtos::SvmFinality::Confirmed,
+            SvmFinality::Finalized => dtos::SvmFinality::Finalized,
+        }
+    }
+}
+
+impl TryFrom<dtos::SvmFinality> for SvmFinality {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SvmFinality) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SvmFinality::Confirmed => Ok(SvmFinality::Confirmed),
+            dtos::SvmFinality::Finalized => Ok(SvmFinality::Finalized),
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
+                context: "SvmFinality",
+            }),
+        }
+    }
+}
+
+impl TryFrom<SvmExtractor> for dtos::SvmExtractor {
+    type Error = ConversionError;
+    fn try_from(value: SvmExtractor) -> Result<Self, Self::Error> {
+        match value {
+            SvmExtractor::InnerInstruction {
+                instruction_index,
+                inner_instruction_index,
+            } => Ok(dtos::SvmExtractor::InnerInstruction {
+                instruction_index: u64::try_from(instruction_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context: "SvmExtractor::InnerInstruction instruction_index exceeds u64",
+                    }
+                })?,
+                inner_instruction_index: u64::try_from(inner_instruction_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context:
+                            "SvmExtractor::InnerInstruction inner_instruction_index exceeds u64",
+                    }
+                })?,
+            }),
+            SvmExtractor::AccountState { pubkey } => {
+                Ok(dtos::SvmExtractor::AccountState { pubkey })
+            }
+        }
+    }
+}
+
+impl TryFrom<dtos::SvmExtractor> for SvmExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SvmExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SvmExtractor::InnerInstruction {
+                instruction_index,
+                inner_instruction_index,
+            } => Ok(SvmExtractor::InnerInstruction {
+                instruction_index: usize::try_from(instruction_index).map_err(|_| {
+                    ConversionError::IntegerOverflow {
+                        context:
+                            "SvmExtractor::InnerInstruction instruction_index exceeds platform usize",
+                    }
+                })?,
+                inner_instruction_index: usize::try_from(inner_instruction_index).map_err(
+                    |_| ConversionError::IntegerOverflow {
+                        context: "SvmExtractor::InnerInstruction inner_instruction_index exceeds platform usize",
+                    },
+                )?,
+            }),
+            dtos::SvmExtractor::AccountState { pubkey } => {
+                Ok(SvmExtractor::AccountState { pubkey })
+            }
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
+                context: "SvmExtractor",
+            }),
+        }
+    }
+}
+
+impl From<SvmExtractedValue> for dtos::SvmExtractedValue {
+    fn from(value: SvmExtractedValue) -> Self {
+        match value {
+            SvmExtractedValue::InnerInstruction(instruction) => {
+                dtos::SvmExtractedValue::InnerInstruction(instruction)
+            }
+            SvmExtractedValue::AccountState(account) => {
+                dtos::SvmExtractedValue::AccountState(account)
+            }
+        }
+    }
+}
+
+impl TryFrom<dtos::SvmExtractedValue> for SvmExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::SvmExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::SvmExtractedValue::InnerInstruction(instruction) => {
+                Ok(SvmExtractedValue::InnerInstruction(instruction))
+            }
+            dtos::SvmExtractedValue::AccountState(account) => {
+                Ok(SvmExtractedValue::AccountState(account))
+            }
+            other => Err(ConversionError::UnsupportedVariant {
+                value: format!("{other:?}"),
+                context: "SvmExtractedValue",
+            }),
+        }
+    }
+}
+
+impl From<SvmExtractedValue> for dtos::ExtractedValue {
+    fn from(value: SvmExtractedValue) -> Self {
+        dtos::ExtractedValue::SvmExtractedValue(value.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -747,5 +867,54 @@ mod tests {
         let contract = dtos::SuiExtractedValue::from(inspector.clone());
         let back = SuiExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn svm_finality_roundtrip() {
+        for (inspector, contract) in [
+            (SvmFinality::Confirmed, dtos::SvmFinality::Confirmed),
+            (SvmFinality::Finalized, dtos::SvmFinality::Finalized),
+        ] {
+            assert_eq!(contract, dtos::SvmFinality::from(inspector.clone()));
+            assert_eq!(inspector, SvmFinality::try_from(contract).unwrap());
+        }
+    }
+
+    #[test]
+    fn svm_extractor_roundtrip() {
+        let extractors = [
+            SvmExtractor::InnerInstruction {
+                instruction_index: 3,
+                inner_instruction_index: 1,
+            },
+            SvmExtractor::AccountState {
+                pubkey: dtos::SvmAddress([0x0a; 32]),
+            },
+        ];
+        for inspector in extractors {
+            let contract = dtos::SvmExtractor::try_from(inspector.clone()).unwrap();
+            let back = SvmExtractor::try_from(contract).unwrap();
+            assert_eq!(inspector, back);
+        }
+    }
+
+    #[test]
+    fn svm_extracted_value_roundtrip() {
+        let values = [
+            SvmExtractedValue::InnerInstruction(dtos::SvmInnerInstruction {
+                program_id: dtos::SvmAddress([0x01; 32]),
+                accounts: vec![dtos::SvmAddress([0x02; 32])],
+                data: vec![0xde, 0xad, 0xbe, 0xef],
+            }),
+            SvmExtractedValue::AccountState(dtos::SvmAccount {
+                owner: dtos::SvmAddress([0x03; 32]),
+                data: vec![0xca, 0xfe],
+            }),
+        ];
+        for inspector in values {
+            let contract = dtos::SvmExtractedValue::from(inspector.clone());
+            let back = SvmExtractedValue::try_from(contract).unwrap();
+            assert_eq!(inspector, back);
+        }
     }
 }

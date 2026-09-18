@@ -139,8 +139,14 @@ pub(crate) fn basic_setup_with_protocol(
     let parameters =
         GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
             .unwrap();
-    let contract =
-        MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None).unwrap();
+    let contract = MpcContract::init_running(
+        domains,
+        1,
+        (&keyset).into_dto_type(),
+        (&parameters).into_dto_type(),
+        None,
+    )
+    .unwrap();
     (context, contract, sk)
 }
 
@@ -272,7 +278,6 @@ impl MpcContract {
             ),
             accept_requests: true,
             proposed_updates: Default::default(),
-            node_foreign_chain_support: Default::default(),
             config: Default::default(),
             tee_state: Default::default(),
             node_migrations: Default::default(),

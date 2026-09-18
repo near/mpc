@@ -1,10 +1,11 @@
 #![allow(non_snake_case)]
 
 use assert_matches::assert_matches;
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
-    ForeignChainInspectionError, ForeignChainInspector,
+    ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     sui::{
-        SuiExtractedValue, SuiTransactionDigest,
+        MAINNET_GENESIS_CHECKPOINT_DIGEST, SuiExtractedValue, SuiTransactionDigest,
         inspector::{SuiExtractor, SuiFinality, SuiInspector},
     },
 };
@@ -17,32 +18,49 @@ use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 
-/// A client that always returns a hard-coded [`GetTransaction`] response.
 struct MockSuiClient {
-    response: Result<GetTransactionResponse, Status>,
+    response: Option<Result<GetTransactionResponse, Status>>,
+    service_info: Option<Result<GetServiceInfoResponse, Status>>,
 }
 
 impl MockSuiClient {
-    fn transaction(tx: ExecutedTransaction) -> Self {
+    fn answering(response: GetTransactionResponse) -> Self {
         Self {
-            response: Ok(GetTransactionResponse::default().with_transaction(tx)),
+            response: Some(Ok(response)),
+            service_info: None,
         }
+    }
+
+    fn transaction(tx: ExecutedTransaction) -> Self {
+        Self::answering(GetTransactionResponse::default().with_transaction(tx))
     }
 
     fn status(status: Status) -> Self {
         Self {
-            response: Err(status),
+            response: Some(Err(status.clone())),
+            service_info: Some(Err(status)),
+        }
+    }
+
+    fn serving(service_info: GetServiceInfoResponse) -> Self {
+        Self {
+            response: None,
+            service_info: Some(Ok(service_info)),
         }
     }
 }
 
 impl SuiRpcClient for MockSuiClient {
     async fn get_transaction(&self, _digest: &str) -> Result<GetTransactionResponse, Status> {
-        self.response.clone()
+        self.response
+            .clone()
+            .expect("test did not arm get_transaction")
     }
 
     async fn get_service_info(&self) -> Result<GetServiceInfoResponse, Status> {
-        unimplemented!("get_service_info() not used by the inspector")
+        self.service_info
+            .clone()
+            .expect("test did not arm get_service_info")
     }
 
     async fn get_checkpoint(&self, _sequence_number: u64) -> Result<GetCheckpointResponse, Status> {
@@ -114,6 +132,9 @@ async fn extract__should_return_normalized_event_for_checkpointed_transaction() 
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then — type_tag address padded to long form, bcs carried as raw bytes.
     assert_eq!(
@@ -144,6 +165,9 @@ async fn extract__should_return_correct_event_for_specific_index() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     assert_eq!(extracted_values.len(), 1);
@@ -166,7 +190,7 @@ async fn extract__should_return_not_finalized_when_checkpoint_is_missing() {
         .extract(tx_id(), SuiFinality::Checkpointed, vec![])
         .await;
 
-    // Then — transient, so the fan-out keeps retrying until it is checkpointed.
+    // Then: transient, worth retrying once the transaction is checkpointed.
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
     assert!(response.unwrap_err().is_transient());
 }
@@ -186,10 +210,7 @@ async fn extract__should_return_transaction_failed_when_execution_failed() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionFailed)
-    );
+    assert_matches!(response, Ok(Verdict::TransactionFailed));
 }
 
 #[tokio::test]
@@ -237,9 +258,7 @@ async fn extract__should_reject_status_without_success_flag_as_malformed() {
 #[tokio::test]
 async fn extract__should_reject_response_missing_transaction_as_malformed() {
     // Given — a `GetTransactionResponse` whose transaction section is absent entirely.
-    let inspector = SuiInspector::new(MockSuiClient {
-        response: Ok(GetTransactionResponse::default()),
-    });
+    let inspector = SuiInspector::new(MockSuiClient::answering(GetTransactionResponse::default()));
 
     // When
     let response = inspector
@@ -265,12 +284,8 @@ async fn extract__should_return_transaction_not_found_for_unknown_digest() {
         .extract(tx_id(), SuiFinality::Checkpointed, vec![])
         .await;
 
-    // Then — a substantive (non-transient) verdict.
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionNotFound)
-    );
-    assert!(!response.unwrap_err().is_transient());
+    // Then
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
 }
 
 #[tokio::test]
@@ -294,7 +309,7 @@ async fn extract__should_propagate_unavailable_provider_as_transient() {
 }
 
 #[tokio::test]
-async fn extract__should_return_error_when_event_index_out_of_bounds() {
+async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_event_index() {
     // Given
     let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![
         framework_event(),
@@ -310,10 +325,7 @@ async fn extract__should_return_error_when_event_index_out_of_bounds() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-    );
+    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
 }
 
 #[tokio::test]
@@ -400,6 +412,9 @@ async fn extract__should_accept_event_without_contents_type_name() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     assert_eq!(
@@ -431,6 +446,9 @@ async fn extract__should_accept_contents_type_in_different_address_form() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     assert_eq!(
@@ -449,8 +467,61 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
         .extract(tx_id(), SuiFinality::Checkpointed, Vec::new())
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     let expected: Vec<SuiExtractedValue> = vec![];
     assert_eq!(expected, extracted_values);
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_return_the_chain_id_the_service_reports() {
+    // Given
+    let client = MockSuiClient::serving(
+        GetServiceInfoResponse::default().with_chain_id(MAINNET_GENESIS_CHECKPOINT_DIGEST),
+    );
+    let inspector = SuiInspector::new(client);
+
+    // When
+    let fingerprint = inspector
+        .network_fingerprint()
+        .await
+        .expect("network_fingerprint should succeed");
+
+    // Then
+    assert_eq!(fingerprint.to_string(), MAINNET_GENESIS_CHECKPOINT_DIGEST);
+}
+
+#[tokio::test]
+async fn network_fingerprint__should_report_service_info_without_a_chain_id_as_malformed() {
+    // Given
+    let client = MockSuiClient::serving(GetServiceInfoResponse::default());
+    let inspector = SuiInspector::new(client);
+
+    // When
+    let fingerprint = inspector.network_fingerprint().await;
+
+    // Then
+    assert_matches!(
+        fingerprint,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
+}
+
+/// A missing method is a refusal, not a missing transaction.
+#[tokio::test]
+async fn network_fingerprint__should_report_a_not_found_service_as_rejected() {
+    // Given
+    let inspector = SuiInspector::new(MockSuiClient::status(Status::not_found("no such service")));
+
+    // When
+    let fingerprint = inspector.network_fingerprint().await;
+
+    // Then
+    assert_matches!(
+        fingerprint,
+        Err(ForeignChainInspectionError::RpcRequestRejected(_))
+    );
 }

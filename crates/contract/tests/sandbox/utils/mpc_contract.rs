@@ -4,12 +4,12 @@ use crate::sandbox::utils::transactions::CallMpcContract;
 
 use super::transactions::all_receipts_successful;
 use mpc_contract::tee::tee_state::NodeId;
-use mpc_primitives::hash::{LauncherImageHash, NodeImageHash, TeeVerifierCodeHash};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::{
     method_names,
     types::{
         Attestation, Config, Ed25519PublicKey, GovernanceThreshold, Participants,
-        ProtocolContractState,
+        ProtocolContractState, VerifiedAttestation,
     },
 };
 use near_workspaces::{
@@ -24,6 +24,10 @@ pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
         .fold(NearToken::from_yoctonear(0), NearToken::saturating_add)
 }
 
+pub async fn get_config(contract: &Contract) -> anyhow::Result<Config> {
+    Ok(contract.view(method_names::CONFIG).await?.json()?)
+}
+
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract
         .view(method_names::STATE)
@@ -31,15 +35,6 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
         .unwrap()
         .json()
         .unwrap()
-}
-
-pub async fn get_allowed_launcher_image_hashes(
-    contract: &Contract,
-) -> anyhow::Result<Vec<LauncherImageHash>> {
-    Ok(contract
-        .view(method_names::ALLOWED_LAUNCHER_IMAGE_HASHES)
-        .await?
-        .json()?)
 }
 
 pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
@@ -51,17 +46,24 @@ pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participant
     Ok(running.parameters.participants)
 }
 
-/// Helper function to get TEE participants from contract.
 pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeId>> {
     Ok(contract
-        .call(method_names::GET_TEE_ACCOUNTS)
-        .args_json(serde_json::json!({}))
-        .max_gas()
-        .transact()
+        .view(method_names::GET_TEE_ACCOUNTS)
         .await?
         .json::<Vec<NodeId>>()?
         .into_iter()
         .collect())
+}
+
+pub async fn available_attestation_grants(
+    contract: &Contract,
+    account_id: &AccountId,
+) -> anyhow::Result<u32> {
+    Ok(contract
+        .view(method_names::AVAILABLE_ATTESTATION_GRANTS)
+        .args_json(serde_json::json!({ "account_id": account_id }))
+        .await?
+        .json()?)
 }
 
 pub async fn prepay_attestation_grants(
@@ -71,11 +73,7 @@ pub async fn prepay_attestation_grants(
     grants: u32,
 ) -> anyhow::Result<ExecutionFinalResult> {
     // The fee is read from `config()`, the way an operator reads it.
-    let config: Config = contract
-        .view(method_names::CONFIG)
-        .args_json(serde_json::json!({}))
-        .await?
-        .json()?;
+    let config = get_config(contract).await?;
     let total = NearToken::from_millinear(
         u128::from(config.attestation_storage_fee_millinear) * u128::from(grants),
     );
@@ -116,25 +114,6 @@ pub async fn submit_participant_info(
         .map_err(Into::into)
 }
 
-pub async fn vote_tee_verifier_change(
-    account: &Account,
-    contract: &Contract,
-    candidate_account_id: &AccountId,
-    expected_code_hash: [u8; 32],
-) -> anyhow::Result<()> {
-    let expected_code_hash = TeeVerifierCodeHash::new(expected_code_hash);
-    all_receipts_successful(
-        account
-            .call(contract.id(), method_names::VOTE_TEE_VERIFIER_CHANGE)
-            .args_json(serde_json::json!({
-                "candidate_account_id": candidate_account_id,
-                "expected_code_hash": expected_code_hash,
-            }))
-            .transact()
-            .await?,
-    )
-}
-
 pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
     contract
         .view(method_names::TEE_VERIFIER_ACCOUNT_ID)
@@ -147,18 +126,14 @@ pub async fn tee_verifier_account_id(contract: &Contract) -> Option<AccountId> {
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<Attestation>> {
-    let result = contract
-        .as_account()
-        .call(contract.id(), method_names::GET_ATTESTATION)
+) -> anyhow::Result<Option<VerifiedAttestation>> {
+    Ok(contract
+        .view(method_names::GET_ATTESTATION)
         .args_json(serde_json::json!({
             "tls_public_key": tls_key
         }))
-        .max_gas()
-        .transact()
-        .await?;
-
-    Ok(result.json()?)
+        .await?
+        .json()?)
 }
 
 pub async fn assert_running_return_participants(
@@ -192,9 +167,8 @@ pub async fn vote_for_hash(
     image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": image_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(*image_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())

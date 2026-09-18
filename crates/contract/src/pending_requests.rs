@@ -14,12 +14,10 @@
 //! directly, so the queue policy lives in one place.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_contract_interface::types::YieldIndex;
 use near_sdk::{CryptoHash, env, store::LookupMap};
 
-use crate::{
-    errors::{Error, InvalidParameters, RequestError},
-    primitives::signature::YieldIndex,
-};
+use crate::errors::{Error, InvalidParameters, RequestError};
 
 /// Maximum number of concurrent yield-resume promises that can be queued for a single
 /// request key (i.e. the number of duplicate submissions whose responses fan out from

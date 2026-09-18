@@ -1,0 +1,86 @@
+# Mainnet RPC provider whitelist
+
+[chains.Bitcoin]
+quorum = 1
+
+[chains.Bitcoin.providers.public]
+base_url = "https://bitcoin-rpc.publicnode.com"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Abstract]
+quorum = 3
+
+[chains.Abstract.providers.alchemy]
+base_url = "https://abstract-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Abstract.providers.abstract-mainnet]
+base_url = "https://api.mainnet.abs.xyz"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Abstract.providers.quicknode]
+base_url = "https://{}.abstract-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Starknet]
+quorum = 3
+
+[chains.Starknet.providers.alchemy]
+base_url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Starknet.providers.publicnode]
+base_url = "https://starknet-rpc.publicnode.com"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Starknet.providers.quicknode]
+base_url = "https://{}.strk-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Aptos]
+quorum = 3
+
+[chains.Aptos.providers.alchemy]
+base_url = "https://aptos-mainnet.g.alchemy.com/v2/"
+auth_scheme = { Path = { placeholder = "{API_KEY}" } }
+chain_routing = "Embedded"
+
+[chains.Aptos.providers.geomi]
+base_url = "https://api.mainnet.aptoslabs.com/v1"
+auth_scheme = { Header = { name = "Authorization", scheme = "Bearer" } }
+chain_routing = "Embedded"
+
+[chains.Aptos.providers.public]
+base_url = "https://fullnode.mainnet.aptoslabs.com/v1"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Aptos.providers.quicknode]
+base_url = "https://{}.aptos-mainnet.quiknode.pro"
+auth_scheme = { Path = { placeholder = "{api_key}" } }
+chain_routing = "Embedded"
+
+[chains.Sui]
+quorum = 3
+
+[chains.Sui.providers.alchemy]
+base_url = "https://sui-mainnet.g.alchemy.com"
+auth_scheme = { Header = { name = "Authorization", scheme = "Bearer" } }
+chain_routing = "Embedded"
+
+[chains.Sui.providers.public]
+base_url = "https://archive.mainnet.sui.io"
+auth_scheme = "None"
+chain_routing = "Embedded"
+
+[chains.Sui.providers.quicknode]
+base_url = "https://{}.sui-mainnet.quiknode.pro"
+auth_scheme = { Header = { name = "x-token" } }
+chain_routing = "Embedded"

@@ -2,6 +2,9 @@ use attestation::attestation::VerificationError;
 use node_types::http_server::StaticWebData;
 use time::OffsetDateTime;
 
+use dcap_qvl::{TcbStatus, policy::PckIdentity, quote::TDReport10};
+
+use crate::tcb_status::{self, EarlyDemotion, Report, TcbVerdict};
 use crate::verify::VerificationResult;
 
 pub fn print_success(static_data: &StaticWebData, result: &VerificationResult) {
@@ -16,7 +19,7 @@ pub fn print_failure(static_data: &StaticWebData, err: &VerificationError) {
     println!();
     println!("--- Failure Details ---");
     match err {
-        VerificationError::TcbStatusNotUpToDate(status) => {
+        VerificationError::TcbStatusNotUpToDate { status, .. } => {
             println!("Reason:          TCB status is not up to date");
             println!("TCB Status:      {status}");
             println!("Expected Status: UpToDate");
@@ -96,5 +99,120 @@ fn format_timestamp(unix_secs: u64) -> String {
             )
         }
         Err(_) => format!("{unix_secs} (invalid timestamp)"),
+    }
+}
+
+pub fn print_tcb_status(report: &Report) {
+    println!("=== MPC Node Platform TCB Status ===");
+
+    // The PCK numbers come from the certificate a successful verification read,
+    // not from the collateral, so every row carries identical values and
+    // whichever verified will do. The verdicts themselves do differ, which is
+    // the point of showing three rows.
+    let pck = match (&report.served, &report.standard, &report.early) {
+        (TcbVerdict::Verified { claims, .. }, _, _)
+        | (_, Some(TcbVerdict::Verified { claims, .. }), _)
+        | (_, _, Some(TcbVerdict::Verified { claims, .. })) => Some(&claims.platform.pck),
+        _ => None,
+    };
+    print_platform(&report.td_report, pck);
+
+    print_verdict("served by the node", &report.served);
+    if let Some(standard) = &report.standard {
+        print_verdict("Intel `standard`", standard);
+    }
+    if let Some(early) = &report.early {
+        print_verdict("Intel `early`", early);
+    }
+
+    if let Some(EarlyDemotion { cleared, demoted }) = report.early_demotion() {
+        println!();
+        println!(
+            "This platform clears TCB recovery set {cleared} but not set {demoted}, which Intel \
+             publishes and has yet to promote."
+        );
+    }
+}
+
+fn print_verdict(label: &str, verdict: &TcbVerdict) {
+    println!();
+    match verdict {
+        TcbVerdict::Verified {
+            tcb_info,
+            claims,
+            shortfalls,
+        } => {
+            println!(
+                "--- {label}: TCB recovery set {}, issued {} ---",
+                tcb_info.tcb_evaluation_data_number, tcb_info.issue_date
+            );
+            println!("Status:                 {}", claims.tcb.status);
+            if !claims.tcb.advisory_ids.is_empty() {
+                println!(
+                    "Advisory IDs:           {}",
+                    claims.tcb.advisory_ids.join(", ")
+                );
+            }
+            for shortfall in shortfalls {
+                println!(
+                    "  {} is {}, needs {} -> {}",
+                    shortfall.component, shortfall.have, shortfall.needs, shortfall.remedy
+                );
+            }
+            // Demoted with nothing to raise: either Intel accepts no level for
+            // this platform, or every SVN clears one and the module identity's
+            // own advisories carry the status down.
+            if shortfalls.is_empty() && claims.tcb.status != TcbStatus::UpToDate {
+                if tcb_info
+                    .tcb_levels
+                    .iter()
+                    .all(|level| level.tcb_status != TcbStatus::UpToDate)
+                {
+                    println!(
+                        "  Intel publishes no UpToDate level for this platform, so no SVN upgrade reaches one."
+                    );
+                } else {
+                    println!(
+                        "  Every SVN clears an accepted level; the status comes from the advisories above."
+                    );
+                }
+            }
+        }
+        TcbVerdict::Rejected(reason) => {
+            println!("--- {label} ---");
+            println!("Rejected:               {reason}");
+        }
+    }
+}
+
+/// `pck` is absent when neither collateral verified, which leaves only the half
+/// of the platform the quote describes on its own.
+fn print_platform(report: &TDReport10, pck: Option<&PckIdentity>) {
+    let (module, module_svn) = tcb_status::tdx_module(&report.tee_tcb_svn);
+
+    println!();
+    println!("--- Platform, as the quote reports it ---");
+    if let Some(pck) = pck {
+        println!("FMSPC:                  {}", hex::encode_upper(pck.fmspc));
+    }
+    println!(
+        "tee_tcb_svn:            {}",
+        hex::encode(report.tee_tcb_svn)
+    );
+    println!(
+        "TDX module:             {} at ISV SVN {}",
+        module.as_deref().unwrap_or("unnamed"),
+        module_svn
+    );
+    println!("TDX TCB components:     {:?}", report.tee_tcb_svn);
+    match pck {
+        Some(pck) => {
+            println!("SGX TCB components:     {:?}", pck.cpu_svn);
+            println!("PCESVN:                 {}", pck.pce_svn);
+        }
+        None => {
+            println!("FMSPC, SGX components and PCESVN come from the PCK certificate,");
+            println!("which neither evaluation could read.");
+        }
     }
 }

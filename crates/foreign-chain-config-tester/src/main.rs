@@ -1,6 +1,6 @@
 //! Foreign-chain RPC config tester: probe every configured provider with a fixed
 //! golden request so operators can verify their config without running the node.
-//! Sui is probed differently — see the README.
+//! Sui and the SVM chains are probed differently — see the README.
 
 mod config;
 mod report;

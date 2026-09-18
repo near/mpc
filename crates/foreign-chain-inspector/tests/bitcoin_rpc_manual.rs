@@ -1,10 +1,13 @@
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspector, NetworkFingerprintInspector, RpcAuthentication,
+    BlockConfirmations, ForeignChainInspector, NetworkFingerprintInspector,
     bitcoin::{
         BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
+        MAINNET_GENESIS_BLOCK_HASH,
         inspector::{BitcoinExtractor, BitcoinInspector},
     },
 };
+use foreign_chain_rpc_factory::build_http_client;
 use jsonrpsee::{core::client::ClientT, http_client::HttpClient};
 use rstest::rstest;
 use serde::Deserialize;
@@ -34,10 +37,10 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider(
     #[case] expected_block_hash: Option<&'static str>,
 ) {
     // given
-    let http_client = foreign_chain_inspector::build_http_client(
-        PUBLIC_NODE_URL.to_string(),
-        RpcAuthentication::KeyInUrl,
-    )
+    let http_client = build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: PUBLIC_NODE_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
     .unwrap();
     let (transaction_id, expected_block_hash) =
         resolve_input(&http_client, tx_hash, expected_block_hash).await;
@@ -49,6 +52,9 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider(
         .extract(transaction_id, threshold, vec![BitcoinExtractor::BlockHash])
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     assert_eq!(
@@ -119,19 +125,17 @@ struct GetBlockVerbosityOneResponse {
     tx: Vec<String>,
 }
 
-/// Bitcoin mainnet's genesis block hash, as shipped in the node config file
-/// `foreign_chains.bitcoin.expected_network_fingerprint`.
-const EXPECTED_NETWORK_FINGERPRINT: &str =
-    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
+/// As shipped in the node config `foreign_chains.bitcoin.expected_network_fingerprint`.
+const EXPECTED_NETWORK_FINGERPRINT: &str = MAINNET_GENESIS_BLOCK_HASH;
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live Bitcoin RPC provider"]
 async fn network_fingerprint_matches_the_shipped_config_value_against_live_rpc_provider() {
     // given
-    let http_client = foreign_chain_inspector::build_http_client(
-        PUBLIC_NODE_URL.to_string(),
-        RpcAuthentication::KeyInUrl,
-    )
+    let http_client = build_http_client(&mpc_node_config::ForeignChainProviderConfig {
+        rpc_url: PUBLIC_NODE_URL.to_string(),
+        auth: mpc_node_config::AuthConfig::None,
+    })
     .unwrap();
     let inspector = BitcoinInspector::new(http_client);
 

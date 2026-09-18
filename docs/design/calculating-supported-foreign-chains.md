@@ -1,27 +1,29 @@
 # Calculating the whitelisted and available foreign-chain sets
 
-Status: Proposed — supersedes the all-participant intersection rule in
-[`docs/foreign-chain-transactions.md`](../foreign-chain-transactions.md). Tracked by
-[#3434](https://github.com/near/mpc/issues/3434).
+Status: Implemented — supersedes the all-participant intersection rule described in the archived
+[`docs/archive/design/foreign-chain-transactions.md`](../archive/design/foreign-chain-transactions.md).
+Tracked by [#3434](https://github.com/near/mpc/issues/3434); the legacy API was removed in
+[#3630](https://github.com/near/mpc/issues/3630).
 
 ## Background
 
-Today, `get_supported_foreign_chains()` returns the **strict intersection** of every
-active participant's registered chains, and `verify_foreign_transaction` rejects any
-request whose target chain is not in it. A single node that registers an empty list
+The legacy `get_supported_foreign_chains()` returned the **strict intersection** of every
+active participant's registered chains, and `verify_foreign_transaction` rejected any
+request whose target chain was not in it. A single node that registers an empty list
 (or hasn't registered yet) drops **every** chain — one operator can take the whole
-feature down. That is what this proposal fixes.
+feature down. That is what this design fixes.
 
 It builds on the per-chain RPC whitelist (`ForeignChainRpcWhitelist`), which holds,
-per chain, the network-trusted providers and the **RPC quorum** (`ChainEntry.quorum`
-— how many of a node's providers must agree for it to accept a result).
+per chain, the network-trusted providers and the voted **RPC quorum** (`ChainEntry.quorum`,
+stored for a deferred quorum policy and not yet consumed: verification compares every
+configured provider, see [Verification behavior](#verification-behavior)).
 
-## Proposal: two sets of chains
+## Design: two sets of chains
 
 > **Terms** (whitelisted, available, RPC quorum, signing threshold, *covers*) are defined in
-> [Foreign Chain Transaction Verification Design — Terminology](../foreign-chain-transactions.md#terminology).
+> [Foreign Chain Transaction Verification Design — Terminology](../archive/design/foreign-chain-transactions.md#terminology).
 
-The network distinguishes the **whitelisted** set (vote-driven policy, `get_whitelisted_foreign_chains()`)
+The network distinguishes the **whitelisted** set (vote-driven policy, `allowed_foreign_chain_providers()`)
 from the **available** set (servable right now, `get_available_foreign_chains()`):
 
 - **Whitelisted** is derived purely from the on-chain RPC whitelist — **no per-node input can add or
@@ -33,7 +35,7 @@ from the **available** set (servable right now, `get_available_foreign_chains()`
 instead of accepting a request that can't reach the signing threshold and letting it time out. The
 rejection is temporary — `C` becomes serviceable again as soon as enough nodes report coverage.
 
-The legacy `get_supported_foreign_chains()` (the intersection rule) is **to be deprecated** in favour
+The legacy `get_supported_foreign_chains()` (the intersection rule) has been removed in favour
 of the two views above.
 
 ## Why two sets
@@ -56,28 +58,37 @@ misconfigured for a chain — an operational anomaly that alerting surfaces (see
 ## Verification behavior
 
 Each node fans the query out to its whitelisted providers for `C` and accepts a
-result only when ≥ `rpc_quorum(C)` return the same response. If fewer agree, the node
-errors out and produces no signature share.
+result only when every provider that reached a verdict reached the same one; providers
+that fail to answer are tolerated. On any disagreement the node errors out and produces
+no signature share.
 
-**This sub-quorum outcome must be terminal — the leader must not re-attempt the
+**A disagreement outcome must be terminal — the leader must not re-attempt the
 request.** Implementation requirement, not current behavior: the generic queue
-retries every request, so the foreign-tx path must special-case a sub-quorum
-result as non-retryable. (Open: whether a sub-quorum from purely *transient*
-failures — timeouts, finality not reached — should still retry, vs. only genuine
-disagreement being terminal. Tracked in [#3477](https://github.com/near/mpc/issues/3477).)
+retries every request, so the foreign-tx path must special-case a disagreement
+as non-retryable. The fan out already distinguishes the two outcomes in its
+return value: when no provider reaches a verdict it propagates the underlying
+error, and only genuine disagreement between verdicts reports a mismatch.
+Whether the no-verdict outcome should retry while disagreement stays terminal
+is tracked in [#3477](https://github.com/near/mpc/issues/3477).
 
 ## Participant selection
 
 Foreign-tx signing must select participants that **cover** the requested chain
-(report ≥ `rpc_quorum(C)` providers for `C`), not merely online ones — a
+(their registration lists `C`), not merely online ones — a
 non-covering participant produces no share and can stall the request.
 
-Implemented on the presignature-selection side: the leader only takes a
-presignature whose participants are all alive **and** supporters of `C`, and
+Implemented in two places:
+1. Leader selection is chain- and threshold-aware: the
+pending-request queue narrows a request's eligible leaders to the supporters
+of `C`, and selects one only when at least a reconstruction threshold's worth
+of them is online (the same threshold that gates availability). Otherwise the request
+parks — no attempt is consumed, the `mpc_num_requests_without_refined_leader_total` metric counts the queue
+passes — until supporters come back or the request expires.
+2. On the
+presignature-selection side, the leader only takes a presignature whose
+participants are all alive **and** supporters of `C`, and as defense-in-depth
 refuses to lead a request for a chain it does not itself support (every owned
-presignature includes the leader). Leader selection itself is not yet
-chain-aware — a non-supporting leader rejects the attempt instead of serving
-it — tracked in [#3961](https://github.com/near/mpc/issues/3961).
+presignature includes the leader).
 
 Residual limitation, accepted as-is: presignature generation remains
 liveness-driven, so participant sets are random `t`-subsets of the alive set.
@@ -91,8 +102,8 @@ underlying queue — which could subsume this limitation — is tracked in
 
 ## Per-node registration
 
-Per-node registration (`register_available_foreign_chain_config` /
-`get_available_foreign_chain_by_node`) reports which chains each node currently covers,
+Per-node registration (`register_foreign_chains_config` / `get_foreign_chains_configs`)
+reports which chains each node currently covers,
 and serves two roles:
 
 - it **feeds the available set** — the contract counts, per chain, how many active
@@ -104,17 +115,14 @@ and serves two roles:
 
 Registration reflects each node's *current* config.
 
-Because this data now feeds the *available* set, the methods are renamed to reflect that:
-`register_foreign_chain_config` → `register_available_foreign_chain_config` and
-`get_foreign_chain_support_by_node` → `get_available_foreign_chain_by_node`. The old names are kept as thin
-wrappers delegating to the new ones, then deprecated and removed once node and contract have both
-migrated — the same independent node/contract rollout used for the view methods, so the rename needs
-no flag-day coordination.
+Registrations are keyed by the node's TLS public key rather than its NEAR account, so an
+operator running several nodes gets one entry per node.
 
 ## Guarantees preserved
 
 **Safety** — the network signs an observation only if ≥ `signing_threshold`
-participants each independently verified it (each via its own RPC quorum). Fewer than
+participants each independently verified it, each against its own configured providers
+(see [Verification behavior](#verification-behavior)). Fewer than
 `signing_threshold` cannot force a false attestation.
 
 **Liveness** — a request is accepted only when `C` is available (≥ `signing_threshold`
@@ -137,11 +145,6 @@ node for every chain.
 
 ## Migration
 
-`get_supported_foreign_chains()` stays working throughout, so the new node version
-can roll out before the contract upgrade (node and contract migrate independently):
-
-1. Keep `get_supported_foreign_chains()` unchanged.
-2. Add `get_whitelisted_foreign_chains()` and `get_available_foreign_chains()` (additive).
-3. Vote the RPC providers / chains into the whitelist.
-4. Upgrade the contract.
-5. Switch node code to the new methods and deprecate `get_supported_foreign_chains()`.
+The new API is available on both node and contract since 3.14.0. The legacy API is removed by
+[#3630](https://github.com/near/mpc/issues/3630) in the release after 3.15.0, whose contract
+migration also clears the legacy per-account storage.

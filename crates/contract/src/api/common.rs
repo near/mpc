@@ -2,7 +2,6 @@
 
 use crate::errors::{InvalidParameters, RequestError, TeeError};
 use crate::{MpcContract, MpcContractExt};
-use dtos::{DomainConfig, DomainId, DomainPurpose};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, env, log, near};
 
@@ -22,11 +21,11 @@ impl MpcContract {
     /// Returns the validated domain config and the caller's account id.
     pub(crate) fn check_request_preconditions(
         &self,
-        domain_id: DomainId,
-        expected_purpose: DomainPurpose,
+        domain_id: dtos::DomainId,
+        expected_purpose: dtos::DomainPurpose,
         minimum_gas: Gas,
         minimum_deposit: NearToken,
-    ) -> (DomainConfig, AccountId) {
+    ) -> (dtos::DomainConfig, AccountId) {
         // 1. Look up the domain and check its purpose.
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
@@ -179,14 +178,14 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         let (config, predecessor) = contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
-        assert_eq!(config.id, DomainId::default());
+        assert_eq!(config.id, dtos::DomainId::default());
         assert_eq!(Curve::from(config.protocol), Curve::Secp256k1);
-        assert_eq!(config.purpose, DomainPurpose::Sign);
+        assert_eq!(config.purpose, dtos::DomainPurpose::Sign);
         assert_eq!(predecessor.as_str(), "contract_account.near");
     }
 
@@ -196,8 +195,8 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         contract.check_request_preconditions(
-            DomainId(999),
-            DomainPurpose::Sign,
+            dtos::DomainId(999),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
@@ -209,8 +208,8 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::CKD,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::CKD,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
@@ -222,8 +221,8 @@ mod tests {
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         override_context_for_preconditions(NearToken::from_yoctonear(1), Gas::from_tgas(1));
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(100),
             NearToken::from_yoctonear(1),
         );
@@ -235,8 +234,8 @@ mod tests {
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
         override_context_for_preconditions(NearToken::from_near(0), Gas::from_tgas(300));
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
@@ -249,8 +248,8 @@ mod tests {
         let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
         contract.accept_requests = false;
         contract.check_request_preconditions(
-            DomainId::default(),
-            DomainPurpose::Sign,
+            dtos::DomainId::default(),
+            dtos::DomainPurpose::Sign,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );

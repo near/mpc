@@ -56,6 +56,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y repro-env
 
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
+        with:
+          save: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Build MPC Node binary and image
         run: |
           export NODE_IMAGE_NAME=test_image_tag_ci
@@ -88,6 +93,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y liblzma-dev repro-env
+
+      - name: Cache repro-env packages
+        uses: ./.github/actions/cache-repro-env-pkgs
 
       - name: Build Rust launcher docker image
         shell: bash
@@ -189,7 +197,7 @@ jobs:
 
   # Independent reproducible path: the Nix derivation produces the contract WASM
   # without a third-party Docker image. Kept exercised alongside the cargo-near
-  # build; see docs/reproducible-builds.md.
+  # build; see docs/guide/reproducible-builds.md.
   nix-build-mpc-contract:
     name: "Nix build mpc-contract"
     needs: changes
@@ -295,11 +303,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: nix develop --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
+      - name: Build tee-verifier
+        run: nix develop --command cargo make build-tee-verifier-optimized
+
       - name: Build test-parallel-contract
         run: nix develop --command cargo make build-test-parallel-contract-optimized
 
       - name: Build backup-cli
-        run: nix develop --command cargo build -p backup-cli --release --locked
+        run: nix develop --command cargo make build-backup-cli
 
       - name: Run E2E tests
         run: nix develop --command cargo make e2e-tests-skip-build

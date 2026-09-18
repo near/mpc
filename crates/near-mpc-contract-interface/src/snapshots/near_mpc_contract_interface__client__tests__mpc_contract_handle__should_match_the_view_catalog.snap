@@ -1,0 +1,31 @@
+---
+source: crates/near-mpc-contract-interface/src/client.rs
+expression: catalog
+---
+contract: mpc.near
+method:   allowed_docker_image_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_launcher_image_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_launcher_compose_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_os_measurements
+args:     {}
+
+contract: mpc.near
+method:   mpc_node_manifest_digest_votes
+args:     {}
+
+contract: mpc.near
+method:   launcher_hash_votes
+args:     {}
+
+contract: mpc.near
+method:   os_measurement_votes
+args:     {}

@@ -2,7 +2,7 @@ use super::domain::DomainRegistry;
 use crate::{
     crypto_shared::types::{PublicKeyExtended, serializable::SerializableEdwardsPoint},
     primitives::{
-        key_state::AuthenticatedParticipantId,
+        key_state::{AuthenticatedAccountId, AuthenticatedParticipantId},
         participants::{ParticipantInfo, Participants},
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
@@ -75,14 +75,9 @@ fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) 
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let (edwards_point, compressed_edwards_point) = gen_random_edwards_point();
-    let near_public_key_compressed = near_sdk::PublicKey::from_parts(
-        near_sdk::CurveType::ED25519,
-        compressed_edwards_point.as_bytes().into(),
-    )
-    .unwrap();
 
     PublicKeyExtended::Ed25519 {
-        near_public_key_compressed,
+        near_public_key_compressed: Ed25519PublicKey::from(compressed_edwards_point),
         edwards_point,
     }
 }
@@ -130,7 +125,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("https://www.near{}.com", i),
+            url: format!("https://www.near{}.com", i).try_into().unwrap(),
             tls_public_key: bogus_ed25519_public_key(),
         },
     )
@@ -169,6 +164,16 @@ pub fn authenticate_as(
     ctx.signer_account_id(account_id.clone());
     testing_env!(ctx.build());
     AuthenticatedParticipantId::new(participants).unwrap()
+}
+
+pub fn authenticate_account_as(
+    account_id: &AccountId,
+    participants: &Participants,
+) -> AuthenticatedAccountId {
+    let mut ctx = VMContextBuilder::new();
+    ctx.signer_account_id(account_id.clone());
+    testing_env!(ctx.build());
+    AuthenticatedAccountId::new(participants).unwrap()
 }
 
 /// Build `n` participants and pre-authenticate each, returning the set alongside

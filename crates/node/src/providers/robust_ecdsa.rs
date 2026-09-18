@@ -60,7 +60,7 @@ impl RobustEcdsaSignatureProvider {
         sign_request_store: Arc<SignRequestStorage>,
         keyshares: HashMap<DomainId, DomainKeyshare<Secp256K1Sha256>>,
     ) -> anyhow::Result<Self> {
-        let keyshares = ecdsa_common::build_keyshares(&clock, &db, &client, keyshares)?;
+        let keyshares = ecdsa_common::build_keyshares(&clock, &db, client.clone(), keyshares)?;
 
         Ok(Self {
             config,
