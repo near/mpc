@@ -36,11 +36,11 @@ impl ProviderCallMetrics {
             }
             metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS
                 .with_label_values(&[chain.label(), label]);
-            for kind in Kind::ALL {
+            for failure in ProviderFailure::ALL {
                 metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL.with_label_values(&[
                     chain.label(),
                     label,
-                    kind.label(),
+                    kind_label(failure),
                 ]);
             }
         }
@@ -97,11 +97,7 @@ impl ObserveProviderCall for ProviderCallTimer {
             .observe(elapsed);
         if let Some(failure) = failure {
             metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-                .with_label_values(&[
-                    running.chain.label(),
-                    &running.label,
-                    Kind::from(failure).label(),
-                ])
+                .with_label_values(&[running.chain.label(), &running.label, kind_label(failure)])
                 .inc();
         }
     }
@@ -133,35 +129,14 @@ impl Outcome {
     }
 }
 
-/// The `kind` label of [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`]. `Timeout` is the
-/// RPC client giving up on an answer; a call the fan-out abandoned is timed in
-/// [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS`] instead.
-#[derive(Clone, Copy)]
-enum Kind {
-    Transient,
-    NonTransient,
-    Timeout,
-}
-
-impl Kind {
-    const ALL: [Self; 3] = [Self::Transient, Self::NonTransient, Self::Timeout];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Transient => "transient",
-            Self::NonTransient => "non_transient",
-            Self::Timeout => "timeout",
-        }
-    }
-}
-
-impl From<ProviderFailure> for Kind {
-    fn from(failure: ProviderFailure) -> Self {
-        match failure {
-            ProviderFailure::Unreachable => Self::Transient,
-            ProviderFailure::Rejected | ProviderFailure::Malformed => Self::NonTransient,
-            ProviderFailure::TimedOut => Self::Timeout,
-        }
+/// The `kind` label of [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`]. A call the fan-out
+/// abandoned has no kind; it is timed in [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS`].
+fn kind_label(failure: ProviderFailure) -> &'static str {
+    match failure {
+        ProviderFailure::Unreachable => "unreachable",
+        ProviderFailure::Rejected => "rejected",
+        ProviderFailure::Malformed => "malformed",
+        ProviderFailure::TimedOut => "timed_out",
     }
 }
 
@@ -186,9 +161,9 @@ mod tests {
             .get_sample_count()
     }
 
-    fn errored(chain: ForeignChain, label: &str, kind: Kind) -> u64 {
+    fn errored(chain: ForeignChain, label: &str, failure: ProviderFailure) -> u64 {
         metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-            .with_label_values(&[chain.label(), label, kind.label()])
+            .with_label_values(&[chain.label(), label, kind_label(failure)])
             .get()
     }
 
@@ -222,9 +197,9 @@ mod tests {
         assert_eq!(timed(chain, "p0", Outcome::Answered), 1);
         assert_eq!(timed(chain, "p0", Outcome::Failed), 4);
         assert_eq!(dropped(chain, "p0"), 0);
-        assert_eq!(errored(chain, "p0", Kind::Transient), 1);
-        assert_eq!(errored(chain, "p0", Kind::NonTransient), 2);
-        assert_eq!(errored(chain, "p0", Kind::Timeout), 1);
+        for failure in ProviderFailure::ALL {
+            assert_eq!(errored(chain, "p0", failure), 1);
+        }
     }
 
     #[test]
@@ -241,8 +216,8 @@ mod tests {
         assert_eq!(dropped(chain, "p0"), 1);
         assert_eq!(timed(chain, "p0", Outcome::Answered), 0);
         assert_eq!(timed(chain, "p0", Outcome::Failed), 0);
-        for kind in Kind::ALL {
-            assert_eq!(errored(chain, "p0", kind), 0);
+        for failure in ProviderFailure::ALL {
+            assert_eq!(errored(chain, "p0", failure), 0);
         }
     }
 
@@ -265,11 +240,11 @@ mod tests {
         // Then: its series is p1, not p2, so input order does not matter.
         assert_eq!(timed(chain, "p1", Outcome::Answered), 1);
         assert_eq!(timed(chain, "p1", Outcome::Failed), 1);
-        assert_eq!(errored(chain, "p1", Kind::Transient), 1);
+        assert_eq!(errored(chain, "p1", ProviderFailure::Unreachable), 1);
         for label in ["p0", "p2"] {
             assert_eq!(timed(chain, label, Outcome::Answered), 0);
             assert_eq!(timed(chain, label, Outcome::Failed), 0);
-            assert_eq!(errored(chain, label, Kind::Transient), 0);
+            assert_eq!(errored(chain, label, ProviderFailure::Unreachable), 0);
         }
     }
 
@@ -296,6 +271,6 @@ mod tests {
             2
         );
         assert_eq!(count("mpc_foreign_chain_provider_dropped_seconds_count"), 1);
-        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 3);
+        assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 4);
     }
 }

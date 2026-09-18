@@ -532,7 +532,17 @@ pub enum ProviderFailure {
     Rejected,
     /// The provider answered with something the caller could not use.
     Malformed,
+    /// The RPC client gave up waiting for an answer.
     TimedOut,
+}
+
+impl ProviderFailure {
+    pub const ALL: [Self; 4] = [
+        Self::Unreachable,
+        Self::Rejected,
+        Self::Malformed,
+        Self::TimedOut,
+    ];
 }
 
 #[cfg(test)]

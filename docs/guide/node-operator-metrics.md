@@ -63,11 +63,13 @@ are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
 
 `kind` is one of:
 
-* `transient`: the provider gave no usable answer, for a reason that can clear
-  on its own: connection trouble, a 5xx, or rate limiting.
-* `non_transient`: the provider answered but refused the request, or returned
-  something unusable. Retrying will not help; this needs a human.
-* `timeout`: the provider's RPC client gave up waiting for the answer.
+* `unreachable`: no answer arrived: connection trouble, a 5xx, or rate
+  limiting. Often clears on its own.
+* `rejected`: the provider answered but refused the request. Retrying will not
+  help; this needs a human.
+* `malformed`: the provider answered with something the node could not use.
+  Needs a human.
+* `timed_out`: the provider's RPC client gave up waiting for the answer.
 
 A dropped check is different from an error: the node itself stopped waiting,
 at its deadline or at shutdown, and whether the provider ever answered is
@@ -77,9 +79,9 @@ outside shutdowns one dropped check fails the whole check for that chain.
 
 Reading the numbers:
 
-* Error counts and dropped counts should stay at zero. Start with
-  `non_transient`, then dropped checks and `timeout`; `transient` often clears
-  on its own.
+* Error counts and dropped counts should stay at zero. Start with `rejected`
+  and `malformed`, then dropped checks and `timed_out`; `unreachable` often
+  clears on its own.
 * For latency, filter on `outcome="answered"` and compare providers of the same
   chain with each other. To see a whole chain in one graph instead, `sum by
   (chain)` aggregates over the providers, and keeping `provider` in the `by`
@@ -146,17 +148,17 @@ increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m
 
 # Warn: a provider refuses or garbles answers: a dead API key, the wrong chain,
 # or a broken backend. Needs a human; retrying does not help.
-increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0  for 10m
+increase(mpc_foreign_chain_provider_errors_total{kind=~"rejected|malformed"}[5m]) > 0  for 10m
 
 # Warn: a provider is unreachable or rate limited while its peers on the same
 # chain answer. The node tolerates this; the 15m hold rides out a short burst.
-increase(mpc_foreign_chain_provider_errors_total{kind="transient"}[5m]) > 0  for 15m
+increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  for 15m
 
 # Page: a provider stops answering, either its RPC client timed out or the node
 # gave up waiting at its deadline. The node waits for every provider, so one
 # silent provider fails the check for that whole chain.
 (increase(mpc_foreign_chain_provider_dropped_seconds_count[5m]) > 0
-  or increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0)  for 5m
+  or increase(mpc_foreign_chain_provider_errors_total{kind="timed_out"}[5m]) > 0)  for 5m
 
 # Warn: a provider failed the hourly probe, or a chain is configured without an
 # expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
