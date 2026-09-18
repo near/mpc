@@ -1,23 +1,22 @@
-//! Contract updates: participants vote for the hash of the next code or config update; once a
-//! hash crosses the governance threshold, a participant submits the matching payload and the
-//! contract applies it.
+//! Contract updates: voting, submitting and applying code and config updates, plus sweeping
+//! votes from departed participants.
 
-use crate::config::Config;
-use crate::dto_mapping::TryIntoContractType;
-use crate::errors::{Error, InvalidParameters, InvalidState};
-use crate::primitives::key_state::AuthenticatedAccountId;
-use crate::primitives::proposal_hash::ProposalHash;
-use crate::state::ProtocolContractState;
-use crate::update::Update;
-use crate::{MpcContract, MpcContractExt};
+use crate::{
+    MpcContract, MpcContractExt,
+    config::Config,
+    errors::{Error, InvalidParameters, InvalidState},
+    primitives::{key_state::AuthenticatedAccountId, proposal_hash::ProposalHash},
+    state::ProtocolContractState,
+    update::update_promise,
+};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, env, log, near};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[near]
 impl MpcContract {
-    /// Submits an update (contract code or config).
-    /// Applies the update if sufficient participants have voted in favor of it, fails otherwise.
+    /// Submits an update and applies it. Fails if the update doesn't yet have enough
+    /// participant votes.
     #[payable]
     #[handle_result]
     pub fn submit_update(
@@ -27,6 +26,8 @@ impl MpcContract {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
+        // Anyone could submit an approved update without harm; we guard the endpoint to keep
+        // control over _when_ it is applied.
         self.voter_or_panic();
 
         let update_hash =
@@ -42,18 +43,12 @@ impl MpcContract {
         {
             return Err(InvalidParameters::UpdateNotApproved.into());
         }
-        let update: Update = update.try_into_contract_type()?;
-        update
-            .into_promise(Gas::from_tgas(
-                self.config.contract_upgrade_deposit_tera_gas,
-            ))
-            .detach();
+        let gas = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
+        update_promise(update, gas)?.detach();
         Ok(())
     }
 
-    /// Votes for `update_hash` as the next update to apply; a participant holds one vote at a
-    /// time, so a new vote replaces the previous one. Returns whether the hash is now approved,
-    /// i.e. whether [`Self::submit_update`] would accept the matching payload.
+    /// Replaces the caller's earlier vote, if any. Returns whether `update_hash` is approved.
     #[handle_result]
     pub fn vote_update(&mut self, update_hash: dtos::UpdateHash) -> Result<bool, Error> {
         log!(
@@ -72,9 +67,8 @@ impl MpcContract {
             .vote(&update_hash, voter, &running_state.parameters))
     }
 
-    /// Update votes keyed by proposal: the SHA-256 of the compact JSON encoding of the voted
-    /// [`dtos::UpdateHash`], e.g. `sha256sum <<< '{"Code":"<hex>"}'`. The hash backed by a
-    /// governance threshold of current participants is the one [`Self::submit_update`] accepts.
+    /// Voters per [`dtos::UpdateHash`], keyed by `sha256sum <<< '{"Code":"<hex>"}'` so that a
+    /// voter can find their own vote.
     pub fn contract_update_votes(&self) -> BTreeMap<ProposalHash, BTreeSet<dtos::AccountId>> {
         self.contract_update_votes
             .pending()
@@ -89,8 +83,7 @@ impl MpcContract {
     }
 
     /// Withdraws the caller's update vote, un-approving the hash they backed if it falls below
-    /// the governance threshold. Panics outside the running state or when the caller is not a
-    /// participant.
+    /// the governance threshold.
     #[handle_result]
     pub fn remove_update_vote(&mut self) -> Result<(), Error> {
         log!("remove_update_vote: signer={}", env::signer_account_id());
@@ -104,7 +97,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Drops update votes from non-participants after resharing.
+    /// Cleans update votes from non-participants after resharing.
     /// Can only be called by participants or by the contract itself.
     #[handle_result]
     pub fn remove_non_participant_contract_update_votes(&mut self) -> Result<(), Error> {
@@ -151,10 +144,10 @@ mod tests {
         NUM_DOMAINS, NUM_GENERATED_DOMAINS, participant_account_ids, setup_tee_test_contract,
     };
     use crate::errors::{Error, InvalidParameters, InvalidState};
-    use crate::primitives::key_state::AuthenticatedAccountId;
-    use crate::primitives::participants::Participants;
     use crate::primitives::proposal_hash::{ProposalHash, ToProposalHash};
-    use crate::primitives::test_utils::{gen_account_id, gen_participants};
+    use crate::primitives::test_utils::{
+        authenticate_account_as, gen_account_id, gen_participants,
+    };
     use crate::state::ProtocolContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
@@ -188,24 +181,14 @@ mod tests {
             .collect()
     }
 
-    /// Authenticates `account_id` against `participants`, a set it may no longer belong to.
-    fn authenticated(
-        participants: &Participants,
-        account_id: &AccountId,
-    ) -> AuthenticatedAccountId {
-        Environment::new(None, Some(account_id.clone()), None);
-        AuthenticatedAccountId::new(participants).unwrap()
-    }
-
-    /// Records a vote straight into state, bypassing the running-state check the entrypoint
-    /// applies, so that the view can be exercised in every protocol state.
+    /// Votes without the running-state check the entrypoint applies.
     fn record_vote(contract: &mut MpcContract, hash: u8, account_id: &AccountId) {
         let parameters = contract
             .protocol_state
             .threshold_parameters()
             .unwrap()
             .clone();
-        let voter = authenticated(parameters.participants(), account_id);
+        let voter = authenticate_account_as(account_id, parameters.participants());
         contract
             .contract_update_votes
             .vote(&update_hash(hash), voter, &parameters);
@@ -301,38 +284,18 @@ mod tests {
         let _ = contract.remove_update_vote();
     }
 
-    /// Test that `vote_update` counts only current participants towards the threshold.
-    ///
-    /// This is a regression test for a bug where votes from accounts that were no longer
-    /// participants (e.g., after resharing) were still counted toward the update threshold.
+    /// Regression test: votes from accounts that are no longer participants used to count
+    /// towards the threshold.
     #[test]
     pub fn test_vote_update_filters_non_participant_votes() {
-        // given: a running state with 3 participants and threshold of 2, holding two votes
-        // from accounts that are no longer participants
-        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
-        let participants = participant_account_ids(&contract);
-        let former_set = gen_participants(2);
-        for (account_id, _, _) in former_set.participants() {
-            let voter = authenticated(&former_set, account_id);
-            let parameters = contract
-                .protocol_state
-                .threshold_parameters()
-                .unwrap()
-                .clone();
-            contract
-                .contract_update_votes
-                .vote(&update_hash(0), voter, &parameters);
-        }
+        // given: two stale votes and one from a current participant, which is not a threshold
+        let (mut contract, participants, _) = contract_with_stale_votes();
 
-        // when: the first participant votes (1 valid vote out of 3 total)
-        Environment::new(None, Some(participants[0].clone()), None);
-        // then: threshold not met (need 2 valid votes, have only 1)
-        assert!(!contract.vote_update(update_hash(0)).unwrap());
-
-        // when: a second participant votes (2 valid votes out of 4 total)
+        // when: a second current participant votes
         Environment::new(None, Some(participants[1].clone()), None);
+
         // then: threshold met
-        assert!(contract.vote_update(update_hash(0)).unwrap());
+        assert!(contract.vote_update(update_hash(1)).unwrap());
     }
 
     /// Callers authorized to drive `remove_non_participant_contract_update_votes`.
@@ -343,7 +306,7 @@ mod tests {
         Participant,
     }
 
-    /// Votes from two accounts that are no longer participants plus one from a current one.
+    /// Two votes from accounts that are no longer participants, plus one from a current one.
     fn contract_with_stale_votes() -> (MpcContract, Vec<AccountId>, Vec<AccountId>) {
         let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
         let participants = participant_account_ids(&contract);
@@ -361,12 +324,12 @@ mod tests {
         for account_id in &former {
             contract.contract_update_votes.vote(
                 &update_hash(1),
-                authenticated(&former_set, account_id),
+                authenticate_account_as(account_id, &former_set),
                 &parameters,
             );
         }
         Environment::new(None, Some(participants[0].clone()), None);
-        contract.vote_update(update_hash(1)).unwrap();
+        assert!(!contract.vote_update(update_hash(1)).unwrap());
         (contract, participants, former)
     }
 
@@ -456,8 +419,6 @@ mod tests {
         let _ = contract.vote_update(update_hash(1));
     }
 
-    /// Votes for `update`'s hash from a governance threshold of participants, leaving it
-    /// approved.
     fn approve(contract: &mut MpcContract, participants: &[AccountId], update: &dtos::Update) {
         for participant in &participants[..THRESHOLD as usize] {
             Environment::new(None, Some(participant.clone()), None);
@@ -469,7 +430,7 @@ mod tests {
 
     #[test]
     fn remove_update_vote__should_take_back_an_approval_and_block_submission() {
-        // Given an approved update.
+        // Given
         let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
         let participants = participant_account_ids(&contract);
         let code = vec![1, 2, 3];
@@ -479,11 +440,11 @@ mod tests {
             &dtos::Update::Code(code.clone()),
         );
 
-        // When one of its backers withdraws.
+        // When
         Environment::new(None, Some(participants[0].clone()), None);
         contract.remove_update_vote().unwrap();
 
-        // Then the payload is refused until the threshold is restored.
+        // Then
         Environment::new(None, Some(participants[2].clone()), None);
         let refused = contract.submit_update(dtos::Update::Code(code.clone()));
         assert_matches!(
@@ -543,7 +504,7 @@ mod tests {
         let first = contract.submit_update(dtos::Update::Code(code.clone()));
         let second = contract.submit_update(dtos::Update::Code(code));
 
-        // Then applying it consumes every vote, so it cannot be applied twice.
+        // Then
         first.unwrap();
         assert_eq!(contract.contract_update_votes(), BTreeMap::new());
         assert_matches!(
@@ -556,7 +517,7 @@ mod tests {
 
     #[test]
     fn submit_update__should_reject_an_approved_but_invalid_config() {
-        // Given an approved config whose launcher TTL is below the attestation validity window.
+        // Given
         let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
         let participants = participant_account_ids(&contract);
         let mut config = test_utils::contract_types::dummy_config(1);

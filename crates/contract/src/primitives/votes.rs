@@ -122,7 +122,6 @@ where
         self.votes_by_proposal.clear();
     }
 
-    /// The voters who currently back `proposal`, or [`None`] when nobody does.
     pub fn voters_for(&self, proposal: &ProposalHash) -> Option<&VoterSet<V>> {
         self.votes_by_proposal.get(proposal)
     }

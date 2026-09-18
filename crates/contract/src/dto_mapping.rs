@@ -35,7 +35,6 @@ use crate::{
         running::RunningContractState,
     },
     tee::{measurements::MeasurementVotes, proposal::LauncherHashVotes},
-    update::Update,
 };
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -612,17 +611,6 @@ impl TryFrom<near_mpc_contract_interface::types::Config> for Config {
     }
 }
 
-impl TryIntoContractType<Update> for dtos::Update {
-    type Error = Error;
-
-    fn try_into_contract_type(self) -> Result<Update, Self::Error> {
-        Ok(match self {
-            dtos::Update::Code(code) => Update::Code(code),
-            dtos::Update::Config(config) => Update::Config(config.try_into()?),
-        })
-    }
-}
-
 // =============================================================================
 // State DTO Conversions
 // =============================================================================
@@ -1066,24 +1054,6 @@ mod tests {
     use assert_matches::assert_matches;
     use rand::rngs::OsRng;
     use rstest::rstest;
-    use test_utils::contract_types::dummy_config;
-
-    #[test]
-    fn update_try_into_contract_type__should_reject_invalid_config() {
-        // Given a config whose launcher TTL is below the attestation validity window.
-        let mut config = dummy_config(1);
-        config.launcher_hash_unused_ttl_seconds = 0;
-
-        // When
-        let result: Result<Update, Error> = dtos::Update::Config(config).try_into_contract_type();
-
-        // Then it is rejected before it can be applied.
-        let err = result.expect_err("invalid config must be rejected");
-        assert!(
-            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
-            "error should point at the invalid field, got: {err:?}"
-        );
-    }
 
     #[rstest]
     #[case(dtos::Curve::Secp256k1)]

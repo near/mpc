@@ -226,7 +226,7 @@ expression: abi
       },
       {
         "name": "contract_update_votes",
-        "doc": " Update votes keyed by proposal: the SHA-256 of the compact JSON encoding of the voted\n [`dtos::UpdateHash`], e.g. `sha256sum <<< '{\"Code\":\"<hex>\"}'`. The hash backed by a\n governance threshold of current participants is the one [`Self::submit_update`] accepts.",
+        "doc": " Voters per [`dtos::UpdateHash`], keyed by `sha256sum <<< '{\"Code\":\"<hex>\"}'` so that a\n voter can find their own vote.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -779,7 +779,7 @@ expression: abi
       },
       {
         "name": "remove_non_participant_contract_update_votes",
-        "doc": " Drops update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
+        "doc": " Cleans update votes from non-participants after resharing.\n Can only be called by participants or by the contract itself.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -804,7 +804,7 @@ expression: abi
       },
       {
         "name": "remove_update_vote",
-        "doc": " Withdraws the caller's update vote, un-approving the hash they backed if it falls below\n the governance threshold. Panics outside the running state or when the caller is not a\n participant.",
+        "doc": " Withdraws the caller's update vote, un-approving the hash they backed if it falls below\n the governance threshold.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -1794,7 +1794,7 @@ expression: abi
       },
       {
         "name": "submit_update",
-        "doc": " Submits an update (contract code or config).\n Applies the update if sufficient participants have voted in favor of it, fails otherwise.",
+        "doc": " Submits an update and applies it. Fails if the update doesn't yet have enough\n participant votes.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -2358,7 +2358,7 @@ expression: abi
       },
       {
         "name": "vote_update",
-        "doc": " Votes for `update_hash` as the next update to apply; a participant holds one vote at a\n time, so a new vote replaces the previous one. Returns whether the hash is now approved,\n i.e. whether [`Self::submit_update`] would accept the matching payload.",
+        "doc": " Replaces the caller's earlier vote, if any. Returns whether `update_hash` is approved.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -5256,7 +5256,7 @@ expression: abi
           "minItems": 32
         },
         "UpdateHash": {
-          "description": "Identifies an [`Update`] by content: the SHA-256 of the code bytes, or of the compact JSON encoding of the config.",
+          "description": "Identifies an [`Update`] by content.",
           "oneOf": [
             {
               "type": "object",

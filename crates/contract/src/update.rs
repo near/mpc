@@ -1,9 +1,9 @@
-//! Contract updates: participants vote for a [`dtos::UpdateHash`], and while a governance
-//! threshold of them backs it, the matching [`Update`] may be submitted and applied.
+//! Contract updates: voting for update hashes, and applying the payload they approve.
 
 use crate::{
     config::Config,
     dto_mapping::IntoInterfaceType,
+    errors::Error,
     primitives::{
         key_state::AuthenticatedAccountId,
         participants::Participants,
@@ -18,51 +18,34 @@ use near_mpc_contract_interface::types as dtos;
 use near_sdk::{Gas, NearToken, Promise, env, near};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Update {
-    Code(Vec<u8>),
-    Config(Config),
-}
-
-impl Update {
-    /// Code updates deploy the code and call `migrate` with `gas`; config updates call
-    /// `update_config` with the gas the new config prescribes.
-    pub fn into_promise(self, gas: Gas) -> Promise {
-        let promise = Promise::new(env::current_account_id());
-        match self {
-            Update::Code(code) => promise.deploy_contract(code).function_call(
-                method_names::MIGRATE,
-                Vec::new(),
-                NearToken::from_near(0),
-                gas,
-            ),
-            Update::Config(config) => {
-                let gas = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
-                let dto_config = config.into_dto_type();
-                promise.function_call(
-                    method_names::UPDATE_CONFIG,
-                    serde_json::to_vec(&(&dto_config,)).expect("Config serializes to JSON"),
-                    NearToken::from_near(0),
-                    gas,
-                )
-            }
-        }
-    }
-}
-
-/// JSON so that participants can verify a pending-vote key off-chain from the hash they
-/// submitted.
 impl ToProposalHash for dtos::UpdateHash {
     type Serializer = Json;
     type Hasher = Sha256;
 }
 
-/// Approval is not latched: an update may be submitted exactly while its hash holds votes from
-/// a governance threshold of *current* participants. Withdrawing a vote therefore un-approves
-/// the hash, and so does a resharing that drops its backers.
-///
-/// A governance threshold always exceeds half the participants and each participant holds one
-/// vote, so at most one hash is approved at a time.
+/// Config updates run with the gas the new config prescribes, not `gas`.
+pub(crate) fn update_promise(update: dtos::Update, gas: Gas) -> Result<Promise, Error> {
+    let promise = Promise::new(env::current_account_id());
+    Ok(match update {
+        dtos::Update::Code(code) => promise.deploy_contract(code).function_call(
+            method_names::MIGRATE,
+            Vec::new(),
+            NearToken::from_near(0),
+            gas,
+        ),
+        dtos::Update::Config(config) => {
+            let config: Config = config.try_into()?;
+            let gas = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
+            promise.function_call(
+                method_names::UPDATE_CONFIG,
+                serde_json::to_vec(&(&config.into_dto_type(),)).expect("Config serializes to JSON"),
+                NearToken::from_near(0),
+                gas,
+            )
+        }
+    })
+}
+
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct ContractUpdateVotes {
@@ -81,8 +64,7 @@ impl Default for ContractUpdateVotes {
 }
 
 impl ContractUpdateVotes {
-    /// Records `voter`'s vote for `update_hash`, replacing any earlier vote of theirs. Returns
-    /// whether the hash is now approved.
+    /// Replaces any earlier vote by `voter`. Returns whether `update_hash` is now approved.
     pub fn vote(
         &mut self,
         update_hash: &dtos::UpdateHash,
@@ -96,8 +78,8 @@ impl ContractUpdateVotes {
         count >= threshold_parameters.threshold().value()
     }
 
-    /// Clears every vote if `update_hash` is approved, so that the caller may apply it exactly
-    /// once. Votes for other hashes go too: they were cast against the superseded contract.
+    /// Clears every vote if `update_hash` is approved: votes for other hashes were cast against
+    /// the superseded contract.
     pub fn take_if_approved(
         &mut self,
         update_hash: &dtos::UpdateHash,
@@ -117,13 +99,10 @@ impl ContractUpdateVotes {
         true
     }
 
-    /// Withdraws `voter`'s vote, which un-approves the hash they backed if it drops below the
-    /// governance threshold.
     pub fn remove_vote(&mut self, voter: &AuthenticatedAccountId) {
         self.pending.remove_vote(voter);
     }
 
-    /// Drops votes from accounts that are no longer participants.
     pub fn retain(&mut self, current: &Participants) {
         self.pending
             .retain_votes(|voter| current.is_participant(voter));

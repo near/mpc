@@ -349,8 +349,7 @@ impl SandboxTestSetupBuilder {
 /// - The state call is not deserializable,
 /// - Or the post-upgrade code does not match the expected binary.
 ///
-/// Only contracts running the production binary still take this flow; the current contract
-/// takes [`vote_and_submit_contract_binary`].
+/// Only contracts running the production binary take this flow.
 #[expect(deprecated)]
 pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
@@ -418,8 +417,7 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-/// [`propose_and_vote_contract_binary`] for the current contract: votes for the binary's hash
-/// until it is approved, then submits the binary from `accounts[0]`.
+/// [`propose_and_vote_contract_binary`] for the current contract.
 pub async fn vote_and_submit_contract_binary(
     accounts: &[Account],
     contract: &Contract,
@@ -446,7 +444,6 @@ pub async fn vote_and_submit_contract_binary(
     );
 }
 
-/// Casts votes for `update_hash` until `vote_update` reports it approved.
 pub async fn vote_update_till_approved(
     contract: &Contract,
     accounts: &[Account],

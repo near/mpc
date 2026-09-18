@@ -1,7 +1,5 @@
-//! Contract-update API of contract `3.15.1`, the version deployed on mainnet and testnet: an
-//! update is stored on-chain via `propose_update` and applied by the threshold `vote_update(id)`.
-//! Kept only so tests can upgrade a production contract to the current build; remove once
-//! production runs the vote-then-submit API (`submit_update` / `vote_update(update_hash)`).
+//! Contract-update API of `3.15.1`, the version deployed on mainnet and testnet. Kept so that
+//! tests can upgrade a production contract; remove once production takes `submit_update`.
 
 use crate::deposits::DepositOverflowError;
 use crate::types::Config;
@@ -86,7 +84,7 @@ mod client {
     use crate::method_names::VOTE_UPDATE;
     use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken};
 
-    /// Gas for the threshold `vote_update(id)`, which deploys the proposed code.
+    /// The threshold vote deploys the proposed code.
     const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
 
     impl<C: CallContract> MpcContractHandle<C> {

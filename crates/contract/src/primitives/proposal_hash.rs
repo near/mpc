@@ -15,8 +15,7 @@
 //! }
 //! ```
 //!
-//! [`Json`] hashes the compact `serde_json` encoding instead, for proposals whose hash
-//! participants verify off-chain from the JSON they submitted.
+//! New encodings (e.g. JSON) join as further strategy types.
 
 use borsh::BorshSerialize;
 use near_sdk::serde::Serialize;

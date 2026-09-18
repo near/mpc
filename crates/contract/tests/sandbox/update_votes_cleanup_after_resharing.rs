@@ -218,8 +218,7 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     Ok(())
 }
 
-/// Votes for `update_hash` from `voters`. The key is the SHA-256 of the hash's compact JSON
-/// encoding, which is what the contract exposes.
+/// Keyed the way the contract exposes it: the SHA-256 of the hash's compact JSON encoding.
 fn expected_update_votes(
     update_hash: &UpdateHash,
     voters: &[Account],

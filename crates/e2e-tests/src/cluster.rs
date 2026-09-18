@@ -1032,9 +1032,9 @@ impl MpcCluster {
             .context("failed to send verify_foreign_transaction request")
     }
 
-    /// Propose a contract code update and cast votes until `vote_update` reports
-    /// the threshold reached, through the update API of the production binary the
-    /// cluster runs. Pair with [`Self::ensure_deployed_code`]: the deploy
+    /// Propose a contract code update through the update API of the production binary the
+    /// cluster runs, and cast votes until `vote_update` reports the threshold reached.
+    /// Pair with [`Self::ensure_deployed_code`]: the deploy
     /// and `migrate()` promise runs asynchronously, and a panicking `migrate`
     /// rolls the deploy back without changing the threshold-reached signal.
     #[expect(deprecated)]

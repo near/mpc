@@ -73,9 +73,7 @@ impl From<OldTeeState> for TeeState {
     }
 }
 
-/// Update proposals as stored by `3.15.1`: the payload of every proposal plus one vote per
-/// participant for a proposal id. Neither carries over to the vote-then-submit scheme, and a
-/// stored proposal holds a whole contract binary, so the migration clears both maps.
+/// A stored proposal holds a whole contract binary, so the migration clears both maps.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct ProposedUpdates {
     vote_by_participant: IterableMap<AccountId, UpdateId>,

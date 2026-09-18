@@ -19,9 +19,9 @@ async fn test_zero_gas_deposit_config_value_fails_upgrades() {
     );
 }
 
-/// Votes in and submits the current binary, with `min_gas` configured as the gas the contract
-/// attaches to the `migrate` call. Returns whether `submit_update` was accepted: a zero gas
-/// deposit makes the promise it spawns an invalid receipt, which fails the call itself.
+/// Returns whether `submit_update` was accepted with `min_gas` configured as the gas the
+/// contract attaches to `migrate`. A zero gas deposit makes the promise an invalid receipt,
+/// which fails the call itself.
 async fn run_upgrade_scenario(min_gas: u64) -> bool {
     let init_config = near_mpc_contract_interface::types::InitConfig {
         contract_upgrade_deposit_tera_gas: Some(min_gas),

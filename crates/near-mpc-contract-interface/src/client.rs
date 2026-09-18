@@ -144,7 +144,6 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    /// Attaches [`submit_update_deposit_yoctonear`] for the payload, see there for why.
     pub async fn submit_update(
         &self,
         update: Update,

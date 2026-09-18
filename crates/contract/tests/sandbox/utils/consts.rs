@@ -20,12 +20,8 @@ pub const ALL_PROTOCOLS: &[Protocol; 4] = &[
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(60);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_INIT: Gas = Gas::from_tgas(300);
-/// Gas for `vote_update`, which only records the vote; the threshold vote merely marks the hash
-/// approved.
 pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(5);
-/// Maximum gas expected for `submit_update` of a contract binary, which hashes the payload,
-/// deploys it and runs the migration function. Hashing the payload on-chain accounts for
-/// roughly 24 GGas per byte of it.
+/// Covers hashing, deploying and migrating a contract-sized payload.
 pub const MAX_GAS_FOR_SUBMIT_UPDATE: Gas = Gas::from_tgas(210);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);

@@ -43,7 +43,7 @@ async fn test_propose_contract_max_size_upload() {
     dbg!(contract.id());
 
     // check that we can submit an update with the maximum contract size. The payload is not
-    // valid Wasm, so only the call itself is expected to succeed; the deploy receipt fails.
+    // valid Wasm, so only the call itself succeeds.
     let update = Update::Code(vec![0; 1536 * 1024 - 400]); //3900 seems to not work locally
     vote_update_till_approved(&contract, &mpc_signer_accounts, hash(&update)).await;
     let execution = mpc_signer_accounts[0]
@@ -122,8 +122,7 @@ async fn test_propose_update_config() {
         .unwrap();
     let state: ProtocolContractState = get_state(&contract).await;
 
-    // check that each participant can vote for the config, and that the threshold vote is the
-    // one that approves it:
+    // check that the threshold vote is the one that approves the config:
     for (i, voter) in mpc_signer_accounts.iter().enumerate() {
         dbg!(voter.id());
         let execution = voter
@@ -228,7 +227,7 @@ async fn submit_update__should_consume_the_approval() {
 
     vote_and_submit_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 
-    // Applying the update cleared the votes, so the very same payload is refused now.
+    // Applying the update cleared the votes.
     let execution = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .submit_update(current_contract_update())
@@ -241,8 +240,7 @@ async fn submit_update__should_consume_the_approval() {
     dbg!(state);
 }
 
-/// Regression test for issue #1617: ensures that voting on contract updates is cheap, and bounds
-/// the gas the submission of a contract binary takes.
+/// Regression test for issue #1617: voting on contract updates must stay cheap.
 #[tokio::test]
 async fn test_vote_update_gas_before_threshold() {
     let SandboxTestSetup {

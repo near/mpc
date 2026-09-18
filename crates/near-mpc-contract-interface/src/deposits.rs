@@ -11,9 +11,8 @@ pub const MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR: u128 = 1;
 #[error("the required deposit exceeds u128::MAX yoctoNEAR")]
 pub struct DepositOverflowError;
 
-/// Deposit to attach to `submit_update`: the storage staking for a payload of `payload_bytes`.
-/// Only the growth over the deployed code needs covering, but the contract cannot measure it,
-/// so the whole payload is prepaid and the contract keeps the deposit.
+/// Prepays storage staking for the whole payload: only its growth over the deployed code needs
+/// covering, but the contract cannot measure that.
 pub fn submit_update_deposit_yoctonear(
     payload_bytes: usize,
     storage_byte_cost_yoctonear: u128,
