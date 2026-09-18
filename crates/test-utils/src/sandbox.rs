@@ -7,8 +7,9 @@ use near_workspaces::network::{Sandbox, ValidatorKey};
 // We need old blocks to stick around long enough for tests to poll their
 // transaction outcomes (#4461): `respond__should_drain_saturated_fan_out_queue`
 // spans ~600 blocks, while the neard default of 5 epochs keeps only ~300 at
-// the sandbox's 60-block epochs. 20 epochs keep at least 19 × 60 = 1140 blocks.
+// 60-block epochs. 20 epochs keep at least 19 × 60 = 1140 blocks.
 const GC_NUM_EPOCHS_TO_KEEP: u32 = 20;
+const EPOCH_LENGTH: u32 = 60;
 
 /// Owns the sandbox process: dropping the last clone kills it. Keep this
 /// alive for as long as the test talks to the chain.
@@ -36,6 +37,9 @@ pub async fn start_sandbox() -> anyhow::Result<SandboxWorker> {
         additional_accounts: vec![near_sandbox::GenesisAccount::default_with_name(
             "registrar".parse().expect("static account id is valid"),
         )],
+        additional_genesis: Some(serde_json::json!({
+            "epoch_length": EPOCH_LENGTH,
+        })),
         additional_config: Some(serde_json::json!({
             "gc_num_epochs_to_keep": GC_NUM_EPOCHS_TO_KEEP,
         })),
