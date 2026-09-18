@@ -20,14 +20,33 @@ security and verification purposes.
 
 - `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
 
+On a machine with Nix, `nix develop .#repro` supplies all of the above instead.
+The shell needs no root: `repro-env` drives podman, which is daemonless, and the
+`repro-dockerd` command it provides starts a rootless docker daemon for the
+buildx half of the build. The pinned BuildKit and skopeo images make the output
+independent of the host's docker version.
+
+The shell also patches `repro-env` to use a statically linked `catatonit`. It
+otherwise bind-mounts `/usr/bin/catatonit` into the build container, which fails
+on distributions that do not populate `/usr/bin`.
+
 **Requirements for building the MPC contract** (either path works):
 
 - [Nix](https://nixos.org/download/) with flakes enabled (Nix path), or
-- `docker` and [`cargo-near`](https://github.com/near/cargo-near) (NEP-330 path)
+- `docker` and [`cargo-near`](https://github.com/near/cargo-near) (NEP-330 path;
+  `nix develop .#repro` supplies both)
 
 ## Building Images
 
 The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
+
+It resets the mtime of every path in the repository, including `.git`, so run it
+in a throwaway `git worktree` rather than a checkout you are working in. Note
+also that `repro-env` fetches pinned `.deb`s from `snapshot.debian.org`, which
+rate-limits aggressively and which repro-env queries without retries, so a
+single HTTP 5xx aborts the build. Downloads are cached under
+`~/.cache/repro-env/pkgs`, keyed by the `sha256` from `repro-env.lock` and
+re-verified on every build, so re-running resumes where the last attempt died.
 
 **Build both node and launcher images** (default behavior):
 
@@ -67,12 +86,17 @@ build metadata in `crates/contract/Cargo.toml`
 `rust-toolchain.toml` (`1.97.1`). This metadata is embedded in the WASM, which
 lets automated third-party verifiers such as sourcescan.io and nearblocks replay
 the build and confirm the on-chain contract matches the published source. This
-is the build CI publishes as the release artifact. It requires `docker`:
+is the build CI publishes as the release artifact. It requires `docker`; in
+`nix develop .#repro`, run `repro-dockerd` first to start the daemon:
 
 ```bash
 cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 sha256sum target/near/mpc_contract/mpc_contract.wasm
 ```
+
+The build always uses the committed `HEAD` — it clones the repo to a temporary
+build site and drops uncommitted changes — so check out the tag you mean to
+reproduce.
 
 To verify a release artifact, compare the SHA-256 above against the
 `sha256:<digest>` value listed under "MPC contract" in the GitHub release notes.

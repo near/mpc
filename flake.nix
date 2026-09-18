@@ -66,6 +66,7 @@
         mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
         };
+        near-sandbox = pkgs.callPackage ./nix/near-sandbox.nix { };
         opengrep = pkgs.callPackage ./nix/opengrep.nix { };
       });
 
@@ -88,6 +89,7 @@
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
+          near-sandbox = pkgs.callPackage ./nix/near-sandbox.nix { };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
@@ -134,6 +136,12 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
+
+            # The near-sandbox crate downloads a prebuilt dynamically-linked
+            # neard, which cannot run on NixOS (no FHS loader). Point it at the
+            # nix-packaged binary instead; the env var short-circuits the
+            # download for every consumer (near-sandbox, near-workspaces).
+            NEAR_SANDBOX_BIN_PATH = "${near-sandbox}/bin/near-sandbox";
           }
           // lib.optionalAttrs (stdenv.isLinux && isX86) {
             # Production ISA for cc-crate dependencies (rocksdb, snappy, zstd,
@@ -164,13 +172,16 @@
             rustPlatform.bindgenHook
           ];
 
-          nearTools = with pkgs; [
+          nearTools = [
             near-cli-rs
             cargo-near
+            near-sandbox
           ];
 
           miscTools = with pkgs; [
             git
+            curl  # launch-localnet.sh, wait-for-endpoint polling
+            gettext  # envsubst, used by launch-localnet.sh
             binaryen
             ast-grep  # structural lints, e.g. lints/rules/*
             editorconfig-checker
@@ -210,6 +221,127 @@
             "zerocallusedregs"
           ];
 
+          # repro-env bind-mounts an init binary into the build container as its
+          # entrypoint, hardcoded to /usr/bin/catatonit — a path NixOS has no
+          # reason to populate. It has to be statically linked: it is mounted
+          # into a Debian container, so a nix-store binary would fail there
+          # looking for its glibc interpreter.
+          catatonitStatic = pkgs.pkgsStatic.catatonit.overrideAttrs (_: {
+            # The static cross stdenv has no readelf for installCheckPhase to
+            # run; the link itself succeeds.
+            doInstallCheck = false;
+          });
+
+          reproEnv = pkgs.repro-env.overrideAttrs (old: {
+            postPatch = (old.postPatch or "") + ''
+              substituteInPlace src/container.rs \
+                --replace-fail /usr/bin/catatonit ${catatonitStatic}/bin/catatonit
+            '';
+          });
+
+          # near-verify-rs runs the cargo-near build container as the host's own
+          # uid/gid, hardcoded with no override. Under the rootless daemon below
+          # that is precisely wrong: rootlesskit maps the host user to container
+          # uid 0, so `-u <host uid>:<gid>` names an unmapped subuid that cannot
+          # write the bind-mounted build site, and the build dies creating
+          # `target/`. Rewriting the value to 0:0 gets what the flag was reaching
+          # for anyway — output lands on the host owned by the invoking user.
+          # `-it` goes too, so the build works with no tty (CI, `nix develop -c`).
+          reproDocker = pkgs.writeShellApplication {
+            name = "docker";
+            text = ''
+              args=()
+              while [ "$#" -gt 0 ]; do
+                case "$1" in
+                  -u | --user)
+                    args+=("$1" 0:0)
+                    shift 2
+                    ;;
+                  -it)
+                    shift
+                    ;;
+                  *)
+                    args+=("$1")
+                    shift
+                    ;;
+                esac
+              done
+              exec ${pkgs.docker}/bin/docker "''${args[@]}"
+            '';
+          };
+
+          # Tooling for `deployment/build-images.sh` and the cargo-near contract
+          # build. `reproDocker` stands in for `pkgs.docker`: nothing in this
+          # shell should reach the unwrapped client.
+          reproTools = [
+            reproEnv
+            reproDocker
+          ]
+          ++ (with pkgs; [
+            podman
+            skopeo
+            docker-buildx
+            git
+            coreutils
+            findutils
+            jq
+          ]);
+
+          # Paths shared by the `repro` shell and its dockerd helper. The socket
+          # lives in XDG_RUNTIME_DIR so it dies with the login session; the data
+          # root has to outlive it to keep the pinned builder's image cache.
+          reproDirs = ''
+            runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+            state_dir="''${XDG_STATE_HOME:-$HOME/.local/share}/mpc-repro"
+            docker_sock="$runtime_dir/mpc-repro-docker.sock"
+          '';
+
+          # repro-env only ever shells out to podman, which needs no daemon. The
+          # buildx half of build-images.sh does need one, and a rootless dockerd
+          # supplies it without root or any NixOS-level docker service: the
+          # nixpkgs wrapper bundles rootlesskit, slirp4netns and fuse-overlayfs,
+          # and the host already provides the pieces rootless mode cannot fake
+          # (subuid/subgid ranges plus setuid newuidmap/newgidmap).
+          reproDockerd = pkgs.writeShellApplication {
+            name = "repro-dockerd";
+            runtimeInputs = [
+              pkgs.docker
+              pkgs.coreutils
+            ];
+            text = ''
+              ${reproDirs}
+              export DOCKER_HOST="unix://$docker_sock"
+
+              if docker info >/dev/null 2>&1; then
+                echo "rootless dockerd already running"
+                echo "DOCKER_HOST=$DOCKER_HOST"
+                exit 0
+              fi
+
+              mkdir -p "$state_dir/docker-data" "$state_dir/log"
+              log="$state_dir/log/dockerd.log"
+              echo "starting rootless dockerd..."
+              nohup dockerd-rootless \
+                --host "$DOCKER_HOST" \
+                --data-root "$state_dir/docker-data" \
+                --exec-root "$runtime_dir/mpc-repro-docker-exec" \
+                --pidfile "$runtime_dir/mpc-repro-docker.pid" \
+                >"$log" 2>&1 &
+
+              for i in $(seq 60); do
+                if docker info >/dev/null 2>&1; then
+                  echo "rootless dockerd up (''${i}s)"
+                  echo "DOCKER_HOST=$DOCKER_HOST"
+                  exit 0
+                fi
+                sleep 1
+              done
+
+              echo "dockerd did not come up within 60s; see $log" >&2
+              exit 1
+            '';
+          };
+
         in
         {
           default = pkgs.mkShell {
@@ -244,6 +376,53 @@
                 export RANLIB="${llvmPkgs.llvm}/bin/llvm-ranlib"
               ''}
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
+            '';
+          };
+        }
+        // lib.optionalAttrs stdenv.hostPlatform.isLinux {
+          repro = pkgs.mkShellNoCC {
+            packages = reproTools ++ [
+              reproDockerd
+              # The contract's NEP-330 build compiles inside the pinned
+              # sourcescan image, but cargo-near resolves the workspace on the
+              # host first, and its `cargo metadata` shells out to `rustc -vV` —
+              # so the host needs the toolchain even though it builds nothing.
+              rustToolchain
+              cargo-near
+            ];
+
+            shellHook = ''
+              ${reproDirs}
+
+              # buildx stores builder definitions under $DOCKER_CONFIG, and
+              # build-images.sh re-`inspect`s its pinned builder on every run, so
+              # this must be a stable directory — a temp one loses the builder
+              # between runs. Deliberately not ~/.docker: the shell should never
+              # write to a config the user also drives a real daemon with.
+              export DOCKER_CONFIG="$state_dir/docker-config"
+              mkdir -p "$DOCKER_CONFIG/cli-plugins"
+              ln -sfn ${pkgs.docker-buildx}/libexec/docker/cli-plugins/docker-buildx \
+                "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+
+              export DOCKER_HOST="unix://$docker_sock"
+
+              # containers/image refuses to pull with no signature policy on
+              # disk, and NixOS only populates /etc/containers when
+              # virtualisation.containers is enabled — which rootless podman
+              # does not otherwise require.
+              policy="''${XDG_CONFIG_HOME:-$HOME/.config}/containers/policy.json"
+              if [ ! -e "$policy" ]; then
+                mkdir -p "$(dirname "$policy")"
+                echo '{"default":[{"type":"insecureAcceptAnything"}]}' >"$policy"
+                echo "wrote default container signature policy to $policy"
+              fi
+
+              printf "\e[32m🔁 MPC reproducible-build shell\e[0m\n"
+              printf "  repro-dockerd                       start the rootless docker daemon\n"
+              printf "  ./deployment/build-images.sh --node  build (from the repo root)\n"
+              printf "  cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml\n"
+              printf "\e[33m  build-images.sh resets the mtime of every path in the repo,\n"
+              printf "  including .git — run it in a throwaway worktree.\e[0m\n"
             '';
           };
         }
