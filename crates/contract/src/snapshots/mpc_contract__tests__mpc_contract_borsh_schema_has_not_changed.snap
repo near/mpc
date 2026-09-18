@@ -158,6 +158,11 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "BoundedString<256>": Sequence {
+            length_width: 4,
+            length_range: 0..=256,
+            elements: "u8",
+        },
         "Config": Struct {
             fields: NamedFields(
                 [
@@ -799,7 +804,7 @@ BorshSchemaContainer {
                 [
                     (
                         "url",
-                        "String",
+                        "BoundedString<256>",
                     ),
                     (
                         "tls_public_key",

@@ -68,7 +68,7 @@ pub async fn create_account_given_id(
 
 pub fn gen_participant_info() -> ParticipantInfo {
     ParticipantInfo {
-        url: "127.0.0.1".into(),
+        url: "127.0.0.1".try_into().unwrap(),
         tls_public_key: bogus_ed25519_public_key(),
     }
 }

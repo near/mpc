@@ -15,7 +15,9 @@ pub mod types {
     };
     pub use config::{Config, InitConfig};
     pub use foreign_chain::*;
-    pub use participants::{ParticipantId, ParticipantInfo, Participants};
+    pub use participants::{
+        MAX_PARTICIPANT_URL_BYTES, ParticipantId, ParticipantInfo, ParticipantUrl, Participants,
+    };
 
     pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
     pub use near_mpc_crypto_types::CKDResponse;

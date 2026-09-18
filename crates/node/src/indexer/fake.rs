@@ -423,7 +423,9 @@ impl FakeMpcContractState {
 pub fn participant_info_from_config(info: &config::ParticipantInfo) -> ParticipantInfo {
     ParticipantInfo {
         tls_public_key: (&info.p2p_public_key).into(),
-        url: format!("http://{}:{}", info.address, info.port),
+        url: format!("http://{}:{}", info.address, info.port)
+            .try_into()
+            .expect("test fixture url must fit the bound"),
     }
 }
 
