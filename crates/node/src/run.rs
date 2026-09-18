@@ -34,6 +34,7 @@ use std::{
     collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
+    time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
 use tokio::signal::unix::{SignalKind, signal};
@@ -43,11 +44,10 @@ use tracing::info;
 
 use crate::tee::{
     AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{
-        AttestationSubmitter, monitor_attestation_removal, run_periodic_attestation_submission,
-    },
+    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
 };
 
+pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
 
@@ -202,6 +202,12 @@ pub async fn run_mpc_node(config: StartConfig) -> anyhow::Result<()> {
         .context("Failed to create web server.")?;
 
     let _web_server_join_handle = root_runtime.spawn(web_server);
+
+    // Detached: the report is diagnostic, nothing downstream waits on it.
+    root_runtime.spawn(crate::foreign_chain_probe::run_periodic_probe(
+        node_config.foreign_chains.clone(),
+        tokio::time::interval(FOREIGN_CHAIN_PROBE_INTERVAL),
+    ));
 
     // Create Indexer and wait for indexer to be synced.
     let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
@@ -364,12 +370,7 @@ where
         allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
         attestation_reader: indexer_api.attestation_reader.clone(),
     };
-    tokio::spawn(run_periodic_attestation_submission(submitter.clone()));
-    tokio::spawn(monitor_attestation_removal(
-        submitter,
-        config.my_near_account_id.clone(),
-        indexer_api.attested_nodes_receiver.clone(),
-    ));
+    tokio::spawn(run_periodic_attestation_submission(submitter));
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();

@@ -22,7 +22,7 @@ use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args::SignatureRespondArgs;
 use near_mpc_contract_interface::types::{
-    Bls12381G1PublicKey, CKDAppPublicKey, CKDRequestArgs, Protocol, SignRequestArgs,
+    Bls12381G1PublicKey, CKDAppPublicKey, CKDRequest, CKDRequestArgs, Protocol, SignRequestArgs,
 };
 use near_workspaces::operations::TransactionStatus;
 use serde::Serialize;
@@ -229,7 +229,7 @@ struct MakeDuplicateSignCallsArgs<'a> {
 /// [`crate::sandbox::common::SandboxTestSetupBuilder::with_sandbox_test_methods`]).
 async fn wait_for_pending_signature_queue(
     contract: &near_workspaces::Contract,
-    request: &mpc_contract::primitives::signature::SignatureRequest,
+    request: &near_mpc_contract_interface::types::SignatureRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
@@ -319,7 +319,7 @@ struct MakeDuplicateCkdCallsArgs<'a> {
 /// CKD counterpart to [`wait_for_pending_signature_queue`]; same rationale.
 async fn wait_for_pending_ckd_queue(
     contract: &near_workspaces::Contract,
-    request: &mpc_contract::primitives::ckd::CKDRequest,
+    request: &CKDRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);

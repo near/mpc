@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn build_request_url__preserves_query_auth_param() {
-        // Given a base carrying a query-auth param (as produced by `auth_config_to_rpc_auth`).
+        // Given a base carrying a query-auth param.
         let base = Url::parse("https://host/v1?api_key=secret").unwrap();
 
         // When

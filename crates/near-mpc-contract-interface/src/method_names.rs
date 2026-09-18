@@ -18,9 +18,8 @@ pub const VOTE_PK: &str = "vote_pk";
 pub const VOTE_RESHARED: &str = "vote_reshared";
 pub const VOTE_NEW_PARAMETERS: &str = "vote_new_parameters";
 pub const VOTE_ADD_DOMAINS: &str = "vote_add_domains";
-pub const REGISTER_FOREIGN_CHAIN_SUPPORT: &str = "register_foreign_chain_support";
 pub const REGISTER_FOREIGN_CHAINS_CONFIG: &str = "register_foreign_chains_config";
-pub const VOTE_CODE_HASH: &str = "vote_code_hash";
+pub const VOTE_MPC_NODE_MANIFEST_DIGEST: &str = "vote_mpc_node_manifest_digest";
 pub const VOTE_ADD_LAUNCHER_HASH: &str = "vote_add_launcher_hash";
 pub const VOTE_REMOVE_LAUNCHER_HASH: &str = "vote_remove_launcher_hash";
 pub const VOTE_ADD_OS_MEASUREMENT: &str = "vote_add_os_measurement";
@@ -33,6 +32,7 @@ pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain
 pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
 pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
 pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
+pub const REMOVE_UPDATE_PROPOSAL: &str = "remove_update_proposal";
 pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
 // Protocol management
@@ -88,8 +88,6 @@ pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const AVAILABLE_ATTESTATION_GRANTS: &str = "available_attestation_grants";
 pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee_verifier_account_id";
 pub const GET_ATTESTATION: &str = "get_attestation";
-pub const GET_SUPPORTED_FOREIGN_CHAINS: &str = "get_supported_foreign_chains";
-pub const GET_FOREIGN_CHAIN_SUPPORT_BY_NODE: &str = "get_foreign_chain_support_by_node";
 pub const GET_AVAILABLE_FOREIGN_CHAINS: &str = "get_available_foreign_chains";
 pub const GET_FOREIGN_CHAINS_CONFIGS: &str = "get_foreign_chains_configs";
 pub const ALLOWED_FOREIGN_CHAIN_PROVIDERS: &str = "allowed_foreign_chain_providers";
@@ -97,11 +95,7 @@ pub const ALLOWED_DOCKER_IMAGE_HASHES: &str = "allowed_docker_image_hashes";
 pub const ALLOWED_LAUNCHER_COMPOSE_HASHES: &str = "allowed_launcher_compose_hashes";
 pub const ALLOWED_LAUNCHER_IMAGE_HASHES: &str = "allowed_launcher_image_hashes";
 pub const LAUNCHER_HASH_VOTES: &str = "launcher_hash_votes";
-pub const CODE_HASH_VOTES: &str = "code_hash_votes";
+pub const MPC_NODE_MANIFEST_DIGEST_VOTES: &str = "mpc_node_manifest_digest_votes";
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
-
-// Deprecated methods
-#[deprecated(note = "https://github.com/near/mpc/issues/3079")]
-pub const REGISTER_FOREIGN_CHAIN_CONFIG: &str = "register_foreign_chain_config";

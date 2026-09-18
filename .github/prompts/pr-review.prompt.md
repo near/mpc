@@ -108,5 +108,5 @@ Please always use `gh pr comment` to post your review instead.
 [CLAUDE.md]: ../../CLAUDE.md
 [AGENTS.md]: ../../AGENTS.md
 [CONTRIBUTING.md]: ../../CONTRIBUTING.md
-[engineering-standards.md]: ../../docs/engineering-standards.md
+[engineering-standards.md]: ../../docs/development/engineering-standards.md
 [prepare-github-release.sh]: ../../scripts/ops/prepare-github-release.sh

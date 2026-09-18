@@ -12,7 +12,7 @@ anyhow = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true, optional = true }
 foreign-chain-inspector = { workspace = true }
-foreign-chain-rpc-auth = { workspace = true }
+foreign-chain-rpc-factory = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
@@ -24,6 +24,7 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+foreign-chain-inspector = { workspace = true, features = ["test-utils"] }
 httpmock = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }

@@ -7,3 +7,4 @@ pub mod resharing_utils;
 pub mod shared_key_utils;
 pub mod sign_utils;
 pub mod transactions;
+pub mod views;

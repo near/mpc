@@ -22,7 +22,7 @@ used to speed up signing.
 ## [Signing](./signing.md)
 
 This describes the signing protocol, which consists of a presignature phase
-and a final signature phase.
+and a final signature phase, and the variant that runs both as one online protocol.
 
 # Security Analysis
 

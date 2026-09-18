@@ -1,4 +1,4 @@
-use ::attestation::report_data::REPORT_DATA_SIZE;
+use ::attestation::REPORT_DATA_SIZE;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{AsRef, Deref, From};
 use serde::{Deserialize, Serialize};
@@ -156,9 +156,9 @@ impl From<ReportDataV1> for ReportData {
     }
 }
 
-impl From<ReportData> for ::attestation::report_data::ReportData {
+impl From<ReportData> for ::attestation::ReportData {
     fn from(val: ReportData) -> Self {
-        ::attestation::report_data::ReportData::from(val.to_bytes())
+        ::attestation::ReportData::from(val.to_bytes())
     }
 }
 
