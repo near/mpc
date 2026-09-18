@@ -1352,8 +1352,6 @@ deployment shapes:
 
 ---
 
-#### Required Ports
-
 See [Required ports](../node-requirements.md#ports).
 
 ### Configuring and Starting the MPC Binary in a CVM
