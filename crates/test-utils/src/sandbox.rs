@@ -4,10 +4,10 @@ use std::sync::Arc;
 use near_workspaces::Worker;
 use near_workspaces::network::{Sandbox, ValidatorKey};
 
-/// The neard default of 5 epochs (~300 blocks at the sandbox's 60-block
-/// epochs) is outlived by `respond__should_drain_saturated_fan_out_queue`,
-/// which spans ~600 blocks before polling its earliest tx outcomes — GC drops
-/// them first (#4461). 20 epochs retain at least 19 × 60 = 1140 blocks.
+// We need old blocks to stick around long enough for tests to poll their
+// transaction outcomes (#4461): `respond__should_drain_saturated_fan_out_queue`
+// spans ~600 blocks, while the neard default of 5 epochs keeps only ~300 at
+// the sandbox's 60-block epochs. 20 epochs keep at least 19 × 60 = 1140 blocks.
 const GC_NUM_EPOCHS_TO_KEEP: u32 = 20;
 
 #[derive(Clone)]
