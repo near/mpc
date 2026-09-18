@@ -10,7 +10,6 @@ use jsonrpsee::http_client::transport::Error as HttpTransportError;
 use mpc_node_config::ForeignChainProviderConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
-use scopeguard::ScopeGuard;
 use thiserror::Error;
 
 pub use jsonrpsee::http_client;
@@ -144,8 +143,8 @@ pub trait NetworkFingerprintInspector {
 /// A hanging one still stalls the extraction: it waits for every inspector, up to the caller's
 /// deadline. When no inspector reached a verdict, the first error is propagated.
 ///
-/// With a recorder set through [`FanOut::measuring`], every provider call is reported once it
-/// completes, or as [`ProviderFailure::TimedOut`] if the future is dropped first.
+/// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
+/// provider returns, or by dropping its timer if the future is dropped first.
 #[derive(Clone)]
 pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
@@ -168,36 +167,28 @@ impl<Inspector> FanOut<Inspector> {
     }
 }
 
-/// Receives the outcome of each provider call a [`FanOut`] makes.
+/// Starts a timer for calls to foreign chain RPC providers.
+pub trait TimeProviderCall: Send + Sync {
+    fn start_timer(&self, provider: &ProviderId) -> impl ObserveProviderCall;
+}
+
+/// A running timer for one provider call.
 ///
-/// Invoked at most once per call, possibly while the call's task is being aborted, so an
-/// implementation must neither block nor panic. `elapsed` is the provider's answer time when
-/// `failure` is [`None`]; otherwise it only says how long the call was waited on.
-pub trait RecordProviderCall: Send + Sync {
-    fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>);
+/// Call [`Self::observe`] with the outcome once the provider returns. A timer dropped without
+/// being observed means the call was abandoned before the provider returned, and implementations
+/// must record that in their destructor. Implementations must not block or panic on either
+/// path, because both can run while the task is being aborted.
+pub trait ObserveProviderCall: Send + 'static {
+    fn observe(self, failure: Option<ProviderFailure>);
 }
 
 /// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default.
-impl RecordProviderCall for () {
-    fn record(&self, _: &ProviderId, _: Duration, _: Option<ProviderFailure>) {}
+impl TimeProviderCall for () {
+    fn start_timer(&self, _: &ProviderId) -> impl ObserveProviderCall {}
 }
 
-async fn measured<Recorder, Value>(
-    recorder: Recorder,
-    provider: &ProviderId,
-    call: impl Future<Output = Result<Value, ForeignChainInspectionError>>,
-) -> Result<Value, ForeignChainInspectionError>
-where
-    Recorder: RecordProviderCall,
-{
-    let started = tokio::time::Instant::now();
-    let guard = scopeguard::guard(recorder, move |recorder| {
-        recorder.record(provider, started.elapsed(), Some(ProviderFailure::TimedOut));
-    });
-    let result = call.await;
-    let failure = result.as_ref().err().and_then(|err| err.provider_failure());
-    ScopeGuard::into_inner(guard).record(provider, started.elapsed(), failure);
-    result
+impl ObserveProviderCall for () {
+    fn observe(self, _: Option<ProviderFailure>) {}
 }
 
 impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
@@ -207,7 +198,7 @@ where
     Inspector::Finality: Clone + Send + 'static,
     Inspector::Extractor: Clone + Send + 'static,
     Inspector::ExtractedValue: Send + 'static + PartialEq + Eq + Hash + std::fmt::Debug,
-    Recorder: RecordProviderCall + Clone + 'static,
+    Recorder: TimeProviderCall + Clone + 'static,
 {
     type TransactionId = Inspector::TransactionId;
     type Finality = Inspector::Finality;
@@ -229,14 +220,11 @@ where
             let provider = provider.clone();
             let recorder = self.recorder.clone();
             join_set.spawn(async move {
-                // Measured inside the task so the clock excludes scheduling delay. A task aborted
+                // Started inside the task so the clock excludes scheduling delay. A task aborted
                 // before its first poll makes no call and reports nothing.
-                let result = measured(
-                    recorder,
-                    &provider,
-                    inspector.extract(tx_id, finality, extractors),
-                )
-                .await;
+                let timer = recorder.start_timer(&provider);
+                let result = inspector.extract(tx_id, finality, extractors).await;
+                timer.observe(result.as_ref().err().and_then(|err| err.provider_failure()));
                 (provider, result)
             });
         }

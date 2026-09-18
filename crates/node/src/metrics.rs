@@ -554,27 +554,44 @@ pub fn init_attestation_freshness_metrics() {
     LazyLock::force(&MPC_ATTESTATION_LAST_LANDED_TIMESTAMP_SECONDS);
 }
 
+/// A call cannot outlive the inspection deadline by much, so the top bucket is the deadline.
+fn foreign_chain_provider_call_buckets() -> Vec<f64> {
+    vec![
+        0.025,
+        0.05,
+        0.1,
+        0.2,
+        0.35,
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.5,
+        FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs_f64(),
+    ]
+}
+
 pub static MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS: LazyLock<prometheus::HistogramVec> =
     LazyLock::new(|| {
         prometheus::register_histogram_vec!(
             "mpc_foreign_chain_provider_inspection_seconds",
-            "Time one foreign chain RPC provider took to answer a verify request. Failed and timed \
-             out calls are not timed; see mpc_foreign_chain_provider_errors_total",
+            "Time one foreign chain RPC provider took to return on a verify request, whether it \
+             answered or failed. Calls the node abandoned are in \
+             mpc_foreign_chain_provider_dropped_seconds",
+            &["chain", "provider", "outcome"],
+            foreign_chain_provider_call_buckets(),
+        )
+        .unwrap()
+    });
+
+pub static MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        prometheus::register_histogram_vec!(
+            "mpc_foreign_chain_provider_dropped_seconds",
+            "Time the node waited on a foreign chain RPC provider before abandoning the call, at \
+             its deadline or at shutdown. Whether the provider answered is unknown",
             &["chain", "provider"],
-            // Answers cannot outlive the inspection deadline, so nothing lands past the top bucket.
-            vec![
-                0.025,
-                0.05,
-                0.1,
-                0.2,
-                0.35,
-                0.5,
-                0.75,
-                1.0,
-                1.5,
-                2.5,
-                FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs_f64(),
-            ],
+            foreign_chain_provider_call_buckets(),
         )
         .unwrap()
     });

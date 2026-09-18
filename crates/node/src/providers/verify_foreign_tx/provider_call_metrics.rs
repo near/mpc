@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
-use foreign_chain_inspector::{ProviderFailure, RecordProviderCall};
+use foreign_chain_inspector::{ObserveProviderCall, ProviderFailure, TimeProviderCall};
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
+use prometheus::HistogramTimer;
 
 use crate::metrics;
 
@@ -27,7 +27,14 @@ impl ProviderCallMetrics {
             .map(|(index, provider)| (provider.clone(), format!("p{index}")))
             .collect();
         for label in labels.values() {
-            metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            for outcome in Outcome::ALL {
+                metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS.with_label_values(&[
+                    chain.label(),
+                    label,
+                    outcome.label(),
+                ]);
+            }
+            metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS
                 .with_label_values(&[chain.label(), label]);
             for kind in Kind::ALL {
                 metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL.with_label_values(&[
@@ -41,32 +48,94 @@ impl ProviderCallMetrics {
     }
 }
 
-impl RecordProviderCall for ProviderCallMetrics {
-    fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>) {
-        // The node builds fan-out and this recorder from the same provider list, so this is
-        // unreachable in practice. If this were to happen somehow, we drop the observation
-        // instead of panicing.
+impl TimeProviderCall for ProviderCallMetrics {
+    fn start_timer(&self, provider: &ProviderId) -> impl ObserveProviderCall {
+        // The node builds the fan-out and this recorder from the same provider list, so an
+        // unknown provider is unreachable in practice. Should it happen, the call goes
+        // unrecorded rather than panicking.
         let Some(label) = self.labels.get(provider) else {
             tracing::debug!(
                 chain = self.chain.label(),
                 %provider,
-                "provider call reported for an unknown provider; dropping the observation"
+                "provider call started for an unknown provider; not recording it"
             );
-            return;
+            return ProviderCallTimer(None);
         };
-        let Some(failure) = failure else {
-            metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
-                .with_label_values(&[self.chain.label(), label])
-                .observe(elapsed.as_secs_f64());
-            return;
-        };
-        metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-            .with_label_values(&[self.chain.label(), label, Kind::from(failure).label()])
-            .inc();
+        let timer = metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS
+            .with_label_values(&[self.chain.label(), label])
+            .start_timer();
+        ProviderCallTimer(Some(RunningTimer {
+            timer,
+            chain: self.chain,
+            label: label.clone(),
+        }))
     }
 }
 
-/// The `kind` label of [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`].
+/// Times one provider call. Dropped unobserved, the prometheus timer records the call as
+/// abandoned; [`ObserveProviderCall::observe`] disarms it and records the outcome instead.
+struct ProviderCallTimer(Option<RunningTimer>);
+
+struct RunningTimer {
+    timer: HistogramTimer,
+    chain: ForeignChain,
+    label: String,
+}
+
+impl ObserveProviderCall for ProviderCallTimer {
+    fn observe(self, failure: Option<ProviderFailure>) {
+        let Some(running) = self.0 else {
+            return;
+        };
+        let elapsed = running.timer.stop_and_discard();
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .with_label_values(&[
+                running.chain.label(),
+                &running.label,
+                Outcome::of(failure).label(),
+            ])
+            .observe(elapsed);
+        if let Some(failure) = failure {
+            metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
+                .with_label_values(&[
+                    running.chain.label(),
+                    &running.label,
+                    Kind::from(failure).label(),
+                ])
+                .inc();
+        }
+    }
+}
+
+/// The `outcome` label of [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS`].
+#[derive(Clone, Copy)]
+enum Outcome {
+    Answered,
+    Failed,
+}
+
+impl Outcome {
+    const ALL: [Self; 2] = [Self::Answered, Self::Failed];
+
+    fn of(failure: Option<ProviderFailure>) -> Self {
+        if failure.is_some() {
+            Self::Failed
+        } else {
+            Self::Answered
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Answered => "answered",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// The `kind` label of [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL`]. `Timeout` is the
+/// RPC client giving up on an answer; a call the fan-out abandoned is timed in
+/// [`metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS`] instead.
 #[derive(Clone, Copy)]
 enum Kind {
     Transient,
@@ -105,8 +174,14 @@ mod tests {
 
     const PROVIDER: &str = "a-provider";
 
-    fn timed(chain: ForeignChain, label: &str) -> u64 {
+    fn timed(chain: ForeignChain, label: &str, outcome: Outcome) -> u64 {
         metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
+            .with_label_values(&[chain.label(), label, outcome.label()])
+            .get_sample_count()
+    }
+
+    fn dropped(chain: ForeignChain, label: &str) -> u64 {
+        metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS
             .with_label_values(&[chain.label(), label])
             .get_sample_count()
     }
@@ -126,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_call_metrics__should_time_answers_and_count_failures() {
+    fn provider_call_metrics__should_time_every_returned_call_and_count_failures() {
         // Given
         let chain = ForeignChain::Bitcoin;
         let provider = ProviderId(PROVIDER.to_string());
@@ -140,14 +215,35 @@ mod tests {
             Some(ProviderFailure::Malformed),
             Some(ProviderFailure::TimedOut),
         ] {
-            recorder.record(&provider, Duration::from_millis(10), failure);
+            recorder.start_timer(&provider).observe(failure);
         }
 
         // Then
-        assert_eq!(timed(chain, "p0"), 1);
+        assert_eq!(timed(chain, "p0", Outcome::Answered), 1);
+        assert_eq!(timed(chain, "p0", Outcome::Failed), 4);
+        assert_eq!(dropped(chain, "p0"), 0);
         assert_eq!(errored(chain, "p0", Kind::Transient), 1);
         assert_eq!(errored(chain, "p0", Kind::NonTransient), 2);
         assert_eq!(errored(chain, "p0", Kind::Timeout), 1);
+    }
+
+    #[test]
+    fn provider_call_metrics__should_time_a_dropped_call_when_its_handle_is_dropped() {
+        // Given
+        let chain = ForeignChain::Base;
+        let provider = ProviderId(PROVIDER.to_string());
+        let recorder = ProviderCallMetrics::new(chain, [&provider]);
+
+        // When
+        drop(recorder.start_timer(&provider));
+
+        // Then
+        assert_eq!(dropped(chain, "p0"), 1);
+        assert_eq!(timed(chain, "p0", Outcome::Answered), 0);
+        assert_eq!(timed(chain, "p0", Outcome::Failed), 0);
+        for kind in Kind::ALL {
+            assert_eq!(errored(chain, "p0", kind), 0);
+        }
     }
 
     #[test]
@@ -161,20 +257,20 @@ mod tests {
         let recorder = ProviderCallMetrics::new(chain, &providers);
 
         // When: the alphabetically middle provider answers once and fails once.
-        recorder.record(&providers[2], Duration::from_millis(10), None);
-        recorder.record(
-            &providers[2],
-            Duration::from_millis(10),
-            Some(ProviderFailure::Unreachable),
-        );
+        recorder.start_timer(&providers[2]).observe(None);
+        recorder
+            .start_timer(&providers[2])
+            .observe(Some(ProviderFailure::Unreachable));
 
         // Then: its series is p1, not p2, so input order does not matter.
-        assert_eq!(timed(chain, "p1"), 1);
+        assert_eq!(timed(chain, "p1", Outcome::Answered), 1);
+        assert_eq!(timed(chain, "p1", Outcome::Failed), 1);
         assert_eq!(errored(chain, "p1", Kind::Transient), 1);
-        assert_eq!(timed(chain, "p0"), 0);
-        assert_eq!(timed(chain, "p2"), 0);
-        assert_eq!(errored(chain, "p0", Kind::Transient), 0);
-        assert_eq!(errored(chain, "p2", Kind::Transient), 0);
+        for label in ["p0", "p2"] {
+            assert_eq!(timed(chain, label, Outcome::Answered), 0);
+            assert_eq!(timed(chain, label, Outcome::Failed), 0);
+            assert_eq!(errored(chain, label, Kind::Transient), 0);
+        }
     }
 
     #[test]
@@ -197,8 +293,9 @@ mod tests {
         };
         assert_eq!(
             count("mpc_foreign_chain_provider_inspection_seconds_count"),
-            1
+            2
         );
+        assert_eq!(count("mpc_foreign_chain_provider_dropped_seconds_count"), 1);
         assert_eq!(count("mpc_foreign_chain_provider_errors_total"), 3);
     }
 }

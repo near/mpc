@@ -4002,7 +4002,6 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "rstest",
- "scopeguard",
  "serde",
  "serde_json",
  "sui-sdk-types",

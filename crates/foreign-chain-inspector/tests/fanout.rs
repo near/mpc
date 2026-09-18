@@ -12,8 +12,8 @@ use std::{pin::Pin, sync::Arc, time::Duration};
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ProviderFailure,
-    RecordProviderCall, Verdict,
+    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ObserveProviderCall,
+    ProviderFailure, TimeProviderCall, Verdict,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
@@ -127,14 +127,47 @@ fn fan_out_of(inspectors: Vec<MockInspector>) -> FanOut<MockInspector> {
     FanOut::new(inspectors)
 }
 
-type ReportedCall = (ProviderId, Duration, Option<ProviderFailure>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CallEnd {
+    Observed(Option<ProviderFailure>),
+    Dropped,
+}
+
+type ReportedCall = (ProviderId, CallEnd);
 
 #[derive(Clone)]
 struct ReportedCalls(mpsc::UnboundedSender<ReportedCall>);
 
-impl RecordProviderCall for ReportedCalls {
-    fn record(&self, provider: &ProviderId, elapsed: Duration, failure: Option<ProviderFailure>) {
-        let _ = self.0.send((provider.clone(), elapsed, failure));
+impl TimeProviderCall for ReportedCalls {
+    fn start_timer(&self, provider: &ProviderId) -> impl ObserveProviderCall {
+        RecordingTimer {
+            calls: self.0.clone(),
+            provider: provider.clone(),
+            observed: false,
+        }
+    }
+}
+
+struct RecordingTimer {
+    calls: mpsc::UnboundedSender<ReportedCall>,
+    provider: ProviderId,
+    observed: bool,
+}
+
+impl ObserveProviderCall for RecordingTimer {
+    fn observe(mut self, failure: Option<ProviderFailure>) {
+        self.observed = true;
+        let _ = self
+            .calls
+            .send((self.provider.clone(), CallEnd::Observed(failure)));
+    }
+}
+
+impl Drop for RecordingTimer {
+    fn drop(&mut self) {
+        if !self.observed {
+            let _ = self.calls.send((self.provider.clone(), CallEnd::Dropped));
+        }
     }
 }
 
@@ -144,14 +177,14 @@ fn measured_fan_out_of(
     FanOut<MockInspector, ReportedCalls>,
     mpsc::UnboundedReceiver<ReportedCall>,
 ) {
-    let (calls, reported) = mpsc::unbounded_channel();
+    let (calls, observed) = mpsc::unbounded_channel();
     let fan_out = fan_out_of(inspectors).measuring(ReportedCalls(calls));
-    (fan_out, reported)
+    (fan_out, observed)
 }
 
-fn reported_by_provider(reported: &mut mpsc::UnboundedReceiver<ReportedCall>) -> Vec<ReportedCall> {
+fn reported_by_provider(observed: &mut mpsc::UnboundedReceiver<ReportedCall>) -> Vec<ReportedCall> {
     let mut calls = Vec::new();
-    while let Ok(call) = reported.try_recv() {
+    while let Ok(call) = observed.try_recv() {
         calls.push(call);
     }
     calls.sort_by(|left, right| left.0.cmp(&right.0));
@@ -169,33 +202,36 @@ mod measurement {
             ForeignChainInspectionError::RpcRequestFailed("connection refused".to_string())
         }));
         let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let (fan_out, mut reported) =
+        let (fan_out, mut observed) =
             measured_fan_out_of(vec![answering, unreachable, not_finalized]);
 
         // When
         fan_out.extract((), (), vec![]).await.unwrap();
 
         // Then
-        let calls = reported_by_provider(&mut reported);
-        let calls: Vec<(&str, Option<ProviderFailure>)> = calls
+        let calls = reported_by_provider(&mut observed);
+        let calls: Vec<(&str, CallEnd)> = calls
             .iter()
-            .map(|(provider, _, failure)| (provider.0.as_str(), *failure))
+            .map(|(provider, end)| (provider.0.as_str(), *end))
             .collect();
         assert_eq!(
             calls,
             [
-                ("provider-0", None),
-                ("provider-1", Some(ProviderFailure::Unreachable)),
-                ("provider-2", None),
+                ("provider-0", CallEnd::Observed(None)),
+                (
+                    "provider-1",
+                    CallEnd::Observed(Some(ProviderFailure::Unreachable))
+                ),
+                ("provider-2", CallEnd::Observed(None)),
             ]
         );
     }
 
     #[tokio::test]
-    async fn fan_out_extract__should_report_a_timeout_when_the_caller_gives_up() {
+    async fn fan_out_extract__should_report_a_dropped_call_when_the_caller_gives_up() {
         // Given
         let (asked, mut was_asked) = mpsc::unbounded_channel();
-        let (fan_out, mut reported) = measured_fan_out_of(vec![mock_never_answering(asked)]);
+        let (fan_out, mut observed) = measured_fan_out_of(vec![mock_never_answering(asked)]);
         let mut extract = Box::pin(fan_out.extract((), (), vec![]));
         tokio::select! {
             _ = &mut extract => panic!("the provider never answers"),
@@ -206,10 +242,10 @@ mod measurement {
         drop(extract);
 
         // Then
-        let call = tokio::time::timeout(Duration::from_secs(5), reported.recv())
+        let call = tokio::time::timeout(Duration::from_secs(5), observed.recv())
             .await
-            .expect("the abandoned call must be reported");
-        assert_matches!(call, Some((_, _, Some(ProviderFailure::TimedOut))));
+            .expect("the abandoned call must be observed");
+        assert_matches!(call, Some((_, CallEnd::Dropped)));
     }
 }
 
@@ -463,7 +499,7 @@ mod all_err {
         let err = result.expect_err("expected fan-out to return an error");
         assert!(
             !matches!(err, ForeignChainInspectionError::InspectorResponseMismatch),
-            "error disagreement must not be reported as mismatch, got: {err:?}",
+            "error disagreement must not be observed as mismatch, got: {err:?}",
         );
     }
 

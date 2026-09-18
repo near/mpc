@@ -47,7 +47,7 @@ verification traffic, and an hourly probe that needs no traffic.
 
 ### During traffic
 
-Each provider gets two metrics, labeled with the `chain` (the key it is
+Each provider gets three metrics, labeled with the `chain` (the key it is
 configured under, such as `bitcoin`) and a `provider` pseudonym, so the
 public metrics endpoint never shows which RPC vendors you use. The pseudonyms
 are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
@@ -57,7 +57,8 @@ are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_provider_inspection_seconds` | how long one provider took to answer one check. Failed calls are not timed. |
+| `mpc_foreign_chain_provider_inspection_seconds` | how long one provider took to return on one check, by `outcome`: `answered` or `failed` |
+| `mpc_foreign_chain_provider_dropped_seconds` | checks the node stopped waiting for before the provider returned, and how long it had waited |
 | `mpc_foreign_chain_provider_errors_total` | checks a provider failed to answer, counted by `kind` |
 
 `kind` is one of:
@@ -66,23 +67,32 @@ are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
   on its own: connection trouble, a 5xx, or rate limiting.
 * `non_transient`: the provider answered but refused the request, or returned
   something unusable. Retrying will not help; this needs a human.
-* `timeout`: the provider did not answer before the node gave up, either at its
-  deadline or at shutdown. The node waits for every provider, so outside
-  shutdowns a timeout fails the whole check for that chain.
+* `timeout`: the provider's RPC client gave up waiting for the answer.
+
+A dropped check is different from an error: the node itself stopped waiting,
+at its deadline or at shutdown, and whether the provider ever answered is
+unknown. Such checks are timed in `mpc_foreign_chain_provider_dropped_seconds`
+and do not appear under any `kind`. The node waits for every provider, so
+outside shutdowns one dropped check fails the whole check for that chain.
 
 Reading the numbers:
 
-* Error counts should stay at zero. Start with `non_transient`, then `timeout`;
-  `transient` often clears on its own.
-* For latency, compare providers of the same chain with each other. To see a
-  whole chain in one graph instead, `sum by (chain)` aggregates over the
-  providers, and keeping `provider` in the `by` clause keeps them separate;
-  the same works for the error counters. The top
+* Error counts and dropped counts should stay at zero. Start with
+  `non_transient`, then dropped checks and `timeout`; `transient` often clears
+  on its own.
+* For latency, filter on `outcome="answered"` and compare providers of the same
+  chain with each other. To see a whole chain in one graph instead, `sum by
+  (chain)` aggregates over the providers, and keeping `provider` in the `by`
+  clause keeps them separate; the same works for the error counters. The top
   bucket is the deadline the node enforces, and one observation is a whole
   check (one to three RPC calls), not a single round trip. A provider drifting
   toward the top bucket is the one to watch.
-* Latency percentiles describe successful answers only, because failed calls
-  are counted but not timed.
+* `outcome="failed"` times the checks that ended in an error, so a provider
+  that fails slowly is visible. Keep it out of latency percentiles.
+* For dropped checks, `rate(..._dropped_seconds_sum[5m]) /
+  rate(..._dropped_seconds_count[5m])` is the average time the node waited
+  before giving up. It sits near the deadline unless checks are dropped at
+  shutdown.
 * An answer is never an error, even when it ends the check: a transaction that
   is not final yet, has too few confirmations, was reverted, is missing, or
   sits on a block outside the canonical chain is an answer. Only failure to
@@ -95,7 +105,7 @@ Reading the numbers:
 * Every configured provider's series appears, at zero, as soon as the node
   serves requests, so an idle node reports zero rather than nothing. Solana can
   be configured but is not checked, so it never appears.
-* With no traffic, both series stay flat whether providers are healthy or down.
+* With no traffic, all series stay flat whether providers are healthy or down.
   On a quiet node, the probe below is the health signal.
 * Every participating node checks for itself: one user request produces one
   observation per provider on each node. Counts are per node, not cluster
@@ -142,9 +152,11 @@ increase(mpc_foreign_chain_provider_errors_total{kind="non_transient"}[5m]) > 0 
 # chain answer. The node tolerates this; the 15m hold rides out a short burst.
 increase(mpc_foreign_chain_provider_errors_total{kind="transient"}[5m]) > 0  for 15m
 
-# Page: a provider stops answering without erroring. The node waits for every
-# provider, so one silent provider fails the check for that whole chain.
-increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0  for 5m
+# Page: a provider stops answering, either its RPC client timed out or the node
+# gave up waiting at its deadline. The node waits for every provider, so one
+# silent provider fails the check for that whole chain.
+(increase(mpc_foreign_chain_provider_dropped_seconds_count[5m]) > 0
+  or increase(mpc_foreign_chain_provider_errors_total{kind="timeout"}[5m]) > 0)  for 5m
 
 # Warn: a provider failed the hourly probe, or a chain is configured without an
 # expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
