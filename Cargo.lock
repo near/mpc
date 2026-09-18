@@ -3927,7 +3927,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "sui-sdk-types",
+ "sui-sdk-types 0.4.0",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -11256,7 +11256,7 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_json",
- "sui-sdk-types",
+ "sui-sdk-types 0.3.2",
  "tap",
  "tokio",
  "tonic 0.14.6",
@@ -11283,6 +11283,21 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_with",
+ "winnow 0.7.15",
+]
+
+[[package]]
+name = "sui-sdk-types"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24c4cf4b8ba51ccb8c8f77405e6b50025ccfe174e06e09b0a542ccbc3f224af5"
+dependencies = [
+ "base64ct",
+ "bnum",
+ "bs58 0.5.1",
+ "bytes",
+ "bytestring",
+ "roaring",
  "winnow 0.7.15",
 ]
 
