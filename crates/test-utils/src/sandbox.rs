@@ -10,6 +10,8 @@ use near_workspaces::network::{Sandbox, ValidatorKey};
 // the sandbox's 60-block epochs. 20 epochs keep at least 19 × 60 = 1140 blocks.
 const GC_NUM_EPOCHS_TO_KEEP: u32 = 20;
 
+/// Owns the sandbox process: dropping the last clone kills it. Keep this
+/// alive for as long as the test talks to the chain.
 #[derive(Clone)]
 pub struct SandboxWorker {
     worker: Worker<Sandbox>,

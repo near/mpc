@@ -35,6 +35,7 @@ use test_utils::sandbox::SandboxWorker;
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -141,6 +142,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_cancel_keygen() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
