@@ -35,40 +35,24 @@ For a full architecture review of the TEE-based MPC, see: [design doc](../../des
 
 ## Prerequisites and Requirements
 
+Ensure your node meets the [MPC node requirements](../node-requirements.md). In addition, the node must meet the requirements outlined below.
+
 ### Hardware Requirements
 
-* Have a TDX enabled, bare metal, server.
+* A TDX enabled, bare metal, server.
 
 Note - we currently only support bare metal and do not support virtualized TDX solutions (such as GCP).
 
 * Intel Xeon 5th/6th Generation CPU (TDX Support) and 8 RAM slots filled
   See [Intel TDX HW requirements](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/03/hardware_selection/)
 
-The memory, cores, and disk below are the resources consumed by a single MPC CVM. Because you may need to run two CVMs concurrently while migrating to a new launcher version, size your TDX host for at least **2x** these values, plus some margin.
-
-* Memory - 64GB per CVM
-* (v)Cores - 8 per CVM
-* Disk space - 1TB (1000 GB) per CVM, SSD NVMe or similar performance
+The memory, cores and disk in [MPC node requirements](../node-requirements.md#resources)
+are what a single MPC CVM consumes. Because you may need to run two CVMs concurrently while
+migrating to a new launcher version, size your TDX host for at least **2x** those values.
 
 For a non-exhaustive list of cloud providers offering bare metal servers with Intel TDX, see [Cloud Providers Supporting Bare Metal Servers with Intel TDX](../cloud-providers-tdx.md).
 
 > **Sharing one host between mainnet and testnet?** See [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md) for the additional setup (one `dstack-vmm` hosting both CVMs, with each CVM bound to a distinct host IP at port-forward time). Note: this setup is discouraged as it couples mainnet and testnet availability — a single failure takes both nodes offline.
-
-### Software Requirements
-
-* [`near-cli-rs`](https://github.com/near/near-cli-rs) — install per the upstream README; the `near` binary must be on your `$PATH`.
-
-### General
-
-* Firewall:allow ingress port 80 (MPC), 24567 (near) and port 8080 (web)
-* Assign a static public IP for access towards machine from outside
-
-### Create DNS A record (optional)
-
-Although a node can be accessed using a public IP address, it is recommended to use a domain name instead. Using a domain name allows some flexibility in case of public IP address change/repurpose or failover scenarios. To use a domain name, one must register a DNS A record. Some recommended providers:
-
-* [Namecheap](https://www.namecheap.com/support/knowledgebase/article.aspx/319/2237/how-can-i-set-up-an-a-address-record-for-my-domain/)
-* [Cloudflare](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 
 ### TDX and Dstack Setup
 
@@ -1370,13 +1354,7 @@ deployment shapes:
 
 #### Required Ports
 
-| Port   | Purpose                                                                 |
-|--------|-------------------------------------------------------------------------|
-| **80** | Node-to-node communication (port override convention)                   |
-| **24567** | Decentralized state sync                                             |
-| **8080** | Debug and telemetry collection, plus the `/public_data` endpoint       |
-| **3030** | Debug and telemetry collection                                         |
-| **8079** | Migration port                    |
+See [Required ports](../node-requirements.md#ports).
 
 ### Configuring and Starting the MPC Binary in a CVM
 
