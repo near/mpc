@@ -247,6 +247,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -285,6 +286,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -418,6 +420,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -482,6 +485,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -529,6 +533,7 @@ async fn test_cancel_resharing_only_previous_participants_can_vote(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         new_participant_accounts,
         ..
@@ -553,6 +558,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         initial_running_state,
@@ -604,6 +610,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         new_participant_accounts,
@@ -688,6 +695,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
 async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id()
 -> anyhow::Result<()> {
     let ResharingTestContext {
+        _worker,
         contract,
         persistent_participants,
         new_participant_accounts,
