@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use foreign_chain_inspector::{ObserveProviderCall, ProviderFailure, TimeProviderCall};
+use foreign_chain_inspector::{ProviderFailure, TimeProviderCall};
 use near_mpc_contract_interface::types::{ForeignChain, ProviderId};
 use prometheus::HistogramTimer;
 
@@ -48,8 +48,14 @@ impl ProviderCallMetrics {
     }
 }
 
+/// The timer runs on the dropped series, so a call abandoned with the timer still running is
+/// recorded there by the timer's own destructor. Observing a call discards the timer and records
+/// the elapsed time under its outcome instead.
 impl TimeProviderCall for ProviderCallMetrics {
-    fn start_timer(&self, provider: &ProviderId) -> impl ObserveProviderCall {
+    /// [`None`] for a provider this recorder does not know, whose calls go unrecorded.
+    type Timer = Option<HistogramTimer>;
+
+    fn start_timer(&self, provider: &ProviderId) -> Option<HistogramTimer> {
         // The node builds the fan-out and this recorder from the same provider list, so an
         // unknown provider is unreachable in practice. Should it happen, the call goes
         // unrecorded rather than panicking.
@@ -59,45 +65,31 @@ impl TimeProviderCall for ProviderCallMetrics {
                 %provider,
                 "provider call started for an unknown provider; not recording it"
             );
-            return ProviderCallTimer(None);
+            return None;
         };
-        let timer = metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS
-            .with_label_values(&[self.chain.label(), label])
-            .start_timer();
-        ProviderCallTimer(Some(RunningTimer {
-            timer,
-            chain: self.chain,
-            label: label.clone(),
-        }))
+        Some(
+            metrics::MPC_FOREIGN_CHAIN_PROVIDER_DROPPED_SECONDS
+                .with_label_values(&[self.chain.label(), label])
+                .start_timer(),
+        )
     }
-}
 
-/// Times one provider call. Dropped unobserved, the prometheus timer records the call as
-/// abandoned; [`ObserveProviderCall::observe`] disarms it and records the outcome instead.
-struct ProviderCallTimer(Option<RunningTimer>);
-
-struct RunningTimer {
-    timer: HistogramTimer,
-    chain: ForeignChain,
-    label: String,
-}
-
-impl ObserveProviderCall for ProviderCallTimer {
-    fn observe(self, failure: Option<ProviderFailure>) {
-        let Some(running) = self.0 else {
+    fn observe(
+        &self,
+        timer: Option<HistogramTimer>,
+        provider: &ProviderId,
+        failure: Option<ProviderFailure>,
+    ) {
+        let (Some(timer), Some(label)) = (timer, self.labels.get(provider)) else {
             return;
         };
-        let elapsed = running.timer.stop_and_discard();
+        let elapsed = timer.stop_and_discard();
         metrics::MPC_FOREIGN_CHAIN_PROVIDER_INSPECTION_SECONDS
-            .with_label_values(&[
-                running.chain.label(),
-                &running.label,
-                Outcome::of(failure).label(),
-            ])
+            .with_label_values(&[self.chain.label(), label, Outcome::of(failure).label()])
             .observe(elapsed);
         if let Some(failure) = failure {
             metrics::MPC_FOREIGN_CHAIN_PROVIDER_ERRORS_TOTAL
-                .with_label_values(&[running.chain.label(), &running.label, kind_label(failure)])
+                .with_label_values(&[self.chain.label(), label, kind_label(failure)])
                 .inc();
         }
     }
@@ -190,7 +182,7 @@ mod tests {
             Some(ProviderFailure::Malformed),
             Some(ProviderFailure::TimedOut),
         ] {
-            recorder.start_timer(&provider).observe(failure);
+            recorder.observe(recorder.start_timer(&provider), &provider, failure);
         }
 
         // Then
@@ -232,10 +224,12 @@ mod tests {
         let recorder = ProviderCallMetrics::new(chain, &providers);
 
         // When: the alphabetically middle provider answers once and fails once.
-        recorder.start_timer(&providers[2]).observe(None);
-        recorder
-            .start_timer(&providers[2])
-            .observe(Some(ProviderFailure::Unreachable));
+        recorder.observe(recorder.start_timer(&providers[2]), &providers[2], None);
+        recorder.observe(
+            recorder.start_timer(&providers[2]),
+            &providers[2],
+            Some(ProviderFailure::Unreachable),
+        );
 
         // Then: its series is p1, not p2, so input order does not matter.
         assert_eq!(timed(chain, "p1", Outcome::Answered), 1);

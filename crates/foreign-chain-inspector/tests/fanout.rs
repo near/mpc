@@ -12,8 +12,8 @@ use std::{pin::Pin, sync::Arc, time::Duration};
 
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
-    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ObserveProviderCall,
-    ProviderFailure, TimeProviderCall, Verdict,
+    FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ProviderFailure,
+    TimeProviderCall, Verdict,
 };
 use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
@@ -139,28 +139,32 @@ type ReportedCall = (ProviderId, CallEnd);
 struct ReportedCalls(mpsc::UnboundedSender<ReportedCall>);
 
 impl TimeProviderCall for ReportedCalls {
-    fn start_timer(&self, provider: &ProviderId) -> impl ObserveProviderCall {
+    type Timer = RecordingTimer;
+
+    fn start_timer(&self, provider: &ProviderId) -> RecordingTimer {
         RecordingTimer {
             calls: self.0.clone(),
             provider: provider.clone(),
             observed: false,
         }
     }
+
+    fn observe(
+        &self,
+        mut timer: RecordingTimer,
+        provider: &ProviderId,
+        failure: Option<ProviderFailure>,
+    ) {
+        timer.observed = true;
+        let _ = self.0.send((provider.clone(), CallEnd::Observed(failure)));
+    }
 }
 
+/// Reports the call as dropped unless it was observed first.
 struct RecordingTimer {
     calls: mpsc::UnboundedSender<ReportedCall>,
     provider: ProviderId,
     observed: bool,
-}
-
-impl ObserveProviderCall for RecordingTimer {
-    fn observe(mut self, failure: Option<ProviderFailure>) {
-        self.observed = true;
-        let _ = self
-            .calls
-            .send((self.provider.clone(), CallEnd::Observed(failure)));
-    }
 }
 
 impl Drop for RecordingTimer {

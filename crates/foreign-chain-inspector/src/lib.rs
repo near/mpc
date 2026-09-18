@@ -167,28 +167,28 @@ impl<Inspector> FanOut<Inspector> {
     }
 }
 
-/// Starts a timer for calls to foreign chain RPC providers.
-pub trait TimeProviderCall: Send + Sync {
-    fn start_timer(&self, provider: &ProviderId) -> impl ObserveProviderCall;
-}
-
-/// A running timer for one provider call.
+/// Times calls to foreign chain RPC providers.
 ///
-/// Call [`Self::observe`] with the outcome once the provider returns. A timer dropped without
-/// being observed means the call was abandoned before the provider returned, and implementations
-/// must record that in their destructor. Implementations must not block or panic on either
-/// path, because both can run while the task is being aborted.
-pub trait ObserveProviderCall: Send + 'static {
-    fn observe(self, failure: Option<ProviderFailure>);
+/// [`Self::start_timer`] begins one call and [`Self::observe`] ends it with the outcome once the
+/// provider returns. Implementations must not block or panic in either, because both can run
+/// while the task is being aborted.
+pub trait TimeProviderCall: Send + Sync {
+    /// A timer dropped without being observed means the call was abandoned before the provider
+    /// returned. Implementations must record that in the timer's destructor.
+    type Timer: Send + 'static;
+
+    fn start_timer(&self, provider: &ProviderId) -> Self::Timer;
+
+    fn observe(&self, timer: Self::Timer, provider: &ProviderId, failure: Option<ProviderFailure>);
 }
 
 /// Satisfies [`FanOut`]'s recorder bounds for the unmeasured default.
 impl TimeProviderCall for () {
-    fn start_timer(&self, _: &ProviderId) -> impl ObserveProviderCall {}
-}
+    type Timer = ();
 
-impl ObserveProviderCall for () {
-    fn observe(self, _: Option<ProviderFailure>) {}
+    fn start_timer(&self, _: &ProviderId) {}
+
+    fn observe(&self, _: (), _: &ProviderId, _: Option<ProviderFailure>) {}
 }
 
 impl<Inspector, Recorder> ForeignChainInspector for FanOut<Inspector, Recorder>
@@ -224,7 +224,8 @@ where
                 // before its first poll makes no call and reports nothing.
                 let timer = recorder.start_timer(&provider);
                 let result = inspector.extract(tx_id, finality, extractors).await;
-                timer.observe(result.as_ref().err().and_then(|err| err.provider_failure()));
+                let failure = result.as_ref().err().and_then(|err| err.provider_failure());
+                recorder.observe(timer, &provider, failure);
                 (provider, result)
             });
         }
