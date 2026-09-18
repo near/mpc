@@ -31,11 +31,19 @@
 //! Heavy: run explicitly, e.g.
 //! `nix develop -c cargo test -p mpc-contract --test test attestation_scan_gas_curve_sweep -- --ignored --nocapture`.
 //! The sweep list can be overridden with `ATTESTATION_SCAN_SWEEP_NS=0,10,50,...`.
+//!
+//! Two focused companions skip the sweep and bisect: [`attestation_ab_gas_curve`] measures
+//! the write paths (`submit_participant_info` for a new entry and as a repeat submission
+//! overwrite) plus the `clean_invalid_attestations` floor with nothing to remove, at
+//! N=0 and N=1000; [`init_running_gas_curve`] measures contract genesis with the harness's
+//! 5 participant threshold set. Both use only public endpoints so the same file measures
+//! the bare `IterableMap` baseline. Fill levels override with `ATTESTATION_AB_NS=0,1000`.
 
 use crate::sandbox::common::{gen_accounts, init_contract_running, make_threshold_params};
+use crate::sandbox::utils::consts::GAS_FOR_INIT;
 use crate::sandbox::utils::contract_build::current_contract;
 use crate::sandbox::utils::mpc_contract::{
-    available_attestation_grants, get_config, get_participant_attestation,
+    available_attestation_grants, get_config, get_participant_attestation, get_tee_accounts,
     prepay_and_submit_participant_info, prepay_attestation_grants,
 };
 use crate::sandbox::utils::shared_key_utils::new_secp256k1;
@@ -614,5 +622,275 @@ async fn attestation_scan_gas_curve_sweep() -> anyhow::Result<()> {
         let highest = rows.last().map(|row| row.n_attacker_entries).unwrap_or(0);
         println!("\nregister still passing at the highest measured N = {highest}");
     }
+    Ok(())
+}
+
+/// Fill levels for the focused A/B rows; override with `ATTESTATION_AB_NS=0,1000`.
+const AB_NS: &[usize] = &[0, 1000];
+/// `max_scan` the post reshare promise passes (`RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN`),
+/// so the floor row matches what production sweeps spend.
+const CLEAN_PRODUCTION_MAX_SCAN: u32 = 30;
+/// `max_scan` that walks the whole map at any measured fill level.
+const CLEAN_FULL_SCAN_MAX_SCAN: u32 = 10_000;
+/// Measured runs per op in the focused rows; the median is reported.
+const AB_RUNS: usize = 3;
+
+fn ab_ns() -> Vec<usize> {
+    match std::env::var("ATTESTATION_AB_NS") {
+        Ok(s) => s
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect(),
+        Err(_) => AB_NS.to_vec(),
+    }
+}
+
+struct AbMeasurement {
+    n_attacker_entries: usize,
+    /// `submit_participant_info` for a brand new entry: fresh TLS key, one grant consumed.
+    new_entry: OpMeasurement,
+    /// `submit_participant_info` overwriting the caller's own entry: same TLS key, same
+    /// account, no grant. The hourly re-attestation hot path.
+    re_attestation: OpMeasurement,
+    /// `clean_invalid_attestations` with nothing to remove, at the production scan bound.
+    clean_production: OpMeasurement,
+    /// `clean_invalid_attestations` with nothing to remove, scanning the whole map.
+    clean_full_scan: OpMeasurement,
+}
+
+impl AbMeasurement {
+    fn ops(&self) -> [(&'static str, &OpMeasurement); 4] {
+        [
+            ("new entry", &self.new_entry),
+            ("re-attestation", &self.re_attestation),
+            ("clean at the production scan bound", &self.clean_production),
+            ("clean over the whole map", &self.clean_full_scan),
+        ]
+    }
+}
+
+fn print_ab_row(m: &AbMeasurement) {
+    let ops = m.ops();
+    println!(
+        "| {:>5} | {:>9} | {:>9} | {:>10} | {:>12} | {}",
+        m.n_attacker_entries,
+        ggas(m.new_entry.median_gas()),
+        ggas(m.re_attestation.median_gas()),
+        ggas(m.clean_production.median_gas()),
+        ggas(m.clean_full_scan.median_gas()),
+        ops.iter()
+            .map(|(name, op)| format!("{name}: {}", op.status()))
+            .collect::<Vec<_>>()
+            .join("; "),
+    );
+}
+
+/// Focused A/B rows: at each fill level, the median of [`AB_RUNS`] runs of the new entry
+/// and repeat submission write paths plus the `clean_invalid_attestations` floor with
+/// nothing to remove (all entries valid), at the production scan bound and over the whole
+/// map. The three new entry runs consume exactly the [`SPARE_GRANTS`] the fill bought, so
+/// a leftover grant count would mean a sweep returned credit it must not have.
+#[tokio::test]
+#[ignore = "sandbox benchmark; run explicitly"]
+async fn attestation_ab_gas_curve() -> anyhow::Result<()> {
+    println!("|     N | new entry | re-attest | clean (30) | clean (full) | statuses");
+    for n in ab_ns() {
+        let env = setup_bench_env().await?;
+        env.fill(n).await?;
+        env.submit_victim_attestation().await?;
+
+        // `fill` skips its prepay at N=0, but the measured new entry runs each consume one
+        // of the spare grants.
+        if n == 0 {
+            let root = env.worker.root_account()?;
+            let funding = NearToken::from_yoctonear(
+                env.yocto(env.fee_token(SPARE_GRANTS as u128))
+                    + env.yocto(NearToken::from_near(10)),
+            );
+            root.transfer_near(env.attacker.id(), funding)
+                .await?
+                .into_result()?;
+            let prepay = prepay_attestation_grants(
+                &env.attacker,
+                &env.contract,
+                env.attacker.id(),
+                SPARE_GRANTS as u32,
+            )
+            .await?;
+            anyhow::ensure!(prepay.is_success(), "N=0 grant prepay failed: {prepay:?}");
+        }
+
+        let clean_production = measure_op(
+            &env.attacker,
+            &env.contract,
+            method_names::CLEAN_INVALID_ATTESTATIONS,
+            json!({ "max_scan": CLEAN_PRODUCTION_MAX_SCAN }),
+            AB_RUNS,
+            None,
+        )
+        .await;
+        let clean_full_scan = measure_op(
+            &env.attacker,
+            &env.contract,
+            method_names::CLEAN_INVALID_ATTESTATIONS,
+            json!({ "max_scan": CLEAN_FULL_SCAN_MAX_SCAN }),
+            AB_RUNS,
+            None,
+        )
+        .await;
+
+        // Second submission of the same TLS key by the same account: an overwrite that
+        // consumes no grant.
+        let re_attestation = measure_op(
+            &env.victim,
+            &env.contract,
+            method_names::SUBMIT_PARTICIPANT_INFO,
+            json!({
+                "proposed_participant_attestation":
+                    dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+                "tls_public_key": env.victim_tls_key,
+            }),
+            AB_RUNS,
+            None,
+        )
+        .await;
+
+        // Brand new entries, a fresh TLS key per run, each consuming one grant.
+        let mut new_entry = OpMeasurement {
+            gas_samples: Vec::with_capacity(AB_RUNS),
+            error: None,
+        };
+        for index in 0..AB_RUNS {
+            let (gas, error) = record_run(
+                &env.attacker,
+                &env.contract,
+                method_names::SUBMIT_PARTICIPANT_INFO,
+                json!({
+                    "proposed_participant_attestation":
+                        dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+                    "tls_public_key": fabricated_tls_key(index, MEASURED_SUBMIT_TLS_MARKER),
+                }),
+                None,
+            )
+            .await;
+            new_entry.gas_samples.push(gas);
+            if new_entry.error.is_none() {
+                new_entry.error = error;
+            }
+        }
+
+        let m = AbMeasurement {
+            n_attacker_entries: n,
+            new_entry,
+            re_attestation,
+            clean_production,
+            clean_full_scan,
+        };
+        for (name, op) in m.ops() {
+            anyhow::ensure!(
+                op.error.is_none(),
+                "{name} failed at N={n}: {}",
+                op.status()
+            );
+        }
+
+        // Nothing may have been swept and every new entry must have landed: 5 genesis plus
+        // participant entries, the victim's, N attacker entries, AB_RUNS new entries.
+        let stored = get_tee_accounts(&env.contract).await?;
+        anyhow::ensure!(
+            stored.len() == 6 + n + AB_RUNS,
+            "expected {} stored attestations, got {}; a sweep must not have removed any",
+            6 + n + AB_RUNS,
+            stored.len()
+        );
+        // And the grant ledger must match: the fill (or the N=0 top-up) left exactly the
+        // SPARE_GRANTS the measured new entry runs consumed, so a sweep returning credit
+        // would show up as a leftover balance.
+        let grants_left = available_attestation_grants(&env.contract, env.attacker.id()).await?;
+        anyhow::ensure!(
+            grants_left == 0,
+            "expected no grants left after the measured runs, got {grants_left}"
+        );
+
+        print_ab_row(&m);
+    }
+    Ok(())
+}
+
+/// Median `total_gas_burnt` of `init_running` with the harness's 5 participant threshold
+/// set, over [`AB_RUNS`] fresh deployments. Genesis writes one mock attestation per
+/// participant, and the fix writes one reverse index row alongside each.
+#[tokio::test]
+#[ignore = "sandbox benchmark; run explicitly"]
+async fn init_running_gas_curve() -> anyhow::Result<()> {
+    let mut gas_samples = Vec::with_capacity(AB_RUNS);
+    for _ in 0..AB_RUNS {
+        let worker =
+            near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION).await?;
+        let contract = worker.dev_deploy(current_contract()).await?;
+        let (accounts, _) = gen_accounts(&worker, SETUP_PARTICIPANTS + 1).await;
+
+        // Same threshold set shape as `setup_bench_env`: 4 participants under the shared
+        // marker plus the victim under its own.
+        let mut threshold_set = Participants::new();
+        for (index, account) in accounts[..SETUP_PARTICIPANTS].iter().enumerate() {
+            threshold_set.insert(
+                account.id().clone(),
+                ParticipantInfo {
+                    url: "127.0.0.1".to_string(),
+                    tls_public_key: fabricated_tls_key(index, PARTICIPANT_TLS_MARKER),
+                },
+            )?;
+        }
+        threshold_set.insert(
+            accounts[SETUP_PARTICIPANTS].id().clone(),
+            ParticipantInfo {
+                url: "127.0.0.1".to_string(),
+                tls_public_key: fabricated_tls_key(0, VICTIM_TLS_MARKER),
+            },
+        )?;
+        let threshold_params = make_threshold_params(&threshold_set);
+
+        let domain_id = dtos::DomainId(0);
+        let domains = vec![dtos::DomainConfig {
+            id: domain_id,
+            protocol: dtos::Protocol::CaitSith,
+            reconstruction_threshold: dtos::ReconstructionThreshold::new(3),
+            purpose: dtos::DomainPurpose::ForeignTx,
+        }];
+        let (dto_pk, _) = new_secp256k1();
+        let key = dtos::KeyForDomain {
+            attempt: dtos::AttemptId::new(),
+            domain_id,
+            key: dto_pk.into(),
+        };
+        let keyset = dtos::Keyset::new(dtos::EpochId::new(1), vec![key]);
+        let init_config: Option<dtos::InitConfig> = None;
+
+        let result = contract
+            .call(method_names::INIT_RUNNING)
+            .args_json(json!({
+                "domains": domains,
+                "next_domain_id": 1,
+                "keyset": keyset,
+                "parameters": dtos::GovernanceThresholdParameters::from(threshold_params),
+                "init_config": init_config,
+            }))
+            .gas(GAS_FOR_INIT)
+            .transact()
+            .await?;
+        anyhow::ensure!(result.is_success(), "init_running failed: {result:?}");
+        gas_samples.push(result.total_gas_burnt.as_gas());
+    }
+    gas_samples.sort_unstable();
+    println!(
+        "init_running (5 participants): median {:.2} Tgas over {AB_RUNS} deploys \
+         (samples in Tgas: {:?})",
+        gas_samples[AB_RUNS / 2] as f64 / 1e12,
+        gas_samples
+            .iter()
+            .map(|g| g / 1_000_000_000_000)
+            .collect::<Vec<_>>(),
+    );
     Ok(())
 }
