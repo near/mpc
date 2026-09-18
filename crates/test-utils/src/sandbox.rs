@@ -4,25 +4,12 @@ use std::sync::Arc;
 use near_workspaces::Worker;
 use near_workspaces::network::{Sandbox, ValidatorKey};
 
-/// How many epochs the sandbox retains before garbage-collecting old blocks.
-///
-/// `near-sandbox init --fast` produces 60-block epochs, and neard's default
-/// `gc_num_epochs_to_keep = 5` leaves a retention window of only ~245–300
-/// blocks. A test that submits many transactions and polls their outcomes at
-/// the end (e.g. `respond__should_drain_saturated_fan_out_queue`, spanning
-/// ~600 blocks) loses the earliest outcomes to GC and fails with unknown-
-/// transaction errors (see issue #4461). 20 epochs guarantee a window of at
-/// least 19 × 60 = 1140 blocks.
+/// The neard default of 5 epochs (~300 blocks at the sandbox's 60-block
+/// epochs) is outlived by `respond__should_drain_saturated_fan_out_queue`,
+/// which spans ~600 blocks before polling its earliest tx outcomes — GC drops
+/// them first (#4461). 20 epochs retain at least 19 × 60 = 1140 blocks.
 const GC_NUM_EPOCHS_TO_KEEP: u32 = 20;
 
-/// A [`Worker`] connected to a sandbox instance owned by this handle.
-///
-/// The sandbox is started through the [`near_sandbox`] crate directly instead
-/// of [`near_workspaces::sandbox_with_version`], because near-workspaces does
-/// not expose the node-config overrides we need (block retention, see
-/// [`GC_NUM_EPOCHS_TO_KEEP`]). The handle derefs to the inner [`Worker`];
-/// dropping the last clone kills the sandbox process, exactly like a worker
-/// obtained from near-workspaces.
 #[derive(Clone)]
 pub struct SandboxWorker {
     worker: Worker<Sandbox>,
@@ -37,12 +24,13 @@ impl Deref for SandboxWorker {
     }
 }
 
-/// Starts a [`crate::DEFAULT_SANDBOX_VERSION`] sandbox with an extended block
-/// retention window and attaches a [`Worker`] to it.
+/// Starts the sandbox through [`near_sandbox`] directly because
+/// [`near_workspaces::sandbox_with_version`] does not expose the node-config
+/// overrides we need (block retention).
 pub async fn start_sandbox() -> anyhow::Result<SandboxWorker> {
     let config = near_sandbox::SandboxConfig {
-        // near-workspaces adds this account itself when it spawns the sandbox;
-        // top-level account creation (`dev_create_account` etc.) needs it.
+        // near-workspaces adds this account when it spawns the sandbox itself;
+        // top-level account creation needs it.
         additional_accounts: vec![near_sandbox::GenesisAccount::default_with_name(
             "registrar".parse().expect("static account id is valid"),
         )],
