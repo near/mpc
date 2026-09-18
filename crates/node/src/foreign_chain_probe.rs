@@ -44,10 +44,6 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
     }
 }
 
-fn is_probed(row: &ProviderHealth) -> bool {
-    row.status != ProviderStatus::ProbeNotImplemented
-}
-
 #[derive(Debug, PartialEq, Eq)]
 struct Summary {
     probed: usize,
@@ -56,7 +52,7 @@ struct Summary {
 
 fn summarize(rows: &[ProviderHealth]) -> Summary {
     Summary {
-        probed: rows.iter().filter(|row| is_probed(row)).count(),
+        probed: rows.iter().filter(|row| row.status.was_probed()).count(),
         healthy: rows.iter().filter(|row| row.status.is_healthy()).count(),
     }
 }
@@ -100,7 +96,7 @@ fn publish_metrics(report: &ProbeReport) {
     let probed_chains: BTreeSet<dtos::ForeignChain> = report
         .rows()
         .iter()
-        .filter(|row| is_probed(row))
+        .filter(|row| row.status.was_probed())
         .map(|row| row.chain)
         .collect();
 

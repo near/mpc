@@ -36,6 +36,10 @@ impl ProviderStatus {
     pub fn is_healthy(&self) -> bool {
         matches!(self, Self::Healthy)
     }
+
+    pub fn was_probed(&self) -> bool {
+        !matches!(self, Self::ProbeNotImplemented)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,12 +261,10 @@ mod tests {
         }
     }
     use super::*;
-    use crate::golden;
-    use crate::network::Network;
     use assert_matches::assert_matches;
     use foreign_chain_inspector::{
         abstract_chain, adi, aptos, arbitrum, avalanche, base, bitcoin, bnb, ethereum, hyperevm,
-        polygon, starknet, sui,
+        polygon, starknet, sui, svm,
     };
     use foreign_chain_rpc_factory::inspectors::InspectorFactory;
     use foreign_chain_rpc_interfaces::sui::Status;
@@ -291,6 +293,9 @@ mod tests {
     const PROVIDER_NAME: &str = "publicnode";
     const BITCOIN_MAINNET: &str = bitcoin::MAINNET_GENESIS_BLOCK_HASH;
     const BITCOIN_TESTNET3: &str = bitcoin::TESTNET3_GENESIS_BLOCK_HASH;
+    const SOLANA_MAINNET: &str = svm::SOLANA_MAINNET_GENESIS_HASH;
+    const SOLANA_DEVNET: &str = svm::SOLANA_DEVNET_GENESIS_HASH;
+    const FOGO_MAINNET: &str = svm::FOGO_MAINNET_GENESIS_HASH;
 
     struct EvmMainnet {
         chain: ForeignChain,
@@ -858,10 +863,9 @@ mod tests {
     {
         // Given — each chain answers its own genesis hash, so a cross-wired arm would
         // compare Solana's against Fogo's.
-        let golden = golden::golden_set(Network::Mainnet);
         let expected = [
-            (ForeignChain::Solana, golden.solana.unwrap().genesis_hash),
-            (ForeignChain::Fogo, golden.fogo.unwrap().genesis_hash),
+            (ForeignChain::Solana, SOLANA_MAINNET),
+            (ForeignChain::Fogo, FOGO_MAINNET),
         ];
         let mut servers = Vec::new();
         let mut config = ForeignChainsConfig::default();
@@ -896,16 +900,16 @@ mod tests {
     async fn probe_all_providers__should_report_an_svm_provider_on_another_network_as_wrong_network()
      {
         // Given — a provider on Solana devnet against a mainnet expectation.
-        let mainnet = golden::golden_set(Network::Mainnet).solana.unwrap();
-        let devnet = golden::golden_set(Network::Testnet).solana.unwrap();
+        let mainnet = SOLANA_MAINNET;
+        let devnet = SOLANA_DEVNET;
         let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, devnet.genesis_hash).await;
+        mock_fingerprint(&server, devnet).await;
         let mut config = ForeignChainsConfig::default();
         put_chain(
             &mut config,
             ForeignChain::Solana,
             chain_config(
-                Some(mainnet.genesis_hash),
+                Some(mainnet),
                 one_provider("publicnode", &server.base_url()),
             ),
         );
@@ -917,8 +921,8 @@ mod tests {
         assert_eq!(
             status_of(&report, ForeignChain::Solana, "publicnode"),
             ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new(mainnet.genesis_hash),
-                observed: NetworkFingerprint::new(devnet.genesis_hash),
+                expected: NetworkFingerprint::new(mainnet),
+                observed: NetworkFingerprint::new(devnet),
             }
         );
     }

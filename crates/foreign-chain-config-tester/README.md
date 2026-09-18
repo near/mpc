@@ -1,18 +1,16 @@
-# Foreign-chain RPC config tester
+# Foreign chain RPC config tester
 
-A standalone tool that checks the foreign-chain RPC providers in an MPC node
-config, so a misconfiguration (unreachable URL, wrong/expired API key, or a
+A standalone tool that checks the foreign chain RPC providers in an MPC node
+config, so a misconfiguration (unreachable URL, wrong or expired API key, or a
 provider pointed at the wrong network) is caught before the node hits it in
 production.
 
-For each configured provider it runs a fixed request against a known reference
-transaction — the same inspector and auth handling the node uses — and compares
-the result against a known-good value. Sui and the SVM chains (Solana, Fogo) are
-the exception: their providers prune historical transactions, so the check
-instead verifies the provider's chain identity (for Sui also inspecting a
-transaction from its latest checkpoint). Every
-provider is checked independently: one bad provider does not stop the others
-from being reported.
+It runs the probe the node itself runs after startup and then hourly: every
+configured provider is asked which network it serves, and the answer is compared
+with the chain's `expected_network_fingerprint` from the same config. Every
+provider is checked independently, so one bad provider does not stop the others
+from being reported, and the verdicts are exactly the ones the node logs for
+that config.
 
 ## Usage
 
@@ -27,36 +25,58 @@ cargo run -p foreign-chain-config-tester -- --config /path/to/user-config.toml
 - the launcher config (`foreign_chains` under `node`);
 - the legacy `config.yaml` (`foreign_chains` at the top level).
 
-### Network
+The section is validated the way the node validates it at startup, so a config
+the node would refuse fails before any provider is contacted. Tokens configured
+with `env` are read from the environment: export them in the shell that runs
+the tester.
 
-Reference transactions are network-specific. The network is auto-detected from
-the config (`chain_id`, falling back to `mpc_contract_id`). Override it — or set
-it for configs that carry no such field — with `--network`:
-
-```bash
-cargo run -p foreign-chain-config-tester -- --config user-config.toml --network testnet
-```
+Each chain needs an `expected_network_fingerprint`; the values per chain and
+network are listed in the operator guide under
+[Expected network fingerprints](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#expected-network-fingerprints).
+The expectation is set per chain, so a config can mix networks. A chain
+configured without it fails, as it does in the node.
 
 ## Output
 
-A row per provider, a summary line, and the reason for each failure listed
-below the table. The process exits non-zero if any provider failed.
+A row per provider, a placeholder row per chain absent from the config, a
+summary line, and the reason for each failure listed below the table. The
+process exits with a failure status if any provider failed, or if the config
+holds no foreign chains at all.
 
 ```
-CHAIN     PROVIDER   RESULT
-abstract  public     ✓ ok
-bitcoin   public     ✓ ok
-starknet  public     ✗ failed
-aptos     public     ✓ ok
-sui       public     ✓ ok
-solana    public     ✓ ok
+CHAIN      PROVIDER          RESULT
+abstract   abstract-testnet  ✓ ok
+abstract   alchemy           ✗ failed
+adi        -                 – skipped (not configured)
+aptos      alchemy           ✗ failed
+aptos      public            ✓ ok
+bitcoin    public            ✓ ok
+ethereum   -                 – skipped (not configured)
+fogo       public            ✓ ok
+solana     alchemy           ✗ failed
+solana     public            ✓ ok
+starknet   alchemy           ✗ failed
+starknet   publicnode        ✓ ok
+sui        public            ✓ ok
+...
 
-5 passed, 1 failed, 0 skipped
+7 passed, 11 failed, 8 skipped
 
 Failures:
-  starknet / public: the provider ruled the golden transaction out: the transaction was not found
+  abstract / alchemy: request rejected: credentials invalid, or not enabled for this chain
+  aptos / alchemy: request rejected: credentials invalid, or not enabled for this chain
+  solana / alchemy: request rejected: credentials invalid, or not enabled for this chain
+  ...
 ```
 
-> **Note:** for providers that carry the API key in the URL (`path` / `query`
-> auth), a failure message may include that URL, and therefore the key. Scrub any
-> secrets from the output before sharing it.
+| Result | Meaning |
+|---|---|
+| `ok` | the provider serves the expected network |
+| `failed` | the provider is unhealthy; the reason is listed under `Failures` |
+| `skipped` | the chain is not configured |
+
+The table and the failure reasons name chains and providers only. They carry no
+URLs, tokens, or provider error text, so they can be shared as is. When the
+tester refuses the config it reports a validation error instead, and that error
+may quote a provider URL, along with a key embedded in it: scrub it before
+sharing.
