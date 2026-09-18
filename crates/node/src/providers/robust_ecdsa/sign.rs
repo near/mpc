@@ -37,7 +37,7 @@ impl RobustEcdsaSignatureProvider {
             },
             presignature.participants,
         )?;
-        let (_num_signers, damgard_et_al_threshold) =
+        let (_num_signers, robust_ecdsa_threshold) =
             compute_thresholds(keyshare.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
@@ -47,7 +47,7 @@ impl RobustEcdsaSignatureProvider {
 
         let (signature, public_key) = SignComputation {
             keygen_out: keyshare.keygen_output,
-            max_malicious: damgard_et_al_threshold,
+            max_malicious: robust_ecdsa_threshold,
             presign_out: presignature.presignature,
             msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
@@ -89,7 +89,7 @@ impl RobustEcdsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let keyshare = self.keyshare(sign_request.domain)?;
-        let (_num_signers, damgard_et_al_threshold) =
+        let (_num_signers, robust_ecdsa_threshold) =
             compute_thresholds(keyshare.reconstruction_threshold)?;
 
         let msg_hash = *sign_request
@@ -100,7 +100,7 @@ impl RobustEcdsaSignatureProvider {
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: keyshare.keygen_output,
-            max_malicious: damgard_et_al_threshold,
+            max_malicious: robust_ecdsa_threshold,
             presignature_store: keyshare.presignature_store.clone(),
             presignature_id,
             msg_hash: msg_hash.into(),

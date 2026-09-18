@@ -554,7 +554,7 @@ impl MpcClient {
                 "Incorrect protocol for domain: {:?}",
                 request.domain
             )),
-            Some(Protocol::DamgardEtAl) => {
+            Some(Protocol::RobustEcdsa) => {
                 let (signature, public_key) = make_signature!(self.robust_ecdsa_signature_provider);
 
                 let response = contract_args::SignatureRespondArgs::from_ecdsa(
@@ -590,7 +590,7 @@ impl MpcClient {
 
                 Ok(response)
             }
-            Some(Protocol::CaitSith) | Some(Protocol::DamgardEtAl) | Some(Protocol::Frost) => {
+            Some(Protocol::CaitSith) | Some(Protocol::RobustEcdsa) | Some(Protocol::Frost) => {
                 Err(anyhow::anyhow!(
                     "Signature scheme is not allowed for domain: {:?}",
                     request.domain_id
@@ -625,7 +625,7 @@ impl MpcClient {
                 Ok(response)
             }
             Some(Protocol::ConfidentialKeyDerivation)
-            | Some(Protocol::DamgardEtAl)
+            | Some(Protocol::RobustEcdsa)
             | Some(Protocol::Frost) => Err(anyhow::anyhow!(
                 "Signature scheme is not allowed for domain: {:?}",
                 request.domain_id

@@ -183,7 +183,7 @@ verify Dstack attestations; see [Deploy the TEE verifier contract](../../docs/de
 When first deployed, the contract has no keys. In order to make any signatures,
 we must first generate some keys. This example generates one key for each
 supported protocol. You can specify duplicate protocols here as well if you
-wish to add multiple keys for the same protocol. Use `DamgardEtAl` to add a
+wish to add multiple keys for the same protocol. Use `RobustEcdsa` to add a
 Robust ECDSA key on Secp256k1 (distinct from `CaitSith`, which is the classic
 ECDSA protocol on the same curve).
 

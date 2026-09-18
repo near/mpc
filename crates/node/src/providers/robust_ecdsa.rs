@@ -1,4 +1,4 @@
-//! Provider for [`Protocol::DamgardEtAl`](mpc_primitives::domain::Protocol::DamgardEtAl)
+//! Provider for [`Protocol::RobustEcdsa`](mpc_primitives::domain::Protocol::RobustEcdsa)
 //! domains.
 //!
 //! # Do not enable this in production
@@ -215,7 +215,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
         for Err(join_error) in futures::future::join_all(generate_presignatures).await {
             tracing::error!(
-                "Damgard et al background presignature task ended unexpectedly: {join_error}"
+                "Robust ECDSA background presignature task ended unexpectedly: {join_error}"
             );
         }
 

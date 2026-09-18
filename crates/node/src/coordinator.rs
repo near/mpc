@@ -627,7 +627,7 @@ where
                                     DomainKeyshare::new(data, reconstruction_threshold),
                                 );
                             }
-                            Protocol::DamgardEtAl => {
+                            Protocol::RobustEcdsa => {
                                 robust_ecdsa_keyshares.insert(
                                     domain_id,
                                     DomainKeyshare::new(data, reconstruction_threshold),
