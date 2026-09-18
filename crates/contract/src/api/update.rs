@@ -3,6 +3,7 @@
 //! contract applies it.
 
 use crate::config::Config;
+use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::primitives::proposal_hash::ProposalHash;
@@ -41,7 +42,7 @@ impl MpcContract {
         {
             return Err(InvalidParameters::UpdateNotApproved.into());
         }
-        let update: Update = update.try_into()?;
+        let update: Update = update.try_into_contract_type()?;
         update
             .into_promise(Gas::from_tgas(
                 self.config.contract_upgrade_deposit_tera_gas,
@@ -146,7 +147,9 @@ impl MpcContract {
 #[expect(non_snake_case)]
 mod tests {
     use crate::MpcContract;
-    use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, participant_account_ids};
+    use crate::api::test_utils::{
+        NUM_DOMAINS, NUM_GENERATED_DOMAINS, participant_account_ids, setup_tee_test_contract,
+    };
     use crate::errors::{Error, InvalidParameters, InvalidState};
     use crate::primitives::key_state::AuthenticatedAccountId;
     use crate::primitives::participants::Participants;
@@ -155,7 +158,6 @@ mod tests {
     use crate::state::ProtocolContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
-        gen_running_state_with_params,
     };
     use crate::tee::test_utils::Environment;
     use assert_matches::assert_matches;
@@ -165,22 +167,8 @@ mod tests {
     use rstest::rstest;
     use std::collections::{BTreeMap, BTreeSet};
 
+    const NUM_PARTICIPANTS: usize = 3;
     const THRESHOLD: u64 = 2;
-
-    /// A running contract with three participants and governance threshold two.
-    fn running_contract() -> (MpcContract, Vec<AccountId>) {
-        let running_state = gen_running_state_with_params(1, 3, THRESHOLD);
-        let participants: Vec<AccountId> = running_state
-            .parameters
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-        let contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-        (contract, participants)
-    }
 
     fn update_hash(byte: u8) -> dtos::UpdateHash {
         dtos::UpdateHash::Code(dtos::Hash256([byte; 32]))
@@ -321,7 +309,8 @@ mod tests {
     pub fn test_vote_update_filters_non_participant_votes() {
         // given: a running state with 3 participants and threshold of 2, holding two votes
         // from accounts that are no longer participants
-        let (mut contract, participants) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
+        let participants = participant_account_ids(&contract);
         let former_set = gen_participants(2);
         for (account_id, _, _) in former_set.participants() {
             let voter = authenticated(&former_set, account_id);
@@ -356,7 +345,8 @@ mod tests {
 
     /// Votes from two accounts that are no longer participants plus one from a current one.
     fn contract_with_stale_votes() -> (MpcContract, Vec<AccountId>, Vec<AccountId>) {
-        let (mut contract, participants) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
+        let participants = participant_account_ids(&contract);
         let former_set = gen_participants(2);
         let former: Vec<AccountId> = former_set
             .participants()
@@ -460,7 +450,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "not a voter")]
     fn vote_update__should_panic_for_non_participants() {
-        let (mut contract, _) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
         Environment::new(None, Some(gen_account_id()), None);
 
         let _ = contract.vote_update(update_hash(1));
@@ -480,7 +470,8 @@ mod tests {
     #[test]
     fn remove_update_vote__should_take_back_an_approval_and_block_submission() {
         // Given an approved update.
-        let (mut contract, participants) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
+        let participants = participant_account_ids(&contract);
         let code = vec![1, 2, 3];
         approve(
             &mut contract,
@@ -518,7 +509,8 @@ mod tests {
     #[test]
     fn submit_update__should_reject_a_hash_that_is_not_approved() {
         // Given
-        let (mut contract, participants) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
+        let participants = participant_account_ids(&contract);
         Environment::new(None, Some(participants[0].clone()), None);
 
         // When
@@ -536,7 +528,8 @@ mod tests {
     #[test]
     fn submit_update__should_apply_the_approved_update_once() {
         // Given
-        let (mut contract, participants) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
+        let participants = participant_account_ids(&contract);
         let code = vec![1, 2, 3];
         approve(
             &mut contract,
@@ -564,7 +557,8 @@ mod tests {
     #[test]
     fn submit_update__should_reject_an_approved_but_invalid_config() {
         // Given an approved config whose launcher TTL is below the attestation validity window.
-        let (mut contract, participants) = running_contract();
+        let (mut contract, ..) = setup_tee_test_contract(NUM_PARTICIPANTS, THRESHOLD);
+        let participants = participant_account_ids(&contract);
         let mut config = test_utils::contract_types::dummy_config(1);
         config.launcher_hash_unused_ttl_seconds = 0;
         let update = dtos::Update::Config(config);

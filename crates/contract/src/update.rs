@@ -4,7 +4,6 @@
 use crate::{
     config::Config,
     dto_mapping::IntoInterfaceType,
-    errors::Error,
     primitives::{
         key_state::AuthenticatedAccountId,
         participants::Participants,
@@ -23,17 +22,6 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(crate) enum Update {
     Code(Vec<u8>),
     Config(Config),
-}
-
-impl TryFrom<dtos::Update> for Update {
-    type Error = Error;
-
-    fn try_from(value: dtos::Update) -> Result<Self, Self::Error> {
-        Ok(match value {
-            dtos::Update::Code(code) => Update::Code(code),
-            dtos::Update::Config(config) => Update::Config(config.try_into()?),
-        })
-    }
 }
 
 impl Update {
@@ -143,31 +131,5 @@ impl ContractUpdateVotes {
 
     pub fn pending(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedAccountId>> {
         self.pending.all()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::update::Update;
-    use near_mpc_contract_interface::types as dtos;
-    use test_utils::contract_types::dummy_config;
-
-    // Vote bookkeeping is covered by `primitives::votes`, approval by `api::update`.
-    #[test]
-    #[expect(non_snake_case)]
-    fn update_try_from__should_reject_invalid_config() {
-        // Given a config whose launcher TTL is below the attestation validity window.
-        let mut config = dummy_config(1);
-        config.launcher_hash_unused_ttl_seconds = 0;
-
-        // When it is converted into an `Update`.
-        let result = Update::try_from(dtos::Update::Config(config));
-
-        // Then it is rejected before it can be applied.
-        let err = result.expect_err("invalid config must be rejected");
-        assert!(
-            format!("{err:?}").contains("launcher_hash_unused_ttl_seconds"),
-            "error should point at the invalid field, got: {err:?}"
-        );
     }
 }
