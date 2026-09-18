@@ -85,7 +85,7 @@ pub fn max_reconstruction_threshold(domains: &[DomainConfig]) -> Option<Reconstr
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
 /// that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to
 /// add domains but ultimately canceled that process.)
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DomainRegistry {
     domains: Vec<DomainConfig>,
@@ -235,7 +235,7 @@ impl DomainRegistry {
 
 /// Tracks votes to add domains. Each participant can at any given time vote for a list of domains
 /// to add.
-#[near(serializers=[borsh, json])]
+#[near(serializers=[borsh])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
     pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
@@ -271,9 +271,7 @@ impl AddDomainsVotes {
         let remaining_votes = self
             .proposal_by_account
             .iter()
-            .filter(|&(participant_id, _vote)| {
-                participants.is_participant_given_participant_id(&participant_id.get())
-            })
+            .filter(|&(participant_id, _vote)| participants.is_participant(participant_id))
             .map(|(participant_id, vote)| (participant_id.clone(), vote.clone()))
             .collect();
         AddDomainsVotes {

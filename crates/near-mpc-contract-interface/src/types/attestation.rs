@@ -1,8 +1,12 @@
 use std::fmt;
 
+use crate::types::tee::ExpectedMeasurements;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
-use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash, Sha384Digest};
+use mpc_primitives::hash::{
+    KeyProviderEventDigest, LauncherDockerComposeHash, MrtdHash, NodeImageHash, Rtmr0Hash,
+    Rtmr1Hash, Rtmr2Hash,
+};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 
@@ -136,11 +140,11 @@ pub struct VerifiedDstackAttestation {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifiedMeasurements {
-    pub mrtd: Sha384Digest,
-    pub rtmr0: Sha384Digest,
-    pub rtmr1: Sha384Digest,
-    pub rtmr2: Sha384Digest,
-    pub key_provider_event_digest: Sha384Digest,
+    pub mrtd: MrtdHash,
+    pub rtmr0: Rtmr0Hash,
+    pub rtmr1: Rtmr1Hash,
+    pub rtmr2: Rtmr2Hash,
+    pub key_provider_event_digest: KeyProviderEventDigest,
 }
 
 #[derive(
@@ -195,7 +199,7 @@ pub enum MockAttestation {
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
-        expected_measurements: Option<VerifiedMeasurements>,
+        expected_measurements: Option<ExpectedMeasurements>,
     },
 }
 
@@ -268,47 +272,6 @@ impl fmt::Debug for DstackAttestation {
             .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
             .finish()
     }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-// This is a hand-maintained mirror of the verified `attestation::AppCompose` — the
-// security-relevant subset, NOT the type used during attestation verification. Keep its security
-// fields in sync with the verified struct, or it can drift.
-// TODO(#3425): dedupe with `attestation::AppCompose` (single source of truth) — pending team decision.
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct AppCompose {
-    pub manifest_version: u32,
-    pub name: String,
-    pub runner: String,
-    pub docker_compose_file: String,
-    pub kms_enabled: bool,
-    pub tproxy_enabled: Option<bool>,
-    pub gateway_enabled: Option<bool>,
-    pub public_logs: bool,
-    pub public_sysinfo: bool,
-    pub local_key_provider_enabled: bool,
-    pub key_provider_id: Option<String>,
-    pub allowed_envs: Vec<String>,
-    pub no_instance_id: bool,
-    pub secure_time: Option<bool>,
-    pub pre_launch_script: Option<String>,
-    pub init_script: Option<String>,
-    pub bash_script: Option<String>,
 }
 
 /// Trusted Computing Base information structure

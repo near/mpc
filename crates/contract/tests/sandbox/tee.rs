@@ -17,11 +17,13 @@ use crate::sandbox::{
         resharing_utils::conclude_resharing,
         sign_utils::DomainResponseTest,
         transactions::CallMpcContract,
+        views::{SandboxViewer, ViewMpcContract},
     },
 };
 use anyhow::Result;
 use mpc_contract::primitives::{participants::Participants, test_utils::bogus_ed25519_public_key};
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
+use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::deposits::STORAGE_BYTE_COST_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
@@ -45,8 +47,9 @@ fn mock_expiring_at(expiry_timestamp_seconds: u64) -> MockAttestation {
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
 /// and additional votes don't change the allowed state or latest hash.
 #[tokio::test]
-async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_basic_threshold_and_stability() -> Result<()> {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -54,17 +57,18 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc_contract = worker.view_mpc(contract.id());
     let threshold = assert_running_return_threshold(&contract).await;
 
     let allowed_mpc_image_digest = image_digest();
 
     // Initially, there should be no allowed hashes
-    assert_allowed_docker_image_hashes(&contract, &[]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
 
     // First votes - should not be enough
     for account in mpc_signer_accounts.iter().take((threshold.0 - 1) as usize) {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
-        assert_allowed_docker_image_hashes(&contract, &[]).await;
+        assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
     }
 
     // `threshold`-th vote - should reach threshold
@@ -74,7 +78,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         &allowed_mpc_image_digest,
     )
     .await?;
-    assert_allowed_docker_image_hashes(&contract, &[allowed_mpc_image_digest]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[allowed_mpc_image_digest]).await;
 
     // Additional votes - should not change the allowed hashes
     const EXTRA_VOTES_TO_TEST_STABILITY: usize = 4;
@@ -86,7 +90,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         )
         .await?;
         // Should still have exactly one hash
-        assert_allowed_docker_image_hashes(&contract, &[allowed_mpc_image_digest]).await;
+        assert_allowed_docker_image_hashes(&mpc_contract, &[allowed_mpc_image_digest]).await;
     }
 
     Ok(())
@@ -95,8 +99,10 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 /// Tests that once a code hash reaches voting threshold and becomes allowed,
 /// it remains in the allowed list even when participants change their votes away from it.
 #[tokio::test]
-async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_approved_hashes_persist_after_vote_changes()
+-> Result<()> {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -104,6 +110,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc_contract = worker.view_mpc(contract.id());
     let threshold = assert_running_return_threshold(&contract).await;
     // This is necessary for some parts of the test below
     assert!((threshold.0 as usize) < mpc_signer_accounts.len());
@@ -113,7 +120,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     let second_hash = NodeImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
-    assert_allowed_docker_image_hashes(&contract, &[]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
 
     // Initial votes for first hash - reach threshold
     for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
@@ -121,14 +128,14 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     }
 
     // Verify first hash is allowed
-    assert_allowed_docker_image_hashes(&contract, &[first_hash]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[first_hash]).await;
 
     // Participant 0 changes vote to second hash
     vote_for_hash(&mpc_signer_accounts[0], &contract, &second_hash).await?;
 
     // First hash should still be allowed
     // Second hash should not be allowed yet (only 1 vote)
-    assert_allowed_docker_image_hashes(&contract, &[first_hash]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[first_hash]).await;
 
     // Participants 2..threshold votes for second hash - should reach threshold
     for account in mpc_signer_accounts
@@ -140,22 +147,23 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     }
 
     // Now both hashes should be allowed
-    assert_allowed_docker_image_hashes(&contract, &[second_hash, first_hash]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[second_hash, first_hash]).await;
 
     // Participant 1 also changes vote to second hash
     vote_for_hash(&mpc_signer_accounts[1], &contract, &second_hash).await?;
 
     // Both hashes should still be allowed (once a hash reaches threshold, it stays)
     // Second hash should still be allowed (threshold + 1 votes)
-    assert_allowed_docker_image_hashes(&contract, &[second_hash, first_hash]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[second_hash, first_hash]).await;
 
     Ok(())
 }
 
-/// Tests that vote_code_hash does not accept votes from a randomly generated
+/// Tests that vote_mpc_node_manifest_digest does not accept votes from a randomly generated
 /// account id that is not in the participant list
 #[tokio::test]
-async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
+async fn test_vote_mpc_node_manifest_digest_doesnt_accept_account_id_not_in_participant_list()
+-> Result<()> {
     let SandboxTestSetup {
         worker, contract, ..
     } = SandboxTestSetup::builder()
@@ -166,13 +174,12 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     let allowed_mpc_image_digest = image_digest();
 
     let res = random_account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(allowed_mpc_image_digest)
         .await?;
     let Err(err) = res.into_result() else {
         panic!(
-            "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
+            "vote_mpc_node_manifest_digest should not accept votes from a randomly generated account id that is not in the participant list"
         );
     };
     let err_str = format!("{:?}", err);
@@ -183,56 +190,15 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     Ok(())
 }
 
-#[tokio::test]
-async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() -> Result<()> {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .build()
-        .await;
-    let allowed_mpc_image_digest =
-        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-
-    let res = mpc_signer_accounts
-        .first()
-        .unwrap()
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
-        .transact()
-        .await?;
-    assert!(res.is_success());
-    Ok(())
-}
-
-async fn get_allowed_launcher_compose_hashes(
-    contract: &Contract,
-) -> Result<Vec<LauncherDockerComposeHash>> {
-    Ok(contract
-        .call(method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES)
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?
-        .json::<Vec<LauncherDockerComposeHash>>()?)
-}
-
-async fn get_allowed_hashes(contract: &Contract) -> Vec<dtos::AllowedMpcDockerImageHash> {
-    contract
-        .call(method_names::ALLOWED_DOCKER_IMAGE_HASHES)
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
+async fn assert_allowed_docker_image_hashes(
+    mpc_contract: &MpcContractHandle<SandboxViewer>,
+    expected: &[NodeImageHash],
+) {
+    let entries = mpc_contract
+        .allowed_docker_image_hashes()
         .await
-        .expect("Contract is running")
-        .json()
-        .expect("allowed_docker_image_hashes method is infallible")
-}
-
-async fn assert_allowed_docker_image_hashes(contract: &Contract, expected: &[NodeImageHash]) {
-    let entries = get_allowed_hashes(contract).await;
+        .expect("allowed_docker_image_hashes view should succeed")
+        .value;
 
     let hashes: Vec<NodeImageHash> = entries.iter().map(|entry| entry.image_hash).collect();
     assert_eq!(hashes, expected);
@@ -276,6 +242,7 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -504,6 +471,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
 async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification()
 -> Result<()> {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -511,6 +479,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc_contract = worker.view_mpc(contract.id());
     let threshold = assert_running_return_threshold(&contract).await;
     let hash_1 = [1; 32];
     let hash_2 = [2; 32];
@@ -519,7 +488,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let participant_account_1 = &mpc_signer_accounts[0];
 
     // Initially, there should be no allowed hashes
-    assert_allowed_docker_image_hashes(&contract, &[]).await;
+    assert_allowed_docker_image_hashes(&mpc_contract, &[]).await;
 
     let hashes = [hash_1, hash_2, hash_3];
 
@@ -574,6 +543,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 #[tokio::test]
 async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_attestation() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -745,6 +715,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
 #[tokio::test]
 async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -752,9 +723,14 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc_contract = worker.view_mpc(contract.id());
 
     assert_eq!(
-        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        mpc_contract
+            .allowed_launcher_compose_hashes()
+            .await?
+            .value
+            .len(),
         0
     );
 
@@ -764,7 +740,11 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
     }
     assert_eq!(
-        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        mpc_contract
+            .allowed_launcher_compose_hashes()
+            .await?
+            .value
+            .len(),
         0,
         "no compose hashes without a launcher image"
     );
@@ -775,7 +755,11 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         vote_add_launcher_hash(account, &contract, &launcher_hash).await?;
     }
     assert_eq!(
-        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        mpc_contract
+            .allowed_launcher_compose_hashes()
+            .await?
+            .value
+            .len(),
         1,
         "1 compose hash: launcher x MPC image"
     );
@@ -1047,12 +1031,13 @@ async fn prepay_and_submit_a_constrained_mock__should_use_at_most_half_a_grant_f
         .with_protocols(ALL_PROTOCOLS)
         .build()
         .await;
+    let mpc_contract = worker.view_mpc(contract.id());
     let image_hash = image_digest();
     for account in &mpc_signer_accounts {
         vote_for_hash(account, &contract, &image_hash).await?;
         vote_add_launcher_hash(account, &contract, &LauncherImageHash::from([0xAA; 32])).await?;
     }
-    let [compose_hash] = get_allowed_launcher_compose_hashes(&contract).await?[..] else {
+    let [compose_hash] = mpc_contract.allowed_launcher_compose_hashes().await?.value[..] else {
         panic!("the launcher and image hashes must derive exactly one compose hash");
     };
     let now_seconds = worker.view_block().await?.timestamp() / 1_000_000_000;

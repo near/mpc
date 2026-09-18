@@ -37,15 +37,6 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
         .unwrap()
 }
 
-pub async fn get_allowed_launcher_image_hashes(
-    contract: &Contract,
-) -> anyhow::Result<Vec<LauncherImageHash>> {
-    Ok(contract
-        .view(method_names::ALLOWED_LAUNCHER_IMAGE_HASHES)
-        .await?
-        .json()?)
-}
-
 pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
     let state = get_state(contract).await;
     let ProtocolContractState::Running(running) = state else {
@@ -176,9 +167,8 @@ pub async fn vote_for_hash(
     image_hash: &NodeImageHash,
 ) -> anyhow::Result<()> {
     let result = account
-        .call(contract.id(), method_names::VOTE_CODE_HASH)
-        .args_json(serde_json::json!({"code_hash": image_hash}))
-        .transact()
+        .call_mpc(contract.id())
+        .vote_mpc_node_manifest_digest(*image_hash)
         .await?;
     all_receipts_successful(result)?;
     Ok(())

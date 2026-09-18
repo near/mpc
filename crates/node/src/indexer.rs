@@ -4,6 +4,7 @@ use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types
 
 use self::stats::IndexerStats;
 use anyhow::Context;
+use chain_gateway::account_id_compat::to_near_internal;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
@@ -20,12 +21,12 @@ use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_TEE_ACCOUNTS, MIGRATION_INFO, STATE,
+    MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
@@ -106,7 +107,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_PENDING_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -146,7 +147,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_PENDING_CKD_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -187,7 +188,7 @@ impl IndexerViewClient {
             .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
@@ -227,7 +228,7 @@ impl IndexerViewClient {
         .into_bytes();
 
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.clone(),
+            account_id: to_near_internal(mpc_contract_id),
             method_name: GET_ATTESTATION.to_string(),
             args: get_attestation_args.into(),
         };
@@ -271,13 +272,12 @@ impl IndexerViewClient {
             .await
     }
 
-    /// Borsh-decoding view-fn query (`get_mpc_state` is JSON-only).
     pub(crate) async fn get_allowed_foreign_chain_providers(
         &self,
         mpc_contract_id: AccountId,
-    ) -> anyhow::Result<std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
+    ) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
+            account_id: to_near_internal(&mpc_contract_id),
             method_name: ALLOWED_FOREIGN_CHAIN_PROVIDERS.to_string(),
             args: vec![].into(),
         };
@@ -289,22 +289,9 @@ impl IndexerViewClient {
         let response = self.view_client.send_async(query).await??;
 
         match response.kind {
-            QueryResponseKind::CallResult(result) => borsh::from_slice::<
-                std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
-            >(&result.result)
-            .with_context(|| {
-                let preview: String = result
-                    .result
-                    .iter()
-                    .take(32)
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                format!(
-                    "failed to borsh-decode allowed_foreign_chain_providers response (len={}, first {} bytes hex: {preview})",
-                    result.result.len(),
-                    result.result.len().min(32),
-                )
-            }),
+            QueryResponseKind::CallResult(result) => {
+                decode_allowed_foreign_chain_providers(&result.result)
+            }
             _ => anyhow::bail!("got unexpected response querying allowed_foreign_chain_providers"),
         }
     }
@@ -342,13 +329,6 @@ impl IndexerViewClient {
             .await
     }
 
-    pub(crate) async fn get_mpc_tee_accounts(
-        &self,
-        mpc_contract_id: AccountId,
-    ) -> anyhow::Result<(u64, Vec<dtos::NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
-    }
-
     pub(crate) async fn get_mpc_migration_info(
         &self,
         mpc_contract_id: AccountId,
@@ -365,7 +345,7 @@ impl IndexerViewClient {
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
+            account_id: to_near_internal(&mpc_contract_id),
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };
@@ -387,6 +367,25 @@ impl IndexerViewClient {
             }
         }
     }
+}
+
+/// TODO(#4353): drop the borsh fallback once mainnet and testnet both return JSON.
+fn decode_allowed_foreign_chain_providers(
+    bytes: &[u8],
+) -> anyhow::Result<BTreeMap<dtos::ForeignChain, dtos::ChainEntry>> {
+    let json_error = match serde_json::from_slice(bytes) {
+        Ok(whitelist) => return Ok(whitelist),
+        Err(error) => error,
+    };
+    borsh::from_slice(bytes).with_context(|| {
+        let preview: String = bytes.iter().take(32).map(|b| format!("{b:02x}")).collect();
+        format!(
+            "failed to decode allowed_foreign_chain_providers as JSON ({json_error}) or \
+             borsh (len={}, first {} bytes hex: {preview})",
+            bytes.len(),
+            bytes.len().min(32),
+        )
+    })
 }
 
 pub(crate) trait ReadAttestationExpiry: Send + Sync {
@@ -559,8 +558,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
     /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
     pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Watcher that tracks node IDs that have TEE attestations in the contract.
-    pub attested_nodes_receiver: watch::Receiver<Vec<dtos::NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 
@@ -575,7 +572,13 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
+    use super::{
+        BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress, decode_allowed_foreign_chain_providers,
+        dtos,
+    };
+    use assert_matches::assert_matches;
+    use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use std::collections::BTreeMap;
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
         let mut progress = SyncProgress::default();
@@ -675,5 +678,68 @@ mod tests {
         let expected =
             pre.len() + resync.len() + usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
         assert_eq!(caught_up_at, Some(expected));
+    }
+
+    fn whitelist_fixture() -> BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
+        BTreeMap::from([(
+            dtos::ForeignChain::Bitcoin,
+            dtos::ChainEntry {
+                providers: NonEmptyBTreeMap::new(
+                    dtos::ProviderId("alchemy".to_string()),
+                    dtos::ProviderConfig {
+                        base_url: "http://localhost:7".to_string(),
+                        auth_scheme: dtos::AuthScheme::None,
+                        chain_routing: dtos::ChainRouting::Embedded,
+                    },
+                ),
+                quorum: 1,
+            },
+        )])
+    }
+
+    #[test]
+    fn decode_allowed_foreign_chain_providers__should_decode_a_json_result() {
+        // Given
+        let bytes = serde_json::to_vec(&whitelist_fixture()).unwrap();
+
+        // When
+        let decoded = decode_allowed_foreign_chain_providers(&bytes).unwrap();
+
+        // Then
+        assert_eq!(decoded, whitelist_fixture());
+    }
+
+    #[test]
+    fn decode_allowed_foreign_chain_providers__should_decode_a_borsh_result() {
+        // Given
+        let bytes = borsh::to_vec(&whitelist_fixture()).unwrap();
+
+        // When
+        let decoded = decode_allowed_foreign_chain_providers(&bytes).unwrap();
+
+        // Then
+        assert_eq!(decoded, whitelist_fixture());
+    }
+
+    #[test]
+    fn decode_allowed_foreign_chain_providers__should_decode_an_empty_borsh_result() {
+        // Given
+        let bytes =
+            borsh::to_vec(&BTreeMap::<dtos::ForeignChain, dtos::ChainEntry>::new()).unwrap();
+
+        // When
+        let decoded = decode_allowed_foreign_chain_providers(&bytes).unwrap();
+
+        // Then
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn decode_allowed_foreign_chain_providers__should_return_err_on_bytes_of_neither_encoding() {
+        // When
+        let result = decode_allowed_foreign_chain_providers(b"not a whitelist");
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 }

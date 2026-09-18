@@ -1,6 +1,8 @@
 use ed25519_dalek::VerifyingKey;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo};
+use near_mpc_contract_interface::types::{
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey,
+};
 use near_mpc_crypto_types::Keyset;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
@@ -125,14 +127,29 @@ fn infer_migration_status(
     my_p2p_public_key: &VerifyingKey,
     destination_node_info: &Option<DestinationNodeInfo>,
 ) -> bool {
-    destination_node_info
-        .as_ref()
-        .map(|info| {
-            ed25519_dalek::VerifyingKey::try_from(&info.destination_node_info.tls_public_key)
-                .inspect_err(|_| tracing::warn!(target: "Migration Service", "Error parsing public key from chain."))
-                .is_ok_and(|key| key == *my_p2p_public_key)
-        })
-        .unwrap_or(false)
+    let Some(info) = destination_node_info.as_ref() else {
+        return false;
+    };
+    let registered_key = &info.destination_node_info.tls_public_key;
+    match VerifyingKey::try_from(registered_key) {
+        Ok(key) if key == *my_p2p_public_key => true,
+        Ok(_) => {
+            tracing::warn!(
+                registered_tls_public_key = %String::from(registered_key),
+                my_tls_public_key = %String::from(&Ed25519PublicKey::from(my_p2p_public_key)),
+                "a destination node with a different TLS key is registered for this account; this node will not onboard (expected if this node is the migration source)"
+            );
+            false
+        }
+        Err(err) => {
+            tracing::error!(
+                ?err,
+                registered_tls_public_key = %String::from(registered_key),
+                "could not parse the registered destination node's TLS public key from chain"
+            );
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -151,7 +168,6 @@ pub mod tests {
     use crate::{
         config,
         indexer::{migrations::ContractMigrationInfo, participants::ContractState},
-        tests::dto_conversions::keyset_to_dto,
     };
 
     use super::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo, OnboardingJob};
@@ -507,7 +523,7 @@ pub mod tests {
 
         (
             ContractCase::new(contract, onboarding_node_p2p_public_key),
-            keyset_to_dto(&running_state.keyset),
+            Keyset::from(&running_state.keyset),
         )
     }
     pub(crate) fn make_initializing_contract_case(
