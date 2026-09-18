@@ -45,6 +45,7 @@ pub fn current_contract_proposal() -> ProposeUpdateArgs {
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -73,6 +74,7 @@ async fn test_propose_contract_max_size_upload() {
 #[tokio::test]
 async fn test_propose_update_config() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -189,6 +191,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -202,6 +205,7 @@ async fn test_propose_update_contract() {
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -240,6 +244,7 @@ async fn test_invalid_contract_deploy() {
 #[tokio::test]
 async fn test_propose_update_contract_many() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -296,6 +301,7 @@ async fn test_propose_update_contract_many() {
 #[tokio::test]
 async fn test_vote_update_gas_before_threshold() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -370,6 +376,7 @@ async fn test_vote_update_gas_before_threshold() {
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -412,6 +419,7 @@ async fn test_propose_incorrect_updates() {
 async fn many_sequential_updates() {
     let number_of_participants = PARTICIPANT_LEN;
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -439,6 +447,7 @@ async fn many_sequential_updates() {
 async fn only_one_vote_from_participant() {
     let number_of_participants = 3;
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -512,6 +521,7 @@ async fn only_one_vote_from_participant() {
 async fn remove_update_proposal__should_drop_the_proposal_and_its_votes() {
     // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -549,6 +559,7 @@ async fn remove_update_proposal__should_drop_the_proposal_and_its_votes() {
 async fn remove_update_proposal__should_not_pass_votes_on_to_a_later_proposal() {
     // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -603,6 +614,7 @@ async fn remove_update_proposal__should_not_pass_votes_on_to_a_later_proposal() 
 async fn remove_update_proposal__should_fail_for_an_unknown_id() {
     // Given
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -654,6 +666,7 @@ async fn update_from_current_contract_to_migration_contract() {
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
