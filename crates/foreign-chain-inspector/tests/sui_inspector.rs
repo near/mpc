@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 use assert_matches::assert_matches;
+use foreign_chain_inspector::Verdict;
 use foreign_chain_inspector::{
     ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
     sui::{
@@ -131,6 +132,9 @@ async fn extract__should_return_normalized_event_for_checkpointed_transaction() 
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then — type_tag address padded to long form, bcs carried as raw bytes.
     assert_eq!(
@@ -161,6 +165,9 @@ async fn extract__should_return_correct_event_for_specific_index() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     assert_eq!(extracted_values.len(), 1);
@@ -183,7 +190,7 @@ async fn extract__should_return_not_finalized_when_checkpoint_is_missing() {
         .extract(tx_id(), SuiFinality::Checkpointed, vec![])
         .await;
 
-    // Then — transient, so the fan-out keeps retrying until it is checkpointed.
+    // Then: transient, worth retrying once the transaction is checkpointed.
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
     assert!(response.unwrap_err().is_transient());
 }
@@ -203,10 +210,7 @@ async fn extract__should_return_transaction_failed_when_execution_failed() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionFailed)
-    );
+    assert_matches!(response, Ok(Verdict::TransactionFailed));
 }
 
 #[tokio::test]
@@ -280,12 +284,8 @@ async fn extract__should_return_transaction_not_found_for_unknown_digest() {
         .extract(tx_id(), SuiFinality::Checkpointed, vec![])
         .await;
 
-    // Then — a substantive (non-transient) verdict.
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionNotFound)
-    );
-    assert!(!response.unwrap_err().is_transient());
+    // Then
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
 }
 
 #[tokio::test]
@@ -309,7 +309,7 @@ async fn extract__should_propagate_unavailable_provider_as_transient() {
 }
 
 #[tokio::test]
-async fn extract__should_return_error_when_event_index_out_of_bounds() {
+async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_event_index() {
     // Given
     let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![
         framework_event(),
@@ -325,10 +325,7 @@ async fn extract__should_return_error_when_event_index_out_of_bounds() {
         .await;
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-    );
+    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
 }
 
 #[tokio::test]
@@ -415,6 +412,9 @@ async fn extract__should_accept_event_without_contents_type_name() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     assert_eq!(
@@ -446,6 +446,9 @@ async fn extract__should_accept_contents_type_in_different_address_form() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     assert_eq!(
@@ -464,6 +467,9 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
         .extract(tx_id(), SuiFinality::Checkpointed, Vec::new())
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // Then
     let expected: Vec<SuiExtractedValue> = vec![];

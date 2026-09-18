@@ -95,7 +95,6 @@ fn run_near_init(config: &NearInitConfig, home_dir: &Path) -> anyhow::Result<()>
         config.download_config_url.as_deref(),
         boot_nodes,
         None,
-        None,
     )
     .context("failed to initialize NEAR node")?;
 

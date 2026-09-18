@@ -182,6 +182,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         keys,
@@ -247,6 +248,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
     let SandboxTestSetup {
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         keys,
@@ -295,7 +297,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_initialization() -> anyhow::Result<()> {
-    let (_, contract) = init().await;
+    let (_worker, contract) = init().await;
 
     // Empty candidates should fail.
     let participants = Participants::new();

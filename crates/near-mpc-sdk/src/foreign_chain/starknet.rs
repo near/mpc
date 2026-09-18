@@ -3,6 +3,7 @@ use crate::{
     sign::NotSet,
 };
 
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
 use near_mpc_contract_interface::types::ExtractedValue;
 
 // API types
@@ -27,8 +28,10 @@ pub struct StarknetRequest<TxId, Finality> {
     expected_block_hash: Option<StarknetBlockHash>,
 }
 
-impl From<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
-    fn from(built_request: BuildableStarknetRequest) -> Self {
+impl TryFrom<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
+    type Error = BoundedVecOutOfBounds;
+
+    fn try_from(built_request: BuildableStarknetRequest) -> Result<Self, Self::Error> {
         let mut extractors = vec![];
         let mut expected_values = vec![];
 
@@ -39,14 +42,14 @@ impl From<BuildableStarknetRequest> for ForeignChainRpcRequestWithExpectations {
             ));
         }
 
-        ForeignChainRpcRequestWithExpectations {
+        Ok(ForeignChainRpcRequestWithExpectations {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id: built_request.tx_id,
                 finality: built_request.finality,
-                extractors,
+                extractors: extractors.try_into()?,
             }),
             expected_values,
-        }
+        })
     }
 }
 
@@ -189,7 +192,7 @@ mod test {
         let expected_request = ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
             tx_id,
             finality: StarknetFinality::AcceptedOnL1,
-            extractors: vec![StarknetExtractor::BlockHash],
+            extractors: [StarknetExtractor::BlockHash].into(),
         });
         let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: expected_request.clone(),
@@ -232,7 +235,7 @@ mod test {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id,
                 finality: StarknetFinality::AcceptedOnL1,
-                extractors: vec![StarknetExtractor::BlockHash],
+                extractors: [StarknetExtractor::BlockHash].into(),
             }),
         };
 
@@ -266,7 +269,7 @@ mod test {
 
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Starknet(rpc_request) => {
-            assert_eq!(rpc_request.extractors, vec![]);
+            assert!(rpc_request.extractors.is_empty());
         });
     }
 }

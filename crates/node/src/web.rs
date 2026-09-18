@@ -159,6 +159,8 @@ struct ForeignChainsProviderCounts {
     avalanche: usize,
     #[serde(skip_serializing_if = "is_zero")]
     adi: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    fogo: usize,
 }
 
 impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
@@ -178,6 +180,7 @@ impl From<ForeignChainsConfig> for ForeignChainsProviderCounts {
             sui: config.sui.map_or(0, |c| c.providers.len()),
             avalanche: config.avalanche.map_or(0, |c| c.providers.len()),
             adi: config.adi.map_or(0, |c| c.providers.len()),
+            fogo: config.fogo.map_or(0, |c| c.providers.len()),
         }
     }
 }
@@ -419,6 +422,7 @@ mod tests {
     const SUI_RPC_URL: &str = "https://fullnode.mainnet.sui.io/";
     const AVALANCHE_RPC_URL: &str = "https://api.avax.network/ext/bc/C/rpc";
     const ADI_RPC_URL: &str = "https://rpc.adifoundation.ai";
+    const FOGO_RPC_URL: &str = "https://testnet.fogo.io/";
 
     const SOLANA_BEARER_TOKEN: &str = "sk-SUPER-SECRET-KEY";
     const BITCOIN_PATH_TOKEN: &str = "ankr-secret-token";
@@ -547,6 +551,7 @@ mod tests {
                     AuthConfig::None,
                 )),
                 adi: Some(test_chain(PROVIDER_PUBLIC, ADI_RPC_URL, AuthConfig::None)),
+                fogo: Some(test_chain(PROVIDER_PUBLIC, FOGO_RPC_URL, AuthConfig::None)),
             },
             cores: Some(4),
             separate_asset_generation_runtime: true,
@@ -588,6 +593,7 @@ mod tests {
             "sui",
             "avalanche",
             "adi",
+            "fogo",
         ] {
             assert_eq!(
                 counts.get(chain).and_then(|v| v.as_u64()),
@@ -617,6 +623,7 @@ mod tests {
             SUI_RPC_URL,
             AVALANCHE_RPC_URL,
             ADI_RPC_URL,
+            FOGO_RPC_URL,
             SOLANA_BEARER_TOKEN,
             BITCOIN_PATH_TOKEN,
             STARKNET_QUERY_TOKEN,

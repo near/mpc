@@ -14,13 +14,10 @@ use crate::sandbox::{
     common::{candidates, init_contract, init_contract_running, make_threshold_params},
     utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
 };
-use mpc_contract::{
-    crypto_shared::types::PublicKeyExtended,
-    primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-};
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
+    AttemptId, DomainConfig, DomainId, DomainPurpose, EpochId, KeyForDomain, Keyset, Protocol,
+    ReconstructionThreshold,
 };
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
@@ -28,6 +25,7 @@ use rstest::rstest;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
+use test_utils::sandbox::SandboxWorker;
 
 /// Path to gas thresholds configuration file.
 const GAS_THRESHOLDS_FILE: &str = "gas_thresholds.json";
@@ -105,6 +103,7 @@ struct TestEnv {
     account_ids: Vec<AccountId>,
     /// Total number of participants registered in the contract.
     n_participants: usize,
+    _worker: SandboxWorker,
 }
 
 impl TestEnv {
@@ -259,9 +258,7 @@ async fn setup_test_env_running(n_participants: usize) -> TestEnv {
 }
 
 async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -> TestEnv {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     let account_ids: Vec<AccountId> = (0..n_participants)
@@ -280,11 +277,10 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
             purpose: DomainPurpose::Sign,
         };
         let (dto_pk, _) = new_secp256k1();
-        let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();
         let key = KeyForDomain {
             attempt: AttemptId::new(),
             domain_id,
-            key: public_key,
+            key: dto_pk.into(),
         };
         let keyset = Keyset::new(EpochId::new(1), vec![key]);
         let domains = vec![domain];
@@ -309,5 +305,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         caller,
         account_ids,
         n_participants,
+        _worker: worker,
     }
 }

@@ -16,7 +16,7 @@ impl IntoContractType<Participants> for &dtos::Participants {
                 .insert_with_id(
                     account_id.clone(),
                     ParticipantInfo {
-                        url: info.url.clone(),
+                        url: info.url.clone().try_into().unwrap(),
                         tls_public_key: info.tls_public_key.clone(),
                     },
                     mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),

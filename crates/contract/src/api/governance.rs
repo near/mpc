@@ -2,11 +2,9 @@
 
 use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::key_state::EpochId;
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::tee::tee_state::TeeValidationResult;
 use crate::{MpcContract, MpcContractExt};
-use dtos::DomainConfig;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{env, log, near};
 use std::time::Duration;
@@ -32,7 +30,7 @@ impl MpcContract {
     #[handle_result]
     pub fn vote_new_parameters(
         &mut self,
-        prospective_epoch_id: EpochId,
+        prospective_epoch_id: dtos::EpochId,
         proposal: dtos::ProposedGovernanceThresholdParameters,
     ) -> Result<(), Error> {
         Self::assert_caller_is_signer();
@@ -69,8 +67,7 @@ impl MpcContract {
                     .participants()
                     .iter()
                     .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation
-                            .is_participant_given_account_id(account_id)
+                        !participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
 
@@ -92,7 +89,7 @@ impl MpcContract {
     /// The specified list of domains must have increasing and contiguous IDs, and the first ID
     /// must be the same as the `next_domain_id` returned by state().
     #[handle_result]
-    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+    pub fn vote_add_domains(&mut self, domains: Vec<dtos::DomainConfig>) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         log!(
             "vote_add_domains: signer={}, domains={:?}",
@@ -125,6 +122,7 @@ mod tests {
     use crate::dto_mapping::IntoInterfaceType;
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, KeyForDomain, Keyset};
+    use crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES;
     use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::gen_participants;
     use crate::primitives::thresholds::GovernanceThresholdParameters;
@@ -156,7 +154,7 @@ mod tests {
             GovernanceThresholdParameters::new(participants, governance_threshold).unwrap(),
             BTreeMap::new(),
         );
-        contract.vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+        contract.vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
     }
 
     /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants have
@@ -274,7 +272,7 @@ mod tests {
         let parameters =
             GovernanceThresholdParameters::new(participants.clone(), governance_threshold).unwrap();
         let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
+        let domains = vec![dtos::DomainConfig {
             id: domain_id,
             protocol: Protocol::CaitSith,
             reconstruction_threshold,
@@ -282,16 +280,21 @@ mod tests {
         }];
         let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
         let keyset = Keyset::new(
-            EpochId::new(0),
+            dtos::EpochId::new(0),
             vec![KeyForDomain {
                 domain_id,
                 key: pk.try_into().unwrap(),
                 attempt: AttemptId::new(),
             }],
         );
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, (&parameters).into_dto_type(), None)
-                .unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            (&keyset).into_dto_type(),
+            (&parameters).into_dto_type(),
+            None,
+        )
+        .unwrap();
         (contract, participants, first_participant_id, domain_id)
     }
 
@@ -308,7 +311,42 @@ mod tests {
                 .attached_deposit(NearToken::from_near(0))
                 .build()
         );
-        contract.vote_new_parameters(EpochId::new(1), proposal.into_dto_type())
+        contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
+    }
+
+    /// Mutates the wire form directly: the contract-internal type cannot represent an
+    /// oversized url, which is what makes the DTO conversion the enforcement point.
+    #[test]
+    fn vote_new_parameters__should_reject_a_url_over_the_byte_limit() {
+        // Given: a Running contract, and a proposal whose wire form carries an oversized url
+        let (mut contract, participants, signer, _) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+        let mut args = (&proposal).into_dto_type();
+        args.parameters.participants.participants[0].2.url =
+            "u".repeat(MAX_PARTICIPANT_URL_BYTES + 1);
+
+        // When
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(signer.clone())
+                .predecessor_account_id(signer)
+                .attached_deposit(NearToken::from_near(0))
+                .build()
+        );
+        let result = contract.vote_new_parameters(dtos::EpochId::new(1), args);
+
+        // Then
+        assert_matches!(
+            result.unwrap_err(),
+            Error::InvalidCandidateSet(InvalidCandidateSet::ParticipantUrlTooLong { .. })
+        );
     }
 
     #[test]
@@ -474,7 +512,7 @@ mod tests {
 
         // When / Then: the confused-deputy vote must be rejected before it is recorded.
         contract
-            .vote_new_parameters(EpochId::new(1), (&proposal).into_dto_type())
+            .vote_new_parameters(dtos::EpochId::new(1), (&proposal).into_dto_type())
             .expect("expected panic when predecessor != signer");
     }
 
