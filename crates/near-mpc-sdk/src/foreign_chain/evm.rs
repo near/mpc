@@ -3,6 +3,7 @@ use crate::{
     sign::NotSet,
 };
 
+use near_mpc_bounded_collections::BoundedVecOutOfBounds;
 use near_mpc_contract_interface::types::{ExtractedValue, Hash256};
 
 pub use near_mpc_contract_interface::types::{
@@ -36,10 +37,12 @@ pub struct ExpectedLog {
     pub(crate) log: EvmLog,
 }
 
-impl<Chain: EvmChainVariant> From<BuildableEvmRequest<Chain>>
+impl<Chain: EvmChainVariant> TryFrom<BuildableEvmRequest<Chain>>
     for ForeignChainRpcRequestWithExpectations
 {
-    fn from(built_request: BuildableEvmRequest<Chain>) -> Self {
+    type Error = BoundedVecOutOfBounds;
+
+    fn try_from(built_request: BuildableEvmRequest<Chain>) -> Result<Self, Self::Error> {
         let mut extractors = vec![];
         let mut expected_values = vec![];
 
@@ -59,14 +62,14 @@ impl<Chain: EvmChainVariant> From<BuildableEvmRequest<Chain>>
             )));
         }
 
-        ForeignChainRpcRequestWithExpectations {
+        Ok(ForeignChainRpcRequestWithExpectations {
             request: Chain::wrap(EvmRpcRequest {
                 tx_id: built_request.tx_id,
                 finality: built_request.finality,
-                extractors,
+                extractors: extractors.try_into()?,
             }),
             expected_values,
-        }
+        })
     }
 }
 
@@ -244,7 +247,7 @@ mod test {
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
             assert_eq!(
-                rpc_request.extractors,
+                rpc_request.extractors.to_vec(),
                 vec![
                     EvmExtractor::Log { log_index: 1 },
                     EvmExtractor::Log { log_index: 2 },
@@ -283,7 +286,7 @@ mod test {
         let expected_request = ForeignChainRpcRequest::Abstract(EvmRpcRequest {
             tx_id,
             finality: EvmFinality::Finalized,
-            extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
+            extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }].into(),
         });
         let expected_payload_hash = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: expected_request.clone(),
@@ -334,7 +337,7 @@ mod test {
             request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
                 tx_id,
                 finality: EvmFinality::Finalized,
-                extractors: vec![EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }],
+                extractors: [EvmExtractor::BlockHash, EvmExtractor::Log { log_index: 5 }].into(),
             }),
         };
 
@@ -368,7 +371,7 @@ mod test {
 
         // then
         assert_matches!(&request_args.request, ForeignChainRpcRequest::Abstract(rpc_request) => {
-            assert_eq!(rpc_request.extractors, vec![]);
+            assert!(rpc_request.extractors.is_empty());
         });
     }
 }

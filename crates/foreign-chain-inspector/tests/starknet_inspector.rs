@@ -5,15 +5,17 @@ pub mod common;
 use crate::common::{
     FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
 };
+use foreign_chain_inspector::Verdict;
 
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, NetworkFingerprintInspector,
-    RpcAuthentication, build_http_client,
     starknet::{
         MAINNET_CHAIN_ID, StarknetBlockHash, StarknetExtractedValue, StarknetTransactionHash,
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
+use foreign_chain_rpc_factory::build_http_client;
+use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
 
 use assert_matches::assert_matches;
 use foreign_chain_rpc_interfaces::starknet::{
@@ -94,6 +96,9 @@ async fn extract__should_return_block_hash_when_finality_is_sufficient(
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     assert_eq!(extracted_values.len(), 1);
@@ -127,7 +132,7 @@ async fn extract__should_return_not_finalized_when_finality_is_insufficient() {
 }
 
 #[tokio::test]
-async fn extract__should_return_client_error_for_received_finality() {
+async fn extract__should_return_not_finalized_for_received_finality() {
     // given
     let tx_id = StarknetTransactionHash::from([7; 32]);
 
@@ -148,7 +153,7 @@ async fn extract__should_return_client_error_for_received_finality() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
 }
 
 #[tokio::test]
@@ -177,10 +182,7 @@ async fn extract__should_return_transaction_failed_when_execution_is_reverted() 
         .await;
 
     // then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::TransactionFailed)
-    );
+    assert_matches!(response, Ok(Verdict::TransactionFailed));
 }
 
 #[tokio::test]
@@ -204,6 +206,9 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
         .extract(tx_id, StarknetFinality::AcceptedOnL2, Vec::new())
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let expected: Vec<StarknetExtractedValue> = vec![];
@@ -211,7 +216,32 @@ async fn extract__should_return_empty_when_no_extractors_are_requested() {
 }
 
 #[tokio::test]
-async fn extract__should_propagate_rpc_client_errors() {
+async fn extract__should_return_the_not_found_verdict_for_an_unknown_transaction_hash() {
+    // given: the `TXN_HASH_NOT_FOUND` error code from the Starknet API spec.
+    let mock_client = FixedResponseRpcClient::new(|| {
+        Err(RpcClientError::Call(jsonrpsee::types::ErrorObject::owned(
+            29,
+            "Transaction hash not found",
+            None::<()>,
+        )))
+    });
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            StarknetTransactionHash::from([9; 32]),
+            StarknetFinality::AcceptedOnL2,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(response, Ok(Verdict::TransactionNotFound));
+}
+
+#[tokio::test]
+async fn extract__should_classify_rpc_client_errors() {
     // given
     let tx_id = StarknetTransactionHash::from([9; 32]);
 
@@ -233,11 +263,14 @@ async fn extract__should_propagate_rpc_client_errors() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::RpcRequestFailed(_))
+    );
 }
 
 #[tokio::test]
-async fn extract__should_return_error_when_log_index_out_of_bounds() {
+async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_log_index() {
     // given
     let tx_id = StarknetTransactionHash::from([1; 32]);
 
@@ -262,10 +295,7 @@ async fn extract__should_return_error_when_log_index_out_of_bounds() {
         .await;
 
     // then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
-    );
+    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
 }
 
 #[tokio::test]
@@ -307,6 +337,9 @@ async fn extract__should_return_correct_log_for_specific_index() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     assert_eq!(
@@ -376,7 +409,11 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
     setup_starknet_rpc_mock(&server);
 
     let tx_id = StarknetTransactionHash::from([9; 32]);
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = StarknetInspector::new(client);
 
     // when
@@ -388,6 +425,9 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let mut expected_bytes = [0u8; 32];
@@ -397,6 +437,41 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
             expected_bytes
         ))],
         extracted_values,
+    );
+}
+
+#[tokio::test]
+async fn extract__should_reject_a_canonical_lookup_answering_a_different_height() {
+    // given: the canonical block lookup answers with a block below the receipt's height, the
+    // provider's own fault rather than a statement about the chain.
+    let tx_id = StarknetTransactionHash::from([1; 32]);
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL1,
+        StarknetExecutionStatus::Succeeded,
+    );
+    let canonical_block = GetBlockWithTxHashesResponse {
+        block_hash: receipt.block_hash,
+        block_number: receipt.block_number - 1,
+    };
+    let mock_client = SequentialResponseMockClientBuilder::new()
+        .with_response(&receipt)
+        .with_response(&canonical_block)
+        .build();
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL1,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
     );
 }
 
@@ -440,7 +515,7 @@ async fn extract__should_return_non_canonical_block_when_receipt_block_hash_diff
     // then
     assert_matches!(
         response,
-        Err(ForeignChainInspectionError::NonCanonicalBlock {
+        Ok(Verdict::NonCanonicalBlock {
             block_number: observed_block_number,
             receipt_hash,
             canonical_hash,
@@ -477,7 +552,10 @@ async fn extract__should_propagate_get_block_with_tx_hashes_rpc_error() {
         .await;
 
     // then
-    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
+    );
 }
 
 #[tokio::test]
@@ -487,7 +565,11 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
     setup_starknet_rpc_mock(&server);
 
     let tx_id = StarknetTransactionHash::from([9; 32]);
-    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
+    let client = build_http_client(&ForeignChainProviderConfig {
+        rpc_url: server.url("/"),
+        auth: AuthConfig::None,
+    })
+    .unwrap();
     let inspector = StarknetInspector::new(client);
 
     // when
@@ -499,6 +581,9 @@ async fn extract__should_return_event_log_for_specific_index_via_http_rpc_client
         )
         .await
         .expect("extract should succeed");
+    let Verdict::Extracted(extracted_values) = extracted_values else {
+        panic!("expected extracted values, got: {extracted_values}");
+    };
 
     // then
     let mut expected_block_hash = [0u8; 32];

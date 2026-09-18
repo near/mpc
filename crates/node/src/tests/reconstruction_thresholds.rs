@@ -25,6 +25,23 @@ const REQUEST_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(
 /// Generous budget for [`warm_up`], absorbing the one-time cold-start after each online-set change.
 const WARMUP_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// Warm-up signatures per domain. An online-set change strands most of a node's buffered
+/// presignatures on the participants that left, and the first request to find the buffer empty pays
+/// for generating a fresh one; the rest run against a buffer that generation is keeping up with.
+const WARMUP_SIGNATURES: usize = 5;
+
+/// Presignatures each node buffers per domain, raised from the default 5 so that the presignatures
+/// a departing node strands rarely leave a node with none at all. Stays within the triples a single
+/// generation batch yields.
+const PRESIGNATURES_TO_BUFFER: usize = 16;
+
+/// Deepens every node's presignature buffers. Call before the nodes are run.
+fn buffer_presignatures(setup: &mut IntegrationTestSetup) {
+    for node in &mut setup.configs {
+        node.config.presignature.desired_presignatures_to_buffer = PRESIGNATURES_TO_BUFFER;
+    }
+}
+
 /// Sign or CKD request per `domain`'s protocol; both are gated by its reconstruction threshold.
 async fn request_and_await_response(
     indexer: &mut FakeIndexerManager,
@@ -40,13 +57,15 @@ async fn request_and_await_response(
     }
 }
 
-/// Primes each domain's presignatures for the current online set with a generously-budgeted sign,
-/// whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and DamgardEtAl consume
-/// pre-generated presignatures; Frost and CKD sign directly, so pass only the block's signable
-/// CaitSith/DamgardEtAl domains after every online-set change.
+/// Primes each domain's presignatures for the current online set with [`WARMUP_SIGNATURES`]
+/// generously-budgeted signs, whose cold-start can exceed [`REQUEST_WAIT_BUDGET`]. Only CaitSith and
+/// DamgardEtAl consume pre-generated presignatures; Frost and CKD sign directly, so pass only the
+/// block's signable CaitSith/DamgardEtAl domains after every online-set change.
 async fn warm_up(indexer: &mut FakeIndexerManager, domains: &[&DomainConfig]) {
     for domain in domains {
-        let _ = request_and_await_response(indexer, "warmup", domain, WARMUP_WAIT_BUDGET).await;
+        for _ in 0..WARMUP_SIGNATURES {
+            let _ = request_and_await_response(indexer, "warmup", domain, WARMUP_WAIT_BUDGET).await;
+        }
     }
 }
 
@@ -157,6 +176,7 @@ async fn per_domain_reconstruction_threshold__should_gate_signing_availability_w
         contract.add_domains(domains.clone());
     }
 
+    buffer_presignatures(&mut setup);
     let _runs = setup
         .configs
         .into_iter()
@@ -294,6 +314,7 @@ async fn resharing__should_apply_updated_thresholds_while_preserving_unchanged_o
         contract.add_domains(domains.iter().map(|d| d.before.clone()).collect());
     }
 
+    buffer_presignatures(&mut setup);
     let _runs = setup
         .configs
         .into_iter()

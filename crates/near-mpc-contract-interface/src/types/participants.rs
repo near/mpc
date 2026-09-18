@@ -1,9 +1,15 @@
 use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_mpc_bounded_collections::BoundedString;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde::{Deserialize, Serialize};
 
 pub use mpc_primitives::ParticipantId;
+
+/// Bounded because [`ParticipantInfo`] is stored inline in the contract state.
+pub const MAX_PARTICIPANT_URL_BYTES: usize = 256;
+
+pub type ParticipantUrl = BoundedString<MAX_PARTICIPANT_URL_BYTES>;
 
 #[derive(
     Clone,

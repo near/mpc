@@ -205,7 +205,9 @@ impl TestSetup {
     fn vote_with_all_participants(&mut self, hash: [u8; 32], timestamp: u64) {
         for (account_id, _, _) in &self.participants_list.clone() {
             self.with_env(account_id, timestamp);
-            self.contract.vote_code_hash(hash.into()).unwrap();
+            self.contract
+                .vote_mpc_node_manifest_digest(hash.into())
+                .unwrap();
         }
     }
     /// Returns the list of NodeIds for all participants. The
@@ -931,7 +933,9 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 #[case(ContractProtocolState::Running)]
 #[case(ContractProtocolState::Initializing)]
 #[case(ContractProtocolState::Resharing)]
-fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProtocolState) {
+fn vote_mpc_node_manifest_digest_works_in_contract_protocol_states(
+    #[case] state: ContractProtocolState,
+) {
     let mut setup = TestSetupBuilder::new()
         .with_contract_protocol_state(state)
         .build();

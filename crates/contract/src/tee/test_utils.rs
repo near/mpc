@@ -4,8 +4,9 @@
 //! attestation behavior, and general contract state management.
 
 use crate::MpcContract;
+use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
-use crate::tee::{measurements::ContractExpectedMeasurements, tee_state::TeeState};
+use crate::tee::tee_state::TeeState;
 use mpc_attestation::attestation::default_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_account_id::AccountId;
@@ -125,7 +126,7 @@ pub fn whitelist_dstack_measurements(
     tee_state.whitelist_tee_proposal(image, Duration::MAX);
     tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
     for &measurements in default_measurements() {
-        tee_state.add_measurement(ContractExpectedMeasurements::from(measurements));
+        tee_state.add_measurement(measurements.into_dto_type());
     }
     if let Some(compose_hash) = compose_hash {
         tee_state

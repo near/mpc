@@ -1,0 +1,483 @@
+use near_account_id::AccountId;
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
+use tokio_util::sync::{CancellationToken, DropGuard};
+
+use crate::{
+    HasPollInterval, ObservedState, SerializedObservation, TransportError, ViewArgs, ViewContract,
+    views::{
+        deserialize::Deserializer,
+        view_call::{ViewCall, deserialize_res},
+    },
+};
+
+pub struct MonitoringTask<T, ViewError> {
+    pub(crate) cached: Result<ObservedState<T>, TransportError<ViewError>>,
+    pub last_observed: tokio::sync::watch::Receiver<Result<SerializedObservation, ViewError>>,
+    _task_handle: JoinHandle<()>,
+    _drop_guard: DropGuard,
+    deserializer: Deserializer<T>,
+}
+
+impl<T, ViewError> MonitoringTask<T, ViewError> {
+    pub async fn new<Viewer>(view_call: ViewCall<Viewer, T>) -> Self
+    where
+        Viewer: ViewContract<Error = ViewError> + HasPollInterval + Send + 'static,
+    {
+        make_monitoring_task(view_call).await
+    }
+}
+
+impl<T, ViewError> MonitoringTask<T, ViewError>
+where
+    ViewError: Clone,
+{
+    pub fn update_cache(&mut self) {
+        let last_observed = self.last_observed.borrow_and_update().clone();
+        let res = deserialize_res(last_observed, self.deserializer);
+        self.cached = res;
+    }
+}
+
+/// Spawns a monitoring task with tokio.
+/// Cancels the spawned task when dropped.
+pub(crate) async fn make_monitoring_task<Viewer, T>(
+    view_call: ViewCall<Viewer, T>,
+) -> MonitoringTask<T, Viewer::Error>
+where
+    Viewer: ViewContract + HasPollInterval + Send + 'static,
+{
+    let observed_state = view_call
+        .viewer
+        .view_contract(&view_call.contract_id, view_call.args.clone())
+        .await;
+
+    let (sender, last_observed) = tokio::sync::watch::channel(observed_state.clone());
+
+    let cancel_token = CancellationToken::new();
+    let _task_handle = tokio::spawn(monitor(
+        view_call.viewer,
+        view_call.contract_id,
+        view_call.args,
+        sender,
+        cancel_token.clone(),
+    ));
+    let cached = deserialize_res(observed_state, view_call.deserializer);
+
+    MonitoringTask {
+        cached,
+        last_observed,
+        _task_handle,
+        _drop_guard: cancel_token.drop_guard(),
+        deserializer: view_call.deserializer,
+    }
+}
+
+async fn monitor<Viewer: ViewContract + HasPollInterval>(
+    viewer: Viewer,
+    contract_id: AccountId,
+    view_args: ViewArgs,
+    sender: watch::Sender<Result<SerializedObservation, Viewer::Error>>,
+    cancel: CancellationToken,
+) {
+    let mut ticker = tokio::time::interval(viewer.poll_interval().into());
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // consume the first tick
+    ticker.tick().await;
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                tracing::info!(
+                    contract_id = ?contract_id,
+                    method_name = ?view_args.method_name,
+                    "contract monitoring task cancelled"
+                );
+                break;
+            }
+            _ = ticker.tick() => {
+                let val = viewer
+                    .view_contract(&contract_id, view_args.clone())
+                    .await;
+
+                if sender.send_if_modified(|existing| modify(existing, val)) {
+                    tracing::debug!(
+                        contract_id = ?contract_id,
+                        method_name = ?view_args.method_name,
+                        "updated value"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Conditionally modifies `to_modify` in place and returns a bool indicating if it was modified.
+/// `to_modify` is modified if and only if one of the following holds:
+///     - `to_modify` is Ok(_) and `update_value` is Err(_) or vice-versa
+///     - if `to_modify` and `update_value` are both Ok(ObservedState) with differing value fields
+///     - if `to_modify` and `update_value` are different errors
+fn modify<ViewError>(
+    to_modify: &mut Result<SerializedObservation, ViewError>,
+    update_value: Result<SerializedObservation, ViewError>,
+) -> bool
+where
+    ViewError: PartialEq,
+{
+    let value_changed = match (&to_modify, &update_value) {
+        (Ok(prev), Ok(current)) => prev.value != current.value,
+        (Err(prev_err), Err(curr_err)) => prev_err != curr_err,
+        _ => true,
+    };
+    if value_changed {
+        *to_modify = update_value;
+    }
+    value_changed
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use crate::{
+        HasPollInterval, Json, ObservedState, SerializedObservation, ViewArgs,
+        mock::{Call, MockViewContract, MockViewError},
+        views::{
+            monitoring::{MonitoringTask, make_monitoring_task, modify, monitor},
+            view_call::ViewCall,
+        },
+    };
+    use rstest::rstest;
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    fn expected_call() -> Call {
+        Call {
+            contract_id: "example.testnet".parse().unwrap(),
+            method_name: "example_method".to_string(),
+            args: vec![0xAA, 0xBB],
+        }
+    }
+
+    // unit tests for `modify` function
+    #[rstest]
+    #[case("same bytes, same height do not update", Ok((0, 0)), Ok((0, 0)), false)]
+    #[case("same bytes, different observed_at do not update", Ok((0, 0)), Ok((5, 0)), false)]
+    #[case("different bytes, different obseved_at do update", Ok((0, 0)), Ok((1, 1)), true)]
+    #[case("different bytes, same obseved_at do update", Ok((0, 0)), Ok((0, 1)), true)]
+    #[case("ok -> error does update", Ok((0, 0)), Err(MockViewError("closed")), true)]
+    #[case("error -> ok does update", Err(MockViewError("closed")), Ok((0, 0)), true)]
+    #[case(
+        "same error string does not update",
+        Err(MockViewError("closed")),
+        Err(MockViewError("closed")),
+        false
+    )]
+    #[case(
+        "different error string does update",
+        Err(MockViewError("closed")),
+        Err(MockViewError("other")),
+        true
+    )]
+    fn modify__should_modify_only_on_value_change(
+        #[case] name: &str,
+        #[case] existing_spec: Result<(u64, u8), MockViewError>,
+        #[case] update_spec: Result<(u64, u8), MockViewError>,
+        #[case] expected_changed: bool,
+    ) {
+        let mut to_modify: Result<SerializedObservation, MockViewError> =
+            existing_spec.map(|(at, b)| ObservedState {
+                observed_at: at.into(),
+                value: vec![b],
+            });
+        let update_value = update_spec.map(|(at, b)| ObservedState {
+            observed_at: at.into(),
+            value: vec![b],
+        });
+        let expected = if expected_changed {
+            update_value.clone()
+        } else {
+            to_modify.clone()
+        };
+
+        let changed = modify(&mut to_modify, update_value);
+
+        assert_eq!(changed, expected_changed, "case: {name}");
+        match (to_modify, expected) {
+            (Err(to_modify), Err(expected)) => {
+                assert_eq!(to_modify, expected, "case: {name}")
+            }
+            (Ok(to_modify), Ok(expected)) => assert_eq!(to_modify, expected, "case: {name}"),
+            (a, b) => panic!("case: {name}, mismatch: {a:?}, expected: {b:?}"),
+        }
+    }
+
+    /// Verifies that the monitor function queries the correct parameters
+    #[tokio::test(start_paused = true)]
+    async fn monitor__should_query_the_requested_contract_and_method() {
+        let init_mock = Ok(ObservedState {
+            observed_at: 0.into(),
+            value: vec![0],
+        });
+
+        let call = expected_call();
+        let (viewer, _receiver, _cancel) = setup(call.clone(), init_mock);
+        viewer
+            .await_next_call(Duration::from(viewer.poll_interval()) * 2)
+            .await
+            .unwrap();
+        let calls = viewer.calls();
+        assert!(calls.iter().all(|c| c == &call));
+        assert!(!calls.is_empty());
+    }
+
+    /// Verifies that monitor function emits changes correctly
+    #[rstest]
+    #[case("same bytes, same height", Ok((0, 0)), Ok((0, 0)), false)]
+    #[case("same bytes, different observed_at", Ok((0, 0)), Ok((5, 0)), false)]
+    #[case("different bytes, different obseved_at", Ok((0, 0)), Ok((1, 1)), true)]
+    #[case("different bytes, same obseved_at", Ok((0, 0)), Ok((0, 1)), true)]
+    #[case("ok -> error", Ok((0, 0)), Err(MockViewError("view failed")), true)]
+    #[case("error -> ok", Err(MockViewError("view failed")), Ok((0, 0)), true)]
+    #[case(
+        "same error",
+        Err(MockViewError("view failed")),
+        Err(MockViewError("view failed")),
+        false
+    )]
+    #[tokio::test(start_paused = true)]
+    async fn monitor__should_notify_receiver_only_on_value_change(
+        #[case] name: &str,
+        #[case] init_spec: Result<(u64, u8), MockViewError>,
+        #[case] next_spec: Result<(u64, u8), MockViewError>,
+        #[case] expected_changed: bool,
+    ) {
+        // Given
+        let init_mock_response = mock_spec(init_spec.clone());
+        let call = expected_call();
+        let (viewer, mut receiver, _cancel) = setup(call.clone(), init_mock_response);
+
+        // when: view response changes
+        let next_mock_response = mock_spec(next_spec.clone());
+        viewer.set_response(next_mock_response);
+        viewer
+            .await_next_call(Duration::from(viewer.poll_interval()) * 2)
+            .await
+            .unwrap();
+
+        // Then:
+        // we expect the receiver to be notified in case of change
+        assert_eq!(receiver.has_changed().unwrap(), expected_changed);
+
+        // We expect the value in the receiver to match the expected value
+        let found = receiver.borrow_and_update().clone();
+        let expected = if expected_changed {
+            next_spec
+        } else {
+            init_spec
+        };
+        let expected = mock_spec(expected);
+        match (found, expected) {
+            (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
+            (Err(g), Err(e)) => assert_eq!(g, e, "case: {name}"),
+            (a, b) => panic!("case: {name}, mismatch: got {a:?}, expected {b:?}"),
+        }
+
+        let calls = viewer.calls();
+        assert!(calls.iter().all(|c| c == &call), "case: {name}");
+    }
+
+    /// Verifies that the monitor function drops the sender when cancelled
+    #[tokio::test]
+    async fn monitor__should_drop_the_sender_on_cancellation() {
+        let init_mock = Ok(ObservedState {
+            observed_at: 0.into(),
+            value: vec![0],
+        });
+        let (_viewer, mut receiver, cancel) = setup(expected_call(), init_mock);
+        cancel.cancel();
+        assert!(receiver.changed().await.is_err());
+    }
+
+    // make_monitoring_task tests
+    #[rstest]
+    #[case("initial ok", Ok((0, 0)))]
+    #[case("initial err", Err(MockViewError("view failed")))]
+    #[tokio::test(start_paused = true)]
+    async fn monitoring_task__should_set_the_initial_value_from_the_first_view(
+        #[case] name: &str,
+        #[case] init_spec: Result<(u64, u8), MockViewError>,
+    ) {
+        let init_mock = mock_spec(init_spec.clone());
+
+        let call = expected_call();
+        let (viewer, task) = setup_task(call.clone(), init_mock).await;
+
+        let calls = viewer.calls();
+        assert!(calls.iter().all(|c| c == &call), "case: {name}");
+        assert!(!calls.is_empty(), "case: {name}");
+
+        let found = task.last_observed.borrow().clone();
+
+        let expected = mock_spec(init_spec);
+        match (found, expected) {
+            (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
+            (Err(g), Err(e)) => assert_eq!(g, e, "case: {name}"),
+            (a, b) => panic!("case: {name}, mismatch: got {a:?}, expected {b:?}"),
+        }
+    }
+
+    // tests that the monitoring task propagates changes correctly
+    #[rstest]
+    #[case("same bytes, same height", Ok((0, 0)), Ok((0, 0)), false)]
+    #[case("same bytes, different observed_at", Ok((0, 0)), Ok((5, 0)), false)]
+    #[case("different bytes, different observed_at", Ok((0, 0)), Ok((1, 1)), true)]
+    #[case("different bytes, same observed_at", Ok((0, 0)), Ok((0, 1)), true)]
+    #[case("ok -> error", Ok((0, 0)), Err(MockViewError("view failed")), true)]
+    #[case("error -> ok", Err(MockViewError("view failed")), Ok((0, 0)), true)]
+    #[case(
+        "same error",
+        Err(MockViewError("view failed")),
+        Err(MockViewError("view failed")),
+        false
+    )]
+    #[tokio::test(start_paused = true)]
+    async fn monitoring_task__should_propagate_only_value_changes(
+        #[case] name: &str,
+        #[case] init_spec: Result<(u64, u8), MockViewError>,
+        #[case] next_spec: Result<(u64, u8), MockViewError>,
+        #[case] expected_changed: bool,
+    ) {
+        let init_mock = mock_spec(init_spec.clone());
+        let next_mock = mock_spec(next_spec.clone());
+
+        let call = expected_call();
+        let (viewer, mut task) = setup_task(call.clone(), init_mock).await;
+
+        // Update what the viewer will return on the next poll
+        viewer.set_response(next_mock);
+
+        // Wait for the background monitor loop to actually call view again
+        viewer
+            .await_next_call(Duration::from(viewer.poll_interval()) * 2)
+            .await
+            .unwrap();
+
+        // Now check whether the watch receiver reports a change
+        assert_eq!(
+            task.last_observed.has_changed().unwrap(),
+            expected_changed,
+            "case: {name}"
+        );
+
+        let found = task.last_observed.borrow_and_update().clone();
+        let expected = if expected_changed {
+            next_spec
+        } else {
+            init_spec
+        };
+        let expected = mock_spec(expected);
+        match (found, expected) {
+            (Ok(g), Ok(e)) => assert_eq!(g, e, "case: {name}"),
+            (Err(g), Err(e)) => assert_eq!(g, e, "case: {name}"),
+            (a, b) => panic!("case: {name}, mismatch: got {a:?}, expected {b:?}"),
+        }
+
+        let calls = viewer.calls();
+        assert!(calls.iter().all(|c| c == &expected_call()), "case: {name}");
+    }
+
+    /// ensurse that the correct parameters are getting queried
+    /// note that this test is redundant, since we are testing this in the other tests already
+    #[tokio::test(start_paused = true)]
+    async fn monitoring_task__should_query_the_requested_contract_and_method() {
+        let init_mock = Ok(ObservedState {
+            observed_at: 0.into(),
+            value: vec![0],
+        });
+
+        let call = expected_call();
+        let (viewer, _task) = setup_task(call.clone(), init_mock).await;
+        viewer
+            .await_next_call(Duration::from(viewer.poll_interval()) * 2)
+            .await
+            .unwrap();
+        let calls = viewer.calls();
+        assert!(calls.iter().all(|c| c == &call));
+        assert!(!calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn monitoring_task__should_close_the_receiver_on_drop() {
+        let init_mock = Ok(ObservedState {
+            observed_at: 0.into(),
+            value: vec![0],
+        });
+
+        let call = expected_call();
+        let (_viewer, task) = setup_task(call, init_mock).await;
+
+        // Move receiver out so we can observe closure after dropping the task.
+        let mut receiver = task.last_observed.clone();
+
+        // Dropping should cancel the background loop.
+        drop(task);
+
+        // Once monitor exits, sender is dropped and changed().await returns Err.
+        // Use timeout so the test cannot hang if something is wrong.
+        let res = tokio::time::timeout(std::time::Duration::from_secs(2), receiver.changed()).await;
+        assert!(res.is_ok(), "expected receiver to close after drop");
+        assert!(
+            res.unwrap().is_err(),
+            "expected channel closed (sender dropped)"
+        );
+    }
+
+    // helper functions
+
+    async fn setup_task(
+        call: Call,
+        mock_response: Result<SerializedObservation, MockViewError>,
+    ) -> (MockViewContract, MonitoringTask<Vec<u8>, MockViewError>) {
+        let viewer = MockViewContract::new(mock_response);
+        let view_call = ViewCall::new::<Json>(
+            viewer.clone(),
+            call.contract_id,
+            ViewArgs::new(call.method_name, call.args),
+        );
+        let task = make_monitoring_task(view_call).await;
+
+        (viewer, task)
+    }
+
+    fn setup(
+        call: Call,
+        mock_response: Result<SerializedObservation, MockViewError>,
+    ) -> (
+        MockViewContract,
+        tokio::sync::watch::Receiver<Result<SerializedObservation, MockViewError>>,
+        CancellationToken,
+    ) {
+        let viewer = MockViewContract::new(mock_response.clone());
+
+        let (sender, receiver) = tokio::sync::watch::channel(mock_response.clone());
+
+        let cancel = CancellationToken::new();
+
+        let _handle = tokio::spawn(monitor(
+            viewer.clone(),
+            call.contract_id.clone(),
+            ViewArgs::new(call.method_name, call.args),
+            sender,
+            cancel.clone(),
+        ));
+        (viewer, receiver, cancel)
+    }
+
+    fn mock_spec(
+        spec: Result<(u64, u8), MockViewError>,
+    ) -> Result<SerializedObservation, MockViewError> {
+        spec.map(|(at, b)| ObservedState {
+            observed_at: at.into(),
+            value: vec![b],
+        })
+    }
+}

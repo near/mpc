@@ -167,7 +167,7 @@ mod tests {
     use crate::home_paths::near_data_dir;
     use rstest::rstest;
 
-    fn must_read_recorded(home: &Path) -> Option<u64> {
+    fn read_recorded(home: &Path) -> Option<u64> {
         std::fs::read_to_string(wipe_token_file(home))
             .ok()
             .map(|s| s.trim().parse().unwrap())
@@ -207,7 +207,7 @@ mod tests {
 
         // Then
         assert_eq!(data_dir.exists(), expect_data_dir_exists);
-        assert_eq!(must_read_recorded(home), expect_recorded);
+        assert_eq!(read_recorded(home), expect_recorded);
     }
 
     #[test]
@@ -226,7 +226,7 @@ mod tests {
         // cleanup is non-fatal (retried on the next startup), so the wipe succeeds.
         result.unwrap();
         assert!(!not_a_dir.exists());
-        assert_eq!(must_read_recorded(home), Some(1));
+        assert_eq!(read_recorded(home), Some(1));
     }
 
     #[test]
