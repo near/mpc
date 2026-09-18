@@ -17,6 +17,7 @@ use std::{
     fs,
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     path::Path,
+    time::Duration,
 };
 
 const DEFAULT_PPROF_PORT: u16 = 34001;
@@ -25,6 +26,10 @@ const DEFAULT_PPROF_PORT: u16 = 34001;
 /// considered offline / lagging. Used by the mesh network to filter out
 /// participants that are too far behind in the indexer height.
 pub const MAX_INDEXER_HEIGHT_DIFF: u64 = 50;
+
+/// How long a follower will wait, at the start of computation, for a
+/// connection to each other participant in the round to be established before giving up.
+pub const PARTICIPANT_CONNECTION_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TripleConfig {
