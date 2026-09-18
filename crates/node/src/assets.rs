@@ -1554,10 +1554,9 @@ mod tests {
                 Arc::new(move || condition_value.lock().unwrap().clone()),
             )
         };
-        // observe both participants as alive
+        // make the queue cache this value, so the change below leaves it stale
         queue.cold_queue.lock().unwrap().update_condition_value();
 
-        // one of them goes offline
         *condition_value.lock().unwrap() = vec![online_participant.clone()];
         let id_stale = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id_fresh = id_stale.add_to_counter(1).unwrap();
@@ -1571,6 +1570,9 @@ mod tests {
 
         // Then: the one the stale value would have allowed is skipped
         assert_eq!(taken, Some((id_fresh, online_participant)));
+        // and it is parked rather than dropped, so it becomes usable again on reconnect
+        assert_eq!(queue.offline(), 1);
+        assert_eq!(queue.available(), 0);
     }
 
     // A take with a supplied value nothing matches yet parks; it completes once
