@@ -101,9 +101,11 @@ Reading the numbers:
   answer counts as an error.
 * A provider whose answers disagree with its peers also fails the whole check
   for that chain, and these metrics do not show it: its answers count as
-  answers here. When verify requests fail for a chain while every error
-  counter stays at zero, suspect a disagreeing provider and compare the node
-  logs.
+  answers here, since a provider that answers differently is not necessarily
+  malfunctioning; it may just be slow and lag behind its peers. The node counts
+  the failed check itself, labeled by chain, under
+  `mpc_num_verify_foreign_tx_verdict_mismatches`, and the node logs name the
+  providers that disagreed.
 * Every configured provider's series appears, at zero, as soon as the node
   serves requests, so an idle node reports zero rather than nothing. Solana can
   be configured but is not checked, so it never appears.
