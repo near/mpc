@@ -7,15 +7,16 @@
 //! factory below sets the same `expect_extract` behaviour on every clone.
 
 #![expect(non_snake_case)]
+pub mod common;
 
 use std::{pin::Pin, sync::Arc, time::Duration};
 
+use crate::common::fan_out_of;
 use assert_matches::assert_matches;
 use foreign_chain_inspector::{
     FanOut, ForeignChainInspectionError, ForeignChainInspector, HexBytes, ProviderFailure,
     TimeProviderCall, Verdict,
 };
-use near_mpc_bounded_collections::NonEmptyVec;
 use near_mpc_contract_interface::types::ProviderId;
 use rstest::rstest;
 use tokio::sync::mpsc;
@@ -113,18 +114,6 @@ fn verdict(make: impl Fn() -> Verdict<u32> + Send + Sync + 'static) -> ResponseF
 
 fn err(make: impl Fn() -> ForeignChainInspectionError + Send + Sync + 'static) -> ResponseFn {
     Arc::new(move || Err(make()))
-}
-
-fn fan_out_of(inspectors: Vec<MockInspector>) -> FanOut<MockInspector> {
-    let named: Vec<(ProviderId, MockInspector)> = inspectors
-        .into_iter()
-        .enumerate()
-        .map(|(index, inspector)| (ProviderId(format!("provider-{index}")), inspector))
-        .collect();
-    let inspectors: NonEmptyVec<(ProviderId, MockInspector)> = named
-        .try_into()
-        .expect("test must provide at least one inspector");
-    FanOut::new(inspectors)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
