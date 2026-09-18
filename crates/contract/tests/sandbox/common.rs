@@ -54,6 +54,7 @@ use serde_json::json;
 use signature::hazmat::PrehashSigner;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+use test_utils::sandbox::SandboxWorker;
 use tokio_util::time::FutureExt as _;
 
 use super::utils::contract_build;
@@ -108,14 +109,12 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
     (accounts, candidates)
 }
 
-pub async fn init() -> (Worker<Sandbox>, Contract) {
+pub async fn init() -> (SandboxWorker, Contract) {
     init_with_wasm(current_contract()).await
 }
 
-pub async fn init_with_wasm(wasm: &[u8]) -> (Worker<Sandbox>, Contract) {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+pub async fn init_with_wasm(wasm: &[u8]) -> (SandboxWorker, Contract) {
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     (worker, contract)
 }
@@ -169,7 +168,7 @@ pub async fn init_contract_running(
 }
 
 pub struct SandboxTestSetup {
-    pub worker: Worker<Sandbox>,
+    pub worker: SandboxWorker,
     pub contract: Contract,
     pub mpc_signer_accounts: Vec<Account>,
     pub keys: Vec<DomainKey>,

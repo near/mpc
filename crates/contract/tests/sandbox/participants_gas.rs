@@ -256,9 +256,7 @@ async fn setup_test_env_running(n_participants: usize) -> TestEnv {
 }
 
 async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -> TestEnv {
-    let worker = near_workspaces::sandbox_with_version(test_utils::DEFAULT_SANDBOX_VERSION)
-        .await
-        .unwrap();
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
     let account_ids: Vec<AccountId> = (0..n_participants)

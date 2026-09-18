@@ -26,10 +26,11 @@ use mpc_contract::primitives::{
 };
 use near_mpc_contract_interface::types::ReconstructionThreshold;
 use near_mpc_contract_interface::{method_names, types as dtos};
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{Account, Contract};
 use rstest::rstest;
 use serde_json::json;
 use std::collections::BTreeMap;
+use test_utils::sandbox::SandboxWorker;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
@@ -322,7 +323,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
 }
 
 struct ResharingTestContext {
-    _worker: Worker<Sandbox>,
+    _worker: SandboxWorker,
     contract: Contract,
     persistent_participants: Vec<Account>,
     new_participant_accounts: Vec<Account>,

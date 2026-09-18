@@ -11644,6 +11644,7 @@ dependencies = [
 name = "test-utils"
 version = "3.15.0"
 dependencies = [
+ "anyhow",
  "bs58 0.5.1",
  "cargo-near-build",
  "ed25519-dalek 2.2.0",
@@ -11652,7 +11653,9 @@ dependencies = [
  "mpc-primitives",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "near-sandbox",
  "near-sdk",
+ "near-workspaces",
  "serde_json",
  "serde_yaml",
  "sha2 0.10.9",
