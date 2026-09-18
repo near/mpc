@@ -40,4 +40,7 @@ pub enum StorageKey {
     PendingVerifyForeignTxRequestsV3,
     CodeHashVotesByVoter,
     CodeHashVotesByProposal,
+    /// Reverse index for [`StorageKey::StoredAttestations`]: account public key to the
+    /// TLS key of the newest attestation carrying it.
+    StoredAttestationsByAccountKey,
 }

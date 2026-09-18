@@ -44,8 +44,10 @@ const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
 /// Default TTL after which a launcher image hash unused by any participant is evicted.
 pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
 
-/// One attestation-storage grant, in milliNEAR.
-const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
+/// One attestation storage grant, in milliNEAR. Covers the worst case stored entry
+/// (value row plus the reverse index row by account public key) and the grant row, at
+/// twice their combined storage cost, leaving headroom for storage size or price drift.
+const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 25;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh])]
