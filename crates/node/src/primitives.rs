@@ -205,12 +205,15 @@ pub struct MpcMessage {
     pub kind: MpcMessageKind,
 }
 
+/// Discriminants are wire format: only ever append, never reorder. See [`MpcTaskId`].
 #[derive(Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum MpcMessageKind {
-    Start(MpcStartMessage),
-    Computation(Vec<Vec<u8>>),
-    Abort(String),
-    Success,
+    Start(MpcStartMessage) = 0,
+    Computation(Vec<Vec<u8>>) = 1,
+    Abort(String) = 2,
+    Success = 3,
 }
 
 impl MpcMessageKind {
@@ -257,13 +260,17 @@ pub struct MpcPeerMessage {
     pub message: MpcMessage,
 }
 
+/// Discriminants are explicit and part of the wire format: a variant is only ever appended,
+/// never reordered or renumbered, so that nodes on different versions keep decoding each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum MpcTaskId {
-    EcdsaTaskId(EcdsaTaskId),
-    EddsaTaskId(EddsaTaskId),
-    CKDTaskId(CKDTaskId),
-    RobustEcdsaTaskId(RobustEcdsaTaskId),
-    VerifyForeignTxTaskId(VerifyForeignTxTaskId),
+    EcdsaTaskId(EcdsaTaskId) = 0,
+    EddsaTaskId(EddsaTaskId) = 1,
+    CKDTaskId(CKDTaskId) = 2,
+    RobustEcdsaTaskId(RobustEcdsaTaskId) = 3,
+    VerifyForeignTxTaskId(VerifyForeignTxTaskId) = 4,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -291,8 +298,69 @@ pub struct Version {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::providers::ckd::CKDTaskId;
+    use mpc_primitives::domain::DomainId;
+    use mpc_primitives::{AttemptId, EpochId, KeyEventId};
+    use near_indexer_primitives::CryptoHash;
+    use rstest::rstest;
+
+    fn uid() -> UniqueId {
+        UniqueId::new(ParticipantId::from_raw(0), 1, 0)
+    }
+
+    fn key_event() -> KeyEventId {
+        KeyEventId::new(EpochId::new(0), DomainId(0), AttemptId(0))
+    }
+
+    #[rstest]
+    #[case(MpcMessageKind::Start(MpcStartMessage { task_id: EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), participants: Vec::new() }), 0)]
+    #[case(MpcMessageKind::Computation(Vec::new()), 1)]
+    #[case(MpcMessageKind::Abort(String::new()), 2)]
+    #[case(MpcMessageKind::Success, 3)]
+    fn mpc_message_kind__should_keep_borsh_discriminants_stable(
+        #[case] kind: MpcMessageKind,
+        #[case] discriminant: u8,
+    ) {
+        // When
+        let encoded = borsh::to_vec(&kind).unwrap();
+
+        // Then
+        assert_eq!(encoded[0], discriminant);
+    }
+
+    /// The two-byte prefix of an encoded task id is (outer discriminant, inner discriminant).
+    /// Pinning both is what lets a variant be appended without older nodes misreading the rest.
+    #[rstest]
+    #[case(EcdsaTaskId::KeyGeneration { key_event: key_event() }.into(), 0, 0)]
+    #[case(EcdsaTaskId::KeyResharing { key_event: key_event() }.into(), 0, 1)]
+    #[case(EcdsaTaskId::ManyTriples { start: uid(), count: 64 }.into(), 0, 2)]
+    #[case(EcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0), paired_triple_id: uid() }.into(), 0, 3)]
+    #[case(EcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 0, 4)]
+    #[case(EddsaTaskId::KeyGeneration { key_event: key_event() }.into(), 1, 0)]
+    #[case(EddsaTaskId::KeyResharing { key_event: key_event() }.into(), 1, 1)]
+    #[case(EddsaTaskId::Signature { id: CryptoHash::default() }.into(), 1, 2)]
+    #[case(CKDTaskId::KeyGeneration { key_event: key_event() }.into(), 2, 0)]
+    #[case(CKDTaskId::KeyResharing { key_event: key_event() }.into(), 2, 1)]
+    #[case(CKDTaskId::Ckd { id: CryptoHash::default() }.into(), 2, 2)]
+    #[case(RobustEcdsaTaskId::KeyGeneration { key_event: key_event() }.into(), 3, 0)]
+    #[case(RobustEcdsaTaskId::KeyResharing { key_event: key_event() }.into(), 3, 1)]
+    #[case(RobustEcdsaTaskId::Presignature { id: uid(), domain_id: DomainId(0) }.into(), 3, 2)]
+    #[case(RobustEcdsaTaskId::Signature { id: CryptoHash::default(), presignature_id: uid() }.into(), 3, 3)]
+    #[case(VerifyForeignTxTaskId::VerifyForeignTx { id: CryptoHash::default(), presignature_id: uid() }.into(), 4, 0)]
+    fn mpc_task_id__should_keep_borsh_discriminants_stable(
+        #[case] task_id: MpcTaskId,
+        #[case] outer: u8,
+        #[case] inner: u8,
+    ) {
+        // When
+        let encoded = borsh::to_vec(&task_id).unwrap();
+
+        // Then
+        assert_eq!(encoded[..2], [outer, inner]);
+    }
 
     #[test]
     fn test_validate_owned_by_accepts_matching_participant() {
